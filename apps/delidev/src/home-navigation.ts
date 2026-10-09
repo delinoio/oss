@@ -1,5 +1,5 @@
 import { type Resource } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, object, resourceName, text } from "./documents";
 import { sessionTitlePresentation } from "./session-title";
 
 // Home deliberately retains only navigation metadata. Full Resource documents
@@ -13,10 +13,13 @@ export interface NavigationRow {
   outcome: string;
   archive: string;
   title?: ReturnType<typeof sessionTitlePresentation>;
+  sidechatParent?: string;
 }
 export function navigationRow(row: Resource): NavigationRow {
-  const data = document(row);
-  return { id: row.id, projectId: row.projectId, revision: row.revision, name: resourceName(row), workspace: text(data.workspace), outcome: text(data.outcome), archive: text(data.archive), title: sessionTitlePresentation(data) };
+  const data = document(row), fork=object(data.fork), parent=text(fork.source_session_id);
+  // Navigation retains only this original relationship hint, never fork snapshots.
+  const sidechatParent=Object.keys(object(fork.sidechat_parent_snapshot)).length && parent!==row.id && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(parent) ? parent : undefined;
+  return { id: row.id, projectId: row.projectId, revision: row.revision, name: resourceName(row), workspace: text(data.workspace), outcome: text(data.outcome), archive: text(data.archive), title: sessionTitlePresentation(data), ...(sidechatParent ? {sidechatParent} : {}) };
 }
 export { ReadStage } from "./scroll-pagination";
 import { PaginationChain, type PaginationBatch, type PaginationPage, type PaginationFailure, type PaginationSnapshot, type PaginationReader } from "./scroll-pagination";

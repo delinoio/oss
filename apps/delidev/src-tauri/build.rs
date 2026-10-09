@@ -19,6 +19,7 @@ fn main() {
             "read_date_format",
             "update_date_format",
             "shortcut_capture_native",
+            "browser_tab_shortcuts",
             "read_shortcut_preferences",
             "update_shortcut_preferences",
             "update_appearance",

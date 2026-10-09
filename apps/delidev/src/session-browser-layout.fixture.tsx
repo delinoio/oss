@@ -12,13 +12,14 @@ import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { BrowserHostProvider } from "./host-capabilities";
 import { SessionView } from "./session";
+import { SessionTabsProvider } from "./session-tabs";
 import "./themes.css";
 import "./styles.css";
 import "./session-browser-layout.fixture.css";
 const args = new URLSearchParams(location.search);
 await i18n.changeLanguage(args.get("language") ?? "en");
 if (args.get("theme") !== "system") document.documentElement.dataset.theme = args.get("theme") ?? "light";
-if (args.get("zoom") === "2") document.body.style.zoom = "2";
+if (args.get("zoom") === "2") {document.body.style.zoom = "2";document.documentElement.style.setProperty("--fixture-scale","2");}
 const sessionId = newRequestId(), accountId = newRequestId(), profileId = newRequestId();
 const session = create(ResourceSchema, { id: sessionId, sessionId, kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ name: "Synthetic Browser session", workspace: "general-chat", archive: "active", outcome: "stopped", dispatch: "paused", recovery: "none", initial_execution: { id: newRequestId(), initial_account_id: accountId } }) });
 const profile = create(BrowserProfileSchema, { id: profileId, accountId, revision: 1n, state: BrowserProfileState.ACTIVE, serverId: newRequestId(), deviceId: newRequestId() });
@@ -46,4 +47,4 @@ function Fixture() {
   const [draft, setDraft] = useState("Retained synthetic Browser draft"), [mounted, setMounted] = useState(true);
   return <div className="app browser-layout-fixture" data-fixture="__browserSplitFixture"><aside><h1>DeliDev</h1><button onClick={() => setMounted(value => !value)}>Fixture remount</button></aside><main><div className="session-container">{mounted ? <SessionView id={sessionId} draft={draft} setDraft={setDraft} /> : null}</div></main></div>;
 }
-createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MutationIntents><BrowserHostProvider available={args.get("host") !== "unsupported"}><Fixture /></BrowserHostProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MutationIntents><BrowserHostProvider available={args.get("host") !== "unsupported"}><SessionTabsProvider><Fixture /></SessionTabsProvider></BrowserHostProvider></MutationIntents></QueryClientProvider></TransportProvider>);

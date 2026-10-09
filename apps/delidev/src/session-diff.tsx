@@ -11,7 +11,7 @@ import { workspaceReadOptions } from "./session-files";
 import { Problem } from "./ui";
 import { LocalReviewRecovery, LocalReviews } from "./local-reviews";
 
-export function SessionDiff({ sessionId, worktree, close }: { sessionId: string; worktree: boolean; close: () => void }) {
+export function SessionDiff({ sessionId, worktree, close, selected, openComparison }: { sessionId: string; worktree: boolean; close: () => void; selected?: {repository:string;comparison:Comparison;path:string}; openComparison?: (value:{repository:string;comparison:Comparison;path:string})=>void }) {
   useLocale();
   const panelRoot = useRef<HTMLElement>(null);
   const shortcuts = useShortcuts([{ id: ShortcutId.DiffClose, scope: Surface.Sessions, label: "shortcuts.closeDiff", bindings: [{ key: "Escape" }], target: panelRoot, input: ShortcutInput.Target, run: close }]);
@@ -20,7 +20,7 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
   const [repository, setRepository] = useState<string>();
   const [acceptedDeletionId, setAcceptedDeletionId] = useState<string>();
   const available = roots.data?.roots.filter((root) => root.repository_id);
-  const selected = repository ?? available?.find((root) => root.primary)?.repository_id ?? available?.[0]?.repository_id;
+  const selectedRepository = selected?.repository ?? repository ?? available?.find((root) => root.primary)?.repository_id ?? available?.[0]?.repository_id;
   useEffect(() => { heading.current?.focus(); }, []);
   return <aside ref={panelRoot} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiffClose)} className="session-files" aria-label={copy("session-diff.sessionGitDiff_d6706d")} onKeyDown={shortcuts.onKeyDown}>
     <header><h2 ref={heading} tabIndex={-1}>{copy("session-diff.gitDiff_fa5e4e")}</h2><button onClick={close} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiffClose)} aria-label={copy("session-diff.closeSessionDiff_43130b")}>{copy("session-diff.close_7d9eb7")}</button></header>
@@ -28,23 +28,23 @@ export function SessionDiff({ sessionId, worktree, close }: { sessionId: string;
     <Problem error={roots.error} />
     {roots.isPending ? <p role="status">{copy("session-diff.loadingWorkspaceRoots_0d8c0f")}</p> : null}
     {roots.error ? <button disabled={roots.isFetching} onClick={() => void roots.refetch()}>{copy("session-diff.retryWorkspaceRoots_6b5165")}</button> : null}
-    {available?.length ? <label>{copy("session-diff.diffRepository_12d492")}<select value={selected} onChange={(event) => setRepository(event.target.value)}>{available.map((root) => <option key={root.repository_id} value={root.repository_id}>{root.name}{root.primary ? copy("session-diff.primary_b88564") : ""}</option>)}</select></label> : roots.data ? <p>{copy("session-diff.thisWorkspaceHasNoPreparedGit_9235fc")}</p> : null}
+    {available?.length ? <label>{copy("session-diff.diffRepository_12d492")}<select value={selectedRepository} onChange={(event) => openComparison ? openComparison({repository:event.target.value,comparison:selected?.comparison ?? (worktree ? Comparison.Creation : Comparison.WorkingTree),path:selected?.path ?? "."}) : setRepository(event.target.value)}>{available.map((root) => <option key={root.repository_id} value={root.repository_id}>{root.name}{root.primary ? copy("session-diff.primary_b88564") : ""}</option>)}</select></label> : roots.data ? <p>{copy("session-diff.thisWorkspaceHasNoPreparedGit_9235fc")}</p> : null}
     <LocalReviewRecovery sessionId={sessionId} onAccepted={setAcceptedDeletionId} />
-    {selected ? <RepositoryDiff key={selected} sessionId={sessionId} repository={selected} worktree={worktree} acceptedDeletionId={acceptedDeletionId} /> : null}
+    {selectedRepository ? <RepositoryDiff key={`${selectedRepository}:${selected?.comparison}:${selected?.path}`} sessionId={sessionId} repository={selectedRepository} initial={selected} openComparison={openComparison} worktree={worktree} acceptedDeletionId={acceptedDeletionId} /> : null}
   </aside>;
 }
 
-function RepositoryDiff({ sessionId, repository, worktree, acceptedDeletionId }: { sessionId: string; repository: string; worktree: boolean; acceptedDeletionId?: string }) {
+export function RepositoryDiff({ sessionId, repository, worktree, acceptedDeletionId, initial, openComparison }: { sessionId: string; repository: string; worktree: boolean; acceptedDeletionId?: string; initial?: {comparison:Comparison;path:string}; openComparison?: (value:{repository:string;comparison:Comparison;path:string})=>void }) {
   useLocale();
-  const [comparison, setComparison] = useState(worktree ? Comparison.Creation : Comparison.WorkingTree);
-  const [path, setPath] = useState("."), [pathDraft, setPathDraft] = useState(".");
-  const result = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: "git-diff", repository_id: repository, comparison, path }) }, { ...workspaceReadOptions, select: (response) => readDiff(response.documentJson, repository, comparison, path) });
+  const [comparison, setComparison] = useState(initial?.comparison ?? (worktree ? Comparison.Creation : Comparison.WorkingTree));
+  const [path, setPath] = useState(initial?.path ?? "."), [pathDraft, setPathDraft] = useState(initial?.path ?? ".");
+  const result = useQuery(SessionQuery.readSessionWorkspace, { sessionId, queryJson: encode({ operation: "git-diff", repository_id: repository, comparison, path }) }, { ...workspaceReadOptions, enabled: !openComparison || Boolean(initial), select: (response) => readDiff(response.documentJson, repository, comparison, path) });
   return <>
-    <label>{copy("session-diff.comparison_571527")}<select value={comparison} onChange={(event) => setComparison(event.target.value as Comparison)}>
+    <label>{copy("session-diff.comparison_571527")}<select value={comparison} onChange={(event) => openComparison ? openComparison({repository,comparison:event.target.value as Comparison,path}) : setComparison(event.target.value as Comparison)}>
       <option value={Comparison.WorkingTree}>{copy("session-diff.workingTreeAgainstCurrentHead_f0fac9")}</option><option value={Comparison.Staged}>{copy("session-diff.stagedChangesAgainstCurrentHead_9974f1")}</option>{worktree ? <option value={Comparison.Creation}>{copy("session-diff.workingTreeAgainstCreationCommit_3102e8")}</option> : null}
     </select></label>
-    <form onSubmit={(event) => { event.preventDefault(); setPath(pathDraft); }}><label>{copy("session-diff.relativeDiffPath_e67374")}<input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button>{copy("session-diff.comparePath_31d172")}</button></form>
-    <button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("session-diff.refreshDiff_f700bc")}</button>
+    <form onSubmit={(event) => { event.preventDefault(); if(openComparison)openComparison({repository,comparison,path:pathDraft});else setPath(pathDraft); }}><label>{copy("session-diff.relativeDiffPath_e67374")}<input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button>{copy("session-diff.comparePath_31d172")}</button></form>
+    <button disabled={result.isFetching || Boolean(openComparison && !initial)} onClick={() => void result.refetch()}>{copy("session-diff.refreshDiff_f700bc")}</button>
     <p>{copy("session-diff.untrackedFilesAreListedSeparatelySubmodules_49f75e")}</p>
     <Problem error={result.error} />
     {result.isFetching ? <p role="status">{copy("session-diff.readingGitDiff_13bd34")}</p> : null}

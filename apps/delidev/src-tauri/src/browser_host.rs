@@ -20,7 +20,7 @@ use delidev_desktop::{
     canonical_id,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_runtime_cef::CefRuntime;
 type Result<T> = std::result::Result<T, NativeFailure>;
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -115,6 +115,7 @@ struct State {
     live: usize,
     exit_code: Option<i32>,
     discovery_pending: bool,
+    tab_shortcuts: BTreeMap<String, (String, String, u64, u8, Instant, String)>,
 }
 impl State {
     fn select_tab(
@@ -1083,6 +1084,72 @@ impl BrowserHost {
         }
     }
 
+    pub fn tab_shortcuts(
+        &self,
+        window: &str,
+        profile: &str,
+        view_id: &str,
+        count: u8,
+        token: &str,
+    ) -> Result<()> {
+        canonical_id(token)?;
+        if count > 9 || self.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::InvalidInput);
+        }
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        let view = state
+            .views
+            .get(window)
+            .filter(|v| {
+                v.profile == profile && v.view_id == view_id && !v.closing && v.failure.is_none()
+            })
+            .ok_or(NativeFailure::InvalidInput)?;
+        let generation = view.generation;
+        state.tab_shortcuts.insert(
+            window.into(),
+            (
+                profile.into(),
+                view_id.into(),
+                generation,
+                count,
+                Instant::now(),
+                token.into(),
+            ),
+        );
+        Ok(())
+    }
+
+    fn numeric_selection(
+        &self,
+        profile: &str,
+        request: &ViewRequest,
+        position: u8,
+    ) -> Option<(String, String)> {
+        if self.stopping.load(Ordering::Acquire) {
+            return None;
+        }
+        let state = self.state.lock().ok()?;
+        let view = state.views.get(&request.window)?;
+        let (original_profile, view_id, generation, count, time, token) =
+            state.tab_shortcuts.get(&request.window)?;
+        if view.closing
+            || view.failure.is_some()
+            || view.profile != profile
+            || original_profile != profile
+            || view.view_id != *view_id
+            || view.generation != *generation
+            || request.generation != *generation
+            || request.tab != view.request.tab
+            || position == 0
+            || position > *count
+            || time.elapsed() > Duration::from_millis(750)
+            || state.reservations.get(&request.window) != Some(view_id)
+        {
+            return None;
+        }
+        Some((view_id.clone(), token.clone()))
+    }
+
     pub fn status(&self, window: &str, profile: &str, view_id: &str) -> Result<BrowserState> {
         let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if state
@@ -1881,8 +1948,90 @@ cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<Cef
  fn display_handler(&self)->Option<DisplayHandler>{Some(ExternalDisplay::new(Arc::clone(&self.host),self.profile.clone(),self.request.clone()))}
  fn permission_handler(&self)->Option<PermissionHandler>{Some(DenyPermissions::new())}
  fn dialog_handler(&self)->Option<DialogHandler>{Some(DenyFiles::new())}
+ fn keyboard_handler(&self)->Option<KeyboardHandler>{Some(ExternalKeyboard::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone(),Arc::new(Mutex::new(None))))}
  fn download_handler(&self)->Option<DownloadHandler>{Some(DenyDownloads::new())}
 }}
+#[cfg(target_os = "linux")]
+type ExternalOsEvent<'a> = Option<&'a mut cef::sys::XEvent>;
+#[cfg(target_os = "macos")]
+type ExternalOsEvent<'a> = *mut u8;
+#[cfg(windows)]
+type ExternalOsEvent<'a> = Option<&'a mut cef::sys::MSG>;
+#[derive(Clone, Serialize)]
+struct NumericSelection {
+    profile_id: String,
+    view_id: String,
+    position: u8,
+    token: String,
+}
+cef::wrap_keyboard_handler! {struct ExternalKeyboard{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,pressed:Arc<Mutex<Option<i32>>>,}impl KeyboardHandler{
+ fn on_pre_key_event(&self,browser:Option<&mut Browser>,event:Option<&KeyEvent>,_os_event:ExternalOsEvent<'_>,_shortcut:Option<&mut i32>)->i32{
+  let Some(event)=event else{return 0;};
+  if event.type_==cef::sys::cef_key_event_type_t::KEYEVENT_KEYUP.into() {
+    if let Ok(mut pressed)=self.pressed.lock() && *pressed==Some(event.windows_key_code) { *pressed=None;return 1; }
+    return 0;
+  }
+  if self.pressed.lock().is_ok_and(|pressed|*pressed==Some(event.windows_key_code)) {return 1;}
+  if self.app.state::<Arc<crate::shortcut_capture_host::CaptureHost>>().fenced(){return 0;}
+  let raw=event.type_==cef::sys::cef_key_event_type_t::KEYEVENT_RAWKEYDOWN.into();
+  let Some(position)=delidev_desktop::session_tab_shortcuts::numeric_intent(event.windows_key_code,event.modifiers,cfg!(target_os="macos"),raw,event.windows_key_code==229)else{return 0;};
+  if !browser.as_deref().is_some_and(native_composition_clear) {return 0;}
+  let Some((view_id,token))=self.host.numeric_selection(&self.profile,&self.request,position)else{return 0;};
+  let Some(window)=self.app.get_webview_window(&self.request.window)else{return 0;};
+  if window.emit("session-tab-selection",NumericSelection{profile_id:self.profile.clone(),view_id,position,token}).is_err(){tracing::warn!(operation="browser_tab_shortcut",stage="delivery",classification="unavailable");}
+  if let Ok(mut pressed)=self.pressed.lock(){*pressed=Some(event.windows_key_code);}
+  1
+ }
+}}
+// CEF 151.8.1 / Chromium 151.0.7922.174
+// (39c51c70dd5feca6b6aba5bb7997b595011c553d): windowed native_mac.mm binds the
+// original WebContents NSView; its RenderWidgetHostViewCocoa NSTextInputClient
+// owns hasMarkedText. The OSR-only OnImeCompositionRangeChanged callback cannot
+// establish windowed composition. Windowed CEF has no RenderHandler IME
+// callback. Only the original native first responder may prove composition
+// clear; missing evidence denies forwarding.
+fn native_composition_clear(browser: &Browser) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::{ClassType, msg_send, runtime::AnyObject, sel};
+        use objc2_app_kit::NSView;
+        let Some(host) = browser.host() else {
+            return false;
+        };
+        let Some(view) = (unsafe { (host.window_handle() as *mut NSView).as_ref() }) else {
+            return false;
+        };
+        unsafe {
+            let window: *mut AnyObject = msg_send![view, window];
+            if window.is_null() {
+                return false;
+            }
+            let responder: *mut AnyObject = msg_send![window, firstResponder];
+            if responder.is_null() {
+                return false;
+            }
+            let is_view: bool = msg_send![responder,isKindOfClass:NSView::class()];
+            if !is_view {
+                return false;
+            }
+            let original: bool = msg_send![responder,isDescendantOf:view];
+            if !original {
+                return false;
+            }
+            let supported: bool = msg_send![responder,respondsToSelector:sel!(hasMarkedText)];
+            if !supported {
+                return false;
+            }
+            let marked: bool = msg_send![responder, hasMarkedText];
+            !marked
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = browser;
+        false
+    }
+}
 cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
@@ -2425,6 +2574,48 @@ exec /bin/cat "$2/desktop-client/pending.json"
         }
     }
 
+    #[test]
+    fn session_tab_shortcut_admission_fences_original_view_and_generation() {
+        let (_temp, host, record, view_id, request) = active_storage_fixture();
+        let token = uuid::Uuid::now_v7().to_string();
+        assert!(host.numeric_selection(&record.id, &request, 1).is_none());
+        host.tab_shortcuts("fixture", &record.id, &view_id, 9, &token)
+            .unwrap();
+        assert_eq!(
+            host.numeric_selection(&record.id, &request, 9),
+            Some((view_id.clone(), token.clone()))
+        );
+        assert!(host.numeric_selection("foreign", &request, 1).is_none());
+        let mut stale = request.clone();
+        stale.generation += 1;
+        assert!(host.numeric_selection(&record.id, &stale, 1).is_none());
+        host.tab_shortcuts("fixture", &record.id, &view_id, 0, &token)
+            .unwrap();
+        assert!(host.numeric_selection(&record.id, &request, 1).is_none());
+        assert!(
+            host.tab_shortcuts("fixture", &record.id, &view_id, 10, &token)
+                .is_err()
+        );
+        host.tab_shortcuts("fixture", &record.id, &view_id, 9, &token)
+            .unwrap();
+        host.state
+            .lock()
+            .unwrap()
+            .tab_shortcuts
+            .get_mut("fixture")
+            .unwrap()
+            .4 = Instant::now() - Duration::from_secs(1);
+        assert!(host.numeric_selection(&record.id, &request, 1).is_none());
+        host.tab_shortcuts("fixture", &record.id, &view_id, 9, &token)
+            .unwrap();
+        assert!(
+            host.hide_with("fixture", &record.id, &view_id, |_| Err(
+                NativeFailure::Busy
+            ))
+            .is_err()
+        );
+        assert!(host.numeric_selection(&record.id, &request, 1).is_none());
+    }
     fn active_storage_fixture() -> (
         tempfile::TempDir,
         Arc<BrowserHost>,

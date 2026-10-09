@@ -812,3 +812,8 @@ it("keeps the General Chat header shortcut independent of disclosure and project
   expect(within(group).getByRole("button", { name: "새 일반 대화" })).toBe(shortcut);
   expect(shortcut.getAttribute("title")).toBe("새 일반 대화");
 });
+
+it("routes a retained Sidechat through its original parent hint without independent Fork adoption",async()=>{
+ const parent=newRequestId();const child=resource(EntityKind.SESSION,"Retained child","",{workspace:"local",outcome:"stopped",archive:"active",fork:{source_session_id:parent,sidechat_parent_snapshot:{configuration:{}}}});
+ const value=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:[child]})});fireEvent.click(await screen.findByRole("button",{name:/Local computer Retained child/}));expect(value.openSession).toHaveBeenCalledExactlyOnceWith(child.id,parent,"Retained child");
+});

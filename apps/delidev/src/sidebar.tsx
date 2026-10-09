@@ -136,7 +136,7 @@ function StatusGlyph({ outcome, archive }: { outcome: string; archive: string })
   return <span className="sidebar-statuses" data-outcome={outcome} aria-hidden="true">{execution}{archiveGlyph}</span>;
 }
 
-function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boolean; open: (id: string) => void }) {
+function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boolean; open: (id: string, sidechatParent?:string, name?:string) => void }) {
   useLocale();
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
@@ -153,7 +153,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const description = copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
   const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
   return <div className="sidebar-session-container">
-    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); open(row.id); }}>
+    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); if(row.sidechatParent)open(row.id,row.sidechatParent,row.name);else open(row.id); }}>
       <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
       {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
@@ -174,7 +174,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
 }
 
 function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, open, active, root }: {
-  projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+  projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
 }) {
   useLocale();
   const sessions = useNavigationQuery(home.project(projectId), HomeScope.Sessions, projectId, includeArchived, active && !fallback);
@@ -190,7 +190,7 @@ function ProjectSessions({ projectId, label, fallback = false, fallbackRows, hom
 }
 
 function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, newSession, projectSelectionBlocked, home, includeArchived, selected, open, active, root }: {
-  projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+  projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
   newSession: (projectId: string) => void; projectSelectionBlocked: boolean;
 }) {
   const disclosureContentId1 = useId();
@@ -206,7 +206,7 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
 }
 
 export function Sidebar({ openCommandMenu, surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
+  openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
@@ -363,7 +363,7 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, serverPre
   const commandAria = useGlobalShortcutAria(ShortcutId.CommandMenu);
   const helpAria = useGlobalShortcutAria(ShortcutId.Help);
   const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
-  const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
+  const chooseSession = (id: string, parent?:string, name?:string) => { if(parent)openSession(id,parent,name);else openSession(id); setDrawerOpen(false); };
   const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
   return <SessionRowActionsProvider active={active}><SessionHoverProvider enabled={active} scope={surface}><aside className={`sidebar${surface === Surface.PullRequests ? " sidebar-pull-requests" : ""}`} aria-label={copy("sidebar.applicationSidebar_7e4842")}>
     <nav ref={rail} className="sidebar-rail" aria-label={copy("sidebar.primaryNavigation_e1bfe7")}>

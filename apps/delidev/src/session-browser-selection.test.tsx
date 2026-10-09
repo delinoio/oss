@@ -13,6 +13,7 @@ import {
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionView } from "./session";
+import { SessionTabsProvider } from "./session-tabs";
 
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
@@ -70,14 +71,16 @@ it.each([false, true])("switches the open browser before Resume and retains the 
   });
   native.mockReset().mockResolvedValue({ tabs: { tabs: [{ id: tab, url: "https://fixture.test/" }], selected: tab }, removal_pending: false });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider>
     <SessionView id={sessionId} draft="unsent composer text" setDraft={() => {}} />
-  </MutationIntents></QueryClientProvider></TransportProvider>);
+  </SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+  const composer = await screen.findByRole("textbox", { name: "Message" });
   const open = async () => {
+    fireEvent.click(screen.getByRole("tab", { name: "Browser" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), { target: { value: "https://fixture.test/" } });
     await waitFor(() => expect((screen.getByRole("button", { name: "Open account browser" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Open account browser" }));
-    await screen.findByRole("button", { name: /Tab 1/ });
+    await screen.findByRole("tab", { name: "https://fixture.test/", selected: true });
   };
   try {
     await waitFor(() => expect(publish).toBeTypeOf("function"));
@@ -87,7 +90,7 @@ it.each([false, true])("switches the open browser before Resume and retains the 
     const first = native.mock.calls.find(([op]) => op === "open_browser")![1];
     await act(async () => publish(resource(2n, [accountB])));
     await waitFor(() => expect(native).toHaveBeenCalledWith("control_browser", expect.objectContaining({ action: "hide", viewId: first.viewId })));
-    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("unsent composer text");
+    expect((composer as HTMLTextAreaElement).value).toBe("unsent composer text");
     expect(register).toHaveBeenCalledTimes(1);
     await open();
     expect(register.mock.calls[1][0]).toMatchObject({ accountId: accountB, session: { expectedRevision: 2n } });
@@ -98,6 +101,6 @@ it.each([false, true])("switches the open browser before Resume and retains the 
     await open();
     expect(register.mock.calls[2][0]).toMatchObject({ accountId: accountA, session: { expectedRevision: 3n } });
     expect(native.mock.calls.filter(([op]) => op === "open_browser")[2][1].profileId).toBe(profileA);
-    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("unsent composer text");
+    expect((composer as HTMLTextAreaElement).value).toBe("unsent composer text");
   } finally { view.unmount(); client.clear(); }
 });

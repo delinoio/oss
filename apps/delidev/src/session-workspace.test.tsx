@@ -53,12 +53,13 @@ it("retains composer, mode and staged information edits through tool switches an
   const name = screen.getByRole("textbox", { name: "Session name" });
   fireEvent.change(name, { target: { value: "Staged name" } });
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
-  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(composer.isConnected).toBe(true);
+  expect(composer.closest("[hidden]")).not.toBeNull();
   screen.getByRole("heading", { name: "Session information" }).focus();
   expect(screen.getByRole("textbox", { name: "Session name" })).toBe(name);
   expect(name).toHaveProperty("value", "Staged name");
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Session information" }), { key: "Escape" });
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("tab", {name:"Conversation"}));
   expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
   mounted.rerender(f.view("Retained draft"));
   expect(composer).toHaveProperty("value", "Retained draft");
@@ -104,9 +105,9 @@ it("observes reached budgets in persistent Info and reveals the budget without c
   await waitFor(() => expect(f.budget).toHaveBeenCalled());
   await waitFor(() => expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true));
   expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", { name: "Show details" }));
-  expect(screen.getByRole("button", { name: "Files" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   const info = screen.getByRole("complementary", { name: "Session information" });
   expect(within(info).getByText("Usage and budget").closest("details")).toHaveProperty("open", true);
   fireEvent.keyDown(info, { key: "Escape" });
@@ -180,21 +181,22 @@ it("shows original uncertain startup recovery beside the conversation with one c
   expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
   expect(f.recover).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
-  fireEvent.click(recovery);
-  expect(screen.getByRole("button", { name: "Files" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(screen.getByRole("button", {name:"Reconcile original execution"}));
+  expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   expect(f.recover).not.toHaveBeenCalled();
   expect(screen.getByRole("complementary", { name: "Session information" })).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Confirm selected recovery action" }));
   const confirmation = screen.getByRole("button", { name: "Confirm selected recovery action" });
   fireEvent.keyDown(confirmation, { key: "Escape" });
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));
+  expect(screen.getByRole("tab", {name:"Files"}).getAttribute("aria-selected")).toBe("true");
   screen.getByRole("heading", { name: "Session information" }).focus();
   expect(screen.getByRole("button", { name: "Confirm selected recovery action" })).toBe(confirmation);
   expect(screen.getAllByRole("button", { name: "Reconcile original execution" })).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "Reconcile original execution" })).toBe(recovery);
+  expect(recovery.isConnected).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Confirm selected recovery action" }));
   await waitFor(() => expect(f.recover).toHaveBeenCalledTimes(1));
   expect(f.recover.mock.calls[0][0]).toMatchObject({ mutation: { id: f.session.id, expectedRevision: 7n }, expectedExecutionId: execution });
+  fireEvent.click(screen.getByRole("tab", {name:"Conversation"}));
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "Retained first draft");
   expect(f.control).not.toHaveBeenCalled(); expect(f.enqueue).not.toHaveBeenCalled();
 });
@@ -209,68 +211,16 @@ it("keeps malformed startup evidence visible and does not grant retry", async ()
 });
 
 
-it("keeps Info independent of every temporary tool and restores the original tool opener", async () => {
-  const f = fixture(); render(f.view());
-  await screen.findByRole("heading", { name: "Original session" });
-  const info = screen.getByRole("complementary", { name: "Session information" });
-  const heading = within(info).getByRole("heading", { name: "Session information" });
-  const composer = screen.getByRole("textbox", { name: "Message" });
-  expect(within(info).getByText("Status and recovery").closest("details")).toHaveProperty("open", true);
-  for (const details of info.querySelectorAll(".session-information-section")) expect(details).toHaveProperty("open", false);
-  expect(screen.queryByRole("button", { name: "Close session information" })).toBeNull();
-  for (const name of ["Files", "Diff", "Terminals", "Browser", "Diagnostics"]) {
-    const opener = screen.getByRole("button", { name });
-    fireEvent.click(opener);
-    expect(opener.getAttribute("aria-expanded")).toBe("true");
-    expect(info).toHaveProperty("hidden", false);
-    screen.getByRole("heading", { name: "Session information" }).focus();
-    expect(document.activeElement).toBe(heading);
-    expect(opener.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.keyDown(heading, { key: "Escape" });
-    expect(document.activeElement).toBe(opener);
-    expect(opener.getAttribute("aria-expanded")).toBe("false");
-    expect(info).toHaveProperty("hidden", false); expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-  }
-  screen.getByRole("heading", { name: "Session information" }).focus();
-  fireEvent.keyDown(heading, { key: "Escape" });
-  expect(document.activeElement).toBe(heading); expect(info).toHaveProperty("hidden", false);
-  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
+it("keeps Info independent of all tabs with one active content region and retained authoring", async()=>{
+ const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});const info=screen.getByRole("complementary",{name:"Session information"});
+ for(const name of ["Files","Diff","Terminals","Browser","Diagnostics"]){fireEvent.click(screen.getByRole("button",{name}));expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");expect(screen.getAllByRole("tabpanel")).toHaveLength(1);expect(info).toHaveProperty("hidden",false);expect(composer.isConnected).toBe(true);expect(composer.closest("[hidden]")).not.toBeNull();info.focus();fireEvent.keyDown(info,{key:"Escape"});expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");}
+ fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
 });
-
-it("keeps one upper tool alongside the independent Terminal dock and restores each opener", async () => {
-  const f = fixture(); const mounted = render(f.view());
-  await screen.findByRole("heading", { name: "Original session" });
-  const composer = screen.getByRole("textbox", { name: "Message" }), browser = screen.getByRole("button", { name: "Browser" }), terminals = screen.getByRole("button", { name: "Terminals" });
-  fireEvent.click(browser);fireEvent.click(terminals);
-  expect(browser.getAttribute("aria-expanded")).toBe("true");expect(terminals.getAttribute("aria-expanded")).toBe("true");
-  const dock = screen.getByRole("complementary", { name: "Session terminals" });
-  fireEvent.keyDown(within(dock).getByRole("button", { name: "Details" }), { key: "Escape" });
-  expect(document.activeElement).toBe(terminals);expect(terminals.getAttribute("aria-expanded")).toBe("false");expect(browser.getAttribute("aria-expanded")).toBe("true");
-  fireEvent.click(terminals);fireEvent.click(screen.getByRole("button", { name: "Files" }));
-  expect(browser.getAttribute("aria-expanded")).toBe("false");expect(terminals.getAttribute("aria-expanded")).toBe("true");
-  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), { key: "Escape" });
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files" }));expect(terminals.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);expect(f.control).not.toHaveBeenCalled();
-  mounted.unmount();f.client.clear();
+it("replaces dock/split coexistence with exact selection and presentation-only close",async()=>{
+ const f=fixture();render(f.view());await screen.findByRole("heading",{name:"Original session"});fireEvent.click(screen.getByRole("button",{name:"Browser"}));fireEvent.click(screen.getByRole("button",{name:"Terminals"}));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");expect(screen.queryByRole("region",{name:"Session browser"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Close Browser tab"}));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"Close Terminals tab"}));expect(screen.getByRole("tab",{name:"Conversation"}).getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(screen.getByRole("tab",{name:"Conversation"}));expect(f.control).not.toHaveBeenCalled();
 });
-
-it.each([580, 120])("occludes mounted upper content at automatic maximum and restores it at body height %s", async height => {
-  vi.stubGlobal("ResizeObserver", class { constructor(private changed: () => void) {} observe(node: HTMLElement) { Object.defineProperties(node, { clientWidth: { configurable: true, value: 1344 }, clientHeight: { configurable: true, value: height } }); this.changed(); } disconnect() {} });
-  const f = fixture(), mounted = render(f.view());
-  try {
-    const composer = await screen.findByRole("textbox", { name: "Message" });composer.focus();
-    fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
-    const upper = mounted.container.querySelector(".session-upper-content")!;
-    await waitFor(() => expect(upper.getAttribute("aria-hidden")).toBe("true"));
-    expect(upper.hasAttribute("inert")).toBe(true);expect(upper.contains(composer)).toBe(true);expect(composer).toHaveProperty("value", "Original draft");
-    fireEvent.click(screen.getByRole("button", { name: "Restore terminal dock" }));
-    await waitFor(() => expect(upper.hasAttribute("inert")).toBe(false));
-    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);expect(document.activeElement).toBe(composer);
-    expect(upper.getAttribute("data-terminal-compact-restored")).toBe(height === 120 ? "true" : null);
-    fireEvent.click(screen.getByRole("button", { name: "Maximize terminal dock" }));await waitFor(() => expect(upper.hasAttribute("inert")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Hide terminals" }));await waitFor(() => expect(upper.hasAttribute("inert")).toBe(false));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Terminals" }));expect(f.control).not.toHaveBeenCalled();
-  } finally { mounted.unmount();f.client.clear();vi.unstubAllGlobals(); }
+it.each([580,120])("keeps retained composer isolated from terminal pane at body height %s",async height=>{
+ const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("button",{name:"Terminals"}));expect(composer.isConnected).toBe(true);expect(composer.closest("[inert]")).not.toBeNull();expect(screen.queryByRole("button",{name:"Maximize terminal dock"})).toBeNull();expect(screen.getAllByRole("tabpanel")).toHaveLength(1);fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(composer).toHaveProperty("value","Original draft");expect(height).toBeGreaterThan(0);expect(f.control).not.toHaveBeenCalled();
 });
 
 it.each([false, true])("shows only waiting queue inputs while retaining accepted history (mixed=%s)", async mixed => {

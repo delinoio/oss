@@ -12,8 +12,9 @@ export interface TerminalScreen {
   focus(): void;
   dispose(): void;
 }
-export function openTerminalScreen(host: HTMLElement, input: (bytes: Uint8Array) => void, resized: (rows: number, columns: number) => void, unavailable: () => void): TerminalScreen {
+export function openTerminalScreen(host: HTMLElement, input: (bytes: Uint8Array) => void, resized: (rows: number, columns: number) => void, unavailable: () => void, tabShortcut?: (event: KeyboardEvent) => boolean): TerminalScreen {
   const terminal = new Terminal({ allowProposedApi: true, scrollback: 5000, fontSize: 14, fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", screenReaderMode: true, logLevel: "off", disableStdin: true, linkHandler: { activate: () => {}, hover: () => {}, leave: () => {} }, theme: { background: "#14191f", foreground: "#e5e9f0", cursor: "#e5e9f0", black: "#222a33", red: "#ef8181", green: "#8bd49c", yellow: "#e8c77a", blue: "#80b7ef", magenta: "#c4a0e8", cyan: "#7fd0d0", white: "#e5e9f0", brightBlack: "#778390", brightRed: "#ffa0a0", brightGreen: "#a9e9b5", brightYellow: "#ffe1a2", brightBlue: "#acd2ff", brightMagenta: "#e2baff", brightCyan: "#a5eeee", brightWhite: "#ffffff" } });
+  terminal.attachCustomKeyEventHandler(event => !tabShortcut?.(event));
   const webgl = new WebglAddon(), fit = new FitAddon();
   let alive = true, writable = false;
   const pending = new Set<() => void>();

@@ -27,6 +27,7 @@ pub mod quota_countdown;
 pub mod session_creation_preferences;
 pub mod tray_status;
 
+pub mod session_tab_shortcuts;
 pub mod shortcut_capture;
 pub mod shortcut_preferences;
 pub mod updater;

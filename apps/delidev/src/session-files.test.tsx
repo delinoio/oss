@@ -7,7 +7,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ErrorDetailSchema, SessionService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { SessionFiles } from "./session-files";
+import { SessionFiles, SessionFilePreview } from "./session-files";
 
 function fixture() {
   const sessionId = newRequestId(), first = newRequestId(), primary = newRequestId();
@@ -25,7 +25,7 @@ function fixture() {
     const [open, setOpen] = useState(true);
     return <TransportProvider transport={transport}><QueryClientProvider client={client}>{open ? <SessionFiles sessionId={sessionId} close={() => setOpen(false)} /> : <button onClick={() => setOpen(true)}>Reopen files</button>}</QueryClientProvider></TransportProvider>;
   }
-  return { sessionId, first, primary, read, client, View };
+  return { sessionId, first, primary, read, client, transport, View };
 }
 
 it("browses the actual selected root and retains inert bounded previews with exact file size", async () => {
@@ -182,4 +182,9 @@ it("joins an ignored-abort Connect handler before preview after directory cancel
   finishPage(); await screen.findByText("safe"); expect(maximum).toBe(1);
   fireEvent.click(screen.getByRole("button", { name: "Back to files" })); expect(screen.queryByText("late.txt")).toBeNull();
   await waitFor(() => expect(client.getQueryCache().getAll()).toHaveLength(0));
+});
+
+it("opens active typed file previews through the serialized read owner and discards bytes on departure",async()=>{
+ const f=fixture();const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><SessionFilePreview sessionId={f.sessionId} repository={f.primary} path="note.txt" close={()=>{}}/></QueryClientProvider></TransportProvider>);
+ await screen.findByText("<script>globalThis.unsafe = true</script>");expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls[0][0].queryJson))).toMatchObject({operation:"file",repository_id:f.primary,path:"note.txt"});expect(view.container.querySelector("script,iframe,a")).toBeNull();view.unmount();await waitFor(()=>expect(f.client.getQueryCache().getAll()).toHaveLength(0));
 });

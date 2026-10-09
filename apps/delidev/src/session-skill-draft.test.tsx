@@ -25,7 +25,7 @@ function fixture() {
  const returnToOriginal=async()=>{fireEvent.click(screen.getByRole("button",{name:/General Chat Skill other/}));await screen.findByRole("heading",{name:"Skill other"});fireEvent.click(screen.getByRole("button",{name:/General Chat Skill original/}));await screen.findByRole("heading",{name:"Skill original"});return screen.getByRole("textbox",{name:"Message"});};
  return {transport,original,other,selection,enqueue,select,returnToOriginal};
 }
-it("retains exact skill invocation through actual App session unmount/remount",async()=>{const f=fixture();render(<App transport={f.transport}/>);const before=await f.select();const after=await f.returnToOriginal();expect(after).not.toBe(before);expect(after).toHaveProperty("value","$retained");fireEvent.click(screen.getByRole("button",{name:"Queue message"}));await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());expect(f.enqueue.mock.calls[0]![0].skills?.selections).toEqual([f.selection]);});
+it("retains exact skill invocation across retained App session tab switches",async()=>{const f=fixture();render(<App transport={f.transport}/>);const before=await f.select();const after=await f.returnToOriginal();expect(after).toBe(before);expect(after).toHaveProperty("value","$retained");fireEvent.click(screen.getByRole("button",{name:"Queue message"}));await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());expect(f.enqueue.mock.calls[0]![0].skills?.selections).toEqual([f.selection]);});
 
 it("retains the original opaque selection across same-identity reconnect",async()=>{
  const f=fixture(),props={pairingAuthority:{endpoint:"http://127.0.0.1:46399",serverId:newRequestId()},currentDeviceId:newRequestId()};

@@ -66,5 +66,17 @@
   "shortcuts.nativeCloseWindow": "Close Window",
   "shortcuts.nativeQuit": "Quit (macOS menu)",
   "shortcuts.nativeHide": "Hide (macOS menu)",
-  "shortcuts.nativeMinimize": "Minimize (native menu)"
+  "shortcuts.nativeMinimize": "Minimize (native menu)",
+  "session-tabs.tabs": "Session tabs",
+  "session-tabs.close": "Close {{name}} tab",
+  "shortcuts.tab1": "Select tab 1",
+  "shortcuts.tab2": "Select tab 2",
+  "shortcuts.tab3": "Select tab 3",
+  "shortcuts.tab4": "Select tab 4",
+  "shortcuts.tab5": "Select tab 5",
+  "shortcuts.tab6": "Select tab 6",
+  "shortcuts.tab7": "Select tab 7",
+  "shortcuts.tab8": "Select tab 8",
+  "shortcuts.tab9": "Select tab 9",
+  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app."
 }

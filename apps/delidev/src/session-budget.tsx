@@ -1,6 +1,7 @@
+import { useSessionQuery as useQuery } from "./session-activity";
 import { formatDecimal, productError, ProductError, ownedMessage, useProductMessage, LocalizedText, copy, displayLocale, useLocale  } from "./localization";
 import { useEffect, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+
 import { BudgetState, SessionQuery, UsageCoverage, newRequestId, type Resource, type SessionBudgetView } from "@delinoio/delidev-api-client";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";

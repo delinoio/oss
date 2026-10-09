@@ -75,3 +75,10 @@ it("scopes snapshots and removes original registration owners independently", ()
   store.remove(first); expect(store.getSnapshot().map(item => item.id)).toEqual([ShortcutId.SearchFocus]);
   store.remove(second); expect(store.getSnapshot()).toEqual([]);
 });
+
+it("admits only the numeric tab definitions from terminal input and consumes once",()=>{
+ const input=document.createElement("textarea");input.dataset.shortcuts="passthrough";document.body.append(input);
+ const tab=definition({id:ShortcutId.SessionTab1,input:ShortcutInput.Allow,terminal:true,bindings:[{key:"1",primary:true}]});
+ const other=definition({input:ShortcutInput.Allow});expect(dispatch([tab,other],{key:"1"},input).defaultPrevented).toBe(true);expect(tab.run).toHaveBeenCalledTimes(1);
+ dispatch([tab,other],{key:"1",repeat:true},input);dispatch([tab,other],{key:"1",isComposing:true},input);dispatch([tab,other],{key:"1",shiftKey:true},input);dispatch([tab,other],{},input);expect(tab.run).toHaveBeenCalledTimes(1);expect(other.run).not.toHaveBeenCalled();input.remove();
+});

@@ -296,3 +296,11 @@ it("retains exact uncertain input across dock hiding and never closes or creates
   expect(createTerminal).not.toHaveBeenCalled();expect((controls.mock.calls[0]![0] as {action:TerminalAction}).action).toBe(TerminalAction.INPUT);
   view.unmount();client.clear();
 });
+
+it("keeps every existing terminal picker keyboard reachable in the single-pane workspace", async () => {
+ const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({archive:"active"})});
+ const terminals=[1,2].map(()=>create(ResourceSchema,{id:newRequestId(),kind:EntityKind.TERMINAL,sessionId:session.id,schemaVersion:1,revision:1n,documentJson:encode({state:"exited",cleanup_verified:true})}));
+ const open=vi.fn(),transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:()=>({resources:terminals})});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} tabbed close={()=>{}} openTerminal={open}/></MutationIntents></TransportProvider></QueryClientProvider>);
+ const first=await screen.findByRole("button",{name:/Terminal 1/}),second=screen.getByRole("button",{name:/Terminal 2/});expect(first.tabIndex).toBe(0);expect(second.tabIndex).toBe(0);first.focus();expect(fireEvent.keyDown(first,{key:"ArrowRight"})).toBe(true);expect(open).not.toHaveBeenCalled();second.focus();expect(document.activeElement).toBe(second);view.unmount();client.clear();
+});
