@@ -48,10 +48,9 @@ export function ShortcutSettings() {
           <button type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.disableAction",{name:copy(action.label)})} onClick={()=>setDraft(previous=>({...previous,[action.id]:{state:ShortcutOverrideState.Disabled}}))}>{copy("shortcut-settings.disable")}</button>
           <button type="button" disabled={locked||Boolean(capturing)||!draft[action.id]} aria-label={copy("shortcut-settings.restoreAction",{name:copy(action.label)})} onClick={()=>restore(action.id)}>{copy("shortcut-settings.restore")}</button></div>
       </div>)}
+      <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(action.defaults)}</dd></div>)}</dl>
     </section>)}
-    <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p><dl>
-      {readOnlyShortcutCatalog.map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(action.defaults)}</dd></div>)}
-    </dl></section>
+    <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p></section>
     {capturing?<div role="status"><p>{copy("shortcut-settings.captureHelp")}</p>{invalid?<p role="alert">{copy("shortcut-settings.invalid")}</p>:null}<button type="button" onClick={cancelCapture}>{copy("shortcut-settings.cancelCapture")}</button></div>:null}
     {conflicts.map(([a,b])=><p role="alert" key={`${a}:${b}`}>{copy("shortcut-settings.conflict",{first:copy(shortcutCatalog.find(action=>action.id===a)!.label),second:copy(shortcutCatalog.find(action=>action.id===b)!.label)})}</p>)}
     {conflict?<p role="alert">{copy("shortcut-settings.changed")}</p>:null}
