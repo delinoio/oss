@@ -5,6 +5,10 @@ import { claudeToolReference } from "./native-claude-tool";
 import { validGrokTool } from "./native-grok-interactions";
 
 export interface ConversationProjection { id: string; revision: bigint; tool?: { owner: string; name: string; state: string } }
+enum NativeToolName { Read = "read", Shell = "bash", Todo = "todowrite" }
+// These closed adapters preserve exactly these native names in the Worker;
+// other tools retain their recorded name/kind without reconstruction.
+const nativeNames: Record<string, NativeToolName> = { "opencode-read": NativeToolName.Read, "opencode-shell": NativeToolName.Shell, "opencode-todo": NativeToolName.Todo };
 const uuid = (value: unknown) => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const identity = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && new TextEncoder().encode(value).length <= 1024 && !/[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(value);
 const label = (value: unknown) => identity(value) && value.length <= 256 ? value : "";
@@ -30,7 +34,7 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
     if (!Object.keys(tool).length) return projection;
     const observations = Array.isArray(tool.states) ? tool.states : [];
     const latest = object(object(observations.at(-1)).snapshot);
-    name = started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : label(started.kind);
+    name = started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : nativeNames[label(started.kind)] || label(started.kind);
     state = label(completed.status) || (latest.kind === started.kind ? label(latest.status) : "") || label(started.status) || state;
   }
   projection.tool = { owner: JSON.stringify([sessionId, d.execution_id, d.native_thread_id, d.native_turn_id]), name, state };
