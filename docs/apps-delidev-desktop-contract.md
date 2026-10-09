@@ -3533,6 +3533,10 @@ The shared 640px Add repository dialog, including New Project's registration chi
 
 Keep every existing expanded field, inspection/job/error/remediation/retry, URL suggestion/manual names, System 37/legacy folder admission, edited-draft Clone restriction and original Worker/native proofs unchanged. URL-only registration requires no Worker/clone. Preserve separate read-only GitHub child containment/opener restoration, mounted parent drafts and late-callback disposal with independent accepted business jobs. Only body scrolls; localized themes/narrow/zoom layouts wrap and keep header/footer/focus reachable. No registration authority or protocol/schema changes are added.
 
+### Explicit first-terminal opening (issue #2112)
+
+The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
+
 ## Detailed session startup — issue #2120
 
 Ordinary Session and General Chat render authenticated original operation
