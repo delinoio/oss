@@ -105,6 +105,12 @@ const (
 	// SessionServiceListQueueProcedure is the fully-qualified name of the SessionService's ListQueue
 	// RPC.
 	SessionServiceListQueueProcedure = "/delidev.v1.SessionService/ListQueue"
+	// SessionServiceMoveQueuedInputProcedure is the fully-qualified name of the SessionService's
+	// MoveQueuedInput RPC.
+	SessionServiceMoveQueuedInputProcedure = "/delidev.v1.SessionService/MoveQueuedInput"
+	// SessionServiceListWaitingQueueProcedure is the fully-qualified name of the SessionService's
+	// ListWaitingQueue RPC.
+	SessionServiceListWaitingQueueProcedure = "/delidev.v1.SessionService/ListWaitingQueue"
 	// SessionServiceControlSessionProcedure is the fully-qualified name of the SessionService's
 	// ControlSession RPC.
 	SessionServiceControlSessionProcedure = "/delidev.v1.SessionService/ControlSession"
@@ -163,6 +169,8 @@ type SessionServiceClient interface {
 	EditQueuedInput(context.Context, *connect.Request[v1.EditQueuedInputRequest]) (*connect.Response[v1.EditQueuedInputResponse], error)
 	RemoveQueuedInput(context.Context, *connect.Request[v1.RemoveQueuedInputRequest]) (*connect.Response[v1.RemoveQueuedInputResponse], error)
 	ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error)
+	MoveQueuedInput(context.Context, *connect.Request[v1.MoveQueuedInputRequest]) (*connect.Response[v1.MoveQueuedInputResponse], error)
+	ListWaitingQueue(context.Context, *connect.Request[v1.ListWaitingQueueRequest]) (*connect.Response[v1.ListWaitingQueueResponse], error)
 	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
 	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
@@ -330,6 +338,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("ListQueue")),
 			connect.WithClientOptions(opts...),
 		),
+		moveQueuedInput: connect.NewClient[v1.MoveQueuedInputRequest, v1.MoveQueuedInputResponse](
+			httpClient,
+			baseURL+SessionServiceMoveQueuedInputProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("MoveQueuedInput")),
+			connect.WithClientOptions(opts...),
+		),
+		listWaitingQueue: connect.NewClient[v1.ListWaitingQueueRequest, v1.ListWaitingQueueResponse](
+			httpClient,
+			baseURL+SessionServiceListWaitingQueueProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("ListWaitingQueue")),
+			connect.WithClientOptions(opts...),
+		),
 		controlSession: connect.NewClient[v1.ControlSessionRequest, v1.ControlSessionResponse](
 			httpClient,
 			baseURL+SessionServiceControlSessionProcedure,
@@ -419,6 +439,8 @@ type sessionServiceClient struct {
 	editQueuedInput          *connect.Client[v1.EditQueuedInputRequest, v1.EditQueuedInputResponse]
 	removeQueuedInput        *connect.Client[v1.RemoveQueuedInputRequest, v1.RemoveQueuedInputResponse]
 	listQueue                *connect.Client[v1.ListQueueRequest, v1.ListQueueResponse]
+	moveQueuedInput          *connect.Client[v1.MoveQueuedInputRequest, v1.MoveQueuedInputResponse]
+	listWaitingQueue         *connect.Client[v1.ListWaitingQueueRequest, v1.ListWaitingQueueResponse]
 	controlSession           *connect.Client[v1.ControlSessionRequest, v1.ControlSessionResponse]
 	renameSession            *connect.Client[v1.RenameSessionRequest, v1.RenameSessionResponse]
 	prepareSessionWorkspace  *connect.Client[v1.PrepareSessionWorkspaceRequest, v1.PrepareSessionWorkspaceResponse]
@@ -551,6 +573,16 @@ func (c *sessionServiceClient) ListQueue(ctx context.Context, req *connect.Reque
 	return c.listQueue.CallUnary(ctx, req)
 }
 
+// MoveQueuedInput calls delidev.v1.SessionService.MoveQueuedInput.
+func (c *sessionServiceClient) MoveQueuedInput(ctx context.Context, req *connect.Request[v1.MoveQueuedInputRequest]) (*connect.Response[v1.MoveQueuedInputResponse], error) {
+	return c.moveQueuedInput.CallUnary(ctx, req)
+}
+
+// ListWaitingQueue calls delidev.v1.SessionService.ListWaitingQueue.
+func (c *sessionServiceClient) ListWaitingQueue(ctx context.Context, req *connect.Request[v1.ListWaitingQueueRequest]) (*connect.Response[v1.ListWaitingQueueResponse], error) {
+	return c.listWaitingQueue.CallUnary(ctx, req)
+}
+
 // ControlSession calls delidev.v1.SessionService.ControlSession.
 func (c *sessionServiceClient) ControlSession(ctx context.Context, req *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error) {
 	return c.controlSession.CallUnary(ctx, req)
@@ -627,6 +659,8 @@ type SessionServiceHandler interface {
 	EditQueuedInput(context.Context, *connect.Request[v1.EditQueuedInputRequest]) (*connect.Response[v1.EditQueuedInputResponse], error)
 	RemoveQueuedInput(context.Context, *connect.Request[v1.RemoveQueuedInputRequest]) (*connect.Response[v1.RemoveQueuedInputResponse], error)
 	ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error)
+	MoveQueuedInput(context.Context, *connect.Request[v1.MoveQueuedInputRequest]) (*connect.Response[v1.MoveQueuedInputResponse], error)
+	ListWaitingQueue(context.Context, *connect.Request[v1.ListWaitingQueueRequest]) (*connect.Response[v1.ListWaitingQueueResponse], error)
 	ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error)
 	RenameSession(context.Context, *connect.Request[v1.RenameSessionRequest]) (*connect.Response[v1.RenameSessionResponse], error)
 	PrepareSessionWorkspace(context.Context, *connect.Request[v1.PrepareSessionWorkspaceRequest]) (*connect.Response[v1.PrepareSessionWorkspaceResponse], error)
@@ -790,6 +824,18 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("ListQueue")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceMoveQueuedInputHandler := connect.NewUnaryHandler(
+		SessionServiceMoveQueuedInputProcedure,
+		svc.MoveQueuedInput,
+		connect.WithSchema(sessionServiceMethods.ByName("MoveQueuedInput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceListWaitingQueueHandler := connect.NewUnaryHandler(
+		SessionServiceListWaitingQueueProcedure,
+		svc.ListWaitingQueue,
+		connect.WithSchema(sessionServiceMethods.ByName("ListWaitingQueue")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceControlSessionHandler := connect.NewUnaryHandler(
 		SessionServiceControlSessionProcedure,
 		svc.ControlSession,
@@ -900,6 +946,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceRemoveQueuedInputHandler.ServeHTTP(w, r)
 		case SessionServiceListQueueProcedure:
 			sessionServiceListQueueHandler.ServeHTTP(w, r)
+		case SessionServiceMoveQueuedInputProcedure:
+			sessionServiceMoveQueuedInputHandler.ServeHTTP(w, r)
+		case SessionServiceListWaitingQueueProcedure:
+			sessionServiceListWaitingQueueHandler.ServeHTTP(w, r)
 		case SessionServiceControlSessionProcedure:
 			sessionServiceControlSessionHandler.ServeHTTP(w, r)
 		case SessionServiceRenameSessionProcedure:
@@ -1023,6 +1073,14 @@ func (UnimplementedSessionServiceHandler) RemoveQueuedInput(context.Context, *co
 
 func (UnimplementedSessionServiceHandler) ListQueue(context.Context, *connect.Request[v1.ListQueueRequest]) (*connect.Response[v1.ListQueueResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListQueue is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) MoveQueuedInput(context.Context, *connect.Request[v1.MoveQueuedInputRequest]) (*connect.Response[v1.MoveQueuedInputResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.MoveQueuedInput is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) ListWaitingQueue(context.Context, *connect.Request[v1.ListWaitingQueueRequest]) (*connect.Response[v1.ListWaitingQueueResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListWaitingQueue is not implemented"))
 }
 
 func (UnimplementedSessionServiceHandler) ControlSession(context.Context, *connect.Request[v1.ControlSessionRequest]) (*connect.Response[v1.ControlSessionResponse], error) {

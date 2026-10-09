@@ -672,6 +672,13 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Record{}, storageError(err)
 	}
+	var membership queueMembership
+	if kind == domain.QueueKind {
+		membership, err = t.prepareQueueMembership(id, sessionID, body, expected)
+		if err != nil {
+			return Record{}, err
+		}
+	}
 	now := t.now.UnixMilli()
 	created := now
 	action := Created
@@ -700,6 +707,11 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	if err != nil {
 		return Record{}, storageError(err)
+	}
+	if kind == domain.QueueKind {
+		if err := t.publishQueueMembership(id, sessionID, membership); err != nil {
+			return Record{}, err
+		}
 	}
 	r := Record{ID: id, Kind: kind, Revision: expected + 1, SessionID: sessionID, ProjectID: projectID, Data: body, CreatedAt: time.UnixMilli(created).UTC(), UpdatedAt: t.now}
 	if err = t.indexMessage(r); err != nil {
@@ -803,8 +815,34 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 			return err
 		}
 	}
+	var membership queueMembership
+	if kind == domain.QueueKind {
+		var body map[string]json.RawMessage
+		if json.Unmarshal(r.Data, &body) != nil {
+			return queueOrderRecovery()
+		}
+		body["delivery"] = json.RawMessage(`"removed"`)
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		membership, err = t.prepareQueueMembership(id, r.SessionID, raw, expected)
+		if err != nil {
+			return err
+		}
+	}
 	if _, err = t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
 		return storageError(err)
+	}
+	if kind == domain.QueueKind {
+		if err := t.publishQueueMembership(id, r.SessionID, membership); err != nil {
+			return err
+		}
+	}
+	if kind == domain.JobKind {
+		if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=? AND NOT EXISTS(SELECT 1 FROM entities WHERE id=json_extract(metadata.value,'$.child_session_id'))", forkImageSnapshotPrefix+string(id)); err != nil {
+			return storageError(err)
+		}
 	}
 	// Historical receipt content must not resurrect a deleted entity. Preserve the
 	// request identity/digest, returning a minimal non-content deletion result.

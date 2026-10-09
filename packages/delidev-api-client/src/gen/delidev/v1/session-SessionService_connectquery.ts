@@ -125,6 +125,16 @@ export const removeQueuedInput = SessionService.method.removeQueuedInput;
 export const listQueue = SessionService.method.listQueue;
 
 /**
+ * @generated from rpc delidev.v1.SessionService.MoveQueuedInput
+ */
+export const moveQueuedInput = SessionService.method.moveQueuedInput;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.ListWaitingQueue
+ */
+export const listWaitingQueue = SessionService.method.listWaitingQueue;
+
+/**
  * @generated from rpc delidev.v1.SessionService.ControlSession
  */
 export const controlSession = SessionService.method.controlSession;
