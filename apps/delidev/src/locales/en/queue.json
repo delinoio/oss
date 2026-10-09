@@ -14,5 +14,8 @@
   "queue.retryTheSame_4cb78a": "Retry the same <s0/>",
   "queue.pendingActions": "Pending input actions",
   "queue.sendingOriginal": "Sending the original input action…",
-  "queue.uncertainOriginal": "The original input action acknowledgment is uncertain."
+  "queue.uncertainOriginal": "The original input action acknowledgment is uncertain.",
+  "queue.more": "More input actions",
+  "queue.waitingInputs": "Waiting inputs",
+  "queue.steer": "Steer"
 }

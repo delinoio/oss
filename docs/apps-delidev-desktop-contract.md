@@ -3526,6 +3526,27 @@ Publication uses a synced same-directory temporary file and atomic create-new li
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
 
+### Compact waiting inputs (issue #2141)
+
+Ordinary reconciled waiting inputs use a compact list immediately above the
+composer, inset 12px with a subtle semantic border, 12px radius and 4px gap.
+Rows have a 40px base height, 14px ellipsized prompt and 12px secondary actions:
+Steer, accessible Remove icon, and More with Edit. Edit exposes the complete
+original input and preserves its revision, UTF-8 bound, skills and images.
+More/Edit remains available for inspection during read-only, pending or
+uncertain states; Save and other mutations retain their original locks.
+Attachments and editors may grow rows; narrow rows wrap their actions. Keep
+Agent requests separate and the existing short-height scrolling budget.
+
+Hide the ordinary surface and its gap only after a successful current complete
+read with all relevant payloads resident establishes no waiting inputs. Failed
+reads, continuations and evicted payload restoration remain independently
+reachable without a zero-waiting claim. Image startup rejections and original
+pending/uncertain actions retain their recovery presentation. Drafts, mutation
+controllers and composer identity remain independent of row visibility. This
+presentation adds no movement controls, RPC, protocol, migration or native
+change. Durable reordering requires its separately negotiated feature.
+
 ### Project editor tabs
 Both saved-project edit entries share General, Repositories, Execution and Access tabs in that order, initially General. General owns the required name; Repositories owns ordered additions/grip reordering/removal and explicit primary selection; Execution retains routing, fetch, plan approval, effective inheritance and the complete remediation override/return-to-global; Access retains configured-empty deny-all Agent Worker/account restrictions and ordered selections. Preserve optional session-default fields, complete unknown document values, schema/capability gates, original revisions and immutable execution snapshots. New Project retains its three-step wizard.
 
