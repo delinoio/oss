@@ -6,9 +6,9 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, TerminalQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { MutationIntents } from "./mutation";
+import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTerminals } from "./session-terminals";
 
 // Component tests use a text fixture; real parser/WebGL/CSP acceptance runs in
@@ -400,5 +400,33 @@ it("reopens the last content-tab selection instead of the first inventory termin
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(terminals[1]!.id));
     expect(createTerminal).not.toHaveBeenCalled();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it.each([TerminalAction.INPUT, TerminalAction.RESIZE, TerminalAction.CLOSE])("reopens non-close uncertain controls while retaining exact ownership (action %s)", async action => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) });
+  const opened = vi.fn(), createTerminal = vi.fn(), controlTerminal = vi.fn(() => { throw new ConnectError("Original acknowledgment lost", Code.Unavailable); });
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [terminal] }) });
+    router.service(TerminalService, { createTerminal, controlTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const control = useRetainedMutation(`terminal-control:${terminal.id}`, TerminalQuery.controlTerminal);
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => void control.send({ mutation: { id: terminal.id, expectedRevision: 1n, requestId: newRequestId() }, action, input: action === TerminalAction.INPUT ? new Uint8Array([13]) : undefined, rows: action === TerminalAction.RESIZE ? 24 : undefined, columns: action === TerminalAction.RESIZE ? 80 : undefined })}>Control fixture</button>{control.uncertain ? <p>Retained control</p> : null}<button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Control fixture" }));
+    await screen.findByText("Retained control");
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    if (action === TerminalAction.CLOSE) { await screen.findByRole("button", { name: "Retry terminal inventory read" }); expect(opened).not.toHaveBeenCalled(); }
+    else await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
+    expect(createTerminal).not.toHaveBeenCalled(); expect(controlTerminal).toHaveBeenCalledOnce();
+    expect(screen.getByText("Retained control")).toBeTruthy();
   } finally { view.unmount(); client.clear(); }
 });
