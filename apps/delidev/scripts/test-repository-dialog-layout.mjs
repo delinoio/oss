@@ -106,7 +106,11 @@ try {
     if (previews && width === 1440 && theme === "light") { const path = join(previews, `${language}.png`); await page.screenshot({ path }); console.log(JSON.stringify({ operation: "repository_dialog_preview", language, path, nativeAcceptance: "not-performed" })); }
     await dialog.getByRole("textbox", { name: l("Git URL"), exact: true }).evaluate(node => node.focus());
     assert(await child.evaluate(node => node.contains(document.activeElement)), "The parent must be inert below the child");
-    for (const key of ["Tab", "Shift+Tab"]) for (let step = 0; step < 12; step++) { await page.keyboard.press(key); assert(await child.evaluate(node => node.contains(document.activeElement)), "Focus escaped the child dialog"); }
+    for (const key of ["Tab", "Shift+Tab"]) for (let step = 0; step < 12; step++) {
+      await page.keyboard.press(key);
+      const focus=await child.evaluate(node=>({contained:node.contains(document.activeElement),tag:document.activeElement?.tagName,className:document.activeElement?.className,modal:node.matches(':modal')}));
+      assert(focus.contained, `Focus escaped the child dialog: ${JSON.stringify({language,theme,width,height,key,step,...focus})}`);
+    }
     const filter = child.getByRole("textbox", { name: c("filter"), exact: true }); await filter.fill("desktop");
     await page.mouse.click(8, 8); assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 2, "Backdrop clicks must retain both dialogs");
     for (const action of ["Escape", "Close"]) {
