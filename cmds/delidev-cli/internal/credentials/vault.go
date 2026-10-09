@@ -30,6 +30,7 @@ const maxRecordBytes = 100 << 10
 type Purpose string
 
 const (
+	MCPServer           Purpose = "mcp-server"
 	AccountAPI          Purpose = "account-api"
 	AccountLogin        Purpose = "account-login"
 	NetworkProxy        Purpose = "network-proxy"
@@ -40,7 +41,7 @@ const (
 
 func (p Purpose) valid() bool {
 	switch p {
-	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
+	case MCPServer, AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
 		return true
 	default:
 		return false

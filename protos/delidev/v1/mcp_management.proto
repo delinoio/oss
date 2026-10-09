@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+import "delidev/v1/common.proto";
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Catalog authority is separate from each harness's native runtime acceptance.
+service McpManagementService {
+ rpc ListMcpServers(ListMcpServersRequest) returns (ListMcpServersResponse);
+ rpc MutateMcpServer(MutateMcpServerRequest) returns (MutateMcpServerResponse);
+ rpc AuthenticateMcpServer(AuthenticateMcpServerRequest) returns (AuthenticateMcpServerResponse);
+}
+service McpWorkerService {
+ rpc WatchMcpManagement(WatchMcpManagementRequest) returns (stream WatchMcpManagementResponse);
+ rpc ReportMcpManagement(ReportMcpManagementRequest) returns (ReportMcpManagementResponse);
+}
+enum McpTransport { MCP_TRANSPORT_UNSPECIFIED = 0; MCP_TRANSPORT_STDIO = 1; MCP_TRANSPORT_STREAMABLE_HTTP = 2; }
+enum McpAuthentication { MCP_AUTHENTICATION_UNSPECIFIED = 0; MCP_AUTHENTICATION_NONE = 1; MCP_AUTHENTICATION_MANUAL = 2; MCP_AUTHENTICATION_OAUTH = 3; }
+enum McpMutation { MCP_MUTATION_UNSPECIFIED = 0; MCP_MUTATION_SAVE = 1; MCP_MUTATION_ENABLE = 2; MCP_MUTATION_DELETE = 3; }
+enum McpAuthenticationOperation { MCP_AUTHENTICATION_OPERATION_UNSPECIFIED = 0; MCP_AUTHENTICATION_OPERATION_START = 1; MCP_AUTHENTICATION_OPERATION_COMPLETE = 2; MCP_AUTHENTICATION_OPERATION_CANCEL = 3; }
+enum McpAuthenticationState { MCP_AUTHENTICATION_STATE_UNSPECIFIED = 0; MCP_AUTHENTICATION_STATE_NOT_REQUIRED = 1; MCP_AUTHENTICATION_STATE_REQUIRED = 2; MCP_AUTHENTICATION_STATE_PENDING = 3; MCP_AUTHENTICATION_STATE_READY = 4; MCP_AUTHENTICATION_STATE_CANCELED = 5; MCP_AUTHENTICATION_STATE_UNCERTAIN = 6; }
+message McpDefinition {
+ string id = 1; string name = 2; McpTransport transport = 3;
+ string executable = 4; repeated string arguments = 5; string directory = 6; string endpoint = 7;
+ repeated string environment_names = 8; repeated string header_names = 9;
+ McpAuthentication authentication = 10; bool enabled = 11; uint64 revision = 12;
+}
+message McpServer {
+ McpDefinition definition = 1; string machine_id = 2; string worker_device_id = 3;
+ McpAuthenticationState authentication_state = 4; repeated string agent_ids = 5;
+ // Empty until an independently accepted native adapter proves support.
+ repeated string supported_harnesses = 6;
+}
+message McpSecret { string name = 1; string value = 2; }
+message ListMcpServersRequest { string machine_id = 1; }
+message ListMcpServersResponse { repeated McpServer servers = 1; }
+message MutateMcpServerRequest {
+ Mutation mutation = 1; string machine_id = 2; McpMutation operation = 3;
+ McpDefinition definition = 4; optional bool enabled = 5;
+ // Presence distinguishes retaining protected values from explicitly replacing them.
+ McpSecretValues secrets = 6; bool confirmed = 7;
+}
+message McpSecretValues { repeated McpSecret environment = 1; repeated McpSecret headers = 2; }
+message MutateMcpServerResponse { McpServer server = 1; string request_id = 2; bool replayed = 3; bool deleted = 4; }
+message AuthenticateMcpServerRequest {
+ Mutation mutation = 1; string machine_id = 2; McpAuthenticationOperation operation = 3;
+ string attempt_id = 4; string callback_url = 5;
+}
+message AuthenticateMcpServerResponse {
+ string request_id = 1; string attempt_id = 2; McpAuthenticationState state = 3;
+ string authorization_url = 4; bool replayed = 5;
+}
+message WatchMcpManagementRequest { string machine_id = 1; string instance_id = 2; }
+message McpManagementCommand {
+ string id = 1; string actor_id = 2; string machine_id = 3; string worker_device_id = 4; string worker_instance_id = 5;
+ oneof operation { ListMcpServersRequest list = 6; MutateMcpServerRequest mutation = 7; AuthenticateMcpServerRequest authentication = 8; }
+}
+message WatchMcpManagementResponse { McpManagementCommand command = 1; bool heartbeat = 2; }
+message ReportMcpManagementRequest {
+ string machine_id = 1; string instance_id = 2; string command_id = 3;
+ oneof result { ListMcpServersResponse list = 4; MutateMcpServerResponse mutation = 5; AuthenticateMcpServerResponse authentication = 6; }
+ string problem_code = 7;
+}
+message ReportMcpManagementResponse {}

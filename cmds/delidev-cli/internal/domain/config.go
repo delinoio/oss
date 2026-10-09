@@ -289,6 +289,7 @@ type AgentSourceRoute struct {
 }
 
 type Agent struct {
+	MCPSelections           *MCPSelectionList          `json:"mcp_selections,omitempty"`
 	NativeDefaults          *NativeHarnessDefaultProof `json:"-"`
 	HarnessSettings         *AgentHarnessSettings      `json:"harness_settings,omitempty"`
 	ReconfigurationRequired bool                       `json:"reconfiguration_required,omitempty"`
@@ -304,6 +305,11 @@ type Agent struct {
 }
 
 func (a Agent) Validate() error {
+	if a.MCPSelections != nil {
+		if err := a.MCPSelections.Validate(); err != nil {
+			return err
+		}
+	}
 	if a.HarnessSettings != nil {
 		if err := a.HarnessSettings.Validate(len(a.SourceRoutes())); err != nil {
 			return err

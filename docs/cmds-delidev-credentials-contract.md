@@ -182,3 +182,15 @@ Cancellation before acquisition admits no vault or native work; failed opening
 publishes no owner and permits a later original-authority retry. Release the gate
 before native login/logout or waiting on its process. Original operation claims,
 independent cleanup and joined shutdown keep their existing ownership.
+
+## Worker-owned MCP credential purpose
+
+MCP management uses the separate `mcp-server` protected purpose. Its immutable
+references belong to the original Worker-owned definition and request, under the
+original server/device scope. They never alias provider credentials. Public
+catalogs retain secret names and authentication state only. The Worker must
+synchronize the complete protected-reference claim before writing secret bytes.
+Definition edits create new generations without replacing accepted references.
+Explicit catalog retirement preserves independently pinned execution references;
+only confirmed original dependent cleanup permits their removal. Catalog support
+alone grants no native MCP execution or provider authentication authority.
