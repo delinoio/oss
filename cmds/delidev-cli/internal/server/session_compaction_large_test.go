@@ -278,16 +278,8 @@ func configureLargeCompactionSubscription(t *testing.T, c *continuationFixture) 
 		if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", account); err != nil {
 			return nil, err
 		}
-		mr, err := tx.Get(domain.ModelKind, c.input.Configuration.ModelID)
+		c.input.Configuration.ModelID, err = fixtureInlineSource(tx, c.input.Configuration.AgentID, "", domain.SubscriptionChatGPT)
 		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](mr)
-		if err != nil {
-			return nil, err
-		}
-		model.ProviderID, model.SubscriptionService, model.SourceKind = "", domain.SubscriptionChatGPT, domain.SubscriptionModel
-		if _, err := tx.Put(domain.ModelKind, mr.ID, mr.Revision, "", "", model); err != nil {
 			return nil, err
 		}
 		sr, session, err := sessionRecord(tx, c.input.SessionID)

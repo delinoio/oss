@@ -43,16 +43,8 @@ func managedSidechatFixture(t *testing.T) (*continuationFixture, domain.ID, []by
 		if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", a); err != nil {
 			return nil, err
 		}
-		mr, err := tx.Get(domain.ModelKind, f.input.Configuration.ModelID)
+		f.input.Configuration.ModelID, err = fixtureInlineSource(tx, f.input.Configuration.AgentID, "", domain.SubscriptionChatGPT)
 		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](mr)
-		if err != nil {
-			return nil, err
-		}
-		model.ProviderID, model.SourceKind, model.SubscriptionService = "", domain.SubscriptionModel, domain.SubscriptionChatGPT
-		if _, err := tx.Put(domain.ModelKind, mr.ID, mr.Revision, "", "", model); err != nil {
 			return nil, err
 		}
 		f.input.Configuration.Subscription, f.input.Configuration.SubscriptionService, f.input.Configuration.ProviderID = true, domain.SubscriptionChatGPT, ""

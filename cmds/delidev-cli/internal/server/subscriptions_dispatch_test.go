@@ -47,16 +47,8 @@ func TestSubscriptionDispatchRequiresManagedWorkerCapability(t *testing.T) {
 					if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", a); err != nil {
 						return nil, err
 					}
-					models, err := tx.List(store.Filter{Kind: domain.ModelKind, Limit: 1})
-					if err != nil || len(models) != 1 {
-						return nil, err
-					}
-					model, err := store.Decode[domain.Model](models[0])
-					if err != nil {
-						return nil, err
-					}
-					model.ProviderID, model.SourceKind, model.SubscriptionService = "", domain.SubscriptionModel, domain.SubscriptionChatGPT
-					if _, err = tx.Put(domain.ModelKind, models[0].ID, models[0].Revision, "", "", model); err != nil {
+					agent.Routes[0].Model.ProviderID, agent.Routes[0].Model.SubscriptionService = "", domain.SubscriptionChatGPT
+					if _, err = tx.Put(domain.AgentKind, agents[0].ID, agents[0].Revision+1, "", "", agent); err != nil {
 						return nil, err
 					}
 

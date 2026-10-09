@@ -62,16 +62,8 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 		if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", a); err != nil {
 			return nil, err
 		}
-		modelRecord, err := tx.Get(domain.ModelKind, f.input.Configuration.ModelID)
+		f.input.Configuration.ModelID, err = fixtureInlineSource(tx, f.input.Configuration.AgentID, "", domain.SubscriptionChatGPT)
 		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](modelRecord)
-		if err != nil {
-			return nil, err
-		}
-		model.ProviderID, model.SourceKind, model.SubscriptionService = "", domain.SubscriptionModel, domain.SubscriptionChatGPT
-		if _, err := tx.Put(domain.ModelKind, modelRecord.ID, modelRecord.Revision, "", "", model); err != nil {
 			return nil, err
 		}
 		f.input.Configuration.ProviderID, f.input.Configuration.SubscriptionService, f.input.Configuration.Subscription = "", domain.SubscriptionChatGPT, true
