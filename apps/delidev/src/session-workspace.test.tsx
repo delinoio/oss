@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, newRequestId, type RenameSessionRequest } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
@@ -41,7 +41,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     wake();
   };
   const enqueue = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session,request));
-  const rename = vi.fn(async () => ({ change: { session } }));
+  const rename = vi.fn(async (_request: RenameSessionRequest) => ({ change: { session, requestId: "" } }));
   const recover = vi.fn(async (_request: unknown) => ({ change: { session } }));
   const control = vi.fn(async () => ({ change: { session } }));
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
@@ -424,7 +424,7 @@ it("verified terminal removal skips intervening Files and selects the original l
 });
 
  it("publishes the verified rename to the open header without a stream event", async () => {
- const f=fixture(); f.rename.mockImplementationOnce(async (request: any)=>({change:{requestId:request.mutation.requestId,session:create(ResourceSchema,{...f.session,revision:8n,documentJson:encode({...readDocument(f.session),name:request.name})})}}));
+ const f=fixture(); f.rename.mockImplementationOnce(async (request)=>({change:{requestId:request.mutation!.requestId,session:create(ResourceSchema,{...f.session,revision:8n,documentJson:encode({...readDocument(f.session),name:request.name})})}}));
  render(f.view()); const heading=await screen.findByRole("heading",{name:"Original session"}); fireEvent.doubleClick(heading);
  const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original session"));
  fireEvent.change(input,{target:{value:"Receipt name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
