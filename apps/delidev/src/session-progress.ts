@@ -42,6 +42,14 @@ function originalQueue(input: Resource, sessionId: string): boolean {
     && count(d.sequence) && d.sequence > 0 && count(d.content_revision) && d.content_revision > 0 && typeof d.prompt === "string" && ["execute", "plan"].includes(String(d.mode))
     && ["queued", "claimed", "accepted", "uncertain", "removed", "rejected-before-start"].includes(String(d.delivery)) && (d.execution_id === undefined || uuid(d.execution_id)) && (d.native_request_id === undefined || uuid(d.native_request_id));
 }
+/** Exact server initial-readiness sentinel, never a general unavailable error. */
+export function initialExecutionPending(value: unknown): boolean {
+  const problem = object(value);
+  return problem.code === "unavailable"
+    && problem.message === "The first execution is waiting for its workspace, Runner Device or account."
+    && problem.guidance === "Prepare the workspace, connect the selected Runner Device and validate the selected account. Inspect the retained session for the current blocking reason."
+    && Object.keys(problem).length === 3;
+}
 enum StartupState { Ready = 1 }
 enum StartupPhase { Settings = 4 }
 enum StartupDelivery { NotSent = 1 }
@@ -63,13 +71,21 @@ export function sessionProgress(observation: ProgressObservation): SessionProgre
   const { session: row, sessionId, messages } = observation;
   if (!observation.current || !observation.complete || observation.blocked || !row || row.kind !== EntityKind.SESSION || row.id !== sessionId || row.schemaVersion !== 1 || row.revision <= 0n || row.revision > 0xffffffffffffffffn || row.documentJson.byteLength > 1 << 20 || !uuid(sessionId)) return;
   const d = readDocument(row), preparation = object(d.preparation), execution = object(d.execution), selected = object(d.current_execution ?? d.initial_execution), startup = object(d.startup);
-  if (d.archive !== "active" || d.recovery !== "none" || !["ready", "claimed"].includes(String(d.dispatch)) || !["not-started", "running"].includes(String(d.outcome)) || d.problem != null || d.startup_rejection != null || d.execution_recovery_job_id != null || d.compaction_job_id != null || startup.failure != null || !count(d.pending_inputs)) return;
+  // The server retains blocked dispatch until the original first claim. This
+  // exception projects only its untouched initial input, not retry readiness.
+  const initialPending = initialExecutionPending(d.problem) && d.dispatch === "blocked" && d.outcome === "not-started"
+    && d.active_execution_id == null && d.initial_execution == null && d.current_execution == null && d.execution == null && d.startup == null
+    && d.last_input_sequence === 1 && d.pending_inputs === 1 && observation.queueCurrent && observation.queue.length === 1
+    && originalQueue(observation.queue[0]!, sessionId) && readDocument(observation.queue[0]!).sequence === 1
+    && readDocument(observation.queue[0]!).delivery === "queued" && readDocument(observation.queue[0]!).execution_id == null
+    && readDocument(observation.queue[0]!).native_request_id == null;
+  if (d.archive !== "active" || d.recovery !== "none" || (!initialPending && !["ready", "claimed"].includes(String(d.dispatch))) || !["not-started", "running"].includes(String(d.outcome)) || (d.problem != null && !initialPending) || d.startup_rejection != null || d.execution_recovery_job_id != null || d.compaction_job_id != null || startup.failure != null || !count(d.pending_inputs)) return;
   if (d.execution != null && !Object.keys(execution).length || d.startup != null && (!uuid(startup.job_id) || !uuid(startup.execution_id) || Object.keys(startup).some(key => !["job_id", "execution_id", "ready", "failure"].includes(key)))) return;
   if (startup.ready !== undefined && !validReady(startup.ready, startup.job_id)) return;
   if (!uuid(preparation.job_id) || preparation.recovery_job_id != null || !["pending", "ready"].includes(String(preparation.state))) return;
-  if (preparation.state === "pending") return !messages.length && !d.active_execution_id && d.dispatch === "ready" ? SessionProgressPhase.Preparing : undefined;
+  if (preparation.state === "pending") return !messages.length && !d.active_execution_id && (d.dispatch === "ready" || initialPending) ? SessionProgressPhase.Preparing : undefined;
   if (!d.active_execution_id) {
-    if (d.dispatch !== "ready" || !observation.queueCurrent || d.pending_inputs === 0 || messages.length) return;
+    if ((!initialPending && d.dispatch !== "ready") || !observation.queueCurrent || d.pending_inputs === 0 || messages.length) return;
     // A pending count is not proof that its original queued input is eligible.
     const inputs = observation.queue.filter(input => originalQueue(input, sessionId));
     if (inputs.length !== observation.queue.length || inputs.some(input => !["queued", "removed", "accepted", "rejected-before-start"].includes(String(readDocument(input).delivery)))) return;

@@ -5,7 +5,7 @@ import { act, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { encode } from "./documents";
 import { conversationProjection } from "./tool-turn-projection";
-import { progressMessages, progressResponseOwner, responseSuppressesProgress, responseEvidence, ResponseEvidenceKind, SessionProgressPhase, sessionProgress, type ProgressObservation } from "./session-progress";
+import { initialExecutionPending, progressMessages, progressResponseOwner, responseSuppressesProgress, responseEvidence, ResponseEvidenceKind, SessionProgressPhase, sessionProgress, type ProgressObservation } from "./session-progress";
 import { SessionProgressStatus } from "./session-progress-status";
 import { i18n } from "./localization";
 const sessionId = newRequestId(), executionId = newRequestId(), inputId = newRequestId(), jobId = newRequestId();
@@ -74,4 +74,23 @@ it("validates READY metadata without treating it as input acceptance", () => {
  expect(sessionProgress(observation({ startup }))).toBe(SessionProgressPhase.Response);
  expect(sessionProgress(observation({ startup: { ...startup, ready: { ...ready, state: 3 } } }))).toBeUndefined();
  expect(sessionProgress(observation({ execution: undefined, startup: { ...startup, execution_id: newRequestId() } }))).toBeUndefined();
+});
+
+const initialProblem = { code: "unavailable", message: "The first execution is waiting for its workspace, Runner Device or account.", guidance: "Prepare the workspace, connect the selected Runner Device and validate the selected account. Inspect the retained session for the current blocking reason." };
+const originalInitial = { outcome: "not-started", dispatch: "blocked", problem: initialProblem, active_execution_id: undefined, initial_execution: undefined, execution: undefined, pending_inputs: 1, last_input_sequence: 1, preparation: { job_id: jobId, state: "pending" } };
+const firstQueue = resource(EntityKind.QUEUE, { delivery: "queued", sequence: 1, content_revision: 1, mode: "execute", prompt: "Initial queued input" }, inputId);
+it("projects the exact server sentinel through original preparation and ready queue", () => {
+ expect(initialExecutionPending(initialProblem)).toBe(true);
+ expect(sessionProgress(observation(originalInitial, { queue: [firstQueue] }))).toBe(SessionProgressPhase.Preparing);
+ expect(sessionProgress(observation({ ...originalInitial, preparation: { job_id: jobId, state: "ready" } }, { queue: [firstQueue] }))).toBe(SessionProgressPhase.Queued);
+});
+it.each([{ problem: { ...initialProblem, message: "Runner Device is disconnected." } }, { problem: { ...initialProblem, code: "internal" } }, { problem: { ...initialProblem, guidance: "Changed guidance" } }, { problem: { ...initialProblem, cause: "Unknown" } }, { dispatch: "paused" }, { outcome: "stopped" }, { archive: "archived" }, { recovery: "required" }, { initial_execution: { id: executionId, input_id: inputId } }, { current_execution: { id: executionId, input_id: inputId } }, { startup: {} }, { startup_rejection: {} }, { last_input_sequence: 2 }, { pending_inputs: 2 }, { preparation: { job_id: jobId, state: "failed" } }, { execution_recovery_job_id: jobId }])("retains initial problem precedence for incompatible proof %j", extra => {
+ expect(sessionProgress(observation({ ...originalInitial, ...extra }, { queue: [firstQueue] }))).toBeUndefined();
+});
+it.each([{ current: false }, { complete: false }, { blocked: true }, { queueCurrent: false }, { queue: [] }, { messages: [{ id: inputId, revision: 1n }] }])("suppresses initial readiness without complete current evidence", extra => {
+ expect(sessionProgress(observation(originalInitial, { queue: [firstQueue], ...extra }))).toBeUndefined();
+});
+it.each([{ sequence: 2 }, { delivery: "uncertain" }, { execution_id: executionId }, { native_request_id: inputId }, { mode: "unknown" }])("requires untouched original initial queue proof %j", extra => {
+ const queue = resource(EntityKind.QUEUE, { delivery: "queued", sequence: 1, content_revision: 1, mode: "execute", prompt: "Initial queued input", ...extra }, inputId);
+ expect(sessionProgress(observation(originalInitial, { queue: [queue] }))).toBeUndefined();
 });
