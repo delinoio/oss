@@ -57,7 +57,7 @@ try {
       assert.equal(measured.overflow, false, 'Narrow search remains contained');
     }
 
-    assert.equal(await page.locator('[data-settings-category]').count(),19);
+    assert.equal(await page.locator('[data-settings-category]').count(),18);
     const originalCategories=await page.locator('[data-settings-category]').evaluateAll(nodes=>nodes.map(node=>node.dataset.settingsCategory));
     assert.equal(await input.getAttribute('placeholder'),language==='en'?'Search Settings':'설정 검색');
     assert.equal(await input.getAttribute('aria-label'),t('settings.search.label'));
