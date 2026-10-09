@@ -23,10 +23,10 @@ export function validQuitCount(value:unknown):value is string { return typeof va
 export function QuitConfirmation({ ready, transport }: { ready:boolean; transport?:Transport }) {
  useLocale();const client=useMemo(()=>transport ? createClient(SystemService,transport) : undefined,[transport]);
  const [attempt,setAttempt]=useState<QuitAttempt>(), [error,setError]=useState<unknown>();
- const dialog=useRef<HTMLDialogElement>(null),cancel=useRef<HTMLButtonElement>(null),seen=useRef(new Set<string>()),currentAttempt=useRef<string|null>(null),controllersRetired=useRef<(()=>void)|undefined>(undefined);
+ const dialog=useRef<HTMLDialogElement>(null),cancel=useRef<HTMLButtonElement>(null),seen=useRef(new Set<string>()),currentAttempt=useRef<string|null>(null),controllersRetired=useRef<(()=>void)|undefined>(undefined),readSequence=useRef(0);
  useEffect(()=>{
-  if(!isTauri())return;let disposed=false, unlisten:(()=>void)|undefined, timer:ReturnType<typeof setInterval>|undefined;const controllers=new Set<AbortController>();controllersRetired.current=()=>{controllers.forEach(value=>value.abort());clearInterval(timer);timer=undefined;};let sequence=0;
-  const update=async()=>{const generation=++sequence;try{const next=await invoke<QuitAttempt|null>("read_quit_attempt");if(disposed||generation!==sequence)return;
+  if(!isTauri())return;let disposed=false, unlisten:(()=>void)|undefined, timer:ReturnType<typeof setInterval>|undefined;const controllers=new Set<AbortController>();controllersRetired.current=()=>{controllers.forEach(value=>value.abort());clearInterval(timer);timer=undefined;};
+  const update=async()=>{const generation=++readSequence.current;try{const next=await invoke<QuitAttempt|null>("read_quit_attempt");if(disposed||generation!==readSequence.current)return;
     if(next && (!validQuitCount(next.count) || !/^[a-f0-9-]{36}$/.test(next.id)))return;
     if(currentAttempt.current!==(next?.id??null)){controllers.forEach(value=>value.abort());currentAttempt.current=next?.id??null;}
     setAttempt(next?.present?next:undefined);setError(undefined);
@@ -36,12 +36,12 @@ export function QuitConfirmation({ ready, transport }: { ready:boolean; transpor
       let count:string|null=null;try {if(ready && client){const result=await client.getOverview({}, {signal:abort.signal,timeoutMs:4900});if(result.activeSessions>=0n && result.activeSessions<1n<<64n && result.observedAt.length<=64 && Number.isFinite(Date.parse(result.observedAt)) && !abort.signal.aborted)count=result.activeSessions.toString();}}catch{/* Native retains unknown status for unavailable fresh observations. */}finally{clearTimeout(timeout);controllers.delete(abort);}
       if(!disposed&&!abort.signal.aborted&&currentAttempt.current===next.id)await invoke("observe_quit_attempt",{id:next.id,count});
     }
-  }catch{if(!disposed&&generation===sequence)setError(copy("quit-confirmation.unavailable"));}};
+  }catch{if(!disposed&&generation===readSequence.current)setError(copy("quit-confirmation.unavailable"));}};
   void listen("quit-attempt",()=>void update()).then(value=>{if(disposed)value();else{unlisten=value;void update();}}).catch(()=>{});
   return()=>{clearInterval(timer);disposed=true;unlisten?.();controllers.forEach(value=>value.abort());controllersRetired.current=undefined;};
  },[client,ready]);
  useEffect(()=>{if(!attempt?.present)return;const opener=document.activeElement as HTMLElement|null;try {dialog.current?.showModal();cancel.current?.focus();void invoke("present_quit_attempt",{id:attempt.id}).catch(()=>{if(currentAttempt.current===attempt.id)setError(copy("quit-confirmation.unavailable"));});} catch { setError(copy("quit-confirmation.unavailable")); }return()=>{dialog.current?.close();if(opener?.isConnected&&!opener.closest('[hidden],[inert]'))opener.focus({preventScroll:true});};},[attempt?.id]);
- const decide=async(decision:"cancel"|"confirm")=>{if(!attempt)return;try{await invoke("decide_quit_attempt",{id:attempt.id,decision});if(currentAttempt.current===attempt.id&&decision==="cancel"){currentAttempt.current=null;setAttempt(undefined);setError(undefined);controllersRetired.current?.();}}catch{if(currentAttempt.current===attempt.id)setError(copy("quit-confirmation.unavailable"));}};
+ const decide=async(decision:"cancel"|"confirm")=>{if(!attempt)return;try{await invoke("decide_quit_attempt",{id:attempt.id,decision});if(currentAttempt.current===attempt.id&&decision==="cancel"){currentAttempt.current=null;++readSequence.current;setAttempt(undefined);setError(undefined);controllersRetired.current?.();}}catch{if(currentAttempt.current===attempt.id)setError(copy("quit-confirmation.unavailable"));}};
  if(!attempt?.present)return null;
  return <DialogSurface ref={dialog} className="quit-confirmation" role="alertdialog" aria-labelledby="quit-confirmation-title" aria-describedby="quit-confirmation-explanation" onCancel={()=>void decide("cancel")} onKeyDown={event=>{if(event.key!=="Tab")return;const controls=[...event.currentTarget.querySelectorAll<HTMLElement>("summary,button,input,select,textarea,a[href],[tabindex]")].filter(node=>node.tabIndex>=0&&!node.matches(":disabled")&&node.getClientRects().length>0&&!node.closest("[hidden],[inert]")),first=controls[0],last=controls.at(-1);if(first&&last&&(event.shiftKey?document.activeElement===first:document.activeElement===last)){event.preventDefault();(event.shiftKey?last:first).focus();}}}>
   <h2 id="quit-confirmation-title">{copy("quit-confirmation.title")}</h2>

@@ -67,3 +67,12 @@ it("keeps native reads idle outside the original presented attempt",async()=>{
   const retired=reads();await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});expect(reads()).toBe(retired);
  } finally {vi.useRealTimers();}
 });
+
+it("cannot reopen a canceled dialog from an already pending native read",async()=>{
+ const f=fixture();render(f.view());await screen.findByRole("alertdialog");
+ const old=native.view!;let finish!:(value:QuitAttempt)=>void;
+ native.invoke.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ await act(async()=>native.event());await waitFor(()=>expect(finish).toBeTypeOf("function"));
+ fireEvent.click(screen.getByRole("button",{name:"Cancel"}));await waitFor(()=>expect(screen.queryByRole("alertdialog")).toBeNull());
+ await act(async()=>finish(old));expect(screen.queryByRole("alertdialog")).toBeNull();
+});
