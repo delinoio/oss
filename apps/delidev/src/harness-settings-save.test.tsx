@@ -11,8 +11,8 @@ import {newConfiguration,ServerPreferenceSection} from "./configuration-fields";
 import {encode} from "./documents";
 import {MutationIntents} from "./mutation";
 
-test("Codex Settings keeps the exact authoritative draft after a rejected revision save",async()=>{
- const body={...newConfiguration(EntityKind.SETTINGS),harness_defaults_version:1,harness_defaults:[{harness:"codex",values:inheritedHarnessValues()}]};
+test.each([{harness:"codex",section:ServerPreferenceSection.Codex,title:"Codex CLI",target:"codex"},{harness:"claude-code",section:ServerPreferenceSection.Claude,title:"Claude Code CLI",target:"claude"}])("$title keeps the exact authoritative draft after a rejected revision save",async({harness,section})=>{
+ const body={...newConfiguration(EntityKind.SETTINGS),harness_defaults_version:1,harness_defaults:[{harness,values:inheritedHarnessValues()}]};
  const row=create(ResourceSchema,{kind:EntityKind.SETTINGS,id:newRequestId(),revision:7n,schemaVersion:4,documentJson:encode(body)});
  const save=vi.fn((_request:SaveConfigurationRequest)=>{throw new ConnectError("Revision conflict",Code.Aborted)});
  const transport=createRouterTransport(router=>{
@@ -21,7 +21,7 @@ test("Codex Settings keeps the exact authoritative draft after a rejected revisi
   router.service(ConfigurationService,{saveConfiguration:save});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
- const saved=vi.fn();render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationEditor kind={EntityKind.SETTINGS} initial={row} serverPreferenceSection={ServerPreferenceSection.Codex} active saved={saved} cancel={()=>{}} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{complete:true,resource:row,fetching:false}}/></MutationIntents></QueryClientProvider></TransportProvider>);
+ const saved=vi.fn();render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationEditor kind={EntityKind.SETTINGS} initial={row} serverPreferenceSection={section} active saved={saved} cancel={()=>{}} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{complete:true,resource:row,fetching:false}}/></MutationIntents></QueryClientProvider></TransportProvider>);
  const selection=await screen.findByLabelText("Reasoning effort: Setting source");await waitFor(()=>expect(selection).toHaveProperty("disabled",false));fireEvent.change(selection,{target:{value:"override"}});
  const input=screen.getByRole("textbox",{name:"Reasoning effort"});fireEvent.change(input,{target:{value:"high"}});
  const button=screen.getByRole("button",{name:"Save changes"});await waitFor(()=>expect(button).toHaveProperty("disabled",false));fireEvent.click(button);
@@ -30,15 +30,15 @@ test("Codex Settings keeps the exact authoritative draft after a rejected revisi
  const sent=JSON.parse(new TextDecoder().decode(request.documentJson));expect(sent.harness_defaults[0].values.effort).toEqual({state:"override",value:"high"});expect(sent.default_routing).toBe(body.default_routing);
 });
 
-test("Settings exposes Codex under Harnesses and search reaches the original controls",async()=>{
- const body={...newConfiguration(EntityKind.SETTINGS),harness_defaults_version:1,harness_defaults:[{harness:"codex",values:inheritedHarnessValues()}]};
+test.each([{harness:"codex",title:"Codex CLI",target:"codex"},{harness:"claude-code",title:"Claude Code CLI",target:"claude"}])("Settings exposes $title under Harnesses and search reaches original controls",async({harness,title,target})=>{
+ const body={...newConfiguration(EntityKind.SETTINGS),harness_defaults_version:1,harness_defaults:[{harness,values:inheritedHarnessValues()}]};
  const row=create(ResourceSchema,{kind:EntityKind.SETTINGS,id:newRequestId(),revision:1n,schemaVersion:4,documentJson:encode(body)});
  const transport=createRouterTransport(router=>{
   router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.HARNESS_DEFAULTS_V1,SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1,SystemCapability.SESSION_DEFAULTS_V1]})});
   router.service(ResourceService,{listResources:request=>({resources:request.filter?.kind===EntityKind.SETTINGS?[row]:[]}),getResource:()=>({resource:row})});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings/></MutationIntents></QueryClientProvider></TransportProvider>);
- expect(screen.getByRole("heading",{name:"Harnesses"})).toBeTruthy();fireEvent.click(screen.getByRole("button",{name:"Codex CLI"}));expect(await screen.findByLabelText("Reasoning effort: Setting source")).toBeTruthy();
- const search=screen.getByRole("searchbox");fireEvent.change(search,{target:{value:"Reasoning effort"}});const result=screen.getByRole("button",{name:"Codex CLI › Reasoning effort"});result.focus();fireEvent.click(result);
- await waitFor(()=>expect(document.activeElement?.closest('[data-settings-search-target="codex-effort"]')).toBeTruthy());
+ expect(screen.getByRole("heading",{name:"Harnesses"})).toBeTruthy();fireEvent.click(screen.getByRole("button",{name:title}));expect(await screen.findByLabelText("Reasoning effort: Setting source")).toBeTruthy();
+ const search=screen.getByRole("searchbox");fireEvent.change(search,{target:{value:"Reasoning effort"}});const result=screen.getByRole("button",{name:`${title} › Reasoning effort`});result.focus();fireEvent.click(result);
+ await waitFor(()=>expect(document.activeElement?.closest(`[data-settings-search-target="${target}-effort"]`)).toBeTruthy());
 });

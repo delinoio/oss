@@ -3546,3 +3546,28 @@ English/Korean labels, static search targets and keyboard focus identify the
 original controls without indexing account values or native observations.
 Portable schema 7 and imports 1–6 preserve the foundation's original ownership.
 No protocol numbers, database migration, native launch or validation probe is added.
+
+## Claude Code CLI inherited Settings
+
+Issue #1988 adds Settings > Harnesses > Claude Code CLI through the same schema-4
+configuration owner and shared editor as Codex. The connected-server menu edits
+Claude harness, API provider/profile and Claude subscription default scopes.
+Project and Agent editors override or reset the same typed values, while preserving
+other harness entries, future optional fields and original ordered source models.
+Model choices must match the original Claude provider/service and harness. The
+Agent API preview uses the existing Claude Messages profile requirement.
+
+Claude exposes model, bounded exact effort and native `claude_permission` selectors
+from the existing permission owner, including its implemented `auto` selector.
+Do not translate those modes into Codex sandbox or approval fields. Unsupported
+Claude child, service-tier and reviewer extensions remain hidden when inherited;
+retained overrides remain unavailable and can only return to inheritance. Codex
+capabilities cannot enable a Claude extension. System 63 grants configuration
+support only; actual Runner/process/account/profile admission remains separate.
+Unknown native defaults remain unavailable without new probes or fallback guesses.
+
+Preserve original revision-bearing saves, draft fields on conflicts and incomplete
+reads, and current inherited values after a successful reconnect. English/Korean
+presentation and static search targets focus the original controls. The menu does
+not change credentials, install Claude, edit host configuration files or introduce
+a second defaults store. No allocation, migration or native adapter is added.

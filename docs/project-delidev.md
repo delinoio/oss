@@ -421,3 +421,5 @@ authority; no separate probe, RPC or SQLite migration is added. Follow the catal
 and harness contracts.
 
 Codex CLI Settings shares the schema-4 inherited configuration owner across connected-server, Project and Agent edits. Follow the desktop and catalog Codex inherited Settings sections; static localized search and configuration previews grant no native authority.
+
+Claude Code CLI shares inherited Settings ownership with Codex across connected-server, Project and Agent editors. Follow the desktop and catalog Claude inherited Settings sections; unavailable extensions and native defaults retain their original execution gates.

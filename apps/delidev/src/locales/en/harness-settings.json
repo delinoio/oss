@@ -37,5 +37,14 @@
   "harness-settings.removeScope": "Remove this default scope",
   "harness-settings.sourceModel": "Source {{v0}} model",
   "harness-settings.previewSource": "Preview source",
-  "harness-settings.wrongSource": "Choose a Codex model from this original source. Your selection is retained."
+  "harness-settings.wrongSource": "Choose a Codex model from this original source. Your selection is retained.",
+  "harness-settings.claudeTitle": "Claude Code CLI",
+  "harness-settings.claudeServerScope": "Claude defaults on the connected server. Project and Agent overrides take precedence.",
+  "harness-settings.claudeProjectScope": "Project overrides for Claude Code CLI. Reset a field to use the server default.",
+  "harness-settings.claudeAgentScope": "Agent overrides for Claude Code CLI. Project defaults apply in the execution's original project; unknown native defaults remain unavailable.",
+  "harness-settings.claudeNativeBoundary": "Saving a default does not install Claude, change credentials, edit host configuration files or grant native functionality. The original process verifies supported settings before input.",
+  "harness-settings.allClaudeSources": "All Claude sources",
+  "harness-settings.addClaudeHarness": "Add Claude defaults",
+  "harness-settings.claudeSubscription": "Claude subscription source",
+  "harness-settings.claudeWrongSource": "Choose a Claude model from this original source. Your selection is retained."
 }

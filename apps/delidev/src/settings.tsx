@@ -170,7 +170,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
  const prefixValue = kind === EntityKind.SETTINGS ? data.branch_prefix : kind === EntityKind.PROJECT ? object(data.settings).branch_prefix : undefined;
  const prefixInvalid = prefixValue !== undefined && (typeof prefixValue !== "string" || !validBranchPrefix(prefixValue));
  const behaviorUnsupported = [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) && source?.schemaVersion === 2 && !supportsProjectBehavior;
-  const saveDisabled = (serverPreferenceSection===ServerPreferenceSection.Codex||source?.schemaVersion===4)&&!supportsHarnessDefaults || defaultsUnsupported || prefixInvalid || behaviorUnsupported || selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
+  const saveDisabled = ([ServerPreferenceSection.Codex,ServerPreferenceSection.Claude].includes(serverPreferenceSection)||source?.schemaVersion===4)&&!supportsHarnessDefaults || defaultsUnsupported || prefixInvalid || behaviorUnsupported || selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
   const submit = () => {
     // The ref also fences a submit dispatched before React commits the disabled button.
     if (saveDisabled || pendingSelections.current.size) return;
@@ -247,6 +247,7 @@ enum SettingsGroup { Harnesses = "Harnesses", Ai = "AI", Coding = "Coding", Devi
 
 export const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.KeyboardShortcuts]: { get label() { return copy("shortcuts.title"); }, get description() { return copy("shortcut-settings.scope"); }, area: SettingsArea.KeyboardShortcuts },
+  [SettingsCategory.ClaudeCLI]: { get label(){return copy("harness-settings.claudeTitle");},get description(){return copy("harness-settings.claudeServerScope");},kind:EntityKind.SETTINGS,area:SettingsArea.Configuration },
   [SettingsCategory.CodexCLI]: { get label(){return copy("harness-settings.title");},get description(){return copy("harness-settings.serverScope");},kind:EntityKind.SETTINGS,area:SettingsArea.Configuration },
   [SettingsCategory.Appearance]: { get label() { return copy("settings.appearance_3907fa"); }, get description() { return copy("settings.savedOnThisComputer_11cb50"); }, area: SettingsArea.Appearance },
   [SettingsCategory.Backups]: { get label() { return copy("settings.backups_3334fe"); }, get description() { return copy("settings.inspectManagedDatabaseImagesAndFollow_b28b20"); }, area: SettingsArea.Backups },
@@ -269,7 +270,7 @@ export const settingsCategories: Record<SettingsCategory, { label: string; descr
 };
 
 export const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
- {label:SettingsGroup.Harnesses,categories:[SettingsCategory.CodexCLI]},
+ {label:SettingsGroup.Harnesses,categories:[SettingsCategory.CodexCLI,SettingsCategory.ClaudeCLI]},
   { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
   { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations, SettingsCategory.GitWorkflow] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
@@ -277,6 +278,7 @@ export const settingsGroups: { label: SettingsGroup; categories: SettingsCategor
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+ [SettingsCategory.ClaudeCLI]: "m8 5-6 7 6 7M16 5l6 7-6 7",
  [SettingsCategory.CodexCLI]: "m8 5-6 7 6 7M16 5l6 7-6 7",
  [SettingsCategory.ProjectDefaults]: "M4 6h16M4 12h16M4 18h16",
 
@@ -414,8 +416,9 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const isGitWorkflow = selectedCategory === SettingsCategory.GitWorkflow;
   const isProjectDefaults = selectedCategory === SettingsCategory.ProjectDefaults;
   const isCodex=selectedCategory===SettingsCategory.CodexCLI;
-  const isPreferenceCategory = isServerPreferences || isGitWorkflow || isProjectDefaults || isCodex;
-  const preferenceSection = isCodex ? ServerPreferenceSection.Codex : isProjectDefaults ? ServerPreferenceSection.ProjectDefaults : isGitWorkflow ? ServerPreferenceSection.GitWorkflow : ServerPreferenceSection.AccountRouting;
+  const isClaude=selectedCategory===SettingsCategory.ClaudeCLI;
+  const isPreferenceCategory = isServerPreferences || isGitWorkflow || isProjectDefaults || isCodex || isClaude;
+  const preferenceSection = isClaude ? ServerPreferenceSection.Claude : isCodex ? ServerPreferenceSection.Codex : isProjectDefaults ? ServerPreferenceSection.ProjectDefaults : isGitWorkflow ? ServerPreferenceSection.GitWorkflow : ServerPreferenceSection.AccountRouting;
   const preferenceLabel = serverPreferenceLabel(preferenceSection);
   const isPairedDevices = selectedCategory === SettingsCategory.PairedDevices;
   const isRunnerDevices = selectedCategory === SettingsCategory.ExecutionWorkers;
@@ -519,7 +522,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
         {isGitWorkflow ? <p className="settings-breadcrumb">{copy("settings.gitWorkflow")}</p> : null}
         {area !== SettingsArea.Backups && !isApiAccounts && !isApiProviders ? <div className="settings-category-heading">
-          <div className="settings-category-title"><h1 data-settings-search-target="category" aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isCodex ? copy("harness-settings.serverScope") : isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
+          <div className="settings-category-title"><h1 data-settings-search-target="category" aria-live="polite" aria-atomic="true">{selected.label}</h1>{selectedCategory === SettingsCategory.Repositories ? <p>{copy("settings.repositoryDescription")}</p> : isAgentWorkers ? <p className="settings-agent-summary">{copy("settings.reusableConfigurationsForYourAgents_5ba1a2")}</p> : isPreferenceCategory ? <p>{isClaude ? copy("harness-settings.claudeServerScope") : isCodex ? copy("harness-settings.serverScope") : isGitWorkflow ? copy("settings.gitWorkflowDescription") : copy("settings.defaultRoutingWorktreeFetchAndPull_e19cf8")}</p> : null}<p className={isAgentWorkers ? "settings-scope settings-agent-scope" : isPreferenceCategory ? "settings-scope server-preferences-scope" : isPairedDevices ? "settings-scope paired-device-summary" : "settings-scope"}>{categoryDescription}</p>{isPairedDevices ? <p className="paired-device-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p> : null}</div>
           {configurationList ? <div className="settings-toolbar">
             <SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" ref={isPairedDevices ? refreshDevices : undefined} aria-label={isGitWorkflow ? copy("settings.refreshGitWorkflow") : undefined} onClick={() => { if (isProjects) projectMetadata.refresh(); if (isAgentWorkers) refreshModels(value => value + 1); void result.refetch(); }}>{isGitWorkflow ? copy("settings.refresh_0e9161") : copy("settings.refreshSettings_65dbd6")}</SettingsActionButton>
 

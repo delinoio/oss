@@ -46,7 +46,7 @@ export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceS
 }
 
 export function serverPreferenceLabel(section: ServerPreferenceSection): string {
-  return section === ServerPreferenceSection.Codex ? copy("harness-settings.title") : section === ServerPreferenceSection.ProjectDefaults ? copy("configuration-fields.projectDefaults") : section === ServerPreferenceSection.GitWorkflow ? copy("server-preferences.gitWorkflow") : copy("settings.serverPreferences_eba66b");
+  return section === ServerPreferenceSection.Claude ? copy("harness-settings.claudeTitle") : section === ServerPreferenceSection.Codex ? copy("harness-settings.title") : section === ServerPreferenceSection.ProjectDefaults ? copy("configuration-fields.projectDefaults") : section === ServerPreferenceSection.GitWorkflow ? copy("server-preferences.gitWorkflow") : copy("settings.serverPreferences_eba66b");
 }
 
 export function ServerPreferencesEmpty({ section = ServerPreferenceSection.All }: { section?: ServerPreferenceSection }) {

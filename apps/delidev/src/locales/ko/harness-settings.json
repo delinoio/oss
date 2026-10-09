@@ -37,5 +37,14 @@
   "harness-settings.removeScope": "이 기본값 범위 삭제",
   "harness-settings.sourceModel": "소스 {{v0}} 모델",
   "harness-settings.previewSource": "소스 미리보기",
-  "harness-settings.wrongSource": "원래 소스의 Codex 모델을 선택하세요. 기존 선택은 유지됩니다."
+  "harness-settings.wrongSource": "원래 소스의 Codex 모델을 선택하세요. 기존 선택은 유지됩니다.",
+  "harness-settings.claudeTitle": "Claude Code CLI",
+  "harness-settings.claudeServerScope": "연결된 서버의 Claude 기본값입니다. 프로젝트 및 에이전트 재정의가 우선합니다.",
+  "harness-settings.claudeProjectScope": "Claude Code CLI 프로젝트 재정의입니다. 필드를 초기화하면 서버 기본값을 사용합니다.",
+  "harness-settings.claudeAgentScope": "Claude Code CLI 에이전트 재정의입니다. 실행의 원래 프로젝트 기본값이 적용되며, 확인되지 않은 네이티브 기본값은 사용할 수 없습니다.",
+  "harness-settings.claudeNativeBoundary": "기본값을 저장해도 Claude 설치, 자격 증명 변경, 호스트 설정 파일 편집 또는 네이티브 기능 활성화가 발생하지 않습니다. 원래 프로세스가 입력 전에 지원 설정을 검증합니다.",
+  "harness-settings.allClaudeSources": "모든 Claude 소스",
+  "harness-settings.addClaudeHarness": "Claude 기본값 추가",
+  "harness-settings.claudeSubscription": "Claude 구독 소스",
+  "harness-settings.claudeWrongSource": "원래 소스의 Claude 모델을 선택하세요. 선택은 보존됩니다."
 }

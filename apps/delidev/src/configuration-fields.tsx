@@ -1,4 +1,5 @@
-import { HarnessDefaultFields, HarnessSettingsScope } from "./harness-settings";
+// SPDX-License-Identifier: Apache-2.0
+import { HarnessDefaultFields, HarnessSettingsScope, HarnessSettingsHarness } from "./harness-settings";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -38,7 +39,7 @@ export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Ant
 export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
 export enum Routing { Fixed = "fixed", Priority = "priority", RoundRobin = "round-robin", Quota = "remaining-quota", Reset = "reset-window", Sequential = "sequential-exhaustion" }
 enum Permission { Default = "default", Read = "read-only", Workspace = "workspace-write", Full = "full-access" }
-enum ClaudePermission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions", Auto = "auto" }
+export enum ClaudePermission { Default = "default", Plan = "plan", AcceptEdits = "acceptEdits", DontAsk = "dontAsk", Bypass = "bypassPermissions", Auto = "auto" }
 export const editableKinds = [EntityKind.PROVIDER, EntityKind.MODEL, EntityKind.ACCOUNT, EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.PROJECT, EntityKind.REPOSITORY, EntityKind.SETTINGS];
 export const kindNames: Partial<Record<EntityKind, string>> = { get [EntityKind.INTEGRATION]() { return copy("configuration-fields.githubProfile_5a175c"); }, get [EntityKind.PROVIDER]() { return copy("configuration-fields.provider_472590"); }, get [EntityKind.MODEL]() { return copy("configuration-fields.model_5e2c61"); }, get [EntityKind.ACCOUNT]() { return copy("configuration-fields.aiAccount_042001"); }, get [EntityKind.AGENT]() { return copy("configuration-fields.agentWorker_a4caa7"); }, get [EntityKind.TEMPLATE]() { return copy("configuration-fields.instructions_934652"); }, get [EntityKind.PROJECT]() { return copy("configuration-fields.project_985959"); }, get [EntityKind.MACHINE]() { return copy("configuration-fields.runnerDevice_37efe3"); }, get [EntityKind.REPOSITORY]() { return copy("configuration-fields.repository_13d6ff"); }, get [EntityKind.SETTINGS]() { return copy("configuration-fields.serverPreferences_eba66b"); } };
 export function newConfiguration(kind: EntityKind): Document {
@@ -250,14 +251,14 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
     <ProviderAPIFormatFields data={data} change={change} {...props} /><p>{copy("configuration-fields.localhostRefersToTheServerComputer_cfc90a")}</p><Check label={copy("configuration-fields.discoverModelsAutomaticallyForConnectedEntries_6f1cb4")} value={data.discovery} change={(discovery) => change({ ...data, discovery })} />
   </>;
 }
-export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", Codex = "codex", ProjectDefaults = "project-defaults" }
+export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", Codex = "codex", Claude = "claude", ProjectDefaults = "project-defaults" }
 interface FieldsProps { supportsHarnessDefaults?:boolean; disabled?: boolean; supportsProjectBehavior?: boolean; supportsSessionDefaults?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false, supportsSessionDefaults = false } = props;
   const reviewerStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.AGENT });
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
-  if(kind===EntityKind.SETTINGS && serverPreferenceSection===ServerPreferenceSection.Codex) return <HarnessDefaultFields data={data} change={change} scope={HarnessSettingsScope.Server} active={active} disabled={props.disabled||!props.supportsHarnessDefaults}/>;
+  if(kind===EntityKind.SETTINGS && [ServerPreferenceSection.Codex,ServerPreferenceSection.Claude].includes(serverPreferenceSection)) return <HarnessDefaultFields harness={serverPreferenceSection===ServerPreferenceSection.Claude?HarnessSettingsHarness.Claude:HarnessSettingsHarness.Codex} data={data} change={change} scope={HarnessSettingsScope.Server} active={active} disabled={props.disabled||!props.supportsHarnessDefaults}/>;
   if (kind === EntityKind.SETTINGS) return <>
  {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <h3>{copy("configuration-fields.projectDefaults")}</h3> : null}
  {supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <section data-settings-search-target="plan-mode-default"><Check label={copy("configuration-fields.planModeDefault")} value={data.plan_mode_default} change={field("plan_mode_default")} /></section> : null}
@@ -278,7 +279,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
     return <><TextField label={isApi ? copy("configuration-fields.entryName_978463") : copy("configuration-fields.accountAlias_332faa")} value={data.alias} change={field("alias")} required />{isApi ? <ResourceChoice label={copy("configuration-fields.provider_472590")} kind={EntityKind.PROVIDER} value={text(data.provider_id)} activeApiOnly active={active} disabled={existing} required change={(provider_id) => change({ ...data, provider_id })} /> : <p><LocalizedText id="configuration-fields.subscriptionService_78d697" components={{ s0: <>{subscriptionServiceNames[subscriptionService(data.subscription_service)!] ?? copy("configuration-fields.unsupportedService_724094")}</> }} /></p>}{isApi ? <AccountAPIFormatField {...props} /> : null}<Check label={isApi ? copy("configuration-fields.enableThisEntry_9d9bf5") : copy("configuration-fields.enableThisAccount_c76498")} value={data.enabled} change={field("enabled")} /><Check label={isApi ? copy("configuration-fields.excludeFromAutomaticEntrySelection_464713") : copy("configuration-fields.excludeFromAutomaticAccountSelection_016878")} value={data.exclude_automatic} change={field("exclude_automatic")} /><Check label={isApi ? copy("configuration-fields.notifyWhenEntryQuotaRecovers_b06486") : copy("configuration-fields.notifyWhenAccountQuotaRecovers_02ed43")} value={data.recovery_notifications} change={field("recovery_notifications")} /><p><LocalizedText id="configuration-fields.connectionHealthAndQuotaAreManaged_2751ec" components={{ s0: <>{isApi ? copy("configuration-fields.entry_923fe5") : copy("configuration-fields.account_9af211")}</> }} /></p></>;
   }
   if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
-  if(kind===EntityKind.AGENT && data.harness===Harness.Codex && data.harness_settings) return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required/><OrderedLinks label={copy("configuration-fields.instructions_934652")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active}/></>;
+  if(kind===EntityKind.AGENT && [Harness.Codex,Harness.Claude].includes(data.harness as Harness) && data.harness_settings) return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required/><OrderedLinks label={copy("configuration-fields.instructions_934652")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active}/></>;
   if (kind === EntityKind.AGENT) {
     const options = object(data.options);
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
@@ -324,7 +325,7 @@ function ProjectFields({ data, change, active, movementActive = active, supports
   const repositories = items(data.repositories).map(text);
   const { names, loading, error, retry } = useProjectRepositoryNames(repositories, active);
   return <>
-    {supportsHarnessDefaults || data.harness_defaults_version ? <HarnessDefaultFields data={data} change={change} scope={HarnessSettingsScope.Project} active={active} disabled={disabled||!supportsHarnessDefaults}/> : null}
+    {supportsHarnessDefaults || data.harness_defaults_version ? <><HarnessDefaultFields data={data} change={change} scope={HarnessSettingsScope.Project} active={active} disabled={disabled||!supportsHarnessDefaults}/><HarnessDefaultFields harness={HarnessSettingsHarness.Claude} data={data} change={change} scope={HarnessSettingsScope.Project} active={active} disabled={disabled||!supportsHarnessDefaults}/></> : null}
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
       <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p><LocalizedText id="configuration-fields.orderIsPreserved_62a111" components={{ s0: <>{copy("project-creation.workspaceHelp")}</> }} /></p>
