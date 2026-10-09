@@ -8,7 +8,6 @@
   "provider-model-settings.customApiProvider_c1db3d": "Custom API provider",
   "provider-model-settings.localApiServer_dd8eec": "Local API server",
   "provider-model-settings.preset_7252e7": "Preset",
-  "provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388": "Entries: <s0/>. Connection state is separate from provider validation and model compatibility.",
   "provider-model-settings.turningThisProviderOffPreservesIts_2cf65c": "Turning this provider off preserves its entries, credentials, models and history.",
   "provider-model-settings.manageAiApiKeys_a84e42": "Manage AI API Keys",
   "provider-model-settings.addAiApiKey_2c04a8": "Add AI API key",
@@ -71,5 +70,7 @@
   "provider-model-settings.extra.fdfda19280ec": "Unsupported subscription service",
   "provider-model-settings.extra.ca1844969742": "Unavailable",
   "provider-model-settings.extra.dc937b598926": "None",
-  "provider-model-settings.sentence.490d50c6611c": "{{v0}} connected · {{v1}} total"
+  "provider-model-settings.sentence.490d50c6611c": "{{v0}} connected · {{v1}} total",
+  "provider-model-settings.entriesSummary": "Entries: <s0/>.",
+  "provider-model-settings.connectionGuidance": "Connection state is separate from provider validation and model compatibility."
 }
