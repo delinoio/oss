@@ -12,7 +12,11 @@ import (
 
 func TestClaudeWebPublicationKeepsNativeCallsResultsAndReceiptReplay(t *testing.T) {
 	for _, name := range []claude.ServerToolName{claude.ServerWebSearch, claude.ServerWebFetch} {
-		for _, problem := range []claude.ServerToolProblem{"", "unavailable"} {
+		problems := []claude.ServerToolProblem{"", "unavailable"}
+		if name == claude.ServerWebFetch {
+			problems = append(problems, "url_not_allowed")
+		}
+		for _, problem := range problems {
 			t.Run(string(name)+string(problem), func(t *testing.T) {
 				c, rpc := newClaudeContentFixture(t)
 				ctx := context.Background()

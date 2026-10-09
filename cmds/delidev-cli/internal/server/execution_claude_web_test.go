@@ -9,7 +9,11 @@ import (
 
 func TestClaudeWebServerRetainsOriginalResultsAtomicallyAndReplays(t *testing.T) {
 	for _, name := range []domain.ClaudeWebName{domain.ClaudeWebSearch, domain.ClaudeWebFetch} {
-		for _, problem := range []string{"", "unavailable", "invalid_tool_input"} {
+		problems := []string{"", "unavailable", "invalid_tool_input"}
+		if name == domain.ClaudeWebFetch {
+			problems = append(problems, "url_not_allowed")
+		}
+		for _, problem := range problems {
 			t.Run(string(name)+problem, func(t *testing.T) {
 				f := newClaudePublicationFixture(t, domain.ExecuteMode)
 				f.publish(t, f.event(domain.ExecutionThreadBound, 1))
