@@ -11,6 +11,8 @@ fn main() {
             "desktop_update_native",
             "desktop_credential_access",
             "choose_repository_folder",
+            "export_generated_image",
+            "read_generated_image_export",
             "read_runner_device_preferences",
             "update_runner_device_preferences",
             "read_session_creation_preferences",

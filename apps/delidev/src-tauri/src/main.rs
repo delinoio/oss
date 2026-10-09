@@ -272,7 +272,7 @@ async fn export_generated_image(
 }
 
 #[tauri::command]
-fn read_generated_image_export(
+async fn read_generated_image_export(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     operation_id: String,

@@ -19,7 +19,8 @@
     "device-language",
     "browser-presentation",
     "repository-folder",
-    "worker-network"
+    "worker-network",
+    "generated-image-export"
   ],
   "webviews": [
     "server-*"

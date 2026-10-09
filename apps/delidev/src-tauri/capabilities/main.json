@@ -21,7 +21,8 @@
     "browser-presentation",
     "repository-folder",
     "worker-network",
-    "credential-access"
+    "credential-access",
+    "generated-image-export"
   ],
   "webviews": [
     "main",

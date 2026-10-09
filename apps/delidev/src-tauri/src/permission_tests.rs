@@ -210,3 +210,66 @@ fn numeric_session_selection_is_trusted_local_only() {
         }
     }
 }
+
+#[test]
+fn image_export_has_closed_compiled_permissions_and_product_only_authority() {
+    let commands = ["export_generated_image", "read_generated_image_export"];
+    for target in [Target::MacOS, Target::Windows, Target::Linux] {
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+        let app = &manifests[APP_ACL_KEY];
+        assert_eq!(
+            app.permissions["generated-image-export"].commands.allow,
+            commands
+        );
+        for command in commands {
+            assert!(app.commands.iter().any(|value| value == command));
+        }
+        let capabilities = serde_json::from_str(CAPABILITIES).unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for command in commands {
+            for label in ["main", "local-fixture", "server-fixture"] {
+                assert!(
+                    authority
+                        .resolve_access(command, label, label, &Origin::Local)
+                        .is_some()
+                );
+                for child in [
+                    "external-child",
+                    "browser-child",
+                    "tray-status",
+                    "auxiliary",
+                ] {
+                    assert!(
+                        authority
+                            .resolve_access(command, label, child, &Origin::Local)
+                            .is_none()
+                    );
+                }
+                assert!(
+                    authority
+                        .resolve_access(
+                            command,
+                            label,
+                            label,
+                            &Origin::Remote {
+                                url: "https://untrusted.invalid".parse().unwrap()
+                            }
+                        )
+                        .is_none()
+                );
+            }
+            for label in ["tray-status", "external-child", "auxiliary"] {
+                assert!(
+                    authority
+                        .resolve_access(command, label, label, &Origin::Local)
+                        .is_none()
+                );
+            }
+        }
+    }
+}

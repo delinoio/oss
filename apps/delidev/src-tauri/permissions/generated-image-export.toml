@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+[[permission]]
+identifier = "generated-image-export"
+description = "Explicitly save one verified original generated PNG and observe its retained result."
+commands.allow = ["export_generated_image", "read_generated_image_export"]
