@@ -105,3 +105,12 @@ it("uses the server-clock heartbeat observation despite desktop clock skew", () 
  expect(startupWorkerCurrent(session,machine,true)).toBe(false);
  vi.restoreAllMocks();
 });
+
+
+it("preserves managed Clone then Inspect plan order across repository aggregation", () => {
+ const steps=[{workspace_operation:1},{workspace_operation:3,repository_id:repo1,repository_ordinal:1,repository_count:2,state:2,sequence:2},{workspace_operation:2,repository_id:repo1,repository_ordinal:1,repository_count:2,state:2,sequence:3},{workspace_operation:3,repository_id:repo2,repository_ordinal:2,repository_count:2,state:1,sequence:4},{workspace_operation:2,repository_id:repo2,repository_ordinal:2,repository_count:2},{workspace_operation:6},{workspace_operation:7}];
+ const operations=startupOperations(resource({workspace:{...workspace,last_sequence:4,steps}}),SessionProgressPhase.Preparing)!;
+ expect(operations.workspace.map(row=>row.operation)).toEqual([1,3,2,6,7]);
+ expect(operations.workspace[1]).toEqual({operation:3,state:"running",ordinal:2,count:2});
+ expect(operations.workspace[2]?.state).toBe("pending");
+});
