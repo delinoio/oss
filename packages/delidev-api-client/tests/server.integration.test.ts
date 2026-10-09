@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { fixtureBinary } from "../../../scripts/ci/fixture-binary.mjs";
-import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/gen/delidev/v1/delidev_pb.js";
+import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/index.js";
 import { createDeliDevTransport } from "../src/transport.js";
 import { clientFailure, FailureCode } from "../src/errors.js";
 import { ConnectionState, SyncKind, synchronizeResources } from "../src/synchronization.js";
