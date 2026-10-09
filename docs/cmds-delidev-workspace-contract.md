@@ -356,3 +356,16 @@ unchanged. A dedicated branch reader must not widen the general document parser.
 ## Project behavior settings (issue #1965)
 
 Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+## Prepared skill inventory observation deadline
+
+Prepared-session skill inventory reuses original workspace observation locks,
+manifest comparisons and anchored root identity. Its thirty-second operation
+context remains available for subsequent package enumeration. Before observing
+roots, copy the request with one deadline equal to the earlier of its original
+deadline and now plus fifteen seconds. General Chat and every repository share
+that same deadline; later roots cannot renew the observation budget. Ordinary
+workspace reads retain their sixteen-second admission guard. Skill requests
+retain their thirty-one-second admission ceiling and reject expired deadlines.
+Creation/unprepared inventory, selected-package preparation and independent
+cleanup retain their original operation context and ownership checks. Follow the
+[explicit native skills contract](cmds-delidev-sessions-contract.md#explicit-native-skills).

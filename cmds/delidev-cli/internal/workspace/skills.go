@@ -45,26 +45,41 @@ func (m *Manager) ReadSkills(ctx context.Context, request ReadRequest) (domain.S
 	if request.Skills.SessionID == "" || request.Manifest.Version == 0 {
 		return packages.List(ctx, *request.Skills, nil)
 	}
-	roots := []string{}
-	// Collect only independently verified accepted roots. No preparation occurs.
-	if request.Preparation.Type == domain.GeneralChat {
-		e = m.observeWorkspace(ctx, request, "", true, func(_ context.Context, _ Git, _ Manifest, _ *os.Root, path string) error {
-			roots = append(roots, path)
+	roots, e := skillWorkspaceRoots(request, func(observation ReadRequest, repository domain.ID) (string, error) {
+		var path string
+		err := m.observeWorkspace(ctx, observation, repository, true, func(_ context.Context, _ Git, _ Manifest, _ *os.Root, root string) error {
+			path = root
 			return nil
 		})
-	} else {
-		for _, repository := range request.Manifest.Repositories {
-			e = m.observeWorkspace(ctx, request, repository.ID, true, func(_ context.Context, _ Git, _ Manifest, _ *os.Root, path string) error {
-				roots = append(roots, path)
-				return nil
-			})
-			if e != nil {
-				break
-			}
-		}
-	}
+		return path, err
+	})
 	if e != nil {
 		return result, e
 	}
 	return packages.List(ctx, *request.Skills, roots)
+}
+
+// One observation budget covers all accepted roots. Package enumeration keeps
+// the caller's original context; a later repository cannot renew this budget.
+func skillWorkspaceRoots(request ReadRequest, observe func(ReadRequest, domain.ID) (string, error)) ([]string, error) {
+	observation := request
+	if deadline := time.Now().Add(15 * time.Second); deadline.Before(observation.Deadline) {
+		observation.Deadline = deadline
+	}
+	ids := []domain.ID{""}
+	if request.Preparation.Type != domain.GeneralChat {
+		ids = make([]domain.ID, len(request.Manifest.Repositories))
+		for i, repository := range request.Manifest.Repositories {
+			ids[i] = repository.ID
+		}
+	}
+	roots := make([]string, 0, len(ids))
+	for _, id := range ids {
+		root, err := observe(observation, id)
+		if err != nil {
+			return nil, err
+		}
+		roots = append(roots, root)
+	}
+	return roots, nil
 }
