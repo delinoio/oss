@@ -126,7 +126,7 @@
   "settings.savedKind.MACHINE": "실행 장치를 저장했습니다.",
   "settings.savedKind.PROVIDER": "제공자를 저장했습니다.",
   "settings.savedKind.MODEL": "모델을 저장했습니다.",
-  "settings.savedKind.SETTINGS": "서버 환경 설정을 저장했습니다.",
+  "settings.savedKind.SETTINGS": "프로젝트 기본값을 저장했습니다.",
   "settings.savedKind.fallback": "설정을 저장했습니다.",
   "settings.repositoryDescription": "작업할 Git 저장소와 GitHub 접근 설정을 관리하세요.",
   "settings.repositoryRemoteSource": "Git 원격 저장소",

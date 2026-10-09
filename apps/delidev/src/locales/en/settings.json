@@ -126,7 +126,7 @@
   "settings.savedKind.MACHINE": "Runner Device saved.",
   "settings.savedKind.PROVIDER": "Provider saved.",
   "settings.savedKind.MODEL": "Model saved.",
-  "settings.savedKind.SETTINGS": "Server preferences saved.",
+  "settings.savedKind.SETTINGS": "Project defaults saved.",
   "settings.savedKind.fallback": "Configuration saved.",
   "settings.repositoryDescription": "Manage Git repositories and their GitHub access settings.",
   "settings.repositoryRemoteSource": "Git remote repository",
