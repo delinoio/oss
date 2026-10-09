@@ -30,6 +30,8 @@ import (
 )
 
 type Config struct {
+	startupProgress          bool
+	progress                 *sessionStartupReporter
 	paidCredits              bool
 	imageClient              delidevv1connect.AttachmentServiceClient
 	branchReportClient       delidevv1connect.WorkerServiceClient
@@ -411,10 +413,16 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if openCodeCompactionExpected {
 				profile += "\x00opencode-compaction-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
+				profile += "\x00session-startup-progress-v1"
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
@@ -534,6 +542,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
@@ -945,7 +954,11 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 	jobConfig.questionControls = work.controls
 	jobConfig.approvalControls = work.approvals
 	jobConfig.steerControls = work.steers
+	jobConfig.progress = newSessionStartupReporter(work.context, jobConfig, job)
+	defer jobConfig.progress.close()
 	result, err := runJob(work.context, jobConfig, instance, resource, job)
+	jobConfig.progress.close()
+	jobConfig.progress = nil
 	work.cancel()
 	if err != nil {
 		return err
@@ -1228,7 +1241,7 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			}
 		}
 		manager := workspace.Manager{Root: root, Logger: config.Logger}
-		manifest, err := manager.Prepare(ctx, input)
+		manifest, err := manager.Prepare(workspace.WithStartupObserver(ctx, config.progress.observe), input)
 		if err != nil {
 			return nil, err
 		}

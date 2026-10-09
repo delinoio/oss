@@ -94,6 +94,8 @@ const (
 
 const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
 
+const SessionStartupProgressV1 WorkerCapability = "session-startup-progress-v1"
+
 type WorkerCapability string
 
 const (

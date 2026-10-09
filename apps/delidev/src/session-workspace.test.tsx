@@ -46,6 +46,8 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const control = vi.fn(async () => ({ change: { session } }));
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
+  const getResource = vi.fn((request: { id: string; kind: EntityKind }) => ({ resource: retained.get(request.id) }));
+
   const listQueue = vi.fn((_request: { pageToken: string }) => ({ inputs: queueInputs(id), nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
@@ -59,7 +61,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     router.service(SessionService, { listQueue, getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: async () => { await snapshotGate; return { resources: [session], cursor: "original-snapshot" }; },
-      getResource: request => ({ resource: retained.get(request.id) }),
+      getResource,
       listResources: request => terminalMode && request.filter?.kind === EntityKind.TERMINAL ? { resources: terminals } : list(request),
       async *watchEvents(_request, context) {
         while (!context.signal.aborted) {
@@ -75,7 +77,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
   const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionNameEditorProvider><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></SessionNameEditorProvider></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, listQueue, enqueue, rename, control, recover, budget, draft, list, publish, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
+  return { session, client, view, listQueue, enqueue, rename, control, recover, budget, draft, list, publish, getResource, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -346,24 +348,29 @@ it("retains compact response waiting after the original native user message appe
 
 it("projects accepted live preparation, claim and response transitions without remounting or sending", async () => {
   const execution = newRequestId(), input = newRequestId(), job = newRequestId(), preparation = newRequestId();
-  const initial = { outcome: "not-started", archive: "active", recovery: "none", dispatch: "ready", pending_inputs: 1, preparation: { job_id: preparation, state: "pending" } };
-  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, initial);
+  const initial = { outcome: "not-started", archive: "active", recovery: "none", dispatch: "blocked", last_input_sequence: 1, problem: { code: "unavailable", message: "The first execution is waiting for its workspace, Runner Device or account.", guidance: "Prepare the workspace, connect the selected Runner Device and validate the selected account. Inspect the retained session for the current blocking reason." }, pending_inputs: 1, preparation: { job_id: preparation, state: "pending" } };
+  const queuedFor = (id: string) => [create(ResourceSchema, { id: input, sessionId: id, kind: EntityKind.QUEUE, revision: 1n, schemaVersion: 1, documentJson: encode({ delivery: "queued", prompt: "Original queued input", mode: "execute", sequence: 1, content_revision: 1 }) })];
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, initial, queuedFor);
   const { container, rerender } = render(f.view("Original ongoing draft"));
-  await screen.findByText("Preparing workspace"); const composer = screen.getByRole("textbox", { name: "Message" });
+  await screen.findByText("Preparing workspace"); expect(container.querySelector(".session-notices")?.textContent).not.toContain("Execution is blocked"); expect(screen.getByText(/The first execution is waiting for its workspace/).closest("aside")).toHaveProperty("hidden", false); const composer = screen.getByRole("textbox", { name: "Message" });
   const update = (revision: bigint, data: object) => f.publish({ ...f.session, revision, documentJson: encode({ ...readDocument(f.session), ...initial, ...data }) });
   const queued = create(ResourceSchema, { id: input, sessionId: f.session.id, kind: EntityKind.QUEUE, revision: 1n, schemaVersion: 1, documentJson: encode({ delivery: "queued", prompt: "Original queued input", mode: "execute", sequence: 1, content_revision: 1 }) });
   act(() => { f.publish(queued); update(8n, { preparation: { job_id: preparation, state: "ready" } }); }); await screen.findByText("Waiting to start");
-  const selection = { active_execution_id: execution, initial_execution: { id: execution, input_id: input }, preparation: { job_id: preparation, state: "ready" }, dispatch: "claimed" };
-  act(() => update(9n, selection)); await screen.findByText("Starting agent");
+  act(() => update(9n, { preparation: { job_id: preparation, state: "ready" }, problem: { code: "unavailable", message: "The selected Worker is not currently connected.", guidance: "Reconnect the original execution machine; the accepted input remains queued." } }));
+  await screen.findByText("Execution is blocked"); expect(container.querySelector(".session-progress")).toBeNull();
+  expect(screen.getByText(/The selected Worker is not currently connected/).textContent).toContain("Reconnect the original execution machine; the accepted input remains queued.");
+  act(() => update(10n, { preparation: { job_id: preparation, state: "ready" } })); await screen.findByText("Waiting to start");
+  const selection = { active_execution_id: execution, initial_execution: { id: execution, input_id: input }, preparation: { job_id: preparation, state: "ready" }, dispatch: "claimed", problem: undefined };
+  act(() => update(11n, selection)); await screen.findByText("Starting agent");
   const native = { job_id: job, execution_id: execution, input_id: input, native_thread_id: "original-thread", native_turn_id: "original-turn", last_sequence: 2, outcome: "running", waiting: { approval: false, user_input: false }, accepted_inputs: [{ input_id: input, prompt_digest: "a".repeat(64) }] };
   const accepted = { ...selection, outcome: "running", pending_inputs: 0, execution: native };
-  act(() => { f.publish({ ...queued, revision: 2n, documentJson: encode({ delivery: "accepted", execution_id: execution }) }); update(10n, accepted); }); await screen.findByText("Waiting for response");
+  act(() => { f.publish({ ...queued, revision: 2n, documentJson: encode({ delivery: "accepted", execution_id: execution }) }); update(12n, accepted); }); await screen.findByText("Waiting for response");
   rerender(f.view("Original ongoing draft", false)); expect(container.querySelector(".session-progress")).toBeNull(); rerender(f.view("Original ongoing draft")); await screen.findByText("Waiting for response");
   const user = create(ResourceSchema, { id: newRequestId(), sessionId: f.session.id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ execution_id: execution, input_id: input, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-user", role: "user", state: "complete", text: "Published initial input", first_sequence: 3, last_sequence: 3 }) });
-  act(() => { update(11n, { ...accepted, execution: { ...native, last_sequence: 3 } }); f.publish(user); }); await screen.findByText("Published initial input"); await screen.findByText("Waiting for response"); expect(container.querySelector(".session-progress.is-compact")).toBeTruthy();
+  act(() => { update(13n, { ...accepted, execution: { ...native, last_sequence: 3 } }); f.publish(user); }); await screen.findByText("Published initial input"); await screen.findByText("Waiting for response"); expect(container.querySelector(".session-progress.is-compact")).toBeTruthy();
   const assistant = { ...user, id: newRequestId(), documentJson: encode({ execution_id: execution, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-assistant", role: "assistant", state: "streaming", text: "First visible response", first_sequence: 4, last_sequence: 4 }) };
-  act(() => { update(12n, { ...accepted, execution: { ...native, last_sequence: 4 } }); f.publish(assistant); }); await screen.findByText("First visible response"); await waitFor(() => expect(container.querySelector(".session-progress")).toBeNull());
-  act(() => { f.publish({ ...assistant, revision: 2n, documentJson: encode({ execution_id: execution, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-assistant", role: "assistant", state: "streaming", text: "", first_sequence: 4, last_sequence: 4 }) }); update(13n, { ...accepted, execution: { ...native, last_sequence: 4 } }); }); expect(container.querySelector(".session-progress")).toBeNull();
+  act(() => { update(14n, { ...accepted, execution: { ...native, last_sequence: 4 } }); f.publish(assistant); }); await screen.findByText("First visible response"); await waitFor(() => expect(container.querySelector(".session-progress")).toBeNull());
+  act(() => { f.publish({ ...assistant, revision: 2n, documentJson: encode({ execution_id: execution, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-assistant", role: "assistant", state: "streaming", text: "", first_sequence: 4, last_sequence: 4 }) }); update(15n, { ...accepted, execution: { ...native, last_sequence: 4 } }); }); expect(container.querySelector(".session-progress")).toBeNull();
   act(() => update(8n, { preparation: { job_id: preparation, state: "pending" } })); expect(container.querySelector(".session-progress")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer); expect(composer).toHaveProperty("value", "Original ongoing draft"); expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
 });
@@ -450,6 +457,21 @@ it.each([false, true])("retains initial terminal toolbar intent until session lo
     else { await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id)); expect(f.terminalWatches).toHaveBeenCalledOnce(); }
     expect(f.terminalCreate).toHaveBeenCalledTimes(departed ? 0 : 1); expect(f.terminalControl).not.toHaveBeenCalled();
   } finally { view.unmount(); release(); f.releaseTerminal(); f.client.clear(); }
+});
+
+it.each(["succeeded", "failed", "canceled"])("does not observe Worker presence for terminal %s retained startup history", async outcome => {
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{outcome,machine_id:newRequestId(),startup_progress:{workspace:{job_id:newRequestId()}}});
+ const mounted=render(f.view());
+ try {
+  await screen.findByRole("heading",{name:"Original session"});
+  // The existing Session machine reader still owns its one ordinary read.
+  expect(f.getResource.mock.calls.filter(([request])=>request.kind===EntityKind.MACHINE)).toHaveLength(1);
+  const machineId=readDocument(f.session).machine_id as string;
+  const machineQueries=f.client.getQueryCache().findAll().filter(query=>JSON.stringify(query.queryKey).includes(machineId));
+  const observers=machineQueries.flatMap(query=>query.observers);
+  expect(observers.some(observer=>observer.options.enabled===false && observer.options.refetchInterval===false)).toBe(true);
+  expect(observers.every(observer=>observer.options.refetchInterval!==5000)).toBe(true);
+ } finally { mounted.unmount();f.client.clear(); }
 });
 
 it("reveals an arrival and hides its final claim without replacing composer or sending", async () => {
