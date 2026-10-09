@@ -16,7 +16,7 @@ type childHistoryTransport func(*http.Request) (*http.Response, error)
 func (f childHistoryTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
-	for _, variant := range []string{"pinned-chronological", "contradictory-newest-first", "completed-question"} {
+	for _, variant := range []string{"pinned-chronological", "contradictory-newest-first", "completed-question", "missing-text-end", "missing-reasoning-end", "error-missing-completion-running-tool", "error-completed-running-tool", "closed-error", "closed-error-tool", "closed-success-tool", "closed-failed-tool", "closed-reasoning", "busy", "unfinished-abort"} {
 		t.Run(variant, func(t *testing.T) {
 			reversed := variant == "contradictory-newest-first"
 			f := newHistoryFixture(t)
@@ -35,6 +35,38 @@ func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
 				question := fixtureCompletedTool()
 				question["id"], question["sessionID"], question["messageID"], question["tool"] = "prt_01960dcbe1feABCDEFGHIJKLMN", childID, assistant["id"], string(domain.OpenCodeQuestionTool)
 				parts = append(parts, question)
+			}
+			unsettled := variant == "missing-text-end" || variant == "missing-reasoning-end" || variant == "error-missing-completion-running-tool" || variant == "error-completed-running-tool" || variant == "busy" || variant == "unfinished-abort"
+			if variant == "missing-text-end" {
+				delete(answer["time"].(map[string]any), "end")
+			}
+			if variant == "missing-reasoning-end" || variant == "closed-reasoning" {
+				parts = append(parts, map[string]any{"id": "prt_01960dcbe1feABCDEFGHIJKLMN", "sessionID": childID, "messageID": assistant["id"], "type": "reasoning", "text": "private reasoning", "time": map[string]any{"start": 1235}})
+				if variant == "closed-reasoning" {
+					parts[len(parts)-1].(map[string]any)["time"].(map[string]any)["end"] = 1250
+				}
+			}
+			if strings.Contains(variant, "error") || variant == "unfinished-abort" {
+				kind := UnknownErrorKind
+				if variant == "unfinished-abort" {
+					kind = AbortedErrorKind
+					s.observer.stop = &inputStopAttempt{}
+				}
+				assistant["error"] = map[string]any{"name": kind, "data": map[string]any{"message": "private fixture error"}}
+			}
+			if variant == "error-missing-completion-running-tool" || variant == "unfinished-abort" {
+				delete(assistant["time"].(map[string]any), "completed")
+			}
+			if strings.Contains(variant, "tool") {
+				tool := fixtureCompletedTool()
+				tool["id"], tool["sessionID"], tool["messageID"] = "prt_01960dcbe1feABCDEFGHIJKLMN", childID, assistant["id"]
+				if strings.Contains(variant, "running-tool") {
+					tool["state"] = map[string]any{"status": "running", "input": map[string]any{"filePath": "private fixture path"}, "time": map[string]any{"start": 1235}}
+				}
+				if variant == "closed-failed-tool" {
+					tool["state"] = map[string]any{"status": "error", "input": map[string]any{"filePath": "private fixture path"}, "error": "private fixture tool error", "time": map[string]any{"start": 1235, "end": 1250}}
+				}
+				parts = append(parts, tool)
 			}
 			rows := []any{user, map[string]any{"info": assistant, "parts": parts}}
 			if reversed {
@@ -55,6 +87,14 @@ func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
 					value = rows
 				case "/session/status":
 					value = map[string]any{}
+					if variant == "busy" {
+						value = map[string]any{childID: map[string]any{"type": "busy"}}
+					}
+				case "/session/" + fixtureSessionID + "/children":
+					session := fixtureSession(s.cwd, domain.NewID(), fixtureSettings())
+					session["id"], session["parentID"] = childID, fixtureSessionID
+					session["time"] = map[string]any{"created": 1235, "updated": 1250}
+					value = []any{session}
 				default:
 					t.Fatal("child history escaped closed GET routes", r.URL.RequestURI())
 				}
@@ -69,8 +109,28 @@ func TestForegroundChildUsesPinnedChronologicalPage(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || len(values) != 1 || values[0].Status != domain.SubagentCompleted || values[0].Output == nil || values[0].Output.Text != "original child answer" || values[0].Usage == nil || values[0].ObservedModel == nil {
+			expected := domain.SubagentCompleted
+			if unsettled {
+				expected = domain.SubagentRunning
+			} else if strings.Contains(variant, "error") {
+				expected = domain.SubagentFailed
+			}
+			if err != nil || len(values) != 1 || values[0].Status != expected || values[0].Output == nil || values[0].Output.Text != "original child answer" || values[0].Usage == nil || values[0].ObservedModel == nil {
 				t.Fatal("pinned child page rejected", values, err)
+			}
+			s.children = map[string]*foregroundChild{childID: child}
+			inventoryErr := s.readForegroundChildInventory(context.Background(), false)
+			if unsettled {
+				if inventoryErr == nil || s.childInventoryVerified {
+					t.Fatal("unfinished child established final inventory")
+				}
+				if variant != "busy" {
+					if err := s.readForegroundChildInventory(context.Background(), true); err != nil || child.value.Status.Terminal() {
+						t.Fatal("Stop inventory fabricated native settlement", err)
+					}
+				}
+			} else if inventoryErr != nil || !s.childInventoryVerified {
+				t.Fatal("closed native child rejected", inventoryErr)
 			}
 		})
 	}

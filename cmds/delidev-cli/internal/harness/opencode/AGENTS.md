@@ -27,3 +27,5 @@
 
 - Register the exact original API execution token and caller-protected values in transient native reflection guards. Refuse supported literal, decoded JSON and Base64 reflections before event retention, public content or retained-history proof; keep original cleanup/recovery and once-only input claims. Never redact or replace native content. Guard values remain private runtime state and grant no operating-system sandbox guarantee.
 - Include the original private HTTP password in SSE and content-snapshot guards. Exact owned GET `/config` and `/provider` responses remain private credential-verification inputs; this exception grants no content publication or other route authority.
+
+- Foreground child success/error projections require the same closed native message/part predicate: completion time, ended text/reasoning and terminal tools. Unfinished histories retain running partial telemetry; only the independent original verified Stop/joined-scope cleanup source may interrupt an unfinished abort. Missing/busy status never supplies settlement.
