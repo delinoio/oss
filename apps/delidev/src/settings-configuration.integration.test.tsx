@@ -66,14 +66,15 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(screen.getByRole("button", { name: "Close Manage connection" }));
   fireEvent.click(await screen.findByRole("button", { name: "More actions for Owned keyless account" }));
   fireEvent.click(screen.getByRole("button", { name: "Edit preferences" }));
-  const enableValidated = await screen.findByRole("checkbox", { name: "Enable this entry" });
+  const editor = await screen.findByRole("dialog");
+  const enableValidated = await within(editor).findByRole("checkbox", { name: "Enable this entry" });
   await waitFor(() => expect(enableValidated.matches(":disabled")).toBe(false));
   expect((enableValidated as HTMLInputElement).checked).toBe(false);
   fireEvent.click(enableValidated);
-  const saveAccount = screen.getByRole("button", { name: "Save AI API key entry" });
+  const saveAccount = await within(editor).findByRole("button", { name: "Save changes" });
   await waitFor(() => expect(saveAccount.matches(":disabled")).toBe(false));
   fireEvent.click(saveAccount);
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit preferences" })).toBeNull());
+  await waitFor(() => expect(editor.isConnected).toBe(false));
   const accounts = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } });
   expect(accounts.resources).toHaveLength(1);
   expect(document(accounts.resources[0])).toMatchObject({ enabled: true, health: "ready" });
