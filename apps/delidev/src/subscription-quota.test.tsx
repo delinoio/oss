@@ -308,3 +308,9 @@ it("fences a consent confirmation after account revision replacement", async()=>
  expect((screen.getByRole("button",{name:"Enable automatic reset credits"}) as HTMLButtonElement).disabled).toBe(true);expect(value.consent).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Keep automatic reset credits off"}));expect((await screen.findByRole("checkbox",{name:"Automatically use a reset credit when subscription quota is exhausted"}) as HTMLInputElement).checked).toBe(false);
 });
+
+it.each(["light", "dark"])("localizes automatic credit consent in Korean using the %s theme",async theme=>{
+ globalThis.document.documentElement.dataset.theme=theme;
+ try {await i18n.changeLanguage("ko");const value=fixture();render(<value.Harness />);const checkbox=await screen.findByRole("checkbox",{name:"구독 한도가 소진되면 리셋 크레딧 자동 사용"});await waitFor(()=>expect((checkbox as HTMLInputElement).disabled).toBe(false));fireEvent.click(checkbox);expect(await screen.findByRole("heading",{name:"리셋 크레딧 자동 사용 켜기"})).toBeTruthy();expect(screen.getByText("서버가 실행 중일 때 동작합니다. 다시 로그인하면 재승인이 필요합니다.")).toBeTruthy();fireEvent.click(screen.getByRole("button",{name:"자동 사용 끄기 유지"}));expect(value.consent).not.toHaveBeenCalled();}
+ finally {await i18n.changeLanguage("en");delete globalThis.document.documentElement.dataset.theme;}
+});

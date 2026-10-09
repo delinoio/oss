@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -328,5 +329,40 @@ func TestAutomaticCreditPortableExcludesStandingAuthority(t *testing.T) {
 	})
 	if e == nil {
 		t.Fatal("legacy omission erased consent")
+	}
+}
+
+func TestAutomaticCreditUncertainFinishClearsGenerationConsentAndReconcilesSameKey(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, false)
+	admitFixture(t, f, &b, "")
+	r, a := f.record()
+	original := *a.Subscription.Observation
+	l := a.Subscription.Lease
+	lease := &pb.TakeSubscriptionResponse{LeaseId: string(l.ID), LeaseRevision: l.Revision, GenerationId: string(l.Generation)}
+	f.claimObservation(string(original.ID), lease)
+	f.publishObservation(string(original.ID), lease, domain.SubscriptionObservationResult{ConsumeUncertain: true, QuotaError: domain.Unavailable})
+	bundle, err := f.secrets.Get(context.Background(), credentials.Ref{Owner: r.ID, ID: l.Generation, Purpose: credentials.AccountLogin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(bundle)
+	if _, err = f.finish(lease, bundle, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	r, a = f.record()
+	if a.Subscription.AutomaticCreditConsent != nil || a.Subscription.Generation == l.Generation || a.Subscription.Lease != nil || a.Subscription.Observation.Phase != domain.SubscriptionObservationUncertain {
+		t.Fatal("finish retained consent or lost original uncertainty")
+	}
+	_, err = f.client.ReconcileSubscriptionCredit(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.ReconcileSubscriptionCreditRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, OperationId: string(original.ID), ConnectionId: string(a.Connection.ID), GenerationId: string(a.Subscription.Generation)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, a = f.record()
+	op := a.Subscription.Observation
+	if op.ID != original.ID || op.CreditID != original.CreditID || op.NextCredit != original.NextCredit || op.CreditsObservationID != original.CreditsObservationID || op.AutomaticBlock != nil || op.AutomaticEpisodeID != "" || op.AutomaticLeaseID != "" {
+		t.Fatal("explicit reconciliation changed key/selector or reused retired automatic authority")
+	}
+	if _, err = f.take(&pb.RequestSubscriptionResponse{OperationId: string(original.ID)}, pb.SubscriptionAction_SUBSCRIPTION_ACTION_RESET_CREDIT); err != nil {
+		t.Fatal("explicit same-key reconciliation lost its independent lane", err)
 	}
 }

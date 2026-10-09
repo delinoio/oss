@@ -75,7 +75,7 @@ func (s SubscriptionState) Validate(account Account) error {
 	if s.AutomaticCreditConsent != nil && (s.AutomaticCreditConsent.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) || s.AutomaticCreditEpisode != nil && (s.AutomaticCreditEpisode.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) {
 		return invalid()
 	}
-	if len(s.AutomaticCreditBlocks) > 1024 {
+	if len(s.AutomaticCreditBlocks) > 1024 || len(s.AutomaticCreditBlocks) > 0 && account.SubscriptionService != SubscriptionChatGPT {
 		return invalid()
 	}
 	for _, block := range s.AutomaticCreditBlocks {

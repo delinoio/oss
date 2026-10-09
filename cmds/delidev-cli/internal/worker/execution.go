@@ -572,7 +572,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 
 		event = *parentTerminal
-		if managed != nil && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
+		if managed != nil && config.quotaBlockSupported && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
 			managed.publishQuotaBlock(ctx, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})
 		}
 		// Fence and join original observations before native credential capture and
