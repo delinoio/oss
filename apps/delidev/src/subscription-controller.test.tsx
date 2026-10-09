@@ -92,7 +92,7 @@ it("discards a late creation acknowledgment while keeping accepted default accou
 it("starts an existing account login without a Runner Device and retries the exact uncertain request", async () => {
   const value = fixture(); value.login.mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable)); render(<value.Harness />);
   await screen.findByRole("article", { name: "Existing subscription" });
-  fireEvent.click(screen.getByRole("button", { name: "Manage login for Existing subscription" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage Existing subscription" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(await screen.findByRole("button", { name: "Sign in to ChatGPT" }));
   await screen.findByRole("button", { name: "Retry original request" });
@@ -173,7 +173,7 @@ it("projects terminal Codex diagnostics without another login or cached native p
  const value=fixture();
  value.progress.mockImplementation(() => ({state:SubscriptionLoginState.FAILED,url:"",diagnostic:create(CodexDiagnosticSchema,{detectedVersion:"0.159.2",minimumVersion:"0.151.0",phase:CodexDiagnosticPhase.INITIALIZE,code:"unsupported",message:"private-native-sentinel"})}));
  render(<value.Harness />);
- fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Manage Existing subscription"}));
   await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
   await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));
@@ -194,7 +194,7 @@ it("projects terminal Codex diagnostics without another login or cached native p
 it("keeps an uncertain original browser opening visible across later waiting polls", async () => {
  const value=fixture(); value.native.mockRejectedValue(new Error("private-native-url"));
  render(<value.Harness />);
- fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Manage Existing subscription"}));
   await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
   await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));

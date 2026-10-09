@@ -872,3 +872,46 @@ it("retains semantic deep nesting after indentation caps and roots every cyclic 
  const last=value.container.querySelector(`[data-conversation-node="${rows[7]!.id}"]`)!;expect((last.firstElementChild as HTMLElement).style.paddingLeft).toBe("36px");let depth=0;for(let element=last.parentElement;element;element=element.parentElement)if(element.tagName==="UL"&&element.className!=="sidebar-conversation-forest")depth++;expect(depth).toBe(7);
  for(const row of [a,b])expect(value.container.querySelector(`[data-conversation-node="${row.id}"]`)?.parentElement?.className).toBe("sidebar-conversation-forest");
 });
+
+
+it.each(["project", "general-chat", "sidechat"])("clears retained %s row selection on creation pages and restores it on return", async (kind) => {
+  const project = resource(EntityKind.PROJECT, "Retained project");
+  const parent = resource(EntityKind.SESSION, "Retained parent", "", { workspace: "general-chat", outcome: "running", archive: "active" });
+  const retained = resource(EntityKind.SESSION, "Retained selection", kind === "project" ? project.id : "", {
+    workspace: kind === "project" ? "worktree" : "general-chat", outcome: "running", archive: "active",
+    ...(kind === "sidechat" ? { fork: { source_session_id: parent.id, sidechat_parent_snapshot: { configuration: {} } } } : {}),
+  });
+  const rows = kind === "sidechat" ? [parent, retained] : [retained];
+  const value = mountSidebar({
+    projects: () => ({ resources: kind === "project" ? [project] : [] }),
+    sessions: ({ projectId }) => ({ sessions: projectId && projectId !== project.id ? [] : rows }),
+    props: { selectedSessionId: retained.id },
+    stateful: true,
+  });
+  const row = await screen.findByRole("button", { name: /Retained selection/ });
+  expect(row.getAttribute("aria-current")).toBe("true");
+  const list = value.container.querySelector<HTMLElement>(".sidebar-list")!;
+  list.scrollTop = 45;
+  fireEvent.scroll(list);
+  const action = value.container.querySelector<HTMLButtonElement>(".sidebar-new-session")!;
+  fireEvent.click(action);
+  expect(action.getAttribute("aria-current")).toBe("page");
+  expect(value.container.querySelectorAll('.sidebar-session-row[aria-current="true"]')).toHaveLength(0);
+  expect(screen.getByRole("button", { name: /Retained selection/ })).toBe(row);
+  fireEvent.click(screen.getAllByRole("button", { name: "New Chat" })[0]);
+  expect(screen.getAllByRole("button", { name: "New Chat" })[0].getAttribute("aria-current")).toBe("page");
+  expect(value.container.querySelectorAll('.sidebar-session-row[aria-current="true"]')).toHaveLength(0);
+  value.setSurface(Surface.Sessions);
+  expect(screen.getByRole("button", { name: /Retained selection/ })).toBe(row);
+  expect(row.getAttribute("aria-current")).toBe("true");
+  expect(list.scrollTop).toBe(45);
+  expect(value.openSession).not.toHaveBeenCalled();
+  expect(value.newSession).toHaveBeenCalledOnce();
+  expect(value.newGeneralChat).toHaveBeenCalledOnce();
+  if (kind === "project") {
+    value.setProps({ projectSelectionBlocked: true });
+    fireEvent.click(value.container.querySelector<HTMLButtonElement>(".sidebar-project-group .sidebar-project-new-session")!);
+    expect(value.newSession).toHaveBeenCalledOnce();
+    expect(row.getAttribute("aria-current")).toBe("true");
+  }
+});

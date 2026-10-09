@@ -87,6 +87,47 @@ describe("DevHud UI foundation", () => {
     await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
+  it("awaits the exact focus target through delayed initial and restoration frames", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => { frames.push(callback); return frames.length; }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      const opener = createRef<HTMLButtonElement>();
+      const first = createRef<HTMLButtonElement>();
+      return <><Button ref={opener} onClick={() => setOpen(true)}>Open</Button><Dialog open={open} title="Delayed" initialFocusRef={first} returnFocusRef={opener} onClose={() => setOpen(false)}><Button ref={first}>First</Button></Dialog></>;
+    }
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    opener.focus();
+    fireEvent.click(opener);
+    const first = screen.getByRole("button", { name: "First" });
+    let initialSettled = false;
+    const initial = waitFor(() => expect(document.activeElement).toBe(first)).then(() => { initialSettled = true; });
+    await act(async () => { await Promise.resolve(); });
+    expect(initialSettled).toBe(false);
+    expect(document.activeElement).toBe(opener);
+    act(() => frames.shift()?.(0));
+    await initial;
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Delayed" }), { key: "Escape" });
+    let restorationSettled = false;
+    const restoration = waitFor(() => expect(document.activeElement).toBe(opener)).then(() => { restorationSettled = true; });
+    await act(async () => { await Promise.resolve(); });
+    expect(restorationSettled).toBe(false);
+    act(() => frames.shift()?.(0));
+    await restoration;
+  });
+
+  it.each(["suppressed", "incorrect"] as const)("rejects %s focus instead of treating dialog presence as readiness", async (focus) => {
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const first = createRef<HTMLButtonElement>();
+    render(<Dialog open title="Unfocused" initialFocusRef={first} onClose={() => undefined}><Button ref={first}>First</Button><Button>Wrong target</Button></Dialog>);
+    if (focus === "incorrect") screen.getByRole("button", { name: "Wrong target" }).focus();
+    expect(screen.getByRole("dialog", { name: "Unfocused" })).toBeTruthy();
+    await expect(waitFor(() => expect(document.activeElement).toBe(first.current), { timeout: 50, interval: 5 })).rejects.toThrow();
+  });
+
   it("closes a sheet through its named back control", async () => {
     function Harness() {
       const [open, setOpen] = useState(true);
