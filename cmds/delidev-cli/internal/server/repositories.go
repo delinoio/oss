@@ -24,7 +24,7 @@ type repositorySaveOutput struct {
 func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
 	record, err := tx.Get(domain.RepositoryKind, id)
 	if expected == 0 && domain.SafeError(err).Code == domain.NotFound {
-		return nil
+		return tx.RequireUnusedID(id)
 	}
 	if err != nil {
 		return err
@@ -189,11 +189,18 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 		} else {
 			saved, e := tx.Put(domain.RepositoryKind, input.ID, input.ExpectedRevision, "", "", input.Repository)
 			if e != nil {
-				return e
-			}
-			parent.Output, err = json.Marshal(repositorySaveOutput{ID: saved.ID, Revision: saved.Revision})
-			if err != nil {
-				return err
+				// Known immutable identity refusal is a settled validation result,
+				// not a reason to roll back the original successful child report.
+				// Unexpected storage failure still rolls back for exact retry.
+				if domain.SafeError(e).Code != domain.Conflict {
+					return e
+				}
+				problem = domain.SafeError(e)
+			} else {
+				parent.Output, err = json.Marshal(repositorySaveOutput{ID: saved.ID, Revision: saved.Revision})
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
