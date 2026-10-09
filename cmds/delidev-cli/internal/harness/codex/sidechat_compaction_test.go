@@ -68,6 +68,12 @@ func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method stri
 			enabled := name == "skip_host_skill_discovery" || f.sidechatDrift == "feature" && name == "hooks"
 			data = append(data, map[string]any{"name": name, "stage": "stable", "displayName": nil, "description": nil, "announcement": nil, "enabled": enabled, "defaultEnabled": false})
 		}
+		if f.sidechatDrift == "duplicate-inventory" {
+			data = append(data, data[0])
+		}
+		if f.sidechatDrift == "malformed-inventory" {
+			data[0].(map[string]any)["enabled"] = nil
+		}
 		write(id, map[string]any{"data": data, "nextCursor": nil})
 		return true
 	}
@@ -76,7 +82,7 @@ func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method stri
 }
 
 func TestSidechatCompactionRechecksChangedNativeAuthorityBeforeOnceOnlySend(t *testing.T) {
-	for _, kind := range []string{"mcp", "permission", "feature", "unchanged"} {
+	for _, kind := range []string{"mcp", "permission", "feature", "duplicate-inventory", "malformed-inventory", "unchanged"} {
 		t.Run(kind, func(t *testing.T) {
 			c, capture, source, _ := continuationFixture(t, "sidechat")
 			if _, err := c.VerifyContinuation(context.Background(), domain.NewID(), source, ContinueAfterSuccess); err != nil {
@@ -101,7 +107,7 @@ func TestSidechatCompactionRechecksChangedNativeAuthorityBeforeOnceOnlySend(t *t
 
 func TestManagedSidechatRechecksCombinedNativeProfileBeforeInputAndCompaction(t *testing.T) {
 	for _, operation := range []string{"input", "steer", "compaction"} {
-		for _, drift := range []string{"mcp", "permission", "feature", "provider", "authentication", "unchanged"} {
+		for _, drift := range []string{"mcp", "permission", "feature", "provider", "authentication", "duplicate-inventory", "malformed-inventory", "unchanged"} {
 			t.Run(operation+"/"+drift, func(t *testing.T) {
 				t.Setenv("DELIDEV_CODEX_MANAGED_SIDECHAT", "1")
 				c, capture, source, _ := continuationFixture(t, "sidechat")

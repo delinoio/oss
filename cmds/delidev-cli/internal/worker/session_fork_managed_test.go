@@ -86,10 +86,20 @@ func runManagedSidechatProcess(home string) bool {
 			write(req.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}, "features": features, "sandbox_mode": "read-only", "approval_policy": "never", "approvals_reviewer": "user", "allow_login_shell": false, "web_search": "disabled", "notify": []any{}, "mcp_servers": map[string]any{}, "plugins": map[string]any{}, "hooks": map[string]any{}}, "origins": nil, "layers": nil})
 		case "experimentalFeature/list":
 			features := []any{}
+			featureIndexes := map[string]int{}
 			for i, arg := range os.Args {
 				if arg == "-c" && i+1 < len(os.Args) && strings.HasPrefix(os.Args[i+1], "features.") {
 					kv := strings.SplitN(strings.TrimPrefix(os.Args[i+1], "features."), "=", 2)
-					features = append(features, map[string]any{"name": kv[0], "stage": "stable", "displayName": nil, "description": nil, "announcement": nil, "enabled": kv[1] == "true", "defaultEnabled": false})
+					// Native inventory lists each feature once with its effective value,
+					// even when independent authority layers repeat the same override.
+					// Keep duplicate-inventory rejection in the real client intact.
+					entry := map[string]any{"name": kv[0], "stage": "stable", "displayName": nil, "description": nil, "announcement": nil, "enabled": kv[1] == "true", "defaultEnabled": false}
+					if index, exists := featureIndexes[kv[0]]; exists {
+						features[index] = entry
+					} else {
+						featureIndexes[kv[0]] = len(features)
+						features = append(features, entry)
+					}
 				}
 			}
 			write(req.ID, map[string]any{"data": features, "nextCursor": nil})
