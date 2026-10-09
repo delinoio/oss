@@ -9,7 +9,10 @@ use std::{
 
 use delidev_desktop::{
     NativeFailure, canonical_id,
-    notifications::{self, Notice, Permission, PermissionProblem, PresentationResult, Readiness},
+    notifications::{
+        self, Notice, NotificationKind, Permission, PermissionProblem, PresentationResult,
+        Readiness,
+    },
 };
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_runtime_cef::CefRuntime;
@@ -375,12 +378,13 @@ impl NotificationHost {
                     );
                     break;
                 };
+                let mut suppress_restoration = false;
                 if matches!(
                     observed,
                     delidev_desktop::notification_connection::Observation::AuthenticatedSuccess { .. }
                 ) {
                     match ledger.acknowledged(&observed) {
-                        Ok(true) => transitions = Default::default(),
+                        Ok(true) => suppress_restoration = true,
                         Ok(false) => {}
                         Err(_) => break,
                     }
@@ -389,6 +393,9 @@ impl NotificationHost {
                     Ok(v) => v,
                     Err(_) => break,
                 };
+                let edge = edge.filter(|kind| {
+                    !(suppress_restoration && *kind == NotificationKind::ServerRestored)
+                });
                 if let Some(kind) = edge {
                     if host.current(&validated_target.label, &validated_target.scope) {
                         let target = validated_target;

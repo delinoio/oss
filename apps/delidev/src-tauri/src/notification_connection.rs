@@ -188,9 +188,9 @@ impl Ledger {
             lost: *lost,
             restored: *restored,
         };
-        let mut reset_baseline = true;
+        let mut suppress_restoration = true;
         if let Some(previous) = self.preferences()? {
-            reset_baseline = previous.lost != next.lost || previous.restored != next.restored;
+            suppress_restoration = !previous.restored && next.restored;
             if previous.revision > generation || previous.revision == generation && previous != next
             {
                 return Err(NativeFailure::InvalidEvidence);
@@ -208,7 +208,7 @@ impl Ledger {
             .map_err(|_| NativeFailure::StorageUnavailable)
             .and_then(|_| sync_directory(&self.directory));
         let _ = fs::remove_file(&temporary);
-        result.map(|()| reset_baseline)
+        result.map(|()| suppress_restoration)
     }
 
     fn preferences(&self) -> Result<Option<Preferences>, NativeFailure> {
@@ -413,6 +413,53 @@ mod tests {
             None
         );
     }
+    #[test]
+    fn connection_choices_have_independent_future_checkpoints() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("ledger");
+        private_directory(&directory).unwrap();
+        let ledger = Ledger {
+            directory,
+            key: "fixture".into(),
+            server: uuid::Uuid::now_v7().to_string(),
+            client: uuid::Uuid::now_v7().to_string(),
+        };
+        let initial = success(&ledger.server);
+        assert!(ledger.acknowledged(&initial).unwrap());
+        let change =
+            |revision: &str, lost: bool, restored: bool| Observation::AuthenticatedSuccess {
+                server_id: ledger.server.clone(),
+                revision: Some(revision.into()),
+                lost: Some(lost),
+                restored: Some(restored),
+            };
+        // Disabling loss must not suppress the independently enabled recovery.
+        assert!(!ledger.acknowledged(&change("2", false, true)).unwrap());
+        assert!(
+            ledger
+                .reserve(NotificationKind::ServerLost)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            ledger
+                .reserve(NotificationKind::ServerRestored)
+                .unwrap()
+                .is_some()
+        );
+        assert!(!ledger.acknowledged(&change("3", false, false)).unwrap());
+        // The success acknowledging a newly enabled recovery is its checkpoint.
+        assert!(ledger.acknowledged(&change("4", false, true)).unwrap());
+        assert!(!ledger.acknowledged(&change("4", false, true)).unwrap());
+        let cached = Observation::AuthenticatedSuccess {
+            server_id: ledger.server.clone(),
+            revision: None,
+            lost: None,
+            restored: None,
+        };
+        assert!(!ledger.acknowledged(&cached).unwrap());
+    }
+
     #[test]
     fn acknowledged_generation_and_immutable_reservation_survive_reopen() {
         let root = tempfile::tempdir().unwrap();
