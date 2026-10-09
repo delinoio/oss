@@ -46,6 +46,8 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const control = vi.fn(async () => ({ change: { session } }));
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
+  const getResource = vi.fn((request: { id: string; kind: EntityKind }) => ({ resource: retained.get(request.id) }));
+
   const listQueue = vi.fn((_request: { pageToken: string }) => ({ inputs: queueInputs(id), nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
@@ -58,7 +60,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     router.service(SessionService, { listQueue, getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
-      getResource: request => ({ resource: retained.get(request.id) }),
+      getResource,
       listResources: request => terminalMode && request.filter?.kind === EntityKind.TERMINAL ? { resources: terminals } : list(request),
       async *watchEvents(_request, context) {
         while (!context.signal.aborted) {
@@ -74,7 +76,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
   const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionNameEditorProvider><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></SessionNameEditorProvider></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, listQueue, enqueue, rename, control, recover, budget, draft, list, publish, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
+  return { session, client, view, listQueue, enqueue, rename, control, recover, budget, draft, list, publish, getResource, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -428,6 +430,22 @@ it("verified terminal removal skips intervening Files and selects the original l
   expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
   expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
+});
+
+
+it.each(["succeeded", "failed", "canceled"])("does not observe Worker presence for terminal %s retained startup history", async outcome => {
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{outcome,machine_id:newRequestId(),startup_progress:{workspace:{job_id:newRequestId()}}});
+ const mounted=render(f.view());
+ try {
+  await screen.findByRole("heading",{name:"Original session"});
+  // The existing Session machine reader still owns its one ordinary read.
+  expect(f.getResource.mock.calls.filter(([request])=>request.kind===EntityKind.MACHINE)).toHaveLength(1);
+  const machineId=readDocument(f.session).machine_id as string;
+  const machineQueries=f.client.getQueryCache().findAll().filter(query=>JSON.stringify(query.queryKey).includes(machineId));
+  const observers=machineQueries.flatMap(query=>query.observers);
+  expect(observers.some(observer=>observer.options.enabled===false && observer.options.refetchInterval===false)).toBe(true);
+  expect(observers.every(observer=>observer.options.refetchInterval!==5000)).toBe(true);
+ } finally { mounted.unmount();f.client.clear(); }
 });
 
 it("reveals an arrival and hides its final claim without replacing composer or sending", async () => {

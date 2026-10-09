@@ -89,3 +89,12 @@ Optional user-service controllers use process-birth observation for identity che
 ## Desktop host and independent Workers
 
 The resident desktop CLI has a separate original-child lifetime from Worker-launched execution scopes. The native main process owns its kill-on-close Windows Job, persistent Linux spawning thread/parent-death signal and macOS original-parent/pipe observer. Independent detached Workers remain outside this containment and retain their original execution cleanup authority. App loss terminates only its resident CLI/internal server; forced termination leaves native cleanup uncertainty visible. Explicit fixed Local Workers may follow the same-server execution locator without changing immutable registration or selected outbound policy; Saved/remote Workers cannot. Follow the [desktop lifetime boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).
+
+## Descriptive interactive startup observations
+
+Issue #2120 permits a transient nonblocking observer on the original interactive
+child. Launch begins at its actual owned creation boundary and completes only
+after its original Resume succeeds; initialization begins then and is confirmed
+only by the adapter's validated native response. This callback is excluded from
+serialization and noninteractive Run helpers. It cannot release the barrier,
+change cancellation, input/cleanup authority, ownership journals or return values.
