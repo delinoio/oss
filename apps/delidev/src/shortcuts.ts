@@ -4,11 +4,12 @@ import type { MessageKey } from "./localization";
 import { Surface } from "./surface";
 
 export enum ShortcutScope { Global = "global" }
-export enum ShortcutId { Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
+export enum ShortcutId { CommandMenu = "command-menu", Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
 export enum ShortcutInput { Ignore = "ignore", Allow = "allow", Target = "target" }
 export enum ShortcutExecution { Action = "action", Native = "native" }
 export enum ShortcutPlatform { Mac = "mac", Other = "other" }
 export const globalShortcutBindings = {
+  [ShortcutId.CommandMenu]: [{ key: "k", primary: true }],
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
 } as const;
@@ -60,13 +61,14 @@ function editable(node: Element): boolean {
   return Boolean(node.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'));
 }
 export interface ShortcutHelpDispatch { dialog: HTMLDialogElement; beforeRun: () => void }
-export function dispatchShortcut(event: KeyboardEvent, definitions: readonly ShortcutDefinition[], surface: Surface, platform: ShortcutPlatform, local = false, help?: ShortcutHelpDispatch): boolean {
+export function dispatchShortcut(event: KeyboardEvent, definitions: readonly ShortcutDefinition[], surface: Surface, platform: ShortcutPlatform, local = false, help?: ShortcutHelpDispatch, menu?: HTMLDialogElement): boolean {
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.getModifierState?.("AltGraph")) return false;
   const node = event.target instanceof Element ? event.target : document.activeElement;
   if (!node || node.closest('[data-shortcuts="passthrough"], [hidden], [inert]')) return false;
+  const fromMenu = Boolean(menu?.open && menu.contains(node));
   const fromHelp = Boolean(help?.dialog.open && help.dialog.contains(node));
-  if (shortcutModalVisible(fromHelp ? help!.dialog : undefined)) return false;
-  const candidates = definitions.filter(item => item.active !== false && (item.scope === ShortcutScope.Global || item.scope === surface) && (!local || item.target) && (!fromHelp || !item.target) && (!item.target || (availableShortcutTarget(item.target.current) && item.target.current!.contains(node))) && (!editable(node) || item.input === ShortcutInput.Allow || (item.input === ShortcutInput.Target && item.target?.current?.contains(node))) && item.bindings.some(binding => bindingMatches(event, binding, platform)));
+  if (shortcutModalVisible(fromMenu ? menu : fromHelp ? help!.dialog : undefined)) return false;
+  const candidates = definitions.filter(item => item.active !== false && (!fromMenu || item.id === ShortcutId.CommandMenu) && (item.scope === ShortcutScope.Global || item.scope === surface) && (!local || item.target) && (!fromHelp || (!item.target && item.id !== ShortcutId.CommandMenu)) && (!item.target || (availableShortcutTarget(item.target.current) && item.target.current!.contains(node))) && (!editable(node) || item.input === ShortcutInput.Allow || (item.input === ShortcutInput.Target && item.target?.current?.contains(node))) && item.bindings.some(binding => bindingMatches(event, binding, platform)));
   const priority = (item: ShortcutDefinition) => item.target ? 2 : item.scope === ShortcutScope.Global ? 0 : 1;
   const highest = Math.max(-1, ...candidates.map(priority));
   const matches = candidates.filter(item => priority(item) === highest);

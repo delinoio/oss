@@ -1,0 +1,1 @@
+Original MIT terms for the installed Radix UI dependency family: primitive, react-compose-refs, react-context, react-dialog, react-dismissable-layer, react-focus-guards, react-focus-scope, react-id, react-portal, react-presence, react-primitive, react-slot, react-use-callback-ref, react-use-controllable-state, react-use-effect-event, react-use-layout-effect.

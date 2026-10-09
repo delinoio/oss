@@ -2,7 +2,7 @@
 import { SettingsActionScope, SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureDensity, DisclosureDensityScope } from "./disclosure";
 import { SettingsCategory } from "./settings-category";
-import { SettingsSearch, SettingsSearchFocus, type SettingsSearchRequest } from "./settings-search";
+import { SettingsSearch, SettingsSearchFocus, SettingsSearchTarget, type SettingsSearchRequest } from "./settings-search";
 import { AgentWorkerRow } from "./agent-worker-row";
 import { AgentWorkerMetadataProvider } from "./agent-worker-models";
 import { useRunnerRemediation } from "./runner-remediation";
@@ -227,12 +227,13 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
   </>;
 }
 
+export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string };
 export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
 
 enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
 
-const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
+export const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.KeyboardShortcuts]: { get label() { return copy("shortcuts.title"); }, get description() { return copy("shortcut-settings.scope"); }, area: SettingsArea.KeyboardShortcuts },
   [SettingsCategory.Appearance]: { get label() { return copy("settings.appearance_3907fa"); }, get description() { return copy("settings.savedOnThisComputer_11cb50"); }, area: SettingsArea.Appearance },
   [SettingsCategory.Backups]: { get label() { return copy("settings.backups_3334fe"); }, get description() { return copy("settings.inspectManagedDatabaseImagesAndFollow_b28b20"); }, area: SettingsArea.Backups },
@@ -254,7 +255,7 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.Transfer]: { get label() { return copy("settings.importExport_6e061f"); }, get description() { return copy("settings.moveConfigurationBetweenDelidevServers_749ed7"); }, area: SettingsArea.Transfer },
 };
 
-const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
+export const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
   { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
   { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations, SettingsCategory.GitWorkflow] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
@@ -290,13 +291,14 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 }
 
 
-interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsEntryDestination; destinationConsumed?: () => void }
+interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsNavigationEntry; destinationConsumed?: () => void }
 enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount }
 type SettingsCategoryEntry = { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
 interface SettingsSelection { category: SettingsCategory; key: string; entry?: SettingsCategoryEntry }
 type NavigateSettings = (category: SettingsCategory, entry?: SettingsCategoryEntry) => void;
 
-function entrySelection(destination?: SettingsEntryDestination): SettingsSelection {
+function entrySelection(destination?: SettingsNavigationEntry): SettingsSelection {
+  if (typeof destination === "object") return { category: destination.category, key: newRequestId() };
   return { category: destination === SettingsEntryDestination.GitProfiles ? SettingsCategory.Integrations : destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
 }
 
@@ -311,7 +313,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   const [selection, setSelection] = useState(() => entrySelection(entryDestination));
   const initialDestination = useRef(entryDestination);
-  const handledDestination = useRef<SettingsEntryDestination | undefined>(undefined);
+  const handledDestination = useRef<SettingsNavigationEntry | undefined>(undefined);
   const navigate = useCallback<NavigateSettings>((category, entry) => {
     setSearchRequest(undefined);
     closeDrawer();
@@ -326,6 +328,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
       const target = entrySelection(entryDestination);
       navigate(target.category, target.entry);
     }
+    if (typeof entryDestination === "object") setSearchRequest({ category: entryDestination.category, target: entryDestination.target ?? SettingsSearchTarget.Category, generation: entryDestination.generation });
     destinationConsumed?.();
   }, [destinationConsumed, entryDestination, navigate]);
   return <>

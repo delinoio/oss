@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.command-menu { box-sizing:border-box; width:min(640px,calc(100vw - 32px)); max-width:none; max-height:calc(100dvh - 32px); padding:16px; margin:auto; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); overflow:hidden; }
+.command-menu::backdrop { background:var(--backdrop); }
+.command-menu header { display:flex; gap:8px; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.command-menu h2 { margin:0; font-size:18px; overflow-wrap:anywhere; }
+.command-menu button,.command-menu [cmdk-input] { min-height:40px; border-radius:8px; }
+.command-menu [cmdk-root] { display:flex; flex-direction:column; min-height:0; }
+.command-menu [cmdk-input] { box-sizing:border-box; width:100%; flex-shrink:0; }
+.command-menu [cmdk-list] { max-height:calc(100dvh - 160px); overflow:auto; overscroll-behavior:contain; }
+.command-menu [cmdk-group-heading] { color:var(--muted); font-size:12px; padding:12px 8px 4px; }
+.command-menu [cmdk-item] { display:flex; flex-direction:column; justify-content:center; min-height:40px; padding:8px; box-sizing:border-box; border-radius:8px; cursor:pointer; overflow-wrap:anywhere; }
+.command-menu [cmdk-item][data-selected="true"] { background:var(--surface-selected); outline:2px solid var(--focus); outline-offset:-2px; }
+.command-menu [cmdk-item][data-disabled="true"] { color:var(--muted); cursor:default; }
+.command-menu [cmdk-item] small { margin-top:4px; }
+.command-menu [cmdk-empty] { padding:16px 8px; }

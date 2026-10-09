@@ -219,4 +219,11 @@ const fixtureTransport = createRouterTransport(router => {
   }) : [], more_machines: false, more_credentials: false }) }; } });
 });
 const transport = fixtureTransport;
+// Isolated command-palette fixture counters observe ordinary destinations only.
+if (args.get("commandPalette") === "true") {
+ const counts = { calls: 0, writes: 0 };
+ const unary = transport.unary;
+ transport.unary = (...parameters) => { counts.calls++; if (/^(create|save|update|submit|confirm)/i.test(parameters[0].name)) counts.writes++; return unary(...parameters); };
+ Object.assign(window, { __commandMenuFixture: counts });
+}
 createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><DateFormatProvider bridge={dateFormatBridge}>{notificationLayout ? <NotificationLayoutFixture transport={transport} /> : <App localServer={<WizardFixtureControls />} transport={transport} pairingAuthority={networkFixture ? { endpoint: "https://fixture.example", serverId } : undefined} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} />}</DateFormatProvider></AppearanceProvider></LanguageProvider>);

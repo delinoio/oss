@@ -13,7 +13,7 @@ import { Workspace, workspaceNames } from "./documents";
 import { Surface } from "./views";
 import { useShortcutHelp, useGlobalShortcutAria } from "./shortcut-provider";
 import { ShortcutId } from "./shortcuts";
-import type { SettingsEntryDestination } from "./settings";
+import type { SettingsNavigationEntry } from "./settings";
 import { ScrollContinuation } from "./scroll-continuation";
 import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
@@ -205,8 +205,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsEntryDestination) => void;
+export function Sidebar({ openCommandMenu, surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
@@ -360,6 +360,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   };
 
   const openShortcutHelp = useShortcutHelp();
+  const commandAria = useGlobalShortcutAria(ShortcutId.CommandMenu);
   const helpAria = useGlobalShortcutAria(ShortcutId.Help);
   const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
   const chooseSession = (id: string) => { openSession(id); setDrawerOpen(false); };
@@ -373,6 +374,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
       <SidebarButton label={copy("sidebar.activity_38da15")} icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
       <SubscriptionRail enabled={connectionReady && !drawerOpen} manage={openSettings} focusFallback={() => rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button")?.focus()} />
+      <button type="button" className="sidebar-rail-button" aria-label={copy("command-menu.title")} aria-keyshortcuts={commandAria} aria-haspopup="dialog" onClick={openCommandMenu}><Icon name="search" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("command-menu.title")} <kbd>{commandAria.startsWith("Meta") ? "⌘ K" : "Ctrl K"}</kbd></span></button>
       <button type="button" className="sidebar-rail-button" aria-label={copy("shortcuts.title")} aria-keyshortcuts={helpAria} aria-haspopup="dialog" onClick={openShortcutHelp}><Icon name="help" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("shortcuts.title")}</span></button>
       <SidebarButton label={copy("sidebar.settings_74a883")} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>

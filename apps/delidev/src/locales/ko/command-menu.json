@@ -1,0 +1,9 @@
+{
+  "command-menu.title": "명령 메뉴",
+  "command-menu.navigate": "이동",
+  "command-menu.create": "만들기",
+  "command-menu.help": "도움말",
+  "command-menu.search": "명령 검색",
+  "command-menu.empty": "검색 결과가 없습니다.",
+  "command-menu.close": "명령 메뉴 닫기"
+}
