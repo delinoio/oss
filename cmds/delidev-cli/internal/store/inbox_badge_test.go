@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,46 @@ func TestUnreadInboxCountZero(t *testing.T) {
 			t.Fatal(count)
 		}
 		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnreadInboxCountUsesReadStateIndex(t *testing.T) {
+	s, _ := openTest(t)
+	if err := s.Read(context.Background(), func(tx *Tx) error {
+		for _, query := range []string{
+			"SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(body,'$.read_state')=?",
+			"SELECT id FROM entities WHERE kind='inbox' AND id>? AND json_extract(body,'$.read_state')=? ORDER BY id LIMIT 51",
+		} {
+			args := []any{domain.InboxUnread}
+			if strings.Contains(query, "id>?") {
+				args = []any{"", domain.InboxUnread}
+			}
+			rows, err := tx.tx.QueryContext(tx.ctx, "EXPLAIN QUERY PLAN "+query, args...)
+			if err != nil {
+				return err
+			}
+			indexed := false
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					rows.Close()
+					return err
+				}
+				indexed = indexed || strings.Contains(detail, "SEARCH entities USING INDEX inbox_read")
+			}
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return err
+			}
+			if !indexed {
+				t.Errorf("read-state query did not seek its original inbox_read index: %s", query)
+			}
+		}
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -209,7 +209,7 @@ func (t *Tx) InboxPage(f InboxFilter) ([]Record, bool, uint64, error) {
 	for _, part := range []struct {
 		column string
 		value  string
-	}{{"session_id", string(f.SessionID)}, {"project_id", string(f.ProjectID)}, {"json_extract(body,'$.source')", string(f.Source)}, {"json_extract(CAST(body AS TEXT),'$.read_state')", string(f.ReadState)}} {
+	}{{"session_id", string(f.SessionID)}, {"project_id", string(f.ProjectID)}, {"json_extract(body,'$.source')", string(f.Source)}, {"json_extract(body,'$.read_state')", string(f.ReadState)}} {
 		if part.value != "" {
 			query += " AND " + part.column + "=?"
 			args = append(args, part.value)
@@ -279,6 +279,6 @@ func (t *Tx) deleteAccountRecoveryInbox(account domain.ID) error {
 // preferences, source joins and delivery claims cannot filter this aggregate.
 func (t *Tx) UnreadInboxCount() (uint64, error) {
 	var count uint64
-	err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(CAST(body AS TEXT),'$.read_state')=?", domain.InboxUnread).Scan(&count)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(body,'$.read_state')=?", domain.InboxUnread).Scan(&count)
 	return count, storageError(err)
 }
