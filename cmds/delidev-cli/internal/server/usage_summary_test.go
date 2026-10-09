@@ -26,7 +26,7 @@ func TestUsageRPCDeduplicatedSnapshotDefaultsFiltersAndPrivacy(t *testing.T) {
 	e.ObservationID = domain.NewID()
 	f.publish(t, e)
 	c := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
-	request := &pb.GetUsageSummaryRequest{AccountId: string(f.input.AccountID), ModelId: string(f.input.Configuration.ModelID)}
+	request := &pb.GetUsageSummaryRequest{AccountId: string(f.input.AccountID), Model: wireModel(domain.ModelIdentity{ProviderID: f.input.Configuration.ProviderID, SubscriptionService: f.input.Configuration.SubscriptionService, NativeID: f.input.Configuration.NativeModel})}
 	response, err := c.GetUsageSummary(context.Background(), ownerRequest(f.service.Identity, request))
 	if err != nil {
 		t.Fatal(err)
