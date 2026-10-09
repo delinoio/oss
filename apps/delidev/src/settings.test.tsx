@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import { copy, i18n, SupportedLanguage } from "./localization";
 import { RepositoryRow } from "./repository-list";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
@@ -1191,4 +1192,32 @@ it("keeps confirmed provider switches and layout content through delayed off/on 
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(original.getAttribute("aria-checked")).toBe("true");
   expect(screen.getByRole("switch", { name: "Turn off OpenAI" })).toBe(original);
+});
+
+it.each(Object.values(SupportedLanguage))("shows API provider guidance once with exact and unavailable counts in %s", async language => {
+  const custom = resource(EntityKind.PROVIDER, { name: "Custom fixture", enabled: true });
+  const entries = [
+    create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, displayName: "Hosted fixture", enabled: true, accountCountsAvailable: true }),
+    create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OLLAMA, displayName: "Local fixture", enabled: true, connectedAccounts: 1n, totalAccounts: 2n, accountCountsAvailable: true }),
+    create(ProviderInventoryEntrySchema, { providerId: custom.id, provider: custom, displayName: "Custom fixture", enabled: true, accountCountsAvailable: false }),
+  ];
+  const value = fixture([custom], { providerEntries: entries });
+  render(value.view(<Settings visible />));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  await screen.findByText("Custom fixture", { selector: '.api-provider-name span' });
+  await act(async () => { await i18n.changeLanguage(language); });
+  const guidance = copy("provider-model-settings.connectionGuidance");
+  expect(screen.getAllByText(guidance)).toHaveLength(1);
+  const paragraph = screen.getByText(guidance), search = screen.getByRole("textbox", { name: copy("provider-model-settings.searchApiProviders_1b03d9") });
+  expect(paragraph.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(paragraph.closest("article")).toBeNull();
+  for (const [name, count] of [["Hosted fixture", copy("provider-model-settings.sentence.490d50c6611c", { v0: "0", v1: "0" })], ["Local fixture", copy("provider-model-settings.sentence.490d50c6611c", { v0: "1", v1: "2" })], ["Custom fixture", copy("provider-model-settings.extra.555765b26ebc")]]) {
+    const row = screen.getByText(name, { selector: '.api-provider-name span' }).closest("article")!;
+    expect(row.textContent).toContain(count);
+    expect(row.textContent).not.toContain(guidance);
+  }
+  fireEvent.change(search, { target: { value: "no-match" } });
+  expect(screen.getAllByText(guidance)).toHaveLength(1);
+  expect(value.connect).not.toHaveBeenCalled();
+  expect(value.save).not.toHaveBeenCalled();
 });
