@@ -11755,6 +11755,14 @@
     {
       "issue": 2138,
       "kind": "message",
+      "declaration": "SetTokenPricingModeRequest",
+      "member": "expected_revision",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
       "declaration": "SetTokenPricingModeResponse",
       "member": "current",
       "number": 1,
