@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { resolve } from "node:path";
-import { type Transport } from "@connectrpc/connect";
+import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { EntityKind, SystemCapability } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceService, SystemCapability } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { useSettingsFixture } from "./settings-test-fixture";
@@ -45,7 +45,11 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   // Each save crosses the real Go mutation and list refetch. Use the ordinary
   // one-second wait only if this fixture stops exercising the native server.
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Real server profile" }, { timeout: 15000 }));
+  await screen.findByRole("heading", { name: "Real server profile" }, { timeout: 15000 });
+  const profiles = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.INTEGRATION } });
+  const savedProfile = profiles.resources.find(value => JSON.parse(new TextDecoder().decode(value.documentJson)).name === "Real server profile");
+  expect(savedProfile).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: `Rename Real server profile · ${savedProfile!.id}` }, { timeout: 15000 }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 15000 });

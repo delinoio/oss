@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useEffect, useId } from "react";
 import { useInfiniteQuery, useQuery } from "@connectrpc/connect-query";
 import { APIFormatId, APIAuthenticationId, apiFormat, apiFormatLabels, apiFormatProfile, apiFormatToWire, providerAPIFormats, accountAPIProfile, AccountTypeFilter, EntityKind, ProviderInventoryCapability, ProviderQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
@@ -65,7 +66,7 @@ export function ProviderAPIFormatFields({ data, change, active, initial, saveBlo
     {!ready ? <p role="status">{inventory.isFetching ? copy("configuration-fields.loadingApiFormats") : copy("configuration-fields.apiFormatsUnavailable")}</p> : null}
     {initial && !referencesReady ? <p role="status">{copy("configuration-fields.apiProfileReferencesUnavailable")}</p> : null}
     <Problem error={inventory.error || referencesError} />
-    {inventory.error || referencesError || keepsKey && generations.data && !generationsValid ? <button type="button" onClick={() => { void inventory.refetch(); if (initial) { references.forEach(({ query }) => { void query.refetch(); }); if (keepsKey) void generations.refetch(); } }}>{copy("configuration-fields.retryApiFormats")}</button> : null}
+    {inventory.error || referencesError || keepsKey && generations.data && !generationsValid ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={() => { void inventory.refetch(); if (initial) { references.forEach(({ query }) => { void query.refetch(); }); if (keepsKey) void generations.refetch(); } }}>{copy("configuration-fields.retryApiFormats")}</SettingsActionButton> : null}
   </section>;
 }
 

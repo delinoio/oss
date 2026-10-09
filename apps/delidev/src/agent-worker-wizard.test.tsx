@@ -58,7 +58,7 @@ function fixture(capabilities = [SystemCapability.AGENT_WORKER_WIZARD_V1, System
 async function start(value: ReturnType<typeof fixture>, edit = false, transport = value.transport) {
   render(value.view(transport));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  fireEvent.click(edit ? await screen.findByRole("button", { name: "Edit Existing Worker" }) : screen.getByRole("button", { name: "New Agent Worker" }));
+  fireEvent.click(edit ? await screen.findByRole("button", { name: `Edit Existing Worker · ${value.agent.id}` }) : screen.getByRole("button", { name: "New Agent Worker" }));
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
 }
 const confirmHarness = (name = "Codex") => fireEvent.click(screen.getByRole("radio", { name }));
@@ -671,7 +671,7 @@ it("prefills edits, preserves hidden options and exact uncertain requests across
   value.save.mockImplementationOnce(async () => { throw new ConnectError("Lost acknowledgement", Code.Unavailable); });
   value.save.mockImplementation(async request => ({ requestId: request.mutation!.requestId, resource: value.agent }));
   const view = render(value.view());
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(await screen.findByRole("button", { name: "Edit Existing Worker" }));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(await screen.findByRole("button", { name: `Edit Existing Worker · ${value.agent.id}` }));
   await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
   confirmHarness(); await waitFor(() => expect(scrollChoiceValue(sourceChoice("Account source"))).toBe(`api:${value.provider.id}`));
   (await screen.findAllByText("1 accounts selected"))[0]; next(); next();

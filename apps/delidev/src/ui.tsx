@@ -1,3 +1,4 @@
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale, type MessageKey } from "./localization";
 import { useLayoutEffect, useId, useRef, type ReactNode, type RefObject, type ComponentPropsWithRef } from "react";
@@ -60,13 +61,13 @@ export function Modal({ title, close, children, visible = true, className, initi
     const focus = document.activeElement;
     if (!event.currentTarget.contains(focus) || (event.shiftKey ? focus === first : focus === last)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
   }}>
-    <header><h2 id={id}>{title}</h2><button ref={closeButton} type="button" onClick={close} aria-label={copy("ui.close_0fbe2a", { v0: title })}>{copy("ui.close_7d9eb7")}</button></header>
+    <header><h2 id={id}>{title}</h2><SettingsActionButton icon={SettingsActionIcon.Cancel} ref={closeButton} type="button" onClick={close} aria-label={copy("ui.close_0fbe2a", { v0: title })}>{copy("ui.close_7d9eb7")}</SettingsActionButton></header>
     {children}
   </DialogSurface>;
 }
 export function More({ available, busy, load }: { available: boolean; busy: boolean; load: () => void }) {
   useLocale();
-  return available ? <button disabled={busy} onClick={load}>{busy ? copy("ui.loading_ba3bbb") : copy("ui.loadMore_ac8991")}</button> : null;
+  return available ? <SettingsActionButton icon={SettingsActionIcon.Inspect} disabled={busy} onClick={load}>{busy ? copy("ui.loading_ba3bbb") : copy("ui.loadMore_ac8991")}</SettingsActionButton> : null;
 }
 
 const failureGuidance: Record<FailureCode, MessageKey> = {

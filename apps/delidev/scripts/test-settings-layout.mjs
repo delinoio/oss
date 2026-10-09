@@ -48,7 +48,7 @@ const screenshotPath = screenshot ? await ensureOutsideCheckout(screenshot) : nu
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
-const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
+const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const wizardAccountsOnly = process.env.DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";

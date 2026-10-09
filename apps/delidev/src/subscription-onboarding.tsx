@@ -1,6 +1,7 @@
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from "./settings-task-context";
 import { SettingsTaskActions } from "./settings-task";
 import { useEffect, useRef, useId } from "react";
@@ -70,7 +71,7 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
     [SubscriptionOnboardingStage.Failed]: copy("subscription-onboarding.extra.a8a3202b6aa5"),
   }[stage];
   return <section className="subscription-account-create subscription-onboarding" aria-label={copy("subscription-onboarding.addAccount_8403fa", { v0: serviceName })}>
-    <button type="button" className="subscription-onboarding-back" disabled={!active} onClick={leave}>{copy("subscription-onboarding.backToAiSubscription_224262")}</button>
+    <SettingsActionButton icon={SettingsActionIcon.Back} type="button" className="subscription-onboarding-back" disabled={!active} onClick={leave}>{copy("subscription-onboarding.backToAiSubscription_224262")}</SettingsActionButton>
     <h2 hidden={inTask}><LocalizedText id="subscription-onboarding.addAccount_2c24d0" components={{ s0: <>{serviceName}</> }} /></h2>
     <ol className="subscription-onboarding-steps" aria-label={copy("subscription-onboarding.accountSetupProgress_269e63")}>
       <li aria-current={!naming ? "step" : undefined}><LocalizedText id="subscription-onboarding.signIn_b011b4" components={{ s0: <>{naming ? <span aria-hidden="true">✓ </span> : null}</> }} /></li>
@@ -93,21 +94,21 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         <div><dt>{copy("subscription-onboarding.errorCode_2c35f6")}</dt><dd>{diagnostic?.code ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
       </dl>
-    } actions={props.inspect ? <button type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</button> : undefined} /> : null}
+    } actions={props.inspect ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</SettingsActionButton> : undefined} /> : null}
     {failed || props.problem ? <LocalConnectionHelp active={active} /> : null}
     {naming ? <form id={`${taskFormId}-1`} onSubmit={(event) => { event.preventDefault(); if (active && !busy && subscriptionNameValid(props.name)) props.saveName(); }}>
       <label htmlFor="subscription-onboarding-name">{copy("subscription-onboarding.accountName_a704d8")}</label>
       <input id="subscription-onboarding-name" ref={nameInput} autoComplete="off" required value={props.name} disabled={!active || busy} onChange={(event) => props.changeName(event.target.value)} aria-describedby="subscription-onboarding-name-help" />
       <p id="subscription-onboarding-name-help">{props.suggested ? copy("subscription-onboarding.suggestedFromYourSignedInAccount_5ddc0f") : copy("subscription-onboarding.chooseANameForYourSigned_6ec79b")}</p>
-      <SettingsTaskActions form={`${taskFormId}-1`} className=""><button className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>{copy("subscription-onboarding.saveAccountName_7c6744")}</button><button type="button" disabled={!active} onClick={leave}>{copy("subscription-onboarding.later_73b6e4")}</button></SettingsTaskActions>
+      <SettingsTaskActions form={`${taskFormId}-1`} className=""><SettingsActionButton icon={SettingsActionIcon.Save} className="primary" disabled={!active || busy || !subscriptionNameValid(props.name)}>{copy("subscription-onboarding.saveAccountName_7c6744")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={!active} onClick={leave}>{copy("subscription-onboarding.later_73b6e4")}</SettingsActionButton></SettingsTaskActions>
     </form> : <>
       {stage === SubscriptionOnboardingStage.Waiting && !props.problem ? <p>{copy("subscription-onboarding.yourBrowserHasOpenedForSign_7b9723")}</p> : null}
       <SettingsTaskActions className="">
-        {props.canReopen ? <button type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>{copy("subscription-onboarding.openBrowserAgain_63833e")}</button> : null}
-        {props.canCancel ? <button type="button" disabled={!active || busy} onClick={props.cancel}>{copy("subscription-onboarding.cancelLogin_8304c3")}</button> : null}
+        {props.canReopen ? <SettingsActionButton icon={SettingsActionIcon.Open} type="button" className="primary" disabled={!active || busy} onClick={props.reopen}>{copy("subscription-onboarding.openBrowserAgain_63833e")}</SettingsActionButton> : null}
+        {props.canCancel ? <SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={!active || busy} onClick={props.cancel}>{copy("subscription-onboarding.cancelLogin_8304c3")}</SettingsActionButton> : null}
       </SettingsTaskActions>
     </>}
-    {props.problem && !failed ? <InlineRemediation summary={<><p>{props.problem}</p><p>{copy("subscription-onboarding.inline.browser")}</p></>} actions={props.inspect ? <button type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</button> : undefined} /> : null}
+    {props.problem && !failed ? <InlineRemediation summary={<><p>{props.problem}</p><p>{copy("subscription-onboarding.inline.browser")}</p></>} actions={props.inspect ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</SettingsActionButton> : undefined} /> : null}
     {(stage !== SubscriptionOnboardingStage.Unsupported || failed) ? <p className="subscription-onboarding-footer">{naming ? copy("subscription-onboarding.yourSignedInAccountIsKept_1d2f83") : copy("subscription-onboarding.leavingThisScreenKeepsTheAccount_e209d9")}</p> : null}
   </section>;
 }

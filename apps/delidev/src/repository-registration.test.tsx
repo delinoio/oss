@@ -166,7 +166,7 @@ it("keeps checkout removal available when editing an existing repository", async
   const f = fixture();
   const repository = row(EntityKind.REPOSITORY, { name: "Existing", checkouts: [{ machine_id: f.machine.id, path: "/existing" }], base: {}, starting: {}, auto_fetch: true });
   f.resources.set(repository.id, repository); f.mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Existing" }));
+  fireEvent.click(await screen.findByRole("button", { name: `Edit Existing · ${repository.id}` }));
   const remove = screen.getByRole("button", { name: "Remove checkout" });
   expect((remove as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByText("Use Change folder to replace this checkout.")).toBeNull();

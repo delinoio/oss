@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Children, Fragment, cloneElement, createContext, isValidElement, useCallback, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskContext, useSettingsTaskDismiss, type SettingsTaskPresentation } from "./settings-task-context";
@@ -213,7 +214,7 @@ function associateForm(children: ReactNode, form?: string, task?: React.ContextT
     // Only explicitly audited dismissal duplicates opt in; marked business or
     // nested cancellation controls keep their existing adaptation.
     if (child.type === SettingsTaskDismissButton && task && !task.stepId) return null;
-    if (child.type !== "button" && child.type !== SettingsTaskDismissButton) return child;
+    if (child.type !== "button" && child.type !== SettingsActionButton && child.type !== SettingsTaskDismissButton) return child;
     const button = child as React.ReactElement<ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }>;
     // Local cancellation remains available while a request is pending. Nested
     // steps keep their own Back/Keep callback and the parent's lifetime.
@@ -229,7 +230,7 @@ function associateForm(children: ReactNode, form?: string, task?: React.ContextT
 // Page cancellation and nested return remain available with their original guards.
 export function SettingsTaskDismissButton(props: ButtonHTMLAttributes<HTMLButtonElement> & { "data-settings-task-cancel"?: boolean }) {
   const task = useContext(SettingsTaskContext);
-  return task && !task.stepId ? null : <button {...props} />;
+  return task && !task.stepId ? null : <SettingsActionButton icon={SettingsActionIcon.Cancel} {...props} />;
 }
 
 export function SettingsTaskActions({ children, className = "", form }: { children: ReactNode; className?: string; form?: string }) {

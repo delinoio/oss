@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
 import { useId, useState } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
@@ -20,7 +21,7 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
   const singleton = ids.length === 1;
   return <article className="project-row project-metadata-row" data-single-repository={singleton || undefined}>
     <header className="project-row-heading"><div className="project-identity"><h3>{name}</h3>{!singleton ? <p>{copy("settings.projectRepositoryCount", { count: ids.length })}</p> : null}</div>
-      <div className="actions"><button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={() => edit(row)}>{copy("settings.edit_464c4f")}</button><button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={() => remove(row)}>{copy("settings.delete_e2d0a5")}</button></div>
+      <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetId={row.id} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={() => edit(row)}>{copy("settings.edit_464c4f")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon} targetId={row.id} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={() => remove(row)}>{copy("settings.delete_e2d0a5")}</SettingsActionButton></div>
     </header>
     <ol id={repositoriesId} className="project-repository-rows">{(expanded ? ids : ids.slice(0, 3)).map((id, index) => {
       const details = metadata.get(id), ready = details?.state === RepositoryDetailsState.Ready;

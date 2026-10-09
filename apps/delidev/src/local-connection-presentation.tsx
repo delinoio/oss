@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { copy, useLocale } from "./localization";
@@ -48,5 +49,5 @@ export function LocalConnectionHelp({ active = true }: { active?: boolean }) {
   const { requestInline, release } = useContext(Presentation);
   const slot = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { const original = slot.current; return () => { if (original) release?.(original); }; }, [release, active]);
-  return active && requestInline ? <><button type="button" onClick={() => { if (slot.current) requestInline(slot.current); }}>{copy("desktop.connectionControls_6f99ea")}</button><div ref={slot} /></> : null;
+  return active && requestInline ? <><SettingsActionButton icon={SettingsActionIcon.Connect} type="button" onClick={() => { if (slot.current) requestInline(slot.current); }}>{copy("desktop.connectionControls_6f99ea")}</SettingsActionButton><div ref={slot} /></> : null;
 }

@@ -4,6 +4,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { useStablePageRevisions, paginationError, invalidGitHubPage, useGitHubCatalog, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
@@ -111,15 +112,15 @@ export function RepositoryGitHubPicker({ active, supported, disabled, choose }: 
   const changeProfile = (id: string) => { setProfile(available.find(row => row.id === id)); setFilter(""); };
   const refreshProfiles = () => { setProfile(undefined); setFilter(""); profiles.refetch(); };
   return <div ref={bindRoot} className="repository-github-picker">
-    {available.length > 0 && !profiles.error && !disabled ? <button ref={opener} type="button" disabled={disabled || profiles.isFetching} aria-haspopup="dialog" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setOpen(true); }}>{copy("repository-github.choose")}</button> : null}
+    {available.length > 0 && !profiles.error && !disabled ? <SettingsActionButton icon={SettingsActionIcon.Inspect} ref={opener} type="button" disabled={disabled || profiles.isFetching} aria-haspopup="dialog" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setOpen(true); }}>{copy("repository-github.choose")}</SettingsActionButton> : null}
     {!visible && profiles.isPending ? <p role="status">{copy("repository-github.checkingProfiles")}</p> : null}
-    {!visible ? <><Problem error={paginationError(profiles.error?.failure)} />{profiles.error ? <button type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshGitHubProfiles")}</button> : null}</> : null}
+    {!visible ? <><Problem error={paginationError(profiles.error?.failure)} />{profiles.error ? <SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshGitHubProfiles")}</SettingsActionButton> : null}</> : null}
     {!visible ? <ScrollContinuation query={profiles} root={root} active={active && !disabled} label={copy("repository-github.profile")} /> : null}
     {visible ? <GitHubRepositoryDialog opener={opener} close={() => setOpen(false)}>
       {profiles.isPending ? <p role="status">{copy("repository-github.checkingProfiles")}</p> : null}<Problem error={paginationError(profiles.error?.failure)} />
       {!supported ? <p role="status">{copy("repository-github.updateServer")}</p> : null}
       <ScrollPicker label={copy("repository-github.profile")} value={profile?.id ?? ""} change={changeProfile} query={profiles} active={visible} disabled={disabled || !supported} placeholder={copy("repository-github.chooseProfile")} options={available.map(row => ({ id: row.id, label: resourceName(row) }))} selectedLabel={profile ? resourceName(profile) : undefined} />
-      <div className="actions"><button type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshProfiles")}</button></div>
+      <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={disabled || profiles.isFetching} onClick={refreshProfiles}>{copy("repository-github.refreshProfiles")}</SettingsActionButton></div>
       {!available.length && !profiles.isPending && !profiles.error ? <p>{copy("repository-github.noProfiles")}</p> : null}
       {profile ? <><label>{copy("repository-github.filter")}<input value={filter} maxLength={200} disabled={disabled} onChange={event => setFilter(event.target.value)} /></label>
         {reading ? <p role="status">{copy("repository-github.loading")}</p> : null}
@@ -134,7 +135,7 @@ export function RepositoryGitHubPicker({ active, supported, disabled, choose }: 
           {traversal.rows.length > 0 && !traversal.rows.some(row => row.label.toLowerCase().includes(filter.toLowerCase())) ? <p>{copy("repository-github.noMatches")}</p> : null}
           <ScrollContinuation query={traversal} root={repositoryRoot} active={visible && !disabled && !stale} label={copy("repository-github.title")} />
         </div>
-        <div className="actions"><button type="button" disabled={disabled || reading || stale || !supported} onClick={traversal.refresh}>{copy("repository-github.refreshRepositories")}</button></div>
+        <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={disabled || reading || stale || !supported} onClick={traversal.refresh}>{copy("repository-github.refreshRepositories")}</SettingsActionButton></div>
       </> : null}
       <p className="repository-github-hint">{copy("repository-github.credentials")}</p>
     </GitHubRepositoryDialog> : null}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { useId } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text } from "./documents";
@@ -27,8 +28,8 @@ export function RepositoryRow({ row, edit, remove }: { row: Resource; edit: () =
       <div className="repository-identity"><h2 id={heading}>{name}</h2>{supported ? <p>{remoteSource ? copy("settings.repositoryRemoteSource") : copy("settings.repositoryCheckoutSource")}</p> : null}</div>
       <span className={`repository-badge${supported && !configured ? " repository-badge-attention" : ""}`}>{!supported ? copy("settings.repositoryUnsupported") : configured ? copy("settings.repositoryGithubConfigured") : copy("settings.repositoryGithubNeedsSetup")}</span>
       <div className="actions repository-manage-actions">
-        <button type="button" disabled={row.schemaVersion !== 1} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={edit}>{copy("settings.edit_464c4f")}</button>
-        <button type="button" className="repository-delete" disabled={row.schemaVersion !== 1} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={remove}>{copy("settings.delete_e2d0a5")}</button>
+        <SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetId={row.id} type="button" disabled={row.schemaVersion !== 1} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={edit}>{copy("settings.edit_464c4f")}</SettingsActionButton>
+        <SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon} targetId={row.id} type="button" className="repository-delete" disabled={row.schemaVersion !== 1} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={remove}>{copy("settings.delete_e2d0a5")}</SettingsActionButton>
       </div>
     </header>
     {supported ? <dl className="repository-metadata">

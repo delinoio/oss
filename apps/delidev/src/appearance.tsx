@@ -1,3 +1,4 @@
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -149,6 +150,6 @@ export function AppearanceSettings() {
     </fieldset>
     <p id="appearance-scope">{copy("appearance.systemFollowsThisComputerSAppearance_edf3db")}</p>
     <p role="status" aria-live="polite">{operation === AppearanceOperation.Reading ? copy("appearance.readingAppearance_04736c") : operation === AppearanceOperation.Saving ? copy("appearance.savingTheme_26a81f") : snapshot.problem ? copy("appearance.appearanceIsNotSavedInspectThe_76382e") : copy("appearance.themeSaved_5d20dd")}</p>
-    {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>{copy("appearance.reloadAppearance_c3f2b4")}</button></> : null}
+    {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={Boolean(operation)} onClick={reload}>{copy("appearance.reloadAppearance_c3f2b4")}</SettingsActionButton></> : null}
   </section>;
 }

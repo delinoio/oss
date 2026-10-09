@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { ProjectRepositoryOrder, RepositorySecondaryID } from "./project-repository-order";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { useCallback, useContext, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -115,7 +116,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
 
         {catalog.loading ? <p role="status">{copy(catalog.rows.length ? "project-creation.loadingMore" : "project-creation.loading")}</p> : null}
         {catalog.complete && !matches.length ? <p role="status">{copy(catalog.rows.length ? "project-creation.noMatches" : "project-creation.empty")}</p> : null}
-        {catalog.error ? <><p role="status">{copy("project-creation.incomplete")}</p>{catalog.error instanceof ProductError ? <p role="alert">{copy(catalog.error.productMessage.key)}</p> : <Problem error={catalog.error} />}<div className="actions"><button type="button" onClick={catalog.retry}>{copy("project-creation.retryRead")}</button><button type="button" onClick={catalog.reload}>{copy("project-creation.reload")}</button></div></> : null}
+        {catalog.error ? <><p role="status">{copy("project-creation.incomplete")}</p>{catalog.error instanceof ProductError ? <p role="alert">{copy(catalog.error.productMessage.key)}</p> : <Problem error={catalog.error} />}<div className="actions"><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={catalog.retry}>{copy("project-creation.retryRead")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={catalog.reload}>{copy("project-creation.reload")}</SettingsActionButton></div></> : null}
         <h4>{copy("project-creation.selectedCount", { count: ids.length })}</h4>{selected(true)}<p>{copy("project-creation.orderHelp")}</p>
       </fieldset>
     </section>
@@ -140,11 +141,11 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     {children}
     <SettingsTaskActions form={formId}>
       <SettingsTaskDismissButton type="button" data-settings-task-cancel disabled={cancelDisabled} onClick={cancel}>{copy("project-creation.cancel")}</SettingsTaskDismissButton>
-      {step !== Step.Repositories ? <button type="button" disabled={blocked} onClick={() => { setProblem(""); setValidationField(undefined); setStep(step - 1); }}>{copy("project-creation.previous")}</button> : null}
-      {uncertain ? <button type="button" disabled={busy} onClick={retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}
+      {step !== Step.Repositories ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={blocked} onClick={() => { setProblem(""); setValidationField(undefined); setStep(step - 1); }}>{copy("project-creation.previous")}</SettingsActionButton> : null}
+      {uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={busy} onClick={retry}>{copy("settings.retryTheSameConfiguration_630088")}</SettingsActionButton> : null}
       {/* Keep the submit button separate: a browser can run the click's default
           action after React turns the clicked Next button into a submit button. */}
-      {step === Step.Restrictions ? <button key="save" type="submit" className="primary" disabled={saveDisabled}>{copy("project-creation.save")}</button> : <button key="next" type="button" className="primary" disabled={blocked || (step === Step.Repositories ? !validRepositories : !configured)} onClick={event => { event.preventDefault(); next(); }}>{copy("project-creation.next")}</button>}
+      {step === Step.Restrictions ? <SettingsActionButton icon={SettingsActionIcon.Save} key="save" type="submit" className="primary" disabled={saveDisabled}>{copy("project-creation.save")}</SettingsActionButton> : <SettingsActionButton icon={SettingsActionIcon.Next} key="next" type="button" className="primary" disabled={blocked || (step === Step.Repositories ? !validRepositories : !configured)} onClick={event => { event.preventDefault(); next(); }}>{copy("project-creation.next")}</SettingsActionButton>}
     </SettingsTaskActions>
   </form>;
 }

@@ -66,7 +66,7 @@ try {
     const productionStyle = async expanded => {
       const style = await opener.evaluate(node => {
         const css = getComputedStyle(node), marker = getComputedStyle(node, "::before"), box = node.getBoundingClientRect();
-        return { border: css.borderTopColor, background: css.backgroundColor, fontSize: css.fontSize, lineHeight: css.lineHeight, fontWeight: css.fontWeight, paddingLeft: css.paddingLeft, paddingRight: css.paddingRight, height: box.height, marker: marker.content, markerGap: marker.marginRight, overflow: node.scrollWidth > node.clientWidth, outlineWidth: css.outlineWidth, outlineStyle: css.outlineStyle, outlineColor: css.outlineColor };
+        return { border: css.borderTopColor, background: css.backgroundColor, fontSize: css.fontSize, lineHeight: css.lineHeight, fontWeight: css.fontWeight, paddingLeft: css.paddingLeft, paddingRight: css.paddingRight, height: box.height, marker: marker.content, markerGap: marker.marginRight, gap: css.gap, chevron: node.querySelector(".disclosure-chevron") ? { transform: getComputedStyle(node.querySelector(".disclosure-chevron")).transform, hidden: node.querySelector(".disclosure-chevron").getAttribute("aria-hidden"), focusable: node.querySelector(".disclosure-chevron").getAttribute("focusable") } : null, overflow: node.scrollWidth > node.clientWidth, outlineWidth: css.outlineWidth, outlineStyle: css.outlineStyle, outlineColor: css.outlineColor };
       });
       const context = JSON.stringify({ language, theme, width, height, expanded, style });
       assert.equal(style.border, "rgba(0, 0, 0, 0)", context);
@@ -74,7 +74,7 @@ try {
       assert.equal(style.fontSize, "16px", context); assert.equal(style.lineHeight, "24px", context); assert.equal(style.fontWeight, "600", context);
       assert.equal(style.paddingLeft, "0px", context); assert.equal(style.paddingRight, "0px", context);
       assert(style.height >= 40 && !style.overflow, context);
-      assert.equal(style.marker, expanded ? '"▾"' : '"▸"', context); assert.equal(style.markerGap, "12px", context);
+      assert.equal(style.marker, "none", context); assert.equal(style.gap, "8px", context); assert(style.chevron, context); assert.equal(style.chevron.hidden, "true", context); assert.equal(style.chevron.focusable, "false", context); assert.equal(style.chevron.transform, expanded ? "matrix(0, 1, -1, 0, 0, 0)" : "none", context);
       assert(Number.parseFloat(style.outlineWidth) >= 2 && style.outlineStyle !== "none" && style.outlineColor !== "rgba(0, 0, 0, 0)", context);
     };
     await page.keyboard.press("Tab"); await opener.focus(); await productionStyle(false); await opener.press("Enter");

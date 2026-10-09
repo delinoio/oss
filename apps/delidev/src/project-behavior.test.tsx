@@ -9,19 +9,23 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceService, ResourceSchema, ConfigurationService, SystemService, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
 import { ProjectBehaviorFields, newConfiguration } from "./configuration-fields";
 import { type Document } from "./documents";
+import { SettingsActionScope } from "./settings-action";
 it("retains explicit disabled overrides and restores continuous global inheritance", async () => {
  const defaults = { ...newConfiguration(EntityKind.SETTINGS), automatic_plan_approval: true };
  const resource = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SETTINGS, revision: 1n, schemaVersion: 2, documentJson: new TextEncoder().encode(JSON.stringify(defaults)) });
  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [resource] }) }));
  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
  function Fixture() { const [data,setData]=useState<Document>({settings:{}});return <><ProjectBehaviorFields data={data} change={setData} active /><output aria-label="retained settings">{JSON.stringify(data.settings)}</output></>; }
- render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Fixture /></QueryClientProvider></TransportProvider>);
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsActionScope><Fixture /></SettingsActionScope></QueryClientProvider></TransportProvider>);
  await waitFor(() => expect(screen.getAllByText("Effective value: Enabled").length).toBe(2));
  fireEvent.change(screen.getByLabelText("Automatically approve native plans"),{target:{value:"disabled"}});
  expect(screen.getByLabelText("retained settings").textContent).toContain('"automatic_plan_approval":"disabled"');
  fireEvent.change(screen.getByLabelText("Pull request remediation policy"),{target:{value:"explicit"}});
  expect(screen.getByLabelText("retained settings").textContent).toContain('"remediation"');
- fireEvent.click(screen.getByRole("button",{name:"Return all settings to global defaults"}));
+ const restore = screen.getByRole("button",{name:"Return all settings to global defaults"});
+ expect(restore.getAttribute("data-settings-action")).toBe("back");
+ expect(restore.getAttribute("data-settings-action-presentation")).toBe("label");
+ fireEvent.click(restore);
  expect(screen.getByLabelText("retained settings").textContent).not.toContain('"remediation"');
  expect(screen.getByLabelText("retained settings").textContent).toContain('"automatic_plan_approval":"inherit"');
  });

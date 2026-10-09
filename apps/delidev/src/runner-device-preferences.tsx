@@ -1,5 +1,6 @@
 import { Problem } from "./ui";
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -105,6 +106,6 @@ export function useRunnerPreference(kind: RunnerWorkflow, active: boolean, eligi
  };
  const remember = (machine: string) => { if (!id.test(machine) || !authority) return; const memory = authority.memory.get(kind) ?? { scope: authority.scope }; memory.machine = machine; memory.pending = machine; authority.memory.set(kind, memory); persist(machine); };
  const touch = () => { touched.current = true; epoch.current++; setReading(false); };
- const guidance = authority ? <>{reading ? <p role="status">{copy("new-session.preferencesResolving")}</p> : null}{problem ? <p role="alert">{creationPreferenceProblemMessage(problem)}</p> : null}{lookupError ? <Problem error={lookupError} /> : null}{!reading && !suggestion && !lookupError ? <p>{copy("runner-preferences.choose")}</p> : null}{problem || lookupError ? <button type="button" disabled={reading} onClick={() => void inspect()}>{copy("new-session.preferencesInspect")}</button> : null}{canRetry ? <button type="button" onClick={() => { const memory = authority?.memory.get(kind); if (memory?.pending) { setCanRetry(false); persist(memory.pending); } }}>{copy("new-session.preferencesSave")}</button> : null}</> : null;
+ const guidance = authority ? <>{reading ? <p role="status">{copy("new-session.preferencesResolving")}</p> : null}{problem ? <p role="alert">{creationPreferenceProblemMessage(problem)}</p> : null}{lookupError ? <Problem error={lookupError} /> : null}{!reading && !suggestion && !lookupError ? <p>{copy("runner-preferences.choose")}</p> : null}{problem || lookupError ? <SettingsActionButton icon={SettingsActionIcon.Save} type="button" disabled={reading} onClick={() => void inspect()}>{copy("new-session.preferencesInspect")}</SettingsActionButton> : null}{canRetry ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={() => { const memory = authority?.memory.get(kind); if (memory?.pending) { setCanRetry(false); persist(memory.pending); } }}>{copy("new-session.preferencesSave")}</SettingsActionButton> : null}</> : null;
  return { suggestion: active && resolvedKey === requestKey ? suggestion : undefined, candidates: active && resolvedKey === requestKey ? candidates : [], resolved: active && resolvedKey === requestKey && !reading, reading, lookupFailed: Boolean(lookupError), touch, remember, guidance, inspect };
 }

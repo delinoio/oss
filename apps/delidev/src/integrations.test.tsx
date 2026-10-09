@@ -7,6 +7,7 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, ErrorDetailSchema, IntegrationService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { Integrations } from "./integrations";
 import { MutationIntents } from "./mutation";
+import { SettingsActionScope } from "./settings-action";
 import { document as profileDocument, encode } from "./documents";
 
 function fixture() {
@@ -267,4 +268,16 @@ it.each(["Rename Work", "Manage Work"])("pauses the original profile inventory b
   await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(f.list).toHaveBeenCalledTimes(reads); expect(row.isConnected).toBe(true);
   expect(f.save).not.toHaveBeenCalled(); expect(f.replace).not.toHaveBeenCalled();
+});
+
+it("pins a paged profile Rename action to its original identity without observing other pages", async () => {
+ const f = fixture();
+ render(<SettingsActionScope>{f.view()}</SettingsActionScope>);
+ const rename = await screen.findByRole("button", { name: `Rename Work · ${f.profile.id}` });
+ expect(rename.getAttribute("data-settings-action-presentation")).toBe("icon");
+ const reads = f.list.mock.calls.length;
+ fireEvent.click(rename);
+ expect(screen.getByRole("textbox", { name: "Profile name" }).getAttribute("value")).toBe("Work");
+ expect(f.list).toHaveBeenCalledTimes(reads);
+ expect(f.save).not.toHaveBeenCalled();
 });

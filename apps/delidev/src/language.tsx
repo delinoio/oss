@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -230,7 +231,7 @@ export function LanguageSettings() {
     <p id={`${id}-help`} className="language-sr-only">{copy("language.searchHelp")}</p>
     <p id={`${id}-scope`}>{copy("language.scope")}</p>
     <p role="status" aria-live="polite">{copy(operation === LanguageOperation.Reading ? "language.reading" : operation === LanguageOperation.Saving ? "language.saving" : snapshot.problem ? "language.notSaved" : "language.saved")}</p>
-    {snapshot.problem ? <><p role="alert">{copy(problemMessages[snapshot.problem])}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>{copy("language.reload")}</button></> : null}
-    {snapshot.widget_problem ? <><p role="alert">{copy("language.widgetFailed")}</p>{!snapshot.problem ? <button type="button" disabled={Boolean(operation)} onClick={reload}>{copy("language.reload")}</button> : null}</> : null}
+    {snapshot.problem ? <><p role="alert">{copy(problemMessages[snapshot.problem])}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={Boolean(operation)} onClick={reload}>{copy("language.reload")}</SettingsActionButton></> : null}
+    {snapshot.widget_problem ? <><p role="alert">{copy("language.widgetFailed")}</p>{!snapshot.problem ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={Boolean(operation)} onClick={reload}>{copy("language.reload")}</SettingsActionButton> : null}</> : null}
   </section>;
 }

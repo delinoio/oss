@@ -1,3 +1,4 @@
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useId, type ReactNode } from "react";
@@ -45,9 +46,9 @@ export function RemediationPolicyFields({ value, change, children, presentation 
           <label><LocalizedText id="remediation-policy.selectorGithubNodeId_0ffe19" components={{ s0: <>{index + 1}</> }} /><input required maxLength={256} value={text(selector.node_id)} onChange={event => update(index, { ...selector, node_id: event.target.value })} /></label>
           <p>{copy("remediation-policy.useTheExactIdsFromVerified_267b6d")}</p>
         </>}
-        <button type="button" onClick={() => field("reviewer_selectors", selectors.filter((_, i) => i !== index))}><LocalizedText id="remediation-policy.removeReviewerSelector_b485a1" components={{ s0: <>{index + 1}</> }} /></button>
+        <SettingsActionButton icon={SettingsActionIcon.Delete} type="button" onClick={() => field("reviewer_selectors", selectors.filter((_, i) => i !== index))}><LocalizedText id="remediation-policy.removeReviewerSelector_b485a1" components={{ s0: <>{index + 1}</> }} /></SettingsActionButton>
       </fieldset></li>)}</ol>
-      <button type="button" disabled={selectors.length >= 100} onClick={() => field("reviewer_selectors", [...selectors, { kind: ReviewerSelectorKind.User, id: "", node_id: "" }])}>{copy("remediation-policy.addReviewerSelector_c0a36d")}</button>
+      <SettingsActionButton icon={SettingsActionIcon.Add} type="button" disabled={selectors.length >= 100} onClick={() => field("reviewer_selectors", [...selectors, { kind: ReviewerSelectorKind.User, id: "", node_id: "" }])}>{copy("remediation-policy.addReviewerSelector_c0a36d")}</SettingsActionButton>
     </fieldset>
   </>;
   return <fieldset><legend>{copy("remediation-policy.pullRequestRemediationPolicy_98e643")}</legend>
