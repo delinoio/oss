@@ -4,6 +4,7 @@ package worker
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -21,7 +22,8 @@ func TestNativeImageGenerationPreservesOriginalNegotiatedMachineCapabilities(t *
 		{"duplicate original capability", []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NativeImageGenerationV1, domain.RemoteWorkspaceCloneV1}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			machine := domain.Machine{Name: "Original Worker", OS: "linux", Architecture: "amd64", WorkerCapabilities: test.capabilities}
+			observed := time.Now().UTC()
+			machine := domain.Machine{HeartbeatObservedAt: &observed, Name: "Original Worker", OS: "linux", Architecture: "amd64", WorkerCapabilities: test.capabilities}
 			raw, err := json.Marshal(machine)
 			if err != nil {
 				t.Fatal(err)

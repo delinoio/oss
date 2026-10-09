@@ -119,7 +119,7 @@ func TestMachineResourceProjectsOnlyOriginalWorkerHeartbeat(t *testing.T) {
 		t.Fatal(err)
 	}
 	var bundle map[string]json.RawMessage
-	if json.Unmarshal(exported.Msg.DocumentJson, &bundle) != nil || bytes.Contains(bundle["machines"], []byte("last_seen")) || bytes.Contains(bundle["machines"], []byte("instance")) {
+	if json.Unmarshal(exported.Msg.DocumentJson, &bundle) != nil || bytes.Contains(bundle["machines"], []byte("heartbeat_observed_at")) || bytes.Contains(bundle["machines"], []byte("last_seen")) || bytes.Contains(bundle["machines"], []byte("instance")) {
 		t.Fatal("portable export adopted runtime liveness")
 	}
 }
@@ -145,5 +145,42 @@ func TestMachineHeartbeatProjectionMissingMalformedAndFutureRemainUnknown(t *tes
 		if _, err := machineHeartbeatProjection(record, domain.NewID(), now, now); domain.SafeError(err).Code != domain.RecoveryRequired {
 			t.Fatal("malformed source presented live")
 		}
+	}
+}
+
+func TestMachineHeartbeatProjectionPreservesStrictTypedConsumers(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	original := domain.Machine{Name: "Original Runner", OS: "linux", Architecture: "amd64", LastSeen: now.Add(-time.Hour)}
+	raw, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := store.Record{Kind: domain.MachineKind, Data: raw}
+	projected, err := machineHeartbeatProjection(record, domain.NewID(), now.Add(-5*time.Second), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var machine domain.Machine
+	if err := domain.Decode(projected.Data, &machine); err != nil {
+		t.Fatal("original typed consumer rejected projected Machine", err)
+	}
+	if err := machine.Validate(); err != nil {
+		t.Fatal("descriptive observation changed original Machine validity", err)
+	}
+	if machine.HeartbeatObservedAt == nil || !machine.HeartbeatObservedAt.Equal(now) || !machine.LastSeen.Equal(now.Add(-5*time.Second)) {
+		t.Fatal("lost same-read server clock metadata")
+	}
+	if !bytes.Equal(record.Data, raw) || original.HeartbeatObservedAt != nil {
+		t.Fatal("projection changed original stored Machine")
+	}
+	unknown := append([]byte(nil), projected.Data...)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(unknown, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["unknown_machine_authority"] = json.RawMessage(`true`)
+	unknown, _ = json.Marshal(fields)
+	if domain.Decode(unknown, &machine) == nil {
+		t.Fatal("typed compatibility relaxed closed unknown-field rejection")
 	}
 }

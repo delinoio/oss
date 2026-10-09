@@ -781,16 +781,18 @@ type Installation struct {
 	Protocol         *ProtocolObservation `json:"protocol,omitempty"`
 }
 type Machine struct {
-	Network            *WorkerNetworkState `json:"network,omitempty"`
-	Name               string              `json:"name"`
-	OS                 string              `json:"os"`
-	Architecture       string              `json:"architecture"`
-	Version            string              `json:"version"`
-	Installations      []Installation      `json:"installations"`
-	WorkerCapabilities []WorkerCapability  `json:"worker_capabilities,omitempty"`
-	DiscoveryRevision  uint64              `json:"discovery_revision,omitempty"`
-	LastSeen           time.Time           `json:"last_seen"`
-	Disabled           bool                `json:"disabled"`
+	// HeartbeatObservedAt is transient server-clock read metadata, never lease authority.
+	HeartbeatObservedAt *time.Time          `json:"heartbeat_observed_at,omitempty"`
+	Network             *WorkerNetworkState `json:"network,omitempty"`
+	Name                string              `json:"name"`
+	OS                  string              `json:"os"`
+	Architecture        string              `json:"architecture"`
+	Version             string              `json:"version"`
+	Installations       []Installation      `json:"installations"`
+	WorkerCapabilities  []WorkerCapability  `json:"worker_capabilities,omitempty"`
+	DiscoveryRevision   uint64              `json:"discovery_revision,omitempty"`
+	LastSeen            time.Time           `json:"last_seen"`
+	Disabled            bool                `json:"disabled"`
 }
 
 func (m Machine) Validate() error {

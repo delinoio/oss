@@ -3554,7 +3554,9 @@ Detailed startup presence reads use the original Machine network instance and
 server-projected heartbeat and same-read `heartbeat_observed_at` through the
 existing Resource query. Compare lease timestamps only in that server clock
 domain; browser-clock skew cannot grant or remove presence. Both projected
-timestamps are transient and leave original Machine revisions, storage and
+timestamps are transient. The closed optional Machine observation member keeps
+original strict typed Worker reads compatible without relaxing unknown-field
+checks or native eligibility. These reads leave original Machine revisions, storage and
 portable configuration unchanged. Failed/missing
 reads, instance replacement and the original 60-second lease boundary stop
 animation; a report timestamp or long-running step duration is never a freshness
