@@ -47,7 +47,7 @@ it("consumes captures, local resets, disable and category departure without a na
 });
 it("retains dirty drafts on a concurrent committed change and blocks until explicit discard",async()=>{
  const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");await capture();
- await act(async()=>f.publish({revision:2,overrides:{help:{state:ShortcutOverrideState.Disabled}},problem:null}));expect(screen.getByRole("button",{name:"Save changes"}).hasAttribute("disabled")).toBe(true);await screen.findByText(/Shortcuts changed in another window/);expect(screen.getByText("Ctrl + Shift + J")).toBeTruthy();
+ await act(async()=>f.publish({revision:2,overrides:{help:{state:ShortcutOverrideState.Disabled}},problem:null}));expect(screen.getByRole("button",{name:"Save changes"}).hasAttribute("disabled")).toBe(true);await screen.findByText(/Shortcuts changed in another window/);expect(screen.getByRole("button",{name:"Capture shortcut for New session"}).closest(".shortcut-settings-row")?.querySelector(".shortcut-current-binding")?.textContent).toBe("Ctrl + Shift + J");
  fireEvent.click(screen.getByRole("button",{name:"Discard changes"}));await screen.findByText("Current saved shortcuts");expect(screen.getByText("Disabled")).toBeTruthy();
 });
 it("does not replay an uncertain native save, preserving effective bindings until explicit reinspection",async()=>{
