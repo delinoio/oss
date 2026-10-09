@@ -96,6 +96,16 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.Progress.Kind == domain.AutoReviewProgress {
+		if input.Configuration.Harness != domain.Codex || input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || input.Configuration.SidechatPolicy != "" {
+			return executionEventConflict()
+		}
+		next, err := domain.ApplyAutoReview(progress.AutoReviews, *update.Progress.AutoReview)
+		if err != nil {
+			return executionEventConflict()
+		}
+		progress.AutoReviews = next
+	}
 	if update.Progress.Kind == domain.NativeCompactionProgress {
 		v := update.Progress.Compaction
 		if v == nil || v.Harness != input.Configuration.Harness {
@@ -129,6 +139,8 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		return err
 	}
 	switch update.Progress.Kind {
+	case domain.AutoReviewProgress:
+	// The review lifecycle remains separate from plan, diff and tool cursors.
 	case domain.NativeCompactionProgress:
 		progress.LatestNativeCompactionID = update.ID
 	case domain.OpenCodeWorkspaceProgressKind:

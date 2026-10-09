@@ -67,6 +67,9 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	autoReviews         map[domain.ID]domain.AutoReviewState
+	autoReviewPayloads  map[string][32]byte
+	autoReviewActions   map[string][32]byte
 	contextBase         *ContinuationContextCheckpoint
 	contextOrder        []ContextRecord
 	compaction          *manualCompaction

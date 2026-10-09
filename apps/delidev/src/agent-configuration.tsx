@@ -9,7 +9,7 @@ import "./agent-configuration.css";
 export const AgentReadProblem = createContext<((label: string, problem: boolean) => void) | undefined>(undefined);
 
 enum AgentSection { Reasoning = "Reasoning", Accounts = "Accounts & routing", Instructions = "Instructions", Native = "Native harness options" }
-const nativeKeys = ["subagent_model", "subagent_effort", "max_concurrency", "approval_policy", "approval_review_model", "service_tier"];
+const nativeKeys = ["subagent_model", "subagent_effort", "max_concurrency", "approvals_reviewer", "approval_policy", "approval_review_model", "service_tier"];
 const permissionKeys = ["permission", "claude_permission"];
 
 function nativeSummary(data: Document) {

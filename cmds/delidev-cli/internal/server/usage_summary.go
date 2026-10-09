@@ -131,6 +131,9 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 				}
 				*part.target = label
 			}
+			if group.Attribution != "" {
+				row.ModelName = group.Attribution.Label()
+			}
 			result.Groups = append(result.Groups, row)
 		}
 		if analytics := summary.Analytics; analytics != nil {
@@ -146,6 +149,9 @@ func (s *Service) GetUsageSummary(ctx context.Context, req *connect.Request[pb.G
 				name, err := usageLabel(domain.ModelKind, model.ModelID)
 				if err != nil {
 					return err
+				}
+				if model.Attribution != "" {
+					name = model.Attribution.Label()
 				}
 				wire.Models = append(wire.Models, &pb.UsageAnalyticsModel{ProviderId: string(model.ProviderID), SubscriptionService: rpc.WireSubscriptionService(model.SubscriptionService), ModelId: string(model.ModelID), ProviderName: provider, ModelName: name, Totals: usageTotals(model.Totals)})
 			}

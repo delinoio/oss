@@ -11,6 +11,7 @@ import (
 type MetadataKind string
 
 const (
+	AutoReviewReplayChecked  MetadataKind = "auto-review-replay-checked"
 	ThreadIdentityChecked    MetadataKind = "thread-identity-checked"
 	ThreadSettingsChecked    MetadataKind = "thread-settings-checked"
 	RemoteControlDisabled    MetadataKind = "remote-control-disabled"

@@ -17,7 +17,7 @@ import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } 
 import type { ScrollContinuationQuery } from "./scroll-continuation";
 import { ScrollPicker } from "./scroll-picker";
 import type { MessageShape } from "@bufbuild/protobuf";
-import { FailureCode, clientFailure, EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { SystemCapability, SystemQuery, FailureCode, clientFailure, EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text, type Document } from "./documents";
 import { Problem, ServiceProblem } from "./ui";
 import { useRetainedMutation } from "./mutation";
@@ -86,13 +86,13 @@ function Choice({ label, value, choices, change, disabled = false, inherited = f
 }
 
 const localPermissionChoices: ScrollContinuationQuery = { loaded: true, nextPageToken: "", append: () => {}, retry: () => {}, reload: () => {} };
-function PermissionChoice({ label, value, choices, change, active, disabled }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; active: boolean; disabled: boolean }) {
+function PermissionChoice({ label, value, choices, change, active, disabled, labels }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; active: boolean; disabled: boolean; labels?: Record<string,string> }) {
   const owner = useRef<HTMLDivElement>(null), admission = useRef({ active, disabled, change });
   admission.current = { active, disabled, change };
   const selected = text(value);
   const retainedLabel = copy("configuration-fields.unsupportedPermissionSelection", { value: selected });
-  const options = [...(selected && !choices.includes(selected) ? [{ id: selected, label: retainedLabel }] : []), ...choices.map(id => ({ id, label: id }))];
-  return <div ref={owner}><ScrollPicker label={label} value={selected} selectedLabel={selected || choices[0]} options={options} query={localPermissionChoices} active={active} disabled={disabled} change={value => {
+  const options = [...(selected && !choices.includes(selected) ? [{ id: selected, label: retainedLabel }] : []), ...choices.map(id => ({ id, label: labels?.[id] ?? id }))];
+  return <div ref={owner}><ScrollPicker label={label} value={selected} selectedLabel={labels?.[selected] ?? (selected || choices[0])} options={options} query={localPermissionChoices} active={active} disabled={disabled} change={value => {
     const current = admission.current, trigger = owner.current?.querySelector("button[role=combobox]");
     // A retained popup callback must also honor a native ancestor fieldset lock
     // before MutationObserver positioning gets a chance to retire the popup.
@@ -101,12 +101,13 @@ function PermissionChoice({ label, value, choices, change, active, disabled }: {
   }} /></div>;
 }
 
-export function AgentPermissions({ harness, options, change, active, disabled }: { harness: unknown; options: Document; change: (value: Document) => void; active: boolean; disabled: boolean }) {
+export function AgentPermissions({ harness, options, change, active, disabled, reviewSupported = false }: { harness: unknown; options: Document; change: (value: Document) => void; active: boolean; disabled: boolean; reviewSupported?: boolean }) {
   useLocale();
   if (harness === Harness.Claude) {
     const conflict = options.permission !== Permission.Default || Boolean(text(options.approval_policy));
     const selected = options.claude_permission ?? ClaudePermission.Default;
     return <fieldset><legend>{copy("configuration-fields.claudeToolPermissions_145abc")}</legend>
+ {options.approvals_reviewer !== undefined ? <><p role="alert">{copy("configuration-fields.approvalReviewForeign")}</p><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => {const next={...options};delete next.approvals_reviewer;change(next);}}>{copy("configuration-fields.clearRetainedNativeOption")}</SettingsActionButton></> : null}
       <PermissionChoice active={active} disabled={disabled} label={copy("configuration-fields.claudePermissionMode_6cb4cf")} value={selected} choices={Object.values(ClaudePermission)} change={(claude_permission) => change({ ...options, claude_permission })} />
       <p>{copy("configuration-fields.planInputsUseClaudeSNative_a3fec5")}</p>
       {selected === ClaudePermission.AcceptEdits ? <p className="notice">{copy("configuration-fields.claudeCanAcceptFileEditsAnd_71cb59")}</p> : null}
@@ -118,7 +119,8 @@ export function AgentPermissions({ harness, options, change, active, disabled }:
   }
   return <>
     <PermissionChoice active={active} disabled={disabled} label={copy("configuration-fields.permissionMode_c7a8e6")} value={options.permission} choices={harness === Harness.Codex ? Object.values(Permission) : [Permission.Default]} change={(permission) => change({ ...options, permission })} />
-    {options.permission === Permission.Default ? <p>{copy("configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d")}</p> : null}
+    {harness === Harness.Codex ? <><PermissionChoice active={active} disabled={disabled || !reviewSupported} label={copy("configuration-fields.approvalReview")} value={options.approvals_reviewer ?? "user"} choices={["user","auto_review"]} labels={{user:copy("configuration-fields.approvalReviewUser"),auto_review:copy("configuration-fields.approvalReviewAI")}} change={approvals_reviewer => change({...options,approvals_reviewer,...(approvals_reviewer === "auto_review" ? {approval_policy:"on-request"} : {})})} /><p>{copy("configuration-fields.approvalReviewGuidance")}</p></> : options.approvals_reviewer !== undefined ? <><p role="alert">{copy("configuration-fields.approvalReviewForeign")}</p><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => { const next={...options};delete next.approvals_reviewer;change(next); }}>{copy("configuration-fields.clearRetainedNativeOption")}</SettingsActionButton></> : null}
+ {options.permission === Permission.Default ? <p>{copy("configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d")}</p> : null}
     {harness !== Harness.Codex ? <p>{copy("configuration-fields.nativePermissionUnavailable")}</p> : null}
     {options.permission === Permission.Full ? <p className="notice">{copy("configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a")}</p> : null}
     {options.claude_permission !== undefined ? <><p role="alert"><LocalizedText id="configuration-fields.aClaudePermissionSelectionIsRetained_c20333" components={{ s0: <>{text(options.claude_permission)}</> }} /></p><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => { const next = { ...options }; delete next.claude_permission; change(next); }}>{copy("configuration-fields.clearClaudePermissionSelection_e65f5d")}</SettingsActionButton></> : null}
@@ -245,6 +247,7 @@ interface FieldsProps { disabled?: boolean; supportsProjectBehavior?: boolean; s
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false, supportsSessionDefaults = false } = props;
+  const reviewerStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.AGENT });
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
   if (kind === EntityKind.SETTINGS) return <>
  {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <h3>{copy("configuration-fields.projectDefaults")}</h3> : null}
@@ -271,7 +274,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
       core={<>{!props.workerWizard ? <AgentReconfiguration data={data} change={change} active={active} /> : null}<TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label={copy("configuration-fields.model_5e2c61")} kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div> : null}</>}
-      permissions={<AgentPermissions active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
+      permissions={<AgentPermissions reviewSupported={reviewerStatus.data?.capabilities.includes(SystemCapability.CODEX_APPROVAL_REVIEW_V1) === true} active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
       reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}

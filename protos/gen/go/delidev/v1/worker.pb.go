@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1       WorkerCapability = 30
 	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1 WorkerCapability = 27
 	WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1  WorkerCapability = 38
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1      WorkerCapability = 26
@@ -58,6 +59,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		30: "WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
 		27: "WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1",
 		38: "WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1",
 		26: "WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1",
@@ -87,6 +89,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":          30,
 		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":    27,
 		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":     38,
 		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":         26,
@@ -3969,10 +3972,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\xbc\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*\xec\n" +
 	"\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x124\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12.\n" +
+	"*WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1\x10\x1e\x124\n" +
 	"0WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1\x10\x1b\x123\n" +
 	"/WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1\x10&\x12/\n" +
 	"+WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1\x10\x1a\x12&\n" +

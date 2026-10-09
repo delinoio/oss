@@ -176,7 +176,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		// its fresh execution ID owns the report, not the retained history.
 		history = input.Fork.RuntimeID
 	}
-	result = domain.ExecutionRecoveryRequest{
+	result = domain.ExecutionRecoveryRequest{ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer,
 		Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
 		AssignmentRevision: assigned.Revision, AssignmentDigest: continuationDigest(assigned.Data), AssignmentInputDigest: continuationDigest(claim.Input), ConfigurationDigest: input.ConfigurationDigest,
 		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: domain.BindSessionInput(input.InputID, input.Input).PromptDigest, AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,

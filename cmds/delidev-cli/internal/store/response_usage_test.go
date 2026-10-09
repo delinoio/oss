@@ -186,3 +186,35 @@ func TestResponseUsageMigrationPreservesHistoryWithoutInventingRequests(t *testi
 		})
 	}
 }
+
+func TestReviewerUsageAttributionPersistsWithoutRootModel(t *testing.T) {
+	s, _ := openTest(t)
+	defer s.Close()
+	f := seedSearch(t, s, "reviewer", domain.Archived)
+	for _, attribution := range []domain.ModelAttribution{domain.BuiltinReviewerAttribution, domain.UnknownReviewAttribution} {
+		record := responseRecord(f)
+		record.ModelID = ""
+		record.Attribution = attribution
+		if attribution == domain.UnknownReviewAttribution {
+			record.Usage.ResponseDigest = strings.Repeat("b", 64)
+		}
+		id := domain.NewID()
+		if _, duplicate, err := writeResponse(s, id, record); err != nil || duplicate {
+			t.Fatal("reviewer record refused", err)
+		}
+		retained, err := s.ResponseUsage(context.Background(), id)
+		if err != nil || retained.Record.Attribution != attribution || retained.Record.ModelID != "" {
+			t.Fatal("reviewer borrowed model", err)
+		}
+		err = s.Read(context.Background(), func(tx *Tx) error {
+			estimate, basis, e := tx.ResponseEstimate(id)
+			if e == nil && (basis != nil || estimate.Coverage != domain.EstimateUnavailable) {
+				t.Fatal("reviewer was priced as catalog/root model")
+			}
+			return e
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}

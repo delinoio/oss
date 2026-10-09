@@ -196,7 +196,7 @@ func (s ThreadSettings) params() (threadParams, error) {
 	return p, nil
 }
 func (s ThreadSettings) wireSettings() (threadParams, error) {
-	p := threadParams{Model: s.Model, ModelProvider: s.Provider, Cwd: s.Cwd, DeveloperInstructions: s.Instructions, ApprovalsReviewer: "user", ServiceTier: s.Options.ServiceTier, ApprovalPolicy: ApprovalPolicy(s.Options.ApprovalPolicy)}
+	p := threadParams{Model: s.Model, ModelProvider: s.Provider, Cwd: s.Cwd, DeveloperInstructions: s.Instructions, ApprovalsReviewer: string(s.Options.ApprovalsReviewer.Effective()), ServiceTier: s.Options.ServiceTier, ApprovalPolicy: ApprovalPolicy(s.Options.ApprovalPolicy)}
 	for _, v := range []struct {
 		value, label string
 		maximum      int
@@ -224,7 +224,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		}
 		p.WorkspaceRoots = slices.Clone(s.WorkspaceRoots)
 	}
-	if s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" || domain.ValidateCodexSubagentOptions(s.Options) != nil {
+	if s.Options.ValidateReviewer() != nil || s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" || domain.ValidateCodexSubagentOptions(s.Options) != nil {
 		return p, unsupportedSettings()
 	}
 	switch s.Options.Permission {

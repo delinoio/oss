@@ -33,7 +33,7 @@ func recoverExecution(ctx context.Context, config Config, job domain.Job) (json.
 	evidence, err := InspectCompletedExecution(ctx, manager, CompletedExecutionRef{
 		Harness: request.Harness, OpenCode: request.OpenCode, Claude: request.Claude,
 		ServerID: request.ServerID, DeviceID: request.DeviceID, InstanceID: request.InstanceID, AssignmentRevision: request.AssignmentRevision, AssignmentDigest: request.AssignmentDigest,
-		Checkpoint:  ExecutionCheckpointRef{JobID: request.JobID, SessionID: request.SessionID, MachineID: request.MachineID, HistoryExecutionID: request.HistoryExecutionID, AssignmentInputDigest: request.AssignmentInputDigest, ConfigurationDigest: request.ConfigurationDigest, AccountID: request.AccountID, ConnectionID: request.ConnectionID, Completion: request.Completion, InputMode: request.InputMode, PromptDigest: promptDigest, AcceptedInputs: request.AcceptedInputs},
+		Checkpoint:  ExecutionCheckpointRef{ApprovalsReviewer: request.ApprovalsReviewer, JobID: request.JobID, SessionID: request.SessionID, MachineID: request.MachineID, HistoryExecutionID: request.HistoryExecutionID, AssignmentInputDigest: request.AssignmentInputDigest, ConfigurationDigest: request.ConfigurationDigest, AccountID: request.AccountID, ConnectionID: request.ConnectionID, Completion: request.Completion, InputMode: request.InputMode, PromptDigest: promptDigest, AcceptedInputs: request.AcceptedInputs},
 		Preparation: preparation, Manifest: manifest,
 	})
 	if err != nil {

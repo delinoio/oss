@@ -67,6 +67,7 @@ func (u NativeResponseUsage) Validate() error {
 // records first publication; subsequent identical observations do not charge it
 // again. Nullable counts/cost evidence cannot become measured zero or spend.
 type ResponseUsageRecord struct {
+	Attribution ModelAttribution `json:"model_attribution,omitempty"`
 	// A manual context action has no ordinary input or native turn binding at
 	// the relay boundary. Preserve its original source turn separately; an
 	// unavailable action turn must never borrow the preceding native turn.
@@ -89,10 +90,13 @@ type ResponseUsageRecord struct {
 }
 
 func (u ResponseUsageRecord) Validate() error {
-	for _, id := range []ID{u.SessionID, u.ExecutionID, u.AccountID, u.ConnectionID, u.ModelID} {
+	for _, id := range []ID{u.SessionID, u.ExecutionID, u.AccountID, u.ConnectionID} {
 		if id.Validate() != nil {
 			return invalidObservation()
 		}
+	}
+	if u.Attribution == "" && u.ModelID.Validate() != nil || u.Attribution != "" && (!u.Attribution.Valid() || u.ModelID != "" || u.Purpose == SessionTitleUsage) {
+		return invalidObservation()
 	}
 	if u.SubscriptionService == "" {
 		if u.ProviderID.Validate() != nil {

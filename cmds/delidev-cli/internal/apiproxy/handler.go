@@ -240,7 +240,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if purpose == "" {
 		purpose = domain.ConversationUsage
 	}
-	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
+	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Attribution: lease.Scope.Attribution, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
 	observations := diagnosticObservations{value: &diagnostic}
 	publishDiagnostic := func(work context.Context) error {
 		if lease.PublishDiagnostic == nil {

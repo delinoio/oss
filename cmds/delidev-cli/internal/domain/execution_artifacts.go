@@ -202,6 +202,7 @@ type NativePlan struct {
 // Turn progress has no native item identity. A diff is only an observation,
 // not repository/file-review ownership or permission to read/write a path.
 type NativeProgress struct {
+	AutoReview *AutoReviewObservation       `json:"auto_review,omitempty"`
 	Compaction *NativeCompactionObservation `json:"compaction,omitempty"`
 	Workspace  *OpenCodeWorkspaceEvent      `json:"workspace,omitempty"`
 	Changes    *OpenCodeChanges             `json:"changes,omitempty"`
@@ -220,10 +221,17 @@ func (u ExecutionProgressUpdate) Validate() error {
 		return invalidArtifact()
 	}
 	p := u.Progress
+	if p.AutoReview != nil && p.Kind != AutoReviewProgress {
+		return invalidArtifact()
+	}
 	if p.Compaction != nil && p.Kind != NativeCompactionProgress {
 		return invalidArtifact()
 	}
 	switch p.Kind {
+	case AutoReviewProgress:
+		if p.AutoReview == nil || p.AutoReview.Validate() != nil || p.Compaction != nil || p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan != nil || p.Diff != nil {
+			return invalidArtifact()
+		}
 	case NativeCompactionProgress:
 		if p.Compaction == nil || p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan != nil || p.Diff != nil || p.Compaction.Validate() != nil {
 			return invalidArtifact()

@@ -1140,3 +1140,7 @@ and quarantine nonterminal historical Jobs without granting native authority.
 Unknown fields, duplicate keys, invalid UTF-8, trailing JSON and oversized typed
 documents remain rejected before candidate publication. Source backup bytes and
 the live database remain unchanged on rejection.
+
+## Reviewer accounting without a migration — issue #1980
+
+Optional closed reviewer selection, review progress and builtin/unknown model attribution remain in existing immutable JSON documents. Original API response-reference rows use an empty private model slot only for a proved bounded builtin reviewer scope; root/child scopes retain catalog IDs and cannot adopt those references. Response usage preserves original native digest deduplication and independent pricing snapshots. Reviewer/unknown records remain unpriced and cannot borrow a root model, retroactively rewrite historical attribution or fabricate billing evidence. No relational layout or migration allocation changes. Follow the harness, proxy and usage contracts.

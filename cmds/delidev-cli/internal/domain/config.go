@@ -260,6 +260,7 @@ const (
 )
 
 type AgentOptions struct {
+	ApprovalsReviewer   ApprovalsReviewer    `json:"approvals_reviewer,omitempty"`
 	SubagentModel       string               `json:"subagent_model,omitempty"`
 	SubagentEffort      string               `json:"subagent_effort,omitempty"`
 	MaxConcurrency      uint32               `json:"max_concurrency,omitempty"`
@@ -334,6 +335,9 @@ func (a Agent) Validate() error {
 	}
 	if a.Options.ClaudePermission != "" && !a.Options.ClaudePermission.Valid() {
 		return Fail(InvalidArgument, "Unknown Claude permission mode.", "Choose a native Claude permission mode.")
+	}
+	if err := a.Options.ValidateReviewer(); err != nil {
+		return err
 	}
 	if a.Harness == Codex {
 		if err := ValidateCodexSubagentOptions(a.Options); err != nil {
@@ -811,7 +815,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

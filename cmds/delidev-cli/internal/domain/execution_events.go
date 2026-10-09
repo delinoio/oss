@@ -76,6 +76,7 @@ const MaxExecutionEvents = 100000
 // Observations remain distinct from the immutable requested configuration.
 // Nil effort/tier means unavailable, not a manufactured native default.
 type ObservedExecutionSettings struct {
+	ApprovalsReviewer ApprovalsReviewer    `json:"approvals_reviewer,omitempty"`
 	Model             string               `json:"model"`
 	Effort            *string              `json:"effort"`
 	ServiceTier       *string              `json:"service_tier"`
@@ -97,6 +98,9 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 	}
 	if configuration.Harness != GrokBuild && (o.GrokMode != "" || o.GrokContextTokens != 0) {
 		return Fail(Unsupported, "The observed mode belongs to another native harness.", "Retain the selected harness's original settings.")
+	}
+	if !o.ApprovalsReviewer.Valid() || configuration.Harness != Codex && o.ApprovalsReviewer != "" || o.ApprovalsReviewer.Effective() != configuration.Options.ApprovalsReviewer.Effective() {
+		return invalidObservation()
 	}
 	switch configuration.Harness {
 	case Codex:
@@ -469,6 +473,7 @@ func (e ExecutionEvent) Validate() error {
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
+	AutoReviews              AutoReviewState             `json:"auto_reviews,omitempty"`
 	NativeCompactions        NativeCompactionState       `json:"native_compactions,omitempty"`
 	LatestNativeCompactionID ID                          `json:"latest_native_compaction_id,omitempty"`
 	Subagents                SubagentState               `json:"subagents,omitempty"`

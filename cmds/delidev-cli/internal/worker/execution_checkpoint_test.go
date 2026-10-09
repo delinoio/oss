@@ -460,3 +460,24 @@ func TestExecutionCheckpointBindsAllOriginalWorkspaceRoots(t *testing.T) {
 		})
 	}
 }
+
+func TestApprovalReviewerCheckpointMatchesOriginalSelection(t *testing.T) {
+	f := newCheckpointFixture(t)
+	f.input.Configuration.Options.ApprovalsReviewer = domain.CodexReviewerAuto
+	f.input.Configuration.Options.ApprovalPolicy = "on-request"
+	f.input.Configuration.ReviewerNativeModel = domain.CodexReviewerNativeModel
+	f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
+	f.job.Input, _ = json.Marshal(f.input)
+	f.ref.ConfigurationDigest = f.input.ConfigurationDigest
+	f.ref.AssignmentInputDigest = executionInputDigest(f.job.Input)
+	f.ref.ApprovalsReviewer = domain.CodexReviewerAuto
+	f.bound.Effective.ApprovalsReviewer = "auto_review"
+	if err := f.retain(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadCodexExecutionCheckpoint(f.root, f.ref); err != nil {
+		t.Fatal(err)
+	}
+	f.ref.ApprovalsReviewer = domain.CodexReviewerUser
+	checkpointRecovery(t, func() error { _, err := ReadCodexExecutionCheckpoint(f.root, f.ref); return err }())
+}

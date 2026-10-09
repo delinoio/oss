@@ -88,6 +88,7 @@ func validationStage(method string) eventValidationStage {
 }
 
 const (
+	AutoReviewEvent           EventKind = "auto-review"
 	CompactionEvent           EventKind = "compaction"
 	SubagentEvent             EventKind = "subagent"
 	SubagentActivityEvent     EventKind = "subagent-activity"
@@ -144,6 +145,7 @@ type Message struct {
 }
 
 type Event struct {
+	AutoReview       *domain.AutoReviewObservation
 	Compaction       *CompactionObservation
 	AgentThreadID    domain.ID
 	Subagents        []domain.SubagentObservation
@@ -279,6 +281,8 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return event, err
 	}
 	switch native.Method {
+	case "item/autoApprovalReview/started", "item/autoApprovalReview/completed":
+		return c.observeAutoReviewLocked(native)
 	case "rawResponse/completed":
 		return c.observeResponseUsageLocked(native)
 	case "rawResponseItem/completed":
@@ -339,6 +343,11 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			return Event{}, incompatible()
 		}
 		if turn.Status.terminal() {
+			for _, review := range c.execution.autoReviews[turn.ID] {
+				if review.Status == domain.AutoReviewInProgress {
+					return Event{}, incompatible()
+				}
+			}
 			for key, item := range c.execution.compactionItems {
 				if strings.HasPrefix(key, string(turn.ID)+"/") && item.completedAt == nil {
 					return Event{}, incompatible()

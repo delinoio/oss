@@ -90,7 +90,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	_, machine, machineErr := activeMachine(tx, grant.MachineID)
-	if machineErr != nil || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
+	if machineErr != nil || input.Configuration.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
 		return empty, executionDenied()
 	}
 	_, session, err := sessionRecord(tx, input.SessionID)
@@ -168,7 +168,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err := tx.RequireCodexSubagentModel(input.Configuration, account); err != nil {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
+	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ReviewerNativeModel: input.Configuration.ReviewerNativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
 	if !managed {
 		if err := scope.Validate(); err != nil {
 			return empty, executionDenied()
@@ -298,7 +298,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	// existing exact original observation, even after Stop or account revocation.
 	// It grants no inference and is joined before lease/storage closure.
 	lease.PublishDiagnostic = func(ctx context.Context, value domain.RequestDiagnostic) error {
-		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID || value.AccountID != scope.AccountID || value.ConnectionID != scope.ConnectionID || value.ProviderID != scope.ProviderID || (value.ModelID != scope.ModelID && (scope.ChildModel == nil || value.ModelID != scope.ChildModel.ModelID)) || value.Source != domain.DiagnosticProxyHTTP {
+		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID || value.AccountID != scope.AccountID || value.ConnectionID != scope.ConnectionID || value.ProviderID != scope.ProviderID || (value.ModelID != scope.ModelID && (scope.ChildModel == nil || value.ModelID != scope.ChildModel.ModelID) && !(value.ModelID == "" && value.Attribution == domain.BuiltinReviewerAttribution && scope.ReviewerNativeModel == domain.CodexReviewerNativeModel)) || value.Source != domain.DiagnosticProxyHTTP {
 			return executionDenied()
 		}
 		publication := domain.NewID()
@@ -485,7 +485,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}
 	bindReferences := func(target *apiproxy.Lease, modelID domain.ID) {
 		reference := func(kind apiproxy.ReferenceKind, nativeID string) store.ExecutionReference {
-			return store.ExecutionReference{SessionID: scope.SessionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ModelID: modelID, Kind: kind, NativeID: nativeID}
+			return store.ExecutionReference{SessionID: scope.SessionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ModelID: modelID, Reviewer: target.Scope.Attribution == domain.BuiltinReviewerAttribution, Kind: kind, NativeID: nativeID}
 		}
 		target.AuthorizeReference = func(ctx context.Context, kind apiproxy.ReferenceKind, nativeID string) error {
 			if leaseContext.Err() != nil {
@@ -526,20 +526,29 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		}
 	}
 	bindReferences(lease, scope.ModelID)
-	if scope.ChildModel != nil {
+	if scope.ChildModel != nil || scope.ReviewerNativeModel != "" {
 		lease.BindModel = func(ctx context.Context, model string, operation apiproxy.Operation) (*apiproxy.Lease, error) {
 			if model == scope.NativeModel {
 				return lease, nil
 			}
-			if model != scope.ChildModel.NativeModel || (operation != apiproxy.ResponseCreate && operation != apiproxy.ResponseCompact) || leaseContext.Err() != nil {
+			child := scope.ChildModel != nil && model == scope.ChildModel.NativeModel
+			// A shared child/reviewer name has no distinguishing native role evidence.
+			reviewer := model == scope.ReviewerNativeModel && scope.ReviewerNativeModel != "" && !child
+			if !reviewer && !child || reviewer && operation != apiproxy.ResponseCreate || (operation != apiproxy.ResponseCreate && operation != apiproxy.ResponseCompact) || leaseContext.Err() != nil {
 				return nil, executionDenied()
 			}
 			current, err := a.resolve(ctx, grant)
-			if err != nil || current.ChildModel == nil || *current.ChildModel != *scope.ChildModel {
+			if err != nil || current.ReviewerNativeModel != scope.ReviewerNativeModel || child && (current.ChildModel == nil || *current.ChildModel != *scope.ChildModel) {
 				return nil, executionDenied()
 			}
 			request := *lease
-			request.Scope.ModelID, request.Scope.NativeModel = scope.ChildModel.ModelID, scope.ChildModel.NativeModel
+			if reviewer {
+				request.Scope.ModelID, request.Scope.NativeModel = "", scope.ReviewerNativeModel
+				request.Scope.Attribution = domain.BuiltinReviewerAttribution
+				request.Scope.Operations = []apiproxy.Operation{apiproxy.ResponseCreate}
+			} else {
+				request.Scope.ModelID, request.Scope.NativeModel = scope.ChildModel.ModelID, scope.ChildModel.NativeModel
+			}
 			request.Scope.ChildModel, request.BindModel = nil, nil
 			bindReferences(&request, request.Scope.ModelID)
 			return &request, nil
