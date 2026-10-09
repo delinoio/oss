@@ -44,7 +44,8 @@ try {
     const label=language==="en"?{conversation:"Conversation",browser:"Browser",open:"Open account browser",files:"Files"}:{conversation:"대화",browser:"브라우저",open:"계정 브라우저 열기",files:"파일"};
     const composer=page.locator(".composer textarea");
     await composer.evaluate(node=>{window.originalComposer=node;});
-    await page.getByRole("button",{name:label.browser,exact:true}).click();
+    await page.getByRole("button",{name:language === "ko" ? "도구 열기" : "Open tool",exact:true}).click();
+    await page.getByRole("menuitem",{name:label.browser,exact:true}).click();
     assert.equal(await page.getByRole("tabpanel").count(),1);
     assert.equal(await page.locator(".composer:visible").count(),0);
     await page.getByRole("textbox",{name:language==="en"?"Address":"주소"}).fill("https://example.com/");
@@ -57,6 +58,8 @@ try {
       return {pane:box(pane),tabs:box(tabs),info:box(info),view:box(view),page:document.documentElement.scrollWidth,viewport:innerWidth,splitters:document.querySelectorAll('.browser-splitter,.terminal-dock-separator').length,selected:tabs.querySelectorAll('[aria-selected="true"]').length,scale:parseFloat(getComputedStyle(document.body).zoom)||1};
     });
     assert.equal(matrix.selected,1);assert.equal(matrix.splitters,0);
+    const closeGeometry = await page.locator(".session-tab-close").evaluateAll(nodes => nodes.map(node => { const close = node.getBoundingClientRect(), shell = node.parentElement.getBoundingClientRect(); return { width: close.width, height: close.height, left: close.left, right: close.right, shellLeft: shell.left, shellRight: shell.right }; }));
+    assert(closeGeometry.every(row => row.width >= 40 * matrix.scale - 1 && row.height >= 40 * matrix.scale - 1 && row.left >= row.shellLeft - 1 && row.right <= row.shellRight + 1), JSON.stringify(closeGeometry));
     assert(matrix.tabs.bottom<=matrix.pane.top+1,JSON.stringify(matrix));
     assert(matrix.pane.width>0&&matrix.view.height>0,JSON.stringify(matrix));
     assert(matrix.page<=matrix.viewport+1,JSON.stringify(matrix));

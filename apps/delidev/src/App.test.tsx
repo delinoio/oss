@@ -855,7 +855,7 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep my unsent input" } });
-  fireEvent.click(screen.getByRole("button", { name: "Browser" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
   expect(screen.getByRole("region", { name: "Session browser" })).toBeTruthy();
   expect(composer.isConnected).toBe(true);
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();

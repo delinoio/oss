@@ -1935,14 +1935,14 @@ and OpenCode/Grok theme variants; branding adds no focus target or authority.
 
 Keep the header limited to retained harness identity, session title, live connection and original actions. Status and recovery displays labelled Session ID, Workspace, Result, Dispatch, Archive, Preparation, Recovery, then applicable Automatic title with its complete safe reason, in that order. Reuse independent original observations without a combined health/readiness inference; manual-title omission and loaded sidebar evidence remain unchanged. Right-align existing 40px Stop,
 Resume/startup Retry and Session actions controls with 8px corners. Use semantic
-tokens, a thin divider and 20px horizontal/16px vertical padding. At 520px available
+tokens, a thin divider and 20px horizontal/12px vertical padding. At 520px available
 session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-A full-width tool strip exposes exactly Diff, Files, Terminals, Browser and
-Diagnostics in that order. It opens singleton tool-entry tabs. An accessible
-horizontal tablist sits above exactly one active content region. Conversation is
+Issues #2140/#2121 use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. A fixed 40px Open tool menu sits beside the horizontally scrolling tablist. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+
+Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes #2121's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
 open typed content tabs keyed by session/repository/path and, for comparisons,
 comparison kind. Terminals use the original terminal ID; Browser pages use the
