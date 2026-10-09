@@ -1636,6 +1636,27 @@ async fn browser_state(
     result
 }
 
+#[tauri::command]
+fn browser_tab_shortcuts(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    view_id: String,
+    count: u8,
+    token: String,
+) -> Result<(), NativeFailure> {
+    let original = capture_authority(&window)?;
+    if is_local(&window) {
+        trusted_local(&window)?;
+    } else {
+        saved_binding(&window, &windows)?;
+    }
+    let result = host.tab_shortcuts(window.label(), &profile_id, &view_id, count, &token);
+    recheck_authority(&window, &original)?;
+    result
+}
+
 fn valid_local_runtime(endpoint: &str) -> bool {
     url::Url::parse(endpoint).is_ok_and(|u| {
         u.scheme() == "http"
@@ -1770,6 +1791,7 @@ fn run() -> Result<(), NativeFailure> {
                 open_browser,
                 control_browser,
                 browser_state,
+                browser_tab_shortcuts,
                 open_github,
                 open_provider_guidance,
                 connect_local,
