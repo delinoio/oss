@@ -101,11 +101,12 @@ try {
   const picker = page.waitForEvent("filechooser"); await plus.click(); await (await picker).setFiles([]);
   assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "picker activation cannot submit");
   await input.focus();
-  const before = await input.boundingBox();
+  const inputLayout = node => ({ top: node.offsetTop, left: node.offsetLeft, width: node.offsetWidth, height: node.offsetHeight, composerHeight: node.closest(".composer").clientHeight });
+  const before = await input.evaluate(inputLayout);
   await plus.hover();
   const tooltip = page.getByRole("tooltip"); await tooltip.waitFor();
   assert.equal(await tooltip.textContent(), c("image-input.help"));
-  assert.deepEqual(await input.boundingBox(), before, "guidance cannot displace input");
+  assert.deepEqual(await input.evaluate(inputLayout), before, "guidance cannot displace input layout; natural pointer scrolling is independent");
   await tooltip.hover(); await page.waitForTimeout(150); assert(await tooltip.isVisible());
   await page.mouse.move(1, 1); await tooltip.waitFor({ state: "detached" });
   await plus.focus(); await tooltip.waitFor();
