@@ -187,7 +187,9 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   expect((await createClient(ScheduleService, transport).listScheduleOccurrences({ scheduleId })).occurrences).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Delete schedule" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm schedule deletion" }));
-  await screen.findByText("Schedule configuration deleted. Retained occurrences and sessions remain.");
+  // A real durable Go mutation can outlast Testing Library's one-second default
+  // under concurrent CI shards. Wait for its receipt, never resend the deletion.
+  await screen.findByText("Schedule configuration deleted. Retained occurrences and sessions remain.", {}, { timeout: 15000 });
   expect((await createClient(ScheduleService, transport).listScheduleOccurrences({ scheduleId })).occurrences).toHaveLength(1);
   cleanup();
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
