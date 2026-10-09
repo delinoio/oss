@@ -383,7 +383,7 @@ func waitStartupOwnership(ctx context.Context, root string, config server.Config
 			if ctx.Err() != nil {
 				return nil, domain.SafeError(ctx.Err())
 			}
-			return nil, domain.Fail(domain.Conflict, "The original server still owns this data scope.", "Wait for confirmed shutdown or inspect the original server before retrying startup.")
+			return nil, classifiedStartupConflict(domain.Fail(domain.Conflict, "The original server still owns this data scope.", "Wait for confirmed shutdown or inspect the original server before retrying startup."), startupOwnership)
 		}
 		lock, err := security.TryLock(filepath.Join(root, "server.lock"))
 		if err == nil {

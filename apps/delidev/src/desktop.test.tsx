@@ -310,3 +310,40 @@ it("leaves startup after a failed authority reread and ignores the old observati
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByText("Your sessions, in one place");
 });
+
+it("keeps ownership conflict guidance consistent in startup diagnostics and explicit retry", async () => {
+  const { i18n, copy } = await import("./localization");
+  const { cleanup } = await import("@testing-library/react");
+  const { localStartupProblem } = await import("./local-startup-problem");
+  for (const language of ["en", "ko"]) {
+    await act(() => i18n.changeLanguage(language));
+    bridge.invoke.mockReset();
+    bridge.invoke.mockImplementation(async (command: string) => {
+      if (command === "connection_context") return null;
+      if (command === "local_server_status") return { state: LocalServerState.Blocked, attempts: 1, retry_ms: 0, failure: "ownership-conflict" };
+      if (command === "launch_local" || command === "retry_local") throw "ownership-conflict";
+      throw new Error("Unexpected native authority");
+    });
+    render(<Desktop />);
+    const retry = await screen.findByRole("button", { name: copy("desktop.retry_942087") });
+    const guidance = localStartupProblem("ownership-conflict")!;
+    expect(screen.getAllByText(guidance).length).toBeGreaterThan(0);
+    expect(bridge.invoke.mock.calls.filter(([command]) => command === "launch_local")).toHaveLength(1);
+    expect(bridge.invoke.mock.calls.some(([command]) => command === "retry_local")).toBe(false);
+    const diagnostics = screen.getByRole("button", { name: copy("desktop.troubleshooting_c3af07") });
+    diagnostics.focus();
+    fireEvent.click(diagnostics);
+    const dialog = await screen.findByRole("dialog", { name: copy("desktop.connectionDiagnostics_b30b0d") });
+    expect(within(dialog).getAllByText(guidance).length).toBeGreaterThan(0);
+    expect(bridge.invoke.mock.calls.some(([command]) => command === "stop_local" || command === "retry_local")).toBe(false);
+    // Hiding diagnostics preserves explicit retry and the original failure.
+    // Native Escape dispatches cancel; JSDOM does not synthesize that event.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: copy("desktop.connectionDiagnostics_b30b0d") })).toBeNull());
+    expect(document.activeElement).toBe(diagnostics);
+    fireEvent.click(retry);
+    await waitFor(() => expect(bridge.invoke.mock.calls.filter(([command]) => command === "retry_local")).toHaveLength(1));
+    cleanup();
+  }
+  await act(() => i18n.changeLanguage("en"));
+});

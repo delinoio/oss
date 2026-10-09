@@ -5,11 +5,13 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { LocalConnectionPresentation } from "./local-connection-presentation";
 
+import { localStartupProblem } from "./local-startup-problem";
+
 export enum LocalServerState { Checking = "checking", Ready = "ready", Retrying = "retrying", Stopped = "stopped", Blocked = "blocked" }
 export interface LocalServerStatus { state: LocalServerState; attempts: number; retry_ms: number; failure?: string }
 export function LocalServerStatusText({ status }: { status?: LocalServerStatus }) {
   useLocale();
-  return <p role="status">{!status || status.state === LocalServerState.Checking ? copy("local-server.checkingLocalServer_c92e51") : status.state === LocalServerState.Ready ? copy("local-server.localServerReady_18acea") : status.state === LocalServerState.Stopped ? copy("local-server.automaticRestartIsStopped_f8e4c7") : status.state === LocalServerState.Retrying ? copy("local-server.localServerUnavailableAttemptRetryDelay_9f679d", { v0: status.attempts, v1: Math.ceil(status.retry_ms / 1000) }) : copy("local-server.localServerNeedsAttentionCheckIts_b02a69")}</p>;
+  return <p role="status">{!status || status.state === LocalServerState.Checking ? copy("local-server.checkingLocalServer_c92e51") : status.state === LocalServerState.Ready ? copy("local-server.localServerReady_18acea") : status.state === LocalServerState.Stopped ? copy("local-server.automaticRestartIsStopped_f8e4c7") : status.state === LocalServerState.Retrying ? copy("local-server.localServerUnavailableAttemptRetryDelay_9f679d", { v0: status.attempts, v1: Math.ceil(status.retry_ms / 1000) }) : localStartupProblem(status.failure) ?? copy("local-server.localServerNeedsAttentionCheckIts_b02a69")}</p>;
 }
 export function LocalServerControls({ status, restart, busy, problem, endpoint, connected = false }: { endpoint?: string; connected?: boolean; status?: LocalServerStatus; restart: () => void; busy: boolean; problem?: React.ReactNode }) {
   useLocale();

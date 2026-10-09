@@ -170,7 +170,7 @@ impl Connector {
                     if first.len() as u64 > OUTPUT_LIMIT {
                         return Err(NativeFailure::InvalidEvidence);
                     }
-                    host_result(&first)
+                    host_result(&first, !worker)
                 });
             let _ = send.send(result);
             read_bounded(reader, OUTPUT_LIMIT)
@@ -320,22 +320,14 @@ impl Connector {
     }
 }
 
-fn host_result(bytes: &[u8]) -> Result<serde_json::Value> {
+fn host_result(bytes: &[u8], startup: bool) -> Result<serde_json::Value> {
     let envelope: CliEnvelope =
         serde_json::from_slice(bytes).map_err(|_| NativeFailure::InvalidEvidence)?;
     if envelope.version != 1 {
         return Err(NativeFailure::Incompatible);
     }
     if let Some(error) = envelope.error {
-        return Err(match error.code.as_str() {
-            "unsupported" => NativeFailure::Incompatible,
-            "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
-            "unauthenticated" => NativeFailure::CredentialUnavailable,
-            "permission_denied" => NativeFailure::PermissionDenied,
-            "conflict" => NativeFailure::Busy,
-            "recovery_required" => NativeFailure::InvalidEvidence,
-            _ => NativeFailure::SidecarFailed,
-        });
+        return Err(error.native_failure(startup));
     }
     let result = envelope.result.ok_or(NativeFailure::InvalidEvidence)?;
     if result.get("started").and_then(|v| v.as_bool()) == Some(true) {
@@ -390,7 +382,7 @@ impl Request {
         }
     }
 }
-type Pending = Arc<Mutex<HashMap<String, mpsc::SyncSender<Result<serde_json::Value>>>>>;
+type Pending = Arc<Mutex<HashMap<String, (bool, mpsc::SyncSender<Result<serde_json::Value>>)>>>;
 struct Pipe {
     runtime: Runtime,
     input: mpsc::SyncSender<Vec<u8>>,
@@ -446,7 +438,16 @@ impl Pipe {
             if pending.len() >= 32 {
                 return Err(NativeFailure::Busy);
             }
-            pending.insert(request.id.clone(), send);
+            pending.insert(
+                request.id.clone(),
+                (
+                    matches!(
+                        request.operation.as_str(),
+                        "runtime.launch" | "runtime.retry" | "runtime.ensure"
+                    ),
+                    send,
+                ),
+            );
         }
         if let Err(e) = self.write(request) {
             self.pending
@@ -786,17 +787,9 @@ fn frame(reader: &mut impl BufRead) -> Result<Reply> {
     }
     Ok(reply)
 }
-fn reply_result(reply: Reply) -> Result<serde_json::Value> {
+fn reply_result(reply: Reply, startup: bool) -> Result<serde_json::Value> {
     if let Some(error) = reply.error {
-        return Err(match error.code.as_str() {
-            "unsupported" => NativeFailure::Incompatible,
-            "invalid_argument" | "missing_input" => NativeFailure::InvalidInput,
-            "unauthenticated" => NativeFailure::CredentialUnavailable,
-            "permission_denied" => NativeFailure::PermissionDenied,
-            "conflict" => NativeFailure::Busy,
-            "recovery_required" => NativeFailure::InvalidEvidence,
-            _ => NativeFailure::SidecarFailed,
-        });
+        return Err(error.native_failure(startup));
     }
     reply.result.ok_or(NativeFailure::InvalidEvidence)
 }
@@ -880,7 +873,7 @@ fn spawn(
             if !r.id.is_empty() {
                 Err(NativeFailure::InvalidEvidence)
             } else {
-                reply_result(r)
+                reply_result(r, true)
             }
         })
         .and_then(|v| {
@@ -952,12 +945,12 @@ fn spawn(
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&reply.id);
-            if let Some(send) = request {
-                let _ = send.send(reply_result(reply));
+            if let Some((startup, send)) = request {
+                let _ = send.send(reply_result(reply, startup));
             }
         }
         output_pipe.broken.store(true, Ordering::Release);
-        for (_, send) in pending.lock().unwrap_or_else(|e| e.into_inner()).drain() {
+        for (_, (_, send)) in pending.lock().unwrap_or_else(|e| e.into_inner()).drain() {
             let _ = send.send(Err(NativeFailure::SidecarFailed));
         }
     }));
@@ -1250,7 +1243,10 @@ mod tests {
         let listener =
             std::net::TcpListener::bind(original.endpoint.trim_start_matches("http://")).unwrap();
         listener.set_nonblocking(true).unwrap();
-        assert!(matches!(connector.ensure(), Err(NativeFailure::Busy)));
+        assert!(matches!(
+            connector.ensure(),
+            Err(NativeFailure::OwnershipConflict)
+        ));
         assert_eq!(
             connector.current_runtime_endpoint().unwrap(),
             original.endpoint
@@ -1525,5 +1521,34 @@ mod tests {
         );
         connector.shutdown_owned().unwrap();
         assert!(!root.path().join("joined").exists());
+    }
+}
+
+#[cfg(test)]
+mod conflict_frame_tests {
+    use super::*;
+    #[test]
+    fn legacy_and_correlated_startup_conflicts_keep_safe_inspection() {
+        assert_eq!(
+            host_result(br#"{"version":1,"error":{"code":"conflict"}}"#, true).unwrap_err(),
+            NativeFailure::StartupConflict
+        );
+        for (kind, expected) in [
+            ("ownership", NativeFailure::OwnershipConflict),
+            ("admission", NativeFailure::Busy),
+            ("unknown", NativeFailure::StartupConflict),
+        ] {
+            let raw = format!(
+                r#"{{"version":2,"id":"", "error":{{"code":"conflict","startup_conflict":"{kind}","message":"private secret path"}}}}"#
+            );
+            let reply: Reply = serde_json::from_str(&raw).unwrap();
+            assert_eq!(reply_result(reply, true).unwrap_err(), expected);
+        }
+        let unrelated: Reply =
+            serde_json::from_str(r#"{"version":2,"id":"","error":{"code":"conflict"}}"#).unwrap();
+        assert_eq!(
+            reply_result(unrelated, false).unwrap_err(),
+            NativeFailure::Busy
+        );
     }
 }

@@ -276,4 +276,21 @@ mod tests {
         );
         assert_ne!(backoff(5, 1), backoff(5, 100));
     }
+    #[test]
+    fn ownership_and_legacy_conflicts_block_until_explicit_retry() {
+        let mut attempts = 0;
+        for failure in [
+            NativeFailure::OwnershipConflict,
+            NativeFailure::StartupConflict,
+        ] {
+            let status = observation(Err(failure), &mut attempts, 0);
+            assert_eq!(status.state, LocalServerState::Blocked);
+            assert_eq!(status.retry_ms, 0);
+            assert_eq!(status.failure, Some(failure));
+        }
+        let ready = observation(Ok(LocalServerState::Ready), &mut attempts, 0);
+        assert_eq!(ready.failure, None);
+        assert_eq!(ready.attempts, 0);
+        assert_eq!(ready.state, LocalServerState::Ready);
+    }
 }
