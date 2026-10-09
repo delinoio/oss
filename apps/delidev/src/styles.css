@@ -884,7 +884,12 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 }
 /* Home V4 is scoped; other menu contexts retain their presentation. */
 .sidebar-pane.is-home { background: var(--surface-muted); gap: 12px; padding: 12px; }
-.is-home .sidebar-header-button, .is-home .sidebar-new-session, .is-home .sidebar-new-general-chat { border-radius: 8px; }
+.is-home .sidebar-header { min-height: 32px; }
+.is-home .sidebar-header h1 { font-size: 16px; }
+.is-home .sidebar-header-button { width: 32px; height: 32px; min-width: 32px; min-height: 32px; border-radius: 8px; }
+.is-home .sidebar-header-button .sidebar-icon { width: 16px; height: 16px; }
+/* Reduce only the two creation gaps; the pane/list/footer retain their 12px spacing. */
+.is-home .sidebar-new-session, .is-home .sidebar-new-general-chat { height: auto; min-height: 30px; margin-top: -6px; padding: 4px 8px; border-radius: 6px; white-space: normal; overflow-wrap: anywhere; }
 .is-home .sidebar-new-session[aria-current="page"] { background: var(--selected-background); color: var(--selected-text); border-color: var(--selected-border); }
 .is-home .sidebar-project-row, .is-home .sidebar-session-row { height: 34px; min-height: 34px; border-radius: 8px; color: var(--text); }
 .is-home .sidebar-session-row[aria-current="true"] { background: var(--selected-background); color: var(--selected-text); }
