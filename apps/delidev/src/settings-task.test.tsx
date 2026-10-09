@@ -11,6 +11,9 @@ import { SettingsDialogFocus, SettingsDialogSize, SettingsTaskActions, SettingsT
 import { ConfigurationEditor } from "./settings";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
+import { ProjectEditTab, ProjectEditTabs } from "./project-edit-tabs";
+import { readFileSync } from "node:fs";
+const projectTabStyles = readFileSync("src/project-edit-tabs.css", "utf8");
 
 function renderTask(children: ReactNode) {
   const transport = createRouterTransport(() => {});
@@ -223,4 +226,36 @@ it("retains page cancellation and distinct nested return, while omitting empty t
   fireEvent.click(screen.getByRole("button", {name:"Open nested confirmation"}));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", {name:"Keep nested item"})));
   fireEvent.click(screen.getByRole("button", {name:"Keep nested item"})); expect(screen.getByRole("dialog", {name:"Outer task"})).toBeTruthy(); expect(screen.queryByRole("button", {name:"Confirm nested deletion"})).toBeNull();
+});
+
+
+it("constrains the saved Project tab body through the mounted task wrapper", () => {
+  renderTask(<SettingsTaskDialog title="Edit project" close={() => {}}>
+    <style>{projectTabStyles}</style>
+    <form className="project-editor"><ProjectEditTabs panels={{
+      [ProjectEditTab.General]: <label>Name<input defaultValue="Saved project" /></label>,
+      [ProjectEditTab.Repositories]: <p>Repositories</p>,
+      [ProjectEditTab.Execution]: <p>Execution controls</p>,
+      [ProjectEditTab.Access]: <p>Access</p>,
+    }} /><SettingsTaskActions><button type="submit">Save Project</button></SettingsTaskActions></form>
+  </SettingsTaskDialog>);
+  expect(projectTabStyles).toContain(".settings-task-body");
+  const dialog = screen.getByRole("dialog"), form = dialog.querySelector<HTMLFormElement>(".project-editor")!;
+  const wrapper = form.parentElement!, body = wrapper.parentElement!;
+  expect(body.classList.contains("settings-task-body")).toBe(true);
+  // jsdom checks the actual selector/DOM chain, not viewport geometry.
+  for (const element of [body, wrapper, form]) {
+    expect(getComputedStyle(element).display, element.tagName + ":" + element.className).toBe("flex");
+    expect(getComputedStyle(element).minHeight).toBe("0");
+  }
+  expect(getComputedStyle(body).overflow).toBe("hidden");
+  const panels = [...form.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+  expect(panels).toHaveLength(4);
+  for (const panel of panels) expect(getComputedStyle(panel).overflowY).toBe("auto");
+  expect(screen.getByRole("button", { name: "Save Project" }).closest(".settings-task-body")).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Execution" }));
+  expect(screen.getByRole("tabpanel")).toBe(panels[2]);
+  // Internal task steps hide this retained wrapper; the flex rule must not undo it.
+  wrapper.hidden = true;
+  expect(getComputedStyle(wrapper).display).toBe("none");
 });

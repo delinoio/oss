@@ -7,6 +7,9 @@
 .project-edit-tabs > [hidden] { display: none; }
 .project-edit-tabs > [role="tabpanel"] > fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
 .settings-task-body:has(.project-edit-tabs) { display: flex; flex: 1; min-height: 0; padding: 0; overflow: hidden; }
-.settings-task-body:has(.project-edit-tabs) > .project-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: none; }
+/* The task body retains an intermediate wrapper for mounted step ownership.
+   Constrain that wrapper as well as the form, without revealing a hidden step. */
+.settings-task-body:has(.project-edit-tabs) > div:not([hidden]):has(> .project-editor > .project-edit-tabs) { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.settings-task-body:has(.project-edit-tabs) > div > .project-editor:has(> .project-edit-tabs) { display: flex; flex-direction: column; flex: 1; min-height: 0; max-width: none; }
 .project-editor > .project-edit-tabs { min-height: 0; }
 .settings-task-body:has(.project-edit-tabs) .project-editor > :not(.project-edit-tabs) { flex: none; }
