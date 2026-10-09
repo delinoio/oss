@@ -3,7 +3,15 @@
   "command-menu.navigate": "이동",
   "command-menu.create": "만들기",
   "command-menu.help": "도움말",
-  "command-menu.search": "명령 검색",
+  "command-menu.search": "명령 및 세션 검색",
   "command-menu.empty": "검색 결과가 없습니다.",
-  "command-menu.close": "명령 메뉴 닫기"
+  "command-menu.close": "명령 메뉴 닫기",
+  "command-menu.commands": "명령",
+  "command-menu.projectLoading": "프로젝트 불러오는 중…",
+  "command-menu.projectUnavailable": "프로젝트를 사용할 수 없습니다",
+  "command-menu.loading": "세션 검색 중… 결과가 아직 완전하지 않습니다.",
+  "command-menu.partial": "세션 검색이 완료되지 않았습니다. 불러온 결과는 계속 사용할 수 있습니다.",
+  "command-menu.reload": "다시 불러오기",
+  "command-menu.retry": "재시도",
+  "command-menu.noSessions": "일치하는 세션이 없습니다."
 }
