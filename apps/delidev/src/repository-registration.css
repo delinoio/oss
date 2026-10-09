@@ -59,3 +59,6 @@ div.repository-checkout-group > div[data-disclosure-content]:not([hidden]) { dis
 .repository-checkout-group .repository-clone-fields { padding-top: 0; border: 0; }
 
 .repository-registration .repository-remote-fields { margin-bottom: 0; }
+
+/* The rounded group clips content, so keep each disclosure ring inside its row. */
+.repository-checkout-group > button.disclosure-header.disclosure-header.repository-checkout-toggle:focus-visible { outline-offset: -4px; }
