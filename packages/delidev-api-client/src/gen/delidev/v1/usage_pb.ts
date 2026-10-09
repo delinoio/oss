@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Mutation, SubscriptionServiceIdentity, UsageCoverage } from "./common_pb.js";
+import type { ModelIdentity, Mutation, SubscriptionServiceIdentity, UsageCoverage } from "./common_pb.js";
 import { file_delidev_v1_common } from "./common_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/usage.proto.
  */
 export const file_delidev_v1_usage: GenFile = /*@__PURE__*/
-  fileDesc("ChZkZWxpZGV2L3YxL3VzYWdlLnByb3RvEgpkZWxpZGV2LnYxIo8DChZHZXRVc2FnZVN1bW1hcnlSZXF1ZXN0EhQKDGZyb21fdW5peF9tcxgBIAEoAxIVCg11bnRpbF91bml4X21zGAIgASgDEhIKCnNlc3Npb25faWQYAyABKAkSEgoKcHJvamVjdF9pZBgEIAEoCRISCgphY2NvdW50X2lkGAUgASgJEhMKC3Byb3ZpZGVyX2lkGAYgASgJEhAKCG1vZGVsX2lkGAcgASgJEhQKDGdlbmVyYWxfY2hhdBgIIAEoCBI1CgtncmFudWxhcml0eRgJIAEoDjIgLmRlbGlkZXYudjEuVXNhZ2VUaW1lR3JhbnVsYXJpdHkSEQoJdGltZV96b25lGAogASgJEj4KEmFjY291bnRpbmdfcHJvZmlsZRgLIAEoDjIiLmRlbGlkZXYudjEuVXNhZ2VBY2NvdW50aW5nUHJvZmlsZRJFChRzdWJzY3JpcHRpb25fc2VydmljZRgMIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5IvwBChBBY2NvdW50aW5nVG90YWxzEiwKBGtpbmQYASABKA4yHi5kZWxpZGV2LnYxLkFjY291bnRpbmdVbml0S2luZBINCgV1bml0cxgCIAEoDRITCgtrbm93bl90b3RhbBgDIAEoCRIWCg5tZWFzdXJlZF91bml0cxgEIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgFIAEoDRIvCgthY3R1YWxfY29zdBgGIAEoDjIaLmRlbGlkZXYudjEuVXNhZ2VDb3N0U3RhdGUSMgoOZXN0aW1hdGVkX2Nvc3QYByABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlIl4KDFVzYWdlTWVhc3VyZRITCgtrbm93bl90b3RhbBgBIAEoCRIaChJtZWFzdXJlZF9yZXNwb25zZXMYAiABKA0SHQoVdW5hdmFpbGFibGVfcmVzcG9uc2VzGAMgASgNIucCCgtVc2FnZVRvdGFscxIRCglyZXNwb25zZXMYASABKA0SJwoFaW5wdXQYAiABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIuCgxjYWNoZWRfaW5wdXQYAyABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIzChFjYWNoZV93cml0ZV9pbnB1dBgEIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEigKBm91dHB1dBgFIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEjIKEHJlYXNvbmluZ19vdXRwdXQYBiABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRInCgV0b3RhbBgHIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEjAKCmFjY291bnRpbmcYCCADKAsyHC5kZWxpZGV2LnYxLkFjY291bnRpbmdUb3RhbHMiaQoRVXNhZ2VBbmFseXRpY3NEYXkSFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscyLXAQoTVXNhZ2VBbmFseXRpY3NNb2RlbBITCgtwcm92aWRlcl9pZBgBIAEoCRIQCghtb2RlbF9pZBgCIAEoCRIVCg1wcm92aWRlcl9uYW1lGAMgASgJEhIKCm1vZGVsX25hbWUYBCABKAkSJwoGdG90YWxzGAUgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxJFChRzdWJzY3JpcHRpb25fc2VydmljZRgGIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5IlAKEFVzYWdlT3RoZXJNb2RlbHMSEwoLbW9kZWxfY291bnQYASABKA0SJwoGdG90YWxzGAIgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscyLsAQoOVXNhZ2VBbmFseXRpY3MSNQoLZ3JhbnVsYXJpdHkYASABKA4yIC5kZWxpZGV2LnYxLlVzYWdlVGltZUdyYW51bGFyaXR5EhEKCXRpbWVfem9uZRgCIAEoCRIrCgRkYXlzGAMgAygLMh0uZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljc0RheRIvCgZtb2RlbHMYBCADKAsyHy5kZWxpZGV2LnYxLlVzYWdlQW5hbHl0aWNzTW9kZWwSMgoMb3RoZXJfbW9kZWxzGAUgASgLMhwuZGVsaWRldi52MS5Vc2FnZU90aGVyTW9kZWxzIvsCCgpVc2FnZUdyb3VwEhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhAKCG1vZGVsX2lkGAUgASgJEicKBnRvdGFscxgGIAEoCzIXLmRlbGlkZXYudjEuVXNhZ2VUb3RhbHMSFAoMc2Vzc2lvbl9uYW1lGAcgASgJEhQKDHByb2plY3RfbmFtZRgIIAEoCRIUCgxhY2NvdW50X25hbWUYCSABKAkSFQoNcHJvdmlkZXJfbmFtZRgKIAEoCRISCgptb2RlbF9uYW1lGAsgASgJEi0KCWVzdGltYXRlcxgMIAEoCzIaLmRlbGlkZXYudjEuRXN0aW1hdGVUb3RhbHMSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYDSABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eSKPBQoXR2V0VXNhZ2VTdW1tYXJ5UmVzcG9uc2USFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxImCgZncm91cHMYBCADKAsyFi5kZWxpZGV2LnYxLlVzYWdlR3JvdXASKwoIY292ZXJhZ2UYBSABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYBiABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlEjIKDmVzdGltYXRlZF9jb3N0GAcgASgOMhouZGVsaWRldi52MS5Vc2FnZUNvc3RTdGF0ZRIsCiRhY2NlcHRlZF9leGVjdXRpb25zX3dpdGhvdXRfcmVzcG9uc2UYCCABKA0SLQoJZXN0aW1hdGVzGAkgASgLMhouZGVsaWRldi52MS5Fc3RpbWF0ZVRvdGFscxIpCgdwcmljaW5nGAogAygLMhguZGVsaWRldi52MS5QcmljaW5nVXNhZ2USLQoJYW5hbHl0aWNzGAsgASgLMhouZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljcxI+ChJhY2NvdW50aW5nX3Byb2ZpbGUYDCABKA4yIi5kZWxpZGV2LnYxLlVzYWdlQWNjb3VudGluZ1Byb2ZpbGUSPgoRbmF0aXZlX2FjY291bnRpbmcYDSADKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdTdW1tYXJ5Ei0KJWFjY2VwdGVkX2NvbXBhY3Rpb25zX3dpdGhvdXRfcmVzcG9uc2UYDiABKA0itwIKDFRva2VuUHJpY2luZxIQCghjdXJyZW5jeRgBIAEoCRIOCgZzb3VyY2UYAiABKAkSDQoFYXNfb2YYAyABKAkSMAoKaW5wdXRfbW9kZRgEIAEoDjIcLmRlbGlkZXYudjEuSW5wdXRQcmljaW5nTW9kZRIeChFpbnB1dF9wZXJfbWlsbGlvbhgFIAEoCUgAiAEBEiUKGGNhY2hlZF9pbnB1dF9wZXJfbWlsbGlvbhgGIAEoCUgBiAEBEh8KEm91dHB1dF9wZXJfbWlsbGlvbhgHIAEoCUgCiAEBEhIKCmV4Y2x1c2lvbnMYCCADKAlCFAoSX2lucHV0X3Blcl9taWxsaW9uQhsKGV9jYWNoZWRfaW5wdXRfcGVyX21pbGxpb25CFQoTX291dHB1dF9wZXJfbWlsbGlvbiLhAQoOUHJpY2luZ1ZlcnNpb24SCgoCaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSEAoIcmV2aXNpb24YBCABKAQSGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEicKBWJhc2lzGAYgASgLMhguZGVsaWRldi52MS5Ub2tlblByaWNpbmcSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYByABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eSIqChZHZXRNb2RlbFByaWNpbmdSZXF1ZXN0EhAKCG1vZGVsX2lkGAEgASgJIl4KF0dldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEhYKDm1vZGVsX3JldmlzaW9uGAIgASgEEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uIiYKGEdldFByaWNpbmdWZXJzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJIChlHZXRQcmljaW5nVmVyc2lvblJlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uIooBChZTZXRNb2RlbFByaWNpbmdSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhInCgViYXNpcxgCIAEoCzIYLmRlbGlkZXYudjEuVG9rZW5QcmljaW5nEh8KF2V4cGVjdGVkX21vZGVsX3JldmlzaW9uGAMgASgEImwKF1NldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgikAEKEEN1cnJlbmN5RXN0aW1hdGUSEAoIY3VycmVuY3kYASABKAkSFAoMa25vd25fYW1vdW50GAIgASgJEhoKEmNvbXBsZXRlX3Jlc3BvbnNlcxgDIAEoDRIZChFwYXJ0aWFsX3Jlc3BvbnNlcxgEIAEoDRIdChV1bmF2YWlsYWJsZV9yZXNwb25zZXMYBSABKA0iXgoORXN0aW1hdGVUb3RhbHMSMAoKY3VycmVuY2llcxgBIAMoCzIcLmRlbGlkZXYudjEuQ3VycmVuY3lFc3RpbWF0ZRIaChJ1bnByaWNlZF9yZXNwb25zZXMYAiABKA0i5AEKD0VzdGltYXRlTWVhc3VyZRIUCgxrbm93bl9hbW91bnQYASABKAkSFAoMa25vd25fdG9rZW5zGAIgASgJEhgKEHByaWNlZF9yZXNwb25zZXMYAyABKA0SHwoXbWlzc2luZ191c2FnZV9yZXNwb25zZXMYBCABKA0SHwoXbWlzc2luZ19wcmljZV9yZXNwb25zZXMYBSABKA0SJwofdW5zdXBwb3J0ZWRfYnJlYWtkb3duX3Jlc3BvbnNlcxgGIAEoDRIgChhub3RfYXBwbGljYWJsZV9yZXNwb25zZXMYByABKA0i9QEKDFByaWNpbmdVc2FnZRIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIsCgZ0b3RhbHMYAiABKAsyHC5kZWxpZGV2LnYxLkN1cnJlbmN5RXN0aW1hdGUSKgoFaW5wdXQYAyABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZRIxCgxjYWNoZWRfaW5wdXQYBCABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZRIrCgZvdXRwdXQYBSABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZSJhChdOYXRpdmVBY2NvdW50aW5nTWVhc3VyZRITCgtrbm93bl90b3RhbBgBIAEoCRIWCg5tZWFzdXJlZF91bml0cxgCIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgDIAEoDSKKAQoWTmF0aXZlQ3VycmVuY3lFc3RpbWF0ZRIQCghjdXJyZW5jeRgBIAEoCRIUCgxrbm93bl9hbW91bnQYAiABKAkSFgoOY29tcGxldGVfdW5pdHMYAyABKA0SFQoNcGFydGlhbF91bml0cxgEIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgFIAEoDSLsAwoWTmF0aXZlQWNjb3VudGluZ1RvdGFscxIsCgRraW5kGAEgASgOMh4uZGVsaWRldi52MS5BY2NvdW50aW5nVW5pdEtpbmQSDQoFdW5pdHMYAiABKA0SMgoFaW5wdXQYAyABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjcKCmNhY2hlX3JlYWQYBCABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjgKC2NhY2hlX3dyaXRlGAUgASgLMiMuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nTWVhc3VyZRIzCgZvdXRwdXQYBiABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjUKCHRoaW5raW5nGAcgASgLMiMuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nTWVhc3VyZRIyCgV0b3RhbBgIIAEoCzIjLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ01lYXN1cmUSNgoKY3VycmVuY2llcxgJIAMoCzIiLmRlbGlkZXYudjEuTmF0aXZlQ3VycmVuY3lFc3RpbWF0ZRIWCg51bnByaWNlZF91bml0cxgKIAEoDSL1AQoVTmF0aXZlQWNjb3VudGluZ0dyb3VwEhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhAKCG1vZGVsX2lkGAUgASgJEjIKBnRvdGFscxgGIAEoCzIiLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ1RvdGFscxJFChRzdWJzY3JpcHRpb25fc2VydmljZRgHIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5InYKE05hdGl2ZUFjY291bnRpbmdEYXkSFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSMgoGdG90YWxzGAMgASgLMiIuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nVG90YWxzIrEBChVOYXRpdmVFc3RpbWF0ZU1lYXN1cmUSFAoMa25vd25fYW1vdW50GAEgASgJEhQKDGtub3duX3Rva2VucxgCIAEoCRIUCgxwcmljZWRfdW5pdHMYAyABKA0SGwoTbWlzc2luZ191c2FnZV91bml0cxgEIAEoDRIbChNtaXNzaW5nX3ByaWNlX3VuaXRzGAUgASgNEhwKFG5vdF9hcHBsaWNhYmxlX3VuaXRzGAYgASgNIoQDChdOYXRpdmVBY2NvdW50aW5nUHJpY2luZxIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIyCgZ0b3RhbHMYAiABKAsyIi5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdUb3RhbHMSMAoFaW5wdXQYAyABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRI1CgpjYWNoZV9yZWFkGAQgASgLMiEuZGVsaWRldi52MS5OYXRpdmVFc3RpbWF0ZU1lYXN1cmUSNgoLY2FjaGVfd3JpdGUYBSABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRIxCgZvdXRwdXQYBiABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRI0CglyZWFzb25pbmcYByABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZSL2AgoXTmF0aXZlQWNjb3VudGluZ1N1bW1hcnkSMgoGdG90YWxzGAEgASgLMiIuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nVG90YWxzEjEKBmdyb3VwcxgCIAMoCzIhLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ0dyb3VwEi0KBGRheXMYAyADKAsyHy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdEYXkSMQoGbW9kZWxzGAQgAygLMiEuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nR3JvdXASNAoHcHJpY2luZxgFIAMoCzIjLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ1ByaWNpbmcSKwoIY292ZXJhZ2UYBiABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYByABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlKl4KFFVzYWdlVGltZUdyYW51bGFyaXR5EiYKIlVTQUdFX1RJTUVfR1JBTlVMQVJJVFlfVU5TUEVDSUZJRUQQABIeChpVU0FHRV9USU1FX0dSQU5VTEFSSVRZX0RBWRABKnAKFlVzYWdlQWNjb3VudGluZ1Byb2ZpbGUSKAokVVNBR0VfQUNDT1VOVElOR19QUk9GSUxFX1VOU1BFQ0lGSUVEEAASLAooVVNBR0VfQUNDT1VOVElOR19QUk9GSUxFX05BVElWRV9VTklUU19WMRABKugBChJBY2NvdW50aW5nVW5pdEtpbmQSJAogQUNDT1VOVElOR19VTklUX0tJTkRfVU5TUEVDSUZJRUQQABInCiNBQ0NPVU5USU5HX1VOSVRfS0lORF9DT0RFWF9SRVNQT05TRRABEioKJkFDQ09VTlRJTkdfVU5JVF9LSU5EX0dST0tfQ0xPU0VEX0lOUFVUEAISLworQUNDT1VOVElOR19VTklUX0tJTkRfQ0xBVURFX01BSU5fTE9PUF9JTlBVVBADEiYKIkFDQ09VTlRJTkdfVU5JVF9LSU5EX09QRU5DT0RFX1NURVAQBCp5Cg5Vc2FnZUNvc3RTdGF0ZRIgChxVU0FHRV9DT1NUX1NUQVRFX1VOU1BFQ0lGSUVEEAASIAocVVNBR0VfQ09TVF9TVEFURV9VTkFWQUlMQUJMRRABEiMKH1VTQUdFX0NPU1RfU1RBVEVfS05PV05fU1VCVE9UQUwQAip+ChBJbnB1dFByaWNpbmdNb2RlEiIKHklOUFVUX1BSSUNJTkdfTU9ERV9VTlNQRUNJRklFRBAAEh4KGklOUFVUX1BSSUNJTkdfTU9ERV9VTklGT1JNEAESJgoiSU5QVVRfUFJJQ0lOR19NT0RFX0NBQ0hFRF9ESVNDT1VOVBACMoQDCgxVc2FnZVNlcnZpY2USWgoPR2V0VXNhZ2VTdW1tYXJ5EiIuZGVsaWRldi52MS5HZXRVc2FnZVN1bW1hcnlSZXF1ZXN0GiMuZGVsaWRldi52MS5HZXRVc2FnZVN1bW1hcnlSZXNwb25zZRJaCg9HZXRNb2RlbFByaWNpbmcSIi5kZWxpZGV2LnYxLkdldE1vZGVsUHJpY2luZ1JlcXVlc3QaIy5kZWxpZGV2LnYxLkdldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEmAKEUdldFByaWNpbmdWZXJzaW9uEiQuZGVsaWRldi52MS5HZXRQcmljaW5nVmVyc2lvblJlcXVlc3QaJS5kZWxpZGV2LnYxLkdldFByaWNpbmdWZXJzaW9uUmVzcG9uc2USWgoPU2V0TW9kZWxQcmljaW5nEiIuZGVsaWRldi52MS5TZXRNb2RlbFByaWNpbmdSZXF1ZXN0GiMuZGVsaWRldi52MS5TZXRNb2RlbFByaWNpbmdSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("ChZkZWxpZGV2L3YxL3VzYWdlLnByb3RvEgpkZWxpZGV2LnYxIrkDChZHZXRVc2FnZVN1bW1hcnlSZXF1ZXN0EhQKDGZyb21fdW5peF9tcxgBIAEoAxIVCg11bnRpbF91bml4X21zGAIgASgDEhIKCnNlc3Npb25faWQYAyABKAkSEgoKcHJvamVjdF9pZBgEIAEoCRISCgphY2NvdW50X2lkGAUgASgJEhMKC3Byb3ZpZGVyX2lkGAYgASgJEhAKCG1vZGVsX2lkGAcgASgJEhQKDGdlbmVyYWxfY2hhdBgIIAEoCBI1CgtncmFudWxhcml0eRgJIAEoDjIgLmRlbGlkZXYudjEuVXNhZ2VUaW1lR3JhbnVsYXJpdHkSEQoJdGltZV96b25lGAogASgJEj4KEmFjY291bnRpbmdfcHJvZmlsZRgLIAEoDjIiLmRlbGlkZXYudjEuVXNhZ2VBY2NvdW50aW5nUHJvZmlsZRJFChRzdWJzY3JpcHRpb25fc2VydmljZRgMIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5EigKBW1vZGVsGA0gASgLMhkuZGVsaWRldi52MS5Nb2RlbElkZW50aXR5IvwBChBBY2NvdW50aW5nVG90YWxzEiwKBGtpbmQYASABKA4yHi5kZWxpZGV2LnYxLkFjY291bnRpbmdVbml0S2luZBINCgV1bml0cxgCIAEoDRITCgtrbm93bl90b3RhbBgDIAEoCRIWCg5tZWFzdXJlZF91bml0cxgEIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgFIAEoDRIvCgthY3R1YWxfY29zdBgGIAEoDjIaLmRlbGlkZXYudjEuVXNhZ2VDb3N0U3RhdGUSMgoOZXN0aW1hdGVkX2Nvc3QYByABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlIl4KDFVzYWdlTWVhc3VyZRITCgtrbm93bl90b3RhbBgBIAEoCRIaChJtZWFzdXJlZF9yZXNwb25zZXMYAiABKA0SHQoVdW5hdmFpbGFibGVfcmVzcG9uc2VzGAMgASgNIucCCgtVc2FnZVRvdGFscxIRCglyZXNwb25zZXMYASABKA0SJwoFaW5wdXQYAiABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIuCgxjYWNoZWRfaW5wdXQYAyABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRIzChFjYWNoZV93cml0ZV9pbnB1dBgEIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEigKBm91dHB1dBgFIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEjIKEHJlYXNvbmluZ19vdXRwdXQYBiABKAsyGC5kZWxpZGV2LnYxLlVzYWdlTWVhc3VyZRInCgV0b3RhbBgHIAEoCzIYLmRlbGlkZXYudjEuVXNhZ2VNZWFzdXJlEjAKCmFjY291bnRpbmcYCCADKAsyHC5kZWxpZGV2LnYxLkFjY291bnRpbmdUb3RhbHMiaQoRVXNhZ2VBbmFseXRpY3NEYXkSFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscyKBAgoTVXNhZ2VBbmFseXRpY3NNb2RlbBITCgtwcm92aWRlcl9pZBgBIAEoCRIQCghtb2RlbF9pZBgCIAEoCRIVCg1wcm92aWRlcl9uYW1lGAMgASgJEhIKCm1vZGVsX25hbWUYBCABKAkSJwoGdG90YWxzGAUgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxJFChRzdWJzY3JpcHRpb25fc2VydmljZRgGIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5EigKBW1vZGVsGAcgASgLMhkuZGVsaWRldi52MS5Nb2RlbElkZW50aXR5IlAKEFVzYWdlT3RoZXJNb2RlbHMSEwoLbW9kZWxfY291bnQYASABKA0SJwoGdG90YWxzGAIgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscyLsAQoOVXNhZ2VBbmFseXRpY3MSNQoLZ3JhbnVsYXJpdHkYASABKA4yIC5kZWxpZGV2LnYxLlVzYWdlVGltZUdyYW51bGFyaXR5EhEKCXRpbWVfem9uZRgCIAEoCRIrCgRkYXlzGAMgAygLMh0uZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljc0RheRIvCgZtb2RlbHMYBCADKAsyHy5kZWxpZGV2LnYxLlVzYWdlQW5hbHl0aWNzTW9kZWwSMgoMb3RoZXJfbW9kZWxzGAUgASgLMhwuZGVsaWRldi52MS5Vc2FnZU90aGVyTW9kZWxzIqUDCgpVc2FnZUdyb3VwEhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhAKCG1vZGVsX2lkGAUgASgJEicKBnRvdGFscxgGIAEoCzIXLmRlbGlkZXYudjEuVXNhZ2VUb3RhbHMSFAoMc2Vzc2lvbl9uYW1lGAcgASgJEhQKDHByb2plY3RfbmFtZRgIIAEoCRIUCgxhY2NvdW50X25hbWUYCSABKAkSFQoNcHJvdmlkZXJfbmFtZRgKIAEoCRISCgptb2RlbF9uYW1lGAsgASgJEi0KCWVzdGltYXRlcxgMIAEoCzIaLmRlbGlkZXYudjEuRXN0aW1hdGVUb3RhbHMSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYDSABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eRIoCgVtb2RlbBgOIAEoCzIZLmRlbGlkZXYudjEuTW9kZWxJZGVudGl0eSKPBQoXR2V0VXNhZ2VTdW1tYXJ5UmVzcG9uc2USFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSJwoGdG90YWxzGAMgASgLMhcuZGVsaWRldi52MS5Vc2FnZVRvdGFscxImCgZncm91cHMYBCADKAsyFi5kZWxpZGV2LnYxLlVzYWdlR3JvdXASKwoIY292ZXJhZ2UYBSABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYBiABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlEjIKDmVzdGltYXRlZF9jb3N0GAcgASgOMhouZGVsaWRldi52MS5Vc2FnZUNvc3RTdGF0ZRIsCiRhY2NlcHRlZF9leGVjdXRpb25zX3dpdGhvdXRfcmVzcG9uc2UYCCABKA0SLQoJZXN0aW1hdGVzGAkgASgLMhouZGVsaWRldi52MS5Fc3RpbWF0ZVRvdGFscxIpCgdwcmljaW5nGAogAygLMhguZGVsaWRldi52MS5QcmljaW5nVXNhZ2USLQoJYW5hbHl0aWNzGAsgASgLMhouZGVsaWRldi52MS5Vc2FnZUFuYWx5dGljcxI+ChJhY2NvdW50aW5nX3Byb2ZpbGUYDCABKA4yIi5kZWxpZGV2LnYxLlVzYWdlQWNjb3VudGluZ1Byb2ZpbGUSPgoRbmF0aXZlX2FjY291bnRpbmcYDSADKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdTdW1tYXJ5Ei0KJWFjY2VwdGVkX2NvbXBhY3Rpb25zX3dpdGhvdXRfcmVzcG9uc2UYDiABKA0itwIKDFRva2VuUHJpY2luZxIQCghjdXJyZW5jeRgBIAEoCRIOCgZzb3VyY2UYAiABKAkSDQoFYXNfb2YYAyABKAkSMAoKaW5wdXRfbW9kZRgEIAEoDjIcLmRlbGlkZXYudjEuSW5wdXRQcmljaW5nTW9kZRIeChFpbnB1dF9wZXJfbWlsbGlvbhgFIAEoCUgAiAEBEiUKGGNhY2hlZF9pbnB1dF9wZXJfbWlsbGlvbhgGIAEoCUgBiAEBEh8KEm91dHB1dF9wZXJfbWlsbGlvbhgHIAEoCUgCiAEBEhIKCmV4Y2x1c2lvbnMYCCADKAlCFAoSX2lucHV0X3Blcl9taWxsaW9uQhsKGV9jYWNoZWRfaW5wdXRfcGVyX21pbGxpb25CFQoTX291dHB1dF9wZXJfbWlsbGlvbiLBAgoOUHJpY2luZ1ZlcnNpb24SCgoCaWQYASABKAkSEAoIbW9kZWxfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSEAoIcmV2aXNpb24YBCABKAQSGgoSY3JlYXRlZF9hdF91bml4X21zGAUgASgDEicKBWJhc2lzGAYgASgLMhguZGVsaWRldi52MS5Ub2tlblByaWNpbmcSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYByABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eRIoCgVtb2RlbBgIIAEoCzIZLmRlbGlkZXYudjEuTW9kZWxJZGVudGl0eRI0Cgpwcm92ZW5hbmNlGAkgASgLMiAuZGVsaWRldi52MS5Ub2tlblByaWNlUHJvdmVuYW5jZSIqChZHZXRNb2RlbFByaWNpbmdSZXF1ZXN0EhAKCG1vZGVsX2lkGAEgASgJIl4KF0dldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEhYKDm1vZGVsX3JldmlzaW9uGAIgASgEEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uIiYKGEdldFByaWNpbmdWZXJzaW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJIChlHZXRQcmljaW5nVmVyc2lvblJlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uIooBChZTZXRNb2RlbFByaWNpbmdSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhInCgViYXNpcxgCIAEoCzIYLmRlbGlkZXYudjEuVG9rZW5QcmljaW5nEh8KF2V4cGVjdGVkX21vZGVsX3JldmlzaW9uGAMgASgEImwKF1NldE1vZGVsUHJpY2luZ1Jlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgikAEKEEN1cnJlbmN5RXN0aW1hdGUSEAoIY3VycmVuY3kYASABKAkSFAoMa25vd25fYW1vdW50GAIgASgJEhoKEmNvbXBsZXRlX3Jlc3BvbnNlcxgDIAEoDRIZChFwYXJ0aWFsX3Jlc3BvbnNlcxgEIAEoDRIdChV1bmF2YWlsYWJsZV9yZXNwb25zZXMYBSABKA0iXgoORXN0aW1hdGVUb3RhbHMSMAoKY3VycmVuY2llcxgBIAMoCzIcLmRlbGlkZXYudjEuQ3VycmVuY3lFc3RpbWF0ZRIaChJ1bnByaWNlZF9yZXNwb25zZXMYAiABKA0i5AEKD0VzdGltYXRlTWVhc3VyZRIUCgxrbm93bl9hbW91bnQYASABKAkSFAoMa25vd25fdG9rZW5zGAIgASgJEhgKEHByaWNlZF9yZXNwb25zZXMYAyABKA0SHwoXbWlzc2luZ191c2FnZV9yZXNwb25zZXMYBCABKA0SHwoXbWlzc2luZ19wcmljZV9yZXNwb25zZXMYBSABKA0SJwofdW5zdXBwb3J0ZWRfYnJlYWtkb3duX3Jlc3BvbnNlcxgGIAEoDRIgChhub3RfYXBwbGljYWJsZV9yZXNwb25zZXMYByABKA0i9QEKDFByaWNpbmdVc2FnZRIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIsCgZ0b3RhbHMYAiABKAsyHC5kZWxpZGV2LnYxLkN1cnJlbmN5RXN0aW1hdGUSKgoFaW5wdXQYAyABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZRIxCgxjYWNoZWRfaW5wdXQYBCABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZRIrCgZvdXRwdXQYBSABKAsyGy5kZWxpZGV2LnYxLkVzdGltYXRlTWVhc3VyZSJhChdOYXRpdmVBY2NvdW50aW5nTWVhc3VyZRITCgtrbm93bl90b3RhbBgBIAEoCRIWCg5tZWFzdXJlZF91bml0cxgCIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgDIAEoDSKKAQoWTmF0aXZlQ3VycmVuY3lFc3RpbWF0ZRIQCghjdXJyZW5jeRgBIAEoCRIUCgxrbm93bl9hbW91bnQYAiABKAkSFgoOY29tcGxldGVfdW5pdHMYAyABKA0SFQoNcGFydGlhbF91bml0cxgEIAEoDRIZChF1bmF2YWlsYWJsZV91bml0cxgFIAEoDSLsAwoWTmF0aXZlQWNjb3VudGluZ1RvdGFscxIsCgRraW5kGAEgASgOMh4uZGVsaWRldi52MS5BY2NvdW50aW5nVW5pdEtpbmQSDQoFdW5pdHMYAiABKA0SMgoFaW5wdXQYAyABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjcKCmNhY2hlX3JlYWQYBCABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjgKC2NhY2hlX3dyaXRlGAUgASgLMiMuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nTWVhc3VyZRIzCgZvdXRwdXQYBiABKAsyIy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdNZWFzdXJlEjUKCHRoaW5raW5nGAcgASgLMiMuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nTWVhc3VyZRIyCgV0b3RhbBgIIAEoCzIjLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ01lYXN1cmUSNgoKY3VycmVuY2llcxgJIAMoCzIiLmRlbGlkZXYudjEuTmF0aXZlQ3VycmVuY3lFc3RpbWF0ZRIWCg51bnByaWNlZF91bml0cxgKIAEoDSKfAgoVTmF0aXZlQWNjb3VudGluZ0dyb3VwEhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRISCgphY2NvdW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhAKCG1vZGVsX2lkGAUgASgJEjIKBnRvdGFscxgGIAEoCzIiLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ1RvdGFscxJFChRzdWJzY3JpcHRpb25fc2VydmljZRgHIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5EigKBW1vZGVsGAggASgLMhkuZGVsaWRldi52MS5Nb2RlbElkZW50aXR5InYKE05hdGl2ZUFjY291bnRpbmdEYXkSFAoMZnJvbV91bml4X21zGAEgASgDEhUKDXVudGlsX3VuaXhfbXMYAiABKAMSMgoGdG90YWxzGAMgASgLMiIuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nVG90YWxzIrEBChVOYXRpdmVFc3RpbWF0ZU1lYXN1cmUSFAoMa25vd25fYW1vdW50GAEgASgJEhQKDGtub3duX3Rva2VucxgCIAEoCRIUCgxwcmljZWRfdW5pdHMYAyABKA0SGwoTbWlzc2luZ191c2FnZV91bml0cxgEIAEoDRIbChNtaXNzaW5nX3ByaWNlX3VuaXRzGAUgASgNEhwKFG5vdF9hcHBsaWNhYmxlX3VuaXRzGAYgASgNIoQDChdOYXRpdmVBY2NvdW50aW5nUHJpY2luZxIrCgdwcmljaW5nGAEgASgLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIyCgZ0b3RhbHMYAiABKAsyIi5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdUb3RhbHMSMAoFaW5wdXQYAyABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRI1CgpjYWNoZV9yZWFkGAQgASgLMiEuZGVsaWRldi52MS5OYXRpdmVFc3RpbWF0ZU1lYXN1cmUSNgoLY2FjaGVfd3JpdGUYBSABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRIxCgZvdXRwdXQYBiABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZRI0CglyZWFzb25pbmcYByABKAsyIS5kZWxpZGV2LnYxLk5hdGl2ZUVzdGltYXRlTWVhc3VyZSL2AgoXTmF0aXZlQWNjb3VudGluZ1N1bW1hcnkSMgoGdG90YWxzGAEgASgLMiIuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nVG90YWxzEjEKBmdyb3VwcxgCIAMoCzIhLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ0dyb3VwEi0KBGRheXMYAyADKAsyHy5kZWxpZGV2LnYxLk5hdGl2ZUFjY291bnRpbmdEYXkSMQoGbW9kZWxzGAQgAygLMiEuZGVsaWRldi52MS5OYXRpdmVBY2NvdW50aW5nR3JvdXASNAoHcHJpY2luZxgFIAMoCzIjLmRlbGlkZXYudjEuTmF0aXZlQWNjb3VudGluZ1ByaWNpbmcSKwoIY292ZXJhZ2UYBiABKA4yGS5kZWxpZGV2LnYxLlVzYWdlQ292ZXJhZ2USLwoLYWN0dWFsX2Nvc3QYByABKA4yGi5kZWxpZGV2LnYxLlVzYWdlQ29zdFN0YXRlIlIKElRva2VuUHJpY2luZ1BvbGljeRIqCgRtb2RlGAEgASgOMhwuZGVsaWRldi52MS5Ub2tlblByaWNpbmdNb2RlEhAKCHJldmlzaW9uGAIgASgEInYKFFRva2VuUHJpY2VQcm92ZW5hbmNlEhQKDHByb3ZpZGVyX2tleRgBIAEoCRIRCgltb2RlbF9rZXkYAiABKAkSFwoPc25hcHNob3Rfc2hhMjU2GAMgASgJEhwKFHJldHJpZXZlZF9hdF91bml4X21zGAQgASgDIuMBChNUb2tlblByaWNlUmVmZXJlbmNlEg0KBXN0YXRlGAEgASgJEhoKEmNoZWNrZWRfYXRfdW5peF9tcxgCIAEoAxIUCgxmYWlsdXJlX2NvZGUYAyABKAkSHAoUdW5zdXBwb3J0ZWRfZXN0aW1hdGUYBCABKAgSEgoKY29zdHNfanNvbhgFIAEoDBIYChB1cHN0cmVhbV91cGRhdGVkGAYgASgJEhYKDmFwaV9lcXVpdmFsZW50GAcgASgIEicKBWJhc2lzGAggASgLMhguZGVsaWRldi52MS5Ub2tlblByaWNpbmciQgoWR2V0VG9rZW5QcmljaW5nUmVxdWVzdBIoCgVtb2RlbBgBIAEoCzIZLmRlbGlkZXYudjEuTW9kZWxJZGVudGl0eSLFAQoXR2V0VG9rZW5QcmljaW5nUmVzcG9uc2USKwoHcHJpY2luZxgBIAEoCzIaLmRlbGlkZXYudjEuUHJpY2luZ1ZlcnNpb24SLgoGcG9saWN5GAIgASgLMh4uZGVsaWRldi52MS5Ub2tlblByaWNpbmdQb2xpY3kSMgoJcmVmZXJlbmNlGAMgASgLMh8uZGVsaWRldi52MS5Ub2tlblByaWNlUmVmZXJlbmNlEhkKEXByb3ZpZGVyX3JldmlzaW9uGAQgASgEIuABChZTZXRUb2tlblByaWNpbmdSZXF1ZXN0EigKBW1vZGVsGAEgASgLMhkuZGVsaWRldi52MS5Nb2RlbElkZW50aXR5EhkKEWV4cGVjdGVkX3JldmlzaW9uGAIgASgEEhIKCnJlcXVlc3RfaWQYAyABKAkSJwoFYmFzaXMYBCABKAsyGC5kZWxpZGV2LnYxLlRva2VuUHJpY2luZxIiChpleHBlY3RlZF9wcm92aWRlcl9yZXZpc2lvbhgFIAEoBBIgChhleHBlY3RlZF9wb2xpY3lfcmV2aXNpb24YBiABKAQinAEKF1NldFRva2VuUHJpY2luZ1Jlc3BvbnNlEisKB3ByaWNpbmcYASABKAsyGi5kZWxpZGV2LnYxLlByaWNpbmdWZXJzaW9uEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgSLgoGcG9saWN5GAQgASgLMh4uZGVsaWRldi52MS5Ub2tlblByaWNpbmdQb2xpY3kizAEKGlNldFRva2VuUHJpY2luZ01vZGVSZXF1ZXN0EigKBW1vZGVsGAEgASgLMhkuZGVsaWRldi52MS5Nb2RlbElkZW50aXR5EioKBG1vZGUYAiABKA4yHC5kZWxpZGV2LnYxLlRva2VuUHJpY2luZ01vZGUSIAoYZXhwZWN0ZWRfcG9saWN5X3JldmlzaW9uGAMgASgEEhIKCnJlcXVlc3RfaWQYBCABKAkSIgoaZXhwZWN0ZWRfcHJvdmlkZXJfcmV2aXNpb24YBSABKAQieQobU2V0VG9rZW5QcmljaW5nTW9kZVJlc3BvbnNlEjQKB2N1cnJlbnQYASABKAsyIy5kZWxpZGV2LnYxLkdldFRva2VuUHJpY2luZ1Jlc3BvbnNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgiGwoZUmVmcmVzaFRva2VuUHJpY2VzUmVxdWVzdCJdChpSZWZyZXNoVG9rZW5QcmljZXNSZXNwb25zZRINCgVzdGF0ZRgBIAEoCRIaChJjaGVja2VkX2F0X3VuaXhfbXMYAiABKAMSFAoMZmFpbHVyZV9jb2RlGAMgASgJIpwBChdMaXN0VG9rZW5QcmljaW5nUmVxdWVzdBIRCglwYWdlX3NpemUYASABKA0SEgoKcGFnZV90b2tlbhgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRJFChRzdWJzY3JpcHRpb25fc2VydmljZRgEIAEoDjInLmRlbGlkZXYudjEuU3Vic2NyaXB0aW9uU2VydmljZUlkZW50aXR5ImAKGExpc3RUb2tlblByaWNpbmdSZXNwb25zZRIrCgdwcmljaW5nGAEgAygLMhouZGVsaWRldi52MS5QcmljaW5nVmVyc2lvbhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkqXgoUVXNhZ2VUaW1lR3JhbnVsYXJpdHkSJgoiVVNBR0VfVElNRV9HUkFOVUxBUklUWV9VTlNQRUNJRklFRBAAEh4KGlVTQUdFX1RJTUVfR1JBTlVMQVJJVFlfREFZEAEqcAoWVXNhZ2VBY2NvdW50aW5nUHJvZmlsZRIoCiRVU0FHRV9BQ0NPVU5USU5HX1BST0ZJTEVfVU5TUEVDSUZJRUQQABIsCihVU0FHRV9BQ0NPVU5USU5HX1BST0ZJTEVfTkFUSVZFX1VOSVRTX1YxEAEq6AEKEkFjY291bnRpbmdVbml0S2luZBIkCiBBQ0NPVU5USU5HX1VOSVRfS0lORF9VTlNQRUNJRklFRBAAEicKI0FDQ09VTlRJTkdfVU5JVF9LSU5EX0NPREVYX1JFU1BPTlNFEAESKgomQUNDT1VOVElOR19VTklUX0tJTkRfR1JPS19DTE9TRURfSU5QVVQQAhIvCitBQ0NPVU5USU5HX1VOSVRfS0lORF9DTEFVREVfTUFJTl9MT09QX0lOUFVUEAMSJgoiQUNDT1VOVElOR19VTklUX0tJTkRfT1BFTkNPREVfU1RFUBAEKnkKDlVzYWdlQ29zdFN0YXRlEiAKHFVTQUdFX0NPU1RfU1RBVEVfVU5TUEVDSUZJRUQQABIgChxVU0FHRV9DT1NUX1NUQVRFX1VOQVZBSUxBQkxFEAESIwofVVNBR0VfQ09TVF9TVEFURV9LTk9XTl9TVUJUT1RBTBACKn4KEElucHV0UHJpY2luZ01vZGUSIgoeSU5QVVRfUFJJQ0lOR19NT0RFX1VOU1BFQ0lGSUVEEAASHgoaSU5QVVRfUFJJQ0lOR19NT0RFX1VOSUZPUk0QARImCiJJTlBVVF9QUklDSU5HX01PREVfQ0FDSEVEX0RJU0NPVU5UEAIqdwoQVG9rZW5QcmljaW5nTW9kZRIiCh5UT0tFTl9QUklDSU5HX01PREVfVU5TUEVDSUZJRUQQABIgChxUT0tFTl9QUklDSU5HX01PREVfQVVUT01BVElDEAESHQoZVE9LRU5fUFJJQ0lOR19NT0RFX01BTlVBTBACMugGCgxVc2FnZVNlcnZpY2USXQoQTGlzdFRva2VuUHJpY2luZxIjLmRlbGlkZXYudjEuTGlzdFRva2VuUHJpY2luZ1JlcXVlc3QaJC5kZWxpZGV2LnYxLkxpc3RUb2tlblByaWNpbmdSZXNwb25zZRJaCg9HZXRUb2tlblByaWNpbmcSIi5kZWxpZGV2LnYxLkdldFRva2VuUHJpY2luZ1JlcXVlc3QaIy5kZWxpZGV2LnYxLkdldFRva2VuUHJpY2luZ1Jlc3BvbnNlEloKD1NldFRva2VuUHJpY2luZxIiLmRlbGlkZXYudjEuU2V0VG9rZW5QcmljaW5nUmVxdWVzdBojLmRlbGlkZXYudjEuU2V0VG9rZW5QcmljaW5nUmVzcG9uc2USZgoTU2V0VG9rZW5QcmljaW5nTW9kZRImLmRlbGlkZXYudjEuU2V0VG9rZW5QcmljaW5nTW9kZVJlcXVlc3QaJy5kZWxpZGV2LnYxLlNldFRva2VuUHJpY2luZ01vZGVSZXNwb25zZRJjChJSZWZyZXNoVG9rZW5QcmljZXMSJS5kZWxpZGV2LnYxLlJlZnJlc2hUb2tlblByaWNlc1JlcXVlc3QaJi5kZWxpZGV2LnYxLlJlZnJlc2hUb2tlblByaWNlc1Jlc3BvbnNlEloKD0dldFVzYWdlU3VtbWFyeRIiLmRlbGlkZXYudjEuR2V0VXNhZ2VTdW1tYXJ5UmVxdWVzdBojLmRlbGlkZXYudjEuR2V0VXNhZ2VTdW1tYXJ5UmVzcG9uc2USWgoPR2V0TW9kZWxQcmljaW5nEiIuZGVsaWRldi52MS5HZXRNb2RlbFByaWNpbmdSZXF1ZXN0GiMuZGVsaWRldi52MS5HZXRNb2RlbFByaWNpbmdSZXNwb25zZRJgChFHZXRQcmljaW5nVmVyc2lvbhIkLmRlbGlkZXYudjEuR2V0UHJpY2luZ1ZlcnNpb25SZXF1ZXN0GiUuZGVsaWRldi52MS5HZXRQcmljaW5nVmVyc2lvblJlc3BvbnNlEloKD1NldE1vZGVsUHJpY2luZxIiLmRlbGlkZXYudjEuU2V0TW9kZWxQcmljaW5nUmVxdWVzdBojLmRlbGlkZXYudjEuU2V0TW9kZWxQcmljaW5nUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.GetUsageSummaryRequest
@@ -79,6 +79,11 @@ export type GetUsageSummaryRequest = Message<"delidev.v1.GetUsageSummaryRequest"
    * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 12;
    */
   subscriptionService: SubscriptionServiceIdentity;
+
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 13;
+   */
+  model?: ModelIdentity | undefined;
 };
 
 /**
@@ -283,6 +288,11 @@ export type UsageAnalyticsModel = Message<"delidev.v1.UsageAnalyticsModel"> & {
    * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 6;
    */
   subscriptionService: SubscriptionServiceIdentity;
+
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 7;
+   */
+  model?: ModelIdentity | undefined;
 };
 
 /**
@@ -424,6 +434,11 @@ export type UsageGroup = Message<"delidev.v1.UsageGroup"> & {
    * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 13;
    */
   subscriptionService: SubscriptionServiceIdentity;
+
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 14;
+   */
+  model?: ModelIdentity | undefined;
 };
 
 /**
@@ -616,6 +631,16 @@ export type PricingVersion = Message<"delidev.v1.PricingVersion"> & {
    * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 7;
    */
   subscriptionService: SubscriptionServiceIdentity;
+
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 8;
+   */
+  model?: ModelIdentity | undefined;
+
+  /**
+   * @generated from field: delidev.v1.TokenPriceProvenance provenance = 9;
+   */
+  provenance?: TokenPriceProvenance | undefined;
 };
 
 /**
@@ -1073,6 +1098,11 @@ export type NativeAccountingGroup = Message<"delidev.v1.NativeAccountingGroup"> 
    * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 7;
    */
   subscriptionService: SubscriptionServiceIdentity;
+
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 8;
+   */
+  model?: ModelIdentity | undefined;
 };
 
 /**
@@ -1250,6 +1280,393 @@ export const NativeAccountingSummarySchema: GenMessage<NativeAccountingSummary> 
   messageDesc(file_delidev_v1_usage, 29);
 
 /**
+ * @generated from message delidev.v1.TokenPricingPolicy
+ */
+export type TokenPricingPolicy = Message<"delidev.v1.TokenPricingPolicy"> & {
+  /**
+   * @generated from field: delidev.v1.TokenPricingMode mode = 1;
+   */
+  mode: TokenPricingMode;
+
+  /**
+   * @generated from field: uint64 revision = 2;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.TokenPricingPolicy.
+ * Use `create(TokenPricingPolicySchema)` to create a new message.
+ */
+export const TokenPricingPolicySchema: GenMessage<TokenPricingPolicy> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 30);
+
+/**
+ * @generated from message delidev.v1.TokenPriceProvenance
+ */
+export type TokenPriceProvenance = Message<"delidev.v1.TokenPriceProvenance"> & {
+  /**
+   * @generated from field: string provider_key = 1;
+   */
+  providerKey: string;
+
+  /**
+   * @generated from field: string model_key = 2;
+   */
+  modelKey: string;
+
+  /**
+   * @generated from field: string snapshot_sha256 = 3;
+   */
+  snapshotSha256: string;
+
+  /**
+   * @generated from field: int64 retrieved_at_unix_ms = 4;
+   */
+  retrievedAtUnixMs: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.TokenPriceProvenance.
+ * Use `create(TokenPriceProvenanceSchema)` to create a new message.
+ */
+export const TokenPriceProvenanceSchema: GenMessage<TokenPriceProvenance> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 31);
+
+/**
+ * @generated from message delidev.v1.TokenPriceReference
+ */
+export type TokenPriceReference = Message<"delidev.v1.TokenPriceReference"> & {
+  /**
+   * @generated from field: string state = 1;
+   */
+  state: string;
+
+  /**
+   * @generated from field: int64 checked_at_unix_ms = 2;
+   */
+  checkedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string failure_code = 3;
+   */
+  failureCode: string;
+
+  /**
+   * @generated from field: bool unsupported_estimate = 4;
+   */
+  unsupportedEstimate: boolean;
+
+  /**
+   * @generated from field: bytes costs_json = 5;
+   */
+  costsJson: Uint8Array;
+
+  /**
+   * @generated from field: string upstream_updated = 6;
+   */
+  upstreamUpdated: string;
+
+  /**
+   * @generated from field: bool api_equivalent = 7;
+   */
+  apiEquivalent: boolean;
+
+  /**
+   * @generated from field: delidev.v1.TokenPricing basis = 8;
+   */
+  basis?: TokenPricing | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.TokenPriceReference.
+ * Use `create(TokenPriceReferenceSchema)` to create a new message.
+ */
+export const TokenPriceReferenceSchema: GenMessage<TokenPriceReference> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 32);
+
+/**
+ * @generated from message delidev.v1.GetTokenPricingRequest
+ */
+export type GetTokenPricingRequest = Message<"delidev.v1.GetTokenPricingRequest"> & {
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 1;
+   */
+  model?: ModelIdentity | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.GetTokenPricingRequest.
+ * Use `create(GetTokenPricingRequestSchema)` to create a new message.
+ */
+export const GetTokenPricingRequestSchema: GenMessage<GetTokenPricingRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 33);
+
+/**
+ * @generated from message delidev.v1.GetTokenPricingResponse
+ */
+export type GetTokenPricingResponse = Message<"delidev.v1.GetTokenPricingResponse"> & {
+  /**
+   * @generated from field: delidev.v1.PricingVersion pricing = 1;
+   */
+  pricing?: PricingVersion | undefined;
+
+  /**
+   * @generated from field: delidev.v1.TokenPricingPolicy policy = 2;
+   */
+  policy?: TokenPricingPolicy | undefined;
+
+  /**
+   * @generated from field: delidev.v1.TokenPriceReference reference = 3;
+   */
+  reference?: TokenPriceReference | undefined;
+
+  /**
+   * @generated from field: uint64 provider_revision = 4;
+   */
+  providerRevision: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.GetTokenPricingResponse.
+ * Use `create(GetTokenPricingResponseSchema)` to create a new message.
+ */
+export const GetTokenPricingResponseSchema: GenMessage<GetTokenPricingResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 34);
+
+/**
+ * @generated from message delidev.v1.SetTokenPricingRequest
+ */
+export type SetTokenPricingRequest = Message<"delidev.v1.SetTokenPricingRequest"> & {
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 1;
+   */
+  model?: ModelIdentity | undefined;
+
+  /**
+   * @generated from field: uint64 expected_revision = 2;
+   */
+  expectedRevision: bigint;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: delidev.v1.TokenPricing basis = 4;
+   */
+  basis?: TokenPricing | undefined;
+
+  /**
+   * @generated from field: uint64 expected_provider_revision = 5;
+   */
+  expectedProviderRevision: bigint;
+
+  /**
+   * @generated from field: uint64 expected_policy_revision = 6;
+   */
+  expectedPolicyRevision: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.SetTokenPricingRequest.
+ * Use `create(SetTokenPricingRequestSchema)` to create a new message.
+ */
+export const SetTokenPricingRequestSchema: GenMessage<SetTokenPricingRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 35);
+
+/**
+ * @generated from message delidev.v1.SetTokenPricingResponse
+ */
+export type SetTokenPricingResponse = Message<"delidev.v1.SetTokenPricingResponse"> & {
+  /**
+   * @generated from field: delidev.v1.PricingVersion pricing = 1;
+   */
+  pricing?: PricingVersion | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+
+  /**
+   * @generated from field: delidev.v1.TokenPricingPolicy policy = 4;
+   */
+  policy?: TokenPricingPolicy | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.SetTokenPricingResponse.
+ * Use `create(SetTokenPricingResponseSchema)` to create a new message.
+ */
+export const SetTokenPricingResponseSchema: GenMessage<SetTokenPricingResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 36);
+
+/**
+ * @generated from message delidev.v1.SetTokenPricingModeRequest
+ */
+export type SetTokenPricingModeRequest = Message<"delidev.v1.SetTokenPricingModeRequest"> & {
+  /**
+   * @generated from field: delidev.v1.ModelIdentity model = 1;
+   */
+  model?: ModelIdentity | undefined;
+
+  /**
+   * @generated from field: delidev.v1.TokenPricingMode mode = 2;
+   */
+  mode: TokenPricingMode;
+
+  /**
+   * @generated from field: uint64 expected_policy_revision = 3;
+   */
+  expectedPolicyRevision: bigint;
+
+  /**
+   * @generated from field: string request_id = 4;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: uint64 expected_provider_revision = 5;
+   */
+  expectedProviderRevision: bigint;
+};
+
+/**
+ * Describes the message delidev.v1.SetTokenPricingModeRequest.
+ * Use `create(SetTokenPricingModeRequestSchema)` to create a new message.
+ */
+export const SetTokenPricingModeRequestSchema: GenMessage<SetTokenPricingModeRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 37);
+
+/**
+ * @generated from message delidev.v1.SetTokenPricingModeResponse
+ */
+export type SetTokenPricingModeResponse = Message<"delidev.v1.SetTokenPricingModeResponse"> & {
+  /**
+   * @generated from field: delidev.v1.GetTokenPricingResponse current = 1;
+   */
+  current?: GetTokenPricingResponse | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.SetTokenPricingModeResponse.
+ * Use `create(SetTokenPricingModeResponseSchema)` to create a new message.
+ */
+export const SetTokenPricingModeResponseSchema: GenMessage<SetTokenPricingModeResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 38);
+
+/**
+ * @generated from message delidev.v1.RefreshTokenPricesRequest
+ */
+export type RefreshTokenPricesRequest = Message<"delidev.v1.RefreshTokenPricesRequest"> & {
+};
+
+/**
+ * Describes the message delidev.v1.RefreshTokenPricesRequest.
+ * Use `create(RefreshTokenPricesRequestSchema)` to create a new message.
+ */
+export const RefreshTokenPricesRequestSchema: GenMessage<RefreshTokenPricesRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 39);
+
+/**
+ * @generated from message delidev.v1.RefreshTokenPricesResponse
+ */
+export type RefreshTokenPricesResponse = Message<"delidev.v1.RefreshTokenPricesResponse"> & {
+  /**
+   * @generated from field: string state = 1;
+   */
+  state: string;
+
+  /**
+   * @generated from field: int64 checked_at_unix_ms = 2;
+   */
+  checkedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string failure_code = 3;
+   */
+  failureCode: string;
+};
+
+/**
+ * Describes the message delidev.v1.RefreshTokenPricesResponse.
+ * Use `create(RefreshTokenPricesResponseSchema)` to create a new message.
+ */
+export const RefreshTokenPricesResponseSchema: GenMessage<RefreshTokenPricesResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 40);
+
+/**
+ * @generated from message delidev.v1.ListTokenPricingRequest
+ */
+export type ListTokenPricingRequest = Message<"delidev.v1.ListTokenPricingRequest"> & {
+  /**
+   * @generated from field: uint32 page_size = 1;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 2;
+   */
+  pageToken: string;
+
+  /**
+   * @generated from field: string provider_id = 3;
+   */
+  providerId: string;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 4;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
+};
+
+/**
+ * Describes the message delidev.v1.ListTokenPricingRequest.
+ * Use `create(ListTokenPricingRequestSchema)` to create a new message.
+ */
+export const ListTokenPricingRequestSchema: GenMessage<ListTokenPricingRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 41);
+
+/**
+ * @generated from message delidev.v1.ListTokenPricingResponse
+ */
+export type ListTokenPricingResponse = Message<"delidev.v1.ListTokenPricingResponse"> & {
+  /**
+   * @generated from field: repeated delidev.v1.PricingVersion pricing = 1;
+   */
+  pricing: PricingVersion[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message delidev.v1.ListTokenPricingResponse.
+ * Use `create(ListTokenPricingResponseSchema)` to create a new message.
+ */
+export const ListTokenPricingResponseSchema: GenMessage<ListTokenPricingResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_usage, 42);
+
+/**
  * @generated from enum delidev.v1.UsageTimeGranularity
  */
 export enum UsageTimeGranularity {
@@ -1384,9 +1801,75 @@ export const InputPricingModeSchema: GenEnum<InputPricingMode> = /*@__PURE__*/
   enumDesc(file_delidev_v1_usage, 4);
 
 /**
+ * @generated from enum delidev.v1.TokenPricingMode
+ */
+export enum TokenPricingMode {
+  /**
+   * @generated from enum value: TOKEN_PRICING_MODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: TOKEN_PRICING_MODE_AUTOMATIC = 1;
+   */
+  AUTOMATIC = 1,
+
+  /**
+   * @generated from enum value: TOKEN_PRICING_MODE_MANUAL = 2;
+   */
+  MANUAL = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.TokenPricingMode.
+ */
+export const TokenPricingModeSchema: GenEnum<TokenPricingMode> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_usage, 5);
+
+/**
  * @generated from service delidev.v1.UsageService
  */
 export const UsageService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.UsageService.ListTokenPricing
+   */
+  listTokenPricing: {
+    methodKind: "unary";
+    input: typeof ListTokenPricingRequestSchema;
+    output: typeof ListTokenPricingResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.UsageService.GetTokenPricing
+   */
+  getTokenPricing: {
+    methodKind: "unary";
+    input: typeof GetTokenPricingRequestSchema;
+    output: typeof GetTokenPricingResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.UsageService.SetTokenPricing
+   */
+  setTokenPricing: {
+    methodKind: "unary";
+    input: typeof SetTokenPricingRequestSchema;
+    output: typeof SetTokenPricingResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.UsageService.SetTokenPricingMode
+   */
+  setTokenPricingMode: {
+    methodKind: "unary";
+    input: typeof SetTokenPricingModeRequestSchema;
+    output: typeof SetTokenPricingModeResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.UsageService.RefreshTokenPrices
+   */
+  refreshTokenPrices: {
+    methodKind: "unary";
+    input: typeof RefreshTokenPricesRequestSchema;
+    output: typeof RefreshTokenPricesResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.UsageService.GetUsageSummary
    */

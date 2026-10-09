@@ -1160,3 +1160,16 @@ The native connection lane separately owns a protected per-original-connection p
 ## Atomic turn timing retention (issue #2052)
 
 Existing Session and Message JSON retains optional server-owned accepted/terminal UTC observations with no schema or migration. The existing mutation clock is captured once after receipt lookup; exact retries do not recapture time. Primary acceptance, and later matching terminal publication, share their original receipts and resource/event transaction. Terminal retention selects bounded primary-user records through the existing execution index, checks original session/execution/input/native thread/turn and accepted observation, then updates only timing with their original content and index ownership intact. Any mismatch rolls back all Message, progress, outcome, Inbox and receipt writes. Legacy omissions are never backfilled. Backups preserve retained observations; deletion uses original resource ownership. Native assignment/checkpoint/digest projections omit display timing.
+
+### Current inline source layout
+
+The protocol-2 current declaration is the complete Model-free baseline 32. It
+retains all activated tables, FTS indexes, native ownership, protected cleanup,
+subscription/API profiles, notifications and session-default fields, and removes
+persistent Model entities, indexes and suppressions. Internal source keys encode
+exact identities only as storage indexes; they are never resource UUIDs or wire
+`model_id` values. Current portable bundle 4 remaps embedded Provider references
+and selected Accounts while preserving all newer current configuration fields.
+Earlier DBs and portable bundles are unsupported without conversion. Startup and
+inspection reject earlier DBs before WAL or other writes; this does not authorize
+removing native or protected credential state.

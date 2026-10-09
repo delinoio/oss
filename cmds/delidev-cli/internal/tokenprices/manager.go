@@ -47,6 +47,8 @@ type flight struct {
 	err  error
 }
 type Manager struct {
+	life    context.Context
+	stop    context.CancelFunc
 	mu      sync.Mutex
 	state   Snapshot
 	raw     []byte
@@ -63,7 +65,8 @@ func New(root string, transport http.RoundTripper, logger *slog.Logger, publish 
 	if logger == nil {
 		logger = slog.Default()
 	}
-	m := &Manager{path: filepath.Join(root, "models-dev-token-prices.json"), logger: logger, now: time.Now, wake: make(chan struct{}, 1), publish: publish, state: Snapshot{State: Unavailable}}
+	life, stop := context.WithCancel(context.Background())
+	m := &Manager{life: life, stop: stop, path: filepath.Join(root, "models-dev-token-prices.json"), logger: logger, now: time.Now, wake: make(chan struct{}, 1), publish: publish, state: Snapshot{State: Unavailable}}
 	m.client = &http.Client{Transport: transport, Timeout: RequestTimeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	raw, e := security.ReadPrivate(m.path, MaxBytes+4096)
 	if e == nil {
@@ -122,7 +125,14 @@ func clone(s Snapshot) Snapshot {
 	return s
 }
 func (m *Manager) Refresh(ctx context.Context) error {
+	if e := m.life.Err(); e != nil {
+		return e
+	}
 	m.mu.Lock()
+	if e := m.life.Err(); e != nil {
+		m.mu.Unlock()
+		return e
+	}
 	if f := m.active; f != nil {
 		m.mu.Unlock()
 		select {
@@ -174,6 +184,8 @@ func (m *Manager) Refresh(ctx context.Context) error {
 func (m *Manager) refresh(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, RequestTimeout)
 	defer cancel()
+	unbind := context.AfterFunc(m.life, cancel)
+	defer unbind()
 	if m.client.Transport == nil {
 		return errors.New("explicit outbound transport required")
 	}
@@ -239,12 +251,7 @@ func (m *Manager) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			m.mu.Lock()
-			f := m.active
-			m.mu.Unlock()
-			if f != nil {
-				<-f.done
-			}
+			m.Close()
 			return
 		case <-m.wake:
 			timer.Stop()
@@ -252,5 +259,16 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-timer.C:
 		}
 		_ = m.Refresh(ctx)
+	}
+}
+
+// Close cancels and joins both scheduled and explicitly requested refresh work.
+func (m *Manager) Close() {
+	m.stop()
+	m.mu.Lock()
+	f := m.active
+	m.mu.Unlock()
+	if f != nil {
+		<-f.done
 	}
 }

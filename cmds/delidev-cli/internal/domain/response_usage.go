@@ -81,7 +81,7 @@ type ResponseUsageRecord struct {
 	ConnectionID         ID                  `json:"connection_id"`
 	ProviderID           ID                  `json:"provider_id,omitempty"`
 	SubscriptionService  SubscriptionService `json:"subscription_service,omitempty"`
-	ModelID              ID                  `json:"model_id"`
+	ModelID              ID                  `json:"model_key"`
 	Harness              Harness             `json:"harness"`
 	Version              string              `json:"native_version"`
 	ThreadID             string              `json:"native_thread_id"`
@@ -96,7 +96,7 @@ func (u ResponseUsageRecord) Validate() error {
 			return invalidObservation()
 		}
 	}
-	if u.Attribution == "" && u.ModelID.Validate() != nil || u.Attribution != "" && (!u.Attribution.Valid() || u.ModelID != "" || u.Purpose == SessionTitleUsage) {
+	if u.Attribution == "" && ValidateModelKey(u.ModelID) != nil || u.Attribution != "" && (!u.Attribution.Valid() || u.ModelID != "" || u.Purpose == SessionTitleUsage) {
 		return invalidObservation()
 	}
 	if u.SubscriptionService == "" {

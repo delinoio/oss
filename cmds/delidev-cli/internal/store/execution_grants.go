@@ -86,7 +86,7 @@ func (r ExecutionReference) validate() error {
 			return err
 		}
 	}
-	if r.ModelID.Validate() != nil && !(r.ModelID == "" && r.Reviewer) || r.Reviewer && r.ModelID != "" {
+	if domain.ValidateModelKey(r.ModelID) != nil && !(r.ModelID == "" && r.Reviewer) || r.Reviewer && r.ModelID != "" {
 		return domain.Fail(domain.PermissionDenied, "Invalid reviewer response scope.", "Retain original account and reviewer ownership.")
 	}
 	if r.Kind != domain.NativeResponseReference && r.Kind != domain.NativeConversationReference {
@@ -100,7 +100,7 @@ func (t *Tx) HasExecutionReference(ref ExecutionReference) (bool, error) {
 		return false, err
 	}
 	var exists bool
-	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM execution_references WHERE session_id=? AND account_id=? AND connection_id=? AND model_id=? AND reference_kind=? AND native_id=?)", ref.SessionID, ref.AccountID, ref.ConnectionID, ref.ModelID, ref.Kind, ref.NativeID).Scan(&exists)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM execution_references WHERE session_id=? AND account_id=? AND connection_id=? AND model_key=? AND reference_kind=? AND native_id=?)", ref.SessionID, ref.AccountID, ref.ConnectionID, ref.ModelID, ref.Kind, ref.NativeID).Scan(&exists)
 	return exists, storageError(err)
 }
 
@@ -122,14 +122,14 @@ func (t *Tx) ObserveExecutionReference(ref ExecutionReference) error {
 	if count >= 10000 {
 		return domain.Fail(domain.ResourceExhausted, "The session's native reference bound is reached.", "Retain the original execution for explicit recovery; no reference was substituted.")
 	}
-	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO execution_references(session_id,account_id,connection_id,model_id,reference_kind,native_id) VALUES(?,?,?,?,?,?)", ref.SessionID, ref.AccountID, ref.ConnectionID, ref.ModelID, ref.Kind, ref.NativeID)
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO execution_references(session_id,account_id,connection_id,model_key,reference_kind,native_id) VALUES(?,?,?,?,?,?)", ref.SessionID, ref.AccountID, ref.ConnectionID, ref.ModelID, ref.Kind, ref.NativeID)
 	return storageError(err)
 }
 
 // Match original response identity without promoting it into public usage.
 // The empty model slot belongs only to the immutable builtin reviewer scope.
 func (t *Tx) ResponseModelAttribution(session, account, connection domain.ID, digest string) (domain.ID, bool, error) {
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT model_id,native_id FROM execution_references WHERE session_id=? AND account_id=? AND connection_id=? AND reference_kind=? LIMIT 10001", session, account, connection, domain.NativeResponseReference)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT model_key,native_id FROM execution_references WHERE session_id=? AND account_id=? AND connection_id=? AND reference_kind=? LIMIT 10001", session, account, connection, domain.NativeResponseReference)
 	if err != nil {
 		return "", false, storageError(err)
 	}

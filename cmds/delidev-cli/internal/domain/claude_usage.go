@@ -381,7 +381,7 @@ type ClaudeUsageRecord struct {
 	ConnectionID        ID                     `json:"connection_id"`
 	ProviderID          ID                     `json:"provider_id,omitempty"`
 	SubscriptionService SubscriptionService    `json:"subscription_service,omitempty"`
-	ModelID             ID                     `json:"model_id"`
+	ModelID             ID                     `json:"model_key"`
 	Harness             Harness                `json:"harness"`
 	Version             string                 `json:"native_version"`
 	ThreadID            string                 `json:"native_thread_id"`

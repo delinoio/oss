@@ -59,7 +59,7 @@ func (t *Tx) PutResponseUsage(id domain.ID, record domain.ResponseUsageRecord) (
 	if purpose == "" {
 		purpose = domain.ConversationUsage
 	}
-	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO response_usage(id,session_id,project_id,execution_id,account_id,provider_id,model_id,response_digest,body,created_at,purpose) VALUES(?,?,?,?,?,?,?,?,?,?,?)", id, record.SessionID, record.ProjectID, record.ExecutionID, record.AccountID, record.ProviderID, record.ModelID, record.Usage.ResponseDigest, body, t.now.UnixMilli(), purpose)
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO response_usage(id,session_id,project_id,execution_id,account_id,provider_id,model_key,response_digest,body,created_at,purpose) VALUES(?,?,?,?,?,?,?,?,?,?,?)", id, record.SessionID, record.ProjectID, record.ExecutionID, record.AccountID, record.ProviderID, record.ModelID, record.Usage.ResponseDigest, body, t.now.UnixMilli(), purpose)
 	if err != nil {
 		return "", false, storageError(err)
 	}

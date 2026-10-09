@@ -350,3 +350,27 @@ Refresh reads the captured interval again; choosing the same preset captures a n
 The separate `internal/tokenprices` collector validates provider-specific models.dev data without binary floating-point conversion. Preserve exact supported USD per-million decimals, explicit zero and unavailable rates. Match exact upstream provider and native ID, never `canonical_model_id`, model names or URL resemblance. Context tiers and distinct reasoning/audio/media variants retain bounded reference metadata without an applicable estimate. Distinct cache-write rates remain excluded from the supported input/cache-read/output basis; existing conservative cache-write accounting and unpriced Grok units remain separate.
 
 The collector alone activates no automatic policy or execution support. Complete activation composes source/native-ID identity, immutable future first-retention prices, durable Manual precedence, authenticated policy/refresh operations and the approved Model prices surface with the catalog's inline-model/reset ownership. Original historical unavailable estimates, prices, publication replay and budget subtotals cannot change on refresh.
+
+### Exact source price policy and immutable publication
+
+Protocol 2 uses `ModelIdentity` (one original Provider UUID or SubscriptionService,
+plus the exact native ID); obsolete Model UUID fields remain unused. Each identity
+has a durable versioned Automatic/Manual policy independent of immutable price
+versions. Manual save and mode change pin the original Provider, policy and active
+price revisions as applicable. Mutation receipts retain their accepted policy and
+price together; replay cannot return or select a later refresh result.
+
+Refresh applies only to Automatic identities after a transaction-local policy
+check. First-observation retention uses the same check with a memory snapshot,
+without network or credential access inside SQLite. A valid snapshot with no
+exact match, unmapped source or unsupported rate clears only that identity's
+Automatic active pointer; failure retains the last valid snapshot. Manual rates
+and prior estimates never change. A new retrieval timestamp or snapshot digest
+alone does not create another version when rates, declared exclusions and exact
+upstream provenance are unchanged. Reappearance after no-match advances the
+retained revision sequence instead of reusing an old active revision.
+
+Reference provenance records exact upstream provider/model keys, snapshot SHA-256
+and retrieval time separately from the rate-card `AsOf` label. These are reference
+rates; subscription references are explicitly API-equivalent. Grok closed-input
+units remain unavailable for token estimates and budgets.

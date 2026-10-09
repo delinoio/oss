@@ -52,7 +52,7 @@ type GrokUsageRecord struct {
 	AccountID    ID                `json:"account_id"`
 	ConnectionID ID                `json:"connection_id"`
 	ProviderID   ID                `json:"provider_id"`
-	ModelID      ID                `json:"model_id"`
+	ModelID      ID                `json:"model_key"`
 	Harness      Harness           `json:"harness"`
 	Version      string            `json:"native_version"`
 	ThreadID     string            `json:"native_thread_id"`

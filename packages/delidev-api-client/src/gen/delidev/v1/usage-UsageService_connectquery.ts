@@ -5,6 +5,31 @@
 import { UsageService } from "./usage_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.UsageService.ListTokenPricing
+ */
+export const listTokenPricing = UsageService.method.listTokenPricing;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.GetTokenPricing
+ */
+export const getTokenPricing = UsageService.method.getTokenPricing;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.SetTokenPricing
+ */
+export const setTokenPricing = UsageService.method.setTokenPricing;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.SetTokenPricingMode
+ */
+export const setTokenPricingMode = UsageService.method.setTokenPricingMode;
+
+/**
+ * @generated from rpc delidev.v1.UsageService.RefreshTokenPrices
+ */
+export const refreshTokenPrices = UsageService.method.refreshTokenPrices;
+
+/**
  * @generated from rpc delidev.v1.UsageService.GetUsageSummary
  */
 export const getUsageSummary = UsageService.method.getUsageSummary;

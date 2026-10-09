@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"log/slog"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"strings"
+	"time"
 )
 
 type migrationDefinition struct {
@@ -15,38 +17,7 @@ type migrationDefinition struct {
 }
 
 // Only implemented definitions belong here. Reservations are data, not migrations.
-var migrations = []migrationDefinition{
-	{2, migration002},
-	{3, migration003},
-	{4, migration004},
-	{5, migration005},
-	{6, migration006},
-	{7, migration007},
-	{8, migration008},
-	{9, migration009},
-	{10, migration010},
-	{11, migration011},
-	{12, migration012},
-	{13, migration013},
-	{14, migration014},
-	{15, migration015},
-	{16, migration016},
-	{17, migration017},
-	{18, migration018},
-	{19, migration019},
-	{20, migration020},
-	{21, migration021},
-	{22, migration022},
-	{23, migration023},
-	{24, migration024},
-	{25, migration025},
-	{26, migration026},
-	{27, migration027},
-	{28, migration028},
-	{29, migration029},
-	{30, migration030},
-	{31, migration031},
-}
+var migrations = []migrationDefinition{}
 
 func validateMigrations(definitions []migrationDefinition) error {
 	if len(definitions) != SchemaVersion-1 {
@@ -59,52 +30,32 @@ func validateMigrations(definitions []migrationDefinition) error {
 	}
 	return nil
 }
-func applyMigrations(ctx context.Context, tx *sql.Tx, original int) error {
-	if err := validateMigrations(migrations); err != nil {
-		return err
+
+// No historical migration is reachable from current initialization or reopen.
+func applyMigrations(context.Context, *sql.Tx, int) error {
+	return domain.Fail(domain.Unsupported, "Historical upgrades are retired.", "Preserve the original database and use its matching version.")
+}
+func migrate(ctx context.Context, db *sql.DB, root string) error {
+	var v int
+	if e := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); e != nil {
+		return storageError(e)
 	}
-	for _, definition := range migrations {
-		// Known pre-main variants require idempotent layout reconciliation even when
-		// their original version equals 22 or 23. Remove only if those inputs cease
-		// to be supported; intermediate user_version writes cannot identify them.
-		reconcile := (definition.version == 22 && original == 22) || (definition.version == 23 && original == 23)
-		if definition.version <= original && !reconcile {
-			continue
-		}
-		if err := definition.apply(ctx, tx, original); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d", definition.version)); err != nil {
-			return storageError(err)
-		}
+	if v != SchemaVersion {
+		return domain.Fail(domain.RecoveryRequired, "Earlier databases are unsupported.", "Preserve the original database and sidecars; explicitly reset only after handling native and credential ownership.")
 	}
 	return nil
 }
-func migrate(ctx context.Context, db *sql.DB, root string) error {
-	var version int
-	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return storageError(err)
+func seedCurrentProviders(ctx context.Context, tx *sql.Tx) error {
+	t := &Tx{tx: tx, ctx: ctx, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
+	for _, preset := range providers.Presets() {
+		if !strings.HasPrefix(preset.Provider.Endpoint, "https://") {
+			continue
+		}
+		p := providers.WithAPIFormats(preset.Provider)
+		p.SetEnabled(true)
+		if _, e := t.Put(domain.ProviderKind, domain.NewID(), 0, "", "", p); e != nil {
+			return e
+		}
 	}
-	if version == SchemaVersion {
-		return nil
-	}
-	if version < 1 || version >= SchemaVersion {
-		return domain.Fail(domain.RecoveryRequired, "No supported migration exists for this database.", "Preserve the original and use a matching server version.")
-	}
-	if err := migrationBackup(ctx, db, root); err != nil {
-		return err
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return storageError(err)
-	}
-	defer tx.Rollback()
-	if err := applyMigrations(ctx, tx, version); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return storageError(err)
-	}
-	slog.InfoContext(ctx, "database_migration_committed", "source_version", version, "schema_version", SchemaVersion)
 	return nil
 }

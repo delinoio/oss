@@ -14,7 +14,7 @@ func (t *Tx) grokAccountingSummary(f domain.UsageSelection, result *domain.Usage
 	for _, part := range []struct {
 		column string
 		value  domain.ID
-	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_id", f.ModelID}} {
+	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_key", f.ModelID}} {
 		if part.value != "" {
 			where += " AND r." + part.column + "=?"
 			args = append(args, part.value)
@@ -26,7 +26,7 @@ func (t *Tx) grokAccountingSummary(f domain.UsageSelection, result *domain.Usage
 	if f.GeneralChat {
 		where += " AND r.project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT r.id,r.kind,r.session_id,r.project_id,r.execution_id,r.input_id,r.account_id,r.provider_id,r.model_id,r.body,r.created_at FROM native_accounting r WHERE "+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT r.id,r.kind,r.session_id,r.project_id,r.execution_id,r.input_id,r.account_id,r.provider_id,r.model_key,r.body,r.created_at FROM native_accounting r WHERE "+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return storageError(err)
 	}

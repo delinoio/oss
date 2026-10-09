@@ -493,6 +493,7 @@ message RequestDiagnostic {
   string error_code = 30;
   string provider_request_id = 31;
   SubscriptionServiceIdentity subscription_service = 32;
+  ModelIdentity model = 33;
 }
 message ListRequestDiagnosticsRequest {
   string session_id = 1;

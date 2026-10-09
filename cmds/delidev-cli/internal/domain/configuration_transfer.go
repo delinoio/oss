@@ -4,7 +4,7 @@ import "encoding/json"
 
 // Portable documents contain configuration, never observations, credentials,
 // device registrations, routing cursors or session history.
-const ConfigurationBundleVersion = 6
+const ConfigurationBundleVersion = 4
 const MaxConfigurationEntries = 256
 const MaxConfigurationBundleBytes = 384 << 10
 const MaxConfigurationPlanBytes = 768 << 10

@@ -16,31 +16,53 @@ func (t *Tx) Pricing(id domain.ID) (PricingVersion, error) {
 	if err := id.Validate(); err != nil {
 		return value, err
 	}
-	var body []byte
+	var body, provenance []byte
 	var created int64
 	serviceColumn := "subscription_service"
 	if t.historicalPricingV1 {
 		serviceColumn = "''"
 	}
-	err := t.tx.QueryRowContext(t.ctx, "SELECT model_id,provider_id,"+serviceColumn+",revision,body,created_at FROM pricing_versions WHERE id=?", id).Scan(&value.ModelID, &value.ProviderID, &value.SubscriptionService, &value.Revision, &body, &created)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT model_key,provider_id,"+serviceColumn+",revision,body,created_at,provenance FROM pricing_versions WHERE id=?", id).Scan(&value.ModelID, &value.ProviderID, &value.SubscriptionService, &value.Revision, &body, &created, &provenance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, domain.Fail(domain.NotFound, "The pricing version is unavailable.", "Read the selected model's current pricing or retain the original historical version.")
 	}
 	if err != nil {
 		return value, storageError(err)
 	}
-	if value.ModelID.Validate() != nil || !value.ValidIdentity() || value.Revision == 0 || len(body) > 16<<10 || domain.Decode(body, &value.Basis) != nil || value.Basis.Validate() != nil {
+	if domain.ValidateModelKey(value.ModelID) != nil || !value.ValidIdentity() || value.Revision == 0 || len(body) > 16<<10 || domain.Decode(body, &value.Basis) != nil || value.Basis.Validate() != nil {
+		return value, corrupt()
+	}
+	if domain.Decode(provenance, &value.Provenance) != nil || value.Provenance != nil && value.Provenance.Validate() != nil {
 		return value, corrupt()
 	}
 	value.ID, value.CreatedAt = id, time.UnixMilli(created).UTC()
 	return value, nil
 }
 func (t *Tx) ActivePricing(model domain.ID) (*PricingVersion, error) {
-	if err := model.Validate(); err != nil {
+	if !t.readOnly && t.automaticPrice != nil && !t.resolvingPrice {
+		identity, e := domain.ParseModelKey(model)
+		if e != nil {
+			return nil, e
+		}
+		t.resolvingPrice = true
+		e = t.automaticPrice(t, identity)
+		t.resolvingPrice = false
+		if e != nil {
+			return nil, e
+		}
+	}
+	return t.retainedActivePricing(model)
+}
+func (t *Tx) RetainedActivePricing(model domain.ID) (*PricingVersion, error) {
+	return t.retainedActivePricing(model)
+}
+
+func (t *Tx) retainedActivePricing(model domain.ID) (*PricingVersion, error) {
+	if err := domain.ValidateModelKey(model); err != nil {
 		return nil, err
 	}
 	var id domain.ID
-	err := t.tx.QueryRowContext(t.ctx, "SELECT pricing_id FROM active_pricing WHERE model_id=?", model).Scan(&id)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT pricing_id FROM active_pricing WHERE model_key=?", model).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -60,6 +82,15 @@ func (t *Tx) ActivePricing(model domain.ID) (*PricingVersion, error) {
 // PutPricing appends a new immutable basis and atomically selects it for future
 // observations. Model revisions, prior prices and estimates remain unchanged.
 func (t *Tx) PutPricing(model domain.ID, expected uint64, id domain.ID, basis domain.TokenPricing) (PricingVersion, error) {
+	return t.putPricing(model, expected, id, basis, nil)
+}
+func (t *Tx) PutAutomaticPricing(model domain.ID, expected uint64, id domain.ID, basis domain.TokenPricing, provenance domain.PriceProvenance) (PricingVersion, error) {
+	if e := provenance.Validate(); e != nil {
+		return PricingVersion{}, e
+	}
+	return t.putPricing(model, expected, id, basis, &provenance)
+}
+func (t *Tx) putPricing(model domain.ID, expected uint64, id domain.ID, basis domain.TokenPricing, provenance *domain.PriceProvenance) (PricingVersion, error) {
 	var value PricingVersion
 	if t.readOnly {
 		return value, domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate pricing.", "Use the pricing mutation.")
@@ -78,7 +109,7 @@ func (t *Tx) PutPricing(model domain.ID, expected uint64, id domain.ID, basis do
 	if selected.SourceKind == domain.SubscriptionModel && (!selected.SubscriptionService.Valid() || selected.ProviderID != "") || selected.SourceKind != domain.SubscriptionModel && selected.ProviderID.Validate() != nil {
 		return value, corrupt()
 	}
-	current, err := t.ActivePricing(model)
+	current, err := t.retainedActivePricing(model)
 	if err != nil {
 		return value, err
 	}
@@ -93,20 +124,22 @@ func (t *Tx) PutPricing(model domain.ID, expected uint64, id domain.ID, basis do
 	if err != nil || len(body) > 16<<10 {
 		return value, domain.Fail(domain.ResourceExhausted, "The pricing basis exceeds its bound.", "Shorten its source or explicit exclusions.")
 	}
-	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pricing_versions(id,model_id,provider_id,subscription_service,revision,body,created_at) VALUES(?,?,?,?,?,?,?)", id, model, selected.ProviderID, selected.SubscriptionService, revision+1, body, t.now.UnixMilli())
+	var latest uint64
+	if err = t.tx.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(revision),0) FROM pricing_versions WHERE model_key=?", model).Scan(&latest); err != nil {
+		return value, storageError(err)
+	}
+	if latest >= 1<<63-1 {
+		return value, domain.Fail(domain.ResourceExhausted, "Pricing revision limit reached.", "Retain the original immutable versions.")
+	}
+	prov, _ := json.Marshal(provenance)
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO pricing_versions(id,model_key,provider_id,subscription_service,revision,body,created_at,provenance) VALUES(?,?,?,?,?,?,?,?)", id, model, selected.ProviderID, selected.SubscriptionService, latest+1, body, t.now.UnixMilli(), prov)
 	if err != nil {
 		return value, storageError(err)
 	}
-	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO active_pricing(model_id,pricing_id) VALUES(?,?) ON CONFLICT(model_id) DO UPDATE SET pricing_id=excluded.pricing_id", model, id)
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO active_pricing(model_key,pricing_id) VALUES(?,?) ON CONFLICT(model_key) DO UPDATE SET pricing_id=excluded.pricing_id", model, id)
 	if err != nil {
 		return value, storageError(err)
 	}
-	// The event names the existing model at its unchanged configuration revision.
-	// Pricing owns an independent revision and clients read it through UsageService.
-	if err := t.event(row, Updated); err != nil {
-		return value, err
-	}
-	t.touched[model] = true
 	return t.Pricing(id)
 }
 

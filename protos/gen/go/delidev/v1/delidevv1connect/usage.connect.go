@@ -33,6 +33,21 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// UsageServiceListTokenPricingProcedure is the fully-qualified name of the UsageService's
+	// ListTokenPricing RPC.
+	UsageServiceListTokenPricingProcedure = "/delidev.v1.UsageService/ListTokenPricing"
+	// UsageServiceGetTokenPricingProcedure is the fully-qualified name of the UsageService's
+	// GetTokenPricing RPC.
+	UsageServiceGetTokenPricingProcedure = "/delidev.v1.UsageService/GetTokenPricing"
+	// UsageServiceSetTokenPricingProcedure is the fully-qualified name of the UsageService's
+	// SetTokenPricing RPC.
+	UsageServiceSetTokenPricingProcedure = "/delidev.v1.UsageService/SetTokenPricing"
+	// UsageServiceSetTokenPricingModeProcedure is the fully-qualified name of the UsageService's
+	// SetTokenPricingMode RPC.
+	UsageServiceSetTokenPricingModeProcedure = "/delidev.v1.UsageService/SetTokenPricingMode"
+	// UsageServiceRefreshTokenPricesProcedure is the fully-qualified name of the UsageService's
+	// RefreshTokenPrices RPC.
+	UsageServiceRefreshTokenPricesProcedure = "/delidev.v1.UsageService/RefreshTokenPrices"
 	// UsageServiceGetUsageSummaryProcedure is the fully-qualified name of the UsageService's
 	// GetUsageSummary RPC.
 	UsageServiceGetUsageSummaryProcedure = "/delidev.v1.UsageService/GetUsageSummary"
@@ -49,6 +64,11 @@ const (
 
 // UsageServiceClient is a client for the delidev.v1.UsageService service.
 type UsageServiceClient interface {
+	ListTokenPricing(context.Context, *connect.Request[v1.ListTokenPricingRequest]) (*connect.Response[v1.ListTokenPricingResponse], error)
+	GetTokenPricing(context.Context, *connect.Request[v1.GetTokenPricingRequest]) (*connect.Response[v1.GetTokenPricingResponse], error)
+	SetTokenPricing(context.Context, *connect.Request[v1.SetTokenPricingRequest]) (*connect.Response[v1.SetTokenPricingResponse], error)
+	SetTokenPricingMode(context.Context, *connect.Request[v1.SetTokenPricingModeRequest]) (*connect.Response[v1.SetTokenPricingModeResponse], error)
+	RefreshTokenPrices(context.Context, *connect.Request[v1.RefreshTokenPricesRequest]) (*connect.Response[v1.RefreshTokenPricesResponse], error)
 	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
 	GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error)
 	GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error)
@@ -66,6 +86,36 @@ func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 	baseURL = strings.TrimRight(baseURL, "/")
 	usageServiceMethods := v1.File_delidev_v1_usage_proto.Services().ByName("UsageService").Methods()
 	return &usageServiceClient{
+		listTokenPricing: connect.NewClient[v1.ListTokenPricingRequest, v1.ListTokenPricingResponse](
+			httpClient,
+			baseURL+UsageServiceListTokenPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("ListTokenPricing")),
+			connect.WithClientOptions(opts...),
+		),
+		getTokenPricing: connect.NewClient[v1.GetTokenPricingRequest, v1.GetTokenPricingResponse](
+			httpClient,
+			baseURL+UsageServiceGetTokenPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("GetTokenPricing")),
+			connect.WithClientOptions(opts...),
+		),
+		setTokenPricing: connect.NewClient[v1.SetTokenPricingRequest, v1.SetTokenPricingResponse](
+			httpClient,
+			baseURL+UsageServiceSetTokenPricingProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("SetTokenPricing")),
+			connect.WithClientOptions(opts...),
+		),
+		setTokenPricingMode: connect.NewClient[v1.SetTokenPricingModeRequest, v1.SetTokenPricingModeResponse](
+			httpClient,
+			baseURL+UsageServiceSetTokenPricingModeProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("SetTokenPricingMode")),
+			connect.WithClientOptions(opts...),
+		),
+		refreshTokenPrices: connect.NewClient[v1.RefreshTokenPricesRequest, v1.RefreshTokenPricesResponse](
+			httpClient,
+			baseURL+UsageServiceRefreshTokenPricesProcedure,
+			connect.WithSchema(usageServiceMethods.ByName("RefreshTokenPrices")),
+			connect.WithClientOptions(opts...),
+		),
 		getUsageSummary: connect.NewClient[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse](
 			httpClient,
 			baseURL+UsageServiceGetUsageSummaryProcedure,
@@ -95,10 +145,40 @@ func NewUsageServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // usageServiceClient implements UsageServiceClient.
 type usageServiceClient struct {
-	getUsageSummary   *connect.Client[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse]
-	getModelPricing   *connect.Client[v1.GetModelPricingRequest, v1.GetModelPricingResponse]
-	getPricingVersion *connect.Client[v1.GetPricingVersionRequest, v1.GetPricingVersionResponse]
-	setModelPricing   *connect.Client[v1.SetModelPricingRequest, v1.SetModelPricingResponse]
+	listTokenPricing    *connect.Client[v1.ListTokenPricingRequest, v1.ListTokenPricingResponse]
+	getTokenPricing     *connect.Client[v1.GetTokenPricingRequest, v1.GetTokenPricingResponse]
+	setTokenPricing     *connect.Client[v1.SetTokenPricingRequest, v1.SetTokenPricingResponse]
+	setTokenPricingMode *connect.Client[v1.SetTokenPricingModeRequest, v1.SetTokenPricingModeResponse]
+	refreshTokenPrices  *connect.Client[v1.RefreshTokenPricesRequest, v1.RefreshTokenPricesResponse]
+	getUsageSummary     *connect.Client[v1.GetUsageSummaryRequest, v1.GetUsageSummaryResponse]
+	getModelPricing     *connect.Client[v1.GetModelPricingRequest, v1.GetModelPricingResponse]
+	getPricingVersion   *connect.Client[v1.GetPricingVersionRequest, v1.GetPricingVersionResponse]
+	setModelPricing     *connect.Client[v1.SetModelPricingRequest, v1.SetModelPricingResponse]
+}
+
+// ListTokenPricing calls delidev.v1.UsageService.ListTokenPricing.
+func (c *usageServiceClient) ListTokenPricing(ctx context.Context, req *connect.Request[v1.ListTokenPricingRequest]) (*connect.Response[v1.ListTokenPricingResponse], error) {
+	return c.listTokenPricing.CallUnary(ctx, req)
+}
+
+// GetTokenPricing calls delidev.v1.UsageService.GetTokenPricing.
+func (c *usageServiceClient) GetTokenPricing(ctx context.Context, req *connect.Request[v1.GetTokenPricingRequest]) (*connect.Response[v1.GetTokenPricingResponse], error) {
+	return c.getTokenPricing.CallUnary(ctx, req)
+}
+
+// SetTokenPricing calls delidev.v1.UsageService.SetTokenPricing.
+func (c *usageServiceClient) SetTokenPricing(ctx context.Context, req *connect.Request[v1.SetTokenPricingRequest]) (*connect.Response[v1.SetTokenPricingResponse], error) {
+	return c.setTokenPricing.CallUnary(ctx, req)
+}
+
+// SetTokenPricingMode calls delidev.v1.UsageService.SetTokenPricingMode.
+func (c *usageServiceClient) SetTokenPricingMode(ctx context.Context, req *connect.Request[v1.SetTokenPricingModeRequest]) (*connect.Response[v1.SetTokenPricingModeResponse], error) {
+	return c.setTokenPricingMode.CallUnary(ctx, req)
+}
+
+// RefreshTokenPrices calls delidev.v1.UsageService.RefreshTokenPrices.
+func (c *usageServiceClient) RefreshTokenPrices(ctx context.Context, req *connect.Request[v1.RefreshTokenPricesRequest]) (*connect.Response[v1.RefreshTokenPricesResponse], error) {
+	return c.refreshTokenPrices.CallUnary(ctx, req)
 }
 
 // GetUsageSummary calls delidev.v1.UsageService.GetUsageSummary.
@@ -123,6 +203,11 @@ func (c *usageServiceClient) SetModelPricing(ctx context.Context, req *connect.R
 
 // UsageServiceHandler is an implementation of the delidev.v1.UsageService service.
 type UsageServiceHandler interface {
+	ListTokenPricing(context.Context, *connect.Request[v1.ListTokenPricingRequest]) (*connect.Response[v1.ListTokenPricingResponse], error)
+	GetTokenPricing(context.Context, *connect.Request[v1.GetTokenPricingRequest]) (*connect.Response[v1.GetTokenPricingResponse], error)
+	SetTokenPricing(context.Context, *connect.Request[v1.SetTokenPricingRequest]) (*connect.Response[v1.SetTokenPricingResponse], error)
+	SetTokenPricingMode(context.Context, *connect.Request[v1.SetTokenPricingModeRequest]) (*connect.Response[v1.SetTokenPricingModeResponse], error)
+	RefreshTokenPrices(context.Context, *connect.Request[v1.RefreshTokenPricesRequest]) (*connect.Response[v1.RefreshTokenPricesResponse], error)
 	GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error)
 	GetModelPricing(context.Context, *connect.Request[v1.GetModelPricingRequest]) (*connect.Response[v1.GetModelPricingResponse], error)
 	GetPricingVersion(context.Context, *connect.Request[v1.GetPricingVersionRequest]) (*connect.Response[v1.GetPricingVersionResponse], error)
@@ -136,6 +221,36 @@ type UsageServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	usageServiceMethods := v1.File_delidev_v1_usage_proto.Services().ByName("UsageService").Methods()
+	usageServiceListTokenPricingHandler := connect.NewUnaryHandler(
+		UsageServiceListTokenPricingProcedure,
+		svc.ListTokenPricing,
+		connect.WithSchema(usageServiceMethods.ByName("ListTokenPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceGetTokenPricingHandler := connect.NewUnaryHandler(
+		UsageServiceGetTokenPricingProcedure,
+		svc.GetTokenPricing,
+		connect.WithSchema(usageServiceMethods.ByName("GetTokenPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceSetTokenPricingHandler := connect.NewUnaryHandler(
+		UsageServiceSetTokenPricingProcedure,
+		svc.SetTokenPricing,
+		connect.WithSchema(usageServiceMethods.ByName("SetTokenPricing")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceSetTokenPricingModeHandler := connect.NewUnaryHandler(
+		UsageServiceSetTokenPricingModeProcedure,
+		svc.SetTokenPricingMode,
+		connect.WithSchema(usageServiceMethods.ByName("SetTokenPricingMode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	usageServiceRefreshTokenPricesHandler := connect.NewUnaryHandler(
+		UsageServiceRefreshTokenPricesProcedure,
+		svc.RefreshTokenPrices,
+		connect.WithSchema(usageServiceMethods.ByName("RefreshTokenPrices")),
+		connect.WithHandlerOptions(opts...),
+	)
 	usageServiceGetUsageSummaryHandler := connect.NewUnaryHandler(
 		UsageServiceGetUsageSummaryProcedure,
 		svc.GetUsageSummary,
@@ -162,6 +277,16 @@ func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOpti
 	)
 	return "/delidev.v1.UsageService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case UsageServiceListTokenPricingProcedure:
+			usageServiceListTokenPricingHandler.ServeHTTP(w, r)
+		case UsageServiceGetTokenPricingProcedure:
+			usageServiceGetTokenPricingHandler.ServeHTTP(w, r)
+		case UsageServiceSetTokenPricingProcedure:
+			usageServiceSetTokenPricingHandler.ServeHTTP(w, r)
+		case UsageServiceSetTokenPricingModeProcedure:
+			usageServiceSetTokenPricingModeHandler.ServeHTTP(w, r)
+		case UsageServiceRefreshTokenPricesProcedure:
+			usageServiceRefreshTokenPricesHandler.ServeHTTP(w, r)
 		case UsageServiceGetUsageSummaryProcedure:
 			usageServiceGetUsageSummaryHandler.ServeHTTP(w, r)
 		case UsageServiceGetModelPricingProcedure:
@@ -178,6 +303,26 @@ func NewUsageServiceHandler(svc UsageServiceHandler, opts ...connect.HandlerOpti
 
 // UnimplementedUsageServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedUsageServiceHandler struct{}
+
+func (UnimplementedUsageServiceHandler) ListTokenPricing(context.Context, *connect.Request[v1.ListTokenPricingRequest]) (*connect.Response[v1.ListTokenPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.ListTokenPricing is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) GetTokenPricing(context.Context, *connect.Request[v1.GetTokenPricingRequest]) (*connect.Response[v1.GetTokenPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetTokenPricing is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) SetTokenPricing(context.Context, *connect.Request[v1.SetTokenPricingRequest]) (*connect.Response[v1.SetTokenPricingResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.SetTokenPricing is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) SetTokenPricingMode(context.Context, *connect.Request[v1.SetTokenPricingModeRequest]) (*connect.Response[v1.SetTokenPricingModeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.SetTokenPricingMode is not implemented"))
+}
+
+func (UnimplementedUsageServiceHandler) RefreshTokenPrices(context.Context, *connect.Request[v1.RefreshTokenPricesRequest]) (*connect.Response[v1.RefreshTokenPricesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.RefreshTokenPrices is not implemented"))
+}
 
 func (UnimplementedUsageServiceHandler) GetUsageSummary(context.Context, *connect.Request[v1.GetUsageSummaryRequest]) (*connect.Response[v1.GetUsageSummaryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.UsageService.GetUsageSummary is not implemented"))

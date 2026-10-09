@@ -31,190 +31,95 @@ type agentWorkerMutation struct {
 
 func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerMutation) (store.Result, error) {
 	var agent domain.Agent
-	if err := domain.Decode(input.Document, &agent); err != nil {
-		return store.Result{}, err
+	if e := domain.Decode(input.Document, &agent); e != nil {
+		return store.Result{}, e
 	}
-	selections := input.RouteModels
-	if len(agent.Routes) > 0 {
-		if input.ModelID != "" || input.NativeID != "" || input.ModelRevision != 0 || len(selections) != len(agent.Routes) {
-			return store.Result{}, domain.Fail(domain.InvalidArgument, "Source routes require corresponding model selections.", "Use route_models in source order without the single model selection.")
-		}
-	} else {
-		if len(selections) > 0 {
-			return store.Result{}, domain.Fail(domain.InvalidArgument, "A single source cannot use route_models.", "Use the legacy model selection or submit ordered source routes.")
-		}
-		selections = []agentWorkerModelSelection{{ModelID: input.ModelID, NativeID: input.NativeID, ModelRevision: input.ModelRevision}}
-	}
-	for i, selection := range selections {
-		if len(agent.SourceRoutes()[i].Accounts) == 0 {
-			return store.Result{}, domain.Fail(domain.MissingInput, "Select at least one account.", "Choose accounts for every source.")
-		}
-		if (selection.ModelID == "") == (selection.NativeID == "") || selection.ModelID == "" && selection.ModelRevision != 0 || selection.ModelID != "" && selection.ModelRevision == 0 {
-			return store.Result{}, domain.Fail(domain.InvalidArgument, "Select one model identity.", "Use a canonical model and its revision, or an exact native model ID.")
-		}
-		if selection.ModelID != "" {
-			if err := selection.ModelID.Validate(); err != nil {
-				return store.Result{}, err
-			}
-		}
-		if selection.NativeID != "" {
-			if err := domain.Text(selection.NativeID, "native model ID", 256, true); err != nil {
-				return store.Result{}, err
-			}
-		}
+	if len(agent.Routes) == 0 || len(input.RouteModels) != len(agent.Routes) || input.ModelID != "" || input.NativeID != "" || input.ModelRevision != 0 {
+		return store.Result{}, domain.Fail(domain.InvalidArgument, "Inline source routes are required.", "Use schema 4 with one exact native selection per source.")
 	}
 	if input.ID == "" && input.ExpectedRevision != 0 {
 		return store.Result{}, domain.Fail(domain.InvalidArgument, "A new Worker has no revision.", "Use revision zero for creation.")
 	}
-	// Model identities are resolved inside the receipt transaction. Validate the
-	// remaining complete document now without mutating the caller's route slice.
-	proposed := agent
-	proposed.Routes = slices.Clone(agent.Routes)
-	if len(proposed.Routes) == 0 {
-		proposed.ModelID = domain.NewID()
-	} else {
-		for i := range proposed.Routes {
-			proposed.Routes[i].ModelID = domain.NewID()
+	for _, selection := range input.RouteModels {
+		if selection.ModelID != "" || selection.ModelRevision != 0 || domain.Text(selection.NativeID, "native model ID", 256, true) != nil {
+			return store.Result{}, domain.Fail(domain.Unsupported, "Saved Model selection is retired.", "Enter the exact native model ID for its account source.")
 		}
-	}
-	if err := proposed.Validate(); err != nil {
-		return store.Result{}, err
 	}
 	return state.Mutate(ctx, input.RequestID, "configuration.agent-worker.save", input, func(tx *store.Tx) (any, error) {
-		routes := slices.Clone(agent.SourceRoutes())
+		routes := slices.Clone(agent.Routes)
 		seen := map[string]bool{}
 		for i, route := range routes {
-			modelID, source, err := resolveWorkerModel(tx, agent.WithSource(route), selections[i])
-			if err != nil {
-				return nil, err
+			if len(route.Accounts) == 0 {
+				return nil, domain.Fail(domain.MissingInput, "Select an account for every source.", "Choose original accounts before saving.")
 			}
-			if seen[source] {
-				return nil, domain.Fail(domain.InvalidArgument, "An account source appears more than once.", "Combine accounts from the same source in one route.")
+			var source domain.Account
+			for index, link := range route.Accounts {
+				r, e := tx.Get(domain.AccountKind, link.ID)
+				if e != nil {
+					return nil, e
+				}
+				a, e := store.Decode[domain.Account](r)
+				if e != nil {
+					return nil, e
+				}
+				if e = a.Validate(); e != nil {
+					return nil, e
+				}
+				if index == 0 {
+					source = a
+				}
+				if a.Type != source.Type || a.ProviderID != source.ProviderID || a.SubscriptionService != source.SubscriptionService {
+					return nil, domain.Fail(domain.InvalidArgument, "Selected accounts use different sources.", "Keep each provider or subscription source in its own route.")
+				}
 			}
-			seen[source] = true
-			routes[i].ModelID = modelID
+			identity := domain.ModelIdentity{ProviderID: source.ProviderID, SubscriptionService: source.SubscriptionService, NativeID: input.RouteModels[i].NativeID}
+			if e := identity.Validate(); e != nil {
+				return nil, e
+			}
+			key := string(identity.ProviderID) + "|" + string(identity.SubscriptionService)
+			if seen[key] {
+				return nil, domain.Fail(domain.InvalidArgument, "Duplicate account source.", "Combine accounts from the same source.")
+			}
+			seen[key] = true
+			model := domain.InlineModel{ModelIdentity: identity, MetadataSource: domain.Unknown}
+			if route.Model != nil {
+				model = *route.Model
+				model.ModelIdentity = identity
+				if model.MetadataSource == domain.Known {
+					model.MetadataSource = domain.UserDeclared
+				}
+			}
+			if e := model.Validate(agent.Harness); e != nil {
+				return nil, e
+			}
+			routes[i].Model = &model
+			routes[i].ModelID = identity.Key()
 		}
-		if len(agent.Routes) > 0 {
-			agent.Routes = routes
-		} else {
-			agent.ModelID = routes[0].ModelID
-		}
-		if err := agent.Validate(); err != nil {
-			return nil, err
+		agent.Routes = routes
+		if e := agent.Validate(); e != nil {
+			return nil, e
 		}
 		id := input.ID
 		if id == "" {
 			id = domain.NewID()
 		}
-		if err := validateNewProviderSelections(tx, input.ConfigurationMutation, id, &agent); err != nil {
-			return nil, err
+		if e := validateNewProviderSelections(tx, input.ConfigurationMutation, id, &agent); e != nil {
+			return nil, e
 		}
-		if err := validateRelationships(tx, domain.AgentKind, id, input.ExpectedRevision, &agent); err != nil {
-			return nil, err
+		if e := validateRelationships(tx, domain.AgentKind, id, input.ExpectedRevision, &agent); e != nil {
+			return nil, e
 		}
 		return tx.Put(domain.AgentKind, id, input.ExpectedRevision, "", "", agent)
 	})
 }
 
-func resolveWorkerModel(tx *store.Tx, agent domain.Agent, input agentWorkerModelSelection) (domain.ID, string, error) {
-	var source domain.Account
-	for index, link := range agent.Accounts {
-		record, err := tx.Get(domain.AccountKind, link.ID)
-		if err != nil {
-			return "", "", err
-		}
-		account, err := store.Decode[domain.Account](record)
-		if err != nil {
-			return "", "", err
-		}
-		if err := account.Validate(); err != nil {
-			return "", "", err
-		}
-		if index == 0 {
-			source = account
-		}
-		if account.Type != source.Type || account.ProviderID != source.ProviderID || account.SubscriptionService != source.SubscriptionService {
-			return "", "", domain.Fail(domain.InvalidArgument, "Selected accounts use different sources.", "Choose accounts from one API provider or subscription service.")
-		}
-	}
-	if source.Type == domain.SubscriptionAccount && source.SubscriptionService.Harness() != agent.Harness {
-		return "", "", domain.Fail(domain.Unsupported, "The subscription service does not match this harness.", "Select its native harness or choose an API source.")
-	}
-	var record store.Record
-	var found bool
-	var err error
-	if input.ModelID != "" {
-		record, err = tx.Get(domain.ModelKind, input.ModelID)
-		if err != nil {
-			return "", "", err
-		}
-		if record.Revision != input.ModelRevision {
-			return "", "", domain.Fail(domain.Conflict, "The selected model changed.", "Refresh and explicitly select the current model before saving.")
-		}
-		found = true
-	} else {
-		record, found, err = tx.ModelBySourceNative(source.ProviderID, source.SubscriptionService, input.NativeID)
-		if err != nil {
-			return "", "", err
-		}
-	}
-	model := domain.Model{ProviderID: source.ProviderID, SubscriptionService: source.SubscriptionService, NativeID: input.NativeID, Name: input.NativeID, Harnesses: []domain.Harness{agent.Harness}, Manual: true, MetadataSource: domain.Unknown}
-	modelID := domain.NewID()
-	revision := uint64(0)
-	if source.Type == domain.SubscriptionAccount {
-		model.SourceKind = domain.SubscriptionModel
-	}
-	changed := !found
-	if found {
-		model, err = store.Decode[domain.Model](record)
-		if err != nil {
-			return "", "", err
-		}
-		if !model.MatchesAccount(source, agent.Harness) {
-			return "", "", domain.Fail(domain.InvalidArgument, "The selected model uses another account source.", "Select a model from the accounts' source.")
-		}
-		modelID, revision = record.ID, record.Revision
-		// This is an explicit configuration declaration, not native execution proof.
-		if !slices.Contains(model.Harnesses, agent.Harness) {
-			model.Harnesses = append(model.Harnesses, agent.Harness)
-			changed = true
-		}
-	}
-	if input.ModelID != "" && agent.ModelID != "" && agent.ModelID != modelID {
-		return "", "", domain.Fail(domain.InvalidArgument, "Worker and model selection disagree.", "Submit the selected canonical model identity.")
-	}
-	if changed {
-		if err := model.Validate(); err != nil {
-			return "", "", err
-		}
-		modelInput := ConfigurationMutation{Kind: domain.ModelKind, ExpectedRevision: revision}
-		if err := validateNewProviderSelections(tx, modelInput, modelID, &model); err != nil {
-			return "", "", err
-		}
-		if err := validateRelationships(tx, domain.ModelKind, modelID, revision, &model); err != nil {
-			return "", "", err
-		}
-		if _, err := tx.Put(domain.ModelKind, modelID, revision, "", "", model); err != nil {
-			return "", "", err
-		}
-	}
-
-	return modelID, workerSourceKey(source), nil
-}
-func workerSourceKey(account domain.Account) string {
-	if account.Type == domain.SubscriptionAccount {
-		return "subscription:" + string(account.SubscriptionService)
-	}
-	return "api:" + string(account.ProviderID)
-}
-
 func (s *Service) SaveAgentWorker(ctx context.Context, req *connect.Request[pb.SaveAgentWorkerRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || (req.Msg.Model == nil) == (len(req.Msg.RouteModels) == 0) || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 {
+	if req.Msg.Mutation == nil || req.Msg.Model != nil || len(req.Msg.RouteModels) == 0 || req.Msg.SchemaVersion != 4 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported Worker document, mutation and typed model selection are required.", "Use the current Worker revision and one model selection."), correlation)
 	}
-	if rpc.ResourceSchemaVersion(domain.AgentKind, req.Msg.DocumentJson) != req.Msg.SchemaVersion && !(req.Msg.SchemaVersion == 2 && len(req.Msg.RouteModels) == 0) {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Worker schema does not match its account routes.", "Use schema 3 for ordered source routes."), correlation)
+	if rpc.ResourceSchemaVersion(domain.AgentKind, req.Msg.DocumentJson) != req.Msg.SchemaVersion {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Worker schema does not match its account routes.", "Use schema 4 for inline source routes."), correlation)
 	}
 	input := agentWorkerMutation{ConfigurationMutation: ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: domain.AgentKind, Document: req.Msg.DocumentJson}}
 	selection := func(value *pb.AgentWorkerModelSelection) agentWorkerModelSelection {

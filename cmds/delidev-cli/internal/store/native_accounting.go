@@ -67,7 +67,7 @@ func (t *Tx) PutClaudeAccounting(source, input, session, project domain.ID, o do
 	if len(body) > 16<<10 {
 		return usageReadLimit()
 	}
-	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO native_accounting(id,source_id,session_id,project_id,execution_id,input_id,kind,account_id,provider_id,model_id,body,pricing_id,estimate,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, source, source, session, project, o.ExecutionID, input, u.Kind, o.AccountID, o.ProviderID, o.ModelID, body, priceID, estimate, t.now.UnixMilli())
+	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO native_accounting(id,source_id,session_id,project_id,execution_id,input_id,kind,account_id,provider_id,model_key,body,pricing_id,estimate,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, source, source, session, project, o.ExecutionID, input, u.Kind, o.AccountID, o.ProviderID, o.ModelID, body, priceID, estimate, t.now.UnixMilli())
 	if err != nil {
 		return storageError(err)
 	}
@@ -116,7 +116,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 	for _, p := range []struct {
 		column string
 		id     domain.ID
-	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_id", f.ModelID}} {
+	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_key", f.ModelID}} {
 		if p.id != "" {
 			where += " AND " + p.column + "=?"
 			args = append(args, p.id)
@@ -128,7 +128,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 	if f.GeneralChat {
 		where += " AND project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT id,source_id,session_id,project_id,execution_id,input_id,account_id,provider_id,model_id,body,estimate,COALESCE(pricing_id,''),created_at FROM native_accounting WHERE kind=? AND `+where+` ORDER BY created_at,id LIMIT ?`, append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT id,source_id,session_id,project_id,execution_id,input_id,account_id,provider_id,model_key,body,estimate,COALESCE(pricing_id,''),created_at FROM native_accounting WHERE kind=? AND `+where+` ORDER BY created_at,id LIMIT ?`, append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return v, storageError(err)
 	}
@@ -304,7 +304,7 @@ func (t *Tx) PutOpenCodeAccounting(source, input, session, project domain.ID, o 
 	if err != nil {
 		return storageError(err)
 	}
-	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO native_accounting(id,source_id,session_id,project_id,execution_id,input_id,kind,account_id,provider_id,model_id,body,pricing_id,estimate,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, source, source, session, project, o.ExecutionID, input, u.Kind, o.AccountID, o.ProviderID, o.ModelID, body, priceID, estimate, t.now.UnixMilli())
+	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO native_accounting(id,source_id,session_id,project_id,execution_id,input_id,kind,account_id,provider_id,model_key,body,pricing_id,estimate,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, source, source, session, project, o.ExecutionID, input, u.Kind, o.AccountID, o.ProviderID, o.ModelID, body, priceID, estimate, t.now.UnixMilli())
 	if err != nil {
 		return storageError(err)
 	}

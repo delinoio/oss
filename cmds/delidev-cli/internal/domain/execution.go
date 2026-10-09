@@ -29,7 +29,7 @@ type ExecutionConfiguration struct {
 	AgentID             ID                      `json:"agent_id"`
 	AgentRevision       uint64                  `json:"agent_revision"`
 	Harness             Harness                 `json:"harness"`
-	ModelID             ID                      `json:"model_id"`
+	ModelID             ID                      `json:"model_key"`
 	ModelRevision       uint64                  `json:"model_revision"`
 	ProviderID          ID                      `json:"provider_id,omitempty"`
 	SubscriptionService SubscriptionService     `json:"subscription_service,omitempty"`
@@ -123,6 +123,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
+		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")
+	}
 	if c.BranchPrefix != nil {
 		if err := c.BranchPrefix.Validate(); err != nil {
 			return err
@@ -137,7 +140,7 @@ func (c ExecutionConfiguration) Validate() error {
 	if c.Harness == Codex && ValidateCodexSubagentOptions(c.Options) != nil {
 		return ValidateCodexSubagentOptions(c.Options)
 	}
-	if c.SubagentModel != nil && (c.Harness != Codex || c.SubagentModel.ModelID.Validate() != nil || c.SubagentModel.ModelRevision == 0 || c.SubagentModel.NativeModel != c.Options.SubagentModel || Text(c.SubagentModel.NativeModel, "saved child model", 256, true) != nil) {
+	if c.SubagentModel != nil && (c.Harness != Codex || ValidateModelKey(c.SubagentModel.ModelID) != nil || c.SubagentModel.ModelRevision == 0 || c.SubagentModel.NativeModel != c.Options.SubagentModel || Text(c.SubagentModel.NativeModel, "saved child model", 256, true) != nil) {
 		return Fail(RecoveryRequired, "Invalid retained child model identity.", "Preserve the immutable original child model snapshot.")
 	}
 	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {
@@ -156,7 +159,7 @@ func (c ExecutionConfiguration) Validate() error {
 	for i, template := range c.Templates {
 		ids[i] = template.ID
 	}
-	agent := Agent{Name: "Retained configuration", Harness: c.Harness, ModelID: c.ModelID, Effort: c.Effort, Options: c.Options, Accounts: c.Accounts, Routing: &c.Routing, Templates: ids}
+	agent := Agent{Name: "Retained configuration", Harness: c.Harness, ModelID: c.ModelID, Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}, MetadataSource: Unknown}, Effort: c.Effort, Options: c.Options, Accounts: c.Accounts, Routing: &c.Routing, Templates: ids}
 	model := Model{Name: "Retained model", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{c.Harness}, MetadataSource: Unknown}
 	if c.ImageInputDeclared {
 		if c.Harness != Codex {

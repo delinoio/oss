@@ -124,10 +124,12 @@ message AttachWorkerRequest {
   string network_route_id = 7;
   string network_key_id = 8;
   string network_recipient = 9;
+  uint32 protocol_version = 10;
 }
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 = 22;
   WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1 = 29;
   WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1 = 30;
 

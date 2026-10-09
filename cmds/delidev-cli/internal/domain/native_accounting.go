@@ -29,7 +29,10 @@ type NativeAccountingUnit struct {
 
 func (u NativeAccountingUnit) Validate() error {
 	o := u.Attribution()
-	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID, o.ModelID} {
+	if ValidateModelKey(o.ModelID) != nil {
+		return invalidObservation()
+	}
+	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID} {
 		if id.Validate() != nil {
 			return invalidClaudeUsage()
 		}

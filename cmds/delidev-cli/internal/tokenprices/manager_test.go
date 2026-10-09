@@ -99,3 +99,24 @@ func TestPrivateCacheAndColdFailure(t *testing.T) {
 		t.Fatal("cold failure inferred price")
 	}
 }
+
+func TestShutdownCancelsAndJoinsExplicitRefresh(t *testing.T) {
+	entered := make(chan struct{})
+	done := make(chan struct{})
+	m := New(private(t), transport(func(r *http.Request) (*http.Response, error) {
+		close(entered)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	}), nil, nil)
+	go func() { defer close(done); _ = m.Refresh(context.Background()) }()
+	<-entered
+	m.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("refresh not joined")
+	}
+	if e := m.Refresh(context.Background()); e == nil {
+		t.Fatal("closed manager admitted work")
+	}
+}

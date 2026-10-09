@@ -135,6 +135,19 @@ func (o Observation) Problem() *domain.Error {
 // their documented credential check separately. No inference, retries, fallback,
 // quota interpretation, billing ingestion or account readiness mutation occurs.
 // Callers retain ownership of key and must clear it after the call.
+type listingOnlyKey struct{}
+
+// ListEndpointModels reads the selected endpoint catalog without validating a key,
+// writing account state, creating resources or granting execution eligibility.
+func ListEndpointModels(ctx context.Context, provider domain.Provider, key []byte, project string, routing ...outbound.Resolver) (Observation, error) {
+	if project != "" && !googleOAuthProvider(provider, project) {
+		return Observation{}, domain.Fail(domain.PermissionDenied, "The OAuth project does not match this endpoint.", "Use the original account connection.")
+	}
+	ctx = context.WithValue(context.WithValue(ctx, listingOnlyKey{}, true), oauthProjectKey{}, project)
+	return Inspect(ctx, provider, key, routing...)
+}
+func listingOnly(ctx context.Context) bool { v, _ := ctx.Value(listingOnlyKey{}).(bool); return v }
+
 func Inspect(ctx context.Context, provider domain.Provider, key []byte, routing ...outbound.Resolver) (Observation, error) {
 	if err := provider.Validate(); err != nil {
 		return Observation{}, err
@@ -193,7 +206,7 @@ func inspect(ctx context.Context, client *http.Client, provider domain.Provider,
 		o.Authentication = KeylessEndpoint
 	}
 	remaining := 4 * maxBody
-	if profile == openRouter || profile == vercelGateway {
+	if !listingOnly(ctx) && (profile == openRouter || profile == vercelGateway) {
 		path := "key"
 		if profile == vercelGateway {
 			path = "credits"

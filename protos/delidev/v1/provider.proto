@@ -6,6 +6,7 @@ import "delidev/v1/common.proto";
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 service ProviderService {
+  rpc ListEndpointModels(ListEndpointModelsRequest) returns (ListEndpointModelsResponse);
   rpc ListProviderPresets(ListProviderPresetsRequest) returns (ListProviderPresetsResponse);
   rpc ListProviderInventory(ListProviderInventoryRequest) returns (ListProviderInventoryResponse);
   rpc DiscoverModels(DiscoverModelsRequest) returns (DiscoverModelsResponse);
@@ -169,4 +170,28 @@ message ListKnownSubscriptionModelsResponse {
   string catalog_version = 3;
   string updated_at = 4;
   KnownSubscriptionModelCatalogSource source = 5;
+}
+
+message EndpointModel {
+  string native_id = 1;
+  string display_name = 2;
+  optional uint64 context_limit = 3;
+  repeated string input_modalities = 4;
+  repeated string output_modalities = 5;
+  optional bool tools = 6;
+  optional bool reasoning = 7;
+}
+message ListEndpointModelsRequest {
+  string account_id = 1;
+  uint64 expected_account_revision = 2;
+  uint64 expected_provider_revision = 3;
+}
+message ListEndpointModelsResponse {
+  string account_id = 1;
+  uint64 account_revision = 2;
+  string provider_id = 3;
+  uint64 provider_revision = 4;
+  string connection_id = 5;
+  int64 observed_at_unix_ms = 6;
+  repeated EndpointModel models = 7;
 }

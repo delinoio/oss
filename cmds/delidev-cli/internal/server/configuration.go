@@ -485,14 +485,11 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		sources := map[string]bool{}
 		for _, route := range v.SourceRoutes() {
-			record, err := tx.Get(domain.ModelKind, route.ModelID)
-			if err != nil {
-				return err
+			if route.Model == nil || route.Model.Validate(v.Harness) != nil {
+				return domain.Fail(domain.InvalidArgument, "An exact inline source model is required.", "Keep the current schema-4 route and explicit native metadata.")
 			}
-			model, err := store.Decode[domain.Model](record)
-			if err != nil {
-				return err
-			}
+			model := route.Model.AsModel(v.Harness)
+
 			key := "api:" + string(model.ProviderID)
 			if model.SourceKind == domain.SubscriptionModel {
 				key = "subscription:" + string(model.SubscriptionService)

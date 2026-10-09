@@ -33,7 +33,9 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	}
 	sources := make([]domain.SourceRouteInput, 0, len(agent.SourceRoutes()))
 	for _, route := range agent.SourceRoutes() {
-		mr, model, err := decodeEntity[domain.Model](t, domain.ModelKind, route.ModelID)
+		model := route.Model.AsModel(agent.Harness)
+		mr := Record{Revision: 1}
+		err := route.Model.Validate(agent.Harness)
 		if err != nil {
 			return result, err
 		}
@@ -44,9 +46,6 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		var provider domain.Provider
 		if model.SourceKind == domain.SubscriptionModel {
 			source.Source = "subscription:" + string(model.SubscriptionService)
-			if len(agent.Routes) > 0 && agent.Harness != domain.Codex {
-				source.Problem = domain.Fail(domain.Unsupported, "This subscription execution profile is unsupported.", "Choose a supported account source and harness.")
-			}
 		} else {
 			source.Source = "api:" + string(model.ProviderID)
 			_, provider, err = decodeEntity[domain.Provider](t, domain.ProviderKind, model.ProviderID)

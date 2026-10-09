@@ -268,6 +268,55 @@ func (InputPricingMode) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{4}
 }
 
+type TokenPricingMode int32
+
+const (
+	TokenPricingMode_TOKEN_PRICING_MODE_UNSPECIFIED TokenPricingMode = 0
+	TokenPricingMode_TOKEN_PRICING_MODE_AUTOMATIC   TokenPricingMode = 1
+	TokenPricingMode_TOKEN_PRICING_MODE_MANUAL      TokenPricingMode = 2
+)
+
+// Enum value maps for TokenPricingMode.
+var (
+	TokenPricingMode_name = map[int32]string{
+		0: "TOKEN_PRICING_MODE_UNSPECIFIED",
+		1: "TOKEN_PRICING_MODE_AUTOMATIC",
+		2: "TOKEN_PRICING_MODE_MANUAL",
+	}
+	TokenPricingMode_value = map[string]int32{
+		"TOKEN_PRICING_MODE_UNSPECIFIED": 0,
+		"TOKEN_PRICING_MODE_AUTOMATIC":   1,
+		"TOKEN_PRICING_MODE_MANUAL":      2,
+	}
+)
+
+func (x TokenPricingMode) Enum() *TokenPricingMode {
+	p := new(TokenPricingMode)
+	*p = x
+	return p
+}
+
+func (x TokenPricingMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TokenPricingMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_usage_proto_enumTypes[5].Descriptor()
+}
+
+func (TokenPricingMode) Type() protoreflect.EnumType {
+	return &file_delidev_v1_usage_proto_enumTypes[5]
+}
+
+func (x TokenPricingMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TokenPricingMode.Descriptor instead.
+func (TokenPricingMode) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{5}
+}
+
 type GetUsageSummaryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Half-open server retention-time range. Zero defaults to the last 30 days.
@@ -283,6 +332,7 @@ type GetUsageSummaryRequest struct {
 	TimeZone            string                      `protobuf:"bytes,10,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
 	AccountingProfile   UsageAccountingProfile      `protobuf:"varint,11,opt,name=accounting_profile,json=accountingProfile,proto3,enum=delidev.v1.UsageAccountingProfile" json:"accounting_profile,omitempty"`
 	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,12,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	Model               *ModelIdentity              `protobuf:"bytes,13,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -399,6 +449,13 @@ func (x *GetUsageSummaryRequest) GetSubscriptionService() SubscriptionServiceIde
 		return x.SubscriptionService
 	}
 	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *GetUsageSummaryRequest) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
 }
 
 type AccountingTotals struct {
@@ -726,6 +783,7 @@ type UsageAnalyticsModel struct {
 	ModelName           string                      `protobuf:"bytes,4,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
 	Totals              *UsageTotals                `protobuf:"bytes,5,opt,name=totals,proto3" json:"totals,omitempty"`
 	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,6,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	Model               *ModelIdentity              `protobuf:"bytes,7,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -800,6 +858,13 @@ func (x *UsageAnalyticsModel) GetSubscriptionService() SubscriptionServiceIdenti
 		return x.SubscriptionService
 	}
 	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *UsageAnalyticsModel) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
 }
 
 type UsageOtherModels struct {
@@ -948,6 +1013,7 @@ type UsageGroup struct {
 	ModelName           string                      `protobuf:"bytes,11,opt,name=model_name,json=modelName,proto3" json:"model_name,omitempty"`
 	Estimates           *EstimateTotals             `protobuf:"bytes,12,opt,name=estimates,proto3" json:"estimates,omitempty"`
 	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,13,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	Model               *ModelIdentity              `protobuf:"bytes,14,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1071,6 +1137,13 @@ func (x *UsageGroup) GetSubscriptionService() SubscriptionServiceIdentity {
 		return x.SubscriptionService
 	}
 	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *UsageGroup) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
 }
 
 type GetUsageSummaryResponse struct {
@@ -1337,6 +1410,8 @@ type PricingVersion struct {
 	CreatedAtUnixMs     int64                       `protobuf:"varint,5,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
 	Basis               *TokenPricing               `protobuf:"bytes,6,opt,name=basis,proto3" json:"basis,omitempty"`
 	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,7,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	Model               *ModelIdentity              `protobuf:"bytes,8,opt,name=model,proto3" json:"model,omitempty"`
+	Provenance          *TokenPriceProvenance       `protobuf:"bytes,9,opt,name=provenance,proto3" json:"provenance,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1418,6 +1493,20 @@ func (x *PricingVersion) GetSubscriptionService() SubscriptionServiceIdentity {
 		return x.SubscriptionService
 	}
 	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *PricingVersion) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+func (x *PricingVersion) GetProvenance() *TokenPriceProvenance {
+	if x != nil {
+		return x.Provenance
+	}
+	return nil
 }
 
 type GetModelPricingRequest struct {
@@ -2288,6 +2377,7 @@ type NativeAccountingGroup struct {
 	ModelId             string                      `protobuf:"bytes,5,opt,name=model_id,json=modelId,proto3" json:"model_id,omitempty"`
 	Totals              *NativeAccountingTotals     `protobuf:"bytes,6,opt,name=totals,proto3" json:"totals,omitempty"`
 	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,7,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	Model               *ModelIdentity              `protobuf:"bytes,8,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -2369,6 +2459,13 @@ func (x *NativeAccountingGroup) GetSubscriptionService() SubscriptionServiceIden
 		return x.SubscriptionService
 	}
 	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *NativeAccountingGroup) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
 }
 
 type NativeAccountingDay struct {
@@ -2701,12 +2798,848 @@ func (x *NativeAccountingSummary) GetActualCost() UsageCostState {
 	return UsageCostState_USAGE_COST_STATE_UNSPECIFIED
 }
 
+type TokenPricingPolicy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Mode          TokenPricingMode       `protobuf:"varint,1,opt,name=mode,proto3,enum=delidev.v1.TokenPricingMode" json:"mode,omitempty"`
+	Revision      uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TokenPricingPolicy) Reset() {
+	*x = TokenPricingPolicy{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenPricingPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenPricingPolicy) ProtoMessage() {}
+
+func (x *TokenPricingPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenPricingPolicy.ProtoReflect.Descriptor instead.
+func (*TokenPricingPolicy) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *TokenPricingPolicy) GetMode() TokenPricingMode {
+	if x != nil {
+		return x.Mode
+	}
+	return TokenPricingMode_TOKEN_PRICING_MODE_UNSPECIFIED
+}
+
+func (x *TokenPricingPolicy) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type TokenPriceProvenance struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ProviderKey       string                 `protobuf:"bytes,1,opt,name=provider_key,json=providerKey,proto3" json:"provider_key,omitempty"`
+	ModelKey          string                 `protobuf:"bytes,2,opt,name=model_key,json=modelKey,proto3" json:"model_key,omitempty"`
+	SnapshotSha256    string                 `protobuf:"bytes,3,opt,name=snapshot_sha256,json=snapshotSha256,proto3" json:"snapshot_sha256,omitempty"`
+	RetrievedAtUnixMs int64                  `protobuf:"varint,4,opt,name=retrieved_at_unix_ms,json=retrievedAtUnixMs,proto3" json:"retrieved_at_unix_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *TokenPriceProvenance) Reset() {
+	*x = TokenPriceProvenance{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenPriceProvenance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenPriceProvenance) ProtoMessage() {}
+
+func (x *TokenPriceProvenance) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenPriceProvenance.ProtoReflect.Descriptor instead.
+func (*TokenPriceProvenance) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *TokenPriceProvenance) GetProviderKey() string {
+	if x != nil {
+		return x.ProviderKey
+	}
+	return ""
+}
+
+func (x *TokenPriceProvenance) GetModelKey() string {
+	if x != nil {
+		return x.ModelKey
+	}
+	return ""
+}
+
+func (x *TokenPriceProvenance) GetSnapshotSha256() string {
+	if x != nil {
+		return x.SnapshotSha256
+	}
+	return ""
+}
+
+func (x *TokenPriceProvenance) GetRetrievedAtUnixMs() int64 {
+	if x != nil {
+		return x.RetrievedAtUnixMs
+	}
+	return 0
+}
+
+type TokenPriceReference struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	State               string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	CheckedAtUnixMs     int64                  `protobuf:"varint,2,opt,name=checked_at_unix_ms,json=checkedAtUnixMs,proto3" json:"checked_at_unix_ms,omitempty"`
+	FailureCode         string                 `protobuf:"bytes,3,opt,name=failure_code,json=failureCode,proto3" json:"failure_code,omitempty"`
+	UnsupportedEstimate bool                   `protobuf:"varint,4,opt,name=unsupported_estimate,json=unsupportedEstimate,proto3" json:"unsupported_estimate,omitempty"`
+	CostsJson           []byte                 `protobuf:"bytes,5,opt,name=costs_json,json=costsJson,proto3" json:"costs_json,omitempty"`
+	UpstreamUpdated     string                 `protobuf:"bytes,6,opt,name=upstream_updated,json=upstreamUpdated,proto3" json:"upstream_updated,omitempty"`
+	ApiEquivalent       bool                   `protobuf:"varint,7,opt,name=api_equivalent,json=apiEquivalent,proto3" json:"api_equivalent,omitempty"`
+	Basis               *TokenPricing          `protobuf:"bytes,8,opt,name=basis,proto3" json:"basis,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *TokenPriceReference) Reset() {
+	*x = TokenPriceReference{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TokenPriceReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TokenPriceReference) ProtoMessage() {}
+
+func (x *TokenPriceReference) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TokenPriceReference.ProtoReflect.Descriptor instead.
+func (*TokenPriceReference) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *TokenPriceReference) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *TokenPriceReference) GetCheckedAtUnixMs() int64 {
+	if x != nil {
+		return x.CheckedAtUnixMs
+	}
+	return 0
+}
+
+func (x *TokenPriceReference) GetFailureCode() string {
+	if x != nil {
+		return x.FailureCode
+	}
+	return ""
+}
+
+func (x *TokenPriceReference) GetUnsupportedEstimate() bool {
+	if x != nil {
+		return x.UnsupportedEstimate
+	}
+	return false
+}
+
+func (x *TokenPriceReference) GetCostsJson() []byte {
+	if x != nil {
+		return x.CostsJson
+	}
+	return nil
+}
+
+func (x *TokenPriceReference) GetUpstreamUpdated() string {
+	if x != nil {
+		return x.UpstreamUpdated
+	}
+	return ""
+}
+
+func (x *TokenPriceReference) GetApiEquivalent() bool {
+	if x != nil {
+		return x.ApiEquivalent
+	}
+	return false
+}
+
+func (x *TokenPriceReference) GetBasis() *TokenPricing {
+	if x != nil {
+		return x.Basis
+	}
+	return nil
+}
+
+type GetTokenPricingRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Model         *ModelIdentity         `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTokenPricingRequest) Reset() {
+	*x = GetTokenPricingRequest{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTokenPricingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTokenPricingRequest) ProtoMessage() {}
+
+func (x *GetTokenPricingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTokenPricingRequest.ProtoReflect.Descriptor instead.
+func (*GetTokenPricingRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *GetTokenPricingRequest) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+type GetTokenPricingResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Pricing          *PricingVersion        `protobuf:"bytes,1,opt,name=pricing,proto3" json:"pricing,omitempty"`
+	Policy           *TokenPricingPolicy    `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
+	Reference        *TokenPriceReference   `protobuf:"bytes,3,opt,name=reference,proto3" json:"reference,omitempty"`
+	ProviderRevision uint64                 `protobuf:"varint,4,opt,name=provider_revision,json=providerRevision,proto3" json:"provider_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GetTokenPricingResponse) Reset() {
+	*x = GetTokenPricingResponse{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTokenPricingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTokenPricingResponse) ProtoMessage() {}
+
+func (x *GetTokenPricingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTokenPricingResponse.ProtoReflect.Descriptor instead.
+func (*GetTokenPricingResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *GetTokenPricingResponse) GetPricing() *PricingVersion {
+	if x != nil {
+		return x.Pricing
+	}
+	return nil
+}
+
+func (x *GetTokenPricingResponse) GetPolicy() *TokenPricingPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+func (x *GetTokenPricingResponse) GetReference() *TokenPriceReference {
+	if x != nil {
+		return x.Reference
+	}
+	return nil
+}
+
+func (x *GetTokenPricingResponse) GetProviderRevision() uint64 {
+	if x != nil {
+		return x.ProviderRevision
+	}
+	return 0
+}
+
+type SetTokenPricingRequest struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	Model                    *ModelIdentity         `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	ExpectedRevision         uint64                 `protobuf:"varint,2,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	RequestId                string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Basis                    *TokenPricing          `protobuf:"bytes,4,opt,name=basis,proto3" json:"basis,omitempty"`
+	ExpectedProviderRevision uint64                 `protobuf:"varint,5,opt,name=expected_provider_revision,json=expectedProviderRevision,proto3" json:"expected_provider_revision,omitempty"`
+	ExpectedPolicyRevision   uint64                 `protobuf:"varint,6,opt,name=expected_policy_revision,json=expectedPolicyRevision,proto3" json:"expected_policy_revision,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *SetTokenPricingRequest) Reset() {
+	*x = SetTokenPricingRequest{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTokenPricingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTokenPricingRequest) ProtoMessage() {}
+
+func (x *SetTokenPricingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTokenPricingRequest.ProtoReflect.Descriptor instead.
+func (*SetTokenPricingRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *SetTokenPricingRequest) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+func (x *SetTokenPricingRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *SetTokenPricingRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SetTokenPricingRequest) GetBasis() *TokenPricing {
+	if x != nil {
+		return x.Basis
+	}
+	return nil
+}
+
+func (x *SetTokenPricingRequest) GetExpectedProviderRevision() uint64 {
+	if x != nil {
+		return x.ExpectedProviderRevision
+	}
+	return 0
+}
+
+func (x *SetTokenPricingRequest) GetExpectedPolicyRevision() uint64 {
+	if x != nil {
+		return x.ExpectedPolicyRevision
+	}
+	return 0
+}
+
+type SetTokenPricingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Pricing       *PricingVersion        `protobuf:"bytes,1,opt,name=pricing,proto3" json:"pricing,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Policy        *TokenPricingPolicy    `protobuf:"bytes,4,opt,name=policy,proto3" json:"policy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTokenPricingResponse) Reset() {
+	*x = SetTokenPricingResponse{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTokenPricingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTokenPricingResponse) ProtoMessage() {}
+
+func (x *SetTokenPricingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTokenPricingResponse.ProtoReflect.Descriptor instead.
+func (*SetTokenPricingResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SetTokenPricingResponse) GetPricing() *PricingVersion {
+	if x != nil {
+		return x.Pricing
+	}
+	return nil
+}
+
+func (x *SetTokenPricingResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SetTokenPricingResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *SetTokenPricingResponse) GetPolicy() *TokenPricingPolicy {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+type SetTokenPricingModeRequest struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	Model                    *ModelIdentity         `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	Mode                     TokenPricingMode       `protobuf:"varint,2,opt,name=mode,proto3,enum=delidev.v1.TokenPricingMode" json:"mode,omitempty"`
+	ExpectedPolicyRevision   uint64                 `protobuf:"varint,3,opt,name=expected_policy_revision,json=expectedPolicyRevision,proto3" json:"expected_policy_revision,omitempty"`
+	RequestId                string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ExpectedProviderRevision uint64                 `protobuf:"varint,5,opt,name=expected_provider_revision,json=expectedProviderRevision,proto3" json:"expected_provider_revision,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *SetTokenPricingModeRequest) Reset() {
+	*x = SetTokenPricingModeRequest{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTokenPricingModeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTokenPricingModeRequest) ProtoMessage() {}
+
+func (x *SetTokenPricingModeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTokenPricingModeRequest.ProtoReflect.Descriptor instead.
+func (*SetTokenPricingModeRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SetTokenPricingModeRequest) GetModel() *ModelIdentity {
+	if x != nil {
+		return x.Model
+	}
+	return nil
+}
+
+func (x *SetTokenPricingModeRequest) GetMode() TokenPricingMode {
+	if x != nil {
+		return x.Mode
+	}
+	return TokenPricingMode_TOKEN_PRICING_MODE_UNSPECIFIED
+}
+
+func (x *SetTokenPricingModeRequest) GetExpectedPolicyRevision() uint64 {
+	if x != nil {
+		return x.ExpectedPolicyRevision
+	}
+	return 0
+}
+
+func (x *SetTokenPricingModeRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SetTokenPricingModeRequest) GetExpectedProviderRevision() uint64 {
+	if x != nil {
+		return x.ExpectedProviderRevision
+	}
+	return 0
+}
+
+type SetTokenPricingModeResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Current       *GetTokenPricingResponse `protobuf:"bytes,1,opt,name=current,proto3" json:"current,omitempty"`
+	RequestId     string                   `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                     `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTokenPricingModeResponse) Reset() {
+	*x = SetTokenPricingModeResponse{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTokenPricingModeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTokenPricingModeResponse) ProtoMessage() {}
+
+func (x *SetTokenPricingModeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTokenPricingModeResponse.ProtoReflect.Descriptor instead.
+func (*SetTokenPricingModeResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SetTokenPricingModeResponse) GetCurrent() *GetTokenPricingResponse {
+	if x != nil {
+		return x.Current
+	}
+	return nil
+}
+
+func (x *SetTokenPricingModeResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SetTokenPricingModeResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type RefreshTokenPricesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshTokenPricesRequest) Reset() {
+	*x = RefreshTokenPricesRequest{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshTokenPricesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshTokenPricesRequest) ProtoMessage() {}
+
+func (x *RefreshTokenPricesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshTokenPricesRequest.ProtoReflect.Descriptor instead.
+func (*RefreshTokenPricesRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{39}
+}
+
+type RefreshTokenPricesResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	State           string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	CheckedAtUnixMs int64                  `protobuf:"varint,2,opt,name=checked_at_unix_ms,json=checkedAtUnixMs,proto3" json:"checked_at_unix_ms,omitempty"`
+	FailureCode     string                 `protobuf:"bytes,3,opt,name=failure_code,json=failureCode,proto3" json:"failure_code,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RefreshTokenPricesResponse) Reset() {
+	*x = RefreshTokenPricesResponse{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshTokenPricesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshTokenPricesResponse) ProtoMessage() {}
+
+func (x *RefreshTokenPricesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshTokenPricesResponse.ProtoReflect.Descriptor instead.
+func (*RefreshTokenPricesResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *RefreshTokenPricesResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *RefreshTokenPricesResponse) GetCheckedAtUnixMs() int64 {
+	if x != nil {
+		return x.CheckedAtUnixMs
+	}
+	return 0
+}
+
+func (x *RefreshTokenPricesResponse) GetFailureCode() string {
+	if x != nil {
+		return x.FailureCode
+	}
+	return ""
+}
+
+type ListTokenPricingRequest struct {
+	state               protoimpl.MessageState      `protogen:"open.v1"`
+	PageSize            uint32                      `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken           string                      `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	ProviderId          string                      `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,4,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ListTokenPricingRequest) Reset() {
+	*x = ListTokenPricingRequest{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTokenPricingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTokenPricingRequest) ProtoMessage() {}
+
+func (x *ListTokenPricingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTokenPricingRequest.ProtoReflect.Descriptor instead.
+func (*ListTokenPricingRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *ListTokenPricingRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListTokenPricingRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+func (x *ListTokenPricingRequest) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *ListTokenPricingRequest) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+type ListTokenPricingResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Pricing       []*PricingVersion      `protobuf:"bytes,1,rep,name=pricing,proto3" json:"pricing,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTokenPricingResponse) Reset() {
+	*x = ListTokenPricingResponse{}
+	mi := &file_delidev_v1_usage_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTokenPricingResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTokenPricingResponse) ProtoMessage() {}
+
+func (x *ListTokenPricingResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_usage_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTokenPricingResponse.ProtoReflect.Descriptor instead.
+func (*ListTokenPricingResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_usage_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *ListTokenPricingResponse) GetPricing() []*PricingVersion {
+	if x != nil {
+		return x.Pricing
+	}
+	return nil
+}
+
+func (x *ListTokenPricingResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_delidev_v1_usage_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"\x16delidev/v1/usage.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xaa\x04\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xdb\x04\n" +
 	"\x16GetUsageSummaryRequest\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2725,7 +3658,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\ttime_zone\x18\n" +
 	" \x01(\tR\btimeZone\x12Q\n" +
 	"\x12accounting_profile\x18\v \x01(\x0e2\".delidev.v1.UsageAccountingProfileR\x11accountingProfile\x12Z\n" +
-	"\x14subscription_service\x18\f \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\xd1\x02\n" +
+	"\x14subscription_service\x18\f \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12/\n" +
+	"\x05model\x18\r \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\"\xd1\x02\n" +
 	"\x10AccountingTotals\x122\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1e.delidev.v1.AccountingUnitKindR\x04kind\x12\x14\n" +
 	"\x05units\x18\x02 \x01(\rR\x05units\x12\x1f\n" +
@@ -2756,7 +3690,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
 	"\runtil_unix_ms\x18\x02 \x01(\x03R\vuntilUnixMs\x12/\n" +
-	"\x06totals\x18\x03 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\"\xa2\x02\n" +
+	"\x06totals\x18\x03 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\"\xd3\x02\n" +
 	"\x13UsageAnalyticsModel\x12\x1f\n" +
 	"\vprovider_id\x18\x01 \x01(\tR\n" +
 	"providerId\x12\x19\n" +
@@ -2765,7 +3699,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"model_name\x18\x04 \x01(\tR\tmodelName\x12/\n" +
 	"\x06totals\x18\x05 \x01(\v2\x17.delidev.v1.UsageTotalsR\x06totals\x12Z\n" +
-	"\x14subscription_service\x18\x06 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"d\n" +
+	"\x14subscription_service\x18\x06 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12/\n" +
+	"\x05model\x18\a \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\"d\n" +
 	"\x10UsageOtherModels\x12\x1f\n" +
 	"\vmodel_count\x18\x01 \x01(\rR\n" +
 	"modelCount\x12/\n" +
@@ -2775,7 +3710,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\ttime_zone\x18\x02 \x01(\tR\btimeZone\x121\n" +
 	"\x04days\x18\x03 \x03(\v2\x1d.delidev.v1.UsageAnalyticsDayR\x04days\x127\n" +
 	"\x06models\x18\x04 \x03(\v2\x1f.delidev.v1.UsageAnalyticsModelR\x06models\x12?\n" +
-	"\fother_models\x18\x05 \x01(\v2\x1c.delidev.v1.UsageOtherModelsR\votherModels\"\x99\x04\n" +
+	"\fother_models\x18\x05 \x01(\v2\x1c.delidev.v1.UsageOtherModelsR\votherModels\"\xca\x04\n" +
 	"\n" +
 	"UsageGroup\x12\x1d\n" +
 	"\n" +
@@ -2796,7 +3731,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"model_name\x18\v \x01(\tR\tmodelName\x128\n" +
 	"\testimates\x18\f \x01(\v2\x1a.delidev.v1.EstimateTotalsR\testimates\x12Z\n" +
-	"\x14subscription_service\x18\r \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\xe8\x06\n" +
+	"\x14subscription_service\x18\r \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12/\n" +
+	"\x05model\x18\x0e \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\"\xe8\x06\n" +
 	"\x17GetUsageSummaryResponse\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2829,7 +3765,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"exclusionsB\x14\n" +
 	"\x12_input_per_millionB\x1b\n" +
 	"\x19_cached_input_per_millionB\x15\n" +
-	"\x13_output_per_million\"\xb1\x02\n" +
+	"\x13_output_per_million\"\xa4\x03\n" +
 	"\x0ePricingVersion\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bmodel_id\x18\x02 \x01(\tR\amodelId\x12\x1f\n" +
@@ -2838,7 +3774,11 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\brevision\x18\x04 \x01(\x04R\brevision\x12+\n" +
 	"\x12created_at_unix_ms\x18\x05 \x01(\x03R\x0fcreatedAtUnixMs\x12.\n" +
 	"\x05basis\x18\x06 \x01(\v2\x18.delidev.v1.TokenPricingR\x05basis\x12Z\n" +
-	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"3\n" +
+	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12/\n" +
+	"\x05model\x18\b \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\x12@\n" +
+	"\n" +
+	"provenance\x18\t \x01(\v2 .delidev.v1.TokenPriceProvenanceR\n" +
+	"provenance\"3\n" +
 	"\x16GetModelPricingRequest\x12\x19\n" +
 	"\bmodel_id\x18\x01 \x01(\tR\amodelId\"v\n" +
 	"\x17GetModelPricingResponse\x12%\n" +
@@ -2908,7 +3848,7 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"currencies\x18\t \x03(\v2\".delidev.v1.NativeCurrencyEstimateR\n" +
 	"currencies\x12%\n" +
 	"\x0eunpriced_units\x18\n" +
-	" \x01(\rR\runpricedUnits\"\xc8\x02\n" +
+	" \x01(\rR\runpricedUnits\"\xf9\x02\n" +
 	"\x15NativeAccountingGroup\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
@@ -2920,7 +3860,8 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"providerId\x12\x19\n" +
 	"\bmodel_id\x18\x05 \x01(\tR\amodelId\x12:\n" +
 	"\x06totals\x18\x06 \x01(\v2\".delidev.v1.NativeAccountingTotalsR\x06totals\x12Z\n" +
-	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"\x97\x01\n" +
+	"\x14subscription_service\x18\a \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12/\n" +
+	"\x05model\x18\b \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\"\x97\x01\n" +
 	"\x13NativeAccountingDay\x12 \n" +
 	"\ffrom_unix_ms\x18\x01 \x01(\x03R\n" +
 	"fromUnixMs\x12\"\n" +
@@ -2951,7 +3892,73 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\apricing\x18\x05 \x03(\v2#.delidev.v1.NativeAccountingPricingR\apricing\x125\n" +
 	"\bcoverage\x18\x06 \x01(\x0e2\x19.delidev.v1.UsageCoverageR\bcoverage\x12;\n" +
 	"\vactual_cost\x18\a \x01(\x0e2\x1a.delidev.v1.UsageCostStateR\n" +
-	"actualCost*^\n" +
+	"actualCost\"b\n" +
+	"\x12TokenPricingPolicy\x120\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x1c.delidev.v1.TokenPricingModeR\x04mode\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\"\xb0\x01\n" +
+	"\x14TokenPriceProvenance\x12!\n" +
+	"\fprovider_key\x18\x01 \x01(\tR\vproviderKey\x12\x1b\n" +
+	"\tmodel_key\x18\x02 \x01(\tR\bmodelKey\x12'\n" +
+	"\x0fsnapshot_sha256\x18\x03 \x01(\tR\x0esnapshotSha256\x12/\n" +
+	"\x14retrieved_at_unix_ms\x18\x04 \x01(\x03R\x11retrievedAtUnixMs\"\xcf\x02\n" +
+	"\x13TokenPriceReference\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12+\n" +
+	"\x12checked_at_unix_ms\x18\x02 \x01(\x03R\x0fcheckedAtUnixMs\x12!\n" +
+	"\ffailure_code\x18\x03 \x01(\tR\vfailureCode\x121\n" +
+	"\x14unsupported_estimate\x18\x04 \x01(\bR\x13unsupportedEstimate\x12\x1d\n" +
+	"\n" +
+	"costs_json\x18\x05 \x01(\fR\tcostsJson\x12)\n" +
+	"\x10upstream_updated\x18\x06 \x01(\tR\x0fupstreamUpdated\x12%\n" +
+	"\x0eapi_equivalent\x18\a \x01(\bR\rapiEquivalent\x12.\n" +
+	"\x05basis\x18\b \x01(\v2\x18.delidev.v1.TokenPricingR\x05basis\"I\n" +
+	"\x16GetTokenPricingRequest\x12/\n" +
+	"\x05model\x18\x01 \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\"\xf3\x01\n" +
+	"\x17GetTokenPricingResponse\x124\n" +
+	"\apricing\x18\x01 \x01(\v2\x1a.delidev.v1.PricingVersionR\apricing\x126\n" +
+	"\x06policy\x18\x02 \x01(\v2\x1e.delidev.v1.TokenPricingPolicyR\x06policy\x12=\n" +
+	"\treference\x18\x03 \x01(\v2\x1f.delidev.v1.TokenPriceReferenceR\treference\x12+\n" +
+	"\x11provider_revision\x18\x04 \x01(\x04R\x10providerRevision\"\xbd\x02\n" +
+	"\x16SetTokenPricingRequest\x12/\n" +
+	"\x05model\x18\x01 \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\x12+\n" +
+	"\x11expected_revision\x18\x02 \x01(\x04R\x10expectedRevision\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\x12.\n" +
+	"\x05basis\x18\x04 \x01(\v2\x18.delidev.v1.TokenPricingR\x05basis\x12<\n" +
+	"\x1aexpected_provider_revision\x18\x05 \x01(\x04R\x18expectedProviderRevision\x128\n" +
+	"\x18expected_policy_revision\x18\x06 \x01(\x04R\x16expectedPolicyRevision\"\xc2\x01\n" +
+	"\x17SetTokenPricingResponse\x124\n" +
+	"\apricing\x18\x01 \x01(\v2\x1a.delidev.v1.PricingVersionR\apricing\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\x126\n" +
+	"\x06policy\x18\x04 \x01(\v2\x1e.delidev.v1.TokenPricingPolicyR\x06policy\"\x96\x02\n" +
+	"\x1aSetTokenPricingModeRequest\x12/\n" +
+	"\x05model\x18\x01 \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\x120\n" +
+	"\x04mode\x18\x02 \x01(\x0e2\x1c.delidev.v1.TokenPricingModeR\x04mode\x128\n" +
+	"\x18expected_policy_revision\x18\x03 \x01(\x04R\x16expectedPolicyRevision\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\x12<\n" +
+	"\x1aexpected_provider_revision\x18\x05 \x01(\x04R\x18expectedProviderRevision\"\x97\x01\n" +
+	"\x1bSetTokenPricingModeResponse\x12=\n" +
+	"\acurrent\x18\x01 \x01(\v2#.delidev.v1.GetTokenPricingResponseR\acurrent\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\x1b\n" +
+	"\x19RefreshTokenPricesRequest\"\x82\x01\n" +
+	"\x1aRefreshTokenPricesResponse\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12+\n" +
+	"\x12checked_at_unix_ms\x18\x02 \x01(\x03R\x0fcheckedAtUnixMs\x12!\n" +
+	"\ffailure_code\x18\x03 \x01(\tR\vfailureCode\"\xd2\x01\n" +
+	"\x17ListTokenPricingRequest\x12\x1b\n" +
+	"\tpage_size\x18\x01 \x01(\rR\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x1f\n" +
+	"\vprovider_id\x18\x03 \x01(\tR\n" +
+	"providerId\x12Z\n" +
+	"\x14subscription_service\x18\x04 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\"x\n" +
+	"\x18ListTokenPricingResponse\x124\n" +
+	"\apricing\x18\x01 \x03(\v2\x1a.delidev.v1.PricingVersionR\apricing\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*^\n" +
 	"\x14UsageTimeGranularity\x12&\n" +
 	"\"USAGE_TIME_GRANULARITY_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aUSAGE_TIME_GRANULARITY_DAY\x10\x01*p\n" +
@@ -2971,8 +3978,17 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\x10InputPricingMode\x12\"\n" +
 	"\x1eINPUT_PRICING_MODE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aINPUT_PRICING_MODE_UNIFORM\x10\x01\x12&\n" +
-	"\"INPUT_PRICING_MODE_CACHED_DISCOUNT\x10\x022\x84\x03\n" +
-	"\fUsageService\x12Z\n" +
+	"\"INPUT_PRICING_MODE_CACHED_DISCOUNT\x10\x02*w\n" +
+	"\x10TokenPricingMode\x12\"\n" +
+	"\x1eTOKEN_PRICING_MODE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cTOKEN_PRICING_MODE_AUTOMATIC\x10\x01\x12\x1d\n" +
+	"\x19TOKEN_PRICING_MODE_MANUAL\x10\x022\xe8\x06\n" +
+	"\fUsageService\x12]\n" +
+	"\x10ListTokenPricing\x12#.delidev.v1.ListTokenPricingRequest\x1a$.delidev.v1.ListTokenPricingResponse\x12Z\n" +
+	"\x0fGetTokenPricing\x12\".delidev.v1.GetTokenPricingRequest\x1a#.delidev.v1.GetTokenPricingResponse\x12Z\n" +
+	"\x0fSetTokenPricing\x12\".delidev.v1.SetTokenPricingRequest\x1a#.delidev.v1.SetTokenPricingResponse\x12f\n" +
+	"\x13SetTokenPricingMode\x12&.delidev.v1.SetTokenPricingModeRequest\x1a'.delidev.v1.SetTokenPricingModeResponse\x12c\n" +
+	"\x12RefreshTokenPrices\x12%.delidev.v1.RefreshTokenPricesRequest\x1a&.delidev.v1.RefreshTokenPricesResponse\x12Z\n" +
 	"\x0fGetUsageSummary\x12\".delidev.v1.GetUsageSummaryRequest\x1a#.delidev.v1.GetUsageSummaryResponse\x12Z\n" +
 	"\x0fGetModelPricing\x12\".delidev.v1.GetModelPricingRequest\x1a#.delidev.v1.GetModelPricingResponse\x12`\n" +
 	"\x11GetPricingVersion\x12$.delidev.v1.GetPricingVersionRequest\x1a%.delidev.v1.GetPricingVersionResponse\x12Z\n" +
@@ -2990,135 +4006,181 @@ func file_delidev_v1_usage_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_usage_proto_rawDescData
 }
 
-var file_delidev_v1_usage_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_delidev_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_delidev_v1_usage_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_delidev_v1_usage_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_delidev_v1_usage_proto_goTypes = []any{
-	(UsageTimeGranularity)(0),         // 0: delidev.v1.UsageTimeGranularity
-	(UsageAccountingProfile)(0),       // 1: delidev.v1.UsageAccountingProfile
-	(AccountingUnitKind)(0),           // 2: delidev.v1.AccountingUnitKind
-	(UsageCostState)(0),               // 3: delidev.v1.UsageCostState
-	(InputPricingMode)(0),             // 4: delidev.v1.InputPricingMode
-	(*GetUsageSummaryRequest)(nil),    // 5: delidev.v1.GetUsageSummaryRequest
-	(*AccountingTotals)(nil),          // 6: delidev.v1.AccountingTotals
-	(*UsageMeasure)(nil),              // 7: delidev.v1.UsageMeasure
-	(*UsageTotals)(nil),               // 8: delidev.v1.UsageTotals
-	(*UsageAnalyticsDay)(nil),         // 9: delidev.v1.UsageAnalyticsDay
-	(*UsageAnalyticsModel)(nil),       // 10: delidev.v1.UsageAnalyticsModel
-	(*UsageOtherModels)(nil),          // 11: delidev.v1.UsageOtherModels
-	(*UsageAnalytics)(nil),            // 12: delidev.v1.UsageAnalytics
-	(*UsageGroup)(nil),                // 13: delidev.v1.UsageGroup
-	(*GetUsageSummaryResponse)(nil),   // 14: delidev.v1.GetUsageSummaryResponse
-	(*TokenPricing)(nil),              // 15: delidev.v1.TokenPricing
-	(*PricingVersion)(nil),            // 16: delidev.v1.PricingVersion
-	(*GetModelPricingRequest)(nil),    // 17: delidev.v1.GetModelPricingRequest
-	(*GetModelPricingResponse)(nil),   // 18: delidev.v1.GetModelPricingResponse
-	(*GetPricingVersionRequest)(nil),  // 19: delidev.v1.GetPricingVersionRequest
-	(*GetPricingVersionResponse)(nil), // 20: delidev.v1.GetPricingVersionResponse
-	(*SetModelPricingRequest)(nil),    // 21: delidev.v1.SetModelPricingRequest
-	(*SetModelPricingResponse)(nil),   // 22: delidev.v1.SetModelPricingResponse
-	(*CurrencyEstimate)(nil),          // 23: delidev.v1.CurrencyEstimate
-	(*EstimateTotals)(nil),            // 24: delidev.v1.EstimateTotals
-	(*EstimateMeasure)(nil),           // 25: delidev.v1.EstimateMeasure
-	(*PricingUsage)(nil),              // 26: delidev.v1.PricingUsage
-	(*NativeAccountingMeasure)(nil),   // 27: delidev.v1.NativeAccountingMeasure
-	(*NativeCurrencyEstimate)(nil),    // 28: delidev.v1.NativeCurrencyEstimate
-	(*NativeAccountingTotals)(nil),    // 29: delidev.v1.NativeAccountingTotals
-	(*NativeAccountingGroup)(nil),     // 30: delidev.v1.NativeAccountingGroup
-	(*NativeAccountingDay)(nil),       // 31: delidev.v1.NativeAccountingDay
-	(*NativeEstimateMeasure)(nil),     // 32: delidev.v1.NativeEstimateMeasure
-	(*NativeAccountingPricing)(nil),   // 33: delidev.v1.NativeAccountingPricing
-	(*NativeAccountingSummary)(nil),   // 34: delidev.v1.NativeAccountingSummary
-	(SubscriptionServiceIdentity)(0),  // 35: delidev.v1.SubscriptionServiceIdentity
-	(UsageCoverage)(0),                // 36: delidev.v1.UsageCoverage
-	(*Mutation)(nil),                  // 37: delidev.v1.Mutation
+	(UsageTimeGranularity)(0),           // 0: delidev.v1.UsageTimeGranularity
+	(UsageAccountingProfile)(0),         // 1: delidev.v1.UsageAccountingProfile
+	(AccountingUnitKind)(0),             // 2: delidev.v1.AccountingUnitKind
+	(UsageCostState)(0),                 // 3: delidev.v1.UsageCostState
+	(InputPricingMode)(0),               // 4: delidev.v1.InputPricingMode
+	(TokenPricingMode)(0),               // 5: delidev.v1.TokenPricingMode
+	(*GetUsageSummaryRequest)(nil),      // 6: delidev.v1.GetUsageSummaryRequest
+	(*AccountingTotals)(nil),            // 7: delidev.v1.AccountingTotals
+	(*UsageMeasure)(nil),                // 8: delidev.v1.UsageMeasure
+	(*UsageTotals)(nil),                 // 9: delidev.v1.UsageTotals
+	(*UsageAnalyticsDay)(nil),           // 10: delidev.v1.UsageAnalyticsDay
+	(*UsageAnalyticsModel)(nil),         // 11: delidev.v1.UsageAnalyticsModel
+	(*UsageOtherModels)(nil),            // 12: delidev.v1.UsageOtherModels
+	(*UsageAnalytics)(nil),              // 13: delidev.v1.UsageAnalytics
+	(*UsageGroup)(nil),                  // 14: delidev.v1.UsageGroup
+	(*GetUsageSummaryResponse)(nil),     // 15: delidev.v1.GetUsageSummaryResponse
+	(*TokenPricing)(nil),                // 16: delidev.v1.TokenPricing
+	(*PricingVersion)(nil),              // 17: delidev.v1.PricingVersion
+	(*GetModelPricingRequest)(nil),      // 18: delidev.v1.GetModelPricingRequest
+	(*GetModelPricingResponse)(nil),     // 19: delidev.v1.GetModelPricingResponse
+	(*GetPricingVersionRequest)(nil),    // 20: delidev.v1.GetPricingVersionRequest
+	(*GetPricingVersionResponse)(nil),   // 21: delidev.v1.GetPricingVersionResponse
+	(*SetModelPricingRequest)(nil),      // 22: delidev.v1.SetModelPricingRequest
+	(*SetModelPricingResponse)(nil),     // 23: delidev.v1.SetModelPricingResponse
+	(*CurrencyEstimate)(nil),            // 24: delidev.v1.CurrencyEstimate
+	(*EstimateTotals)(nil),              // 25: delidev.v1.EstimateTotals
+	(*EstimateMeasure)(nil),             // 26: delidev.v1.EstimateMeasure
+	(*PricingUsage)(nil),                // 27: delidev.v1.PricingUsage
+	(*NativeAccountingMeasure)(nil),     // 28: delidev.v1.NativeAccountingMeasure
+	(*NativeCurrencyEstimate)(nil),      // 29: delidev.v1.NativeCurrencyEstimate
+	(*NativeAccountingTotals)(nil),      // 30: delidev.v1.NativeAccountingTotals
+	(*NativeAccountingGroup)(nil),       // 31: delidev.v1.NativeAccountingGroup
+	(*NativeAccountingDay)(nil),         // 32: delidev.v1.NativeAccountingDay
+	(*NativeEstimateMeasure)(nil),       // 33: delidev.v1.NativeEstimateMeasure
+	(*NativeAccountingPricing)(nil),     // 34: delidev.v1.NativeAccountingPricing
+	(*NativeAccountingSummary)(nil),     // 35: delidev.v1.NativeAccountingSummary
+	(*TokenPricingPolicy)(nil),          // 36: delidev.v1.TokenPricingPolicy
+	(*TokenPriceProvenance)(nil),        // 37: delidev.v1.TokenPriceProvenance
+	(*TokenPriceReference)(nil),         // 38: delidev.v1.TokenPriceReference
+	(*GetTokenPricingRequest)(nil),      // 39: delidev.v1.GetTokenPricingRequest
+	(*GetTokenPricingResponse)(nil),     // 40: delidev.v1.GetTokenPricingResponse
+	(*SetTokenPricingRequest)(nil),      // 41: delidev.v1.SetTokenPricingRequest
+	(*SetTokenPricingResponse)(nil),     // 42: delidev.v1.SetTokenPricingResponse
+	(*SetTokenPricingModeRequest)(nil),  // 43: delidev.v1.SetTokenPricingModeRequest
+	(*SetTokenPricingModeResponse)(nil), // 44: delidev.v1.SetTokenPricingModeResponse
+	(*RefreshTokenPricesRequest)(nil),   // 45: delidev.v1.RefreshTokenPricesRequest
+	(*RefreshTokenPricesResponse)(nil),  // 46: delidev.v1.RefreshTokenPricesResponse
+	(*ListTokenPricingRequest)(nil),     // 47: delidev.v1.ListTokenPricingRequest
+	(*ListTokenPricingResponse)(nil),    // 48: delidev.v1.ListTokenPricingResponse
+	(SubscriptionServiceIdentity)(0),    // 49: delidev.v1.SubscriptionServiceIdentity
+	(*ModelIdentity)(nil),               // 50: delidev.v1.ModelIdentity
+	(UsageCoverage)(0),                  // 51: delidev.v1.UsageCoverage
+	(*Mutation)(nil),                    // 52: delidev.v1.Mutation
 }
 var file_delidev_v1_usage_proto_depIdxs = []int32{
-	0,  // 0: delidev.v1.GetUsageSummaryRequest.granularity:type_name -> delidev.v1.UsageTimeGranularity
-	1,  // 1: delidev.v1.GetUsageSummaryRequest.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
-	35, // 2: delidev.v1.GetUsageSummaryRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	2,  // 3: delidev.v1.AccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
-	3,  // 4: delidev.v1.AccountingTotals.actual_cost:type_name -> delidev.v1.UsageCostState
-	3,  // 5: delidev.v1.AccountingTotals.estimated_cost:type_name -> delidev.v1.UsageCostState
-	7,  // 6: delidev.v1.UsageTotals.input:type_name -> delidev.v1.UsageMeasure
-	7,  // 7: delidev.v1.UsageTotals.cached_input:type_name -> delidev.v1.UsageMeasure
-	7,  // 8: delidev.v1.UsageTotals.cache_write_input:type_name -> delidev.v1.UsageMeasure
-	7,  // 9: delidev.v1.UsageTotals.output:type_name -> delidev.v1.UsageMeasure
-	7,  // 10: delidev.v1.UsageTotals.reasoning_output:type_name -> delidev.v1.UsageMeasure
-	7,  // 11: delidev.v1.UsageTotals.total:type_name -> delidev.v1.UsageMeasure
-	6,  // 12: delidev.v1.UsageTotals.accounting:type_name -> delidev.v1.AccountingTotals
-	8,  // 13: delidev.v1.UsageAnalyticsDay.totals:type_name -> delidev.v1.UsageTotals
-	8,  // 14: delidev.v1.UsageAnalyticsModel.totals:type_name -> delidev.v1.UsageTotals
-	35, // 15: delidev.v1.UsageAnalyticsModel.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	8,  // 16: delidev.v1.UsageOtherModels.totals:type_name -> delidev.v1.UsageTotals
-	0,  // 17: delidev.v1.UsageAnalytics.granularity:type_name -> delidev.v1.UsageTimeGranularity
-	9,  // 18: delidev.v1.UsageAnalytics.days:type_name -> delidev.v1.UsageAnalyticsDay
-	10, // 19: delidev.v1.UsageAnalytics.models:type_name -> delidev.v1.UsageAnalyticsModel
-	11, // 20: delidev.v1.UsageAnalytics.other_models:type_name -> delidev.v1.UsageOtherModels
-	8,  // 21: delidev.v1.UsageGroup.totals:type_name -> delidev.v1.UsageTotals
-	24, // 22: delidev.v1.UsageGroup.estimates:type_name -> delidev.v1.EstimateTotals
-	35, // 23: delidev.v1.UsageGroup.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	8,  // 24: delidev.v1.GetUsageSummaryResponse.totals:type_name -> delidev.v1.UsageTotals
-	13, // 25: delidev.v1.GetUsageSummaryResponse.groups:type_name -> delidev.v1.UsageGroup
-	36, // 26: delidev.v1.GetUsageSummaryResponse.coverage:type_name -> delidev.v1.UsageCoverage
-	3,  // 27: delidev.v1.GetUsageSummaryResponse.actual_cost:type_name -> delidev.v1.UsageCostState
-	3,  // 28: delidev.v1.GetUsageSummaryResponse.estimated_cost:type_name -> delidev.v1.UsageCostState
-	24, // 29: delidev.v1.GetUsageSummaryResponse.estimates:type_name -> delidev.v1.EstimateTotals
-	26, // 30: delidev.v1.GetUsageSummaryResponse.pricing:type_name -> delidev.v1.PricingUsage
-	12, // 31: delidev.v1.GetUsageSummaryResponse.analytics:type_name -> delidev.v1.UsageAnalytics
-	1,  // 32: delidev.v1.GetUsageSummaryResponse.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
-	34, // 33: delidev.v1.GetUsageSummaryResponse.native_accounting:type_name -> delidev.v1.NativeAccountingSummary
-	4,  // 34: delidev.v1.TokenPricing.input_mode:type_name -> delidev.v1.InputPricingMode
-	15, // 35: delidev.v1.PricingVersion.basis:type_name -> delidev.v1.TokenPricing
-	35, // 36: delidev.v1.PricingVersion.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	16, // 37: delidev.v1.GetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	16, // 38: delidev.v1.GetPricingVersionResponse.pricing:type_name -> delidev.v1.PricingVersion
-	37, // 39: delidev.v1.SetModelPricingRequest.mutation:type_name -> delidev.v1.Mutation
-	15, // 40: delidev.v1.SetModelPricingRequest.basis:type_name -> delidev.v1.TokenPricing
-	16, // 41: delidev.v1.SetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
-	23, // 42: delidev.v1.EstimateTotals.currencies:type_name -> delidev.v1.CurrencyEstimate
-	16, // 43: delidev.v1.PricingUsage.pricing:type_name -> delidev.v1.PricingVersion
-	23, // 44: delidev.v1.PricingUsage.totals:type_name -> delidev.v1.CurrencyEstimate
-	25, // 45: delidev.v1.PricingUsage.input:type_name -> delidev.v1.EstimateMeasure
-	25, // 46: delidev.v1.PricingUsage.cached_input:type_name -> delidev.v1.EstimateMeasure
-	25, // 47: delidev.v1.PricingUsage.output:type_name -> delidev.v1.EstimateMeasure
-	2,  // 48: delidev.v1.NativeAccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
-	27, // 49: delidev.v1.NativeAccountingTotals.input:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 50: delidev.v1.NativeAccountingTotals.cache_read:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 51: delidev.v1.NativeAccountingTotals.cache_write:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 52: delidev.v1.NativeAccountingTotals.output:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 53: delidev.v1.NativeAccountingTotals.thinking:type_name -> delidev.v1.NativeAccountingMeasure
-	27, // 54: delidev.v1.NativeAccountingTotals.total:type_name -> delidev.v1.NativeAccountingMeasure
-	28, // 55: delidev.v1.NativeAccountingTotals.currencies:type_name -> delidev.v1.NativeCurrencyEstimate
-	29, // 56: delidev.v1.NativeAccountingGroup.totals:type_name -> delidev.v1.NativeAccountingTotals
-	35, // 57: delidev.v1.NativeAccountingGroup.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	29, // 58: delidev.v1.NativeAccountingDay.totals:type_name -> delidev.v1.NativeAccountingTotals
-	16, // 59: delidev.v1.NativeAccountingPricing.pricing:type_name -> delidev.v1.PricingVersion
-	29, // 60: delidev.v1.NativeAccountingPricing.totals:type_name -> delidev.v1.NativeAccountingTotals
-	32, // 61: delidev.v1.NativeAccountingPricing.input:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 62: delidev.v1.NativeAccountingPricing.cache_read:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 63: delidev.v1.NativeAccountingPricing.cache_write:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 64: delidev.v1.NativeAccountingPricing.output:type_name -> delidev.v1.NativeEstimateMeasure
-	32, // 65: delidev.v1.NativeAccountingPricing.reasoning:type_name -> delidev.v1.NativeEstimateMeasure
-	29, // 66: delidev.v1.NativeAccountingSummary.totals:type_name -> delidev.v1.NativeAccountingTotals
-	30, // 67: delidev.v1.NativeAccountingSummary.groups:type_name -> delidev.v1.NativeAccountingGroup
-	31, // 68: delidev.v1.NativeAccountingSummary.days:type_name -> delidev.v1.NativeAccountingDay
-	30, // 69: delidev.v1.NativeAccountingSummary.models:type_name -> delidev.v1.NativeAccountingGroup
-	33, // 70: delidev.v1.NativeAccountingSummary.pricing:type_name -> delidev.v1.NativeAccountingPricing
-	36, // 71: delidev.v1.NativeAccountingSummary.coverage:type_name -> delidev.v1.UsageCoverage
-	3,  // 72: delidev.v1.NativeAccountingSummary.actual_cost:type_name -> delidev.v1.UsageCostState
-	5,  // 73: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
-	17, // 74: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
-	19, // 75: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
-	21, // 76: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
-	14, // 77: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
-	18, // 78: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
-	20, // 79: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
-	22, // 80: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
-	77, // [77:81] is the sub-list for method output_type
-	73, // [73:77] is the sub-list for method input_type
-	73, // [73:73] is the sub-list for extension type_name
-	73, // [73:73] is the sub-list for extension extendee
-	0,  // [0:73] is the sub-list for field type_name
+	0,   // 0: delidev.v1.GetUsageSummaryRequest.granularity:type_name -> delidev.v1.UsageTimeGranularity
+	1,   // 1: delidev.v1.GetUsageSummaryRequest.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
+	49,  // 2: delidev.v1.GetUsageSummaryRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	50,  // 3: delidev.v1.GetUsageSummaryRequest.model:type_name -> delidev.v1.ModelIdentity
+	2,   // 4: delidev.v1.AccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
+	3,   // 5: delidev.v1.AccountingTotals.actual_cost:type_name -> delidev.v1.UsageCostState
+	3,   // 6: delidev.v1.AccountingTotals.estimated_cost:type_name -> delidev.v1.UsageCostState
+	8,   // 7: delidev.v1.UsageTotals.input:type_name -> delidev.v1.UsageMeasure
+	8,   // 8: delidev.v1.UsageTotals.cached_input:type_name -> delidev.v1.UsageMeasure
+	8,   // 9: delidev.v1.UsageTotals.cache_write_input:type_name -> delidev.v1.UsageMeasure
+	8,   // 10: delidev.v1.UsageTotals.output:type_name -> delidev.v1.UsageMeasure
+	8,   // 11: delidev.v1.UsageTotals.reasoning_output:type_name -> delidev.v1.UsageMeasure
+	8,   // 12: delidev.v1.UsageTotals.total:type_name -> delidev.v1.UsageMeasure
+	7,   // 13: delidev.v1.UsageTotals.accounting:type_name -> delidev.v1.AccountingTotals
+	9,   // 14: delidev.v1.UsageAnalyticsDay.totals:type_name -> delidev.v1.UsageTotals
+	9,   // 15: delidev.v1.UsageAnalyticsModel.totals:type_name -> delidev.v1.UsageTotals
+	49,  // 16: delidev.v1.UsageAnalyticsModel.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	50,  // 17: delidev.v1.UsageAnalyticsModel.model:type_name -> delidev.v1.ModelIdentity
+	9,   // 18: delidev.v1.UsageOtherModels.totals:type_name -> delidev.v1.UsageTotals
+	0,   // 19: delidev.v1.UsageAnalytics.granularity:type_name -> delidev.v1.UsageTimeGranularity
+	10,  // 20: delidev.v1.UsageAnalytics.days:type_name -> delidev.v1.UsageAnalyticsDay
+	11,  // 21: delidev.v1.UsageAnalytics.models:type_name -> delidev.v1.UsageAnalyticsModel
+	12,  // 22: delidev.v1.UsageAnalytics.other_models:type_name -> delidev.v1.UsageOtherModels
+	9,   // 23: delidev.v1.UsageGroup.totals:type_name -> delidev.v1.UsageTotals
+	25,  // 24: delidev.v1.UsageGroup.estimates:type_name -> delidev.v1.EstimateTotals
+	49,  // 25: delidev.v1.UsageGroup.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	50,  // 26: delidev.v1.UsageGroup.model:type_name -> delidev.v1.ModelIdentity
+	9,   // 27: delidev.v1.GetUsageSummaryResponse.totals:type_name -> delidev.v1.UsageTotals
+	14,  // 28: delidev.v1.GetUsageSummaryResponse.groups:type_name -> delidev.v1.UsageGroup
+	51,  // 29: delidev.v1.GetUsageSummaryResponse.coverage:type_name -> delidev.v1.UsageCoverage
+	3,   // 30: delidev.v1.GetUsageSummaryResponse.actual_cost:type_name -> delidev.v1.UsageCostState
+	3,   // 31: delidev.v1.GetUsageSummaryResponse.estimated_cost:type_name -> delidev.v1.UsageCostState
+	25,  // 32: delidev.v1.GetUsageSummaryResponse.estimates:type_name -> delidev.v1.EstimateTotals
+	27,  // 33: delidev.v1.GetUsageSummaryResponse.pricing:type_name -> delidev.v1.PricingUsage
+	13,  // 34: delidev.v1.GetUsageSummaryResponse.analytics:type_name -> delidev.v1.UsageAnalytics
+	1,   // 35: delidev.v1.GetUsageSummaryResponse.accounting_profile:type_name -> delidev.v1.UsageAccountingProfile
+	35,  // 36: delidev.v1.GetUsageSummaryResponse.native_accounting:type_name -> delidev.v1.NativeAccountingSummary
+	4,   // 37: delidev.v1.TokenPricing.input_mode:type_name -> delidev.v1.InputPricingMode
+	16,  // 38: delidev.v1.PricingVersion.basis:type_name -> delidev.v1.TokenPricing
+	49,  // 39: delidev.v1.PricingVersion.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	50,  // 40: delidev.v1.PricingVersion.model:type_name -> delidev.v1.ModelIdentity
+	37,  // 41: delidev.v1.PricingVersion.provenance:type_name -> delidev.v1.TokenPriceProvenance
+	17,  // 42: delidev.v1.GetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	17,  // 43: delidev.v1.GetPricingVersionResponse.pricing:type_name -> delidev.v1.PricingVersion
+	52,  // 44: delidev.v1.SetModelPricingRequest.mutation:type_name -> delidev.v1.Mutation
+	16,  // 45: delidev.v1.SetModelPricingRequest.basis:type_name -> delidev.v1.TokenPricing
+	17,  // 46: delidev.v1.SetModelPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	24,  // 47: delidev.v1.EstimateTotals.currencies:type_name -> delidev.v1.CurrencyEstimate
+	17,  // 48: delidev.v1.PricingUsage.pricing:type_name -> delidev.v1.PricingVersion
+	24,  // 49: delidev.v1.PricingUsage.totals:type_name -> delidev.v1.CurrencyEstimate
+	26,  // 50: delidev.v1.PricingUsage.input:type_name -> delidev.v1.EstimateMeasure
+	26,  // 51: delidev.v1.PricingUsage.cached_input:type_name -> delidev.v1.EstimateMeasure
+	26,  // 52: delidev.v1.PricingUsage.output:type_name -> delidev.v1.EstimateMeasure
+	2,   // 53: delidev.v1.NativeAccountingTotals.kind:type_name -> delidev.v1.AccountingUnitKind
+	28,  // 54: delidev.v1.NativeAccountingTotals.input:type_name -> delidev.v1.NativeAccountingMeasure
+	28,  // 55: delidev.v1.NativeAccountingTotals.cache_read:type_name -> delidev.v1.NativeAccountingMeasure
+	28,  // 56: delidev.v1.NativeAccountingTotals.cache_write:type_name -> delidev.v1.NativeAccountingMeasure
+	28,  // 57: delidev.v1.NativeAccountingTotals.output:type_name -> delidev.v1.NativeAccountingMeasure
+	28,  // 58: delidev.v1.NativeAccountingTotals.thinking:type_name -> delidev.v1.NativeAccountingMeasure
+	28,  // 59: delidev.v1.NativeAccountingTotals.total:type_name -> delidev.v1.NativeAccountingMeasure
+	29,  // 60: delidev.v1.NativeAccountingTotals.currencies:type_name -> delidev.v1.NativeCurrencyEstimate
+	30,  // 61: delidev.v1.NativeAccountingGroup.totals:type_name -> delidev.v1.NativeAccountingTotals
+	49,  // 62: delidev.v1.NativeAccountingGroup.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	50,  // 63: delidev.v1.NativeAccountingGroup.model:type_name -> delidev.v1.ModelIdentity
+	30,  // 64: delidev.v1.NativeAccountingDay.totals:type_name -> delidev.v1.NativeAccountingTotals
+	17,  // 65: delidev.v1.NativeAccountingPricing.pricing:type_name -> delidev.v1.PricingVersion
+	30,  // 66: delidev.v1.NativeAccountingPricing.totals:type_name -> delidev.v1.NativeAccountingTotals
+	33,  // 67: delidev.v1.NativeAccountingPricing.input:type_name -> delidev.v1.NativeEstimateMeasure
+	33,  // 68: delidev.v1.NativeAccountingPricing.cache_read:type_name -> delidev.v1.NativeEstimateMeasure
+	33,  // 69: delidev.v1.NativeAccountingPricing.cache_write:type_name -> delidev.v1.NativeEstimateMeasure
+	33,  // 70: delidev.v1.NativeAccountingPricing.output:type_name -> delidev.v1.NativeEstimateMeasure
+	33,  // 71: delidev.v1.NativeAccountingPricing.reasoning:type_name -> delidev.v1.NativeEstimateMeasure
+	30,  // 72: delidev.v1.NativeAccountingSummary.totals:type_name -> delidev.v1.NativeAccountingTotals
+	31,  // 73: delidev.v1.NativeAccountingSummary.groups:type_name -> delidev.v1.NativeAccountingGroup
+	32,  // 74: delidev.v1.NativeAccountingSummary.days:type_name -> delidev.v1.NativeAccountingDay
+	31,  // 75: delidev.v1.NativeAccountingSummary.models:type_name -> delidev.v1.NativeAccountingGroup
+	34,  // 76: delidev.v1.NativeAccountingSummary.pricing:type_name -> delidev.v1.NativeAccountingPricing
+	51,  // 77: delidev.v1.NativeAccountingSummary.coverage:type_name -> delidev.v1.UsageCoverage
+	3,   // 78: delidev.v1.NativeAccountingSummary.actual_cost:type_name -> delidev.v1.UsageCostState
+	5,   // 79: delidev.v1.TokenPricingPolicy.mode:type_name -> delidev.v1.TokenPricingMode
+	16,  // 80: delidev.v1.TokenPriceReference.basis:type_name -> delidev.v1.TokenPricing
+	50,  // 81: delidev.v1.GetTokenPricingRequest.model:type_name -> delidev.v1.ModelIdentity
+	17,  // 82: delidev.v1.GetTokenPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	36,  // 83: delidev.v1.GetTokenPricingResponse.policy:type_name -> delidev.v1.TokenPricingPolicy
+	38,  // 84: delidev.v1.GetTokenPricingResponse.reference:type_name -> delidev.v1.TokenPriceReference
+	50,  // 85: delidev.v1.SetTokenPricingRequest.model:type_name -> delidev.v1.ModelIdentity
+	16,  // 86: delidev.v1.SetTokenPricingRequest.basis:type_name -> delidev.v1.TokenPricing
+	17,  // 87: delidev.v1.SetTokenPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	36,  // 88: delidev.v1.SetTokenPricingResponse.policy:type_name -> delidev.v1.TokenPricingPolicy
+	50,  // 89: delidev.v1.SetTokenPricingModeRequest.model:type_name -> delidev.v1.ModelIdentity
+	5,   // 90: delidev.v1.SetTokenPricingModeRequest.mode:type_name -> delidev.v1.TokenPricingMode
+	40,  // 91: delidev.v1.SetTokenPricingModeResponse.current:type_name -> delidev.v1.GetTokenPricingResponse
+	49,  // 92: delidev.v1.ListTokenPricingRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	17,  // 93: delidev.v1.ListTokenPricingResponse.pricing:type_name -> delidev.v1.PricingVersion
+	47,  // 94: delidev.v1.UsageService.ListTokenPricing:input_type -> delidev.v1.ListTokenPricingRequest
+	39,  // 95: delidev.v1.UsageService.GetTokenPricing:input_type -> delidev.v1.GetTokenPricingRequest
+	41,  // 96: delidev.v1.UsageService.SetTokenPricing:input_type -> delidev.v1.SetTokenPricingRequest
+	43,  // 97: delidev.v1.UsageService.SetTokenPricingMode:input_type -> delidev.v1.SetTokenPricingModeRequest
+	45,  // 98: delidev.v1.UsageService.RefreshTokenPrices:input_type -> delidev.v1.RefreshTokenPricesRequest
+	6,   // 99: delidev.v1.UsageService.GetUsageSummary:input_type -> delidev.v1.GetUsageSummaryRequest
+	18,  // 100: delidev.v1.UsageService.GetModelPricing:input_type -> delidev.v1.GetModelPricingRequest
+	20,  // 101: delidev.v1.UsageService.GetPricingVersion:input_type -> delidev.v1.GetPricingVersionRequest
+	22,  // 102: delidev.v1.UsageService.SetModelPricing:input_type -> delidev.v1.SetModelPricingRequest
+	48,  // 103: delidev.v1.UsageService.ListTokenPricing:output_type -> delidev.v1.ListTokenPricingResponse
+	40,  // 104: delidev.v1.UsageService.GetTokenPricing:output_type -> delidev.v1.GetTokenPricingResponse
+	42,  // 105: delidev.v1.UsageService.SetTokenPricing:output_type -> delidev.v1.SetTokenPricingResponse
+	44,  // 106: delidev.v1.UsageService.SetTokenPricingMode:output_type -> delidev.v1.SetTokenPricingModeResponse
+	46,  // 107: delidev.v1.UsageService.RefreshTokenPrices:output_type -> delidev.v1.RefreshTokenPricesResponse
+	15,  // 108: delidev.v1.UsageService.GetUsageSummary:output_type -> delidev.v1.GetUsageSummaryResponse
+	19,  // 109: delidev.v1.UsageService.GetModelPricing:output_type -> delidev.v1.GetModelPricingResponse
+	21,  // 110: delidev.v1.UsageService.GetPricingVersion:output_type -> delidev.v1.GetPricingVersionResponse
+	23,  // 111: delidev.v1.UsageService.SetModelPricing:output_type -> delidev.v1.SetModelPricingResponse
+	103, // [103:112] is the sub-list for method output_type
+	94,  // [94:103] is the sub-list for method input_type
+	94,  // [94:94] is the sub-list for extension type_name
+	94,  // [94:94] is the sub-list for extension extendee
+	0,   // [0:94] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_usage_proto_init() }
@@ -3133,8 +4195,8 @@ func file_delidev_v1_usage_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_usage_proto_rawDesc), len(file_delidev_v1_usage_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   30,
+			NumEnums:      6,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

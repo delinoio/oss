@@ -10201,6 +10201,2596 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
       "number": 35
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionRequest",
+      "member": "action",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionRequest",
+      "member": "device_code",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionResponse",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestSubscriptionResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelSubscriptionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelSubscriptionResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelSubscriptionResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressRequest",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSubscriptionProgressRequest",
+      "member": "operation_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchSubscriptionRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchSubscriptionRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchSubscriptionResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TakeSubscriptionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TakeSubscriptionRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TakeSubscriptionRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TakeSubscriptionRequest",
+      "member": "operation_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TakeSubscriptionRequest",
+      "member": "action",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishSubscriptionProgressResponse",
+      "member": "canceled",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "FinishSubscriptionResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "FinishSubscriptionResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BackupRestoreState",
+      "member": "BACKUP_RESTORE_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BackupRestoreState",
+      "member": "BACKUP_RESTORE_STATE_PREPARED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BackupRestoreState",
+      "member": "BACKUP_RESTORE_STATE_PUBLISHED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BackupRestoreState",
+      "member": "BACKUP_RESTORE_STATE_RESTORED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BackupRestoreState",
+      "member": "BACKUP_RESTORE_STATE_ROLLED_BACK",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BackupRestoreReceipt",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BackupRestoreReceipt",
+      "member": "backup_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BackupRestoreReceipt",
+      "member": "state",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BackupRestoreReceipt",
+      "member": "created_at",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupRequest",
+      "member": "backup",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupRequest",
+      "member": "sha256",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupRequest",
+      "member": "expected_restore_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupRequest",
+      "member": "confirm",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupResponse",
+      "member": "receipt",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RestoreBackupResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetBackupRestoreRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetBackupRestoreResponse",
+      "member": "receipt",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageRequest",
+      "member": "action",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageRequest",
+      "member": "snapshot_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageRequest",
+      "member": "preview_job_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageRequest",
+      "member": "recovery_job_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestWorkspaceStorageResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetWorkspaceStorageOperationRequest",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetWorkspaceStorageOperationResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelWorkspaceStorageOperationRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelWorkspaceStorageOperationResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelWorkspaceStorageOperationResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListSessionDeletionWorkResponse",
+      "member": "work_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListSessionDeletionWorkResponse",
+      "member": "next_session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionRequest",
+      "member": "session_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionRequest",
+      "member": "deletion_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionRequest",
+      "member": "work_digest",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportSessionDeletionResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RegisterBrowserProfileRequest",
+      "member": "session",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RegisterBrowserProfileRequest",
+      "member": "account_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RegisterBrowserProfileResponse",
+      "member": "profile",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RegisterBrowserProfileResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RegisterBrowserProfileResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetBrowserProfileRequest",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetBrowserProfileResponse",
+      "member": "profile",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListBrowserProfilesRequest",
+      "member": "page_size",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListBrowserProfilesRequest",
+      "member": "page_token",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListBrowserProfilesResponse",
+      "member": "profiles",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListBrowserProfilesResponse",
+      "member": "next_page_token",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ConfirmBrowserProfileRemovalRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ConfirmBrowserProfileRemovalRequest",
+      "member": "deletion_request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ConfirmBrowserProfileRemovalResponse",
+      "member": "profile",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ConfirmBrowserProfileRemovalResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ConfirmBrowserProfileRemovalResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetAccountBrowserCleanupRequest",
+      "member": "account_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetAccountBrowserCleanupResponse",
+      "member": "active",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetAccountBrowserCleanupResponse",
+      "member": "pending",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetAccountBrowserCleanupResponse",
+      "member": "removed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "server_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "device_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "account_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "state",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "BrowserProfile",
+      "member": "deletion_request_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BrowserProfileState",
+      "member": "BROWSER_PROFILE_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BrowserProfileState",
+      "member": "BROWSER_PROFILE_STATE_ACTIVE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BrowserProfileState",
+      "member": "BROWSER_PROFILE_STATE_REMOVAL_PENDING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BrowserProfileState",
+      "member": "BROWSER_PROFILE_STATE_REMOVED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BrowserCapability",
+      "member": "BROWSER_CAPABILITY_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "BrowserCapability",
+      "member": "BROWSER_CAPABILITY_PROTECTED_DEVICE_PROFILE_V1",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetBrowserCapabilitiesResponse",
+      "member": "capabilities",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_RESERVED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_BOUND",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_RUNNING",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_UNCERTAIN",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_SUCCEEDED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_FAILED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_STOPPED",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_CANCELED",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRAttemptState",
+      "member": "ACTIVITY_PR_ATTEMPT_STATE_NOT_STARTED",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRMode",
+      "member": "ACTIVITY_PR_MODE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRMode",
+      "member": "ACTIVITY_PR_MODE_MANUAL",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRMode",
+      "member": "ACTIVITY_PR_MODE_AUTOMATIC",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRProblemReference",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRProblemReference",
+      "member": "content_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRActorType",
+      "member": "ACTIVITY_PR_ACTOR_TYPE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRActorType",
+      "member": "ACTIVITY_PR_ACTOR_TYPE_OWNER",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityPRActorType",
+      "member": "ACTIVITY_PR_ACTOR_TYPE_CLIENT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "problem_set_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "remote_repository_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "pull_request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "number",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "owner",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "name",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "source_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "problems",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "actor_type",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "device_id",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "request_id",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "attempt_state",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "mode",
+      "number": 13,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ActivityPRMetadata",
+      "member": "verification_id",
+      "number": 14,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityCapability",
+      "member": "ACTIVITY_CAPABILITY_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ActivityCapability",
+      "member": "ACTIVITY_CAPABILITY_PR_HANDLING_V1",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsRequest",
+      "member": "account_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsRequest",
+      "member": "account_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsRequest",
+      "member": "include_hidden",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetNativeModelObservationRequest",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelNativeModelDiscoveryRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "NativeModelChange",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "NativeModelChange",
+      "member": "last_success",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "NativeModelChange",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsResponse",
+      "member": "last_success",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DiscoverNativeModelsResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetNativeModelObservationResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetNativeModelObservationResponse",
+      "member": "last_success",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetNativeModelObservationResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelNativeModelDiscoveryResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelNativeModelDiscoveryResponse",
+      "member": "last_success",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CancelNativeModelDiscoveryResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListNativeModelsRequest",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListNativeModelsRequest",
+      "member": "page_size",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListNativeModelsRequest",
+      "member": "page_token",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListNativeModelsResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListNativeModelsResponse",
+      "member": "models_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ListNativeModelsResponse",
+      "member": "next_page_token",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "UsageAccountingProfile",
+      "member": "USAGE_ACCOUNTING_PROFILE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "UsageAccountingProfile",
+      "member": "USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "kind",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "units",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "known_total",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "measured_units",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "unavailable_units",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "actual_cost",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "AccountingTotals",
+      "member": "estimated_cost",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PricingVersion",
+      "member": "provenance",
+      "number": 9
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TokenPricingMode",
+      "member": "TOKEN_PRICING_MODE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TokenPricingMode",
+      "member": "TOKEN_PRICING_MODE_AUTOMATIC",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TokenPricingMode",
+      "member": "TOKEN_PRICING_MODE_MANUAL",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPricingPolicy",
+      "member": "mode",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPricingPolicy",
+      "member": "revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceProvenance",
+      "member": "provider_key",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceProvenance",
+      "member": "model_key",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceProvenance",
+      "member": "snapshot_sha256",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceProvenance",
+      "member": "retrieved_at_unix_ms",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "checked_at_unix_ms",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "failure_code",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "unsupported_estimate",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "costs_json",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "upstream_updated",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "api_equivalent",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "TokenPriceReference",
+      "member": "basis",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "kind": "message",
+      "declaration": "GetTokenPricingResponse",
+      "member": "policy",
+      "number": 2,
+      "newDeclaration": true,
+      "issue": 964,
+      "sharedIssues": [
+        2138
+      ]
+    },
+    {
+      "kind": "message",
+      "declaration": "GetTokenPricingResponse",
+      "member": "reference",
+      "number": 3,
+      "newDeclaration": true,
+      "issue": 964,
+      "sharedIssues": [
+        2138
+      ]
+    },
+    {
+      "kind": "message",
+      "declaration": "GetTokenPricingResponse",
+      "member": "provider_revision",
+      "number": 4,
+      "newDeclaration": true,
+      "issue": 964,
+      "sharedIssues": [
+        2138
+      ]
+    },
+    {
+      "kind": "message",
+      "declaration": "SetTokenPricingRequest",
+      "member": "expected_policy_revision",
+      "number": 6,
+      "newDeclaration": true,
+      "issue": 964,
+      "sharedIssues": [
+        2138
+      ]
+    },
+    {
+      "kind": "message",
+      "declaration": "SetTokenPricingResponse",
+      "member": "policy",
+      "number": 4,
+      "newDeclaration": true,
+      "issue": 964,
+      "sharedIssues": [
+        2138
+      ]
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeRequest",
+      "member": "model",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeRequest",
+      "member": "mode",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeRequest",
+      "member": "expected_policy_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeRequest",
+      "member": "request_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeRequest",
+      "member": "expected_provider_revision",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeResponse",
+      "member": "current",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SetTokenPricingModeResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RefreshTokenPricesResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RefreshTokenPricesResponse",
+      "member": "checked_at_unix_ms",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RefreshTokenPricesResponse",
+      "member": "failure_code",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetPullRequestFixCapabilitiesResponse",
+      "member": "profiles",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "PullRequestFixProfile",
+      "member": "PULL_REQUEST_FIX_PROFILE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "PullRequestFixProfile",
+      "member": "PULL_REQUEST_FIX_PROFILE_CODEX_GIT_V1",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixRequest",
+      "member": "schema_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixRequest",
+      "member": "document_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixResponse",
+      "member": "attempt",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixResponse",
+      "member": "session",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixResponse",
+      "member": "request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixResponse",
+      "member": "replayed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "RequestPullRequestFixResponse",
+      "member": "problem_set",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteSessionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteSessionResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteSessionResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteSessionResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionDeletionRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionDeletionResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionContextRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionContextResponse",
+      "member": "document_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionContextResponse",
+      "member": "capabilities",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ForkWorkspace",
+      "member": "FORK_WORKSPACE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ForkWorkspace",
+      "member": "FORK_WORKSPACE_WORKTREE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ForkWorkspace",
+      "member": "FORK_WORKSPACE_GENERAL_CHAT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "ForkWorkspace",
+      "member": "FORK_WORKSPACE_LOCAL",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionForkRequest",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionForkResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetSessionForkResponse",
+      "member": "session",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ForkSessionResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ForkSessionResponse",
+      "member": "session",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ForkSessionResponse",
+      "member": "request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ForkSessionResponse",
+      "member": "replayed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SwitchSessionAccountRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SwitchSessionAccountRequest",
+      "member": "account_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SwitchSessionAccountResponse",
+      "member": "change",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TerminalAction",
+      "member": "TERMINAL_ACTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TerminalAction",
+      "member": "TERMINAL_ACTION_INPUT",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TerminalAction",
+      "member": "TERMINAL_ACTION_RESIZE",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "TerminalAction",
+      "member": "TERMINAL_ACTION_CLOSE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CreateTerminalRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CreateTerminalRequest",
+      "member": "shell_override",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CreateTerminalRequest",
+      "member": "rows",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CreateTerminalRequest",
+      "member": "columns",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalRequest",
+      "member": "action",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalRequest",
+      "member": "input",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalRequest",
+      "member": "rows",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalRequest",
+      "member": "columns",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CreateTerminalResponse",
+      "member": "terminal",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "CreateTerminalResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalResponse",
+      "member": "terminal",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ControlTerminalResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputRequest",
+      "member": "terminal_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputRequest",
+      "member": "epoch",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputRequest",
+      "member": "after_sequence",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputResponse",
+      "member": "epoch",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputResponse",
+      "member": "sequence",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputResponse",
+      "member": "data",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputResponse",
+      "member": "gap",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputResponse",
+      "member": "heartbeat",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalOutputResponse",
+      "member": "terminal",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalsRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalsRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalsResponse",
+      "member": "assignment_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "WatchTerminalsResponse",
+      "member": "heartbeat",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ClaimTerminalRequest",
+      "member": "request_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ClaimTerminalRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ClaimTerminalRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ClaimTerminalRequest",
+      "member": "terminal_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ClaimTerminalRequest",
+      "member": "operation_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ClaimTerminalResponse",
+      "member": "assignment_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalRequest",
+      "member": "terminal_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalRequest",
+      "member": "operation_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalRequest",
+      "member": "result_json",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ReportTerminalResponse",
+      "member": "terminal",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishTerminalOutputRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishTerminalOutputRequest",
+      "member": "instance_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishTerminalOutputRequest",
+      "member": "terminal_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishTerminalOutputRequest",
+      "member": "epoch",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishTerminalOutputRequest",
+      "member": "sequence",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "PublishTerminalOutputRequest",
+      "member": "data",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileRequest",
+      "member": "schema_version",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileRequest",
+      "member": "document_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileRequest",
+      "member": "credential_json",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileRequest",
+      "member": "clear_credential",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteNetworkProfileRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileRequest",
+      "member": "profile_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileRequest",
+      "member": "profile_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileResponse",
+      "member": "resource",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SaveNetworkProfileResponse",
+      "member": "deleted",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteNetworkProfileResponse",
+      "member": "resource",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteNetworkProfileResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteNetworkProfileResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "DeleteNetworkProfileResponse",
+      "member": "deleted",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileResponse",
+      "member": "resource",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SelectNetworkProfileResponse",
+      "member": "deleted",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetNetworkRouteRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "GetNetworkRouteResponse",
+      "member": "route",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkMetadataRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkMetadataRequest",
+      "member": "desired_generation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkMetadataResponse",
+      "member": "metadata_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "ExportWorkerNetworkMetadataResponse",
+      "member": "authentication",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "SessionDeletionState",
+      "member": "SESSION_DELETION_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "SessionDeletionState",
+      "member": "SESSION_DELETION_STATE_PENDING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "enum",
+      "declaration": "SessionDeletionState",
+      "member": "SESSION_DELETION_STATE_SUCCEEDED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "state",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "accepted_at",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "finished_at",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "workers_pending",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "database_removed",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "backups_removed",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2138,
+      "kind": "message",
+      "declaration": "SessionDeletionJob",
+      "member": "reclaimed_bytes_known",
+      "number": 10,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -10336,6 +12926,60 @@
       "method": "RevertSession",
       "input": "RevertSessionRequest",
       "output": "RevertSessionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 964,
+      "service": "ProviderService",
+      "method": "ListEndpointModels",
+      "input": "ListEndpointModelsRequest",
+      "output": "ListEndpointModelsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 964,
+      "service": "UsageService",
+      "method": "GetTokenPricing",
+      "input": "GetTokenPricingRequest",
+      "output": "GetTokenPricingResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 964,
+      "service": "UsageService",
+      "method": "SetTokenPricing",
+      "input": "SetTokenPricingRequest",
+      "output": "SetTokenPricingResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 964,
+      "service": "UsageService",
+      "method": "ListTokenPricing",
+      "input": "ListTokenPricingRequest",
+      "output": "ListTokenPricingResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2138,
+      "service": "UsageService",
+      "method": "SetTokenPricingMode",
+      "input": "SetTokenPricingModeRequest",
+      "output": "SetTokenPricingModeResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2138,
+      "service": "UsageService",
+      "method": "RefreshTokenPrices",
+      "input": "RefreshTokenPricesRequest",
+      "output": "RefreshTokenPricesResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

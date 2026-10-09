@@ -264,7 +264,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -409,7 +409,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
@@ -485,7 +485,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)
 			}
-			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
+			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
 			err = negotiateErr
 			if err == nil && negotiated.Msg.ServerId != string(credential.ServerID) {

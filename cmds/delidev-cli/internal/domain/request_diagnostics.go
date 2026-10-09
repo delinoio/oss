@@ -39,7 +39,7 @@ type RequestDiagnostic struct {
 	ConnectionID         ID                         `json:"connection_id"`
 	ProviderID           ID                         `json:"provider_id,omitempty"`
 	SubscriptionService  SubscriptionService        `json:"subscription_service,omitempty"`
-	ModelID              ID                         `json:"model_id"`
+	ModelID              ID                         `json:"model_key"`
 	Source               RequestDiagnosticSource    `json:"source"`
 	Operation            RequestDiagnosticOperation `json:"operation"`
 	State                RequestDiagnosticState     `json:"state"`
@@ -118,7 +118,7 @@ func (d RequestDiagnostic) Validate() error {
 			return invalidObservation()
 		}
 	}
-	if (d.Attribution == "" && d.ModelID.Validate() != nil) || d.Attribution != "" && (d.Attribution != BuiltinReviewerAttribution || d.ModelID != "" || d.Harness != Codex || d.Source != DiagnosticProxyHTTP) {
+	if (d.Attribution == "" && ValidateModelKey(d.ModelID) != nil) || d.Attribution != "" && (d.Attribution != BuiltinReviewerAttribution || d.ModelID != "" || d.Harness != Codex || d.Source != DiagnosticProxyHTTP) {
 		return invalidObservation()
 	}
 	if d.SubscriptionService == "" {

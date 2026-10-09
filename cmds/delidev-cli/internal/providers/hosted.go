@@ -119,7 +119,7 @@ func hostedTarget(p profile, base url.URL, page int, token string) (url.URL, ins
 func inspectHosted(ctx context.Context, client *http.Client, provider domain.Provider, key []byte, p profile, base url.URL) Observation {
 	o := Observation{Authentication: AuthenticationUnknown, ObservedAt: time.Now().UTC().Truncate(time.Millisecond)}
 	remaining := 4 * maxBody
-	if verification := privateVerification(p); verification != "" {
+	if verification := privateVerification(p); !listingOnly(ctx) && verification != "" {
 		target, _ := url.Parse(verification)
 		raw, failure := getURL(ctx, client, provider, key, *target, standardHeader)
 		if failure.Failure != NoFailure {

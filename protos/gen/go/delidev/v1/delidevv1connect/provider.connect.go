@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ProviderServiceListEndpointModelsProcedure is the fully-qualified name of the ProviderService's
+	// ListEndpointModels RPC.
+	ProviderServiceListEndpointModelsProcedure = "/delidev.v1.ProviderService/ListEndpointModels"
 	// ProviderServiceListProviderPresetsProcedure is the fully-qualified name of the ProviderService's
 	// ListProviderPresets RPC.
 	ProviderServiceListProviderPresetsProcedure = "/delidev.v1.ProviderService/ListProviderPresets"
@@ -55,6 +58,7 @@ const (
 
 // ProviderServiceClient is a client for the delidev.v1.ProviderService service.
 type ProviderServiceClient interface {
+	ListEndpointModels(context.Context, *connect.Request[v1.ListEndpointModelsRequest]) (*connect.Response[v1.ListEndpointModelsResponse], error)
 	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
 	ListProviderInventory(context.Context, *connect.Request[v1.ListProviderInventoryRequest]) (*connect.Response[v1.ListProviderInventoryResponse], error)
 	DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error)
@@ -74,6 +78,12 @@ func NewProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	providerServiceMethods := v1.File_delidev_v1_provider_proto.Services().ByName("ProviderService").Methods()
 	return &providerServiceClient{
+		listEndpointModels: connect.NewClient[v1.ListEndpointModelsRequest, v1.ListEndpointModelsResponse](
+			httpClient,
+			baseURL+ProviderServiceListEndpointModelsProcedure,
+			connect.WithSchema(providerServiceMethods.ByName("ListEndpointModels")),
+			connect.WithClientOptions(opts...),
+		),
 		listProviderPresets: connect.NewClient[v1.ListProviderPresetsRequest, v1.ListProviderPresetsResponse](
 			httpClient,
 			baseURL+ProviderServiceListProviderPresetsProcedure,
@@ -115,12 +125,18 @@ func NewProviderServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // providerServiceClient implements ProviderServiceClient.
 type providerServiceClient struct {
+	listEndpointModels          *connect.Client[v1.ListEndpointModelsRequest, v1.ListEndpointModelsResponse]
 	listProviderPresets         *connect.Client[v1.ListProviderPresetsRequest, v1.ListProviderPresetsResponse]
 	listProviderInventory       *connect.Client[v1.ListProviderInventoryRequest, v1.ListProviderInventoryResponse]
 	discoverModels              *connect.Client[v1.DiscoverModelsRequest, v1.DiscoverModelsResponse]
 	listKnownSubscriptionModels *connect.Client[v1.ListKnownSubscriptionModelsRequest, v1.ListKnownSubscriptionModelsResponse]
 	searchModels                *connect.Client[v1.SearchModelsRequest, v1.SearchModelsResponse]
 	resolveModel                *connect.Client[v1.ResolveModelRequest, v1.ResolveModelResponse]
+}
+
+// ListEndpointModels calls delidev.v1.ProviderService.ListEndpointModels.
+func (c *providerServiceClient) ListEndpointModels(ctx context.Context, req *connect.Request[v1.ListEndpointModelsRequest]) (*connect.Response[v1.ListEndpointModelsResponse], error) {
+	return c.listEndpointModels.CallUnary(ctx, req)
 }
 
 // ListProviderPresets calls delidev.v1.ProviderService.ListProviderPresets.
@@ -155,6 +171,7 @@ func (c *providerServiceClient) ResolveModel(ctx context.Context, req *connect.R
 
 // ProviderServiceHandler is an implementation of the delidev.v1.ProviderService service.
 type ProviderServiceHandler interface {
+	ListEndpointModels(context.Context, *connect.Request[v1.ListEndpointModelsRequest]) (*connect.Response[v1.ListEndpointModelsResponse], error)
 	ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error)
 	ListProviderInventory(context.Context, *connect.Request[v1.ListProviderInventoryRequest]) (*connect.Response[v1.ListProviderInventoryResponse], error)
 	DiscoverModels(context.Context, *connect.Request[v1.DiscoverModelsRequest]) (*connect.Response[v1.DiscoverModelsResponse], error)
@@ -170,6 +187,12 @@ type ProviderServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewProviderServiceHandler(svc ProviderServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	providerServiceMethods := v1.File_delidev_v1_provider_proto.Services().ByName("ProviderService").Methods()
+	providerServiceListEndpointModelsHandler := connect.NewUnaryHandler(
+		ProviderServiceListEndpointModelsProcedure,
+		svc.ListEndpointModels,
+		connect.WithSchema(providerServiceMethods.ByName("ListEndpointModels")),
+		connect.WithHandlerOptions(opts...),
+	)
 	providerServiceListProviderPresetsHandler := connect.NewUnaryHandler(
 		ProviderServiceListProviderPresetsProcedure,
 		svc.ListProviderPresets,
@@ -208,6 +231,8 @@ func NewProviderServiceHandler(svc ProviderServiceHandler, opts ...connect.Handl
 	)
 	return "/delidev.v1.ProviderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ProviderServiceListEndpointModelsProcedure:
+			providerServiceListEndpointModelsHandler.ServeHTTP(w, r)
 		case ProviderServiceListProviderPresetsProcedure:
 			providerServiceListProviderPresetsHandler.ServeHTTP(w, r)
 		case ProviderServiceListProviderInventoryProcedure:
@@ -228,6 +253,10 @@ func NewProviderServiceHandler(svc ProviderServiceHandler, opts ...connect.Handl
 
 // UnimplementedProviderServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProviderServiceHandler struct{}
+
+func (UnimplementedProviderServiceHandler) ListEndpointModels(context.Context, *connect.Request[v1.ListEndpointModelsRequest]) (*connect.Response[v1.ListEndpointModelsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ListEndpointModels is not implemented"))
+}
 
 func (UnimplementedProviderServiceHandler) ListProviderPresets(context.Context, *connect.Request[v1.ListProviderPresetsRequest]) (*connect.Response[v1.ListProviderPresetsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ProviderService.ListProviderPresets is not implemented"))

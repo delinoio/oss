@@ -78,13 +78,13 @@ func (s Scope) Validate() error {
 		if s.Attribution != domain.BuiltinReviewerAttribution || s.ModelID != "" || s.NativeModel != domain.CodexReviewerNativeModel || s.ReviewerNativeModel != s.NativeModel || len(s.Operations) != 1 || s.Operations[0] != ResponseCreate {
 			return domain.Fail(domain.PermissionDenied, "Invalid native reviewer attribution.", "Retain the proved canonical reviewer request.")
 		}
-	} else if err := s.ModelID.Validate(); err != nil {
+	} else if err := domain.ValidateModelKey(s.ModelID); err != nil {
 		return err
 	}
 	if err := domain.Text(s.NativeModel, "proxy model", 256, true); err != nil {
 		return err
 	}
-	if s.ChildModel != nil && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || s.ChildModel.ModelID.Validate() != nil || s.ChildModel.ModelRevision == 0 || domain.Text(s.ChildModel.NativeModel, "authorized child model", 256, true) != nil) {
+	if s.ChildModel != nil && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || domain.ValidateModelKey(s.ChildModel.ModelID) != nil || s.ChildModel.ModelRevision == 0 || domain.Text(s.ChildModel.NativeModel, "authorized child model", 256, true) != nil) {
 		return domain.Fail(domain.PermissionDenied, "Invalid child model relay scope.", "Retain only the canonical Codex child model from the original execution snapshot.")
 	}
 	if err := s.Provider.Validate(); err != nil {

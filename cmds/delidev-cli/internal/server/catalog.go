@@ -234,25 +234,9 @@ func wireProviderPreset(id *domain.ProviderPresetID) pb.ProviderPresetId {
 	}
 }
 func (s *Service) DiscoverModels(ctx context.Context, req *connect.Request[pb.DiscoverModelsRequest]) (*connect.Response[pb.DiscoverModelsResponse], error) {
-	correlation := req.Header().Get(rpc.CorrelationHeader)
-	meta := req.Msg.Mutation
-	result, err := s.discoverModels(ctx, meta, correlation)
-	if err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	var receipt catalogReceipt
-	if domain.Decode(result.Data, &receipt) != nil || receipt.ID != domain.ID(meta.Id) {
-		return nil, rpc.Error(domain.Fail(domain.NotFound, "The discovery source or a published model was subsequently deleted.", "An old request cannot recreate deleted catalog state."), correlation)
-	}
-	account, err := s.accountRecord(ctx, domain.ID(meta.Id))
-	if err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	raw, _ := json.Marshal(receipt.Observation)
-	response := connect.NewResponse(&pb.DiscoverModelsResponse{Account: rpc.Resource(account), RequestId: meta.RequestId, Replayed: result.Replayed, ObservationJson: raw})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
+	return nil, rpc.Error(domain.Fail(domain.Unsupported, "Persistent Model discovery is retired.", "Use read-only endpoint suggestions for the selected original account."), req.Header().Get(rpc.CorrelationHeader))
 }
+
 func (s *Service) discoverModels(ctx context.Context, meta *pb.Mutation, correlation string) (store.Result, error) {
 	result, err := s.inspectAccount(ctx, meta, catalogInspection, correlation, func(tx *store.Tx, account domain.Account, result accountInspection) (any, error) {
 		observation := domain.CatalogObservation{RequestID: domain.ID(meta.RequestId), ConnectionID: account.Connection.ID, ObservedAt: result.ObservedAt, State: domain.Observed, Received: uint32(len(result.Models)), RetryAfterSeconds: result.RetryAfterSeconds, Problem: result.Problem}

@@ -39,7 +39,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	for _, part := range []struct {
 		column string
 		value  domain.ID
-	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_id", f.ModelID}} {
+	}{{"session_id", f.SessionID}, {"project_id", f.ProjectID}, {"account_id", f.AccountID}, {"provider_id", f.ProviderID}, {"model_key", f.ModelID}} {
 		if part.value != "" {
 			where += " AND r." + part.column + "=?"
 			args = append(args, part.value)
@@ -52,7 +52,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 	if f.GeneralChat {
 		where += " AND r.project_id=''"
 	}
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_id,''),COALESCE(p.provider_id,''),COALESCE(p.subscription_service,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT r.body,r.created_at,e.body,COALESCE(e.pricing_id,''),COALESCE(p.model_key,''),COALESCE(p.provider_id,''),COALESCE(p.subscription_service,''),COALESCE(p.revision,0),COALESCE(p.body,''),COALESCE(p.created_at,0) FROM response_usage r LEFT JOIN response_estimates e ON e.usage_id=r.id LEFT JOIN pricing_versions p ON p.id=e.pricing_id WHERE `+where+" ORDER BY r.created_at,r.id LIMIT ?", append(args, maxUsageResponses+1)...)
 	if err != nil {
 		return result, storageError(err)
 	}
@@ -88,7 +88,7 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 					if len(prices) >= maxUsageGroups {
 						return usageReadLimit()
 					}
-					if price.ID.Validate() != nil || price.ModelID.Validate() != nil || !price.ValidIdentity() || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
+					if price.ID.Validate() != nil || domain.ValidateModelKey(price.ModelID) != nil || !price.ValidIdentity() || price.Revision == 0 || len(priceBody) > 16<<10 || domain.Decode(priceBody, &price.Basis) != nil || price.Basis.Validate() != nil {
 						return corrupt()
 					}
 					price.CreatedAt = time.UnixMilli(pricingCreated).UTC()
@@ -261,7 +261,7 @@ func (t *Tx) usageMissingActions(f domain.UsageSelection, observed map[domain.ID
 	for _, part := range []struct {
 		column string
 		value  domain.ID
-	}{{"e.session_id", f.SessionID}, {"e.project_id", f.ProjectID}, {"json_extract(e.body,'$.input.account_id')", f.AccountID}, {"json_extract(e.body,'$.input.configuration.provider_id')", f.ProviderID}, {"json_extract(e.body,'$.input.configuration.model_id')", f.ModelID}} {
+	}{{"e.session_id", f.SessionID}, {"e.project_id", f.ProjectID}, {"json_extract(e.body,'$.input.account_id')", f.AccountID}, {"json_extract(e.body,'$.input.configuration.provider_id')", f.ProviderID}, {"json_extract(e.body,'$.input.configuration.model_key')", f.ModelID}} {
 		if part.value != "" {
 			column := part.column
 			if compaction {

@@ -232,7 +232,7 @@ type AuxiliaryTitleInput struct {
 	ConnectionID        ID                         `json:"connection_id"`
 	ProviderID          ID                         `json:"provider_id"`
 	ProviderProtocol    APIProtocol                `json:"provider_protocol"`
-	ModelID             ID                         `json:"model_id"`
+	ModelID             ID                         `json:"model_key"`
 	NativeModel         string                     `json:"native_model"`
 	Effort              string                     `json:"effort,omitempty"`
 	ServiceTier         string                     `json:"service_tier,omitempty"`
@@ -240,7 +240,10 @@ type AuxiliaryTitleInput struct {
 }
 
 func (i AuxiliaryTitleInput) Validate() error {
-	for _, id := range []ID{i.SessionID, i.OperationID, i.OriginalJobID, i.OriginalExecutionID, i.MachineID, i.OriginalDeviceID, i.OriginalInstanceID, i.AgentID, i.AccountID, i.ConnectionID, i.ProviderID, i.ModelID} {
+	if ValidateModelKey(i.ModelID) != nil {
+		return invalidObservation()
+	}
+	for _, id := range []ID{i.SessionID, i.OperationID, i.OriginalJobID, i.OriginalExecutionID, i.MachineID, i.OriginalDeviceID, i.OriginalInstanceID, i.AgentID, i.AccountID, i.ConnectionID, i.ProviderID} {
 		if id.Validate() != nil {
 			return Fail(InvalidArgument, "Invalid automatic title assignment identity.", "Preserve the original completed execution and its immutable selection.")
 		}

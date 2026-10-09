@@ -78,14 +78,17 @@ type GrokAccountingRecord struct {
 	AccountID      ID                  `json:"account_id"`
 	ConnectionID   ID                  `json:"connection_id"`
 	ProviderID     ID                  `json:"provider_id"`
-	ModelID        ID                  `json:"model_id"`
+	ModelID        ID                  `json:"model_key"`
 	Version        string              `json:"native_version"`
 	Terminal       GrokTextTerminal    `json:"terminal"`
 	Completion     ExecutionCompletion `json:"completion"`
 }
 
 func (r GrokAccountingRecord) Validate() error {
-	for _, id := range []ID{r.SourceReceipt, r.SourceUsageID, r.JobID, r.SessionID, r.ExecutionID, r.InputID, r.InputRequestID, r.AccountID, r.ConnectionID, r.ProviderID, r.ModelID} {
+	if ValidateModelKey(r.ModelID) != nil {
+		return invalidGrokContent()
+	}
+	for _, id := range []ID{r.SourceReceipt, r.SourceUsageID, r.JobID, r.SessionID, r.ExecutionID, r.InputID, r.InputRequestID, r.AccountID, r.ConnectionID, r.ProviderID} {
 		if id.Validate() != nil {
 			return invalidGrokContent()
 		}

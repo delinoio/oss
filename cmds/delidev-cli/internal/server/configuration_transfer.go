@@ -20,7 +20,7 @@ import (
 )
 
 // Dependency order also keeps committed configuration/event publication stable.
-var portableKinds = []domain.Kind{domain.ProviderKind, domain.ModelKind, domain.AccountKind, domain.TemplateKind, domain.AgentKind, domain.RepositoryKind, domain.ProjectKind, domain.SettingsKind}
+var portableKinds = []domain.Kind{domain.ProviderKind, domain.AccountKind, domain.TemplateKind, domain.AgentKind, domain.RepositoryKind, domain.ProjectKind, domain.SettingsKind}
 
 func configurationActor(ctx context.Context) (domain.Principal, error) {
 	actor, ok := domain.PrincipalFrom(ctx)
@@ -310,7 +310,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if (bundle.Version < 1 || bundle.Version > domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
+	if bundle.Version != domain.ConfigurationBundleVersion || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -322,41 +322,6 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
-		}
-		if bundle.Version < 6 && (entry.Kind == domain.ProjectKind || entry.Kind == domain.SettingsKind) && rpc.ResourceSchemaVersion(entry.Kind, entry.Document) == 3 {
-			return plan, domain.Fail(domain.Unsupported, "Session defaults require portable version 6.", "Export the complete current configuration.")
-		}
-		if bundle.Version < 5 && (entry.Kind == domain.ProjectKind || entry.Kind == domain.SettingsKind) {
-			var fields map[string]json.RawMessage
-			if json.Unmarshal(entry.Document, &fields) != nil {
-				return plan, transferInvalid()
-			}
-			if fields["settings"] != nil || fields["automatic_plan_approval"] != nil {
-				return plan, domain.Fail(domain.Unsupported, "Project behavior settings require portable version 5.", "Export the complete current configuration.")
-			}
-		}
-		if bundle.Version < 4 && (entry.Kind == domain.ProviderKind || entry.Kind == domain.AccountKind) {
-			var fields map[string]json.RawMessage
-			if json.Unmarshal(entry.Document, &fields) != nil {
-				return plan, transferInvalid()
-			}
-			if _, present := fields["api_formats"]; present {
-				return plan, domain.Fail(domain.Unsupported, "API profiles require portable version 4.", "Export the complete current configuration.")
-			}
-			if _, present := fields["api_protocol"]; present {
-				return plan, domain.Fail(domain.Unsupported, "Account API formats require portable version 4.", "Export the complete current configuration.")
-			}
-		}
-		if bundle.Version == 1 {
-			var legacy struct {
-				Type       domain.AccountType         `json:"type"`
-				SourceKind domain.ModelSourceKind     `json:"source_kind"`
-				Protocol   domain.APIProtocol         `json:"protocol"`
-				Service    domain.SubscriptionService `json:"subscription_service"`
-			}
-			if json.Unmarshal(entry.Document, &legacy) != nil || legacy.Type == domain.SubscriptionAccount || legacy.SourceKind != "" || legacy.Protocol == domain.NativeSubscription || legacy.Service != "" {
-				return plan, domain.Fail(domain.Unsupported, "Version-1 imports support API configuration only.", "Reconfigure native subscriptions explicitly and use a version-2 export; the entire import was rejected.")
-			}
 		}
 		if _, err := portableValue(entry.Kind, entry.Document, true); err != nil {
 			return plan, err
@@ -470,35 +435,31 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 		case *domain.Agent:
 			if len(v.Routes) == 0 {
-				err = rewrite(&v.ModelID, domain.ModelKind)
-			} else {
-				if bundle.Version < 3 {
-					return plan, domain.Fail(domain.Unsupported, "Account source routes require portable version 3.", "Export the complete current configuration.")
+				return plan, transferInvalid()
+			}
+			for i := range v.Routes {
+				route := &v.Routes[i]
+				if route.Model == nil {
+					return plan, transferInvalid()
 				}
-				for i := range v.Routes {
-					if err = rewrite(&v.Routes[i].ModelID, domain.ModelKind); err != nil {
+				if route.Model.ProviderID != "" {
+					if err = rewrite(&route.Model.ProviderID, domain.ProviderKind); err != nil {
 						break
 					}
-					for j := range v.Routes[i].Accounts {
-						if err = rewrite(&v.Routes[i].Accounts[j].ID, domain.AccountKind); err != nil {
-							break
-						}
-					}
-					if err != nil {
+				}
+				for j := range route.Accounts {
+					if err = rewrite(&route.Accounts[j].ID, domain.AccountKind); err != nil {
 						break
 					}
+				}
+				if err != nil {
+					break
 				}
 			}
 			if err == nil {
 				err = rewriteIDs(v.Templates, domain.TemplateKind)
 			}
-			if err == nil {
-				for i := range v.Accounts {
-					if err = rewrite(&v.Accounts[i].ID, domain.AccountKind); err != nil {
-						break
-					}
-				}
-			}
+
 		case *domain.Project:
 			if err = rewriteIDs(v.Repositories, domain.RepositoryKind); err == nil {
 				err = rewrite(&v.PrimaryRepository, domain.RepositoryKind)

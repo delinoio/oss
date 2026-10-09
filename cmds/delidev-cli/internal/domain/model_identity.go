@@ -68,3 +68,5 @@ func (m InlineModel) Validate(h Harness) error {
 	}
 	return m.AsModel(h).Validate()
 }
+
+const InlineModelExecutionV1 WorkerCapability = "inline-model-execution-v1"

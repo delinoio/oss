@@ -53,12 +53,12 @@ func RouteSources(agentID ID, agent Agent, project *Project, sources []SourceRou
 		if policy == Fixed && len(agent.Routes[i].Accounts) != 1 {
 			source.Problem = Fail(InvalidArgument, "Fixed routing requires one account per source.", "Configure one account or another policy before execution.")
 		}
-		route, next, err := routeAccount(agentID, agent.WithSource(agent.Routes[i]), source.Model, project, source.Accounts, defaultPolicy, inner, now, source.Blocked)
+		route, next, err := routeAccount(agentID, agent.WithSource(agent.SourceRoutes()[i]), source.Model, project, source.Accounts, defaultPolicy, inner, now, source.Blocked)
 		if source.Problem != nil {
 			err = source.Problem
 			route.Selected = ""
 		}
-		result.Sources[i] = SourceSelection{Source: source.Source, ModelID: agent.Routes[i].ModelID, ModelRevision: source.ModelRevision, NativeModel: source.Model.NativeID, Route: route}
+		result.Sources[i] = SourceSelection{Source: source.Source, ModelID: agent.SourceRoutes()[i].ModelID, ModelRevision: source.ModelRevision, NativeModel: source.Model.NativeID, Route: route}
 		if err != nil {
 			result.Sources[i].Problem = SafeError(err)
 		}

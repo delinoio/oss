@@ -6,6 +6,11 @@ import "delidev/v1/common.proto";
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 service UsageService {
+  rpc ListTokenPricing(ListTokenPricingRequest) returns (ListTokenPricingResponse);
+  rpc GetTokenPricing(GetTokenPricingRequest) returns (GetTokenPricingResponse);
+  rpc SetTokenPricing(SetTokenPricingRequest) returns (SetTokenPricingResponse);
+  rpc SetTokenPricingMode(SetTokenPricingModeRequest) returns (SetTokenPricingModeResponse);
+  rpc RefreshTokenPrices(RefreshTokenPricesRequest) returns (RefreshTokenPricesResponse);
   rpc GetUsageSummary(GetUsageSummaryRequest) returns (GetUsageSummaryResponse);
   rpc GetModelPricing(GetModelPricingRequest) returns (GetModelPricingResponse);
   rpc GetPricingVersion(GetPricingVersionRequest) returns (GetPricingVersionResponse);
@@ -26,6 +31,7 @@ message GetUsageSummaryRequest {
   string time_zone = 10;
   UsageAccountingProfile accounting_profile = 11;
   SubscriptionServiceIdentity subscription_service = 12;
+  ModelIdentity model = 13;
 }
 
 enum UsageTimeGranularity {
@@ -89,6 +95,7 @@ message UsageAnalyticsModel {
   string model_name = 4;
   UsageTotals totals = 5;
   SubscriptionServiceIdentity subscription_service = 6;
+  ModelIdentity model = 7;
 }
 
 message UsageOtherModels {
@@ -121,6 +128,7 @@ message UsageGroup {
   string model_name = 11;
   EstimateTotals estimates = 12;
   SubscriptionServiceIdentity subscription_service = 13;
+  ModelIdentity model = 14;
 }
 
 enum UsageCostState {
@@ -179,6 +187,8 @@ message PricingVersion {
   int64 created_at_unix_ms = 5;
   TokenPricing basis = 6;
   SubscriptionServiceIdentity subscription_service = 7;
+  ModelIdentity model = 8;
+  TokenPriceProvenance provenance = 9;
 }
 
 message GetModelPricingRequest {
@@ -280,6 +290,7 @@ message NativeAccountingGroup {
   string model_id = 5;
   NativeAccountingTotals totals = 6;
   SubscriptionServiceIdentity subscription_service = 7;
+  ModelIdentity model = 8;
 }
 message NativeAccountingDay {
   int64 from_unix_ms = 1;
@@ -313,4 +324,82 @@ message NativeAccountingSummary {
   repeated NativeAccountingPricing pricing = 5;
   UsageCoverage coverage = 6;
   UsageCostState actual_cost = 7;
+}
+
+enum TokenPricingMode {
+  TOKEN_PRICING_MODE_UNSPECIFIED = 0;
+  TOKEN_PRICING_MODE_AUTOMATIC = 1;
+  TOKEN_PRICING_MODE_MANUAL = 2;
+}
+message TokenPricingPolicy {
+  TokenPricingMode mode = 1;
+  uint64 revision = 2;
+}
+message TokenPriceProvenance {
+  string provider_key = 1;
+  string model_key = 2;
+  string snapshot_sha256 = 3;
+  int64 retrieved_at_unix_ms = 4;
+}
+message TokenPriceReference {
+  string state = 1;
+  int64 checked_at_unix_ms = 2;
+  string failure_code = 3;
+  bool unsupported_estimate = 4;
+  bytes costs_json = 5;
+  string upstream_updated = 6;
+  bool api_equivalent = 7;
+  TokenPricing basis = 8;
+}
+message GetTokenPricingRequest {
+  ModelIdentity model = 1;
+}
+message GetTokenPricingResponse {
+  PricingVersion pricing = 1;
+  TokenPricingPolicy policy = 2;
+  TokenPriceReference reference = 3;
+  uint64 provider_revision = 4;
+}
+message SetTokenPricingRequest {
+  ModelIdentity model = 1;
+  uint64 expected_revision = 2;
+  string request_id = 3;
+  TokenPricing basis = 4;
+  uint64 expected_provider_revision = 5;
+  uint64 expected_policy_revision = 6;
+}
+message SetTokenPricingResponse {
+  PricingVersion pricing = 1;
+  string request_id = 2;
+  bool replayed = 3;
+  TokenPricingPolicy policy = 4;
+}
+message SetTokenPricingModeRequest {
+  ModelIdentity model = 1;
+  TokenPricingMode mode = 2;
+  uint64 expected_policy_revision = 3;
+  string request_id = 4;
+  uint64 expected_provider_revision = 5;
+}
+message SetTokenPricingModeResponse {
+  GetTokenPricingResponse current = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message RefreshTokenPricesRequest {}
+message RefreshTokenPricesResponse {
+  string state = 1;
+  int64 checked_at_unix_ms = 2;
+  string failure_code = 3;
+}
+
+message ListTokenPricingRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+  string provider_id = 3;
+  SubscriptionServiceIdentity subscription_service = 4;
+}
+message ListTokenPricingResponse {
+  repeated PricingVersion pricing = 1;
+  string next_page_token = 2;
 }

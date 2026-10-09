@@ -44,7 +44,10 @@ func (f UsageSelection) Validate() error {
 	if f.From.UnixMilli() <= 0 || f.Until.UnixMilli() > 253402300799999 || !f.Until.After(f.From) || f.Until.Sub(f.From) > UsageWindowLimit || (f.GeneralChat && f.ProjectID != "") {
 		return Fail(InvalidArgument, "Invalid usage time range or project selection.", "Select a positive half-open time range of at most 366 days, and either a project or General Chat.")
 	}
-	for _, id := range []ID{f.SessionID, f.ProjectID, f.AccountID, f.ProviderID, f.ModelID} {
+	if f.ModelID != "" && ValidateModelKey(f.ModelID) != nil {
+		return invalidObservation()
+	}
+	for _, id := range []ID{f.SessionID, f.ProjectID, f.AccountID, f.ProviderID} {
 		if id != "" && id.Validate() != nil {
 			return invalidObservation()
 		}
@@ -252,7 +255,7 @@ type UsageGroup struct {
 	AccountID           ID                  `json:"account_id"`
 	ProviderID          ID                  `json:"provider_id,omitempty"`
 	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
-	ModelID             ID                  `json:"model_id"`
+	ModelID             ID                  `json:"model_key"`
 	Totals              UsageTotals         `json:"totals"`
 	Estimates           EstimateTotals      `json:"estimates"`
 }
@@ -267,7 +270,7 @@ type UsageAnalyticsModel struct {
 	Attribution         ModelAttribution    `json:"model_attribution,omitempty"`
 	ProviderID          ID                  `json:"provider_id,omitempty"`
 	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
-	ModelID             ID                  `json:"model_id"`
+	ModelID             ID                  `json:"model_key"`
 	Provider            string              `json:"provider_name,omitempty"`
 	Model               string              `json:"model_name,omitempty"`
 	Totals              UsageTotals         `json:"totals"`

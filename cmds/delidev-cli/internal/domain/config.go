@@ -275,7 +275,8 @@ type WeightedAccount struct {
 	Weight uint32 `json:"weight"`
 }
 type AgentSourceRoute struct {
-	ModelID  ID                `json:"model_id"`
+	ModelID  ID                `json:"-"`
+	Model    *InlineModel      `json:"model"`
 	Accounts []WeightedAccount `json:"accounts,omitempty"`
 	Routing  *RoutingPolicy    `json:"routing,omitempty"`
 }
@@ -284,7 +285,8 @@ type Agent struct {
 	ReconfigurationRequired bool               `json:"reconfiguration_required,omitempty"`
 	Name                    string             `json:"name"`
 	Harness                 Harness            `json:"harness"`
-	ModelID                 ID                 `json:"model_id,omitempty"`
+	ModelID                 ID                 `json:"-"`
+	Model                   *InlineModel       `json:"-"`
 	Effort                  string             `json:"effort,omitempty"`
 	Accounts                []WeightedAccount  `json:"accounts,omitempty"`
 	Routes                  []AgentSourceRoute `json:"routes,omitempty"`
@@ -305,7 +307,10 @@ func (a Agent) Validate() error {
 	}
 	ids := []ID{}
 	for _, route := range a.SourceRoutes() {
-		if err := route.ModelID.Validate(); err != nil {
+		if route.Model == nil {
+			return Fail(MissingInput, "An inline model is required.", "Select an exact native ID for every account source.")
+		}
+		if err := route.Model.Validate(a.Harness); err != nil {
 			return err
 		}
 		if route.Routing != nil && !route.Routing.Valid() {
@@ -355,9 +360,16 @@ func (a Agent) Validate() error {
 // SourceRoutes gives all reference consumers one view without rewriting legacy documents.
 func (a Agent) SourceRoutes() []AgentSourceRoute {
 	if len(a.Routes) > 0 {
-		return a.Routes
+		routes := make([]AgentSourceRoute, len(a.Routes))
+		copy(routes, a.Routes)
+		for i := range routes {
+			if routes[i].Model != nil {
+				routes[i].ModelID = routes[i].Model.ModelIdentity.Key()
+			}
+		}
+		return routes
 	}
-	return []AgentSourceRoute{{ModelID: a.ModelID, Accounts: a.Accounts, Routing: a.Routing}}
+	return []AgentSourceRoute{{ModelID: a.ModelID, Model: a.Model, Accounts: a.Accounts, Routing: a.Routing}}
 }
 func (a Agent) AllAccounts() []WeightedAccount {
 	result := []WeightedAccount{}
@@ -377,7 +389,7 @@ func (a Agent) ModelIDs() []ID {
 // WithSource constructs the existing execution shape for the chosen source only.
 func (a Agent) WithSource(route AgentSourceRoute) Agent {
 	a.Routes = nil
-	a.ModelID, a.Accounts, a.Routing = route.ModelID, route.Accounts, route.Routing
+	a.ModelID, a.Model, a.Accounts, a.Routing = route.ModelID, route.Model, route.Accounts, route.Routing
 	return a
 }
 
@@ -818,7 +830,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != NativeImageGenerationV1 && capability != CodexSessionRevertV1 && capability != SidechatQuestionRetryV1 && capability != ManagedCodexForkV1 && capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != InlineModelExecutionV1 && capability != NativeImageGenerationV1 && capability != CodexSessionRevertV1 && capability != SidechatQuestionRetryV1 && capability != ManagedCodexForkV1 && capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true
