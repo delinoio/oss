@@ -770,7 +770,7 @@ mod tests {
             }
             state.dispose_connection("original-connection");
             assert_eq!(state.scopes.len(), 1);
-            assert_eq!(state.scopes.get("other"), Some(&unrelated));
+            assert!(state.scopes.get("other") == Some(&unrelated));
             assert!(state.active.values().all(|active| active.cancel.is_none()));
             for (index, original) in originals.iter().enumerate() {
                 assert!(state.reserve(original, "late-presentation").is_err());
