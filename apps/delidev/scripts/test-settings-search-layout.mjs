@@ -61,7 +61,7 @@ try {
     await assertPinned();await assertFocusedRow(page.locator('[data-settings-category]').last());
     await assertFocusedRow(page.locator('[data-settings-category]').first());await assertPinned();
     if(width<760 && height<=320){
-      const retained=await input.elementHandle();
+      const retained=await input.elementHandle(),scrollOwner=await page.locator(".sidebar-list").elementHandle();
       // Pointer scrolling and programmatic focus must both clear the header.
       for(const category of ['projects','subscription-accounts','backups']){
         await page.locator('.sidebar-list').evaluate(node=>{node.scrollTop=node.scrollHeight;});
@@ -81,7 +81,12 @@ try {
       await assertFocusedRow(page.locator('[data-settings-category]').last());await assertPinned();
       await footer.locator('p').evaluate((node,text)=>{node.textContent=text;},original);
       assert(await page.locator('.sidebar-drawer-close').evaluate(node=>node.getBoundingClientRect().height>=40));
-      await retained.dispose();
+      await input.fill('retained resize draft');await page.setViewportSize({width,height:321});
+      assert.equal(await input.inputValue(),'retained resize draft');assert(await input.evaluate((node,original)=>node===original,retained));
+      assert(await page.locator('.sidebar-list').evaluate((node,original)=>node===original,scrollOwner));
+      await page.setViewportSize({width,height});assert.equal(await input.inputValue(),'retained resize draft');
+      assert(await input.evaluate((node,original)=>node===original && node===document.activeElement,retained));await input.fill('');
+      await retained.dispose();await scrollOwner.dispose();
     }
 
     // Common letters in bundled metadata produce an overflowing result list.
