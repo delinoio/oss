@@ -16,5 +16,12 @@
   "session-context.compactionRequiresASupportedHarnessAnd_ae76ff": "압축에는 지원되는 하네스와 워커가 필요하며 자격을 갖춘 안정된 경계에서 수행됩니다.",
   "session-context.retryTheSameCompactionRequest_12667c": "동일한 압축 요청 다시 시도",
   "session-context.capabilityReadFailed": "컨텍스트 기능을 읽지 못했습니다. 원래 Worker에 업데이트가 필요하다는 의미는 아닙니다.",
-  "session-context.retryCapability": "컨텍스트 기능 읽기 재시도"
+  "session-context.retryCapability": "컨텍스트 기능 읽기 재시도",
+  "session-context.latestNativeTokens": "네이티브가 최근 보고한 컨텍스트 토큰: <s0/>",
+  "session-context.latestSnapshot": "최근 보고된 스냅샷",
+  "session-context.historicalSnapshot": "이전 스냅샷",
+  "session-context.observedAt": "관측 시각: <s0/>",
+  "session-context.nativeSnapshotExplanation": "네이티브 스냅샷입니다. 이후의 로컬 컨텍스트 변경이 반영되지 않을 수 있으며 네이티브의 컨텍스트 한도 추정값이 포함될 수 있습니다. 실시간으로 정확하게 측정한 값이 아닙니다.",
+  "session-context.contextReadFailed": "컨텍스트 새로고침에 실패했습니다. 남아 있는 스냅샷은 이전 관측값이며 이번 읽기로 확인되지 않았습니다.",
+  "session-context.invalidContext": "컨텍스트 관측값의 형식이 올바르지 않거나 이 세션과 일치하지 않습니다."
 }

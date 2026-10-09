@@ -16,5 +16,12 @@
   "session-context.compactionRequiresASupportedHarnessAnd_ae76ff": "Compaction requires a supported harness and Worker at an eligible settled boundary.",
   "session-context.retryTheSameCompactionRequest_12667c": "Retry the same compaction request",
   "session-context.capabilityReadFailed": "Context capability could not be read. This does not establish that the original Worker needs an update.",
-  "session-context.retryCapability": "Retry context capability read"
+  "session-context.retryCapability": "Retry context capability read",
+  "session-context.latestNativeTokens": "Latest native-reported context tokens: <s0/>",
+  "session-context.latestSnapshot": "Latest reported snapshot",
+  "session-context.historicalSnapshot": "Historical snapshot",
+  "session-context.observedAt": "Observed at: <s0/>",
+  "session-context.nativeSnapshotExplanation": "This is a native snapshot. It may exclude later local context changes and may include a native context-limit estimate. It is not an exact continuous measurement.",
+  "session-context.contextReadFailed": "Context refresh failed. Any retained snapshot is historical and has not been confirmed by this read.",
+  "session-context.invalidContext": "The context observation is malformed or does not match this session."
 }
