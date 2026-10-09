@@ -426,6 +426,10 @@ fn overlay(
         let hwnd = window.hwnd().map_err(|_| NativeFailure::InvalidEvidence)?;
         let shell: ITaskbarList3 = CoCreateInstance(&TaskbarList, None, CLSCTX_INPROC_SERVER)
             .map_err(|_| NativeFailure::InvalidEvidence)?;
+        // Every fresh taskbar interface must initialize before setting or
+        // clearing an overlay. Fail before allocating an icon when
+        // initialization fails.
+        shell.HrInit().map_err(|_| NativeFailure::InvalidEvidence)?;
         let icon = if count == 0 {
             HICON::default()
         } else {
