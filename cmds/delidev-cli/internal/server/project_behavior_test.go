@@ -92,3 +92,64 @@ func TestProjectBehaviorResolvesOnlyOriginalExplicitProject(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestProjectBehaviorPortableProjectRemapsCompletePolicy(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	selection.Bundle.Version = 5
+	sourceMachine, targetMachine := domain.NewID(), domain.NewID()
+	doctorPut(t, s, domain.MachineKind, targetMachine, 0, domain.Machine{Name: "Selected Worker", OS: "linux", Architecture: "amd64"})
+	selection.Bundle.Machines = []domain.ConfigurationMachine{{ID: sourceMachine, Name: "Original Worker", OS: "linux", Architecture: "amd64"}}
+	selection.Machines = []domain.ConfigurationMachineBinding{{SourceID: sourceMachine, TargetID: targetMachine}}
+	repo := transferEntry(domain.RepositoryKind, domain.Repository{Name: "Source", RemoteURL: "https://github.com/fixture/source.git", AutoFetch: true})
+	var agentID domain.ID
+	for _, entry := range selection.Bundle.Entries {
+		if entry.Kind == domain.AgentKind {
+			agentID = entry.ID
+		}
+	}
+	policy := domain.DefaultRemediationPolicy()
+	policy.CIFailure = true
+	policy.AgentID = agentID
+	policy.MachineID = sourceMachine
+	project := transferEntry(domain.ProjectKind, domain.Project{Name: "Project override", Repositories: []domain.ID{repo.ID}, PrimaryRepository: repo.ID, Settings: &domain.ProjectBehavior{AutomaticFetch: domain.DisabledBoolean, AutomaticPlanApproval: domain.EnabledBoolean, Remediation: &policy}})
+	selection.Bundle.Entries = append(selection.Bundle.Entries, repo, project)
+	raw := transferPreview(t, s, selection)
+	var preview domain.ConfigurationImportPreview
+	if err := domain.Decode(raw, &preview); err != nil {
+		t.Fatal(err)
+	}
+	var mappedAgent, mappedRepo domain.ID
+	for _, change := range preview.Plan.Changes {
+		if change.Kind == domain.AgentKind {
+			mappedAgent = change.ID
+		}
+		if change.Kind == domain.RepositoryKind {
+			mappedRepo = change.ID
+		}
+	}
+	var mappedProject domain.ID
+	for _, change := range preview.Plan.Changes {
+		if change.Kind != domain.ProjectKind {
+			continue
+		}
+		mappedProject = change.ID
+		value, err := configurationValue(change.Kind, change.After, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := value.(*domain.Project)
+		if p.PrimaryRepository != mappedRepo || p.Settings.Remediation.AgentID != mappedAgent || p.Settings.Remediation.MachineID != targetMachine || p.Settings.AutomaticFetch != domain.DisabledBoolean || p.Settings.AutomaticPlanApproval != domain.EnabledBoolean {
+			t.Fatal("project policy references or overrides changed")
+		}
+	}
+	transferApply(t, s, raw, domain.NewID())
+	row, err := s.Store.Get(context.Background(), domain.ProjectKind, mappedProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := store.Decode[domain.Project](row)
+	if err != nil || p.Settings.Remediation.AgentID != mappedAgent {
+		t.Fatal("atomic import lost project policy", err)
+	}
+}

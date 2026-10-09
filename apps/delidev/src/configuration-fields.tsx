@@ -386,12 +386,13 @@ export function ProjectBehaviorFields({ data, change, active }: Pick<FieldsProps
  useLocale();
  const defaults = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: active });
  const values = defaults.data?.resources;
- const global = values?.length === 1 && readableServerPreferences(values[0]) && !defaults.error ? document(values[0]) : values?.length === 0 ? newConfiguration(EntityKind.SETTINGS) : undefined;
+ const global = values?.length === 1 && !defaults.data?.nextPageToken && readableServerPreferences(values[0]) && !defaults.error ? document(values[0]) : values?.length === 0 ? newConfiguration(EntityKind.SETTINGS) : undefined;
  const overrides = object(data.settings);
  const set = (key: string, value: unknown) => change({ ...data, settings: { ...overrides, [key]: value } });
  const booleanField = (key: string, label: string) => {
   const choice = text(overrides[key]) || BooleanOverride.Inherit;
-  const effective = choice === BooleanOverride.Inherit ? global?.[key] : choice === BooleanOverride.Enabled;
+  const inherited = choice === BooleanOverride.Inherit ? global?.[key] : choice === BooleanOverride.Enabled;
+  const effective = key === "automatic_fetch" ? global ? Boolean(global.automatic_fetch) && Boolean(inherited) : undefined : inherited;
   return <div><label>{label}<select value={choice} onChange={event => set(key, event.target.value)}>{Object.values(BooleanOverride).map(value => <option key={value} value={value}>{copy(value === BooleanOverride.Inherit ? "configuration-fields.useGlobal" : value === BooleanOverride.Enabled ? "configuration-fields.enabled" : "configuration-fields.disabled")}</option>)}</select></label><p>{copy("configuration-fields.effectiveValue", { value: effective === undefined ? copy("configuration-fields.unavailable") : copy(effective ? "configuration-fields.enabled" : "configuration-fields.disabled") })}</p></div>;
  };
  const routing = text(overrides.routing);

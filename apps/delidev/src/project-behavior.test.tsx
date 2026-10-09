@@ -49,3 +49,35 @@ it.each([false, true])("preserves legacy saves and negotiates schema 2 when supp
  expect(document.remediation).toEqual(legacy.remediation);
  expect(document.automatic_plan_approval).toBe(supported ? true : undefined);
  });
+
+it("keeps global fetch denial effective even with an enabled project override", async () => {
+ const defaults = { ...newConfiguration(EntityKind.SETTINGS), automatic_fetch: false };
+ const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SETTINGS, revision: 1n, schemaVersion: 2, documentJson: new TextEncoder().encode(JSON.stringify(defaults)) });
+ const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [row] }) }));
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ProjectBehaviorFields data={{ settings: { automatic_fetch: "enabled" } }} change={() => {}} active /></QueryClientProvider></TransportProvider>);
+ const input = screen.getByLabelText("Allow automatic fetch before Worktree preparation");
+ await waitFor(() => expect(input.parentElement?.parentElement?.textContent).toContain("Effective value: Disabled"));
+ });
+
+it("opens the exact sidebar project and retains its draft through a resource refresh", async () => {
+ const projectId = newRequestId();
+ let row = create(ResourceSchema, { id: projectId, kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 2, documentJson: new TextEncoder().encode(JSON.stringify({ ...newConfiguration(EntityKind.PROJECT), name: "Original project" })) });
+ const get = vi.fn((_request: { kind: EntityKind; id: string }) => ({ resource: row }));
+ const transport = createRouterTransport(router => {
+ router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1] }) });
+ router.service(ResourceService, { getResource: get, listResources: () => ({ resources: [] }) });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+ const { ProjectSettingsMenu } = await import("./project-settings-menu");
+ const { MutationIntents } = await import("./mutation");
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ProjectSettingsMenu projectId={projectId} label="Original project" active /></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getByRole("button", { name: "Project settings · Original project" }));
+ const name = await screen.findByLabelText("Name") as HTMLInputElement;
+ expect(get.mock.calls[0][0]).toMatchObject({ kind: EntityKind.PROJECT, id: projectId });
+ fireEvent.change(name, { target: { value: "Retained draft" } });
+ row = { ...row, revision: 2n, documentJson: new TextEncoder().encode(JSON.stringify({ ...newConfiguration(EntityKind.PROJECT), name: "External replacement" })) };
+ await client.invalidateQueries();
+ expect(name.value).toBe("Retained draft");
+ expect(screen.getAllByRole("dialog")).toHaveLength(1);
+ });
