@@ -909,9 +909,8 @@ it("opens execution configuration without changing the unsent session draft or d
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep the original unsent draft" } });
   fireEvent.click(screen.getByText("Execution settings"));
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.getByRole("heading", { name: "Execution configuration" })).toBeTruthy();
   expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
   expect((composer as HTMLTextAreaElement).value).toBe("Keep the original unsent draft");
   expect(value.controls).not.toHaveBeenCalled();
   expect(value.enqueues).not.toHaveBeenCalled();
