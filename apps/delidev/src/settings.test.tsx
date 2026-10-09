@@ -416,6 +416,7 @@ it("keeps exact retries within an opening and discards its provider draft on clo
   const create = await screen.findByRole("button", { name: "Custom provider" });
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(create);
+  expect(screen.queryByRole("checkbox", { name: "Discover models automatically for connected entries" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(false));
   fireEvent.click(screen.getByRole("checkbox", { name: "OpenAI Responses" }));

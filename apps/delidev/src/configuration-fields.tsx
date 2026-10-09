@@ -246,7 +246,7 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
   useLocale();
   if (subscriptionOnly) return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={(name) => change({ ...data, name })} required /><p>{copy("configuration-fields.subscriptionProvidersUseNativeSubscriptionProtocol_8f0299")}</p></>;
   return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={(name) => change({ ...data, name })} required />
-    <ProviderAPIFormatFields data={data} change={change} {...props} /><p>{copy("configuration-fields.localhostRefersToTheServerComputer_cfc90a")}</p><Check label={copy("configuration-fields.discoverModelsAutomaticallyForConnectedEntries_6f1cb4")} value={data.discovery} change={(discovery) => change({ ...data, discovery })} />
+    <ProviderAPIFormatFields data={data} change={change} {...props} /><p>{copy("configuration-fields.localhostRefersToTheServerComputer_cfc90a")}</p>
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", ProjectDefaults = "project-defaults" }
