@@ -11,5 +11,6 @@
   "session-name.executionReferences": "실행 참조",
   "session-name.operationDetails": "작업 상세 정보",
   "session-name.nativeEvidence": "네이티브 출처 증거",
-  "session-name.subagent": "서브에이전트 {{number}}"
+  "session-name.subagent": "서브에이전트 {{number}}",
+  "session-name.invalidRead": "현재 세션 이름을 사용할 수 없습니다. 이 세션을 다시 읽어 주세요."
 }

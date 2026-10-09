@@ -6,7 +6,7 @@ import { EntityKind, clientFailure, FailureCode, ResourceQuery, SessionQuery, ne
 import { resourceName } from "./documents";
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { copy, useLocale } from "./localization";
-import { DialogSurface, Problem } from "./ui";
+import { DialogSurface, InlineRemediation, Problem } from "./ui";
 const Editor = createContext<((id: string, opener: HTMLElement) => void) | undefined>(undefined);
 export const useSessionNameEditor = () => useContext(Editor);
 export function validSessionName(value: string) { return Boolean(value.trim()) && !value.includes("\0") && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value) && new TextEncoder().encode(value).byteLength <= 256; }
@@ -50,6 +50,7 @@ function SessionNameController({ id, visible, opener, alive, close }: { id: stri
       <label>{copy("session-tools.sessionName_136a71")}<input ref={input} value={draft?.value ?? ""} disabled={!readable || recoveryPending || rename.busy || rename.uncertain} aria-invalid={draft && !valid ? true : undefined} onChange={event => draft && setDraft({ ...draft, value: event.target.value })} onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} /></label>
       {draft && !valid ? <p role="alert">{copy("session-name.invalid")}</p> : null}
       {conflict ? <><p role="alert">{copy("session-tools.thisSessionChangedWhileEditingThe_e72d40")}</p><button type="button" disabled={rename.busy || rename.uncertain} onClick={() => setDraft(undefined)}>{copy("session-name.discard")}</button></> : null}
+      {!result.isPending && !result.error && !readable ? <InlineRemediation summary={copy("session-name.invalidRead")} actions={<button type="button" onClick={() => void result.refetch()}>{copy("session-name.retryRead")}</button>} /> : null}
       <Problem error={result.error} actions={<button type="button" onClick={() => void result.refetch()}>{copy("session-name.retryRead")}</button>} /><Problem error={rename.error} />
       {rename.uncertain ? <button type="button" disabled={rename.busy || recoveryPending} onClick={rename.retry}>{copy("session-name.retry")}</button> : null}
       <button className="primary" disabled={Boolean(blocked)}>{copy("session-name.save")}</button>

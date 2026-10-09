@@ -11,5 +11,6 @@
   "session-name.executionReferences": "Execution references",
   "session-name.operationDetails": "Operation details",
   "session-name.nativeEvidence": "Native source evidence",
-  "session-name.subagent": "Subagent {{number}}"
+  "session-name.subagent": "Subagent {{number}}",
+  "session-name.invalidRead": "The current session name is unavailable. Retry reading this session."
 }

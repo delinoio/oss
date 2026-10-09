@@ -66,3 +66,10 @@ it.each(["rename", "recovery"])("blocks the other original session operation aft
  if(first === "rename") {const input=await openRename();fireEvent.change(input,{target:{value:"New"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));await screen.findByRole("button",{name:"Retry original rename"});fireEvent.click(screen.getByRole("button",{name:"Close"}));await waitFor(()=>expect(screen.getByRole("button",{name:"Prepare workspace again"})).toHaveProperty("disabled",true));expect(prepare).not.toHaveBeenCalled();}
  else {fireEvent.click(screen.getByRole("button",{name:"Prepare workspace again"}));fireEvent.click(screen.getByRole("button",{name:"Confirm selected recovery action"}));await screen.findByRole("button",{name:"Retry the same preparation"});await openRename();expect(screen.getByRole("button",{name:"Save"})).toHaveProperty("disabled",true);expect(rename).not.toHaveBeenCalled();}
 });
+
+it.each(["missing", "id", "kind", "schema", "revision"])("explains and retries an invalid %s session read", async field => {
+ const f=fixture();const invalid=create(ResourceSchema,{id:field === "id" ? newRequestId():f.id,kind:field === "kind" ? EntityKind.AGENT:EntityKind.SESSION,schemaVersion:field === "schema" ? 2:1,revision:field === "revision" ? 0n:8n});
+ f.read.mockReturnValueOnce({resource:field === "missing" ? undefined!:invalid});render(f.view);fireEvent.doubleClick(screen.getByText("Sidebar name"));
+ await screen.findByText("The current session name is unavailable. Retry reading this session.");expect(screen.getByRole("button",{name:"Save"})).toHaveProperty("disabled",true);
+ fireEvent.click(screen.getByRole("button",{name:"Retry read"}));await waitFor(()=>expect(screen.getByLabelText("Session name")).toHaveProperty("value","Original name"));expect(f.rename).not.toHaveBeenCalled();
+});
