@@ -9,7 +9,7 @@ import (
 )
 
 func (c *CodexEventPublisher) publishImageGeneration(ctx context.Context, event codex.Event) error {
-	if c.publisher == nil || !c.publisher.input.Configuration.Subscription || c.publisher.input.Configuration.SidechatPolicy != "" || event.ImageGeneration == nil || event.ItemID != event.ImageGeneration.ID || event.TurnID != c.turn {
+	if c.publisher == nil || !c.publisher.input.NativeImageGeneration || !c.publisher.input.Configuration.Subscription || c.publisher.input.Configuration.SidechatPolicy != "" || event.ImageGeneration == nil || event.ItemID != event.ImageGeneration.ID || event.TurnID != c.turn {
 		return publicationUncertain()
 	}
 	native := event.ImageGeneration

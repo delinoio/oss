@@ -169,7 +169,7 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 }
 
 func publishGeneratedImageMetadata(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
-	if input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || input.Configuration.SidechatPolicy != "" {
+	if !input.NativeImageGeneration || input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || input.Configuration.SidechatPolicy != "" {
 		return domain.Fail(domain.Unsupported, "The selected native provider does not support generated image publication.", "Retain the original account; no generation bridge or provider substitution is available.")
 	}
 	machineRow, machine, err := activeMachine(tx, input.MachineID)

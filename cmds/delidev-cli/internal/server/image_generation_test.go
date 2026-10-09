@@ -33,6 +33,7 @@ func TestNativeGeneratedImagesPublishOrderedMetadataPartialFailureAndAuthenticat
 	if err != nil {
 		t.Fatal(err)
 	}
+	sf.input.NativeImageGeneration = true
 	takeSubscriptionExecutionFixture(t, sf)
 	f := publicationFixtureFromAuthority(t, sf.authorityFixture)
 	cfg := publicationWorkerConfig(t, f)
@@ -163,6 +164,7 @@ func TestNativeGeneratedImagesPublishOrderedMetadataPartialFailureAndAuthenticat
 }
 func TestNativeGeneratedImageMetadataRejectsUnavailableProvider(t *testing.T) {
 	f := newPublicationFixture(t)
+	f.input.NativeImageGeneration = true
 	event := f.event(domain.ExecutionArtifactStarted, 3)
 	event.Artifact = &domain.ExecutionArtifactUpdate{ID: domain.NewID(), NativeID: "unavailable", Snapshot: &domain.ArtifactSnapshot{Kind: domain.ImageGenerationArtifact, ImageGeneration: &domain.ImageGenerationObservation{Status: domain.ImageGenerationRunning, Outputs: []domain.ImageAttachment{}}}}
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.unavailable-generation", nil, func(tx *store.Tx) (any, error) {

@@ -33,6 +33,8 @@ type ExecutionJobInput struct {
 	Manifest            json.RawMessage            `json:"manifest"`
 	Remediation         *PRFixExecution            `json:"remediation,omitempty"`
 	Continuation        *ExecutionContinuation     `json:"continuation,omitempty"`
+	// Frozen admission owns all output intents, including unpublished native calls.
+	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
 }
 
 // ExecutionCompletion proves only a fully published native terminal boundary
@@ -91,6 +93,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 func (i ExecutionJobInput) Validate() error {
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
+	}
+	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "") {
+		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")
 	}
 	if len(i.Input.Attachments) > 0 {
 		if i.Configuration.Harness != Codex || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {

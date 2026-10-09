@@ -35,7 +35,10 @@ type SessionDeletionFork struct {
 }
 
 type SessionDeletionWork struct {
-	RetryForks               []SessionDeletionFork `json:"retry_forks,omitempty"`
+	RetryForks []SessionDeletionFork `json:"retry_forks,omitempty"`
+	// Frozen original execution admission requires all generation intents, even
+	// when publication failed before the server acquired output references.
+	GeneratedImageCleanup    bool                  `json:"generated_image_cleanup,omitempty"`
 	SkillSnapshots           []SkillBinding        `json:"skill_snapshots,omitempty"`
 	Fork                     *SessionDeletionFork  `json:"fork,omitempty"`
 	Version                  uint32                `json:"version"`
@@ -59,7 +62,7 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
-	if len(w.PreservedGeneratedImages) > MaxSessionImageAttachments {
+	if len(w.PreservedGeneratedImages) > MaxSessionImageAttachments || len(w.PreservedGeneratedImages) > 0 && !w.GeneratedImageCleanup {
 		return SessionDeletionPending()
 	}
 	preserved := make(map[ID]bool, len(w.PreservedGeneratedImages))

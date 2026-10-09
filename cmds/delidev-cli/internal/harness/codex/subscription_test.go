@@ -42,7 +42,14 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		if mode == "thread-managed-workspace-override" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
 			providers["openai"] = map[string]any{"requires_openai_auth": true, "base_url": "https://foreign.invalid"}
 		}
-		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers}, "origins": nil, "layers": nil})
+		features := map[string]any{}
+		if mode == "thread-managed-image-enabled" {
+			features["image_generation"] = true
+		}
+		if mode == "thread-managed-image-disabled" {
+			features["image_generation"] = false
+		}
+		write(id, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": providers, "features": features}, "origins": nil, "layers": nil})
 	case "account/login/start":
 		if sentinel := os.Getenv("DELIDEV_CODEX_LOGIN_SENTINEL"); sentinel != "" {
 			if os.WriteFile(sentinel, []byte("sent"), 0600) != nil {

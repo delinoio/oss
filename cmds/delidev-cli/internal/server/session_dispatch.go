@@ -330,6 +330,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 		}
 	}
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
+	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
 	input.Preparation, input.Manifest = job.Input, job.Output
 	return input, input.Validate()
 }
@@ -338,6 +339,9 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 // converting or replacing the original native assignment. Legacy operations
 // retain their existing capability contract; only new executions require v4.
 func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) error {
+	if input.NativeImageGeneration && !slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1) {
+		return domain.Fail(domain.Unsupported, "The original Runner Device no longer supports generated images.", "Restore its original Worker profile before continuing this execution.")
+	}
 	if input.Validate() != nil || !session.OwnsExecution(input) {
 		return continuationConflict()
 	}

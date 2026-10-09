@@ -3,6 +3,7 @@ package codex
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -11,6 +12,7 @@ import (
 	"image/color"
 	"image/png"
 	"testing"
+	"time"
 )
 
 func generationPNG(t *testing.T) []byte {
@@ -97,6 +99,7 @@ func TestNativeImageGenerationShapesAndOriginalProvider(t *testing.T) {
 		t.Fatal("API/feature flag granted generation")
 	}
 	c.managedHome = t.TempDir()
+	c.imageGeneration = true
 	event, err := c.observeImageGeneration(nativewire.Event{Method: "item/started"}, turn, raw)
 	if err != nil || event.ItemID != "native-original-call" || !event.Correlated {
 		t.Fatal("original managed observation rejected", err)
@@ -117,5 +120,70 @@ func TestNativeImageGenerationUsageLimitAndNoInventedUsage(t *testing.T) {
 	raw, _ = json.Marshal(v)
 	if bytes.Contains(raw, []byte(`"usage":`)) {
 		t.Fatal("fabricated usage")
+	}
+}
+
+func TestNativeImageGenerationActivationRequiresOriginalManagedAssignment(t *testing.T) {
+	valid := Config{EnableImageGeneration: true, Mode: ThreadProtocol, ManagedAuthentication: true, ImageRoot: t.TempDir(), ImageMachineID: domain.NewID()}
+	if err := configureImageGeneration(&valid); err != nil {
+		t.Fatal(err)
+	}
+	if len(valid.Process.Args) != 2 || valid.Process.Args[1] != "features.image_generation=true" {
+		t.Fatal("native feature not requested")
+	}
+	for _, kind := range []string{"proxy", "Sidechat", "no-auth", "probe", "no-root", "no-machine"} {
+		config := valid
+		config.Process.Args = nil
+		switch kind {
+		case "proxy":
+			config.API = &APIConfig{}
+		case "Sidechat":
+			config.Sidechat = ReadOnlySidechatV1
+		case "no-auth":
+			config.ManagedAuthentication = false
+		case "probe":
+			config.Mode = ProbeProtocol
+		case "no-root":
+			config.ImageRoot = ""
+		case "no-machine":
+			config.ImageMachineID = ""
+		}
+		if configureImageGeneration(&config) == nil {
+			t.Fatal("unsupported activation", kind)
+		}
+	}
+	disabled := valid
+	disabled.EnableImageGeneration = false
+	disabled.Process.Args = nil
+	if configureImageGeneration(&disabled) != nil || disabled.Process.Args[1] != "features.image_generation=false" {
+		t.Fatal("historical assignment gained generation")
+	}
+	readonly := Client{managedHome: t.TempDir(), sidechat: ReadOnlySidechatV1, imageRoot: t.TempDir()}
+	if readonly.nativeFrameLimit() != 16<<20 {
+		t.Fatal("original image-bearing history truncated for read-only Sidechat")
+	}
+}
+
+func TestNativeImageGenerationRequiresObservedEffectiveFeatureBeforeInput(t *testing.T) {
+	for _, mode := range []string{"thread-managed-image-enabled", "thread-managed-image-disabled", "thread-managed-ready"} {
+		t.Run(mode, func(t *testing.T) {
+			config := fixtureConfig(t, mode)
+			config.Mode, config.ManagedAuthentication, config.EnableImageGeneration = ThreadProtocol, true, true
+			config.ImageRoot, config.ImageMachineID = t.TempDir(), domain.NewID()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			client, err := Open(ctx, config)
+			if mode == "thread-managed-image-enabled" {
+				if err != nil {
+					t.Fatal("original effective feature rejected", err)
+				}
+				if err = client.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				client.Close()
+				t.Fatal("unobserved native feature authorized input")
+			}
+		})
 	}
 }

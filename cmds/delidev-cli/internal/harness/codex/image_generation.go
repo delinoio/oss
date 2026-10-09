@@ -98,7 +98,7 @@ func decodeImageGeneration(raw json.RawMessage, completed bool) (*ImageGeneratio
 func (c *Client) observeImageGeneration(native nativewire.Event, turnID domain.ID, raw json.RawMessage) (Event, error) {
 	// The original managed profile independently verifies built-in OpenAI account,
 	// auth and effective provider. A feature flag or custom proxy is insufficient.
-	if c.managedHome == "" || c.api != nil || c.sidechat != "" || c.imageRoot == "" || c.imageMachine.Validate() != nil {
+	if !c.imageGeneration || c.managedHome == "" || c.api != nil || c.sidechat != "" || c.imageRoot == "" || c.imageMachine.Validate() != nil {
 		return Event{}, domain.Fail(domain.Unsupported, "The selected native provider cannot publish generated images.", "Use the original supported managed OpenAI account; no provider substitution is available.")
 	}
 	turn, known := c.execution.turns[turnID]
@@ -118,8 +118,22 @@ func (c *Client) observeImageGeneration(native nativewire.Event, turnID domain.I
 }
 
 func (c *Client) nativeFrameLimit() int {
-	if c.managedHome != "" && c.api == nil && c.sidechat == "" && c.imageRoot != "" {
+	if c.managedHome != "" && c.api == nil && c.imageRoot != "" {
 		return 16 << 20
 	}
 	return nativewire.MaxFrame
+}
+
+// Request support only for the admitted original managed route. The later config
+// read verifies the request; actual account/provider proof remains independent.
+func configureImageGeneration(config *Config) error {
+	if config.EnableImageGeneration {
+		if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ImageRoot == "" || config.ImageMachineID.Validate() != nil {
+			return incompatible()
+		}
+		config.Process.Args = append(config.Process.Args, "-c", "features.image_generation=true")
+	} else if config.Mode == ThreadProtocol && config.ManagedAuthentication {
+		config.Process.Args = append(config.Process.Args, "-c", "features.image_generation=false")
+	}
+	return nil
 }

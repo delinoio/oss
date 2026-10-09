@@ -325,6 +325,9 @@ func (t *Tx) planImageSessionDeletion(v SessionDeletion) (SessionDeletion, error
 			v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: upload.Attachment.MachineID, DeviceID: upload.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{}}})
 			index = len(v.Workers) - 1
 		}
+		if upload.GeneratedExecutionID != "" {
+			v.Workers[index].Work.GeneratedImageCleanup = true
+		}
 		if preserved {
 			v.Workers[index].Work.PreservedGeneratedImages = append(v.Workers[index].Work.PreservedGeneratedImages, upload.Attachment)
 		} else {
