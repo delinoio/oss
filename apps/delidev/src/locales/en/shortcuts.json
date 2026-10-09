@@ -77,5 +77,6 @@
   "shortcuts.tab6": "Select tab 6",
   "shortcuts.tab7": "Select tab 7",
   "shortcuts.tab8": "Select tab 8",
-  "shortcuts.tab9": "Select tab 9"
+  "shortcuts.tab9": "Select tab 9",
+  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app."
 }

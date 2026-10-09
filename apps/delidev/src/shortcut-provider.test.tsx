@@ -195,3 +195,8 @@ it("connection replacement disposes held ownership and its release listeners", (
   fireEvent.keyUp(document, { key: "/", code: "Slash" }); fireEvent.keyDown(screen.getByRole("button", { name: "Help opener" }), { key: "?", code: "IntlRo" }); expect(screen.getByRole("dialog")).toBeTruthy();
   view.unmount(); fireEvent.keyUp(document, { key: "?", code: "IntlRo" }); fireEvent.keyDown(document.body, { key: "?" }); expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("discloses the exact external browser numeric exception without disabling ordinary tab shortcuts",()=>{
+ function TabHelp(){const open=useShortcutHelp();useShortcutSurface(Surface.Sessions);useShortcuts([{id:ShortcutId.SessionTab1,scope:Surface.Sessions,label:"shortcuts.tab1",bindings:[{key:"1",primary:true}],terminal:true,run:()=>{}}]);return <button onClick={open}>Tab help</button>;}
+ render(<ShortcutProvider><TabHelp/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Tab help"}));expect(screen.getByText("On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.")).toBeTruthy();expect(screen.getByText("Select tab 1")).toBeTruthy();
+});

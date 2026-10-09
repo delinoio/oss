@@ -77,5 +77,6 @@
   "shortcuts.tab6": "6번 탭 선택",
   "shortcuts.tab7": "7번 탭 선택",
   "shortcuts.tab8": "8번 탭 선택",
-  "shortcuts.tab9": "9번 탭 선택"
+  "shortcuts.tab9": "9번 탭 선택",
+  "shortcuts.externalBrowserTabLimit": "Windows와 Linux에서는 외부 브라우저 페이지에 포커스가 있을 때 탭 표시줄을 사용하세요. 숫자 단축키는 앱의 다른 영역에서 사용할 수 있습니다."
 }

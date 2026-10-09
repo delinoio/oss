@@ -90,7 +90,11 @@ address card and no empty viewport. Page labels derive only from retained URLs;
 no title/favicon discovery, URL logging, page scripts or generalized key bridge.
 The original 16-page gate and explicit resource Close remain separate from shared
 presentation Close. Numeric selection has only typed, original-owner fenced
-local presentation authority under the desktop shortcut contract.
+local presentation authority under the desktop shortcut contract. The owner
+approved deferring only Windows/Linux numeric forwarding while external browser
+content has focus; use the tab bar there. macOS forwarding requires original
+native composition-clear proof. All ordinary app/input/terminal shortcuts and
+other tab acceptance remain required, and localized Help states this exception.
 Back/Forward/Reload, labelled address and Go share
 a compact toolbar; explicit native-view Retry is in its accessible overflow.
 Keep original registration uncertainty/retry beside its owning problem. The

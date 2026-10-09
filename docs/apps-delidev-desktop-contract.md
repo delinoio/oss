@@ -1860,9 +1860,12 @@ window/session/connection admission and native shortcut-capture fences. This is 
 local presentation interface. Windowed CEF cannot use its OSR-only composition
 callback as evidence. macOS admits only the original child NSView subtree's
 current native NSTextInputClient responder with supported `hasMarkedText` false;
-foreign, missing or unknown responders deny forwarding. Windows/Linux native
-forwarding remains denied until equivalent original-view composition proof exists.
-This unresolved implementation boundary is separate from platform acceptance.
+foreign, missing or unknown responders deny forwarding. The owner-approved issue #1951 amendment defers only numeric forwarding while
+Windows/Linux external browser content has focus. Those platforms deny native
+forwarding until equivalent original-view composition proof exists; tab-bar
+selection and ordinary app/input/terminal numeric shortcuts remain available.
+Localized Help discloses this precise exception. It does not defer any other tab
+requirement, macOS safe forwarding or original cleanup/native authority.
 The interface grants no page IPC, business RPC, schema,
 protocol allocation, resource creation, native execution or database migration.
 Fixtures and builds remain separate from actual installed CEF/account/platform acceptance.
