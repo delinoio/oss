@@ -141,9 +141,12 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	// Unknown commands, including retired commands, cannot select a server or consume authentication input.
 	switch command {
-	case "project", "snapshot", "update", "storage", "service-control", "usage", "search", "schedule", "notification", "inbox", "interaction", "session", "queue", "provider", "model", "github", "network", "integration", "browser-profile", "account", "machine", "device", "repository", "server", "doctor", "configuration", "backup", "events", "list", "get", "inspect", "create", "edit", "save", "delete", "routing":
+	case "project", "snapshot", "update", "storage", "service-control", "usage", "search", "schedule", "notification", "inbox", "interaction", "session", "queue", "provider", "model", "github", "network", "integration", "browser-profile", "account", "machine", "device", "repository", "server", "doctor", "configuration", "backup", "events":
 	default:
-		return emit(nil, usage())
+		kind := domain.Kind(command)
+		if !kind.Valid() || rpc.WireKind(kind) == pb.EntityKind_ENTITY_KIND_UNSPECIFIED {
+			return emit(nil, usage())
+		}
 	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
