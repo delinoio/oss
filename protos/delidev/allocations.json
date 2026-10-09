@@ -10335,6 +10335,22 @@
       "number": 4,
       "newDeclaration": true,
       "status": "implemented"
+    },
+    {
+      "issue": 2124,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
+      "number": 76,
+      "status": "implemented"
+    },
+    {
+      "issue": 2124,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
+      "number": 51,
+      "status": "implemented"
     }
   ],
   "rpcReservations": [

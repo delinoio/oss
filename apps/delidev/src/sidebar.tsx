@@ -1,3 +1,4 @@
+import { useSessionNameEditor } from "./session-name-editor";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
@@ -144,6 +145,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const element = useRef<HTMLButtonElement>(null);
   const hover = useSessionHover(element);
   const actionMenuOpen = useSessionActionMenuOpen();
+  const editName = useSessionNameEditor();
   const title = row.name;
   const outcome = row.outcome;
   const archive = row.archive;
@@ -158,7 +160,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   return <div className="sidebar-session-container">
     <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} data-conversation-kind={row.conversationKind ?? ConversationKind.Unknown} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); if(row.sidechatParent)open(row.id,row.sidechatParent,row.name);else open(row.id); }}>
       <Icon name={conversationKindIcons[row.conversationKind ?? ConversationKind.Unknown]} className="sidebar-workspace-icon" />
-      <span className="sidebar-session-title">{title}</span>
+      <span className="sidebar-session-title" onDoubleClick={event => { event.stopPropagation(); hover.dismiss(); editName?.(row.id, element.current ?? event.currentTarget); }}>{title}</span>
       {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
@@ -474,9 +476,10 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
           <button type="button" className="sidebar-header-button" aria-label={copy("sidebar.search_49c266")} onClick={() => navigateHeader(Surface.Search)}><Icon name="search" /></button>
         </div> : null}
       </header>
-      <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button>
+      {!sessionNavigation ? <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button> : null}
       {sessionNavigation ? <button type="button" className="sidebar-new-session" aria-keyshortcuts={newSessionAria} aria-current={surface === Surface.NewSession ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newSession(); setDrawerOpen(false); }}><Icon name="plus" />{copy("sidebar.newSession_cffdba")}</button> : null}
       {sessionNavigation ? <button type="button" className="sidebar-new-general-chat" aria-current={surface === Surface.NewGeneralChat ? "page" : undefined} onClick={(event) => { event.currentTarget.focus(); newGeneralChat(); setDrawerOpen(false); }}><Icon name="chat-plus" />{copy("sidebar.newGeneralChat")}</button> : null}
+      {sessionNavigation ? <button type="button" className="sidebar-drawer-close" onClick={() => setDrawerOpen(false)}>{copy("sidebar.closeNavigation_99904d")}</button> : null}
       <div ref={list} className="sidebar-list" onScroll={(event) => surfaceScroll.current.set(sessionNavigation ? Surface.Sessions : surface, event.currentTarget.scrollTop)} aria-label={sessionNavigation ? copy("sidebar.projectAndSessionNavigation_ccbca5") : copy("sidebar.menuNavigationAndFilters_b5a21d")}>
         <div hidden={!sessionNavigation}>
         <header className="sidebar-projects-heading"><h2>{copy("sidebar.projects_04e2a9")}</h2><button ref={newProjectButton} type="button" className="sidebar-new-project-button" aria-label={copy("sidebar.newProject_a41eb2")} onPointerEnter={() => { newProjectPointerInside.current = true; showNewProjectTooltip(); }} onPointerLeave={() => { newProjectPointerInside.current = false; hideNewProjectTooltipWhenInactive(); }} onFocus={() => { newProjectFocused.current = true; showNewProjectTooltip(); }} onBlur={() => { newProjectFocused.current = false; hideNewProjectTooltipWhenInactive(); }} onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}><Icon name="plus" /></button><button ref={optionsButton} type="button" className="sidebar-options-button" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} aria-haspopup="dialog" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}><Icon name="options" /></button>{optionsOpen ? <div ref={optionsPopup} role="dialog" aria-label={copy("sidebar.projectAndConversationOptions_60b63e")} className="sidebar-options-popup" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOptionsOpen(false); optionsButton.current?.focus(); } }}><label className="sidebar-archived-filter"><input type="checkbox" checked={includeArchived} onChange={(event) => archiveChanged(event.target.checked)} />{copy("sidebar.includeArchived_b6c334")}</label></div> : null}</header>
