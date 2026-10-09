@@ -116,6 +116,11 @@ pub fn create(
             })
             .on_new_window(|_, _| NewWindowResponse::Deny)
             .on_page_load(|window, payload| {
+                if payload.event() == tauri::webview::PageLoadEvent::Started {
+                    window
+                        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+                        .document_changed(window.app_handle(), window.label());
+                }
                 if payload.event() == tauri::webview::PageLoadEvent::Finished {
                     super::enable_document_accessibility(&window);
                 }

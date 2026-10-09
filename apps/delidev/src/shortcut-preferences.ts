@@ -33,7 +33,7 @@ export const fixedNativeShortcutCatalog: readonly {id:NativeShortcutId;label:Mes
  {id:NativeShortcutId.CloseWindow,label:"shortcuts.nativeCloseWindow",key:"w",macOnly:false},
  {id:NativeShortcutId.Quit,label:"shortcuts.nativeQuit",key:"q",macOnly:true},
  {id:NativeShortcutId.Hide,label:"shortcuts.nativeHide",key:"h",macOnly:true},
- {id:NativeShortcutId.Minimize,label:"shortcuts.nativeMinimize",key:"m",macOnly:true},
+ {id:NativeShortcutId.Minimize,label:"shortcuts.nativeMinimize",key:"m",macOnly:false},
 ];
 const nativeReservedKeys=new Set(fixedNativeShortcutCatalog.map(action=>action.key));
 const editableIds = new Set(editableShortcutCatalog.map(action => action.id));

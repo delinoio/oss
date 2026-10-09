@@ -1828,7 +1828,7 @@ fn run() -> Result<(), NativeFailure> {
             if matches!(event, WindowEvent::Focused(false)) {
                 capture.departure(window.app_handle(), window.label(), false);
             } else if matches!(event, WindowEvent::Destroyed) {
-                capture.destroyed(window.app_handle(), window.label());
+                capture.window_disposed(window.app_handle(), window.label());
             } else if matches!(event, WindowEvent::Focused(true)) {
                 capture.departure(window.app_handle(), window.label(), true);
             }

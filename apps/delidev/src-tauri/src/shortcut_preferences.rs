@@ -145,6 +145,23 @@ impl ShortcutStore {
             .unwrap_or_else(|error| error.into_inner())
     }
 
+    // Native capture admission uses only retained verified state on the UI
+    // loop. Hold this guard through physical menu replacement so a concurrent
+    // persistence commit cannot change its original preference revision.
+    pub fn capture_revision(
+        &self,
+        expected: u32,
+    ) -> Result<std::sync::MutexGuard<'_, ShortcutSnapshot>, crate::NativeFailure> {
+        let state = self
+            .state
+            .try_lock()
+            .map_err(|_| crate::NativeFailure::Busy)?;
+        if state.problem.is_some() || state.revision != expected {
+            return Err(crate::NativeFailure::InvalidEvidence);
+        }
+        Ok(state)
+    }
+
     pub fn read(&self) -> ShortcutSnapshot {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         match self.path.as_deref().map(inspect) {
@@ -322,6 +339,21 @@ mod tests {
     }
     fn choice() -> ShortcutOverrides {
         BTreeMap::from([(ShortcutAction::NewSession, binding("j", true))])
+    }
+    #[test]
+    fn capture_admission_rechecks_retained_revision_without_disk_io() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ShortcutStore::new(Some(dir.path().into()));
+        let initial = store.read();
+        let guard = store.capture_revision(initial.revision).unwrap();
+        assert!(matches!(
+            store.capture_revision(initial.revision),
+            Err(crate::NativeFailure::Busy)
+        ));
+        drop(guard);
+        let next = store.update(choice(), initial.revision);
+        assert!(store.capture_revision(initial.revision).is_err());
+        assert!(store.capture_revision(next.revision).is_ok());
     }
     #[test]
     fn native_menu_chords_are_rejected_for_every_editable_action() {

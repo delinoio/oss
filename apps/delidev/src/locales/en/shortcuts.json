@@ -66,5 +66,5 @@
   "shortcuts.nativeCloseWindow": "Close Window",
   "shortcuts.nativeQuit": "Quit (macOS menu)",
   "shortcuts.nativeHide": "Hide (macOS menu)",
-  "shortcuts.nativeMinimize": "Minimize (macOS menu)"
+  "shortcuts.nativeMinimize": "Minimize (native menu)"
 }

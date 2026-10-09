@@ -173,7 +173,13 @@ inspection/End or independent native focus, visibility, disposal or Quit recover
 never restore native accelerators beneath a stale focused capture. Native blur
 restores the menu for other windows but retains an expired original-token
 context; original focus return synchronously reinstalls its fence until End.
-Disposal/Quit retires that context, and no other window may adopt it. Uncertain
+Disposal/Quit retires that context, and no other window may adopt it. Native
+page-load Started also retires the original document context; capture commands
+recheck its document epoch before native-loop admission and response, and hold
+the retained verified preference revision through physical Begin admission
+without disk I/O or CEF URL getters on that loop. Renderer
+retirement completions check the original capture generation so a delayed duplicate
+Cancel/blur result cannot dismiss or mark a newer capture uncertain. Uncertain
 admission/retirement requires exact-token inspection, with no repeated Begin or
 blind renewal. Retired-token tombstones reject a delayed Begin after End and are
 bounded to 1024 captures per app lifetime, failing closed at that bound.

@@ -20,6 +20,7 @@ use super::{
 pub struct CaptureHost {
     state: Mutex<State>,
     pending_close: Mutex<BTreeMap<String, u64>>,
+    documents: Mutex<BTreeMap<String, u64>>,
 }
 #[derive(Default)]
 struct State {
@@ -27,6 +28,7 @@ struct State {
     original: Option<WindowAuthority>,
     menu: Option<Menu<CefRuntime>>,
     inert: Option<Menu<CefRuntime>>,
+    document_epoch: u64,
 }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -49,6 +51,31 @@ pub struct Receipt {
     remaining_ms: u64,
 }
 impl CaptureHost {
+    pub fn document_epoch(&self, label: &str) -> u64 {
+        *self
+            .documents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(label)
+            .unwrap_or(&0)
+    }
+
+    pub fn window_disposed(&self, app: &AppHandle<CefRuntime>, label: &str) {
+        self.documents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(label);
+        self.destroyed(app, label);
+    }
+
+    pub fn document_changed(&self, app: &AppHandle<CefRuntime>, label: &str) {
+        {
+            let mut documents = self.documents.lock().unwrap_or_else(|e| e.into_inner());
+            *documents.entry(label.into()).or_default() += 1;
+        }
+        self.destroyed(app, label);
+    }
+
     pub fn epoch(&self) -> u64 {
         self.state
             .lock()
@@ -214,7 +241,15 @@ impl CaptureHost {
             .clone();
         if let Some(owner) = owner {
             let target = app.get_webview_window(&owner.entry.label);
-            if target.is_none() || recheck_registered(app, &owner).is_err() {
+            let original_document = self
+                .state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .document_epoch;
+            if target.is_none()
+                || self.document_epoch(&owner.entry.label) != original_document
+                || recheck_registered(app, &owner).is_err()
+            {
                 let _ = self.release(app);
                 return;
             }
@@ -223,7 +258,13 @@ impl CaptureHost {
                 && window.is_focused().unwrap_or(false)
                 && !window.is_minimized().unwrap_or(true)
             {
-                let _ = self.resume(app);
+                if self.resume(app).is_err() {
+                    let _ = window.hide();
+                    tracing::warn!(
+                        operation = "shortcut_capture_resume",
+                        code = "menu-restoration-uncertain"
+                    );
+                }
             } else {
                 let _ = self.pause(app);
             }
@@ -245,6 +286,7 @@ pub async fn shortcut_capture_native(
     if token.len() != 36 || uuid::Uuid::parse_str(&token).is_err() {
         return Err(NativeFailure::InvalidEvidence);
     }
+    let document_epoch = host.document_epoch(window.label());
     let original = capture_authority(&window)?;
     if super::is_local(&window) {
         super::trusted_local(&window)?;
@@ -258,6 +300,7 @@ pub async fn shortcut_capture_native(
         }
     }
     recheck_authority(&window, &original)?;
+    let store = Arc::clone(store.inner());
     let host = Arc::clone(host.inner());
     let app_loop = app.clone();
     let owned = original.clone();
@@ -265,8 +308,12 @@ pub async fn shortcut_capture_native(
     app.run_on_main_thread(move || {
         let result = (|| {
             recheck_registered(&app_loop, &owned)?;
+            if host.document_epoch(&owned.entry.label) != document_epoch {
+                return Err(NativeFailure::PermissionDenied);
+            }
             match operation {
                 Operation::Begin => {
+                    let _preferences = store.capture_revision(expected_revision)?;
                     let target = app_loop
                         .get_webview_window(&owned.entry.label)
                         .ok_or(NativeFailure::PermissionDenied)?;
@@ -299,6 +346,7 @@ pub async fn shortcut_capture_native(
                     ) {
                         return Err(NativeFailure::InvalidEvidence);
                     }
+                    state.document_epoch = document_epoch;
                     state.original = Some(owned.clone());
                     state.menu = Some(menu);
                     state.inert = Some(inert.clone());
@@ -350,6 +398,13 @@ pub async fn shortcut_capture_native(
     .map_err(|_| NativeFailure::SidecarFailed)?;
     let receipt = receive.await.map_err(|_| NativeFailure::SidecarFailed)??;
     recheck_authority(&window, &original)?;
+    if window
+        .state::<Arc<CaptureHost>>()
+        .document_epoch(window.label())
+        != document_epoch
+    {
+        return Err(NativeFailure::PermissionDenied);
+    }
     Ok(receipt)
 }
 

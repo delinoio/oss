@@ -81,3 +81,10 @@ it("a late native admission after category departure cannot reopen capture or ch
  const begin=vi.spyOn(shortcutCapture,"begin").mockImplementationOnce(()=>new Promise(resolve=>complete=resolve));const end=vi.spyOn(shortcutCapture,"end").mockResolvedValue(undefined);
  try{const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");fireEvent.click(screen.getByRole("button",{name:"Capture shortcut for New session"}));fireEvent.click(screen.getByRole("button",{name:"Leave category"}));await act(async()=>complete({deadline:performance.now()+10000,token:"departed-token"}));expect(screen.queryByText(/Press Command on macOS/)).toBeNull();expect(end).toHaveBeenCalledWith("departed-token");expect(f.bridge.update).not.toHaveBeenCalled();}finally{begin.mockRestore();end.mockRestore();}
 });
+
+it("late duplicate retirement cannot clear or mark a newer capture uncertain",async()=>{
+ const {shortcutCapture}=await import("./shortcut-capture");let rejectOld!:(error:Error)=>void,finishLatest!:()=>void;
+ const begin=vi.spyOn(shortcutCapture,"begin").mockResolvedValue({deadline:performance.now()+10000,token:"native-token"});
+ const end=vi.spyOn(shortcutCapture,"end").mockResolvedValue(undefined).mockImplementationOnce(()=>new Promise((_,reject)=>rejectOld=reject)).mockImplementationOnce(()=>new Promise(resolve=>finishLatest=resolve));
+ try{const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});fireEvent.click(opener);await screen.findByText(/Press Command on macOS/);fireEvent.click(screen.getByRole("button",{name:"Cancel capture"}));fireEvent.click(screen.getByRole("button",{name:"Cancel capture"}));await act(async()=>finishLatest());fireEvent.click(opener);await screen.findByText(/Press Command on macOS/);await act(async()=>rejectOld(Error("Old lost ACK")));expect(screen.getByText(/Press Command on macOS/)).toBeTruthy();expect(screen.queryByText(/Capture could not be confirmed/)).toBeNull();}finally{begin.mockRestore();end.mockRestore();}
+});

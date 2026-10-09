@@ -66,5 +66,5 @@
   "shortcuts.nativeCloseWindow": "창 닫기",
   "shortcuts.nativeQuit": "종료 (macOS 메뉴)",
   "shortcuts.nativeHide": "가리기 (macOS 메뉴)",
-  "shortcuts.nativeMinimize": "최소화 (macOS 메뉴)"
+  "shortcuts.nativeMinimize": "최소화 (네이티브 메뉴)"
 }

@@ -24,8 +24,8 @@ export function ShortcutSettings() {
     if (!dirty || saved) { setBaseline(snapshot); setDraft(snapshot.overrides); setSaved(false); }
   }, [snapshot, saved]);
   const cancelCapture = () => {
-    captureGeneration.current++;deadline.current=0;setCaptureState("retiring");setInvalid(false);
-    void shortcutCapture.end().then(()=>{if(mounted.current){restoreFocus.current=true;setCapturing(undefined);setCaptureState(undefined);}}).catch(()=>{if(mounted.current)setCaptureState("uncertain");});
+    const generation=++captureGeneration.current;deadline.current=0;setCaptureState("retiring");setInvalid(false);
+    void shortcutCapture.end().then(()=>{if(mounted.current&&generation===captureGeneration.current){restoreFocus.current=true;setCapturing(undefined);setCaptureState(undefined);}}).catch(()=>{if(mounted.current&&generation===captureGeneration.current)setCaptureState("uncertain");});
   };
   const beginCapture=(id:ShortcutId)=>{
     const generation=++captureGeneration.current;setCapturing(id);setCaptureState("arming");setInvalid(false);
