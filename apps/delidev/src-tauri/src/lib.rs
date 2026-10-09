@@ -1088,3 +1088,5 @@ mod startup_conflict_tests {
         }
     }
 }
+
+pub mod quit_confirmation;

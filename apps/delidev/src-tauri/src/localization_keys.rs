@@ -122,6 +122,12 @@ pub enum Message {
     ServerLostNotice,
     ServerRestoredNotice,
     ExportGeneratedImage,
+    QuitTitle,
+    QuitCount,
+    QuitUnknown,
+    QuitExplanation,
+    QuitCancel,
+    QuitConfirm,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -246,6 +252,12 @@ impl Message {
             Self::ServerLostNotice => "serverLostNotice",
             Self::ServerRestoredNotice => "serverRestoredNotice",
             Self::ExportGeneratedImage => "exportGeneratedImage",
+            Self::QuitTitle => "quitTitle",
+            Self::QuitCount => "quitCount",
+            Self::QuitUnknown => "quitUnknown",
+            Self::QuitExplanation => "quitExplanation",
+            Self::QuitCancel => "quitCancel",
+            Self::QuitConfirm => "quitConfirm",
         }
     }
 }

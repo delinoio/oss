@@ -118,5 +118,11 @@
   "scheduleWorkerOfflineNotice": "Worker 오프라인으로 일정 건너뜀",
   "serverLostNotice": "서버 연결 끊김",
   "serverRestoredNotice": "서버 연결 복구",
-  "exportGeneratedImage": "원본 이미지 내보내기"
+  "exportGeneratedImage": "원본 이미지 내보내기",
+  "quitTitle": "DeliDev를 종료할까요?",
+  "quitCount": "아직 완료되지 않은 세션이 {{count}}개 있습니다.",
+  "quitUnknown": "일부 연결의 세션 상태를 확인할 수 없습니다.",
+  "quitExplanation": "앱이 시작한 로컬 Worker의 작업은 중단될 수 있습니다. 독립 실행 중인 Worker와 원격 Worker는 계속 실행됩니다.",
+  "quitCancel": "취소",
+  "quitConfirm": "종료"
 }

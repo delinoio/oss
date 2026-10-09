@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.quit-confirmation { width:480px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:24px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--text); overflow:auto; }
+.quit-confirmation::backdrop { background:rgb(0 0 0 / 20%); }
+.quit-confirmation h2 { font-size:20px; }
+.quit-confirmation p { overflow-wrap:anywhere; }
+.quit-confirmation footer { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:12px; margin-top:24px; }
+.quit-confirmation button { min-height:40px; }

@@ -123,6 +123,12 @@ enum WidgetMessage: String {
     case serverLostNotice
     case serverRestoredNotice
     case exportGeneratedImage
+    case quitTitle
+    case quitCount
+    case quitUnknown
+    case quitExplanation
+    case quitCancel
+    case quitConfirm
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -246,6 +252,12 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "serverLostNotice": "Server connection lost",
         "serverRestoredNotice": "Server connection restored",
         "exportGeneratedImage": "Export original image",
+        "quitTitle": "Quit DeliDev?",
+        "quitCount": "{{count}} sessions have not finished.",
+        "quitUnknown": "Session status could not be verified for some connections.",
+        "quitExplanation": "Quitting can interrupt work on local Workers started by this app. Independently running and remote Workers keep running.",
+        "quitCancel": "Cancel",
+        "quitConfirm": "Quit",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -368,6 +380,12 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "serverLostNotice": "서버 연결 끊김",
         "serverRestoredNotice": "서버 연결 복구",
         "exportGeneratedImage": "원본 이미지 내보내기",
+        "quitTitle": "DeliDev를 종료할까요?",
+        "quitCount": "아직 완료되지 않은 세션이 {{count}}개 있습니다.",
+        "quitUnknown": "일부 연결의 세션 상태를 확인할 수 없습니다.",
+        "quitExplanation": "앱이 시작한 로컬 Worker의 작업은 중단될 수 있습니다. 독립 실행 중인 Worker와 원격 Worker는 계속 실행됩니다.",
+        "quitCancel": "취소",
+        "quitConfirm": "종료",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

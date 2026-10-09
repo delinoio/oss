@@ -4,6 +4,7 @@
   "permissions": [
     "saved-use",
     "tray-presentation",
+    "quit-confirmation",
     "notification-presentation",
     "core:event:allow-listen",
     "core:event:allow-unlisten",

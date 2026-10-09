@@ -1,0 +1,10 @@
+{
+  "quit-confirmation.title": "Quit DeliDev?",
+  "quit-confirmation.count": "{{count}} sessions have not finished.",
+  "quit-confirmation.unknown": "Session status could not be verified for some connections.",
+  "quit-confirmation.explanation": "Quitting can interrupt work on local Workers started by this app. Independently running and remote Workers keep running.",
+  "quit-confirmation.cancel": "Cancel",
+  "quit-confirmation.confirm": "Quit",
+  "quit-confirmation.checking": "Checking session status…",
+  "quit-confirmation.unavailable": "The original Quit attempt could not be verified. Cancel or wait for the native warning."
+}
