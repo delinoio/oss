@@ -14,6 +14,7 @@ type FileChangeKind string
 const (
 	CommandTool         ToolKind = "command"
 	PatchTool           ToolKind = "patch"
+	ImageViewTool       ToolKind = "image-view"
 	OpenCodeReadTool    ToolKind = "opencode-read"
 	OpenCodeShellTool   ToolKind = "opencode-shell"
 	OpenCodeTodoTool    ToolKind = "opencode-todo"
@@ -70,14 +71,15 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
-	Builtin *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
-	Todo    *OpenCodeTodoObservation    `json:"todo,omitempty"`
-	Kind    ToolKind                    `json:"kind"`
-	Status  ToolStatus                  `json:"status"`
-	Command *CommandObservation         `json:"command,omitempty"`
-	Changes []FileChangeObservation     `json:"changes"`
-	Read    *OpenCodeReadObservation    `json:"read,omitempty"`
-	Shell   *OpenCodeShellObservation   `json:"shell,omitempty"`
+	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
+	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
+	Todo      *OpenCodeTodoObservation    `json:"todo,omitempty"`
+	Kind      ToolKind                    `json:"kind"`
+	Status    ToolStatus                  `json:"status"`
+	Command   *CommandObservation         `json:"command,omitempty"`
+	Changes   []FileChangeObservation     `json:"changes"`
+	Read      *OpenCodeReadObservation    `json:"read,omitempty"`
+	Shell     *OpenCodeShellObservation   `json:"shell,omitempty"`
 }
 
 type ToolInputObservation struct {
@@ -171,6 +173,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == ImageViewTool {
+		if s.ImageView == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
+			return invalidTool()
+		}
+		return s.ImageView.Validate()
+	}
+	if s.ImageView != nil {
+		return invalidTool()
+	}
 	if s.Kind == OpenCodeReadTool {
 		if s.Command != nil || s.Changes != nil || s.Read == nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
 			return invalidTool()

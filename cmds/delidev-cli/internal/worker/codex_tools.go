@@ -2,15 +2,18 @@ package worker
 
 import (
 	"context"
+	"runtime"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 type codexToolPublication struct {
 	ID        domain.ID
 	Kind      domain.ToolKind
 	Completed bool
+	ImageView *domain.ImageViewObservation
 }
 
 // Called under the event publisher lock. Only identities remain in this map;
@@ -27,7 +30,25 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 		if event.Tool == nil || event.Tool.ID != event.ItemID {
 			return publicationUncertain()
 		}
-		snapshot, err := codexToolSnapshot(*event.Tool)
+		var snapshot domain.ToolSnapshot
+		var err error
+		if event.Tool.Kind == codex.ImageViewTool {
+			reference := domain.NewID()
+			if known && retained.ImageView != nil {
+				reference = retained.ImageView.ReferenceID
+			}
+			var observed domain.ImageViewObservation
+			observed, err = workspace.ObserveImageViewLocation(c.publisher.input, runtime.GOOS, event.Tool.ImagePath, reference)
+			snapshot = domain.ToolSnapshot{Kind: domain.ImageViewTool, Status: domain.ToolRunning, ImageView: &observed}
+			if event.Kind == codex.ToolCompletedEvent {
+				snapshot.Status = domain.ToolCompleted
+			}
+			if event.Tool.Command != nil || event.Tool.Changes != nil || event.Tool.ID != event.ItemID || event.Tool.Status != map[domain.ToolStatus]codex.ToolStatus{domain.ToolRunning: codex.ToolRunning, domain.ToolCompleted: codex.ToolCompleted}[snapshot.Status] {
+				return publicationUncertain()
+			}
+		} else {
+			snapshot, err = codexToolSnapshot(*event.Tool)
+		}
 		if err != nil {
 			return err
 		}
@@ -36,11 +57,14 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			if c.itemKnown(event.ItemID) || c.itemLimitReached() {
 				return publicationUncertain()
 			}
-			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind}
+			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView}
+			if snapshot.ImageView != nil {
+				retained.ID = snapshot.ImageView.ReferenceID
+			}
 			update.ID = retained.ID
 			kind = domain.ExecutionToolStarted
 		} else {
-			if !known || retained.Completed || retained.Kind != snapshot.Kind {
+			if !known || retained.Completed || retained.Kind != snapshot.Kind || snapshot.Kind == domain.ImageViewTool && (retained.ImageView == nil || snapshot.ImageView == nil || *retained.ImageView != *snapshot.ImageView) {
 				return publicationUncertain()
 			}
 			retained.Completed = true

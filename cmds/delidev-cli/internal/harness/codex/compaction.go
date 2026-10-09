@@ -421,7 +421,7 @@ func (c *Client) compactionTurnsLocked(ctx context.Context) ([]json.RawMessage, 
 				items[item.ID] = true
 				switch item.Type {
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
-				case "commandExecution", "fileChange":
+				case "commandExecution", "fileChange", "imageView":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
 					}

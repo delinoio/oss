@@ -119,5 +119,8 @@
   "session.toolCalls": "Tool calls",
   "session.reachedTools": "This list contains reached records only. Use the conversation history controls to reach more records.",
   "session.userMessage": "User message",
-  "session.submittedUserMessage": "Submitted user message"
+  "session.submittedUserMessage": "Submitted user message",
+  "session.imageView": "Image view",
+  "session.imageViewUnsupported": "This image-view observation is unavailable.",
+  "session.imageViewPreviewUnavailable": "Preview unavailable. This native observation does not retain image bytes or grant access to the current file."
 }
