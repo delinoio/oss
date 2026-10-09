@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
-  SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
+  ErrorDetailSchema, FailureCode, SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
   RequestDiagnosticSource as Source, RequestDiagnosticState as State, RequestDiagnosticOperation as Operation,
   ListRequestDiagnosticsResponseSchema,
 } from "@delinoio/delidev-api-client";
@@ -126,4 +126,18 @@ it("accepts Fast only from original Codex native diagnostic evidence", () => {
  expect(validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[row]}),f.session,"").records[0].effectiveServiceTier).toBe("fast");
  for (const harness of ["claude-code","opencode","grok-build"]) expect(()=>validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[create(RequestDiagnosticSchema,{...row,harness})]}),f.session,"")).toThrow("unavailable");
  expect(()=>validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[create(RequestDiagnosticSchema,{...f.row,requestedServiceTier:"fast",effectiveServiceTier:"fast"})]}),f.session,"")).toThrow("unavailable");
+});
+
+it.each(["expired", "stalled", "transient"])("retries %s diagnostic boundaries through the appropriate original read", async failure => {
+ const f = fixture(); render(<f.View />); await screen.findByText("resp_original");
+ if (failure === "expired") f.read.mockRejectedValueOnce(new ConnectError("Original cursor expired", Code.OutOfRange, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: FailureCode.CursorExpired }) }]));
+ else if (failure === "stalled") f.read.mockResolvedValueOnce({ records: [f.row], nextPageToken: "opaque-page" });
+ else f.read.mockRejectedValueOnce(new ConnectError("Original continuation unavailable", Code.Unavailable));
+ fireEvent.click(screen.getByRole("button", { name: "Load more Model request diagnostics" }));
+ const retry = await screen.findByRole("button", { name: "Retry read" });
+ expect(f.read).toHaveBeenCalledTimes(2); f.read.mockResolvedValueOnce({ records: [f.row], nextPageToken: "" }); fireEvent.click(retry);
+ await waitFor(() => expect(f.read).toHaveBeenCalledTimes(3));
+ expect(f.read).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: failure === "transient" ? "opaque-page" : "", sessionId: f.session }), expect.anything());
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Retry read" })).toBeNull());
+ expect(screen.getByText("resp_original")).toBeTruthy(); expect(screen.getByLabelText("Conversation draft")).toHaveProperty("value", "Retained draft");
 });

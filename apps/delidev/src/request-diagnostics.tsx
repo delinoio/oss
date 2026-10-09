@@ -7,7 +7,7 @@ import { ownedMessage, useProductMessage, copy, useLocale  } from "./localizatio
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
-  subscriptionServiceFromWire, subscriptionServiceLabel, subscriptionServiceHarnesses, isEntityId, RequestDiagnosticSource as Source, RequestDiagnosticState as State,
+  FailureCode, subscriptionServiceFromWire, subscriptionServiceLabel, subscriptionServiceHarnesses, isEntityId, RequestDiagnosticSource as Source, RequestDiagnosticState as State,
   RequestDiagnosticOperation as Operation, SessionQuery, SystemCapability, SystemQuery,
   type ListRequestDiagnosticsResponse, type RequestDiagnostic,
 } from "@delinoio/delidev-api-client";
@@ -115,7 +115,7 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error} /><Failure failure={result.error?.failure} />
     {status.isPending ? <p role="status">{copy("request-diagnostics.checkingDiagnosticSupport_65aa48")}</p> : status.data && !supported ? <p>{copy("request-diagnostics.requestDiagnosticsAreUnavailableOnThis_cb5bc2")}</p> : null}
     {status.error ? <button onClick={() => void status.refetch()}>{copy("request-diagnostics.retryServerCapabilities_18a515")}</button> : null}
-    {supported && result.error ? <button disabled={Boolean(result.loading)} onClick={result.retry}>{copy("session-name.retryRead")}</button> : null}
+    {supported && result.error ? <button disabled={Boolean(result.loading)} onClick={result.error.stalled || result.error.failure.code === FailureCode.CursorExpired ? result.reload : result.retry}>{copy("session-name.retryRead")}</button> : null}
     {supported && !result.loaded && result.loading ? <p role="status">{copy("request-diagnostics.loadingRequestObservations_ac40d6")}</p> : null}
     {result.error && result.loaded ? <p role="alert">{copy("request-diagnostics.refreshFailedTheDisplayedObservationsMay_c02e74")}</p> : null}
     <ScrollPayloadWindow query={result} root={root} active={supported} identity={value => value.id} revision={value => value.revision}>{payload => payload.map(value => <DiagnosticRow key={value.id} value={value} />)}</ScrollPayloadWindow>
