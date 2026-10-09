@@ -336,3 +336,82 @@ func TestManualPriceWinsAgainstInFlightAutomaticRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRetiredProviderPricesRemainReadOnlyAcrossRefresh(t *testing.T) {
+	root := t.TempDir()
+	if e := os.Chmod(root, 0700); e != nil {
+		t.Fatal(e)
+	}
+	db, e := store.Open(context.Background(), root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	s := &Service{Store: db}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	var provider store.Record
+	var original domain.ID
+	input, output := "1", "5"
+	basis := domain.TokenPricing{Currency: "USD", Source: tokenprices.URL, AsOf: "2026-10-09", InputMode: domain.UniformInputPrice, InputPerMillion: &input, OutputPerMillion: &output}
+	snapshot := tokenprices.Snapshot{State: tokenprices.Current, Checked: time.Now(), Catalog: tokenprices.Catalog{Digest: strings.Repeat("a", 64), References: map[string]tokenprices.Reference{"openai\x00Exact/Retired": {Provider: "openai", Model: "Exact/Retired", Basis: &basis}}}}
+	_, e = db.Mutate(ctx, domain.NewID(), "fixture.retired-prices", nil, func(tx *store.Tx) (any, error) {
+		rows, e := tx.List(store.Filter{Kind: domain.ProviderKind, Limit: 100})
+		if e != nil {
+			return nil, e
+		}
+		for _, row := range rows {
+			p, e := store.Decode[domain.Provider](row)
+			if e != nil {
+				return nil, e
+			}
+			if p.PresetID != nil && *p.PresetID == domain.PresetOpenAI {
+				provider = row
+				break
+			}
+		}
+		if provider.ID == "" {
+			t.Fatal("missing original preset provider")
+		}
+		m := domain.ModelIdentity{ProviderID: provider.ID, NativeID: "Exact/Retired"}
+		if _, e := tx.SetPricingPolicy(m, domain.AutomaticPricing, 0); e != nil {
+			return nil, e
+		}
+		if e := s.applyReference(tx, m, snapshot); e != nil {
+			return nil, e
+		}
+		price, e := tx.RetainedActivePricing(m.Key())
+		if e != nil {
+			return nil, e
+		}
+		original = price.ID
+		return nil, tx.Delete(domain.ProviderKind, provider.ID, provider.Revision)
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	m := domain.ModelIdentity{ProviderID: provider.ID, NativeID: "Exact/Retired"}
+	input = "2"
+	snapshot.Catalog.Digest = strings.Repeat("b", 64)
+	for _, matched := range []bool{true, false} {
+		if !matched {
+			snapshot.Catalog.References = nil
+			snapshot.Catalog.Digest = strings.Repeat("c", 64)
+		}
+		if e := s.publishTokenPrices(ctx, snapshot); e != nil {
+			t.Fatal(e)
+		}
+		if e := db.Read(ctx, func(tx *store.Tx) error {
+			price, e := tx.RetainedActivePricing(m.Key())
+			if e != nil || price == nil || price.ID != original || price.Revision != 1 {
+				t.Fatal("refresh changed retired source history", price, e)
+			}
+			namespace, revision, e := priceNamespace(tx, m)
+			if e != nil || namespace != "openai" || revision != 0 {
+				t.Fatal("lost read-only retired display metadata", namespace, revision, e)
+			}
+			return e
+		}); e != nil {
+			t.Fatal(e)
+		}
+	}
+}

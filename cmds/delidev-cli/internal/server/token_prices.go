@@ -131,6 +131,16 @@ func (s *Service) applyReference(tx *store.Tx, m domain.ModelIdentity, snapshot 
 	if policy.Mode == domain.ManualPricing {
 		return nil
 	}
+	if m.ProviderID != "" {
+		if _, e := tx.Get(domain.ProviderKind, m.ProviderID); e != nil {
+			if domain.SafeError(e).Code == domain.NotFound {
+				// Retired provider metadata remains display-only. Neither a
+				// matching catalog nor no-match can rewrite its active history.
+				return nil
+			}
+			return e
+		}
+	}
 	if snapshot.Checked.IsZero() {
 		// Missing or failed cache admission is not a successful no-match.
 		// Retain the durable basis until a checked catalog supersedes it.
