@@ -1060,6 +1060,11 @@ subscription observation JSON carries only the closed original failed-turn
 marker and session/execution/native identities; it cannot carry native error text
 or add a native action. Follow the subscription contract for actor/generation,
 original lease and once-only admission. No migration is added.
+
+## Waiting queue order — issue #2142
+
+System capability `WAITING_QUEUE_ORDER_V1 = 75` owns the owner/client `MoveQueuedInput` and `ListWaitingQueue` declarations. Preserve all older numbers, especially System 53 managed Fork and System 54 OpenCode Go; no Worker capability or database migration is added. Movement fields are mutation 1, session 2, optional expected queue generation 3, before-input ID 4 and before-input revision 5. Presence of generation is required; zero is valid. Response fields are SessionChange 1 and current queue generation 2. Waiting list request fields are session 1, page size 2 and opaque page token 3; response fields are resources 1, next token 2, current generation 3 and exact waiting count 4. Existing Queue JSON and legacy ListQueue remain compatible. Allocation declarations alone grant no execution/native authority.
+
 ## Paid-credit observations — issue #2124
 
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.

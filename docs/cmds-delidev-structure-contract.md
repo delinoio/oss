@@ -484,3 +484,7 @@ Issue #2123 owns System 77 (`AUTOMATIC_RESET_CREDIT_CONSENT_V1`), Worker 52
 PR. These allocations add no migration or native action. Preserve other owners
 and require original active Execute/native lease proof under the subscription
 contract before automatic spending.
+
+## Waiting queue order allocation closure
+
+Issue #2142 records System 75 `WAITING_QUEUE_ORDER_V1`, complete owner/client movement and waiting-list declarations, generated bindings, private ordering metadata and Fork image snapshots in its owning feature PR. Preserve existing allocations and legacy queue/assignment shapes. No Worker allocation or SQLite migration is required. Sessions, storage, protocol and desktop contracts jointly own this feature; declarations and fixtures grant no native/account/platform acceptance.

@@ -1171,3 +1171,9 @@ under recovery quarantine; retained references grant only independent cleanup.
 Portable transfer removes the entire subscription state. Generic configuration
 writes must preserve server-owned fields, including omitted legacy consent and
 episode fields; old clients cannot erase or manufacture spending authority.
+
+## Private waiting order and Fork image snapshots — issue #2142
+
+`session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
+
+New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.
