@@ -61,7 +61,6 @@
 .settings-skeleton-row { padding: 16px; border-bottom: 1px solid var(--border); }
 .settings-skeleton-row span { display: block; width: min(240px, 75%); height: 12px; margin-block: 8px; border-radius: 3px; background: var(--surface-hover); }
 .settings-skeleton-row span + span { width: min(360px, 90%); }
-.settings-content[aria-label] .notification-settings > section, .settings-content[aria-label] .notification-preferences { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .notification-status-row, .notification-saved-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--border); }
 .notification-status-row p { margin: 0; }
 .notification-saved-row dt { flex: 1; }

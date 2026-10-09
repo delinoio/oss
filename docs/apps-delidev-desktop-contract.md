@@ -615,6 +615,15 @@ body width of 600px or less. Decorative outline SVGs are inaccessible; the
 approved bitmap remains reference material. Rail/context-pane, compact drawer,
 sibling categories and visit ownership stay with the shared host.
 
+Issue #1968 distinguishes the saved summary from its editor. Render the saved
+preferences as a heading-associated semantic section, retaining its search
+targets, refs and focus ownership. Native status, saved rows and Inbox guidance
+share the 1040px column and action trailing edge. The actual task-dialog editor
+remains a form capped at 720px. The category header owns its single bottom
+divider; the native section owns the next divider. Do not add shared top borders
+or top-padding bands to either section. Keep 24px section gaps, 16px row padding
+and actions stacked at an available Notifications width of 600px or less.
+
 | Position | Exact copy |
 | --- | --- |
 | Title | Notifications |

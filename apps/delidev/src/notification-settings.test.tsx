@@ -30,7 +30,10 @@ it.each(["X", "Escape"] as const)("keeps the notification summary mounted and re
   const value = fixture();
   render(<SettingsTasks><div className="settings-content"><h1>Notifications category</h1><SettingsTaskBackground>{value.view()}</SettingsTaskBackground></div></SettingsTasks>);
   const opener = await screen.findByRole("button", { name: "Edit notification preferences" });
-  const summary = opener.closest("form")!;
+  const summary = opener.closest("section.notification-preferences")!;
+  expect(summary.tagName).toBe("SECTION");
+  expect(summary.getAttribute("aria-labelledby")).toBe(summary.querySelector("h2")!.id);
+  expect(summary.querySelector("form")).toBeNull();
   fireEvent.click(opener);
   expect(summary.isConnected).toBe(true); expect(opener.isConnected).toBe(true);
   const dialog = screen.getByRole("dialog");

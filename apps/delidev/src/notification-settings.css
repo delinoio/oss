@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .notification-settings { width: 100%; max-width: 1040px; min-width: 0; margin-inline: 0; container: notification-body / inline-size; color: var(--text); font-size: 14px; }
+.notification-settings > :is(.notification-os, .notification-preferences, .notification-inbox-guidance) { width: 100%; max-width: 1040px; min-width: 0; box-sizing: border-box; }
 .notification-intro h1 { font-size: 26px; line-height: 32px; font-weight: 600; }
 .notification-intro { margin-bottom: 24px; }
 .notification-settings p { margin: 0 0 8px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
