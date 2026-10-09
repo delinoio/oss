@@ -50,3 +50,14 @@ it("stops animation for unavailable expired or replaced original Worker presence
  expect(startupWorkerCurrent(session,machine(new Date(now).toISOString(),newRequestId()),now,true)).toBe(false);
  expect(startupWorkerCurrent(session,machine(new Date(now).toISOString()),now,false)).toBe(false);
 });
+
+it("does not animate an earlier descriptive stage after authoritative startup advances",()=>{
+ const queued=startupOperations(resource({workspace}),SessionProgressPhase.Queued)!;
+ expect(queued.workspace.some(row=>row.state === "running")).toBe(false);
+ expect(queued.native.filter(row=>row.state === "running").map(row=>row.operation)).toEqual([0]);
+ const early={...native,last_sequence:1,steps:[{native_phase:4,state:1,sequence:1},{native_phase:5},{native_phase:6}]};
+ const response=startupOperations(resource({workspace,native:early}),SessionProgressPhase.Response)!;
+ expect(response.workspace.some(row=>row.state === "running")).toBe(false);
+ expect(response.native.filter(row=>row.state === "running").map(row=>row.operation)).toEqual([6]);
+ expect(response.workspace.find(row=>row.operation===3)?.state).toBe("pending");
+});

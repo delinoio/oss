@@ -37,11 +37,14 @@ export function startupOperations(resource: Resource | undefined, phase: Session
    return { operation, state: completed ? "completed" : current ? "running" : "pending", ...(current?.repository_id ? { ordinal:current.repository_ordinal,count:current.repository_count } : {}) };
   });
  }
+ const workspaceRows = aggregate(workspace,"workspace_operation");
+ for (const row of workspaceRows) if (phase !== SessionProgressPhase.Preparing && row.state === "running") row.state = "pending";
  const nativeRows = native.length ? aggregate(native,"native_phase") : [1,2,3,4,5,6].map(operation => ({ operation, state: "pending" as StartupOperationRow["state"] }));
+ for (const row of nativeRows) if ((phase === SessionProgressPhase.Preparing || phase === SessionProgressPhase.Queued || phase === SessionProgressPhase.Response && row.operation < 5) && row.state === "running") row.state = "pending";
  // The original accepted input/transcript projection alone proves input delivery.
  for (const row of nativeRows) if (row.operation >= 5) row.state = row.operation === 5 && phase === SessionProgressPhase.Response ? "completed" : row.operation === 6 && phase === SessionProgressPhase.Response ? "running" : row.operation === 5 && phase === SessionProgressPhase.Starting && native.some(s => s.native_phase === 5 && s.state === 1) ? "running" : "pending";
  nativeRows.unshift({ operation:0, state:phase === SessionProgressPhase.Queued ? "running" : phase === SessionProgressPhase.Starting || phase === SessionProgressPhase.Response ? "completed" : "pending" });
- return { workspace:aggregate(workspace,"workspace_operation"),native:nativeRows };
+ return { workspace:workspaceRows,native:nativeRows };
 }
 
 /** Retained failure context remains descriptive and never animates or offers actions. */
