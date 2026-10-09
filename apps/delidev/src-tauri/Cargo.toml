@@ -36,13 +36,13 @@ tokio = { version = "=1.49.0", features = ["sync", "time", "rt", "macros"], opti
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "=0.6.4", optional = true }
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSView", "NSResponder"], optional = true }
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSGeometry"], optional = true }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSView", "NSResponder", "NSApplication", "NSDockTile"], optional = true }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSGeometry", "NSString"], optional = true }
 mac-usernotifications = { version = "=0.3.1", default-features = false, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_Security", "Win32_System_Threading"] }
-windows = { version = "=0.62.2", features = ["Data_Xml_Dom", "UI_Notifications", "Foundation", "Win32_Foundation", "Win32_UI_WindowsAndMessaging"], optional = true }
+windows = { version = "=0.62.2", features = ["Data_Xml_Dom", "UI_Notifications", "Foundation", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Com"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"], optional = true }

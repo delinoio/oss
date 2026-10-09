@@ -122,6 +122,7 @@ pub enum Message {
     ServerLostNotice,
     ServerRestoredNotice,
     ExportGeneratedImage,
+    InboxBadgeUnread,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -246,6 +247,7 @@ impl Message {
             Self::ServerLostNotice => "serverLostNotice",
             Self::ServerRestoredNotice => "serverRestoredNotice",
             Self::ExportGeneratedImage => "exportGeneratedImage",
+            Self::InboxBadgeUnread => "inboxBadgeUnread",
         }
     }
 }

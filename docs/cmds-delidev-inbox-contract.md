@@ -83,3 +83,23 @@ Update this contract, command/session/protocol contracts, project index, validat
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
+
+## Unread icon aggregate (issue #2143)
+
+`InboxService.GetUnreadInboxCount` is an authenticated owner/paired-client-only
+read. System capability 80 advertises the complete operation. Go rechecks the
+original principal in the read transaction and counts every retained Inbox
+entity whose server-owned read state is unread. This includes interaction,
+execution-terminal, subscription-recovery and operational sources. It returns
+only the exact uint64 count and UTC observation time. It performs no joins,
+source-content reads, pagination, preference filtering or notification claims.
+Opening Inbox, inspecting sources and observing this count never mark entries
+read. Accepted explicit read-state changes invalidate the aggregate query.
+There is no database migration or execution/recovery authority.
+
+The desktop connection owns a background Connect Query read, independently of
+Inbox visibility and OS notification permission. The selected native generation
+gets a fresh uncached read, followed by ten-second background refreshes. An
+unsupported capability, Unimplemented RPC, disconnected or revoked authority,
+invalid result, failed read or initial replacement clears presentation. It must
+not substitute notification candidates or partial Inbox pages.

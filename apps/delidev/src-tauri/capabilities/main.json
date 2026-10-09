@@ -22,7 +22,8 @@
     "repository-folder",
     "worker-network",
     "credential-access",
-    "generated-image-export"
+    "generated-image-export",
+    "inbox-badge"
   ],
   "webviews": [
     "main",

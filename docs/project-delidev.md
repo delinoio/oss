@@ -403,3 +403,11 @@ ownership. System 62 / Worker 36 activate no filesystem rewind or migration.
 Original atomic server acceptance/terminal receipts own immutable UTC timing in Session progress and primary-user Message metadata. Bounded desktop projections estimate only the active interval and freeze terminal or unconfirmed display; original inherited Fork attribution remains separate from new child input. Native assignments/checkpoints/digests and older Worker shapes omit display timing. Timing adds no outcome, recovery, cleanup, permission or continuation authority; no allocation or migration. Follow the sessions, storage, protocol, Fork and desktop contracts.
 
 - Issue #2018 native generated images follow the image-input and desktop contracts. System 61/Worker 35 own closed original managed OpenAI observations and authenticated Worker output references. Durable original output intents, independent Fork retention and explicit image-only native export preserve separate cleanup and user-copy ownership; no generation bridge, entitlement inference or migration is introduced.
+
+Unread desktop icon presentation (#2143) joins the Inbox's authenticated exact
+read-only aggregate with a connection-owned background query and one
+process-owned native selected-window badge controller. The Inbox and desktop
+contracts define count, original authority, freshness, fallback locations and
+Quit ownership. System capability 80 and its complete RPC declarations belong
+to this feature; no storage migration or notification authority is added.
+Installed OS/shell/switcher acceptance remains separate from implementation.

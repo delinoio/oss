@@ -118,5 +118,6 @@
   "scheduleWorkerOfflineNotice": "Schedule skipped: Worker offline",
   "serverLostNotice": "Server connection lost",
   "serverRestoredNotice": "Server connection restored",
-  "exportGeneratedImage": "Export original image"
+  "exportGeneratedImage": "Export original image",
+  "inboxBadgeUnread": "DeliDev: {{count}} unread Inbox items"
 }

@@ -20,7 +20,8 @@
     "browser-presentation",
     "repository-folder",
     "worker-network",
-    "generated-image-export"
+    "generated-image-export",
+    "inbox-badge"
   ],
   "webviews": [
     "server-*"

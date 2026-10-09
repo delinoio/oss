@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -266,6 +267,31 @@ func (s *Service) SetInboxReadState(ctx context.Context, req *connect.Request[pb
 	}
 	s.logger.InfoContext(ctx, "inbox_read_state_recorded", "correlation_id", correlation, "inbox_id", receipt.ID, "request_id", result.RequestID, "requested_state", state, "replayed", result.Replayed)
 	response := connect.NewResponse(&pb.SetInboxReadStateResponse{View: view, RequestId: string(result.RequestID), Replayed: result.Replayed})
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}
+
+func (s *Service) GetUnreadInboxCount(ctx context.Context, req *connect.Request[pb.GetUnreadInboxCountRequest]) (*connect.Response[pb.GetUnreadInboxCountResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	if _, err := inboxActor(ctx); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var count uint64
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		var err error
+		count, err = tx.UnreadInboxCount()
+		return err
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "unread_inbox_count_failed", "correlation_id", correlation, "code", domain.SafeError(err).Code)
+		return nil, rpc.Error(err, correlation)
+	}
+	response := connect.NewResponse(&pb.GetUnreadInboxCountResponse{UnreadCount: count, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano)})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }

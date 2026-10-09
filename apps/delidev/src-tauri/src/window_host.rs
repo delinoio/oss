@@ -118,6 +118,9 @@ pub fn create(
             .on_page_load(|window, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Started {
                     window
+                        .state::<Arc<super::badge_host::BadgeHost>>()
+                        .retire(window.app_handle(), window.label());
+                    window
                         .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
                         .document_changed(window.app_handle(), window.label());
                 }

@@ -123,6 +123,7 @@ enum WidgetMessage: String {
     case serverLostNotice
     case serverRestoredNotice
     case exportGeneratedImage
+    case inboxBadgeUnread
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -246,6 +247,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "serverLostNotice": "Server connection lost",
         "serverRestoredNotice": "Server connection restored",
         "exportGeneratedImage": "Export original image",
+        "inboxBadgeUnread": "DeliDev: {{count}} unread Inbox items",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -368,6 +370,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "serverLostNotice": "서버 연결 끊김",
         "serverRestoredNotice": "서버 연결 복구",
         "exportGeneratedImage": "원본 이미지 내보내기",
+        "inboxBadgeUnread": "DeliDev: 읽지 않은 받은 편지함 항목 {{count}}개",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

@@ -1051,3 +1051,14 @@ ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKin
 ## Server-owned turn timing JSON (issue #2052)
 
 Authenticated Session progress and primary-user Message resources may include optional `turn_timing` with UTC `accepted_at` and optional `terminal_at`. Go owns capture in the original acceptance/terminal transactions and exact receipt replay. This additive resource metadata changes no protobuf declaration, RPC, capability or allocation. Closed Worker execution event/update documents reject injected timing. Native assignment, continuation/Fork/compaction and checkpoint/digest projections retain their prior closed shapes without timing. Historical omission is unavailable display evidence, never a synthesized zero or changed native outcome.
+
+## Unread Inbox count allocation (issue #2143)
+
+The complete feature owns System `UNREAD_INBOX_COUNT_V1 = 80`,
+`InboxService.GetUnreadInboxCount`, the empty request and response fields
+`unread_count = 1` (uint64) and `observed_at = 2` (UTC timestamp string).
+`protos/delidev/allocations.json` records these closed declarations and the RPC.
+Preserve all prior numbers; this count-only owner/client read grants no
+notification, native, execution or migration authority. Generate Go and
+TypeScript bindings and legacy facades from the reconciled schemas. Older
+servers remain explicitly unavailable without an aggregate fallback.

@@ -7,3 +7,8 @@ commands.allow = ["begin_tray", "publish_tray", "read_tray_action", "acknowledge
 identifier = "notification-presentation"
 description = "Inspect native notification readiness and present bounded notices for the calling trusted window; no product RPCs, custom content or target selection."
 commands.allow = ["begin_notifications", "end_notifications", "notification_permission", "request_notification_permission", "present_notification"]
+
+[[permission]]
+identifier = "inbox-badge"
+description = "Publish bounded unread count metadata for the original selected trusted product window. No RPC, content, permissions or execution authority."
+commands.allow = ["begin_inbox_badge", "read_inbox_badge_selection", "publish_inbox_badge"]

@@ -10201,6 +10201,28 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
       "number": 35
+    },
+    {
+      "issue": 2143,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1",
+      "number": 80
+    },
+    {
+      "issue": 2143,
+      "kind": "message",
+      "declaration": "GetUnreadInboxCountResponse",
+      "member": "unread_count",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2143,
+      "kind": "message",
+      "declaration": "GetUnreadInboxCountResponse",
+      "member": "observed_at",
+      "number": 2
     }
   ],
   "rpcReservations": [
@@ -10336,6 +10358,15 @@
       "method": "RevertSession",
       "input": "RevertSessionRequest",
       "output": "RevertSessionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2143,
+      "service": "InboxService",
+      "method": "GetUnreadInboxCount",
+      "input": "GetUnreadInboxCountRequest",
+      "output": "GetUnreadInboxCountResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

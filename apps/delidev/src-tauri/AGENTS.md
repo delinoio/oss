@@ -156,3 +156,12 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Local startup ownership and unclassified legacy conflicts use the existing Blocked supervision status/cadence and retain safe explicit inspection/retry guidance. Preserve the original Ensure and lifecycle policy. Decode only closed private error classifications, preserving pending-null behavior, package/protocol checks and unrelated native Busy semantics; never expose raw sidecar messages or private paths. Follow issue #1981 in the desktop contract.
 
 - Issue #2018 original generated-image export uses its dedicated two-command generated-image-export permission in the app manifest and only admitted main/local-*/server-* product webviews. Keep both URL-authorizing commands asynchronous, checksum/bounds and original instance/connection guards, one process-owned pending operation, replay receipts and joined Quit publication. No renderer path, generic save/download/navigation authority or deletion of exported user copies. Test compiled ACL denial for external children, remote origins and tray/auxiliary views; follow the desktop/image-input contracts.
+
+- Unread Inbox icon badges follow the Inbox and desktop contracts (#2143).
+  Keep one process-owned joined BadgeHost, original admitted window/connection
+  authority, native selection generations and publication revisions. Select
+  the most recently focused product window without summing servers. Preserve
+  hidden-window selection, expiry, clear-on-unavailable and normal-Quit join.
+  Receive bounded count/status metadata only; never call RPCs or request
+  notification permission from native badging. Preserve installed icons and
+  disclose OS/shell/switcher limits independently of fixture/build evidence.

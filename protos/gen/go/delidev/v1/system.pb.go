@@ -25,6 +25,7 @@ type SystemCapability int32
 
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                          SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1                SystemCapability = 80
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1                SystemCapability = 53
 	SystemCapability_SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1             SystemCapability = 55
 	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1         SystemCapability = 54
@@ -93,6 +94,7 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
+		80: "SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1",
 		53: "SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1",
 		55: "SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
 		54: "SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
@@ -153,6 +155,7 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
+		"SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1":                80,
 		"SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1":                53,
 		"SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":             55,
 		"SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":         54,
@@ -2974,9 +2977,10 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\x8c\x16\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb9\x16\n" +
 	"\x10SystemCapability\x12!\n" +
 	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12+\n" +
+	"'SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1\x10P\x12+\n" +
 	"'SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1\x105\x12.\n" +
 	"*SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1\x107\x122\n" +
 	".SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1\x106\x120\n" +
