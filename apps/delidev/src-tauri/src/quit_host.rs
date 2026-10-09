@@ -228,8 +228,7 @@ impl QuitHost {
         let code = attempt.code;
         let count = attempt.count.to_string();
         drop(state);
-        if zero {
-            self.admit(&app, &id, code);
+        if zero && self.admit(&app, &id, code, true) {
             return;
         }
         tracing::info!(operation = "desktop_quit_confirmation", phase = "warning");
@@ -283,24 +282,38 @@ impl QuitHost {
                 text(Message::QuitConfirm).into(),
             );
             if approved {
-                self.admit(&app, &id, code);
+                self.admit(&app, &id, code, false);
             } else {
                 self.cancel(&app, &id);
             }
         }
     }
 
-    fn admit(&self, app: &AppHandle<CefRuntime>, id: &str, code: i32) {
+    fn admit(&self, app: &AppHandle<CefRuntime>, id: &str, code: i32, silent: bool) -> bool {
         let mut state = self.attempt.lock().unwrap_or_else(|e| e.into_inner());
-        if !state.as_ref().is_some_and(|a| a.id == id) || self.admitted.swap(true, Ordering::AcqRel)
-        {
-            return;
+        let Some(attempt) = state.as_mut().filter(|a| a.id == id) else {
+            return false;
+        };
+        if self.admitted() {
+            return false;
         }
+        let windows = app.state::<Arc<ProductWindows>>();
+        let mut registry = windows.registry.lock().unwrap_or_else(|e| e.into_inner());
+        if silent && !registry.stop_if_current(&attempt.entries, attempt.local_revision) {
+            attempt.unknown = true;
+            return false;
+        }
+        // Explicit confirmation also fences queued window creation before the
+        // exit event. Silent admission checks and closes this gate atomically.
+        registry.stop();
+        self.admitted.store(true, Ordering::Release);
+        drop(registry);
         *state = None;
         self.changed.notify_all();
         drop(state);
         tracing::info!(operation = "desktop_quit_confirmation", phase = "confirmed");
         app.exit(code);
+        true
     }
 
     fn cancel(&self, app: &AppHandle<CefRuntime>, id: &str) {
@@ -434,7 +447,9 @@ pub async fn decide_quit_attempt(
     drop(state);
     match decision {
         Decision::Cancel => host.cancel(&app, &id),
-        Decision::Confirm => host.admit(&app, &id, code),
+        Decision::Confirm => {
+            host.admit(&app, &id, code, false);
+        }
     };
     Ok(())
 }
