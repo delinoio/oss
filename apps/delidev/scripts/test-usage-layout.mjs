@@ -10,6 +10,36 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 
+
+async function wheelChaining(page, context) {
+ const table=page.locator('.usage-detail > .usage-table'), owner=page.locator('#main');
+ const before=await page.evaluate(()=>({reads:window.__usageFixture.summary, tabs:[...document.querySelectorAll('.usage-tabs [role=tab]')].map(n=>n.getAttribute('aria-selected')),details:[...document.querySelectorAll('.usage-page details')].map(n=>n.open), filters:[...document.querySelectorAll('.usage-sidebar input,.usage-sidebar select')].map(n=>n.value)}));
+ assert.deepEqual(await table.evaluate(n=>[getComputedStyle(n).overscrollBehaviorX,getComputedStyle(n).overscrollBehaviorY]),['contain','auto'],context);
+ const prepare=async()=>{
+  await table.evaluate(n=>{const detail=n.parentElement;detail.style.marginTop='500px';detail.style.marginBottom='1500px';const owner=document.querySelector('#main');owner.scrollTop=n.getBoundingClientRect().top-owner.getBoundingClientRect().top+owner.scrollTop-100;});
+  await page.waitForTimeout(100);
+  const point=await table.evaluate(n=>{const r=n.getBoundingClientRect(),m=document.querySelector('#main').getBoundingClientRect();return{x:Math.max(r.left,m.left)+Math.min(40,r.width/2),y:Math.max(r.top,m.top)+Math.min(40,r.height/2)};});await page.mouse.move(point.x,point.y);
+ };
+ const outward=async delta=>{await prepare();const start=await owner.evaluate(n=>n.scrollTop);assert(await owner.evaluate((n,delta)=>delta<0?n.scrollTop>=150:n.scrollHeight-n.clientHeight-n.scrollTop>=150,delta),`${context}: parent has outward range`);await page.mouse.wheel(0,delta);try {await page.waitForFunction(({start,delta})=>delta<0?document.querySelector('#main').scrollTop<start:document.querySelector('#main').scrollTop>start,{start,delta});} catch(error) {console.log(JSON.stringify({operation:'usage-wheel-failure',context,delta,start,geometry:await table.evaluate(n=>({top:n.scrollTop,height:n.clientHeight,scroll:n.scrollHeight,parent:document.querySelector('#main').scrollTop}))}));throw error;}await page.waitForTimeout(300);};
+ assert(await table.evaluate(n=>n.scrollHeight===n.clientHeight),`${context}: no vertical table overflow`);
+ // Counterfactual verifies the original CSS boundary consumes the same native input.
+ await table.evaluate(n=>n.style.overscrollBehaviorY='contain');await prepare();const blocked=await owner.evaluate(n=>n.scrollTop);await page.mouse.wheel(0,-150);await page.waitForTimeout(150);assert.equal(await owner.evaluate(n=>n.scrollTop),blocked,`${context}: original containment blocks chaining`);await table.evaluate(n=>n.style.overscrollBehaviorY='');
+ await outward(-150);await outward(150);
+ if(await table.evaluate(n=>n.scrollWidth>n.clientWidth)) {
+  await prepare();await page.mouse.wheel(150,0);await page.waitForFunction(()=>document.querySelector('.usage-detail > .usage-table').scrollLeft>0);await page.waitForTimeout(300);
+  await table.evaluate(n=>n.scrollLeft=0);await table.focus();await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>document.querySelector('.usage-detail > .usage-table').scrollLeft>0);assert(await table.evaluate(n=>n===document.activeElement),context);await table.evaluate(n=>n.scrollLeft=0);
+ }
+ await table.evaluate(n=>{n.style.maxHeight='120px';const body=n.querySelector('tbody');for(let i=0;i<5;i++){const row=body.firstElementChild.cloneNode(true);row.dataset.wheelFixture='true';body.append(row);}});
+ assert(await table.evaluate(n=>n.scrollHeight>n.clientHeight),`${context}: fixture-only inner vertical overflow`);
+ for(const delta of [-60,60]) {
+  await prepare();await table.evaluate(n=>n.scrollTop=(n.scrollHeight-n.clientHeight)/2);const start=await table.evaluate(n=>n.scrollTop),parent=await owner.evaluate(n=>n.scrollTop);await page.mouse.wheel(0,delta);await page.waitForFunction(({start,delta})=>{const top=document.querySelector('.usage-detail > .usage-table').scrollTop;return delta<0?top<start:top>start;},{start,delta});await page.waitForTimeout(300);assert.equal(await owner.evaluate(n=>n.scrollTop),parent,`${context}: inner scroll precedes parent`);
+ }
+ // Let the previous native wheel animation settle before freezing the boundary.
+ await page.waitForTimeout(300);await table.evaluate(n=>n.scrollTop=0);await outward(-150);await table.evaluate(n=>n.scrollTop=n.scrollHeight);await outward(150);
+ await table.evaluate(n=>{n.style.maxHeight='';n.querySelectorAll('[data-wheel-fixture]').forEach(row=>row.remove());n.scrollTop=0;n.parentElement.style.marginTop='';n.parentElement.style.marginBottom='';});
+ assert.deepEqual(await page.evaluate(()=>({reads:window.__usageFixture.summary,tabs:[...document.querySelectorAll('.usage-tabs [role=tab]')].map(n=>n.getAttribute('aria-selected')),details:[...document.querySelectorAll('.usage-page details')].map(n=>n.open),filters:[...document.querySelectorAll('.usage-sidebar input,.usage-sidebar select')].map(n=>n.value)})),before,`${context}: wheel input preserves data/filters/tabs/disclosures and reads`);
+}
+
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = { revision: execFileSync("git", ["rev-parse", "HEAD"], { cwd: app, encoding: "utf8" }).trim(), dirty: Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: app, encoding: "utf8" }).trim()) };
 const modulePath = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
@@ -57,6 +87,7 @@ try {
       for (const exact of ["0195c9c0-7b13-7000-8000-000000000001", "9,007,199,254,740,993", "USD", "EUR"]) assert((await main.locator(".usage-row-detail").first().textContent()).includes(exact), context);
       await details.press("Enter");
       assert.equal(await main.locator(".usage-table table thead th").count(),9,context);
+      await wheelChaining(page, context);
     }
     const daily = main.locator(".usage-daily-svg"); await daily.focus(); await page.keyboard.press("End"); await page.keyboard.press("Escape");
     const viewData = main.locator(".usage-chart-panel .usage-data-toggle").first(); await viewData.focus(); await viewData.press("Enter");
