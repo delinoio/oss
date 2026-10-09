@@ -142,8 +142,15 @@ func (s *Service) applyReference(tx *store.Tx, m domain.ModelIdentity, snapshot 
 		}
 	}
 	if snapshot.Checked.IsZero() {
-		// Missing or failed cache admission is not a successful no-match.
-		// Retain the durable basis until a checked catalog supersedes it.
+		// A missing cache retains only an Automatic basis. A Manual basis
+		// cannot remain selected after its policy changes to Automatic.
+		current, e := tx.RetainedActivePricing(m.Key())
+		if e != nil {
+			return e
+		}
+		if current != nil && current.Provenance == nil {
+			return tx.ClearActivePricing(m)
+		}
 		return nil
 	}
 	ref, _, e := priceReference(tx, m, snapshot)

@@ -117,6 +117,28 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 	}); e != nil {
 		t.Fatal(e)
 	}
+	mutate(func(tx *store.Tx) error {
+		if _, e := tx.SetPricingPolicy(m, domain.AutomaticPricing, 1); e != nil {
+			return e
+		}
+		if e := s.applyReference(tx, m, tokenprices.Snapshot{}); e != nil {
+			return e
+		}
+		p, e := tx.RetainedActivePricing(m.Key())
+		if e != nil || p != nil {
+			t.Fatal("cold Automatic retained the Manual basis", p, e)
+		}
+		old, e := tx.Pricing(manual)
+		if e != nil || old.ID != manual {
+			t.Fatal("cold Automatic changed Manual history", old, e)
+		}
+		if _, e := tx.SetPricingPolicy(m, domain.ManualPricing, 2); e != nil {
+			return e
+		}
+		replacement, e := tx.PutPricing(m.Key(), 0, domain.NewID(), basis)
+		manual = replacement.ID
+		return e
+	})
 	snapshot.Catalog.References = map[string]tokenprices.Reference{} // successful no-match
 	mutate(func(tx *store.Tx) error {
 		if e := s.applyReference(tx, m, snapshot); e != nil {
@@ -129,7 +151,7 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 		return e
 	})
 	mutate(func(tx *store.Tx) error {
-		if _, e := tx.SetPricingPolicy(m, domain.AutomaticPricing, 1); e != nil {
+		if _, e := tx.SetPricingPolicy(m, domain.AutomaticPricing, 3); e != nil {
 			return e
 		}
 		if e := s.applyReference(tx, m, snapshot); e != nil {
@@ -155,7 +177,7 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 	s.Store = db
 	if e := db.Read(ctx, func(tx *store.Tx) error {
 		policy, e := tx.PricingPolicy(m)
-		if e != nil || policy.Mode != domain.AutomaticPricing || policy.Revision != 2 {
+		if e != nil || policy.Mode != domain.AutomaticPricing || policy.Revision != 4 {
 			t.Fatal("restart lost unmatched Automatic policy", policy, e)
 		}
 		price, e := tx.RetainedActivePricing(m.Key())
