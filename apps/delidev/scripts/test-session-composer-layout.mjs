@@ -93,6 +93,12 @@ try {
   if (screenshots && width === 1440) await page.screenshot({ path: join(screenshots, `${language}-${theme}-empty.png`) });
   assert.equal(await page.locator(".composer-attachment-help").count(), 0);
   const plus = page.getByRole("button", { name: c("image-input.attach"), exact: true });
+  for (const key of ["Enter", "Space"]) {
+   const picker = page.waitForEvent("filechooser"); await plus.press(key); await (await picker).setFiles([]);
+  }
+  const picker = page.waitForEvent("filechooser"); await plus.click(); await (await picker).setFiles([]);
+  assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "picker activation cannot submit");
+  await input.focus();
   const before = await input.boundingBox();
   await plus.hover();
   const tooltip = page.getByRole("tooltip"); await tooltip.waitFor();
