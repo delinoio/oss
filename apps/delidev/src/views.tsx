@@ -110,8 +110,8 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
 
 interface ActivityFilters { projectId: string; sessionId: string }
 const emptyActivity: ActivityFilters = { projectId: "", sessionId: "" };
-interface ActivityDraft extends ActivityFilters { projectLabel: string; sessionLabel: string }
-const emptyActivityDraft: ActivityDraft = { ...emptyActivity, projectLabel: "", sessionLabel: "" };
+interface ActivitySelection extends ActivityFilters { projectLabel: string; sessionLabel: string }
+const emptyActivitySelection: ActivitySelection = { ...emptyActivity, projectLabel: "", sessionLabel: "" };
 
 // Native selects can clip names. Retain only the two selected labels from the
 // existing change callbacks, with exact IDs and explicit last-selected wording;
@@ -124,17 +124,24 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
   useLocale();
   const content = useRef<HTMLElement>(null);
   const root = useScrollRoot(content);
-  const [draft, setDraft] = useState<ActivityDraft>(emptyActivityDraft);
-  const [selection, setSelection] = useState<ActivityFilters>(emptyActivity);
+  const [selection, setSelection] = useState<ActivitySelection>(emptyActivitySelection);
+  const [selectionResetToken, setSelectionResetToken] = useState(0);
   const closeDrawer = useCloseSidebarDrawer();
-  const request = useCallback((token: string) => ({ projectId: selection.projectId, sessionId: selection.sessionId, pageSize: 50, pageToken: token }), [selection]);
+  const request = useCallback((token: string) => ({ projectId: selection.projectId, sessionId: selection.sessionId, pageSize: 50, pageToken: token }), [selection.projectId, selection.sessionId]);
   const reader = useConnectPaginationReader(ActivityQuery.listActivity, request, activityPage);
-  const result = usePaginationChain(JSON.stringify(selection), active, reader);
+  const result = usePaginationChain(JSON.stringify({ projectId: selection.projectId, sessionId: selection.sessionId }), active, reader);
   usePaginationRefresh(ActivityQuery.listActivity, request(""), active, result.refresh);
-  const apply = (next: ActivityFilters) => { if (selection.projectId === next.projectId && selection.sessionId === next.sessionId) result.reload(); else setSelection(next); closeDrawer(); };
+  const reset = () => {
+    // Fence pending exact-resource acceptance without replacing either selector
+    // or changing its independent metadata continuation/read identity.
+    setSelectionResetToken(current => current + 1);
+    if (!selection.projectId && !selection.sessionId) result.reload();
+    setSelection(emptyActivitySelection);
+    closeDrawer();
+  };
   return <>
   <SidebarSurface active={active} title={copy("views.activity_38da15")} className="activity-sidebar">
-    <button type="button" className="activity-all" aria-pressed={!selection.projectId && !selection.sessionId} onClick={() => { setDraft(emptyActivityDraft); apply(emptyActivity); }}>
+    <button type="button" className="activity-all" aria-pressed={!selection.projectId && !selection.sessionId} onClick={reset}>
       <svg className="activity-filter-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M5 4h8M5 8h8M5 12h8M2 4h.01M2 8h.01M2 12h.01" /></svg>
       <span>{copy("views.allActivity_29ebb2")}</span>
       {!selection.projectId && !selection.sessionId ? <svg className="activity-filter-icon activity-selected-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg> : null}
@@ -142,14 +149,14 @@ export function Activity({ active, open }: { active: boolean; open: (id: string)
     <div className="activity-filter-group" role="group" aria-label={copy("views.activityFilters_b58a53")}>
       <h3>{copy("views.filters_29ded9")}</h3>
       <div>
-        <ResourceChoice label={copy("views.project_985959")} kind={EntityKind.PROJECT} value={draft.projectId} change={(projectId, _data, row) => setDraft((current) => ({ ...current, projectId, projectLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
-        <ActivitySelectedLabel label={copy("views.project_985959")} id={draft.projectId} name={draft.projectLabel} />
+        <ResourceChoice label={copy("views.project_985959")} kind={EntityKind.PROJECT} selectionResetToken={selectionResetToken} value={selection.projectId} change={(projectId, _data, row) => setSelection((current) => ({ ...current, projectId, projectLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
+        <ActivitySelectedLabel label={copy("views.project_985959")} id={selection.projectId} name={selection.projectLabel} />
       </div>
       <div>
-        <ResourceChoice label={copy("views.session_6959b4")} kind={EntityKind.SESSION} value={draft.sessionId} change={(sessionId, _data, row) => setDraft((current) => ({ ...current, sessionId, sessionLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
-        <ActivitySelectedLabel label={copy("views.session_6959b4")} id={draft.sessionId} name={draft.sessionLabel} />
+        <ResourceChoice label={copy("views.session_6959b4")} kind={EntityKind.SESSION} selectionResetToken={selectionResetToken} value={selection.sessionId} change={(sessionId, _data, row) => setSelection((current) => ({ ...current, sessionId, sessionLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
+        <ActivitySelectedLabel label={copy("views.session_6959b4")} id={selection.sessionId} name={selection.sessionLabel} />
       </div>
-      <div className="activity-filter-actions"><button type="button" className="activity-apply" onClick={() => apply({ projectId: draft.projectId, sessionId: draft.sessionId })}>{copy("views.applyFilters_d80ab1")}</button><button type="button" className="activity-reset" onClick={() => { setDraft(emptyActivityDraft); apply(emptyActivity); }}>{copy("views.reset_daee76")}</button></div>
+      <div className="activity-filter-actions"><button type="button" className="activity-reset" onClick={reset}>{copy("views.reset_daee76")}</button></div>
     </div>
   </SidebarSurface>
   <section ref={content} hidden={!active} className="page"><header><h2>{copy("views.activity_38da15")}</h2><button disabled={Boolean(result.loading)} onClick={result.refreshExplicit}>{copy("views.refresh_0e9161")}</button></header><Failure failure={result.error?.failure} />{result.loading ? <p role="status">{copy("views.loadingActivity_a389c3")}</p> : null}{result.error && result.loaded ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_c8711b")}</p> : null}

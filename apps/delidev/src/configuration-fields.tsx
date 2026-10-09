@@ -130,7 +130,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 
 // Selectors accumulate bounded display projections. Exact resources are read
 // only for the retained selection and a deliberate selection callback.
-export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice }: { label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
+export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice, selectionResetToken = 0 }: { selectionResetToken?: number; label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   useLocale();
   // The retained diagnostic owner still fences consuming effects for this exact Runner.
   const inspectRunner = useRunnerRemediation({ active });
@@ -186,7 +186,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
       ? copy("configuration-fields.choices.connection") : copy("configuration-fields.choices.request");
   const readProblem = Boolean(failure || result.error || selectedProviderOff || active && needsProviderCapability && inventory.data && !ready);
   useEffect(() => { reportRead?.(readIdentity, readProblem); return () => reportRead?.(readIdentity, false); }, [readIdentity, readProblem, reportRead]);
-  useLayoutEffect(() => { generation.current++; reportPending?.(readIdentity, false); setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; reportPending?.(readIdentity, false); }; }, [active, disabled, kind, allowedKey, transport, reportPending, readIdentity]);
+  useLayoutEffect(() => { generation.current++; reportPending?.(readIdentity, false); setSelectionBusy(false); setSelectionError(undefined); return () => { generation.current++; reportPending?.(readIdentity, false); }; }, [active, disabled, kind, allowedKey, transport, reportPending, readIdentity, selectionResetToken]);
   // Release only after the accepted callback and its parent draft update commit.
   useLayoutEffect(() => { if (!selectionBusy) reportPending?.(readIdentity, false); });
   const select = async (id: string) => {
