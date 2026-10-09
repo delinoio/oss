@@ -268,9 +268,7 @@ func TestSessionArchiveRestoreKeepsOutcomeQueueAndDispatchIndependent(t *testing
 		t.Fatal("restore resumed or changed outcome")
 	}
 	_, err = client.ControlSession(ctx, ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: acctMutation(restored.Session, domain.NewID()), Action: pb.SessionAction_SESSION_ACTION_RESUME}))
-	if connect.CodeOf(err) != connect.CodeAborted {
-		t.Fatal("unprepared workspace resumed execution")
-	}
+	wantAccountCode(t, err, domain.MissingInput)
 	r, err := client.RenameSession(ctx, ownerRequest(f.identity, &pb.RenameSessionRequest{Mutation: acctMutation(restored.Session, domain.NewID()), Name: "Renamed"}))
 	if err != nil {
 		t.Fatal(err)
