@@ -332,7 +332,7 @@ it.each(["Close Add repository", "Escape"])("dismisses with %s, restores the ope
   const dialog = screen.getByRole("dialog", { name: "Add repository" });
   expect(window.document.activeElement).toBe(within(dialog).getByRole("textbox", { name: "Git URL" }));
   expect(screen.getByRole("region", { name: "No repositories yet", hidden: true })).toBeTruthy();
-  expect(within(dialog).queryByRole("button", {name:"Cancel"})).toBeNull(); expect(within(dialog).queryByRole("button", {name:"Back to repositories"})).toBeNull();
+  expect(within(dialog).getByRole("button", {name:"Cancel"})).toBeTruthy(); expect(within(dialog).queryByRole("button", {name:"Back to repositories"})).toBeNull();
   fireEvent.click(within(dialog).getByRole("button", { name: "Enter a path…" }));
   fireEvent.change(within(dialog).getByRole("textbox", { name: "Absolute checkout path" }), { target: { value: "/discard" } });
   if (action === "Escape") fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
@@ -373,7 +373,7 @@ it("clones with fresh local proof and no frontend registration after acceptance"
   const f = fixture(metadata, true); f.mount(); await f.add(); cloneInputs();
   expect(screen.queryByRole("textbox", { name: "Repository name" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Optional settings" })).toBeNull();
-  expect((screen.getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Add repository" })).toBeNull();
   const button = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
   fireEvent.click(button); await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(f.proof).toHaveBeenCalledTimes(1); expect(f.inspected).not.toHaveBeenCalled(); expect(f.save).not.toHaveBeenCalled();
@@ -688,4 +688,21 @@ it("reevaluates the exact lease age on a successful identical-resource read with
     expect(screen.getByText("/canonical/oss")).toBeTruthy();
     expect(f.inspected).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
   } finally { clock.mockRestore(); }
+});
+
+it("groups independent optional checkout rows and retains the current footer action", async () => {
+ const f=fixture(metadata,true);f.mount();await f.add(false);
+ const dialog=screen.getByRole('dialog',{name:'Add repository'});
+ expect(within(dialog).getByText('Saved on the selected server.')).toBeTruthy();
+ const group=dialog.querySelector('.repository-checkout-group')!;
+ const local=within(dialog).getByRole('button',{name:'Connect a Local folder (optional)'}),clone=within(dialog).getByRole('button',{name:'Clone to this computer (optional)'});
+ expect(group.contains(local)).toBe(true);expect(group.contains(clone)).toBe(true);
+ expect(local.getAttribute('aria-expanded')).toBe('false');expect(clone.getAttribute('aria-expanded')).toBe('false');
+ expect(within(dialog).getByText('Use an existing checkout for Local sessions.')).toBeTruthy();
+ expect(within(dialog).getByText('Create a checkout on this computer.')).toBeTruthy();
+ fireEvent.click(local);fireEvent.click(clone);expect(local.getAttribute('aria-expanded')).toBe('true');expect(clone.getAttribute('aria-expanded')).toBe('true');
+ const footer=dialog.querySelector('.repository-add-footer')!;
+ expect(footer.contains(within(dialog).getByRole('button',{name:'Cancel'}))).toBe(true);
+ expect(footer.contains(within(dialog).getByRole('button',{name:'Clone & add repository'}))).toBe(true);
+ expect(f.save).not.toHaveBeenCalled();expect(f.clone).not.toHaveBeenCalled();
 });

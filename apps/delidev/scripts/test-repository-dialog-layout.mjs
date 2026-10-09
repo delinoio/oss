@@ -63,7 +63,7 @@ try {
       assert(await target.evaluate(node=>node.matches(':modal') && getComputedStyle(node).opacity==='1' && !getComputedStyle(node).backgroundColor.startsWith('rgba')),'The active surface stays opaque');
     };
     await assertBackdrop(dialog);
-    assert.equal(await dialog.getByRole("button", {name:l("Cancel"),exact:true}).count(),0);
+    assert.equal(await dialog.getByRole("button", {name:l("Cancel"),exact:true}).count(),1);
     assert.equal(await dialog.getByRole("button", {name:l("Back to repositories"),exact:true}).count(),0);
     assert(await dialog.getByRole("textbox", { name: l("Git URL"), exact: true }).evaluate(node => node === document.activeElement));
     assert(await page.locator(".settings-content h1").filter({ hasText: l("Repositories") }).isVisible());
@@ -76,6 +76,10 @@ try {
     });
     assert(layout.width <= 640.5 && layout.width <= width - 31 && layout.height <= height - 31 && layout.top >= 15 && !layout.overflow && layout.controls, JSON.stringify(layout));
     assert.equal(layout.padding, "0px"); assert.equal(layout.title, "22px");
+    const checkoutRows = await dialog.locator(".repository-checkout-toggle").evaluateAll(nodes => nodes.map(node => ({ width: node.getBoundingClientRect().width, parent: node.parentElement.getBoundingClientRect().width, padding: getComputedStyle(node).padding, folder: node.querySelector(".repository-checkout-folder")?.getAttribute("aria-hidden"), description: node.querySelector(".repository-checkout-description")?.textContent })));
+    assert.equal(checkoutRows.length, 2); assert(checkoutRows.every(row => Math.abs(row.width - row.parent) <= 2 && row.padding === "16px" && row.folder === "true" && row.description.trim()));
+    assert.equal(await dialog.locator(".repository-add-footer").count(), 1);
+
     if (height <= 480) assert(layout.scroll, "Small viewports require vertical dialog scrolling");
     for (const key of ["Tab", "Shift+Tab"]) for (let step = 0; step < 14; step++) { await page.keyboard.press(key); assert(await dialog.evaluate(node => node.contains(document.activeElement)), "Focus escaped the native dialog"); }
     await dialog.getByRole("textbox", { name: l("Git URL"), exact: true }).fill("https://github.com/owner/repo.git");

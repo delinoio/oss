@@ -43,3 +43,19 @@
 .repository-remote-fields { display: grid; gap: 16px; margin-bottom: 24px; }
 .repository-remote-fields label { display: grid; gap: 8px; }
 .repository-remote-fields p { margin: 0; color: var(--muted); }
+
+.settings-task-dialog:has(.repository-registration) > .settings-task-footer { padding: 0; border: 0; }
+.repository-remote-fields > label:not(:first-child), .repository-remote-fields > .repository-clone-name { margin-top: 4px; }
+.repository-checkout-group { margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.repository-checkout-group > button.disclosure-header.disclosure-header.repository-checkout-toggle { display: grid; grid-template-columns: 20px minmax(0,1fr) 14px; gap: 12px; width: 100%; min-height: 40px; padding: 16px; border: 0; border-radius: 0; background: transparent; }
+.repository-checkout-group > button.repository-checkout-toggle ~ button.repository-checkout-toggle { border-top: 1px solid var(--border); }
+.repository-checkout-toggle > .disclosure-chevron { grid-column: 3; grid-row: 1; }
+.repository-checkout-folder { grid-column: 1; grid-row: 1; width: 20px; height: 20px; }
+.repository-checkout-copy { grid-column: 2; grid-row: 1; min-width: 0; }
+.repository-checkout-title { display: block; font-size: 14px; }
+.repository-checkout-title small, .repository-checkout-description { color: var(--muted); font-size: 12px; }
+.repository-checkout-description { display: block; font-weight: normal; }
+div.repository-checkout-group > div[data-disclosure-content]:not([hidden]) { display: block; padding: 0 16px 16px; }
+.repository-checkout-group .repository-clone-fields { padding-top: 0; border: 0; }
+
+.repository-registration .repository-remote-fields { margin-bottom: 0; }
