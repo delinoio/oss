@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createClient } from "@connectrpc/connect";
-import { useTransport } from "@connectrpc/connect-query";
+import { createClient, type Transport } from "@connectrpc/connect";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,8 +9,8 @@ import { copy, useLocale } from "./localization";
 import "./quit-confirmation.css";
 export interface QuitAttempt { id:string; checking:boolean; unknown:boolean; count:string; present:boolean; observe:boolean }
 export function validQuitCount(value:unknown):value is string { return typeof value==="string" && /^(0|[1-9][0-9]{0,38})$/.test(value) && BigInt(value)<1n<<128n; }
-export function QuitConfirmation({ ready }: { ready:boolean }) {
- useLocale();const transport=useTransport(), client=useMemo(()=>createClient(SystemService,transport),[transport]);
+export function QuitConfirmation({ ready, transport }: { ready:boolean; transport?:Transport }) {
+ useLocale();const client=useMemo(()=>transport ? createClient(SystemService,transport) : undefined,[transport]);
  const [attempt,setAttempt]=useState<QuitAttempt>(), [error,setError]=useState<unknown>();
  const dialog=useRef<HTMLDialogElement>(null),cancel=useRef<HTMLButtonElement>(null),seen=useRef(new Set<string>());
  useEffect(()=>{
@@ -20,7 +19,7 @@ export function QuitConfirmation({ ready }: { ready:boolean }) {
     if(next && (!validQuitCount(next.count) || !/^[a-f0-9-]{36}$/.test(next.id)))return;
     setAttempt(next?.present?next:undefined);setError(undefined);
     if(next?.checking && next.observe && !seen.current.has(next.id)) {seen.current.add(next.id);if(seen.current.size>128)seen.current.delete(seen.current.values().next().value!);const abort=new AbortController();controllers.add(abort);const timeout=setTimeout(()=>abort.abort(),4900);
-      let count:string|null=null;try {if(ready){const result=await client.getOverview({}, {signal:abort.signal,timeoutMs:4900});if(result.activeSessions>=0n && result.activeSessions<1n<<64n && result.observedAt.length<=64 && Number.isFinite(Date.parse(result.observedAt)) && !abort.signal.aborted)count=result.activeSessions.toString();}}catch{/* Native retains unknown status for unavailable fresh observations. */}finally{clearTimeout(timeout);controllers.delete(abort);}
+      let count:string|null=null;try {if(ready && client){const result=await client.getOverview({}, {signal:abort.signal,timeoutMs:4900});if(result.activeSessions>=0n && result.activeSessions<1n<<64n && result.observedAt.length<=64 && Number.isFinite(Date.parse(result.observedAt)) && !abort.signal.aborted)count=result.activeSessions.toString();}}catch{/* Native retains unknown status for unavailable fresh observations. */}finally{clearTimeout(timeout);controllers.delete(abort);}
       if(!disposed&&!abort.signal.aborted)await invoke("observe_quit_attempt",{id:next.id,count});
     }
   }catch{if(!disposed)setError(copy("quit-confirmation.unavailable"));}};

@@ -31,7 +31,7 @@ it("shows failed launch guidance and original registration controls inline witho
   expect(problem.textContent).toContain("0700 for private directories and 0600 for private files");
   expect(problem.textContent).toContain("Preserve existing data");
   expect(bridge.invoke.mock.calls.filter(([command]) => command === "launch_local")).toHaveLength(1);
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "local_server_status", "launch_local"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "local_server_status", "launch_local", "read_quit_attempt"].includes(command))).toBe(true);
   expect(bridge.createTransport).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Re-register this desktop" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Continue desktop recovery" })).toBeNull();
