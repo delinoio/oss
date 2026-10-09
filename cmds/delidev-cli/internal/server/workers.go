@@ -301,6 +301,21 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	var after domain.ID
+	// Keep one earliest predecessor cursor for transient dependency exclusions.
+	// Later independent work may advance the ordinary cursor; a wake or completed
+	// assignment restores this bounded retry boundary without preclaiming work.
+	var dependencyAfter domain.ID
+	var dependencyBlocked bool
+	rememberDependency := func() {
+		if !dependencyBlocked {
+			dependencyAfter, dependencyBlocked = after, true
+		}
+	}
+	retryDependencies := func() {
+		if dependencyBlocked {
+			after, dependencyBlocked = dependencyAfter, false
+		}
+	}
 	var inFlight domain.ID
 	var cancellationSent domain.ID
 	responseControlsSent := map[domain.ID]bool{}
@@ -346,6 +361,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					}
 					return err
 				}
+				retryDependencies()
 				inFlight = ""
 				cancellationSent = ""
 				responseControlsSent = map[domain.ID]bool{}
@@ -421,10 +437,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return rpc.Error(err, correlation)
 				}
 				if pending && (storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover) {
+					rememberDependency()
 					continue
 				}
 			}
 			if job.State == domain.JobQueued {
+				claimDependencyBlocked := false
 				result, err := s.Store.Mutate(ctx, domain.NewID(), "worker.claim", struct{ Job, Instance domain.ID }{record.ID, instance}, func(tx *store.Tx) (any, error) {
 					if err := currentInstance(tx, machine, instance); err != nil {
 						return nil, err
@@ -516,6 +534,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 						}
 						if storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover {
 							if err := tx.RequireNoSidechatDependents(r.SessionID); err != nil {
+								claimDependencyBlocked = true
 								return r, nil
 							}
 						}
@@ -549,6 +568,10 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					s.logger.WarnContext(ctx, "worker claim receipt rejected", "machine_id", machine, "job_id", claimID, "code", domain.SafeError(err).Code)
 					return rpc.Error(err, correlation)
 				}
+				if claimDependencyBlocked {
+					rememberDependency()
+					continue
+				}
 			}
 			if job.State == domain.JobClaimed && job.InstanceID == instance {
 				var cancelRequested bool
@@ -579,7 +602,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		case <-ctx.Done():
 			return rpc.Error(ctx.Err(), correlation)
 		case <-changed:
+			retryDependencies()
 		case <-ticker.C:
+			retryDependencies()
 			if err := s.Store.Heartbeat(ctx, machine, instance); err != nil {
 				return rpc.Error(err, correlation)
 			}

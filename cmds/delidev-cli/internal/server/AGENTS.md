@@ -315,3 +315,5 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 A fresh subscription lifecycle Take may return Canceled with exact cause `subscription_take_not_admitted` only inside its rolled-back admission transaction after original account/Worker/instance/installation/update fences when the queued original is absent, replaced or canceled. Replay, claimed/recovery state, wrong action/machine and post-commit errors never carry this proof. No lease, bundle or native authority is granted.
 
 - Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. Follow the workspace contract.
+
+- Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
