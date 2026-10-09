@@ -82,6 +82,6 @@
 .usage-page .usage-applied details, .usage-page .usage-coverage details, .usage-page .usage-summary-breakdown { padding: 0; border: 0; background: transparent; }
 .usage-page .usage-coverage details { flex-basis: auto; margin-left: auto; }
 .usage-page .usage-coverage details[open] { flex-basis: 100%; margin-left: 0; }
-.usage-page .usage-coverage details[open] > span { display: block; margin-top: 8px; }
+.usage-page .usage-coverage details[open] > .disclosure-native-content > span { display: block; margin-top: 8px; }
 .usage-page .usage-summary h2 { margin-bottom: 12px; }
 @media (max-width: 759px) { .usage-page .usage-coverage details { margin-left: 0; } }
