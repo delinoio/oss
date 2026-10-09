@@ -465,3 +465,7 @@ Follow `apps-delidev-packaging-contract.md` and the download-only exception in
 is permitted; complete six-target updater activation requires a new version and
 its original production signing/acceptance gates. Source changes do not configure
 operational credentials or publish the first release.
+
+## DeliDev QA output ordering
+
+DeliDev QA preparation and its original signal-test children rebuild the API client in the current checkout. Turbo must finish desktop typecheck and release validation before `ci:qa` starts; release validation already follows the frontend build. The combined `test:qa` graph also finishes unit and integration readers first. A dependency on the initial API client build alone does not order a later QA rebuild against its consumers. These edges retain standalone QA preparation, original process admission and joined signal cleanup. Do not infer valid generated declarations from a successful earlier build while another owner can still rewrite its output. Synthetic graph and lifecycle fixtures establish ordering only; actual QA, typecheck, frontend builds and native/platform acceptance remain independent CI or owner validation.

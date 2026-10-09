@@ -143,7 +143,10 @@
     "test:qa": {
       "cache": false,
       "dependsOn": [
-        "test:integration"
+        "typecheck",
+        "test:unit",
+        "test:integration",
+        "ci:release"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -341,7 +344,10 @@
     },
     "ci:qa": {
       "cache": false,
-      "dependsOn": [],
+      "dependsOn": [
+        "typecheck",
+        "ci:release"
+      ],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
