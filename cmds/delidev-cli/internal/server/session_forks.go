@@ -187,7 +187,8 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			input.Version, input.Purpose, input.Workspace = 3, purpose, session.Workspace
 			origin = session.LocalOrigin
 		}
-		if purpose == domain.IndependentFork && input.SourceAssignment.Configuration.Subscription {
+		// OpenCode Go uses protected keys and owns no ChatGPT login generation.
+		if purpose == domain.IndependentFork && input.SourceAssignment.Configuration.Subscription && !input.SourceAssignment.Configuration.IsOpenCodeGo() {
 			_, machine, e := activeMachine(tx, session.MachineID)
 			if e != nil || !domain.ManagedForkSupported(machine.WorkerCapabilities) {
 				return nil, domain.ManagedForkUnavailable()
