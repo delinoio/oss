@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.subscription-paid-credits { padding: 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; }
+.subscription-paid-credits ul { list-style: none; padding: 0; margin: 0; }
+.subscription-paid-credits li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-block: 8px; min-width: 0; overflow-wrap: anywhere; }
+.subscription-paid-credits li small { flex-basis: 100%; }
+.subscription-paid-summary { grid-column: 1 / -1; overflow-wrap: anywhere; }
