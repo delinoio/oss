@@ -269,3 +269,36 @@ func TestTurnTimingInheritedForkCopyKeepsOriginalAttributionWithoutSharedMutable
 		t.Fatal("child mutable timing replaced original source")
 	}
 }
+
+func TestTurnTimingOpenCodePrimaryPartsShareOriginalAtomicTerminal(t *testing.T) {
+	f := newOpenCodePublicationFixture(t, domain.ExecuteMode)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	accepted := time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC)
+	timingPublication(t, f, f.event(domain.ExecutionInputAccepted, 2), accepted, domain.NewID())
+	ids := []domain.ID{domain.NewID(), domain.NewID()}
+	for index, id := range ids {
+		message := domain.ExecutionMessageUpdate{ID: id, NativeID: []string{"prt_01960dcbe1fbabcdefghijklmn", "prt_01960dcbe1fcabcdefghijklmn"}[index], NativeParentID: string(f.turn), InputID: f.input.InputID, Role: domain.UserMessage, Text: f.input.Input.Prompt}
+		for offset, kind := range []domain.ExecutionEventKind{domain.ExecutionMessageStarted, domain.ExecutionMessageCompleted} {
+			e := f.event(kind, uint64(3+index*2+offset))
+			e.Message = &message
+			f.publish(t, e)
+		}
+		if m := timingMessage(t, f, id); m.TurnTiming == nil || !m.TurnTiming.AcceptedAt.Equal(accepted) || m.TurnTiming.TerminalAt != nil {
+			t.Fatal("OpenCode user part replaced the original accepted observation")
+		}
+	}
+	usage := originalOpenCodeUsage()
+	usage.Source, usage.NativeID = domain.OpenCodeMessageUsage, usage.NativeParentID
+	e := f.event(domain.ExecutionOpenCodeUsageObserved, 7)
+	e.ObservationID, e.OpenCodeUsage = domain.NewID(), &usage
+	f.publish(t, e)
+	end := f.event(domain.ExecutionTurnFinished, 8)
+	end.Outcome = domain.ExecutionSucceeded
+	timingPublication(t, f, end, accepted.Add(12*time.Second), domain.NewID())
+	original := timingSession(t, f).Execution.TurnTiming
+	for _, id := range ids {
+		if m := timingMessage(t, f, id); !reflect.DeepEqual(m.TurnTiming, original) || m.TurnTiming.TerminalAt.Sub(m.TurnTiming.AcceptedAt) != 12*time.Second || m.InputID != f.input.InputID || m.NativeParentID != string(f.turn) {
+			t.Fatal("OpenCode split primary history lost atomic timing or original ownership")
+		}
+	}
+}
