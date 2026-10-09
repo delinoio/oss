@@ -12,7 +12,7 @@
 .shortcut-catalog .shortcut-settings-row h3, .settings-content.settings-shortcuts[aria-label] .shortcut-catalog .shortcut-settings-row h3 { font-size: 14px; line-height: 20px; margin: 0; }
 .shortcut-catalog small { color: var(--muted); font-size: 12px; line-height: 18px; }
 .shortcut-current-binding { overflow-wrap: anywhere; }
-.shortcut-current-binding kbd { display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-muted); font: inherit; }
+.shortcut-catalog kbd { display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-muted); font: inherit; }
 .shortcut-settings .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .shortcut-settings button { min-height: 40px; border-radius: 8px; }
 .shortcut-catalog dl { margin: 0; }
@@ -29,3 +29,5 @@
 }
 
 .settings-content.settings-shortcuts[aria-label] .shortcut-catalog h2 { font-size: 14px; line-height: 20px; }
+
+.shortcut-catalog .shortcut-binding { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
 import { bindingKeys, ShortcutId, ShortcutPlatform, shortcutPlatform, type ShortcutBinding } from "./shortcuts";
 import { captureShortcut, fixedNativeShortcutCatalog, customizationBindings, ShortcutGroup, ShortcutOverrideState, shortcutCatalog, editableShortcutCatalog, readOnlyShortcutCatalog, shortcutConflicts, type ShortcutOverrides } from "./shortcut-preferences";
@@ -60,6 +60,7 @@ export function ShortcutSettings() {
     return()=>{clearTimeout(expire);window.removeEventListener("blur",departed);document.removeEventListener("visibilitychange",visibility);document.removeEventListener("keydown",capture,true);};
   },[capturing,locked,platform,captureState]);
   const bindingLabel = (bindings: readonly ShortcutBinding[]) => bindings.length ? bindings.map(binding => bindingKeys(binding,platform).join(" + ")).join(` ${copy("shortcuts.or")} `) : copy("shortcut-settings.disabled");
+  const bindingCaps = (bindings: readonly ShortcutBinding[]) => bindings.length ? bindings.map((binding,bindingIndex) => <span className="shortcut-binding" key={bindingIndex}>{bindingIndex ? <span> {copy("shortcuts.or")} </span> : null}{bindingKeys(binding,platform).map((key,keyIndex) => <Fragment key={keyIndex}>{keyIndex ? <span aria-hidden="true"> + </span> : null}<kbd>{key}</kbd></Fragment>)}</span>) : copy("shortcut-settings.disabled");
   const restore = (id:ShortcutId) => setDraft(previous=>{const next={...previous};delete next[id];return next;});
   return <section className="shortcut-settings" data-settings-search-target="shortcut-bindings" aria-label={copy("shortcuts.title")}>
     <div className="shortcut-catalog" role="region" aria-label={copy("shortcut-settings.catalog")} tabIndex={0} onFocusCapture={event => {
@@ -81,14 +82,14 @@ export function ShortcutSettings() {
     {Object.values(ShortcutGroup).map(group=><section key={group}><h2>{copy(group===ShortcutGroup.Common?"shortcuts.global":group===ShortcutGroup.Session?"shortcut-settings.session":group===ShortcutGroup.Creation?"shortcut-settings.creation":"shortcut-settings.search")}</h2>
       {editableShortcutCatalog.filter(action=>action.group===group).map(action=><div className="shortcut-settings-row" key={action.id}>
         <div className="shortcut-action-description"><h3>{copy(action.label)}</h3><small>{copy("shortcut-settings.default",{binding:bindingLabel(action.defaults)})}</small></div>
-        <div className="shortcut-current-binding">{customizationBindings(action.id,draft).length ? <kbd>{bindingLabel(customizationBindings(action.id,draft))}</kbd> : copy("shortcut-settings.disabled")}</div>
+        <div className="shortcut-current-binding">{bindingCaps(customizationBindings(action.id,draft))}</div>
         <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.captureAction",{name:copy(action.label)})} onClick={event=>{opener.current=event.currentTarget;beginCapture(action.id);}}>{copy("shortcut-settings.capture")}</SettingsActionButton>
           <SettingsActionButton icon={SettingsActionIcon.Stop} presentation={SettingsActionPresentation.Icon} type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.disableAction",{name:copy(action.label)})} onClick={()=>setDraft(previous=>({...previous,[action.id]:{state:ShortcutOverrideState.Disabled}}))}>{copy("shortcut-settings.disable")}</SettingsActionButton>
           <SettingsActionButton icon={SettingsActionIcon.Back} presentation={SettingsActionPresentation.Icon} type="button" disabled={locked||Boolean(capturing)||!draft[action.id]} aria-label={copy("shortcut-settings.restoreAction",{name:copy(action.label)})} onClick={()=>restore(action.id)}>{copy("shortcut-settings.restore")}</SettingsActionButton></div>
       </div>)}
-      <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(action.defaults)}</dd></div>)}</dl>
+      <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingCaps(action.defaults)}</dd></div>)}</dl>
     </section>)}
-    <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p><dl>{fixedNativeShortcutCatalog.filter(action=>!action.macOnly||platform===ShortcutPlatform.Mac).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel([{key:action.key,primary:true}])}</dd></div>)}</dl></section>
+    <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p><dl>{fixedNativeShortcutCatalog.filter(action=>!action.macOnly||platform===ShortcutPlatform.Mac).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingCaps([{key:action.key,primary:true}])}</dd></div>)}</dl></section>
     </div>
     <div className="shortcut-operation-guidance">
     {capturing?<div role="status"><p>{copy(captureState==="active"?"shortcut-settings.captureHelp":captureState==="uncertain"?"shortcut-settings.captureUncertain":"shortcut-settings.capturePending")}</p>{invalid?<p role="alert">{copy("shortcut-settings.invalid")}</p>:null}<SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" onClick={cancelCapture}>{copy("shortcut-settings.cancelCapture")}</SettingsActionButton></div>:null}

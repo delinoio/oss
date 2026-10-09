@@ -139,3 +139,16 @@ it("preserves pointer focus targets until click and reveals keyboard or cancelle
  fireEvent.keyDown(disable,{key:"Tab"});fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
  catalog.scrollTop=0;fireEvent.pointerDown(capture);fireEvent.pointerCancel(capture);fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
 });
+
+it("renders platform-resolved individual keycaps for original current bindings and retains disabled text",async()=>{
+ const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");
+ const row=screen.getByRole("button",{name:"Capture shortcut for New session"}).closest(".shortcut-settings-row")!;
+ expect([...row.querySelectorAll(".shortcut-current-binding kbd")].map(key=>key.textContent)).toEqual(["Ctrl","Shift","N"]);
+ expect(row.querySelector(".shortcut-current-binding")?.textContent).toBe("Ctrl + Shift + N");
+ const fixed=screen.getByText("New Window").closest("div")!;
+ expect([...fixed.querySelectorAll("kbd")].map(key=>key.textContent)).toEqual(["Ctrl","N"]);
+ fireEvent.click(screen.getByRole("button",{name:"Disable New session shortcut"}));
+ expect(row.querySelectorAll(".shortcut-current-binding kbd")).toHaveLength(0);
+ expect(row.querySelector(".shortcut-current-binding")?.textContent).toBe("Disabled");
+ expect(f.bridge.update).not.toHaveBeenCalled();
+});
