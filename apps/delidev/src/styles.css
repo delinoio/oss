@@ -1133,3 +1133,13 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-conversation-disclosure, .sidebar-conversation-disclosure-spacer { width: 20px; min-width: 20px; height: 32px; }
 .sidebar-conversation-line button.sidebar-conversation-disclosure.disclosure-header { width: 20px; min-width: 20px; height: 32px; min-height: 32px; padding: 3px; border: 0; background: transparent; color: var(--text-subtle); }
 .sidebar-conversation-disclosure:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Project centering uses the collapsed primary range; expanded bodies stay in flow. */
+.new-project-session-page { display: block; --project-session-center: 1; --project-session-center-adjustment: -10px; }
+.new-project-session-page > .new-session-content { margin: 0 auto; padding-top: var(--project-session-top, 0px); }
+.app main:has(> .new-project-session-page:not([hidden])) { scrollbar-gutter: stable; }
+.new-session-workspace .workspace-mode legend, .starting-branches-label { padding: 0; margin: 0 0 4px; line-height: 24px; }
+.starting-branch { border: 0; padding: 0; }
+.starting-branches > .disclosure > .disclosure-native-content, .starting-branch > .disclosure-native-content { display: flow-root; }
+.starting-branch > .disclosure-native-content { padding: 8px; }
+@media (max-width: 1100px) { .new-project-session-page { --project-session-center-adjustment: 0px; } }
+@media (max-height: 760px) { .new-project-session-page { --project-session-center: 0; } }

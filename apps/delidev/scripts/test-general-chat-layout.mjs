@@ -123,7 +123,7 @@ try {
     await ordinary.locator('textarea').waitFor(); await ordinary.locator('.new-session-options-toggle').click();
     assert.equal(await ordinary.locator('.new-session-options details > summary').count(), 1, 'Ordinary creation retains its budget disclosure');
     await selectResource(ordinary, 0);
-    assert.equal(await ordinary.locator('.new-session-options .actions button').count(), 2, 'Project workspace controls remain');
+    assert.equal(await ordinary.locator('.workspace-mode input[type=radio]').count(), 2, 'Project workspace controls remain');
     cases++;
   }
   assert.deepEqual(errors, []);

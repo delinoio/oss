@@ -12,6 +12,7 @@ import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { EntityKind, ResourceService, ResourceQuery, SessionQuery, SystemQuery, SystemCapability, newRequestId, type Resource, WorkerCapability, supportsResourceSchema } from "@delinoio/delidev-api-client";
 import { creationPreferenceProblemMessage, useCreationPreferences, type CreationPreferenceBridge, type CreationPreferenceScope } from "./session-creation-preferences";
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
+import { useProjectSessionPlacement } from "./project-session-placement";
 import { useGeneralChatPlacement } from "./general-chat-placement";
 import { document, encode, items, Mode, object, text, Workspace } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
@@ -55,7 +56,9 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
 }) {
   const language = useLocale();
   const generalChat = kind === NewSessionKind.GeneralChat;
-  const placement = useGeneralChatPlacement(generalChat && active, language);
+  const generalPlacement = useGeneralChatPlacement(generalChat && active, language);
+  const projectPlacement = useProjectSessionPlacement(!generalChat && active, language);
+  const placement = generalChat ? generalPlacement : projectPlacement;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
   const images = useImageDraft(idPrefix);
   const local = useLocalWorkerProof(readLocalWorker);
@@ -250,7 +253,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const title = createdElsewhere ? text(document(createdElsewhere).name) || copy("new-session.extra.cffdba22adf2") : copy("new-session.extra.cffdba22adf2");
   const submitLabel = generalChat ? copy("new-session.startGeneralChat") : copy("new-session.createSession_38b6ef");
 
-  return <section ref={placement.page} hidden={!active} className={`new-session-page${generalChat ? " new-general-chat-page" : ""}`} aria-labelledby={`${idPrefix}-heading`}>
+  return <section ref={placement.page} hidden={!active} className={`new-session-page${generalChat ? " new-general-chat-page" : " new-project-session-page"}`} aria-labelledby={`${idPrefix}-heading`}>
     <div className="new-session-content" ref={placement.content}>
       <header className="new-session-header" ref={placement.heading}>
         <button type="button" className="new-session-back" onClick={back}>{copy("new-session.backToSessions_3740d2")}</button>

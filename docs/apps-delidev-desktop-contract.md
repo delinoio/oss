@@ -3124,6 +3124,8 @@ base. Advanced manual/commit overrides remain in Options. General Chat has no
 Git controls, Local hides branch selectors, and existing sessions cannot switch
 workspace modes.
 
+Issue #1898 keeps the centered 820px project New session column. Workspace retains its semantic fieldset, legend and native radios; the primary Starting branch label has a matching 24px band above its native disclosure surface. Text, selection and repository identity wrap naturally. The project-only placement owner measures the visible main scroll-owner height and the heading-to-hints primary range, subtracting direct expanded primary and Additional repositories bodies exactly once. Options stays below that range. Expanded content remains mounted in normal flow and moves the composer downward while heading, Project and Workspace anchors remain stationary. Observe viewport, locale and primary size changes; never center against total scroll height or close/clone live controls for measurement. Preserve minimum padding, short-height top alignment, the separate General Chat owner, discovery/manual fallback, comparison base, Local proof and runner pinning, drafts, fieldset locks and exact pending/uncertain creation retries. No API, RPC, migration, native change, dependency or flag is added.
+
 Open selectors load negotiated current configured-remote inventory through the
 selected Runs on Worker. Explicit Refresh preserves every selection, including a
 disappeared branch shown as unavailable. Search filters the complete verified

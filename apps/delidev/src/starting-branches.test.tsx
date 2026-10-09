@@ -21,7 +21,7 @@ function fixture(){
  const view=(starting:unknown[]=[],change=vi.fn(),supported=true,selectedProject=project)=><TransportProvider transport={transport}><QueryClientProvider client={client}><StartingBranches project={selectedProject} machineId={machine.id} starting={starting} change={change} active supported={supported}/></QueryClientProvider></TransportProvider>;
  return {project,machine,repositories,job,discover,view};
 }
-async function openFirst(){const summary=screen.getAllByText(/Starting branch:/)[0];const details=summary.closest("details")!;details.open=true;fireEvent(details,new Event("toggle"));await screen.findByRole("option",{name:"feature/topic"});}
+async function openFirst(){const summary=document.querySelectorAll(".starting-branch > summary")[0];const details=summary.closest("details")!;details.open=true;fireEvent(details,new Event("toggle"));await screen.findByRole("option",{name:"feature/topic"});}
 it("uses the selected Worker and serializes a remote override without changing saved configuration",async()=>{
  const f=fixture(),change=vi.fn();render(f.view([],change));await openFirst();
  fireEvent.change(screen.getAllByLabelText("Search branches")[0],{target:{value:"feature"}});
@@ -37,7 +37,7 @@ it("refresh preserves a disappeared explicit branch and independent secondary ov
 });
 it("retains saved/manual references when peers do not negotiate discovery",async()=>{
  const f=fixture();render(f.view([],vi.fn(),false));
- const details=screen.getAllByText(/Starting branch:/)[0].closest("details")!;details.open=true;fireEvent(details,new Event("toggle"));
+ const details=document.querySelectorAll(".starting-branch > summary")[0].closest("details")!;details.open=true;fireEvent(details,new Event("toggle"));
  expect((await screen.findAllByText(/Branch discovery is unavailable/)).length).toBeGreaterThan(0);expect(f.discover).not.toHaveBeenCalled();
 });
 it("rejects stale, malformed and incomplete inventories without a generic document-limit increase",()=>{
@@ -52,7 +52,7 @@ it("rejects stale, malformed and incomplete inventories without a generic docume
 it("discards a held lookup after project authority changes",async()=>{
  const f=fixture();let release!: (value:{job:Resource})=>void;
  f.discover.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
- const rendered=render(f.view());const details=screen.getAllByText(/Starting branch:/)[0].closest("details")!;
+ const rendered=render(f.view());const details=document.querySelectorAll(".starting-branch > summary")[0].closest("details")!;
  details.open=true;fireEvent(details,new Event("toggle"));await waitFor(()=>expect(f.discover).toHaveBeenCalledTimes(1));
  const changed=create(ResourceSchema,{...f.project,revision:2n});rendered.rerender(f.view([],vi.fn(),true,changed));
  release({job:f.job(f.repositories[0])});await waitFor(()=>expect(f.discover).toHaveBeenCalledTimes(2));
@@ -60,7 +60,7 @@ it("discards a held lookup after project authority changes",async()=>{
 });
 it("keeps repository selections independent and ordered",async()=>{
  const f=fixture(),change=vi.fn();const primary={repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"upstream",name:"feature/topic"}};
- render(f.view([primary],change));const details=screen.getAllByText(/Starting branch:/)[1].closest("details")!;details.open=true;fireEvent(details,new Event("toggle"));
+ render(f.view([primary],change));const details=document.querySelectorAll(".starting-branch > summary")[1].closest("details")!;details.open=true;fireEvent(details,new Event("toggle"));
  await waitFor(()=>expect(f.discover).toHaveBeenCalledTimes(1));await screen.findByRole("option",{name:"feature/topic"});
  fireEvent.change(screen.getAllByLabelText("Starting branch")[1],{target:{value:"main"}});
  expect(change).toHaveBeenCalledWith([primary,{repository_id:f.repositories[1].id,reference:{type:"remote-branch",remote:"upstream",name:"main"}}]);
