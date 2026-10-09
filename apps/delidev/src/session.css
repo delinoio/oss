@@ -117,7 +117,7 @@
 .session-empty .session-icon { width: 40px; height: 40px; margin-bottom: 8px; }
 .session-empty h3 { color: var(--text); font-size: 18px; margin: 0; }
 .session-empty p { margin: 0; font-size: 12px; }
-.session-input-tray { grid-area: 3 / 1; min-height: 0; max-height: 30vh; overflow: auto; overscroll-behavior: contain; padding: 0 20px 8px; }
+.session-input-tray { grid-area: 3 / 1; min-height: 0; max-height: 30vh; overflow: auto; overscroll-behavior: contain; padding: 0 20px 0; }
 .session-workspace .session-input-tray > details { border: 0; padding: 0; margin: 0; background: transparent; }
 .session-input-tray summary { padding: 5px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
 .session-tray-content { padding: 8px 0 12px; }
@@ -296,3 +296,23 @@
 
 .new-session-composer .skill-textarea { flex: 1; display: flex; }
 .skill-textarea textarea { display: block; }
+
+/* Read/restoration errors and retained requests remain independent of rows. */
+.queue-compact-list { padding: 0; margin: 0 12px 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: auto; }
+.queue-compact-list .queue-compact-item { padding: 0 12px; border-bottom: 1px solid var(--border); }
+.queue-compact-list .queue-compact-item:last-child { border-bottom: 0; }
+.queue-compact-item .queue-row { display: flex; align-items: center; gap: 8px; min-height: 40px; min-width: 0; }
+.queue-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; margin: 0; }
+.queue-compact-actions { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.queue-compact-actions button { min-height: 32px; font-size: 12px; padding: 4px 8px; color: var(--muted); background: transparent; border: 0; }
+.queue-compact-actions .queue-icon { width: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.queue-more { position: relative; }
+.queue-more [role=menu] { position: relative; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; }
+.queue-compact-item > form { padding-bottom: 8px; }
+.queue-read-state[hidden] { display: none; }
+@media (max-width: 760px) {
+  .queue-compact-item .queue-row { flex-wrap: wrap; padding-block: 4px; }
+  .queue-compact-item .queue-preview { flex-basis: 100%; }
+  .queue-compact-actions { margin-left: auto; }
+}
+@media (max-height: 720px) { .session-input-tray > .queue-compact-list, .session-input-tray > .queue-read-state { flex-basis: 100%; } }

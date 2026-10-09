@@ -45,6 +45,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const control = vi.fn(async () => ({ change: { session } }));
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
+  const listQueue = vi.fn((_request: { pageToken: string }) => ({ inputs: queueInputs(id), nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
     router.service(TerminalService, { controlTerminal: terminalControl, createTerminal: terminalCreate, watchTerminalOutput: async function* (request, context) {
@@ -53,7 +54,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
       yield { epoch: "fixture-epoch", sequence: 0n, terminal, heartbeat: true };
       await terminalHeld.get(terminal.id); if (!context.signal.aborted) yield { epoch: "fixture-epoch", sequence: 0n, terminal: create(ResourceSchema, { ...terminal, revision: 2n, documentJson: encode({ state: "exited", cleanup_verified: true }) }), heartbeat: true };
     } });
-    router.service(SessionService, { listQueue: () => ({ inputs: queueInputs(id) }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
+    router.service(SessionService, { listQueue, getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
       getResource: request => ({ resource: retained.get(request.id) }),
@@ -72,7 +73,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
   const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, enqueue, rename, control, recover, budget, draft, list, publish, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
+  return { session, client, view, listQueue, enqueue, rename, control, recover, budget, draft, list, publish, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -263,8 +264,9 @@ it.each([false, true])("shows only waiting queue inputs while retaining accepted
   ]);
   render(f.view());
   await screen.findByRole("heading", { name: "Original session" });
-  const summary = await screen.findByText(`Input queue · ${mixed ? 1 : 0} waiting`);
-  fireEvent.click(summary);
+  await waitFor(() => expect(document.querySelectorAll(".queue-compact-item")).toHaveLength(mixed ? 1 : 0));
+  expect(screen.queryByText(/Input queue ·/)).toBeNull();
+  if (!mixed) await waitFor(() => expect(screen.queryByLabelText("Waiting inputs")).toBeNull());
   expect(document.querySelectorAll(".queue-item")).toHaveLength(mixed ? 1 : 0);
   expect(screen.queryByText(/Hidden history/)).toBeNull();
   if (mixed) expect(screen.getByText("Waiting input")).toBeTruthy();
@@ -413,4 +415,46 @@ it("verified terminal removal skips intervening Files and selects the original l
   expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
   expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
+});
+
+it("reveals an arrival and hides its final claim without replacing composer or sending", async () => {
+  const f = fixture(); render(f.view()); const composer = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => expect(screen.queryByLabelText("Waiting inputs")).toBeNull()); composer.focus();
+  const input = create(ResourceSchema, { id: newRequestId(), sessionId: f.session.id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ prompt: "New waiting arrival", delivery: "queued", sequence: 1, mode: "execute" }) });
+  await act(async () => f.publish(input)); await screen.findByText("New waiting arrival");
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer); expect(document.activeElement).toBe(composer);
+  await act(async () => f.publish(create(ResourceSchema, { ...input, revision: 2n, documentJson: encode({ prompt: "Claimed arrival", delivery: "claimed", sequence: 1, mode: "execute" }) })));
+  await waitFor(() => expect(screen.queryByLabelText("Waiting inputs")).toBeNull());
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer); expect(composer).toHaveProperty("value", "Original draft"); expect(document.activeElement).toBe(composer);
+  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+});
+
+it("keeps initial failed queue reads and incomplete empty pages distinct from confirmed empty", async () => {
+  const f = fixture(); f.listQueue.mockRejectedValueOnce(new ConnectError("Read unavailable", Code.Unavailable));
+  f.listQueue.mockImplementationOnce(() => ({ inputs: [], nextPageToken: "tail" }));
+  render(f.view()); await screen.findByRole("heading", { name: "Original session" });
+  await within(screen.getByLabelText("Waiting inputs")).findByRole("button", { name: "Retry" });
+  expect(screen.getByLabelText("Waiting inputs")).toBeTruthy(); expect(screen.queryByText(/0 waiting/)).toBeNull();
+  fireEvent.click(within(screen.getByLabelText("Waiting inputs")).getByRole("button", { name: "Retry" }));
+  const more = await screen.findByRole("button", { name: "Load more Queue pages" });
+  expect(screen.getByLabelText("Waiting inputs")).toBeTruthy(); expect(screen.queryByText(/0 waiting/)).toBeNull();
+  fireEvent.click(more); await waitFor(() => expect(screen.queryByLabelText("Waiting inputs")).toBeNull());
+  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+});
+
+it("keeps evicted waiting payload restoration reachable even after all current visible pages are nonqueued", async () => {
+  const f = fixture();
+  const pages = Array.from({ length: 4 }, (_, index) => create(ResourceSchema, { id: newRequestId(), sessionId: f.session.id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ prompt: `History page ${index}`, delivery: index === 0 ? "queued" : "accepted", sequence: index + 1, mode: "execute" }) }));
+  f.listQueue.mockImplementation(request => { const index = Number(request.pageToken || "0"); return { inputs: [pages[index]!], nextPageToken: index < 3 ? String(index + 1) : "" }; });
+  render(f.view()); await screen.findByText("History page 0");
+  for (let index = 0; index < 3; index++) {
+    fireEvent.click(await screen.findByRole("button", { name: "Load more Queue pages" }));
+    await waitFor(() => expect(f.listQueue.mock.calls.some(([request]) => request.pageToken === String(index + 1))).toBe(true));
+  }
+  await waitFor(() => expect(screen.queryByText("History page 0")).toBeNull());
+  const original = screen.getByLabelText("Waiting inputs");
+  expect(within(original).getByRole("button", { name: "Restore previously loaded items" })).toBeTruthy();
+  expect(screen.queryByText(/0 waiting/)).toBeNull();
+  fireEvent.click(within(original).getByRole("button", { name: "Restore previously loaded items" }));
+  await screen.findByText("History page 0"); expect(f.enqueue).not.toHaveBeenCalled();
 });

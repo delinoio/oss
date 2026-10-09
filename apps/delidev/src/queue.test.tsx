@@ -20,7 +20,7 @@ function fixture(prompt = "Original queued input") {
   const remove = vi.fn(async (_request: unknown) => ({}));
   const transport = createRouterTransport((router) => router.service(SessionService, { editQueuedInput: edit, steerQueuedInput: steer, removeQueuedInput: remove }));
   const client = new QueryClient();
-  const view = (input = resource) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (input = resource, compact = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput compact={compact} resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { resource, session, execution, turn, edit, steer, remove, view, transport, client };
 }
 
@@ -193,4 +193,17 @@ it("disables image Steer and verifies immutable images before accepting an empty
   await waitFor(() => expect(screen.queryByRole("textbox", { name: "Edited input" })).toBeNull());
   expect(value.edit.mock.calls[1][0]).toEqual(value.edit.mock.calls[0][0]);
   expect(value.steer).not.toHaveBeenCalled();
+});
+
+it("opens the complete original compact input through More and restores menu focus on Escape", async () => {
+  const f = fixture("Long original prompt ".repeat(100)); render(f.view(f.resource, true));
+  expect(screen.queryByText("plan · queued")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit input" })).toBeNull();
+  const more = screen.getByRole("button", { name: "More input actions" });
+  fireEvent.click(more); const edit = screen.getByRole("menuitem", { name: "Edit input" });
+  expect(document.activeElement).toBe(edit); fireEvent.keyDown(edit, { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull(); expect(document.activeElement).toBe(more);
+  fireEvent.click(more); fireEvent.click(screen.getByRole("menuitem", { name: "Edit input" }));
+  expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty("value", "Long original prompt ".repeat(100));
+  expect(f.edit).not.toHaveBeenCalled(); expect(f.remove).not.toHaveBeenCalled(); expect(f.steer).not.toHaveBeenCalled();
 });

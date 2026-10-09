@@ -12,8 +12,10 @@ import { RejectedInput } from "./startup-rejection";
 
 enum Delivery { Queued = "queued", Claimed = "claimed", Accepted = "accepted", Uncertain = "uncertain", Removed = "removed", Rejected = "rejected-before-start" }
 export type QueuedInputDraft = { prompt: string; revision: bigint; skills?: SkillTokenBinding[] };
-export function QueuedInput({ resource, session, refresh, draft, changeDraft, readOnly = false, active = true }: { resource: Resource; session?: Resource; refresh: () => void; draft?: QueuedInputDraft; changeDraft?: (value?: QueuedInputDraft) => void; readOnly?: boolean; active?: boolean }) {
+export function QueuedInput({ resource, session, refresh, draft, changeDraft, readOnly = false, active = true, compact = false }: { resource: Resource; session?: Resource; refresh: () => void; draft?: QueuedInputDraft; changeDraft?: (value?: QueuedInputDraft) => void; readOnly?: boolean; active?: boolean; compact?: boolean }) {
   useLocale();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const [accepted, setAccepted] = useState<Resource>();
   const current = accepted && accepted.revision > resource.revision ? accepted : resource;
   const data = document(current);
@@ -32,13 +34,22 @@ export function QueuedInput({ resource, session, refresh, draft, changeDraft, re
   const sessionData = document(session), execution = object(sessionData.execution);
   const canSteer = !items(data.skills).length && !imageBound && sessionData.outcome === "running" && sessionData.archive === "active" && text(sessionData.active_execution_id) === text(execution.execution_id) && Boolean(text(execution.execution_id) && text(execution.native_turn_id));
   const mutation = () => ({ id: resource.id, expectedRevision: current.revision, requestId: newRequestId() });
-  return <article className="queue-item"><header><strong>{text(data.mode)} · {text(data.delivery)}</strong><small><LocalizedText id="queue.input_3547c5" components={{ s0: <>{String(data.sequence ?? "")}</> }} /></small></header>
-    {text(data.delivery) === Delivery.Removed ? <p>{copy("queue.removedInputOriginalOrderingRetained_3f3155")}</p> : <p>{text(data.prompt)}</p>}
+  const beginEdit = () => { setMenuOpen(false); explicitEdit.current = true; setEdit({ prompt: text(data.prompt), revision: current.revision, skills: queuedSkillBindings(data) }); };
+  return <article className={`queue-item${compact ? " queue-compact-item" : ""}`}><div className="queue-row">{!compact ? <header><strong>{text(data.mode)} · {text(data.delivery)}</strong><small><LocalizedText id="queue.input_3547c5" components={{ s0: <>{String(data.sequence ?? "")}</> }} /></small></header> : null}
+    {text(data.delivery) === Delivery.Removed ? <p>{copy("queue.removedInputOriginalOrderingRetained_3f3155")}</p> : <p className={compact ? "queue-preview" : undefined}>{text(data.prompt)}</p>}
+    {compact && text(data.delivery) === Delivery.Queued ? <div className="queue-compact-actions">
+      <button disabled={busy || !canSteer} onClick={() => void steer.send({ mutation: mutation(), sessionId: resource.sessionId, expectedExecutionId: text(execution.execution_id), expectedTurnId: text(execution.native_turn_id) })}>{copy("queue.steer")}</button>
+      <button className="queue-icon" aria-label={copy("queue.removeInput_95e788")} disabled={busy} onClick={() => void remove.send({ mutation: mutation(), sessionId: resource.sessionId })}><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path d="M4 6h12M7 6V3h6v3M6 6l1 11h6l1-11M9 9v5m2-5v5" /></svg></button>
+      <div className="queue-more" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenuOpen(false); }} onKeyDown={event => { if (event.key === "Escape" && menuOpen) { event.stopPropagation(); setMenuOpen(false); moreButton.current?.focus(); } }}>
+        <button ref={moreButton} className="queue-icon" aria-label={copy("queue.more")} aria-expanded={menuOpen} aria-haspopup="menu" disabled={busy} onClick={() => setMenuOpen(value => !value)}>…</button>
+        {menuOpen ? <div role="menu" aria-label={copy("queue.more")}><button autoFocus role="menuitem" disabled={busy} onClick={beginEdit}>{copy("queue.editInput_f7680c")}</button></div> : null}
+      </div>
+    </div> : null}</div>
     {text(data.delivery) !== Delivery.Removed ? <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} /> : null}
     {imageBound ? <p>{copy("image-input.steerUnavailable")}</p> : null}
     {text(data.delivery) === Delivery.Rejected ? <RejectedInput resource={current} session={session} /> : null}
     {text(data.delivery) === Delivery.Queued ? <>
-      <div className="actions"><button disabled={busy} onClick={() => { explicitEdit.current = true; setEdit({ prompt: text(data.prompt), revision: current.revision, skills: queuedSkillBindings(data) }); }}>{copy("queue.editInput_f7680c")}</button><button disabled={busy} onClick={() => void remove.send({ mutation: mutation(), sessionId: resource.sessionId })}>{copy("queue.removeInput_95e788")}</button><button disabled={busy || !canSteer} onClick={() => void steer.send({ mutation: mutation(), sessionId: resource.sessionId, expectedExecutionId: text(execution.execution_id), expectedTurnId: text(execution.native_turn_id) })}>{copy("queue.steerWithThisInput_d835aa")}</button></div>
+      {!compact ? <div className="actions"><button disabled={busy} onClick={beginEdit}>{copy("queue.editInput_f7680c")}</button><button disabled={busy} onClick={() => void remove.send({ mutation: mutation(), sessionId: resource.sessionId })}>{copy("queue.removeInput_95e788")}</button><button disabled={busy || !canSteer} onClick={() => void steer.send({ mutation: mutation(), sessionId: resource.sessionId, expectedExecutionId: text(execution.execution_id), expectedTurnId: text(execution.native_turn_id) })}>{copy("queue.steerWithThisInput_d835aa")}</button></div> : null}
       {edit ? <QueuedInputEditor key={resource.id} edit={edit} setEdit={setEdit} current={current} session={session} busy={busy} imageBound={imageBound} autoFocus={explicitEdit.current} save={(prompt, selections) => { void update.send({ mutation: { id: resource.id, expectedRevision: edit.revision, requestId: newRequestId() }, sessionId: resource.sessionId, prompt, skills: { selections }, attachments: images ?? [] }, images?.length ? (reply, request) => acknowledgeImages(reply.change, request.mutation!.requestId, images, request.sessionId, request.mutation!.id) : undefined); }} /> : null}
     </> : null}
     {[update, remove, steer].map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="queue.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("queue.edit_262121") : index === 1 ? copy("queue.removal_e57388") : copy("queue.steer_1cf39e")}</> }} /></button> : null}</div>)}

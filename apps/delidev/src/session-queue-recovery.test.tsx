@@ -38,8 +38,6 @@ it("retains the original removal in SessionView after streamed tombstone and res
   render(<App transport={transport} />);
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Queue recovery original/ }));
   await screen.findByRole("textbox", { name: "Message" });
-  const queue = await waitFor(() => { const value = document.querySelector<HTMLDetailsElement>("details.queue"); expect(value).not.toBeNull(); return value!; });
-  fireEvent.click(queue.querySelector("summary")!);
   fireEvent.click(await screen.findByRole("button", { name: "Remove input" }));
   await screen.findByRole("button", { name: "Retry the same removal" });
   await waitFor(() => expect([...channels].some(channel => channel.sessionId === original.id)).toBe(true));

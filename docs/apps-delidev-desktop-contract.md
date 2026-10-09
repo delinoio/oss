@@ -3518,3 +3518,22 @@ The dedicated `export_generated_image` native operation accepts one bounded orig
 Publication uses a synced same-directory temporary file and atomic create-new link. Existing destinations, including symlinks, are never replaced; the user chooses a new filename. Cancellation is terminal and writes nothing. A failure after destination publication reports uncertainty and retains its original receipt. Quit fences new export admission and late dialogs on the UI loop, then joins original disk publication off that loop before native exit. The process owns one pending export and at most 128 immutable receipts; receipts are never evicted into new write authority. A changed request or another window instance cannot replay or read one. Frontend remounts retain the uncertainty fence and can explicitly observe the original receipt. Exported files are user-owned independent copies and session deletion never removes them. Downloads, general file dialogs and navigation remain denied under their existing boundaries.
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
+
+### Compact waiting inputs (issue #2141)
+
+Ordinary reconciled waiting inputs use a compact list immediately above the
+composer, inset 12px with a subtle semantic border, 12px radius and 4px gap.
+Rows have a 40px base height, 14px ellipsized prompt and 12px secondary actions:
+Steer, accessible Remove icon, and More with Edit. Edit exposes the complete
+original input and preserves its revision, UTF-8 bound, skills and images.
+Attachments and editors may grow rows; narrow rows wrap their actions. Keep
+Agent requests separate and the existing short-height scrolling budget.
+
+Hide the ordinary surface and its gap only after a successful current complete
+read with all relevant payloads resident establishes no waiting inputs. Failed
+reads, continuations and evicted payload restoration remain independently
+reachable without a zero-waiting claim. Image startup rejections and original
+pending/uncertain actions retain their recovery presentation. Drafts, mutation
+controllers and composer identity remain independent of row visibility. This
+presentation adds no movement controls, RPC, protocol, migration or native
+change. Durable reordering requires its separately negotiated feature.
