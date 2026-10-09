@@ -334,3 +334,23 @@ it.each(Object.values(Read).flatMap(state => Object.values(SupportedLanguage).ma
   expect(screen.getByRole("article", { name: first.alias })).toBeTruthy();
   for (const action of [first.refresh, first.disconnect, first.edit, first.delete]) expect(action).not.toHaveBeenCalled();
 });
+
+it.each([Connection.Connected, Connection.Disconnected])("retains the original management callback and alias for %s accounts", connection => {
+  const account = { ...row(), connection, connect: vi.fn() };
+  const rendered = render(view([account]));
+  const action = screen.getByRole("button", { name: `Manage ${account.alias}` });
+  expect(action.textContent).toBe(connection === Connection.Disconnected ? "Log in" : "Manage");
+  fireEvent.click(action);
+  expect(account.connect).toHaveBeenCalledTimes(1);
+  rendered.rerender(view([account], { actionsBlocked: true }));
+  expect(action.matches(":disabled")).toBe(true);
+  fireEvent.click(action);
+  expect(account.connect).toHaveBeenCalledTimes(1);
+});
+
+it("preserves Korean subscription management copy", async () => {
+  await i18n.changeLanguage(SupportedLanguage.Korean);
+  const account = { ...row(), connect: vi.fn() };
+  render(view([account]));
+  expect(screen.getByRole("button", { name: `${account.alias} 로그인 관리` }).textContent).toBe("로그인 관리");
+});
