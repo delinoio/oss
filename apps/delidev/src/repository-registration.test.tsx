@@ -697,6 +697,8 @@ it("groups independent optional checkout rows and retains the current footer act
  const group=dialog.querySelector('.repository-checkout-group')!;
  const local=within(dialog).getByRole('button',{name:'Connect a Local folder (optional)'}),clone=within(dialog).getByRole('button',{name:'Clone to this computer (optional)'});
  expect(group.contains(local)).toBe(true);expect(group.contains(clone)).toBe(true);
+ expect(document.getElementById(local.getAttribute('aria-describedby')!)?.textContent).toBe('Use an existing checkout for Local sessions.');
+ expect(document.getElementById(clone.getAttribute('aria-describedby')!)?.textContent).toBe('Create a checkout on this computer.');
  expect(local.getAttribute('aria-expanded')).toBe('false');expect(clone.getAttribute('aria-expanded')).toBe('false');
  expect(within(dialog).getByText('Use an existing checkout for Local sessions.')).toBeTruthy();
  expect(within(dialog).getByText('Create a checkout on this computer.')).toBeTruthy();
