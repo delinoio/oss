@@ -27,12 +27,12 @@ function fixture() {
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
   resources.push(provider, model, account);
   const save = vi.fn((request: { kind: EntityKind; documentJson: Uint8Array }) => {
-    const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson });
+    const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: request.kind === EntityKind.AGENT ? 4 : 1, documentJson: request.documentJson });
     resources.push(resource);
     return { resource };
   });
   const base = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.AGENT_WORKER_WIZARD_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ protocolVersion: 2, capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }) });
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, displayName: "Fixture Provider", enabled: true }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
     router.service(ResourceService, { getResource: request => ({ resource: resources.find(row => row.id === request.id) }), listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
     router.service(ConfigurationService, { saveConfiguration: save, saveAgentWorker: request => ({ ...save({ kind: EntityKind.AGENT, documentJson: request.documentJson }), requestId: request.mutation!.requestId }) });
@@ -53,7 +53,21 @@ function fixture() {
   } };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false, gcTime: 0 } } });
   const view = (visible: boolean, upstream = transport, controlLocalWorker?: ControlLocalWorker) => <StrictMode><TransportProvider transport={upstream}><QueryClientProvider client={client}><MutationIntents><Sibling /><Settings visible={visible} controlLocalWorker={controlLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
-  return { provider, client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
+  return { provider, account, client, save, waiting, transport, view, delay: (method?: string, code?: Code) => { delay = method; failure = code; } };
+}
+
+async function configureAgent(value: ReturnType<typeof fixture>) {
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Account source 1" }), `api:${value.provider.id}`);
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ }));
+  await waitFor(() => expect(value.client.getQueryCache().getAll().some(query => (query.state.data as { resource?: { id: string } } | undefined)?.resource?.id === value.account.id && query.state.status === "success" && query.state.fetchStatus === "idle")).toBe(true));
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const input = await screen.findByRole("combobox", { name: /^Model for / });
+  fireEvent.change(input, { target: { value: "fixture-native" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
 }
 
 function Sibling() {
@@ -147,6 +161,7 @@ it.each([["navigation", "Instructions"], ["Escape then navigation", "Instruction
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
   fireEvent.click(screen.getByRole("button", { name: category }));
   fireEvent.click(await screen.findByRole("button", { name: category === "Agent Workers" ? "New Agent Worker" : "New Instructions" }));
+  if (category === "Agent Workers") await configureAgent(value);
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Abandoned draft" } });
   if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("region", { name: "Settings content" })).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
@@ -216,12 +231,7 @@ it.each([undefined, Code.Unavailable, Code.Canceled])("disposes an Agent opening
   const siblingQuery = value.client.getQueryCache().getAll()[0];
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(await screen.findByRole("button", { name: "New Agent Worker" }));
-  await waitFor(() => expect((screen.getByRole("radio", { name: "Codex" }) as HTMLButtonElement).disabled).toBe(false));
-  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
-  await chooseScrollOption(screen.getByRole("combobox", { name: "Account source" }), `api:${value.provider.id}`);
-  fireEvent.click(await screen.findByRole("checkbox", { name: /Fixture account/ })); next();
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: "fixture-native" } }); next();
+  await configureAgent(value);
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Committed Agent" } });
   value.delay("SaveAgentWorker", code);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
