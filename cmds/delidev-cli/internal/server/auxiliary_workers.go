@@ -125,7 +125,7 @@ func claimTitleJob(ctx context.Context, s *Service, machine, instance, device, j
 			return updated, err
 		}
 		if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
-			if domain.SafeError(err).Code == domain.ResourceExhausted {
+			if domain.SafeError(err).Code == domain.BudgetReached {
 				updated, retireErr := retireQueuedTitle(tx, record, job, domain.JobCanceled, domain.TitleSkipped, domain.TitleReasonBudgetReached, domain.SafeError(err))
 				return updated, retireErr
 			}

@@ -111,7 +111,7 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 		return nil
 	}
 	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
-		if domain.SafeError(err).Code == domain.ResourceExhausted {
+		if domain.SafeError(err).Code == domain.BudgetReached {
 			session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonBudgetReached
 			return nil
 		}
