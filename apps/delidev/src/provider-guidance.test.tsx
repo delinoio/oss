@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ProviderGuidance } from "./provider-guidance";
+import { ProviderGuidance, ProviderGuidanceAction } from "./provider-guidance";
 const native = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn(() => true) }));
 vi.mock("@tauri-apps/api/core", () => native);
 
@@ -24,4 +24,11 @@ it("retains an unconfirmed opening without automatic retry and clears it on prov
   expect(screen.queryByText("fixture error body")).toBeNull();expect(native.invoke).toHaveBeenCalledTimes(1);
   view.rerender(<ProviderGuidance preset="minimax" documentation="https://docs.invalid" />);
   expect(screen.queryByRole("status")).toBeNull();expect(screen.queryByRole("button", { name: "Open official key creation" })).toBeNull();
+});
+
+it("opens fixed Fast guidance through the original native authority instead of a webview popup", async () => {
+ native.invoke.mockReset();native.invoke.mockResolvedValue(undefined);
+ render(<ProviderGuidance preset="openai" documentation="https://untrusted.invalid/ignored" documentationAction={ProviderGuidanceAction.CodexFast} documentationLabel="Official Fast mode guidance"/>);
+ fireEvent.click(screen.getByRole("button",{name:"Official Fast mode guidance"}));
+ await screen.findByRole("status");expect(native.invoke).toHaveBeenCalledWith("open_provider_guidance",{preset:"openai",action:"codex-fast"});expect(native.invoke).toHaveBeenCalledOnce();
 });

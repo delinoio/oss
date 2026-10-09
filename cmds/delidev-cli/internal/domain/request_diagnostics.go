@@ -87,6 +87,14 @@ func DiagnosticServiceTier(value string) *string {
 	return nil
 }
 
+// Fast is a Codex native setting, never an expansion of provider HTTP tiers.
+func DiagnosticNativeServiceTier(harness Harness, value string) *string {
+	if harness == Codex && value == "fast" {
+		return &value
+	}
+	return DiagnosticServiceTier(value)
+}
+
 // IDs must be opaque canonical UUIDs or closed provider identity spellings.
 // Callers additionally apply the protected credential guard before persistence.
 func SafeDiagnosticID(value string) bool {
@@ -128,10 +136,14 @@ func (d RequestDiagnostic) Validate() error {
 		return invalidObservation()
 	}
 	for _, setting := range []struct {
-		value  *string
-		filter func(string) *string
-	}{{d.RequestedEffort, DiagnosticEffort}, {d.EffectiveEffort, DiagnosticEffort}, {d.RequestedServiceTier, DiagnosticRequestedServiceTier}, {d.EffectiveServiceTier, DiagnosticServiceTier}} {
+		value      *string
+		filter     func(string) *string
+		nativeTier bool
+	}{{d.RequestedEffort, DiagnosticEffort, false}, {d.EffectiveEffort, DiagnosticEffort, false}, {d.RequestedServiceTier, DiagnosticRequestedServiceTier, true}, {d.EffectiveServiceTier, DiagnosticServiceTier, true}} {
 		if setting.value != nil && setting.filter(*setting.value) == nil {
+			if setting.nativeTier && d.Source == DiagnosticNativeInput && DiagnosticNativeServiceTier(d.Harness, *setting.value) != nil {
+				continue
+			}
 			return invalidObservation()
 		}
 	}

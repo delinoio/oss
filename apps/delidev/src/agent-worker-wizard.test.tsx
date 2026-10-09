@@ -1219,3 +1219,18 @@ it.each([false, true])("retains one model-result region through pending, empty, 
   expect(input.parentElement!.querySelector(".worker-model-results")).toBe(region);
   expect(value.discover).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
 });
+
+it.each([false, true])("saves explicit Fast mode for a connected ChatGPT subscription Worker (routes=%s)", async routes => {
+ const value = fixture([SystemCapability.AGENT_WORKER_WIZARD_V1, SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1, ...(routes ? [SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1] : [])]);
+ let model: HTMLElement;
+ if (routes) { await start(value); confirmHarness(); await chooseScrollOption(sourceChoice("Account source 1"), "subscription:chatgpt"); fireEvent.click(await screen.findByRole("checkbox", { name: /ChatGPT account/ })); await screen.findByRole("checkbox", { name: "Select ChatGPT account" }); await nextAfterSourceProof(value, [value.subscription]); model = await screen.findByRole("combobox", { name: "Model for ChatGPT subscription" }); }
+ else model = await subscriptionModels(value);
+ fireEvent.change(model,{target:{value:"exact-native-model"}});next();
+ await screen.findByRole("heading",{name:"Configure",level:3});
+ fireEvent.change(screen.getByRole("textbox",{name:"Name"}),{target:{value:"Fast subscription Worker"}});
+ fireEvent.click(screen.getByText("Native harness options"));
+ fireEvent.change(screen.getByRole("combobox",{name:"Service tier"}),{target:{value:"fast"}});
+ fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await waitFor(()=>expect(value.save).toHaveBeenCalledOnce());
+ const saved = JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson));
+ expect(saved.options.service_tier).toBe("fast");expect(saved.harness).toBe("codex");expect(value.save.mock.calls[0][0].model?.selection).toEqual({ case: "nativeId", value: "exact-native-model" });
+});

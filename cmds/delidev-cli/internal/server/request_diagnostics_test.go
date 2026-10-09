@@ -275,3 +275,24 @@ func TestNativeRequestDiagnosticTerminalPreservesUnavailableLatency(t *testing.T
 		})
 	}
 }
+
+// Projection consumes original input/settings evidence without consulting
+// mutable Agent Worker options or expanding provider HTTP classifications.
+func TestNativeFastDiagnosticProjectionRetainsOriginalEvidence(t *testing.T) {
+	f := newPublicationFixture(t)
+	input := f.input
+	input.Configuration.Options.ServiceTier = "fast"
+	event := f.event(domain.ExecutionThreadBound, 1)
+	fast := "fast"
+	event.Observed.ServiceTier = &fast
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-fast-diagnostic", nil, func(tx *store.Tx) (any, error) {
+		return nil, projectNativeDiagnostic(tx, input, event, domain.NewID())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := diagnosticRead(t, f.authorityFixture, &pb.ListRequestDiagnosticsRequest{SessionId: string(input.SessionID)}).Records
+	if len(rows) != 1 || rows[0].RequestedServiceTier == nil || *rows[0].RequestedServiceTier != "fast" || rows[0].EffectiveServiceTier == nil || *rows[0].EffectiveServiceTier != "fast" || rows[0].HttpAttempted != nil || rows[0].DurationMs != nil {
+		t.Fatal("original native Fast evidence was dropped or invented", rows)
+	}
+}

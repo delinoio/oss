@@ -80,3 +80,7 @@ Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project in
 - [Protocol contract](protos-delidev-v1-contract.md)
 - [Desktop contract](apps-delidev-desktop-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+### Codex native Fast tier — issue #1961
+
+Original Codex native input records preserve exact selected/effective `fast` through the closed native tier filter. This applies only to original Codex native source evidence; other native harnesses and provider HTTP observations retain their existing tier domains. Unknown values stay unavailable/redacted. The server projection uses the immutable execution configuration and original applied-setting event, never current Worker settings or requested-to-effective substitution. Frontend validation retains the same source/harness boundary. Native Fast observations grant no billing, acceleration, entitlement, account or retry authority.

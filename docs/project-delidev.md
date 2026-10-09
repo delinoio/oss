@@ -364,3 +364,5 @@ credentials, filesystem authority or device preference writes. Automated build
 and fixture evidence remains distinct from installed platform acceptance.
 
 Project settings and server defaults follow the [project behavior contract](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965). System 52 owns complete schema-2 configuration and portable v5. Explicit original project context governs routing/fetch/remediation; newly published typed native plans share the existing durable response controller. No migration or new native authority is introduced.
+
+- Codex Agent Worker Fast mode selection and original native diagnostics follow the catalog, desktop and diagnostics contracts for issue #1961. No allocation/migration or actual subscription acceptance is implied by fixture evidence.
