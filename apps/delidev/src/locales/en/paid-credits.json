@@ -8,5 +8,6 @@
   "paid-credits.count": "{{count}} credit balances",
   "paid-credits.failed": "Refresh failed; retained observation",
   "paid-credits.stale": "Stale observation",
-  "paid-credits.observed": "Observed"
+  "paid-credits.observed": "Observed",
+  "paid-credits.failed-empty": "Refresh failed; no balance observed"
 }

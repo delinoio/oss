@@ -8,5 +8,6 @@
   "paid-credits.count": "크레딧 잔액 {{count}}개",
   "paid-credits.failed": "새로고침 실패; 기존 관측 유지",
   "paid-credits.stale": "오래된 관측",
-  "paid-credits.observed": "관측됨"
+  "paid-credits.observed": "관측됨",
+  "paid-credits.failed-empty": "새로고침 실패; 관측된 잔액 없음"
 }
