@@ -18,7 +18,7 @@ import (
 var Version = "0.1.0"
 var SourceRevision = ""
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 const CorrelationHeader = "X-Delidev-Correlation-Id"
 
 func Kind(kind pb.EntityKind) (domain.Kind, error) {
@@ -30,7 +30,7 @@ func Kind(kind pb.EntityKind) (domain.Kind, error) {
 		return "", domain.Fail(domain.InvalidArgument, "Unknown entity kind.", "Use a supported versioned kind.")
 	}
 	result := domain.Kind(strings.ToLower(strings.TrimPrefix(name, "ENTITY_KIND_")))
-	if !result.Valid() {
+	if !result.Valid() || result == domain.ModelKind {
 		return "", domain.Fail(domain.InvalidArgument, "Unknown entity kind.", "Use a supported versioned kind.")
 	}
 	return result, nil
@@ -130,6 +130,9 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 }
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
+	if kind == domain.AgentKind {
+		return 4
+	}
 	if kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(raw, &fields) == nil {

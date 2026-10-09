@@ -151,7 +151,7 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 }
 
 func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
-	if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+	if !slices.Contains(machine.WorkerCapabilities, domain.InlineModelExecutionV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
 		return domain.Installation{}, domain.Fail(domain.Unsupported, "This Runner Device needs an update before execution.", "Update and reconnect the selected Runner Device to start the actual process directly.")
 	}
 	return checkedExecutionConfiguration(tx, session, machine, input)

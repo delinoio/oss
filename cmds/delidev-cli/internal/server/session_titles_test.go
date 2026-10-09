@@ -17,6 +17,7 @@ func titleOutputFixture() (domain.AuxiliaryTitleInput, domain.AuxiliaryTitleResu
 		AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(),
 		ProviderProtocol: domain.OpenAIResponses, ModelID: domain.NewID(), NativeModel: "fixture-model", Prompt: "First input",
 	}
+	input.ModelID = (domain.ModelIdentity{ProviderID: input.ProviderID, NativeID: input.NativeModel}).Key()
 	return input, domain.AuxiliaryTitleResult{Version: 1, OperationID: input.OperationID, NameGeneration: input.NameGeneration, Title: "First input", CleanupVerified: true}
 }
 

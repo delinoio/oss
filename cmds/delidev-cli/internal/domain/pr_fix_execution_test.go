@@ -27,6 +27,7 @@ func TestPRFixExecutionRechecksImmutableWritePermission(t *testing.T) {
 		Preparation: json.RawMessage(`{}`), Manifest: json.RawMessage(`{}`),
 		Remediation: &PRFixExecution{AttemptID: NewID(), Target: target, Strategy: MergeConflictStrategy},
 	}
+	input.Configuration.ModelID = (ModelIdentity{ProviderID: input.Configuration.ProviderID, NativeID: input.Configuration.NativeModel}).Key()
 	input.ConfigurationDigest, _ = input.Configuration.Digest()
 	if err := input.Validate(); err != nil {
 		t.Fatal("valid original write assignment", err)

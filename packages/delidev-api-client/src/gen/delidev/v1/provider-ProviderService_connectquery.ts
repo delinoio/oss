@@ -5,6 +5,11 @@
 import { ProviderService } from "./provider_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.ProviderService.ListEndpointModels
+ */
+export const listEndpointModels = ProviderService.method.listEndpointModels;
+
+/**
  * @generated from rpc delidev.v1.ProviderService.ListProviderPresets
  */
 export const listProviderPresets = ProviderService.method.listProviderPresets;

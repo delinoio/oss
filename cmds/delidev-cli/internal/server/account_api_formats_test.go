@@ -172,6 +172,11 @@ func TestPortableConfigurationFormatsVersionFour(t *testing.T) {
 	for _, version := range []uint32{1, 2, 3, 4} {
 		selection := transferSelection()
 		selection.Bundle.Version = version
+		if version != 4 {
+			s, _ := newDoctorFixture(t)
+			assertRejectedPortableVersion(t, s, selection)
+			continue
+		}
 		// Preserve the historical provider tuple for old bundles while using a
 		// format that was already compatible with this fixture's Codex Worker.
 		for i := range selection.Bundle.Entries {
@@ -284,12 +289,8 @@ func TestOpenRouterAccountFormatsAndCodexConfiguration(t *testing.T) {
 		}
 		accounts = append(accounts, r.Msg.Account)
 	}
-	model, err := saveAPIFormatConfiguration(f, domain.ModelKind, domain.Model{Name: "Fixture", NativeID: "provider/model", ProviderID: domain.ID(f.provider.Id), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for i, a := range accounts {
-		agent := domain.Agent{Name: "Codex", Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(a.Id), Weight: 1}}}
+		agent := domain.Agent{Name: "Codex", Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: domain.ID(f.provider.Id), NativeID: "provider/model"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: domain.ID(a.Id), Weight: 1}}}}}
 		_, err := saveAPIFormatConfiguration(f, domain.AgentKind, agent, nil)
 		if i == 0 && err != nil || i == 1 && domain.SafeError(err).Code != domain.Unsupported {
 			t.Fatal("Codex ignored the selected account format", err)

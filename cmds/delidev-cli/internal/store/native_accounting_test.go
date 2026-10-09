@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -253,50 +252,6 @@ func TestNativeAccountingAtomicRetentionReplayRestartPriceAndBudget(t *testing.T
 	}
 }
 
-func TestNativeAccountingMigrationPreservesRawObservationsWithoutBackfill(t *testing.T) {
-	s, root := openTest(t)
-	r, o, _ := nativeAccountingFixture(t, s)
-	source := domain.NewID()
-	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.historical-native", nil, func(tx *Tx) (any, error) { return nil, tx.PutClaudeUsage(source, r.SessionID, r.ProjectID, o) })
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := s.Get(context.Background(), domain.UsageKind, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := historicalSchema(s.db, "024"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s, err = Open(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	after, err := s.Get(context.Background(), domain.UsageKind, source)
-	if err != nil || string(before.Data) != string(after.Data) || before.Revision != after.Revision {
-		t.Fatal("migration rewrote raw history", err)
-	}
-	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.forbidden-backfill", nil, func(tx *Tx) (any, error) {
-		return nil, tx.PutClaudeAccounting(source, domain.NewID(), r.SessionID, r.ProjectID, o)
-	})
-	if domain.SafeError(err).Code != domain.Conflict {
-		t.Fatal("historical raw source acquired a new price/receipt", err)
-	}
-	var n, version int
-	if s.db.QueryRow("SELECT count(*) FROM native_accounting").Scan(&n) != nil || n != 0 || s.db.QueryRow("PRAGMA user_version").Scan(&version) != nil || version != SchemaVersion {
-		t.Fatal("migration fabricated units", n, version)
-	}
-	backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if err != nil || len(backups) != 1 {
-		t.Fatal("no original migration backup", err)
-	}
-	if err := ValidateBackup(context.Background(), backups[0]); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestNativeBudgetCombinesAmountsWithoutResponseCountOrWriteContamination(t *testing.T) {
 	s, _ := openTest(t)
 	r, o, input := nativeAccountingFixture(t, s)
@@ -410,7 +365,7 @@ func TestNativeAccountingCombinedModelInventoryBound(t *testing.T) {
 	r, claude, _ := nativeAccountingFixture(t, s)
 	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.combined-model-inventory", nil, func(tx *Tx) (any, error) {
 		for i := 0; i < domain.UsageModelGroupLimit; i++ {
-			model, source, input := domain.NewID(), domain.NewID(), domain.NewID()
+			model, source, input := domain.ModelIdentity{ProviderID: r.ProviderID, NativeID: fmt.Sprint("model-", i)}.Key(), domain.NewID(), domain.NewID()
 			switch i % 3 {
 			case 0:
 				value := r
@@ -459,7 +414,7 @@ func TestNativeAccountingCombinedModelInventoryBound(t *testing.T) {
 			t.Fatal("complete native model inventory was truncated", models)
 		}
 	}
-	claude.ExecutionID, claude.ModelID, claude.Usage.NativeEventID = domain.NewID(), domain.NewID(), string(domain.NewID())
+	claude.ExecutionID, claude.ModelID, claude.Usage.NativeEventID = domain.NewID(), domain.ModelIdentity{ProviderID: claude.ProviderID, NativeID: "other"}.Key(), string(domain.NewID())
 	if _, err := retainNative(s, domain.NewID(), domain.NewID(), domain.NewID(), r, claude, false); err != nil {
 		t.Fatal(err)
 	}

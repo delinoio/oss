@@ -124,3 +124,10 @@ enum SubscriptionServiceIdentity {
   SUBSCRIPTION_SERVICE_IDENTITY_GROK = 3;
   SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO = 4;
 }
+
+// Exact source identity; no independent Model resource exists in protocol 2.
+message ModelIdentity {
+  string provider_id = 1;
+  SubscriptionServiceIdentity subscription_service = 2;
+  string native_id = 3;
+}

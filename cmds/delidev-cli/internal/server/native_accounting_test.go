@@ -30,7 +30,7 @@ func TestClaudeNativeAccountingRPCProfilesFailureBudgetAndPrivacy(t *testing.T) 
 				price.CachedInputPerMillion = &read
 				amount = "0.0000165"
 			}
-			_, err := c.SetModelPricing(ctx, ownerRequest(f.service.Identity, &pb.SetModelPricingRequest{Mutation: &pb.Mutation{Id: string(f.input.Configuration.ModelID), RequestId: string(domain.NewID())}, ExpectedModelRevision: 1, Basis: price}))
+			_, err := c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, &pb.SetTokenPricingRequest{Model: wireModelKey(f.input.Configuration.ModelID), RequestId: string(domain.NewID()), ExpectedProviderRevision: 1, Basis: price}))
 			if err != nil {
 				t.Fatal(err)
 			}

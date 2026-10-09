@@ -7,8 +7,9 @@ import (
 )
 
 type PricingVersion struct {
+	Provenance          *PriceProvenance    `json:"provenance,omitempty"`
 	ID                  ID                  `json:"id"`
-	ModelID             ID                  `json:"model_id"`
+	ModelID             ID                  `json:"model_key"`
 	ProviderID          ID                  `json:"provider_id,omitempty"`
 	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
 	Revision            uint64              `json:"revision"`
@@ -119,6 +120,13 @@ func (p *PricingUsage) Add(value ResponseEstimate) {
 }
 
 func (p PricingVersion) ValidIdentity() bool {
+	if p.Provenance != nil && p.Provenance.Validate() != nil {
+		return false
+	}
+	identity, e := ParseModelKey(p.ModelID)
+	if e != nil || identity.ProviderID != p.ProviderID || identity.SubscriptionService != p.SubscriptionService {
+		return false
+	}
 	if p.SubscriptionService != "" {
 		return p.SubscriptionService.Valid() && p.ProviderID == ""
 	}

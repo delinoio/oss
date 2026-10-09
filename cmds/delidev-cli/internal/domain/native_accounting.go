@@ -29,7 +29,10 @@ type NativeAccountingUnit struct {
 
 func (u NativeAccountingUnit) Validate() error {
 	o := u.Attribution()
-	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID, o.ModelID} {
+	if !ModelKeyMatchesSource(o.ModelID, o.ProviderID, o.SubscriptionService) {
+		return invalidObservation()
+	}
+	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID} {
 		if id.Validate() != nil {
 			return invalidClaudeUsage()
 		}
@@ -316,5 +319,5 @@ func (u NativeAccountingUnit) Attribution() ClaudeUsageRecord {
 		return u.Observation
 	}
 	o := u.OpenCode
-	return ClaudeUsageRecord{ExecutionID: o.ExecutionID, AccountID: o.AccountID, ConnectionID: o.ConnectionID, ProviderID: o.ProviderID, ModelID: o.ModelID, Harness: o.Harness, Version: o.Version, ThreadID: o.ThreadID, TurnID: o.TurnID, Sequence: o.Sequence}
+	return ClaudeUsageRecord{ExecutionID: o.ExecutionID, AccountID: o.AccountID, ConnectionID: o.ConnectionID, ProviderID: o.ProviderID, SubscriptionService: o.SubscriptionService, ModelID: o.ModelID, Harness: o.Harness, Version: o.Version, ThreadID: o.ThreadID, TurnID: o.TurnID, Sequence: o.Sequence}
 }

@@ -75,8 +75,8 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	}
 	machine := paired["result"].(map[string]any)["machine_id"].(string)
 	p := run([]string{"provider", "create"}, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})["resource"].(map[string]any)
-	m := run([]string{"model", "create"}, domain.Model{Name: "Fixture model", NativeID: "fixture", ProviderID: domain.ID(p["id"].(string)), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})["resource"].(map[string]any)
-	a := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: domain.ID(m["id"].(string)), Options: domain.AgentOptions{Permission: domain.PermissionDefault}})["resource"].(map[string]any)
+	account := run([]string{"account", "create"}, domain.Account{Alias: "Disconnected fixture", Type: domain.APIAccount, ProviderID: domain.ID(p["id"].(string)), Enabled: true, Health: domain.AccountDisconnected})["resource"].(map[string]any)
+	a := run([]string{"agent", "create"}, domain.Agent{Name: "Fixture", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{cliInlineFixtureRoute(domain.ID(p["id"].(string)), "fixture", []domain.WeightedAccount{{ID: domain.ID(account["id"].(string)), Weight: 1}})}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})["resource"].(map[string]any)
 	request := string(domain.NewID())
 	args := []string{"session", "create", "--request-id", request}
 	input := domain.CreateSession{Name: "CLI session", AgentID: domain.ID(a["id"].(string)), MachineID: domain.ID(machine), Workspace: domain.GeneralChat, Prompt: "CLI private fixture"}
@@ -111,8 +111,10 @@ func TestCLISessionAcceptanceQueueAndArchive(t *testing.T) {
 	}
 	revision = strconv.FormatUint(uint64(restored["revision"].(float64)), 10)
 	code, failed := cliRun(t, root, []string{"session", "resume", "--id", id, "--revision", revision}, "")
-	if code == 0 || failed["error"].(map[string]any)["code"] != "conflict" {
-		t.Fatal("CLI resumed an unprepared workspace")
+	// The current inline source has a legitimate disconnected Account. Routing
+	// rejects it before workspace admission; it must never gain execution authority.
+	if code != 2 || failed["error"].(map[string]any)["code"] != "missing_input" || failed["error"].(map[string]any)["message"] != "No eligible account is available for execution." {
+		t.Fatalf("CLI resumed without an eligible original account: code=%d result=%+v", code, failed)
 	}
 
 	code, failed = cliRun(t, root, []string{"session", "recover-workspace", "--id", id, "--revision", revision, "--cleanup", "--wait"}, "")

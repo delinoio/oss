@@ -27,10 +27,10 @@ func TestAutomaticValidationAndDiscoveryRemainIndependent(t *testing.T) {
 		state     domain.ObservationState
 		calls     int32
 	}{
-		{"keyless-both", domain.KeylessAuth, true, 200, domain.Observed, 2},
+		{"keyless-both", domain.KeylessAuth, true, 200, domain.Observed, 1},
 		{"keyless-validation-only", domain.KeylessAuth, false, 200, domain.Observed, 1},
-		{"custom-public", domain.BearerAuth, true, 200, domain.ObservationUnsupported, 2},
-		{"rejected-credentials", domain.KeylessAuth, true, 401, domain.ObservationFailed, 2},
+		{"custom-public", domain.BearerAuth, true, 200, domain.ObservationUnsupported, 1},
+		{"rejected-credentials", domain.KeylessAuth, true, 401, domain.ObservationFailed, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -73,7 +73,7 @@ func TestAutomaticValidationAndDiscoveryRemainIndependent(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if account.Validation == nil || account.Validation.State != test.state || calls.Load() != test.calls || (account.Catalog != nil) != test.discovery {
+			if account.Validation == nil || account.Validation.State != test.state || calls.Load() != test.calls || account.Catalog != nil {
 				t.Fatalf("independent observations: %+v calls=%d", account, calls.Load())
 			}
 			if account.Catalog != nil && account.Catalog.RequestID == account.Validation.RequestID {

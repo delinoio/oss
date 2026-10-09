@@ -6,7 +6,7 @@ export async function verifyLocalServer(transport: Transport, serverId: string) 
   for (let attempt = 0; ; attempt++) {
     try {
       const status = await client.getStatus({}, { timeoutMs: 3000 });
-      if (status.serverId !== serverId || status.protocolVersion !== 1 || status.version !== "0.1.0") throw "incompatible";
+      if (status.serverId !== serverId || status.protocolVersion !== 2 || status.version !== "0.1.0") throw "incompatible";
       if (status.stopping) throw "stopped";
       return;
     } catch (reason) {

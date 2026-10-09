@@ -161,5 +161,8 @@
   "agent-worker-wizard.addApiAccount": "Add an account in AI API Keys",
   "agent-worker-wizard.addSubscriptionAccount": "Add an account in AI Subscription",
   "agent-worker-wizard.retryAccounts": "Retry accounts",
-  "agent-worker-wizard.routingEmpty": "Select accounts to configure their order and weights."
+  "agent-worker-wizard.routingEmpty": "Select accounts to configure their order and weights.",
+  "agent-worker-wizard.endpointModelOrigin": "Endpoint suggestion",
+  "agent-worker-wizard.endpointSuggestions": "Choose a source suggestion or enter its exact native model ID.",
+  "agent-worker-wizard.endpointReadOnly": "Endpoint suggestions are read-only metadata. They do not confirm execution eligibility."
 }

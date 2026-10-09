@@ -30,7 +30,7 @@ func imageRPCFixture(t *testing.T, harnesses ...domain.Harness) (*firstDispatchF
 	}
 	f := newFirstDispatchFixtureForHarness(t, harness)
 	ctx := context.Background()
-	_, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1}}))
+	_, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,16 +44,8 @@ func imageRPCFixture(t *testing.T, harnesses ...domain.Harness) (*firstDispatchF
 		if err != nil {
 			return nil, err
 		}
-		modelRow, err := tx.Get(domain.ModelKind, agent.ModelID)
-		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](modelRow)
-		if err != nil {
-			return nil, err
-		}
-		model.InputModalities = []string{"text", "image"}
-		return tx.Put(domain.ModelKind, modelRow.ID, modelRow.Revision, "", "", model)
+		agent.Routes[0].Model.InputModalities = []string{"text", "image"}
+		return tx.Put(domain.AgentKind, row.ID, row.Revision, "", "", agent)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -169,16 +161,8 @@ func TestImageRPCOrderedClaimExactRetryReadbackAndImmutableEdit(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		row, err := tx.Get(domain.ModelKind, agent.ModelID)
-		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](row)
-		if err != nil {
-			return nil, err
-		}
-		model.InputModalities = []string{"text"}
-		return tx.Put(domain.ModelKind, row.ID, row.Revision, "", "", model)
+		agent.Routes[0].Model.InputModalities = []string{"text"}
+		return tx.Put(domain.AgentKind, agentRow.ID, agentRow.Revision, "", "", agent)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -390,23 +374,12 @@ func TestImageMixedSourcesAndImmutableDeclaredSnapshot(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		modelRow, err := tx.Get(domain.ModelKind, agent.ModelID)
-		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](modelRow)
-		if err != nil {
-			return nil, err
-		}
+		model := *agent.Routes[0].Model
 		model.InputModalities = []string{"text"}
 		model.NativeID += "-text-only"
-		other := domain.NewID()
-		if _, err := tx.Put(domain.ModelKind, other, 0, "", "", model); err != nil {
-			return nil, err
-		}
 		first := agent.SourceRoutes()[0]
 		second := first
-		second.ModelID = other
+		second.Model = &model
 		agent.Routes = []domain.AgentSourceRoute{first, second}
 		agent.ModelID = ""
 		agent.Accounts = nil

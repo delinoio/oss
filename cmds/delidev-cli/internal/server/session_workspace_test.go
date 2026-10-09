@@ -26,7 +26,7 @@ func workspaceStreamWithLifetime(t *testing.T, f *accountFixture, identity secur
 	t.Cleanup(cancel)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.endpoint.URL)
 	instance := string(domain.NewID())
-	if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
+	if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
 		t.Fatal(err)
 	}
 	stream, err := client.WatchWork(ctx, ownerRequest(identity, &pb.WatchWorkRequest{MachineId: string(machine), InstanceId: instance}))

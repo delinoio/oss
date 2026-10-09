@@ -243,7 +243,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	go func() {
 		defer close(catalogDone)
 		if !config.disableCatalogMaintenance && !config.DisableBackgroundMaintenanceForTesting {
-			service.runCatalogMaintenance(catalogCtx)
+			// Protocol 2 has no persistent Model catalog maintenance.
+			_ = catalogCtx
 		}
 	}()
 	defer func() { stopCatalog(); <-catalogDone }()
@@ -256,6 +257,24 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		}
 	}()
 	defer func() { stopKnown(); <-knownDone }()
+
+	priceManager := service.tokenPrices()
+	service.Store.SetAutomaticPricing(func(tx *store.Tx, model domain.ModelIdentity) error {
+		snapshot, err := service.tokenPriceSnapshot(tx, model)
+		if err != nil {
+			return err
+		}
+		return service.applyReference(tx, model, snapshot)
+	})
+	pricesCtx, stopPrices := context.WithCancel(child)
+	pricesDone := make(chan struct{})
+	go func() {
+		defer close(pricesDone)
+		if !config.DisableBackgroundMaintenanceForTesting {
+			priceManager.Run(pricesCtx)
+		}
+	}()
+	defer func() { stopPrices(); priceManager.Close(); <-pricesDone }()
 
 	dispatchCtx, stopDispatch := context.WithCancel(child)
 	dispatchDone := make(chan struct{})

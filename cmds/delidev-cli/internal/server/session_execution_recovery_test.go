@@ -39,7 +39,7 @@ func recoveredAutomaticTitleFixture(t *testing.T) *publicationFixture {
 	terminal := f.event(domain.ExecutionTurnFinished, 3)
 	terminal.Outcome = domain.ExecutionSucceeded
 	f.publish(t, terminal)
-	if _, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{
+	if _, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{ProtocolVersion: 2,
 		RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version,
 		Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1},
 	})); err != nil {
@@ -127,7 +127,7 @@ func replaceRecoveryFixtureWorker(t *testing.T, f *publicationFixture) *publicat
 		t.Fatal(err)
 	}
 	replacement := domain.NewID()
-	_, err = f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(replacement), Version: rpc.Version}))
+	_, err = f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(replacement), Version: rpc.Version}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestExecutionRecoveryRejectsStaleAndUnsettledEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			if scenario == "worker-lost" {
-				_, err = f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(domain.NewID()), Version: rpc.Version}))
+				_, err = f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(domain.NewID()), Version: rpc.Version}))
 				if err != nil {
 					t.Fatal(err)
 				}
