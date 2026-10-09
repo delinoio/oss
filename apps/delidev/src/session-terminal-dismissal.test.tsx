@@ -89,7 +89,7 @@ it("an explicit ID outside the inventory dismisses only after its own exit witho
   await screen.findByRole("textbox", { name: "Terminal input" }); await screen.findByRole("tab", { name: /Terminal 1/ });
   expect(test.getResource).toHaveBeenCalledTimes(1); expect(test.close).not.toHaveBeenCalled();
   test.exit(); await waitFor(() => expect(test.close).toHaveBeenCalledTimes(1));
-  expect(screen.queryByRole("tab")).toBeNull(); expect(test.getResource).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(screen.queryByRole("tab")).toBeNull()); expect(test.getResource).toHaveBeenCalledTimes(1);
   expect(test.control).not.toHaveBeenCalled(); expect(test.createTerminal).not.toHaveBeenCalled();
  } finally { test.cleanup(); }
 });
