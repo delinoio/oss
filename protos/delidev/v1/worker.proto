@@ -125,11 +125,14 @@ message AttachWorkerRequest {
   string network_route_id = 7;
   string network_key_id = 8;
   string network_recipient = 9;
+  uint32 protocol_version = 10;
 }
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 = 52;
+
+  WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 = 22;
 
   WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1 = 50;
   WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1 = 51;

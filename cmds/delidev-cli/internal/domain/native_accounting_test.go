@@ -5,7 +5,8 @@ import "testing"
 
 func nativeUnitFixture() NativeAccountingUnit {
 	input, read, write, zero := ClaudeUsageCount("13"), ClaudeUsageCount("7"), ClaudeUsageCount("5"), ClaudeUsageCount("0")
-	return NativeAccountingUnit{Kind: ClaudeMainLoopInput, SourceID: NewID(), RequestID: NewID(), InputID: NewID(), SessionID: NewID(), Observation: ClaudeUsageRecord{ExecutionID: NewID(), AccountID: NewID(), ConnectionID: NewID(), ProviderID: NewID(), ModelID: NewID(), Harness: ClaudeCode, Version: ClaudeProtocolVersion, ThreadID: string(NewID()), TurnID: string(NewID()), Sequence: 3, Usage: ClaudeUsageObservation{Source: ClaudeInputResultUsage, NativeEventID: string(NewID()), Result: &ClaudeResultUsage{MainLoop: &ClaudeProviderUsage{Input: &input, CacheRead: &read, CacheWrite: &write, Output: &zero, OutputDetail: &ClaudeOutputTokenDetails{Thinking: &zero}}}}}}
+	provider := NewID()
+	return NativeAccountingUnit{Kind: ClaudeMainLoopInput, SourceID: NewID(), RequestID: NewID(), InputID: NewID(), SessionID: NewID(), Observation: ClaudeUsageRecord{ExecutionID: NewID(), AccountID: NewID(), ConnectionID: NewID(), ProviderID: provider, ModelID: (ModelIdentity{ProviderID: provider, NativeID: "fixture"}).Key(), Harness: ClaudeCode, Version: ClaudeProtocolVersion, ThreadID: string(NewID()), TurnID: string(NewID()), Sequence: 3, Usage: ClaudeUsageObservation{Source: ClaudeInputResultUsage, NativeEventID: string(NewID()), Result: &ClaudeResultUsage{MainLoop: &ClaudeProviderUsage{Input: &input, CacheRead: &read, CacheWrite: &write, Output: &zero, OutputDetail: &ClaudeOutputTokenDetails{Thinking: &zero}}}}}}
 }
 func TestNativeInputAccountingExactScopeAndPricing(t *testing.T) {
 	u := nativeUnitFixture()

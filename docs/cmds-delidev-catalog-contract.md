@@ -494,7 +494,11 @@ outbound routing and existing 20-second/32-page/10,000-model/response limits.
 Autocomplete makes no separate credential-validation request and publishes no
 Models, Account changes, catalog observations, events or receipts. No fallback,
 partial response, persistent catalog cache or background catalog refresh is
-allowed. Disconnect, revocation and shutdown cancel and join original requests.
+allowed. The Provider editor omits the retired automatic-discovery control.
+Retain any existing `Provider.discovery` value as inert configuration metadata
+through unrelated edits and portable export; it grants no refresh, catalog or
+credential authority. Disconnect, revocation and shutdown cancel and join
+original requests.
 Logs retain only bounded identities, counts, phase, duration and stable failures.
 
 The editor requests a fresh list on entry/explicit refresh through the first

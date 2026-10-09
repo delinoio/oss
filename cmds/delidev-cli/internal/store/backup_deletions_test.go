@@ -282,41 +282,6 @@ func TestBackupDeletionRejectsCanceledAndStaleAdmission(t *testing.T) {
 	}
 }
 
-func TestBackupDeletionMigrationFrom20PreservesExistingTablesAndBackup(t *testing.T) {
-	s, root, ctx, in := deletionFixture(t)
-	if _, err := historicalSchema(s.db, "020"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	reopened, err := Open(ctx, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	var version int
-	if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
-		t.Fatal(version, err)
-	}
-	images, err := reopened.BackupInventory(ctx)
-	if err != nil || len(images) != 2 {
-		t.Fatal(images, err)
-	}
-	for _, image := range images {
-		inspected, err := reopened.InspectBackup(ctx, image.ID, in.ServerID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if image.ID != in.Backup.ID && inspected.SchemaVersion != 20 {
-			t.Fatal("migration did not preserve original schema", inspected)
-		}
-	}
-	if _, _, err := reopened.DeleteBackup(ctx, domain.NewID(), in); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestBackupDeletionDoesNotAcknowledgeMissingExternalIntent(t *testing.T) {
 	s, root, ctx, in := deletionFixture(t)
 	journal := filepath.Join(root, "backup-deletions")
@@ -411,51 +376,6 @@ func TestBackupDeletionMissingUnlinkAcknowledgmentStillRequiresSync(t *testing.T
 	job, decodeErr = Decode[domain.Job](row)
 	if err != nil || decodeErr != nil || job.State != domain.JobSucceeded || syncs != 3 {
 		t.Fatal(job, err, decodeErr, syncs)
-	}
-}
-
-func TestBackupDeletionMigrationFromBothVersion21Layouts(t *testing.T) {
-	for _, legacyBackupBranch := range []bool{false, true} {
-		t.Run(fmt.Sprint(legacyBackupBranch), func(t *testing.T) {
-			s, root, ctx, in := deletionFixture(t)
-			var original Record
-			if legacyBackupBranch {
-				var err error
-				original, _, err = s.DeleteBackup(ctx, domain.NewID(), in)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if _, err := historicalSchema(s.db, "021-backups"); err != nil {
-					t.Fatal(err)
-				}
-			} else if _, err := historicalSchema(s.db, "021"); err != nil {
-				t.Fatal(err)
-			}
-			if err := s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			reopened, err := Open(ctx, root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
-			var version, index int
-			if err := reopened.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
-				t.Fatal(version, err)
-			}
-			if err := reopened.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name='provider_preset_unique' AND type='index'").Scan(&index); err != nil || index != 1 {
-				t.Fatal(index, err)
-			}
-			if legacyBackupBranch {
-				row, err := reopened.RunBackupDeletion(ctx, original.ID, in.ServerID)
-				job, decodeErr := Decode[domain.Job](row)
-				if err != nil || decodeErr != nil || job.State != domain.JobSucceeded {
-					t.Fatal(job, err, decodeErr)
-				}
-			} else if _, _, err := reopened.DeleteBackup(ctx, domain.NewID(), in); err != nil {
-				t.Fatal(err)
-			}
-		})
 	}
 }
 
@@ -565,88 +485,5 @@ func TestBackupDeletionClaimPreservesReopenedOriginal(t *testing.T) {
 	}
 	if err := verifyDeletionImage(ctx, claimed, in); err != nil {
 		t.Fatal("claimed original lost", err)
-	}
-}
-
-func TestBackupDeletionMigrationFromBothVersion22Layouts(t *testing.T) {
-	for _, backupLayout := range []bool{false, true} {
-		t.Run(fmt.Sprint(backupLayout), func(t *testing.T) {
-			s, root, ctx, in := deletionFixture(t)
-			var openAI, anthropic domain.ID
-			for preset, target := range map[string]*domain.ID{"openai": &openAI, "anthropic": &anthropic} {
-				if err := s.db.QueryRow("SELECT id FROM entities WHERE kind='provider' AND json_extract(body,'$.preset_id')=?", preset).Scan(target); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := s.Mutate(ctx, domain.NewID(), "fixture.saved-off", nil, func(tx *Tx) (any, error) {
-				row, err := tx.Get(domain.ProviderKind, openAI)
-				if err != nil {
-					return nil, err
-				}
-				provider, err := Decode[domain.Provider](row)
-				if err != nil {
-					return nil, err
-				}
-				provider.SetEnabled(false)
-				return tx.Put(domain.ProviderKind, openAI, row.Revision, "", "", provider)
-			}); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := s.db.Exec("DELETE FROM entities WHERE id=?", anthropic); err != nil {
-				t.Fatal(err)
-			}
-			var job Record
-			if backupLayout {
-				var err error
-				job, _, err = s.DeleteBackup(ctx, domain.NewID(), in)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			fixtureVersion := "022"
-			if backupLayout {
-				fixtureVersion = "022-backups"
-			}
-			if _, err := historicalSchema(s.db, fixtureVersion); err != nil {
-				t.Fatal(err)
-			}
-			if err := s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			reopened, err := Open(ctx, root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer reopened.Close()
-			row, err := reopened.Get(ctx, domain.ProviderKind, openAI)
-			provider, decodeErr := Decode[domain.Provider](row)
-			if err != nil || decodeErr != nil || row.Revision != 2 || provider.EnabledValue() {
-				t.Fatal("saved Off identity changed", row, err, decodeErr)
-			}
-			var version, hosted, table int
-			if err := reopened.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != SchemaVersion {
-				t.Fatal(version, err)
-			}
-			if err := reopened.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='backup_deletions'").Scan(&table); err != nil || table != 1 {
-				t.Fatal(table, err)
-			}
-			if err := reopened.db.QueryRow("SELECT count(*) FROM entities WHERE kind='provider' AND json_extract(body,'$.preset_id')='anthropic'").Scan(&hosted); err != nil {
-				t.Fatal(err)
-			}
-			want := 0
-			if backupLayout {
-				want = 1
-			}
-			if hosted != want {
-				t.Fatal("provider defaults crossed the wrong migration boundary", hosted, want)
-			}
-			if backupLayout {
-				row, err := reopened.RunBackupDeletion(ctx, job.ID, in.ServerID)
-				value, decodeErr := Decode[domain.Job](row)
-				if err != nil || decodeErr != nil || value.State != domain.JobSucceeded {
-					t.Fatal(value, err, decodeErr)
-				}
-			}
-		})
 	}
 }

@@ -44,7 +44,7 @@ func (t *Tx) PutGrokAccounting(jobID, projectID domain.ID, input domain.Executio
 	if !errors.Is(err, sql.ErrNoRows) {
 		return storageError(err)
 	}
-	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO native_accounting(id,kind,session_id,project_id,execution_id,input_id,account_id,provider_id,model_id,body,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", record.SourceReceipt, record.Kind, record.SessionID, record.ProjectID, record.ExecutionID, record.InputID, record.AccountID, record.ProviderID, record.ModelID, body, t.now.UnixMilli())
+	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO native_accounting(id,kind,session_id,project_id,execution_id,input_id,account_id,provider_id,model_key,body,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", record.SourceReceipt, record.Kind, record.SessionID, record.ProjectID, record.ExecutionID, record.InputID, record.AccountID, record.ProviderID, record.ModelID, body, t.now.UnixMilli())
 	// Deliberately no price snapshot or session_estimates write: the pinned Grok
 	// category inclusivity is not proved. Remove this exclusion only with a separately
 	// verified native pricing profile, never by reinterpreting response dimensions.

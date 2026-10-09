@@ -42,7 +42,8 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
   if (response.records.length > 50 || response.nextPageToken.length > 2048) invalid();
   const ids = new Set<string>();
   for (const value of response.records) {
-    if (![value.id, value.sessionId, value.executionId, value.accountId, value.connectionId, value.modelId, value.publicationRequestId].every(isEntityId) || ids.has(value.id) || value.sessionId !== sessionId || executionId && value.executionId !== executionId || value.revision < 1n || value.revision > 9223372036854775807n) invalid();
+    if (![value.id, value.sessionId, value.executionId, value.accountId, value.connectionId, value.publicationRequestId].every(isEntityId) || ids.has(value.id) || value.sessionId !== sessionId || executionId && value.executionId !== executionId || value.revision < 1n || value.revision > 9223372036854775807n) invalid();
+    if (!value.model || !value.model.nativeId || new TextEncoder().encode(value.model.nativeId).length > 256 || value.model.providerId !== value.providerId || value.model.subscriptionService !== value.subscriptionService || value.modelId) invalid();
     const service = subscriptionServiceFromWire(value.subscriptionService);
     if (value.subscriptionService ? !service || value.providerId || value.source !== Source.NATIVE_INPUT || subscriptionServiceHarnesses[service] !== value.harness : !isEntityId(value.providerId)) invalid();
     ids.add(value.id);
@@ -69,7 +70,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
     <dl>
       <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd>{value.id}</dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd>{value.executionId}</dd>
       <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd>{value.accountId}</dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd>{value.connectionId}</dd>
-      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.modelId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
+      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.model?.nativeId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
       <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd><Timestamp value={value.observedAt} /></dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd><Timestamp value={value.finishedAt} fallback={copy("request-diagnostics.unavailable_ca1844")} /></dd>
       <dt>{copy("request-diagnostics.httpLatency_4cebf1")}</dt><dd>{value.durationMs === undefined ? copy("request-diagnostics.unavailable_ca1844") : copy("request-diagnostics.ms_d659ce", { v0: value.durationMs.toString() })}</dd>
       <dt>{copy("request-diagnostics.httpAttempt_4a264f")}</dt><dd>{value.httpAttempted === undefined ? copy("request-diagnostics.unavailable_ca1844") : value.httpAttempted ? copy("request-diagnostics.sendClaimedProviderAcceptanceIsUnconfirmed_0370a9") : copy("request-diagnostics.noHttpAttempt_56754e")}</dd>

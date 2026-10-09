@@ -62,6 +62,7 @@ func TestOpenCodeGoOriginalNativeProofAndRevokedLease(t *testing.T) {
 	f.input.Configuration.Subscription = true
 	f.input.Configuration.SubscriptionService = domain.SubscriptionOpenCodeGo
 	f.input.Configuration.ProviderID = ""
+	f.input.Configuration.ModelID = (domain.ModelIdentity{SubscriptionService: domain.SubscriptionOpenCodeGo, NativeID: f.input.Configuration.NativeModel}).Key()
 	digest, err := f.input.Configuration.Digest()
 	if err != nil {
 		t.Fatal(err)
@@ -84,18 +85,7 @@ func TestOpenCodeGoOriginalNativeProofAndRevokedLease(t *testing.T) {
 		if _, e = tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, a); e != nil {
 			return nil, e
 		}
-		r, e = tx.Get(domain.ModelKind, f.input.Configuration.ModelID)
-		if e != nil {
-			return nil, e
-		}
-		m, e := store.Decode[domain.Model](r)
-		if e != nil {
-			return nil, e
-		}
-		m.ProviderID = ""
-		m.SourceKind = domain.SubscriptionModel
-		m.SubscriptionService = domain.SubscriptionOpenCodeGo
-		if _, e = tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, m); e != nil {
+		if _, e = fixtureInlineSource(tx, f.input.Configuration.AgentID, "", domain.SubscriptionOpenCodeGo); e != nil {
 			return nil, e
 		}
 		r, e = tx.Get(domain.MachineKind, f.input.MachineID)
@@ -261,26 +251,7 @@ func configureOpenCodeGoDispatch(t *testing.T, f *firstDispatchFixture) {
 		if _, e = tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, a); e != nil {
 			return nil, e
 		}
-		ar, e := tx.Get(domain.AgentKind, domain.ID(f.agent.Id))
-		if e != nil {
-			return nil, e
-		}
-		agent, e := store.Decode[domain.Agent](ar)
-		if e != nil {
-			return nil, e
-		}
-		r, e = tx.Get(domain.ModelKind, agent.ModelID)
-		if e != nil {
-			return nil, e
-		}
-		model, e := store.Decode[domain.Model](r)
-		if e != nil {
-			return nil, e
-		}
-		model.ProviderID = ""
-		model.SourceKind = domain.SubscriptionModel
-		model.SubscriptionService = domain.SubscriptionOpenCodeGo
-		if _, e = tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, model); e != nil {
+		if _, e = fixtureInlineSource(tx, domain.ID(f.agent.Id), "", domain.SubscriptionOpenCodeGo); e != nil {
 			return nil, e
 		}
 		r, e = tx.Get(domain.MachineKind, domain.ID(f.machine.Id))

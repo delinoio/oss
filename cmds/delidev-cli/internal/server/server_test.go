@@ -145,12 +145,12 @@ func TestConnectSnapshotReplayRestartAndBackupDeduplication(t *testing.T) {
 	}
 	system := delidevv1connect.NewSystemServiceClient(http.DefaultClient, endpoint.URL)
 	backupID := domain.NewID()
-	backup, err := system.CreateBackup(ctx, ownerRequest(identity, &pb.CreateBackupRequest{RequestId: string(backupID)}))
+	backup, err := system.RequestBackup(ctx, ownerRequest(identity, &pb.RequestBackupRequest{RequestId: string(backupID)}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := system.CreateBackup(ctx, ownerRequest(identity, &pb.CreateBackupRequest{RequestId: string(backupID)}))
-	if err != nil || again.Msg.Id != backup.Msg.Id || !again.Msg.Replayed {
+	again, err := system.RequestBackup(ctx, ownerRequest(identity, &pb.RequestBackupRequest{RequestId: string(backupID)}))
+	if err != nil || again.Msg.Job.Id != backup.Msg.Job.Id || !again.Msg.Replayed {
 		t.Fatalf("backup retry duplicated: %+v %v", again, err)
 	}
 	stop()

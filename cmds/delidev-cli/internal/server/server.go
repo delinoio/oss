@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -67,6 +68,8 @@ type Service struct {
 	imageTransferReaders  map[domain.ID]*imageTransferReader
 	skillPreparationsOnce sync.Once
 	skillPreparationsWake chan struct{}
+	tokenPricesOnce       sync.Once
+	prices                *tokenprices.Manager
 	knownModelsOnce       sync.Once
 	knownModels           *knownmodels.Manager
 	releaseVerifier       func([]byte, string, time.Time) (updates.Verified, error)

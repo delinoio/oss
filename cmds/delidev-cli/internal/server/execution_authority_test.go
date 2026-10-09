@@ -88,7 +88,9 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 	} else if harness == domain.ClaudeCode {
 		permission, version = domain.PermissionDefault, domain.ClaudeProtocolVersion
 	}
-	agent := domain.Agent{Name: "Fixture", Harness: harness, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: permission}}
+	modelID = (domain.ModelIdentity{ProviderID: providerID, NativeID: nativeModel}).Key()
+	inline := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: providerID, NativeID: nativeModel}, Name: model.Name, MetadataSource: model.MetadataSource}
+	agent := domain.Agent{Model: inline, Name: "Fixture", Harness: harness, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: permission}}
 	configuration, err := domain.ResolveExecutionConfiguration(agentID, 1, agent, 1, model, domain.Priority, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -104,6 +106,8 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 	secrets := &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}
 	secrets.values[credentials.Ref{Owner: accountID, ID: connectionID, Purpose: credentials.AccountAPI}] = []byte("temporary-upstream-fixture-key")
 	f.service = &Service{Store: s, Identity: security.Identity{ServerID: domain.NewID(), Token: "fixture-owner-token"}, logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: secrets}
+	agent.Routes = []domain.AgentSourceRoute{{Model: inline, Accounts: agent.Accounts}}
+	agent.ModelID, agent.Model, agent.Accounts = "", nil, nil
 	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.execution-authority", f.job, func(tx *store.Tx) (any, error) {
 		put := func(kind domain.Kind, id domain.ID, session domain.ID, value any) error {
 			_, err := tx.Put(kind, id, 0, session, "", value)
@@ -115,7 +119,7 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 			value any
 		}{
 			{domain.ProviderKind, providerID, domain.Provider{Name: "Fixture", Endpoint: upstream, Protocol: protocol, Authentication: domain.BearerAuth}},
-			{domain.ModelKind, modelID, model}, {domain.AgentKind, agentID, agent},
+			{domain.AgentKind, agentID, agent},
 			{domain.AccountKind, accountID, domain.Account{Alias: "Fixture", ProviderID: providerID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: connectionID, Authentication: domain.BearerAuth, ConnectedAt: time.Now().UTC()}}},
 			{domain.MachineKind, f.input.MachineID, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},
 			{domain.DeviceKind, f.device, domain.Device{Name: "Fixture Worker", Type: domain.WorkerDevice, MachineID: f.input.MachineID}},

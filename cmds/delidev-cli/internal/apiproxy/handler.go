@@ -237,7 +237,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	submitted := false
 	phase := phaseCredential
 	defer func() {
-		h.logger.Info("api_proxy_request_finished", "correlation_id", correlation, "execution_id", lease.Scope.ExecutionID, "session_id", lease.Scope.SessionID, "account_id", lease.Scope.AccountID, "provider_id", lease.Scope.ProviderID, "model_id", lease.Scope.ModelID, "purpose", lease.Scope.Purpose, "operation", operation, "phase", phase, "stream", stream, "submitted", submitted, "http_status", status, "error_code", code, "duration_ms", time.Since(started).Milliseconds())
+		h.logger.Info("api_proxy_request_finished", "correlation_id", correlation, "execution_id", lease.Scope.ExecutionID, "session_id", lease.Scope.SessionID, "account_id", lease.Scope.AccountID, "provider_id", lease.Scope.ProviderID, "purpose", lease.Scope.Purpose, "operation", operation, "phase", phase, "stream", stream, "submitted", submitted, "http_status", status, "error_code", code, "duration_ms", time.Since(started).Milliseconds())
 	}()
 	attempted := false
 	purpose := lease.Scope.Purpose

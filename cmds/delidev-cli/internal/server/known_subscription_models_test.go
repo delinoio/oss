@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -12,7 +13,10 @@ import (
 func TestKnownSubscriptionModelsReadOnlyAndWorkerDenied(t *testing.T) {
 	f := newAccountFixture(t)
 	ctx := context.Background()
-	before := catalogSearch(t, f, &pb.SearchModelsRequest{SubscriptionService: pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT})
+	before, err := f.config.ExportConfiguration(ctx, ownerRequest(f.identity, &pb.ExportConfigurationRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
 	client := catalogClient(f)
 	for _, service := range []pb.SubscriptionServiceIdentity{pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT, pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE, pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK} {
 		response, err := client.ListKnownSubscriptionModels(ctx, ownerRequest(f.identity, &pb.ListKnownSubscriptionModelsRequest{SubscriptionService: service}))
@@ -23,11 +27,14 @@ func TestKnownSubscriptionModelsReadOnlyAndWorkerDenied(t *testing.T) {
 			t.Fatalf("invalid known catalog: %+v", response.Msg)
 		}
 	}
-	after := catalogSearch(t, f, &pb.SearchModelsRequest{SubscriptionService: pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT})
-	if len(before.Models) != len(after.Models) {
+	after, err := f.config.ExportConfiguration(ctx, ownerRequest(f.identity, &pb.ExportConfigurationRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before.Msg.DocumentJson, after.Msg.DocumentJson) {
 		t.Fatal("read created saved models")
 	}
-	_, err := client.ListKnownSubscriptionModels(ctx, ownerRequest(f.identity, &pb.ListKnownSubscriptionModelsRequest{}))
+	_, err = client.ListKnownSubscriptionModels(ctx, ownerRequest(f.identity, &pb.ListKnownSubscriptionModelsRequest{}))
 	wantAccountCode(t, err, domain.InvalidArgument)
 	worker, _ := pairedWorker(t, ctx, f.endpoint, f.identity)
 	_, err = client.ListKnownSubscriptionModels(ctx, ownerRequest(worker, &pb.ListKnownSubscriptionModelsRequest{SubscriptionService: pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT}))

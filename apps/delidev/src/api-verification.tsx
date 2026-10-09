@@ -3,9 +3,10 @@ import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Timestamp, TimestampText } from "./timestamp-display";
 import { useQuery } from "@connectrpc/connect-query";
 import { useRef, useState } from "react";
-import { AccountQuery, ProviderQuery, ResourceQuery, EntityKind, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
-import { document, object, text } from "./documents";
+import { AccountQuery, ResourceQuery, EntityKind, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { document, object, text, type Document } from "./documents";
 import { copy, formatNumber, useLocale } from "./localization";
+import { useEndpointModelHints } from "./endpoint-model-hints";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
@@ -27,32 +28,26 @@ export function ApiVerification({ row, provider: providedProvider, active, chang
   const provider = providerMatches(providedProvider) ? providedProvider : providerMatches(providerRead.data?.resource) ? providerRead.data?.resource : undefined;
   const metadata = document(provider);
   const latest = useRef({ row: current, provider, active }); latest.current = { row: current, provider, active };
-  const validation = currentObservation(data.validation, connection), catalog = currentObservation(data.catalog, connection);
-  const discover = useRetainedMutation(`api-check-models:${row.id}`, ProviderQuery.discoverModels, result => { if (result.account) setAcknowledged(result.account); changed(); });
+  const validation = currentObservation(data.validation, connection);
+  const hints=useEndpointModelHints(current,provider,active);
+  const catalog: Document = hints.result ? {state:"observed",received:hints.result.models.length,observed_at:new Date(Number(hints.result.observedAtUnixMs)).toISOString()} : hints.error ? {state:"failed"} : {};
   const validate = useRetainedMutation(`api-check-auth:${row.id}`, AccountQuery.validateAccount, result => {
     if (result.account) setAcknowledged(result.account);
     changed();
     const next = result.account, now = latest.current, providerData = document(now.provider);
     // An acknowledged old connection cannot authorize the next operation. An
     // uncertain validation retains its exact request and never reaches here.
-    if (!next || !now.active || !now.provider || providerData.discovery !== true || providerData.enabled === false || !supportsResourceSchema(now.provider) || !supportsResourceSchema(next)) return;
+    if (!next || !now.active || !now.provider || providerData.enabled === false || !supportsResourceSchema(now.provider) || !supportsResourceSchema(next)) return;
     const nextData = document(next);
     const receipt = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(result.validationJson)));
     const published = object(nextData.validation);
     // Replay returns the immutable old receipt alongside a mutable current account.
-    // Only the same published validation can admit the next discovery.
+    // Only the same published validation can admit the next endpoint read.
     if (receipt.request_id !== result.requestId || published.request_id !== receipt.request_id || published.connection_id !== receipt.connection_id || receipt.connection_id !== text(object(nextData.connection).id)) return;
     if (text(object(nextData.connection).id) !== text(object(document(now.row).connection).id) || nextData.provider_id !== document(now.row).provider_id || nextData.removal || nextData.enabled !== true) return;
-    const input = { mutation: { id: next.id, expectedRevision: next.revision, requestId: newRequestId() } };
-    const connectionId = text(object(nextData.connection).id);
-    void discover.send(input, response => {
-      const observed = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(response.observationJson)));
-      // A replay can return the current account after reconnect or format change.
-      // Reconcile only the immutable original discovery receipt, without chaining work.
-      return Boolean(response.requestId === input.mutation.requestId && response.account?.id === next.id && response.account.kind === EntityKind.ACCOUNT && document(response.account).type === "api" && supportsResourceSchema(response.account) && response.account.revision >= next.revision && observed.request_id === input.mutation.requestId && observed.connection_id === connectionId);
-    });
+    void hints.read({account:next,provider:now.provider});
   });
-  const busy = validate.busy || discover.busy, uncertain = validate.uncertain || discover.uncertain;
+  const busy = validate.busy || hints.pending, uncertain = validate.uncertain;
   const authority = current.kind === EntityKind.ACCOUNT && data.type === "api" && supportsResourceSchema(current) && Boolean(provider && provider.kind === EntityKind.PROVIDER && provider.id === data.provider_id && supportsResourceSchema(provider));
   const available = active && authority && metadata.enabled !== false && data.enabled === true && Boolean(connection) && !data.removal;
   const check = () => {
@@ -65,7 +60,7 @@ export function ApiVerification({ row, provider: providedProvider, active, chang
   };
   const verified = validation.state === "observed" && ["credential-accepted", "keyless-endpoint"].includes(text(validation.authentication));
   const authLabel = data.removal ? "api-verification.cleanup" : !connection ? "api-verification.disconnected" : verified ? validation.authentication === "keyless-endpoint" ? "api-verification.keyless" : "api-verification.verified" : validation.state === "failed" ? "api-verification.failed" : validation.state === "unsupported" ? "api-verification.unsupported" : "api-verification.awaiting";
-  const modelsLabel = metadata.discovery === false ? "api-verification.discoveryDisabled" : catalog.state === "failed" || catalog.state === "unsupported" ? "api-verification.modelsFailed" : catalog.state === "observed" ? catalog.received === 0 ? "api-verification.modelsEmpty" : "api-verification.modelsSynced" : "api-verification.modelsAwaiting";
+  const modelsLabel = catalog.state === "failed" || catalog.state === "unsupported" ? "api-verification.modelsFailed" : catalog.state === "observed" ? catalog.received === 0 ? "api-verification.modelsEmpty" : "api-verification.modelsSynced" : "api-verification.modelsAwaiting";
   const observedAt = [text(validation.observed_at), text(catalog.observed_at)].filter(value => Number.isFinite(Date.parse(value))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
   return <section className="api-verification" aria-label={copy("api-verification.heading")}>
     <div className="api-verification-band">
@@ -82,10 +77,10 @@ export function ApiVerification({ row, provider: providedProvider, active, chang
       <div className="api-verification-actions">
         <SettingsActionButton icon={SettingsActionIcon.Confirm} type="button" disabled={!available || busy || uncertain} onClick={check}>{copy("api-verification.check")}</SettingsActionButton>
         {validate.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={validate.retry}>{copy("api-verification.retryAuth")}</SettingsActionButton> : null}
-        {discover.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={discover.retry}>{copy("api-verification.retryModels")}</SettingsActionButton> : null}
+
       </div>
       <div className="api-verification-problems">
-        <Problem error={validate.error ?? discover.error} />
+        <Problem error={validate.error ?? hints.error} />
         {resolveProvider ? <><Problem error={providerRead.error} />{providerRead.error || providerRead.data && !provider ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || providerRead.isFetching} onClick={() => void providerRead.refetch()}>{copy("api-verification.retryProvider")}</SettingsActionButton> : null}</> : null}
         {!authority ? <small>{copy("api-verification.unavailable")}</small> : null}
       </div>

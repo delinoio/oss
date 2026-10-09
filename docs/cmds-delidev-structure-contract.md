@@ -485,6 +485,16 @@ PR. These allocations add no migration or native action. Preserve other owners
 and require original active Execute/native lease proof under the subscription
 contract before automatic spending.
 
+The complete current implementation activates baseline 32/protocol 2 with the
+inline source-model layout and automatic reference pricing. Executable historical
+migrations 001–031 are retired; frozen SQL keeps allocation and rejection-test
+provenance. Current Worker schema 4 and portable bundle 4 supersede the earlier
+atomic Model/Agent and bundle-2 reset proposal. `CreateBackup` has no synchronous
+runtime support; its historical declaration keeps immutable numeric provenance
+and returns Unsupported without receipts or files. Current creation retains
+`RequestBackup`, original durable jobs and joined publication. These changes do
+not relax protected/native cleanup, validation, cancellation or account authority.
+
 ## Waiting queue order allocation closure
 
 Issue #2142 records System 75 `WAITING_QUEUE_ORDER_V1`, complete owner/client movement and waiting-list declarations, generated bindings, private ordering metadata and Fork image snapshots in its owning feature PR. Preserve existing allocations and legacy queue/assignment shapes. No Worker allocation or SQLite migration is required. Sessions, storage, protocol and desktop contracts jointly own this feature; declarations and fixtures grant no native/account/platform acceptance.

@@ -24,7 +24,7 @@ function fixture() {
   const discovery = vi.fn(async (_request: unknown) => ({ machine, job }));
   const repositoryId = newRequestId();
   const project = create(ResourceSchema, { id: definition.project_id, kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Selected project", repositories: [repositoryId], base: { type: "local-branch", name: "main" } }) });
-  const agent = create(ResourceSchema, { id: definition.agent_id, kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Selected agent" }) });
+  const agent = create(ResourceSchema, { id: definition.agent_id, kind: EntityKind.AGENT, schemaVersion: 4, revision: 1n, documentJson: encode({ name: "Selected agent", harness: "codex", routes: [{ model: { provider_id: newRequestId(), native_id: "fixture-native-model", input_modalities: ["text"], metadata_source: "unknown" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "default" } }) });
   const resources = [machine, project, agent];
   const list = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind), nextPageToken: "" }));
   const get = vi.fn(async (request: { kind: EntityKind; id: string }) => ({ resource: request.kind === EntityKind.JOB ? job : resources.find((row) => row.id === request.id) }));
@@ -402,7 +402,7 @@ it.each([
   ["Runner Device", EntityKind.MACHINE, "machine_id", 1],
 ] as const)("retains %s verification until it settles before allowing wizard navigation", async (label, kind, key, step) => {
   const value = fixture();
-  const replacement = create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Replacement selection" }) });
+  const replacement = create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: kind === EntityKind.AGENT ? 4 : 1, revision: 1n, documentJson: encode({ ...(kind === EntityKind.AGENT ? document(value.agent) : {}), name: "Replacement selection" }) });
   value.resources.push(replacement);
   const originalGet = value.get.getMockImplementation()!;
   let complete!: (response: { resource: Resource }) => void;

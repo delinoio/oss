@@ -34,7 +34,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 	if err != nil {
 		t.Fatal(err)
 	}
-	machine, device, model, provider, agent, repository, project := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	machine, device, account, provider, agent, repository, project := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
 	instance := domain.NewID()
 	token, err := worker.RandomToken()
 	if err != nil {
@@ -48,8 +48,8 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 			value any
 		}{
 			{domain.ProviderKind, provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth}},
-			{domain.ModelKind, model, domain.Model{Name: "Fixture", NativeID: "fixture", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}},
-			{domain.AgentKind, agent, domain.Agent{Name: "Fixture", ModelID: model, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
+			{domain.AccountKind, account, domain.Account{Alias: "Disconnected fixture", Type: domain.APIAccount, ProviderID: provider, Enabled: true, Health: domain.AccountDisconnected}},
+			{domain.AgentKind, agent, domain.Agent{Name: "Fixture", Routes: []domain.AgentSourceRoute{cliInlineFixtureRoute(provider, "fixture", []domain.WeightedAccount{{ID: account, Weight: 1}})}, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
 			{domain.MachineKind, machine, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},
 			{domain.DeviceKind, device, domain.Device{Name: "Fixture", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}},
 			{domain.RepositoryKind, repository, domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: machine, Path: checkout}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
@@ -93,7 +93,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 	// A persisted pre-start beat is no longer current availability. Exercise
 	// the authenticated attach boundary after this server process is ready.
 	workers := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
-	attach := connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})
+	attach := connect.NewRequest(&pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})
 	attach.Header().Set("Authorization", "Bearer "+token)
 	if _, err := workers.AttachWorker(ctx, attach); err != nil {
 		t.Fatal(err)

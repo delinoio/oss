@@ -26,6 +26,7 @@ type WorkerCapability int32
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
 	WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1           WorkerCapability = 52
+	WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1      WorkerCapability = 22
 	WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1    WorkerCapability = 50
 	WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1   WorkerCapability = 51
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1          WorkerCapability = 29
@@ -68,6 +69,7 @@ var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
 		52: "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
+		22: "WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1",
 		50: "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
 		51: "WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1",
 		29: "WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1",
@@ -106,6 +108,7 @@ var (
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
 		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
+		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
 		"WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1":       50,
 		"WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1":      51,
 		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":             29,
@@ -1323,6 +1326,7 @@ type AttachWorkerRequest struct {
 	NetworkRouteId    string                 `protobuf:"bytes,7,opt,name=network_route_id,json=networkRouteId,proto3" json:"network_route_id,omitempty"`
 	NetworkKeyId      string                 `protobuf:"bytes,8,opt,name=network_key_id,json=networkKeyId,proto3" json:"network_key_id,omitempty"`
 	NetworkRecipient  string                 `protobuf:"bytes,9,opt,name=network_recipient,json=networkRecipient,proto3" json:"network_recipient,omitempty"`
+	ProtocolVersion   uint32                 `protobuf:"varint,10,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -1418,6 +1422,13 @@ func (x *AttachWorkerRequest) GetNetworkRecipient() string {
 		return x.NetworkRecipient
 	}
 	return ""
+}
+
+func (x *AttachWorkerRequest) GetProtocolVersion() uint32 {
+	if x != nil {
+		return x.ProtocolVersion
+	}
+	return 0
 }
 
 type AttachWorkerResponse struct {
@@ -4102,7 +4113,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x19RegisterExecutionResponse\x12\x1d\n" +
 	"\n" +
 	"proxy_path\x18\x01 \x01(\tR\tproxyPath\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed\"\xfc\x02\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\xa7\x03\n" +
 	"\x13AttachWorkerRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -4115,7 +4126,9 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12network_generation\x18\x06 \x01(\x04R\x11networkGeneration\x12(\n" +
 	"\x10network_route_id\x18\a \x01(\tR\x0enetworkRouteId\x12$\n" +
 	"\x0enetwork_key_id\x18\b \x01(\tR\fnetworkKeyId\x12+\n" +
-	"\x11network_recipient\x18\t \x01(\tR\x10networkRecipient\"\xf5\x01\n" +
+	"\x11network_recipient\x18\t \x01(\tR\x10networkRecipient\x12)\n" +
+	"\x10protocol_version\x18\n" +
+	" \x01(\rR\x0fprotocolVersion\"\xf5\x01\n" +
 	"\x14AttachWorkerResponse\x12.\n" +
 	"\amachine\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\amachine\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\tR\bserverId\x12`\n" +
@@ -4360,10 +4373,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xf3\r\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xa4\x0e\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12*\n" +
-	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x121\n" +
+	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +
+	"+WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1\x10\x16\x121\n" +
 	"-WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1\x102\x122\n" +
 	".WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1\x103\x12+\n" +
 	"'WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1\x10\x1d\x12.\n" +

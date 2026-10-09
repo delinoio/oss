@@ -64,7 +64,7 @@ Selecting pricing appends a UUID-v7 immutable version bound to the current model
 
 The summary joins each original response with its retained estimate and basis in the same bounded read transaction, validates the calculation against the original counters and returns no partial result after corruption or capacity failure. Overall and session/account/model groups expose separate currency subtotals and complete/partial/unavailable token-basis response counts, plus an independent unpriced-response count. The historical basis breakdown includes original provider/model/version, source/date/rates/exclusions, priced token and amount subtotals, and missing-price/missing-usage/unsupported/not-applicable category counts. Even complete token-basis counts do not establish complete telemetry, actual spend or budget compliance.
 
-CLI commands are `usage pricing get --model-id ID`, `usage pricing version --id ID`, and `usage pricing set --model-id ID --model-revision M --revision N --input PATH [--request-id ID]`. The input is a strict non-secret `TokenPricing` JSON document with snake-case fields; omitted/null rates are unavailable and explicit `"0"` is zero. It may use stdin unless stdin already supplies authentication. No command fetches a rate source or performs inference.
+Current CLI commands are `usage pricing get --provider-id ID --native-id NATIVE`, `usage pricing version --id ID`, and `usage pricing set --provider-id ID --native-id NATIVE --provider-revision P --policy-revision Q --revision N --input PATH [--request-id ID]`. The alternative source is `--subscription-service SERVICE`. `usage pricing mode` binds the same source and original revisions with `--mode automatic|manual`; `usage pricing refresh` explicitly requests the joined upstream update. The input is a strict non-secret `TokenPricing` JSON document with snake-case fields; omitted/null rates are unavailable and explicit `"0"` is zero. It may use stdin unless stdin already supplies authentication. Only the explicit pricing refresh command fetches the fixed public reference. No pricing command performs inference.
 
 ### Optional session budgets
 `SessionService.GetSessionBudget` and `SetSessionBudget` are owner/client-only. Creation may include `estimated_cost_budget`; later writes bind the original session revision, actor and full replacement or explicit removal to a durable request identity. Exact retries return the current authorized session and evidence, never reinstall an older budget. Generic configuration cannot write budgets. Currency is three uppercase letters; the nonnegative decimal threshold allows 18 integer and 15 fractional digits without floating-point conversion. Zero remains an explicit known threshold, not a missing value.
@@ -277,7 +277,7 @@ accounting or product-action capability.
 
 Token pricing uses exact Provider/service and native-ID identity with its own revision. Preserve immutable price versions, original response estimates, exact category/currency handling and budget gates. New pricing affects only future observations. No independent saved Model or completion history is required.
 
-Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). The current implementation activates the source/native-ID pricing boundary. It grants no additional native/account acceptance.
 
 ## Automatic desktop filter application
 
@@ -344,3 +344,53 @@ zero provider usage. Preserve all independently observed response evidence.
 The Time range fieldset offers equal-width 24 hours, 7 days and 30 days buttons with native keyboard behavior and an explicit pressed state. Each selection captures one clock instant and applies an exact BigInt half-open UTC interval atomically through the existing filter owner. Preserve the pinned display timezone and every non-date draft filter, replace both date drafts, clear errors and cancel obsolete date validation. The original endpoints retain milliseconds and later DST-fold instants across subsequent non-date selections.
 
 Refresh reads the captured interval again; choosing the same preset captures a new interval. Manual date edits immediately clear the indicator while retaining the last valid selection during the existing 300ms validation delay. Reset and newly consumed Usage entries clear the indicator; Reset retains server-relative default bounds. Navigation preserves mounted drafts and active-only reads. The localized helper says the rolling range ends when selected. Keep semantic selected/focus styling, wrapping controls, independent filter scrolling and the fixed Reset footer. No polling, new wire fields, aggregation or native/account authority is added.
+
+## Exact provider reference rates — issue #2138
+
+The separate `internal/tokenprices` collector validates provider-specific models.dev data without binary floating-point conversion. Preserve exact supported USD per-million decimals, explicit zero and unavailable rates. Match exact upstream provider and native ID, never `canonical_model_id`, model names or URL resemblance. Context tiers and distinct reasoning/audio/media variants retain bounded reference metadata without an applicable estimate. Distinct cache-write rates remain excluded from the supported input/cache-read/output basis; existing conservative cache-write accounting and unpriced Grok units remain separate.
+
+The collector alone activates no automatic policy or execution support. Complete activation composes source/native-ID identity, immutable future first-retention prices, durable Manual precedence, authenticated policy/refresh operations and the approved Model prices surface with the catalog's inline-model/reset ownership. Original historical unavailable estimates, prices, publication replay and budget subtotals cannot change on refresh.
+
+### Exact source price policy and immutable publication
+
+Protocol 2 uses `ModelIdentity` (one original Provider UUID or SubscriptionService,
+plus the exact native ID); obsolete Model UUID fields remain unused. Each identity
+has a durable versioned Automatic/Manual policy independent of immutable price
+versions. Manual save and mode change pin the original Provider, policy and active
+price revisions as applicable. Mutation receipts retain their accepted policy and
+price together; replay cannot return or select a later refresh result.
+
+Refresh applies only to Automatic identities after a transaction-local policy
+check. First-observation retention uses the same check with a memory snapshot,
+without network or credential access inside SQLite. A valid snapshot with no
+exact match, unmapped source or unsupported rate clears only that identity's
+Automatic active pointer; failure retains the last valid snapshot. Manual rates
+and prior estimates never change. A new retrieval timestamp or snapshot digest
+alone does not create another version when rates, declared exclusions and exact
+upstream provenance are unchanged. Reappearance after no-match advances the
+retained revision sequence instead of reusing an old active revision.
+
+Reference provenance records exact upstream provider/model keys, snapshot SHA-256
+and retrieval time separately from the rate-card `AsOf` label. These are reference
+rates; subscription references are explicitly API-equivalent. Grok closed-input
+units remain unavailable for token estimates and budgets.
+
+### Automatic source-specific token prices — issue #2138
+
+The protocol-2 current layout supersedes the saved-Model pricing and Settings → Models flows described above. Usage filters and price links retain one exact Provider or subscription service plus the original native ID. They use typed `ModelIdentity` values; legacy Model UUID fields remain empty. Diagnostics, charts, routing evidence and immutable execution details preserve the same original source identity. Current Worker readiness accepts schema-4 inline routes and retains existing account, installation and startup checks.
+
+Model prices provides one source/native-ID picker. The compact header contains Automatic (models.dev) or Manual, Refresh prices and Edit. Show input, cached input and output rates, currency, retrieval freshness and the once-per-day update cadence. Missing rates differ from explicit zero. Detailed reference identity, snapshot digest, exclusions and immutable historical versions remain collapsed. Do not display a persistent Model UUID or a separate redundant Model details header. Retired API sources expose historical prices read-only; their metadata does not authorize new policies or rates. Provider deletion atomically retains the original non-secret Provider record in the existing retired configuration table. Live configuration reads never adopt that record, and neither matching nor no-match refreshes may change its retained active price.
+
+Automatic uses only exact reviewed upstream provider/native-ID matches. A valid last snapshot survives a failed refresh as stale; cold failure and unsupported or unmatched rates remain unavailable. Manual retains independently saved decimal rates and is never overwritten by refresh. A changed automatic basis creates a new immutable version only for later observations. Refresh is an explicit joined server operation and cannot replay inference, native inspection, login or account validation. Mode and manual writes preserve the original actor, provider/policy/price revisions, exact request receipt and uncertain retry ownership. UI polling reads metadata without starting upstream refreshes.
+
+Automatic namespace mappings are closed to the reviewed models.dev source at
+`a2413aa7d0b467bdbbb22265e75944bedc57f5a5`: unchanged OpenAI, Anthropic,
+OpenRouter, xAI, DeepSeek, Groq, Mistral, Fireworks AI, Perplexity, Cohere,
+Cerebras, Nebius, DeepInfra, Venice, Scaleway, Baseten, MiniMax/CN,
+SiliconFlow/CN and Tencent TokenHub use their exact preset IDs. Gemini maps to
+`google` and Vercel AI Gateway to `vercel`. Other current and future presets
+remain unmapped even if a later upstream namespace shares their spelling.
+Endpoint or API-profile edits remove managed mapping eligibility. No name,
+URL resemblance or native-ID alias establishes a match.
+
+Mode changes retain and check the original displayed active price revision (zero only when unavailable), together with the policy and provider revisions. A concurrent automatic publication conflicts before any policy mutation, so Manual cannot freeze an unseen rate. Exact uncertain retries retain all three original revisions.

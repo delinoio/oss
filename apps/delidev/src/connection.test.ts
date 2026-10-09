@@ -5,7 +5,7 @@ import { verifyLocalServer } from "./connection";
 
 it("retries only transient status reads and still validates the retained server identity", async () => {
   const id = newRequestId();
-  const read = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, serverId: id }));
+  const read = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, serverId: id }));
   read.mockRejectedValueOnce(new ConnectError("temporary read failure", Code.Unavailable));
   const stop = vi.fn();
   const transport = createRouterTransport((router) => router.service(SystemService, { getStatus: read, stopServer: stop }));

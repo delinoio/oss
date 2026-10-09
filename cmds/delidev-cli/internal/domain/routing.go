@@ -44,7 +44,7 @@ type RoutingState struct {
 }
 type SourceSelection struct {
 	Source        string `json:"source"`
-	ModelID       ID     `json:"model_id"`
+	ModelID       ID     `json:"model_key"`
 	ModelRevision uint64 `json:"model_revision"`
 	NativeModel   string `json:"native_model"`
 	Route         Route  `json:"route"`

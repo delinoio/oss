@@ -2,9 +2,7 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -454,38 +452,6 @@ func TestPRRemediationCancelNeedsRemovedQueueAndHigherPolicyKeepsCount(t *testin
 	}
 	if f.chain(t).AutomaticAttempts != 3 || f.chain(t).ResumeBaseline != 0 {
 		t.Fatal("policy edit reset count")
-	}
-}
-
-func TestPRRemediationV19MigrationPreservesOriginalEvidence(t *testing.T) {
-	s, root := openTest(t)
-	f := newRemediationStoreFixture(t, s)
-	before, _ := s.Get(context.Background(), domain.ProblemKind, f.set.ID)
-	if _, err := historicalSchema(s.db, "019"); err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s, err := Open(notificationOwner(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	after, _ := s.Get(context.Background(), domain.ProblemKind, f.set.ID)
-	if before.Revision != after.Revision || string(before.Data) != string(after.Data) {
-		t.Fatal("migration rewrote original set")
-	}
-	files, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if err != nil || len(files) != 1 {
-		t.Fatal("backup", err)
-	}
-	db, err := sql.Open("sqlite", databaseURI(files[0], true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	var version int
-	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 19 {
-		t.Fatal("original backup", version, err)
 	}
 }
 

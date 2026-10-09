@@ -9,7 +9,7 @@ import (
 func TestNativeOptionsKeepSavedSelectionsSeparateFromExecution(t *testing.T) {
 	for _, harness := range []Harness{Codex, ClaudeCode, OpenCode, GrokBuild} {
 		options := AgentOptions{Permission: PermissionDefault, ApprovalReviewModel: "retained-value"}
-		agent := Agent{Name: "Retained", Harness: harness, ModelID: NewID(), Options: options}
+		agent := Agent{Name: "Retained", Harness: harness, Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: NewID(), NativeID: "fixture"}, MetadataSource: Unknown}, Options: options}
 		if err := agent.Validate(); err != nil {
 			t.Fatal("unavailable option prevented saving", err)
 		}
@@ -74,7 +74,7 @@ func TestUnavailableNativeOptionsIdentifyEveryRetainedSelection(t *testing.T) {
 			{"service_tier", AgentOptions{Permission: PermissionDefault, ServiceTier: "future-tier"}, Codex},
 		} {
 			t.Run(string(harness)+"/"+field.name, func(t *testing.T) {
-				agent := Agent{Name: "Retained selections", Harness: harness, ModelID: NewID(), Options: field.options}
+				agent := Agent{Name: "Retained selections", Harness: harness, Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: NewID(), NativeID: "fixture"}, MetadataSource: Unknown}, Options: field.options}
 				if err := agent.Validate(); err != nil {
 					t.Fatal("saved selection lost", err)
 				}
@@ -99,10 +99,10 @@ func TestUnavailableOptionDoesNotReplaceOriginalFormatValidation(t *testing.T) {
 	configuration := managedSubscriptionExecutionConfiguration(t, PermissionDefault)
 	configuration.Options.ApprovalReviewModel = "retained-reviewer"
 	configuration.ModelID = "invalid-model-reference"
-	if err := configuration.Validate(); err == nil || SafeError(err).Code != InvalidArgument {
+	if err := configuration.Validate(); err == nil || SafeError(err).Code != RecoveryRequired {
 		t.Fatal("missing adapter displaced original reference validation", err)
 	}
-	configuration.ModelID = NewID()
+	configuration.ModelID = (ModelIdentity{ProviderID: configuration.ProviderID, SubscriptionService: configuration.SubscriptionService, NativeID: configuration.NativeModel}).Key()
 	if err := configuration.Validate(); err == nil || SafeError(err).Code != Unsupported || !strings.Contains(SafeError(err).Message, "approval_review_model") {
 		t.Fatal("well-formed retained selection lost its explicit adapter error", err)
 	}

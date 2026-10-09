@@ -1061,6 +1061,10 @@ marker and session/execution/native identities; it cannot carry native error tex
 or add a native action. Follow the subscription contract for actor/generation,
 original lease and once-only admission. No migration is added.
 
+## Protocol-2 inline source activation
+
+Protocol 2 preserves the `delidev.v1` package and all original numeric ownership. System42/Worker22 identify inline source models separately from direct startup43/23. Exact `ModelIdentity` values use Provider UUID or service plus native ID; obsolete Model UUID fields are not reinterpreted as source keys. Current endpoint and price RPC declarations activate the original #964 reservations; price mode, freshness/provenance and refresh fields retain their recorded owning issue. The legacy monolithic public import and aggregate Go/TypeScript/query facades are retired. Current canonical split descriptors register once. `SetTokenPricingModeRequest.expected_revision = 6` carries the original displayed active price revision, independently of existing policy field 3 and Provider field 5. Check all three atomically before changing policy; zero means that the original active price was unavailable. Preserve these exact values in accepted and uncertain-retry receipts. Breaking comparison projects only the empty retired import file out of its baseline and preserves all other FILE checks plus original declaration semantics.
+
 
 ## Atomic toolbar terminal admission — issue #2112 / PR #2260
 
@@ -1108,3 +1112,5 @@ System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
 
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
+
+The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. Issue #2138 records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. Issue #2112 owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.

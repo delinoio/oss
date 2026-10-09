@@ -92,45 +92,11 @@ func providerCatalog(ctx context.Context, c client, o options, args []string) (a
 	}
 	return nil, domain.Fail(domain.InvalidArgument, "Unknown provider preset.", "List available identifiers with provider presets, or create a custom provider with --input.")
 }
-func modelCatalog(ctx context.Context, c client, args []string) (any, error) {
-	operation := args[0]
-	f := flags("model " + operation)
-	provider := f.String("provider-id", "", "")
-	if operation == "resolve" {
-		selector := f.String("selector", "", "")
-		if err := parse(f, args[1:]); err != nil {
-			return nil, err
-		}
-		if *selector == "" {
-			return nil, domain.Fail(domain.MissingInput, "A model selector is required.", "Provide --selector with a canonical UUID, CLI alias or unambiguous native ID.")
-		}
-		response, err := c.providers.ResolveModel(ctx, request(c, &pb.ResolveModelRequest{Selector: *selector, ProviderId: *provider}))
-		if err != nil {
-			return nil, rpc.ClientError(err)
-		}
-		return resourceJSON(response.Msg.Model), nil
-	}
-	query := f.String("query", "", "")
-	hidden := f.Bool("include-hidden", false, "")
-	enabledProviders := f.Bool("enabled-providers-only", false, "filter to active API providers")
-	limit := f.Uint64("limit", 50, "")
-	page := f.String("page-token", "", "")
-	if err := parse(f, args[1:]); err != nil {
-		return nil, err
-	}
-	if *limit < 1 || *limit > 200 {
-		return nil, domain.Fail(domain.InvalidArgument, "Invalid model page size.", "Use --limit between 1 and 200.")
-	}
-	if *enabledProviders {
-		if err := requireProviderInventoryCapability(ctx, c, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER); err != nil {
-			return nil, err
-		}
-	}
-	response, err := c.providers.SearchModels(ctx, request(c, &pb.SearchModelsRequest{Query: *query, ProviderId: *provider, IncludeHidden: *hidden, PageSize: uint32(*limit), PageToken: *page, EnabledProvidersOnly: *enabledProviders}))
-	if err != nil {
-		return nil, rpc.ClientError(err)
-	}
-	return map[string]any{"models": resourcesJSON(response.Msg.Models), "providers": resourcesJSON(response.Msg.Providers), "next_page_token": response.Msg.NextPageToken}, nil
+func modelCatalog(context.Context, client, []string) (any, error) {
+	return nil, retiredModelCatalog()
+}
+func retiredModelCatalog() error {
+	return domain.Fail(domain.Unsupported, "Independent Model catalogs are no longer supported.", "Configure an Agent Worker with its original account source and exact native model ID; use source-native token pricing under usage.")
 }
 
 func requireProviderInventoryCapability(ctx context.Context, c client, capability pb.ProviderInventoryCapability) error {

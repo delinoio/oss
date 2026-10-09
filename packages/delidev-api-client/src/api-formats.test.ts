@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
-import { EntityKind, ResourceSchema } from "./gen/delidev/v1/delidev_pb.js";
+import { EntityKind, ResourceSchema } from "./gen/delidev/v1/common_pb.js";
 import { ApiAuthentication, ApiProtocol, ProviderApiFormatSchema } from "./gen/delidev/v1/common_pb.js";
 import { APIFormatId, APIAuthenticationId, accountAPIProfile, apiFormatMatchesHarness, apiFormatProfileFromWire } from "./api-formats.js";
 import { configurationSchemaVersion, supportsResourceSchema } from "./configuration-identity.js";

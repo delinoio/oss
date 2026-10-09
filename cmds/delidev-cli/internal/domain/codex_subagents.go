@@ -4,7 +4,7 @@ package domain
 // ExecutionSubagentModel pins a canonical child model independently of later
 // catalog edits. It borrows the parent's selected account, never child routing.
 type ExecutionSubagentModel struct {
-	ModelID       ID     `json:"model_id"`
+	ModelID       ID     `json:"model_key"`
 	ModelRevision uint64 `json:"model_revision"`
 	NativeModel   string `json:"native_model"`
 }

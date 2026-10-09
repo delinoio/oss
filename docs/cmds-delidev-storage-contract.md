@@ -1172,6 +1172,37 @@ Portable transfer removes the entire subscription state. Generic configuration
 writes must preserve server-owned fields, including omitted legacy consent and
 episode fields; old clients cannot erase or manufacture spending authority.
 
+### Current inline source layout
+
+The protocol-2 current declaration is the complete Model-free baseline 32. It
+retains all activated tables, FTS indexes, native ownership, protected cleanup,
+subscription/API profiles, notifications and session-default fields, and removes
+persistent Model entities, indexes and suppressions. Internal source keys encode
+exact identities only as storage indexes; they are never resource UUIDs or wire
+`model_id` values. Current portable bundle 4 remaps embedded Provider references
+and selected Accounts while preserving all newer current configuration fields.
+Earlier DBs and portable bundles are unsupported without conversion. Startup and
+inspection reject earlier DBs before WAL or other writes; this does not authorize
+removing native or protected credential state.
+
+The current runtime does not execute historical migrations 001–031 or upgrade
+private restore candidates. Frozen historical SQL remains test provenance only;
+every earlier original database or backup is rejected with its bytes and sidecars
+unchanged. A valid schema-32 restore validates and publishes its immutable current
+image. Existing retained migration-copy cleanup journals keep their original
+fingerprint, independent recovery and deletion authority: retirement of upgrade
+code neither adopts a changed copy nor removes uncertain original state. Current
+restore retains protected references, revocations, subscription quarantine and
+independent native cleanup. Persistent Model search, suppression, validation and
+deletion entry points return Unsupported; ephemeral decoding of an exact internal
+source key grants no registry, account or native authority.
+
+Current protocol-2 backup creation uses only `RequestBackup` and its original
+actor/server-bound job. Historical `CreateBackup` declarations retain allocation
+provenance but return Unsupported without a receipt, backup file or current job.
+Current inventory/restore fixtures explicitly publish retained durable jobs;
+retirement does not change independent backup deletion or restore obligations.
+
 ## Private waiting order and Fork image snapshots — issue #2142
 
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
