@@ -76,7 +76,8 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1,
 	}}
-	for _, entry := range entries {
+	for i, entry := range entries {
+		capabilities := len(message.Capabilities)
 		wire := &pb.ProviderInventoryEntry{PresetId: wireProviderPreset(entry.PresetID), ProviderId: string(entry.ProviderID), DisplayName: entry.DisplayName, Enabled: entry.Enabled, TotalAccounts: entry.TotalAccounts, ConnectedAccounts: entry.ConnectedAccounts, AccountCountsAvailable: entry.AccountCountsAvailable}
 		wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_API_KEY
 		if entry.Provider != nil {
@@ -119,9 +120,29 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 			}
 		}
 		message.Entries = append(message.Entries, wire)
+		message.NextPageToken = ""
+		if more || i+1 < len(entries) {
+			message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entry.CursorKey()), Sequence: epoch})
+			if err != nil {
+				return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+			}
+		}
+		fits, e := resourcePageFits(message)
+		if e != nil {
+			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+		}
+		if !fits {
+			message.Entries = message.Entries[:len(message.Entries)-1]
+			message.Capabilities = message.Capabilities[:capabilities]
+			if len(message.Entries) == 0 {
+				return nil, rpc.Error(resourcePageTooLarge(), req.Header().Get(rpc.CorrelationHeader))
+			}
+			more = true
+			break
+		}
 	}
-	if more && len(entries) > 0 {
-		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entries[len(entries)-1].CursorKey()), Sequence: epoch})
+	if more && len(message.Entries) > 0 {
+		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entries[len(message.Entries)-1].CursorKey()), Sequence: epoch})
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}
@@ -394,14 +415,47 @@ func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.Sear
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	message := &pb.SearchModelsResponse{}
-	for _, record := range models {
-		message.Models = append(message.Models, rpc.Resource(record))
-	}
+	available := make(map[domain.ID]store.Record, len(providers))
 	for _, record := range providers {
-		message.Providers = append(message.Providers, rpc.Resource(record))
+		available[record.ID] = record
 	}
-	if len(models) == f.Limit {
-		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: models[len(models)-1].ID, Sequence: epoch})
+	included := map[domain.ID]bool{}
+	more := len(models) == f.Limit
+	for i, record := range models {
+		model, e := store.Decode[domain.Model](record)
+		if e != nil {
+			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+		}
+		providerCount := len(message.Providers)
+		message.Models = append(message.Models, rpc.Resource(record))
+		if provider, ok := available[model.ProviderID]; ok && !included[model.ProviderID] {
+			message.Providers = append(message.Providers, rpc.Resource(provider))
+		}
+		message.NextPageToken = ""
+		if more || i+1 < len(models) {
+			message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: record.ID, Sequence: epoch})
+			if err != nil {
+				return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+			}
+		}
+		fits, e := resourcePageFits(message)
+		if e != nil {
+			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+		}
+		if !fits {
+			message.Models = message.Models[:len(message.Models)-1]
+			message.Providers = message.Providers[:providerCount]
+			if len(message.Models) == 0 {
+				return nil, rpc.Error(resourcePageTooLarge(), req.Header().Get(rpc.CorrelationHeader))
+			}
+			more = true
+			break
+		}
+		included[model.ProviderID] = true
+	}
+	message.NextPageToken = ""
+	if more && len(message.Models) > 0 {
+		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(message.Models[len(message.Models)-1].Id), Sequence: epoch})
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}

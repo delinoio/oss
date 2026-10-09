@@ -48,6 +48,19 @@ func resourceWireSize(resource *pb.Resource) (int, error) {
 	return max(proto.Size(resource), len(encoded)) + 16, nil
 }
 
+// Dedicated page builders measure the complete response, including their cursor
+// and metadata. Counting raw documents misses JSON's Base64 expansion.
+func resourcePageFits(message proto.Message) (bool, error) {
+	encoded, err := protojson.Marshal(message)
+	if err != nil {
+		return false, err
+	}
+	return max(proto.Size(message), len(encoded)) <= maxResourcePageBytes, nil
+}
+func resourcePageTooLarge() error {
+	return domain.Fail(domain.ResourceExhausted, "One complete entry exceeds the response byte limit.", "Narrow the selected scope or inspect the original individual record.")
+}
+
 func resourceFilter(input *pb.Filter) (store.Filter, error) {
 	if input == nil {
 		return store.Filter{}, domain.Fail(domain.MissingInput, "A resource filter is required.", "Select a resource kind.")

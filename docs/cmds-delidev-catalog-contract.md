@@ -528,3 +528,5 @@ Codex subscription default/full-access do not waive managed authentication owner
 
 
 Automatic validation uses the [provider verification boundary](cmds-delidev-providers-contract.md#automatic-api-verification). Its persisted due time and Retry-After do not replace catalog scheduling. Authentication and model observations retain separate request receipts, connection ownership and completion times. New-format generations require fresh observations; original executions and shared key references remain unchanged. No public protocol, migration, native adapter or reserved model-system activation accompanies this scheduler.
+
+Provider inventory and model search pages retain complete entries within a 4 MiB budget measured in both protobuf and protobuf JSON, including cursor/envelope and capability metadata. Model pages charge and deduplicate only the providers represented by returned models. Byte-limited continuation follows the last returned entry/model under the existing query/filter/epoch binding. A single unfit entry returns correlated ResourceExhausted with narrowing guidance; it cannot produce an empty nonadvancing page.
