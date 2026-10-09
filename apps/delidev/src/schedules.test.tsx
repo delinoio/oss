@@ -27,14 +27,15 @@ function fixture() {
   const agent = create(ResourceSchema, { id: definition.agent_id, kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Selected agent" }) });
   const resources = [machine, project, agent];
   const list = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind), nextPageToken: "" }));
+  const get = vi.fn(async (request: { kind: EntityKind; id: string }) => ({ resource: request.kind === EntityKind.JOB ? job : resources.find((row) => row.id === request.id) }));
   const transport = createRouterTransport((router) => {
     router.service(ScheduleService, { listSchedules: () => ({ schedules: [schedule] }), getSchedule: () => ({ schedule }), saveSchedule: save, runScheduleNow: run, controlSchedule: control, deleteSchedule: remove, listScheduleOccurrences: () => ({ occurrences: [occurrence] }), getScheduleOccurrence: () => ({ occurrence }) });
-    router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: request.kind === EntityKind.JOB ? job : resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: list, getResource: get });
     router.service(WorkerService, { discoverHarnesses: discovery });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { schedule, machine, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, project, agent, repositoryId };
+  return { schedule, machine, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, get, project, agent, repositoryId };
 }
 
 it("sends only the editable schedule definition and retries its exact original revision", async () => {
@@ -393,4 +394,35 @@ it("keeps paused or enabled creation intent visible in the persistent footer on 
   goStep(3); expect(footer.textContent).toContain("Enabled on creation");
   fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(footer.textContent).toContain("Enabled on creation");
   expect(footer.textContent).toContain("1 of 4"); expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["Project", EntityKind.PROJECT, "project_id", 0],
+  ["Agent Worker", EntityKind.AGENT, "agent_id", 1],
+  ["Runner Device", EntityKind.MACHINE, "machine_id", 1],
+] as const)("retains %s verification until it settles before allowing wizard navigation", async (label, kind, key, step) => {
+  const value = fixture();
+  const replacement = create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Replacement selection" }) });
+  value.resources.push(replacement);
+  const originalGet = value.get.getMockImplementation()!;
+  let complete!: (response: { resource: Resource }) => void;
+  value.get.mockImplementation(request => request.id === replacement.id ? new Promise(resolve => { complete = resolve; }) : originalGet(request));
+  render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); goStep(step);
+  const picker = screen.getByRole("combobox", { name: label });
+  fireEvent.click(picker); fireEvent.click(await screen.findByRole("option", { name: "Replacement selection" }));
+  await waitFor(() => expect(complete).toBeTypeOf("function"));
+  expect(picker.dataset.value).toBe(value.definition[key]);
+  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+  if (step) expect(screen.getByRole("button", { name: "Back" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.submit(globalThis.document.querySelector(".schedule-creation form")!);
+  expect(globalThis.document.querySelector(".schedule-creation-step-title")?.textContent).toBe(step ? "Execution" : "Task");
+  expect(value.save).not.toHaveBeenCalled();
+  await act(() => complete({ resource: replacement }));
+  await waitFor(() => expect(picker.dataset.value).toBe(replacement.id));
+  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
+  goStep(3); expect(globalThis.document.querySelector(".schedule-creation-review")?.textContent).toContain("Replacement selection");
+  expect(screen.getByText(replacement.id)).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
 });

@@ -1,11 +1,11 @@
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { flushSync } from "react-dom";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery } from "@delinoio/delidev-api-client";
 import "./schedule-creation.css";
-import { ResourceChoice, TextField } from "./configuration-fields";
+import { ResourceChoice, ResourceSelectionPending, TextField } from "./configuration-fields";
 import { items, Mode, resourceName, text, Workspace, type Document } from "./documents";
 
 enum Frequency { Daily = "daily", Weekdays = "weekdays", Weekly = "weekly", Custom = "custom" }
@@ -47,9 +47,19 @@ function ReviewIdentity({ kind, id }: { kind: EntityKind; id: string }) {
   return <><span>{resource?.id === id && resource.kind === kind ? resourceName(resource) : ""}</span><code>{id}</code></>;
 }
 
-export function ScheduleCreation({ definition, change, active, blocked, submitBlocked = false, localAvailable, selectLocal, submit, cancel, references, errors, retry }: ScheduleCreationProps) {
+export function ScheduleCreation({ definition, change, active, blocked: externalBlocked, submitBlocked = false, localAvailable, selectLocal, submit, cancel, references, errors, retry }: ScheduleCreationProps) {
   useLocale();
   const [step, setStep] = useState(0);
+  // Keep the current step active until every exact picker read commits its
+  // accepted draft; hiding a picker early would retire its pending generation.
+  const selectionWaits = useRef(new Set<string>());
+  const [selectionPending, setSelectionPending] = useState(false);
+  const reportSelectionPending = useCallback((identity: string, pending: boolean) => {
+    if (pending) selectionWaits.current.add(identity); else selectionWaits.current.delete(identity);
+    setSelectionPending(selectionWaits.current.size > 0);
+  }, []);
+  const blocked = externalBlocked || selectionPending;
+
   const root = useRef<HTMLFormElement>(null), stepHeading = useRef<HTMLHeadingElement>(null);
   const [validation, setValidation] = useState(false);
   const [frequency, setFrequency] = useState(Frequency.Weekdays);
@@ -108,7 +118,7 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
   };
   const next = () => { if (!blocked && validate(step)) move(step + 1); };
   const create = () => { if (blocked || submitBlocked || step !== 3) return; for (let index=0; index<3; index++) if (!validate(index)) return; void submit(); };
-  return <section className="schedule-creation"><form ref={root} noValidate onSubmit={(event) => { event.preventDefault(); if (step === 3) create(); else next(); }} onKeyDown={event => {
+  return <ResourceSelectionPending.Provider value={reportSelectionPending}><section className="schedule-creation"><form ref={root} noValidate onSubmit={(event) => { event.preventDefault(); if (step === 3) create(); else next(); }} onKeyDown={event => {
     if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "checkbox" && event.target.type !== "radio" && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); if (step < 3) next(); }
   }}>
 
@@ -168,5 +178,5 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
       <p>{definition.enabled === true ? copy("schedule-creation.enabledOnCreation_f6e986") : copy("schedule-creation.pausedOnCreation_484218")} · {copy("schedule-creation.stepCount", { current: step+1, total: 4 })}<small>{local ? copy("schedule-creation.localComputer_09d55f") : copy("schedule-creation.worktree_c893ba")} · {definition.mode === Mode.Plan ? copy("schedule-creation.plan_fa8ed0") : copy("schedule-creation.execute_e3a67d")}</small></p>
       <div className="actions">{retry}<button type="button" disabled={blocked} onClick={cancel}>{copy("schedule-creation.cancel_19766e")}</button>{step>0?<button type="button" disabled={blocked} onClick={()=>move(step-1)}>{copy("schedule-creation.back")}</button>:null}{step===3?<button key="create" className="primary" type="submit" disabled={blocked || submitBlocked}>{copy("schedule-creation.createSchedule_5b08f3")}</button>:<button key="next" className="primary" type="button" disabled={blocked} onClick={event=>{event.preventDefault();next();}}>{copy("schedule-creation.next")}</button>}</div>
     </div></footer>
-  </form></section>;
+  </form></section></ResourceSelectionPending.Provider>;
 }
