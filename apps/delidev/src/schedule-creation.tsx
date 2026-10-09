@@ -2,10 +2,11 @@ import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclo
 import { copy, useLocale } from "./localization";
 import { flushSync } from "react-dom";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { EntityKind } from "@delinoio/delidev-api-client";
+import { useQuery } from "@connectrpc/connect-query";
+import { EntityKind, ResourceQuery } from "@delinoio/delidev-api-client";
 import "./schedule-creation.css";
 import { ResourceChoice, TextField } from "./configuration-fields";
-import { items, Mode, text, Workspace, type Document } from "./documents";
+import { items, Mode, resourceName, text, Workspace, type Document } from "./documents";
 
 enum Frequency { Daily = "daily", Weekdays = "weekdays", Weekly = "weekly", Custom = "custom" }
 enum Overlap { Overlap = "overlap", Skip = "skip", Wait = "wait" }
@@ -36,6 +37,14 @@ export interface ScheduleCreationProps {
   references: ReactNode | ((active: boolean) => ReactNode);
   errors: ReactNode;
   retry: ReactNode;
+}
+
+function ReviewIdentity({ kind, id }: { kind: EntityKind; id: string }) {
+  // Observe the exact resource already read by its mounted picker. Review must
+  // not fetch choices or derive names from the previous localized DOM commit.
+  const selected = useQuery(ResourceQuery.getResource, { kind, id }, { enabled: false });
+  const resource = selected.data?.resource;
+  return <><span>{resource?.id === id && resource.kind === kind ? resourceName(resource) : ""}</span><code>{id}</code></>;
 }
 
 export function ScheduleCreation({ definition, change, active, blocked, submitBlocked = false, localAvailable, selectLocal, submit, cancel, references, errors, retry }: ScheduleCreationProps) {
@@ -99,8 +108,6 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
   };
   const next = () => { if (!blocked && validate(step)) move(step + 1); };
   const create = () => { if (blocked || submitBlocked || step !== 3) return; for (let index=0; index<3; index++) if (!validate(index)) return; void submit(); };
-  const selectedLabel = (label: string) => [...(root.current?.querySelectorAll<HTMLElement>('[role="combobox"]') ?? [])].find(node => (node.getAttribute("aria-label") ?? document.getElementById(node.getAttribute("aria-labelledby") ?? "")?.textContent) === label)?.textContent ?? "";
-  const identity = (key: string, label: string) => <><span>{selectedLabel(label)}</span><code>{text(definition[key])}</code></>;
   return <section className="schedule-creation"><form ref={root} noValidate onSubmit={(event) => { event.preventDefault(); if (step === 3) create(); else next(); }} onKeyDown={event => {
     if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "checkbox" && event.target.type !== "radio" && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); if (step < 3) next(); }
   }}>
@@ -147,8 +154,8 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
         </fieldset>
       </div>
       {step===3?<section className="schedule-creation-card schedule-creation-review">
-       <section><header><h3>{steps[0]}</h3><button type="button" disabled={blocked} aria-label={copy("schedule-creation.editTask")} onClick={()=>move(0)}>{copy("schedule-creation.edit")}</button></header><dl><dt>{copy("schedule-creation.scheduleName_60918e")}</dt><dd>{text(definition.name)}</dd><dt>{copy("schedule-creation.project_985959")}</dt><dd>{identity("project_id",copy("schedule-creation.project_985959"))}</dd><dt>{copy("schedule-creation.scheduledPrompt_209d2b")}</dt><dd className="schedule-review-prompt">{text(definition.prompt)}</dd></dl></section>
-       <section><header><h3>{steps[1]}</h3><button type="button" disabled={blocked} aria-label={copy("schedule-creation.editExecution")} onClick={()=>move(1)}>{copy("schedule-creation.edit")}</button></header><dl><dt>{copy("schedule-creation.agentWorker_a4caa7")}</dt><dd>{identity("agent_id",copy("schedule-creation.agentWorker_a4caa7"))}</dd><dt>{copy("schedule-creation.runnerDevice_37efe3")}</dt><dd>{identity("machine_id",copy("schedule-creation.runnerDevice_37efe3"))}</dd><dt>{copy("schedule-creation.workspace_87bb59")}</dt><dd>{local?copy("schedule-creation.localComputer_09d55f"):copy("schedule-creation.worktree_c893ba")}</dd><dt>{copy("schedule-creation.executionMode_c21e7c")}</dt><dd>{definition.mode===Mode.Plan?copy("schedule-creation.plan_fa8ed0"):copy("schedule-creation.execute_e3a67d")}</dd><dt>{copy("schedule-creation.startingReferenceOverrides_58881e")}</dt><dd>{items(definition.starting).length?<pre>{JSON.stringify(definition.starting,null,2)}</pre>:copy("schedule-creation.usingSavedProjectReferences_48868d")}</dd></dl></section>
+       <section><header><h3>{steps[0]}</h3><button type="button" disabled={blocked} aria-label={copy("schedule-creation.editTask")} onClick={()=>move(0)}>{copy("schedule-creation.edit")}</button></header><dl><dt>{copy("schedule-creation.scheduleName_60918e")}</dt><dd>{text(definition.name)}</dd><dt>{copy("schedule-creation.project_985959")}</dt><dd>{<ReviewIdentity kind={EntityKind.PROJECT} id={text(definition.project_id)} />}</dd><dt>{copy("schedule-creation.scheduledPrompt_209d2b")}</dt><dd className="schedule-review-prompt">{text(definition.prompt)}</dd></dl></section>
+       <section><header><h3>{steps[1]}</h3><button type="button" disabled={blocked} aria-label={copy("schedule-creation.editExecution")} onClick={()=>move(1)}>{copy("schedule-creation.edit")}</button></header><dl><dt>{copy("schedule-creation.agentWorker_a4caa7")}</dt><dd>{<ReviewIdentity kind={EntityKind.AGENT} id={text(definition.agent_id)} />}</dd><dt>{copy("schedule-creation.runnerDevice_37efe3")}</dt><dd>{<ReviewIdentity kind={EntityKind.MACHINE} id={text(definition.machine_id)} />}</dd><dt>{copy("schedule-creation.workspace_87bb59")}</dt><dd>{local?copy("schedule-creation.localComputer_09d55f"):copy("schedule-creation.worktree_c893ba")}</dd><dt>{copy("schedule-creation.executionMode_c21e7c")}</dt><dd>{definition.mode===Mode.Plan?copy("schedule-creation.plan_fa8ed0"):copy("schedule-creation.execute_e3a67d")}</dd><dt>{copy("schedule-creation.startingReferenceOverrides_58881e")}</dt><dd>{items(definition.starting).length?<pre>{JSON.stringify(definition.starting,null,2)}</pre>:copy("schedule-creation.usingSavedProjectReferences_48868d")}</dd></dl></section>
        <section><header><h3>{steps[2]}</h3><button type="button" disabled={blocked} aria-label={copy("schedule-creation.editRepeat")} onClick={()=>move(2)}>{copy("schedule-creation.edit")}</button></header><dl><dt>{copy("schedule-creation.frequency_16b666")}</dt><dd>{summary}</dd><dt>{copy("schedule-creation.cronExpression_9e6e7d")}</dt><dd><code>{text(definition.cron)}</code></dd><dt>{copy("schedule-creation.ianaTimezone_37cf56")}</dt><dd>{text(definition.timezone)}</dd><dt>{copy("schedule-creation.whenAPreviousOccurrenceIsStill_851448")}</dt><dd>{definition.overlap===Overlap.Skip?copy("schedule-creation.skipTheNewOccurrence_e30b7e"):definition.overlap===Overlap.Wait?copy("schedule-creation.waitInFifoOrderForConfirmed_f1ce8e"):copy("schedule-creation.overlapIndependentSessions_df3095")}</dd></dl></section>
        <p>{definition.enabled===true?copy("schedule-creation.enabledOnCreation_f6e986"):copy("schedule-creation.pausedOnCreation_484218")}</p><p>{copy("schedule-creation.reviewConfiguration")}</p><p>{copy("schedule-creation.nextRunIsCalculatedByThe_a9cb90")}</p>
       </section>:null}

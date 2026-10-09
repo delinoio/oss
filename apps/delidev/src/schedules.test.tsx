@@ -2,12 +2,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, ScheduleService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ScheduleDetails, ScheduleEditor, Schedules } from "./schedules";
+import { i18n } from "./localization";
 import { MachineSettings } from "./machine-settings";
 
 function fixture() {
@@ -357,4 +358,17 @@ it("validates each wizard step, retains drafts through Back and Edit, and only R
 });
 it("opens the Execution step and collapsed overrides for an invalid reference",async()=>{
  const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));await fillCreation(value);const disclosure=screen.getByRole("button",{name:/Starting reference overrides/});fireEvent.click(disclosure);await within(screen.getByLabelText("Add repository override")).findByRole("option",{name:value.repositoryId});choose("Add repository override",value.repositoryId);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));const field=screen.getByLabelText(`Starting ${value.repositoryId} name`);fireEvent.click(disclosure);fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(disclosure.getAttribute("aria-expanded")).toBe("true");expect(globalThis.document.activeElement).toBe(field);expect(value.save).not.toHaveBeenCalled();
+});
+
+it("retains exact Review labels through locale changes without another choice read or save", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); goStep(3);
+  const assertLabels = () => {
+    const review = globalThis.document.querySelector(".schedule-creation-review")!;
+    for (const label of ["Selected project", "Selected agent", "Selected Worker"]) expect(review.textContent).toContain(label);
+  };
+  assertLabels(); const reads = value.list.mock.calls.length;
+  await act(() => i18n.changeLanguage("ko")); assertLabels();
+  await act(() => i18n.changeLanguage("en")); assertLabels();
+  expect(value.list).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled();
 });
