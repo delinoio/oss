@@ -43,3 +43,16 @@ it("retains an uncertain movement outside retired rows and retries its original 
  fireEvent.click(screen.getByRole("button",{name:"Retry the same movement"}));await waitFor(()=>expect(f.move).toHaveBeenCalledTimes(2));
  expect(f.move.mock.calls[1][0]).toEqual(original);await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
 });
+
+it("retains movement when the response has no original acknowledgement",async()=>{
+ const f=fixture();f.move.mockImplementationOnce(async()=>({currentQueueGeneration:9007199254740994n} as Awaited<ReturnType<typeof f.move>>));
+ render(f.view());await screen.findByText("Third");
+ const second=screen.getByText("Second").closest("article")!;
+ fireEvent.click(within(second).getByRole("button",{name:"More input actions"}));fireEvent.click(within(second).getByRole("menuitem",{name:"Move up"}));
+ await screen.findByRole("button",{name:"Retry the same movement"});
+ expect(screen.getByRole("status").textContent).not.toBe("Waiting input moved.");
+ const original=f.move.mock.calls[0][0];
+ fireEvent.click(screen.getByRole("button",{name:"Retry the same movement"}));await waitFor(()=>expect(f.move).toHaveBeenCalledTimes(2));
+ expect(f.move.mock.calls[1][0]).toEqual(original);
+ await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
+});
