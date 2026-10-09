@@ -66,6 +66,13 @@ export class Processes {
   }
   async close() {
     const results = await Promise.allSettled([...this.children].map(entry => this.stop(entry)));
-    if (results.some(result => result.status === "rejected")) throw new QaError("process-exit-unconfirmed");
+    const failures = results.filter(result => result.status === "rejected");
+    for (const failure of failures) {
+      // Keep the cleanup proof uncertain, but retain a closed diagnostic cause.
+      // Never print child output, commands, paths or caller configuration.
+      const codes = new Set(["ENOENT", "ESRCH", "EACCES", "EPERM"]);
+      console.error(JSON.stringify({ event: "delidev.qa.process_cleanup_failed", phase: "joined-exit", classification: codes.has(failure.reason?.code) ? failure.reason.code : "unconfirmed" }));
+    }
+    if (failures.length) throw new QaError("process-exit-unconfirmed");
   }
 }
