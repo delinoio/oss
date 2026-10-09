@@ -193,6 +193,8 @@ func SubscriptionService(v pb.SubscriptionServiceIdentity) domain.SubscriptionSe
 		return domain.SubscriptionChatGPT
 	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE:
 		return domain.SubscriptionClaude
+	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO:
+		return domain.SubscriptionOpenCodeGo
 	case pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK:
 		return domain.SubscriptionGrok
 	default:
@@ -205,6 +207,8 @@ func WireSubscriptionService(v domain.SubscriptionService) pb.SubscriptionServic
 		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT
 	case domain.SubscriptionClaude:
 		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE
+	case domain.SubscriptionOpenCodeGo:
+		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO
 	case domain.SubscriptionGrok:
 		return pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK
 	default:

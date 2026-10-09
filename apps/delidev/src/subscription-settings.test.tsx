@@ -36,8 +36,8 @@ it("renders separate observed quota windows, explicit branding and masked fixtur
   fireEvent.click(screen.getByRole("button", { name: "View all 3 quota windows" }));
   expect(within(screen.getByRole("dialog", { name: "Account details" })).getByText("extra")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Close Account details" }));
-  expect(screen.getAllByRole("heading", { level: 3 }).slice(-3).map((heading) => heading.textContent)).toEqual(["ChatGPT", "Claude", "Grok"]);
-  expect(screen.getByText("For Codex")).toBeTruthy(); expect(screen.getByText("For Claude Code")).toBeTruthy(); expect(screen.getByText("For Grok Build")).toBeTruthy();
+  expect(screen.getAllByRole("heading", { level: 3 }).slice(-4).map((heading) => heading.textContent)).toEqual(["ChatGPT", "Claude", "Grok", "OpenCode Go"]);
+  expect(screen.getByText("For Codex")).toBeTruthy(); expect(screen.getByText("For Claude Code")).toBeTruthy(); expect(screen.getByText("For Grok Build")).toBeTruthy(); expect(screen.getByText("For OpenCode")).toBeTruthy();
 });
 
 it("keeps zero, unknown, non-finite, stale, future, failed and unsupported observations distinct", () => {
@@ -312,4 +312,13 @@ it.each(["unavailable", "cleanup"])("blocks metadata handoff when %s changes wit
   expect(button.matches(":disabled")).toBe(true); fireEvent.click(button);
   rendered.rerender(view([first], { manageDetails: manage, active: false }));
   expect(screen.queryByRole("dialog")).toBeNull(); expect(manage).not.toHaveBeenCalled();
+});
+
+it("keeps Go quota unavailable and exposes only its key management actions", () => {
+ const account={...row("go",[]),connect:vi.fn(),brand:SubscriptionBrand.OpenCodeGo,providerName:"OpenCode Go",alias:"Go Plus fixture"};
+ render(view([account]));
+ expect(screen.getByText("Quota unavailable")).toBeTruthy();
+ expect(screen.queryByRole("button",{name:`Refresh ${account.alias}`})).toBeNull();
+ expect(screen.queryByRole("progressbar")).toBeNull();
+ expect(screen.getByRole("button",{name:`Manage connection for ${account.alias}`})).toBeTruthy();
 });

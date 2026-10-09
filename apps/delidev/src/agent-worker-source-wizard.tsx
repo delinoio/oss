@@ -90,7 +90,7 @@ function SourceGroup({ value, index, count, step, displayed, harness, active, lo
     return () => { selection.current.abort?.abort(); selection.current.generation++; };
   }, [sourceID, value.input, query, active, step]);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
-  const knownSupported = status.data?.capabilities.includes(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1) === true;
+  const knownSupported = source?.id !== SubscriptionServiceId.OpenCodeGo && status.data?.capabilities.includes(SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1) === true;
   const knownModels = useQuery(ProviderQuery.listKnownSubscriptionModels, { subscriptionService: wireService(source) }, { enabled: active && knownSupported && source?.kind === SourceKind.Subscription && step === Step.Model });
   const date = knownModels.data?.updatedAt ?? "";
   const parsedDate = new Date(`${date}T00:00:00Z`);

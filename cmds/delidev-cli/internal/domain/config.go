@@ -674,6 +674,9 @@ func (a Account) Validate() error {
 	if a.APIProtocol != "" && (a.Type != APIAccount || !a.APIProtocol.API()) {
 		return Fail(InvalidArgument, "Invalid account API format.", "Select one supported API format for an API account.")
 	}
+	if a.IsOpenCodeGo() && (a.Subscription != nil || len(a.Quota) != 0 || a.ConfirmedExhausted || a.Connection != nil && (a.Connection.Authentication != BearerAuth || a.Connection.APIFormat == nil || *a.Connection.APIFormat != OpenCodeGoProvider().LegacyAPIFormat())) {
+		return Fail(InvalidArgument, "Invalid OpenCode Go account state.", "Use the protected key connection without native login or quota metadata.")
+	}
 	if a.Subscription != nil {
 		if err := a.Subscription.Validate(a); err != nil {
 			return err
@@ -684,7 +687,7 @@ func (a Account) Validate() error {
 	}
 	if a.Type == SubscriptionAccount {
 		if a.ProviderID != "" || !a.SubscriptionService.Valid() || a.Validation != nil || a.Catalog != nil {
-			return Fail(InvalidArgument, "Invalid subscription account identity.", "Choose ChatGPT, Claude or Grok without an API provider or API observations.")
+			return Fail(InvalidArgument, "Invalid subscription account identity.", "Choose a supported subscription service without an API provider or API observations.")
 		}
 	} else if a.SubscriptionService != "" || a.Subscription != nil {
 		return Fail(InvalidArgument, "API accounts cannot own subscription identity.", "Select an API provider without a subscription service.")
@@ -702,7 +705,7 @@ func (a Account) Validate() error {
 			if err := f.Validate(); err != nil {
 				return err
 			}
-			if a.Type != APIAccount || a.Connection.Authentication != f.Authentication || (a.APIProtocol != "" && a.APIProtocol != f.Protocol) {
+			if (a.Type != APIAccount && !a.IsOpenCodeGo()) || a.Connection.Authentication != f.Authentication || (a.APIProtocol != "" && a.APIProtocol != f.Protocol) {
 				return Fail(InvalidArgument, "The connection API format does not match its account.", "Disconnect and finish credential cleanup before changing the format.")
 			}
 		}
@@ -815,7 +818,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

@@ -1,0 +1,18 @@
+{
+  "opencode-go.guidance": "Go와 Go Plus를 지원합니다. OpenCode Console에서 API 키를 받으세요.",
+  "opencode-go.console": "OpenCode Console 열기",
+  "opencode-go.storage": "API 키는 선택한 서버에 안전하게 저장됩니다. 연결은 키를 저장하며 구독 이용 자격을 확인하지 않습니다.",
+  "opencode-go.quotaUnavailable": "사용량 정보 없음",
+  "opencode-go.unsupported": "이 서버는 OpenCode Go 연결을 지원하지 않습니다.",
+  "opencode-go.accountName": "계정 이름",
+  "opencode-go.apiKey": "API 키",
+  "opencode-go.hideKey": "API 키 숨기기",
+  "opencode-go.revealKey": "API 키 표시",
+  "opencode-go.connect": "계정 연결",
+  "opencode-go.disconnectGuidance": "연결을 해제하면 계정의 진행 중인 요청을 취소하고 보호된 키를 삭제합니다. 기존 세션 기록은 유지됩니다.",
+  "opencode-go.retryOriginal": "원래 요청 재시도",
+  "opencode-go.title": "OpenCode Go 연결",
+  "opencode-go.manageTitle": "OpenCode Go 연결 관리",
+  "opencode-go.manageConnection": "연결 관리",
+  "opencode-go.manageFor": "{{account}} 연결 관리"
+}

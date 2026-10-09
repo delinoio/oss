@@ -49,12 +49,14 @@ function objectTokens(raw: string): Map<string, string> {
 }
 
 export function accountRemovalMutation(resource: Resource): { id: string; requestId: string; expectedRevision: bigint } | undefined {
-  if (resource.kind !== EntityKind.ACCOUNT || resource.schemaVersion !== 1 || !isEntityId(resource.id) || resource.documentJson.byteLength > 1 << 20) return;
+  if (resource.kind !== EntityKind.ACCOUNT || (resource.schemaVersion !== 1 && resource.schemaVersion !== 2) || !isEntityId(resource.id) || resource.documentJson.byteLength > 1 << 20) return;
   try {
     const raw = new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson);
     JSON.parse(raw); // Validate the complete document before scanning its tokens.
     const fields = objectTokens(raw);
-    if (JSON.parse(fields.get("type") ?? "null") !== "api" || JSON.parse(fields.get("health") ?? "null") !== "disconnected" || fields.has("connection")) return;
+    const type = JSON.parse(fields.get("type") ?? "null");
+    const keyAccount = type === "api" && resource.schemaVersion === 1 || type === "subscription" && resource.schemaVersion === 2 && JSON.parse(fields.get("subscription_service") ?? "null") === "opencode_go";
+    if (!keyAccount || JSON.parse(fields.get("health") ?? "null") !== "disconnected" || fields.has("connection")) return;
     const removal = objectTokens(fields.get("removal") ?? "");
     if (removal.size !== 2 || !removal.has("request_id") || !removal.has("expected_revision")) return;
     const requestId: unknown = JSON.parse(removal.get("request_id")!);

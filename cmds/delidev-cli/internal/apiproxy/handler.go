@@ -143,6 +143,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusServiceUnavailable, domain.Unsupported)
 		return
 	}
+	if lease.Scope.SubscriptionService == domain.SubscriptionOpenCodeGo && domain.NativeIdentity(lease.Scope.OpenCodeSession).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {
+		fail(http.StatusForbidden, domain.PermissionDenied)
+		return
+	}
 	if lease.Scope.Purpose == domain.SessionTitleUsage {
 		bounded, stop := context.WithTimeout(ctx, 30*time.Second)
 		defer stop()
@@ -240,7 +244,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if purpose == "" {
 		purpose = domain.ConversationUsage
 	}
-	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, ModelID: lease.Scope.ModelID, Attribution: lease.Scope.Attribution, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
+	diagnostic := domain.RequestDiagnostic{ID: domain.ID(correlation), CorrelationID: domain.ID(correlation), SessionID: lease.Scope.SessionID, ExecutionID: lease.Scope.ExecutionID, AccountID: lease.Scope.AccountID, ConnectionID: lease.Scope.ConnectionID, ProviderID: lease.Scope.ProviderID, SubscriptionService: lease.Scope.SubscriptionService, ModelID: lease.Scope.ModelID, Attribution: lease.Scope.Attribution, Harness: lease.Scope.Harness, Source: domain.DiagnosticProxyHTTP, Operation: diagnosticOperation(operation), State: domain.DiagnosticInProgress, Purpose: purpose, ObservedAt: started.UTC(), HTTPAttempted: &attempted}
 	observations := diagnosticObservations{value: &diagnostic}
 	publishDiagnostic := func(work context.Context) error {
 		if lease.PublishDiagnostic == nil {
@@ -535,6 +539,12 @@ func upstreamRequest(ctx context.Context, incoming *http.Request, raw []byte, sc
 	}
 	req.Header.Set("HTTP-Referer", "https://deli.dev")
 	req.Header.Set("User-Agent", "delidev/0.1.0")
+	if scope.SubscriptionService == domain.SubscriptionOpenCodeGo {
+		if domain.NativeIdentity(scope.OpenCodeSession).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {
+			return nil, domain.Fail(domain.PermissionDenied, "The original OpenCode session proof is unavailable.", "Recover the original execution without replaying input.")
+		}
+		req.Header.Set("x-opencode-session", scope.OpenCodeSession)
+	}
 	req.Header.Set("X-Client-Request-Id", correlation)
 	switch scope.Provider.Authentication {
 	case domain.BearerAuth:

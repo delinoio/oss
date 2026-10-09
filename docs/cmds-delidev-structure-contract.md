@@ -461,3 +461,7 @@ Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with comp
 ### Server quota V2 allocation closure
 
 Issue #1854 owns System 50 `SERVER_SUBSCRIPTION_QUOTA_V2`, recorded with its complete feature implementation under the [allocation workflow](#allocation-workflow). It expands omitted-machine server quota only; retain original System 18/46/49 and all Worker allocations. No migration or new RPC is required. Real native/account/remote/platform acceptance remains owner-assigned and nonblocking for the authorized batch; fixtures/builds never substitute for that evidence.
+
+## OpenCode Go subscriptions — issue #2097
+
+The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

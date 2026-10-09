@@ -236,6 +236,10 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		return empty, err
 	}
 	managed := c.Subscription && account.Type == domain.SubscriptionAccount && account.SubscriptionService == c.SubscriptionService && c.SubscriptionService.Harness() == c.Harness && account.ProviderID == "" && c.ProviderID == "" && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || c.Harness == domain.Codex && account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
+	keySubscription := c.IsOpenCodeGo() && account.IsOpenCodeGo() && account.Validate() == nil
+	if keySubscription && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGoSubscriptionsV1) {
+		return empty, domain.Fail(domain.Unsupported, "The Runner Device cannot execute OpenCode Go.", "Update and reconnect the original Runner Device.")
+	}
 	if managed {
 		capability := domain.ManagedCodexSubscriptionsV1
 		if c.Harness == domain.ClaudeCode {
@@ -249,10 +253,10 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 		}
 	}
 	apiReady := account.Type == domain.APIAccount && account.Validation != nil && account.Validation.ConnectionID == input.ConnectionID && account.Validation.State == domain.Observed && account.Validation.Problem == nil && !account.Validation.ObservedAt.IsZero() && account.Connection != nil && !account.Validation.ObservedAt.Before(account.Connection.ConnectedAt) && !account.Validation.ObservedAt.After(time.Now().UTC().Add(time.Second)) && (account.Validation.Authentication == domain.CredentialAccepted || account.Validation.Authentication == domain.KeylessEndpoint)
-	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady) {
+	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady && !keySubscription) {
 		return empty, domain.Fail(domain.Unsupported, "The selected account lacks verified API execution authority.", "Connect and validate the selected API account; stored credentials or a model catalog alone do not authorize inference.")
 	}
-	if !managed {
+	if !managed && !keySubscription {
 		pr, err := tx.Get(domain.ProviderKind, c.ProviderID)
 		if err != nil {
 			return empty, err

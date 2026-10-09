@@ -187,3 +187,7 @@ The [subscription batch contract](cmds-delidev-subscription-contract.md#failed-s
 ## Automatic API connection verification
 
 Enabled connected API accounts acquire non-inference current-connection validation through the joined server maintenance owner under the [provider verification contract](cmds-delidev-providers-contract.md#automatic-api-verification). Missing evidence is immediately due; subsequent checks use persisted completion plus max(15 minutes, Retry-After). Provider disablement, account disablement, removal and changed connection/profile/revision fence automatic publication. Existing explicit validation, actor-bound replay, quota/exhaustion and immutable execution generations retain their authority. A readable saved key or successful public model list alone cannot become verified authentication.
+
+## OpenCode Go subscriptions — issue #2097
+
+The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

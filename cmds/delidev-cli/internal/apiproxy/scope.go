@@ -36,6 +36,7 @@ const (
 // Credential generation and revocation belong to the execution/account owner.
 type Scope struct {
 	CompactionSourceTurn domain.NativeIdentity
+	OpenCodeSession      string
 	SubscriptionService  domain.SubscriptionService
 	ExecutionID          domain.ID
 	SessionID            domain.ID
@@ -60,10 +61,14 @@ func (s Scope) Validate() error {
 	if s.ReviewerNativeModel != "" && (s.ReviewerNativeModel != domain.CodexReviewerNativeModel || s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || s.CompactionSourceTurn != "") {
 		return domain.Fail(domain.PermissionDenied, "Invalid native reviewer relay scope.", "Retain the original same-account reviewer model authorization.")
 	}
-	if s.SubscriptionService != "" {
+	keySubscription := s.SubscriptionService == domain.SubscriptionOpenCodeGo && s.Harness == domain.OpenCode && s.ProviderID == "" && s.Provider.Endpoint == domain.OpenCodeGoEndpoint && s.Provider.Protocol == domain.OpenAIChat && s.Provider.Authentication == domain.BearerAuth && s.Provider.PresetID == nil && len(s.Provider.APIFormats) == 0 && len(s.Operations) == 1 && s.Operations[0] == ChatCompletion && s.ChildModel == nil && s.Purpose != domain.SessionTitleUsage
+	if s.SubscriptionService != "" && !keySubscription {
 		return domain.Fail(domain.PermissionDenied, "Native subscription identity grants no API relay authority.", "Use the protected native subscription lease.")
 	}
-	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID, s.ProviderID} {
+	if !keySubscription && s.ProviderID.Validate() != nil {
+		return domain.Fail(domain.InvalidArgument, "Invalid relay provider identity.", "Retain the accepted provider.")
+	}
+	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID} {
 		if err := id.Validate(); err != nil {
 			return err
 		}

@@ -169,11 +169,17 @@ func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Ac
 	if err != nil {
 		return account, domain.Provider{}, err
 	}
-	if account.Type != domain.APIAccount {
+	if account.Type != domain.APIAccount && !account.IsOpenCodeGo() {
 		return account, domain.Provider{}, domain.Fail(domain.Unsupported, "Subscription accounts require their official login flow.", "Use the provider's isolated subscription authentication operation.")
 	}
 	if account.Connection != nil || account.Removal != nil || account.Health != domain.AccountDisconnected {
 		return account, domain.Provider{}, domain.Fail(domain.Conflict, "The account already has a connection or pending cleanup.", "Disconnect it and complete credential removal before connecting a replacement.")
+	}
+	if account.IsOpenCodeGo() {
+		if input.Keyless {
+			return account, domain.Provider{}, domain.Fail(domain.InvalidArgument, "OpenCode Go requires an API key.", "Submit the exact console-issued key.")
+		}
+		return account, domain.OpenCodeGoProvider(), nil
 	}
 	record, err := tx.Get(domain.ProviderKind, account.ProviderID)
 	if err != nil {
@@ -284,6 +290,9 @@ func commitAccountConnection(tx *store.Tx, input connectAccountInput, requestID 
 	profile := provider.LegacyAPIFormat()
 	account.Connection.APIFormat = &profile
 	account.Health = domain.AccountUnverified
+	if account.IsOpenCodeGo() {
+		account.Health = domain.AccountReady
+	}
 	account.Validation = nil
 	account.Catalog = nil
 	account.Quota = nil
@@ -371,7 +380,7 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, err
 		}
-		if account.Type != domain.APIAccount {
+		if account.Type != domain.APIAccount && !account.IsOpenCodeGo() {
 			return nil, domain.Fail(domain.Unsupported, "Subscription accounts require their logout flow.", "Use the provider's isolated subscription lifecycle operation.")
 		}
 		if account.Removal != nil {

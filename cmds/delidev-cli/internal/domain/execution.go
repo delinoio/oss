@@ -143,7 +143,7 @@ func (c ExecutionConfiguration) Validate() error {
 	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {
 		return Fail(RecoveryRequired, "Invalid retained subscription identity.", "Preserve the original snapshot; create a new explicitly configured session.")
 	}
-	if c.Subscription && c.Harness != Codex && (c.Harness != ClaudeCode || c.SubscriptionService != SubscriptionClaude) {
+	if c.Subscription && !c.IsOpenCodeGo() && c.Harness != Codex && (c.Harness != ClaudeCode || c.SubscriptionService != SubscriptionClaude) {
 		return Fail(Unsupported, "This harness has no subscription execution profile.", "Select a supported native subscription profile.")
 	}
 	if c.OpenCodeContext != nil && (c.Harness != OpenCode || c.OpenCodeContext.Validate() != nil) {

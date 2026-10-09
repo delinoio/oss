@@ -345,6 +345,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if subagentExpected {
 				profile += "\x00codex-subagent-configuration-v1"
 			}
+			if openCodeChildExpected && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) {
+				profile += "\x00opencode-go-subscriptions-v1"
+			}
 			if openCodeChildExpected {
 				profile += "\x00opencode-foreground-subagents-v1"
 			}
@@ -452,6 +455,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)

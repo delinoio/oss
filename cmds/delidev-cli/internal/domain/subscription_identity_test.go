@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 package domain
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestSubscriptionServiceIdentityIsIndependentAndClosed(t *testing.T) {
-	for _, service := range []SubscriptionService{SubscriptionChatGPT, SubscriptionClaude, SubscriptionGrok} {
+	for _, service := range []SubscriptionService{SubscriptionChatGPT, SubscriptionClaude, SubscriptionGrok, SubscriptionOpenCodeGo} {
 		a := Account{Alias: "Native", Type: SubscriptionAccount, SubscriptionService: service, Health: AccountDisconnected}
 		m := Model{SourceKind: SubscriptionModel, SubscriptionService: service, NativeID: "native-model", Name: "Native model", Harnesses: []Harness{service.Harness()}, MetadataSource: UserDeclared}
 		if a.Validate() != nil || m.Validate() != nil || !m.MatchesAccount(a, service.Harness()) {
@@ -26,7 +29,10 @@ func TestSubscriptionServiceIdentityIsIndependentAndClosed(t *testing.T) {
 		}
 		wrong := m
 		wrong.Harnesses = []Harness{OpenCode}
-		if wrong.Validate() == nil || m.MatchesAccount(a, OpenCode) {
+		if service == SubscriptionOpenCodeGo {
+			wrong.Harnesses = []Harness{Codex}
+		}
+		if wrong.Validate() == nil || m.MatchesAccount(a, wrong.Harnesses[0]) {
 			t.Fatal("cross-harness authority")
 		}
 		other := a
@@ -58,5 +64,31 @@ func TestSubscriptionServiceIdentityIsIndependentAndClosed(t *testing.T) {
 	m := Model{ProviderID: api.ProviderID, NativeID: "api-model", Name: "API", MetadataSource: Unknown}
 	if api.Validate() != nil || m.Validate() != nil || !m.MatchesAccount(api, Codex) {
 		t.Fatal("API-only compatibility changed")
+	}
+}
+
+func TestOpenCodeGoAccountCannotBorrowNativeLoginQuotaOrCredentialGenerations(t *testing.T) {
+	profile := OpenCodeGoProvider().LegacyAPIFormat()
+	account := Account{Alias: "Go Plus", Type: SubscriptionAccount, SubscriptionService: SubscriptionOpenCodeGo, Health: AccountReady, Connection: &AccountConnection{ID: NewID(), Authentication: BearerAuth, APIFormat: &profile, ConnectedAt: time.Now().UTC()}}
+	if account.Validate() != nil {
+		t.Fatal("fixed protected Go connection rejected")
+	}
+	for _, change := range []func(*Account){
+		func(a *Account) { a.Subscription = &SubscriptionState{} },
+		func(a *Account) { a.ConfirmedExhausted = true },
+		func(a *Account) { a.Connection.Authentication = SubscriptionAuth },
+		func(a *Account) { a.Connection.CredentialID = NewID() },
+		func(a *Account) { a.Connection.APIFormat.Endpoint = "https://foreign.example/v1" },
+		func(a *Account) { a.ProviderID = NewID() },
+	} {
+		copied := account
+		connection := *account.Connection
+		format := *account.Connection.APIFormat
+		connection.APIFormat = &format
+		copied.Connection = &connection
+		change(&copied)
+		if copied.Validate() == nil {
+			t.Fatal("foreign/native subscription authority was accepted")
+		}
 	}
 }

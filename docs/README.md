@@ -75,6 +75,7 @@ Each project must have one project index document and one or more domain contrac
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
 - [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)

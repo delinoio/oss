@@ -127,7 +127,12 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService.Harness() == input.Configuration.Harness && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && (input.Configuration.Harness == domain.Codex || input.Configuration.Harness == domain.ClaudeCode)
 	var provider domain.Provider
 	var operations []apiproxy.Operation
-	if !managed {
+	keySubscription := input.Configuration.IsOpenCodeGo() && account.IsOpenCodeGo() && account.Validate() == nil && slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGoSubscriptionsV1)
+	if keySubscription {
+		provider = domain.OpenCodeGoProvider()
+		operations = executionAPIOperations(input, provider.Protocol)
+	}
+	if !managed && !keySubscription {
 		r, err := tx.Get(domain.ProviderKind, input.Configuration.ProviderID)
 		if err != nil {
 			return empty, executionDenied()
@@ -154,7 +159,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 			return empty, executionDenied()
 		}
 	}
-	if (!managed && account.Type != domain.APIAccount) || (len(operations) == 0 && !managed) {
+	if (!managed && !keySubscription && account.Type != domain.APIAccount) || (len(operations) == 0 && !managed) {
 		return empty, executionDenied()
 	}
 	r, err := tx.Get(domain.ModelKind, input.Configuration.ModelID)
@@ -169,6 +174,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ReviewerNativeModel: input.Configuration.ReviewerNativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
+	if keySubscription && session.Execution != nil && session.Execution.ExecutionID == grant.ExecutionID {
+		scope.OpenCodeSession = session.Execution.NativeThreadID
+	}
 	if !managed {
 		if err := scope.Validate(); err != nil {
 			return empty, executionDenied()
@@ -222,6 +230,9 @@ func (a *executionAuthority) inferenceScope(tx *store.Tx, grant store.ExecutionG
 	if err == nil {
 		err = requireExecutionStartupReady(tx, grant.JobID)
 	}
+	if err == nil && scope.SubscriptionService == domain.SubscriptionOpenCodeGo && domain.NativeIdentity(scope.OpenCodeSession).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {
+		return apiproxy.Scope{}, executionDenied()
+	}
 	return scope, err
 }
 
@@ -235,6 +246,9 @@ func (a *executionAuthority) resolve(ctx context.Context, grant store.ExecutionG
 		}
 		return err
 	})
+	if err == nil && scope.SubscriptionService == domain.SubscriptionOpenCodeGo && domain.NativeIdentity(scope.OpenCodeSession).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {
+		return apiproxy.Scope{}, executionDenied()
+	}
 	return scope, err
 }
 
@@ -258,7 +272,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	}
 	// Managed subscription registrations bind publication only. They never
 	// authorize the API relay or expose a subscription bundle through it.
-	if scope.SubscriptionService != "" {
+	if scope.SubscriptionService != "" && scope.SubscriptionService != domain.SubscriptionOpenCodeGo {
 		return nil, executionDenied()
 	}
 	leaseContext, cancel := context.WithCancel(ctx)
@@ -298,7 +312,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 	// existing exact original observation, even after Stop or account revocation.
 	// It grants no inference and is joined before lease/storage closure.
 	lease.PublishDiagnostic = func(ctx context.Context, value domain.RequestDiagnostic) error {
-		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID || value.AccountID != scope.AccountID || value.ConnectionID != scope.ConnectionID || value.ProviderID != scope.ProviderID || (value.ModelID != scope.ModelID && (scope.ChildModel == nil || value.ModelID != scope.ChildModel.ModelID) && !(value.ModelID == "" && value.Attribution == domain.BuiltinReviewerAttribution && scope.ReviewerNativeModel == domain.CodexReviewerNativeModel)) || value.Source != domain.DiagnosticProxyHTTP {
+		if value.SessionID != scope.SessionID || value.ExecutionID != scope.ExecutionID || value.AccountID != scope.AccountID || value.ConnectionID != scope.ConnectionID || value.ProviderID != scope.ProviderID || value.SubscriptionService != scope.SubscriptionService || (value.ModelID != scope.ModelID && (scope.ChildModel == nil || value.ModelID != scope.ChildModel.ModelID) && !(value.ModelID == "" && value.Attribution == domain.BuiltinReviewerAttribution && scope.ReviewerNativeModel == domain.CodexReviewerNativeModel)) || value.Source != domain.DiagnosticProxyHTTP {
 			return executionDenied()
 		}
 		publication := domain.NewID()
@@ -760,7 +774,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 	}
 	s.logger.Info("execution_credential_registered", "job_id", identity.Job, "machine_id", identity.Machine, "instance_id", identity.Instance, "request_id", meta.RequestId, "api_protocol", registeredScope.Provider.Protocol, "subscription_service", registeredScope.SubscriptionService, "replayed", result.Replayed)
 	proxyPath := apiproxy.Prefix
-	if registeredScope.SubscriptionService != "" {
+	if registeredScope.SubscriptionService != "" && registeredScope.SubscriptionService != domain.SubscriptionOpenCodeGo {
 		proxyPath = ""
 	}
 	response := connect.NewResponse(&pb.RegisterExecutionResponse{ProxyPath: proxyPath, Replayed: result.Replayed})

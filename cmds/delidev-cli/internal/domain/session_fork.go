@@ -96,10 +96,10 @@ func (i ForkJobInput) Validate() error {
 	}
 	// Independent Fork retains the API-only profile. Managed Sidechat alone
 	// carries the original protected generation for its exact claimed Fork lease.
-	if i.SourceAssignment.Configuration.Subscription && (i.Purpose != SidechatFork || i.SourceAssignment.Configuration.SubscriptionService != SubscriptionChatGPT || i.SubscriptionGeneration.Validate() != nil) {
+	if i.SourceAssignment.Configuration.Subscription && !i.SourceAssignment.Configuration.IsOpenCodeGo() && (i.Purpose != SidechatFork || i.SourceAssignment.Configuration.SubscriptionService != SubscriptionChatGPT || i.SubscriptionGeneration.Validate() != nil) {
 		return Fail(Unsupported, "Managed subscription sessions do not support native Fork yet.", "Keep the original session; Fork requires a separately verified managed authentication lease.")
 	}
-	if !i.SourceAssignment.Configuration.Subscription && i.SubscriptionGeneration != "" {
+	if (!i.SourceAssignment.Configuration.Subscription || i.SourceAssignment.Configuration.IsOpenCodeGo()) && i.SubscriptionGeneration != "" {
 		return SidechatUnavailable()
 	}
 	harness := i.SourceAssignment.Configuration.Harness

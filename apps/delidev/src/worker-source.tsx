@@ -22,7 +22,7 @@ export function fromKey(value: string): Source | undefined {
 }
 export function wireService(source?: Source) {
   if (source?.kind !== SourceKind.Subscription) return SubscriptionServiceIdentity.UNSPECIFIED;
-  return { [SubscriptionServiceId.ChatGPT]: SubscriptionServiceIdentity.CHATGPT, [SubscriptionServiceId.Claude]: SubscriptionServiceIdentity.CLAUDE, [SubscriptionServiceId.Grok]: SubscriptionServiceIdentity.GROK }[source.id as SubscriptionServiceId];
+  return { [SubscriptionServiceId.ChatGPT]: SubscriptionServiceIdentity.CHATGPT, [SubscriptionServiceId.Claude]: SubscriptionServiceIdentity.CLAUDE, [SubscriptionServiceId.Grok]: SubscriptionServiceIdentity.GROK, [SubscriptionServiceId.OpenCodeGo]: SubscriptionServiceIdentity.OPENCODE_GO }[source.id as SubscriptionServiceId];
 }
 export function sameSource(row: Resource, source?: Source) {
   const data = document(row);

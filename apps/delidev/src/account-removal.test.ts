@@ -58,3 +58,12 @@ it("rejects unsupported resources and oversized or invalid UTF-8 documents", () 
     { documentJson: invalidUtf8 },
   ]) expect(accountRemovalMutation(create(ResourceSchema, { ...row, ...change }))).toBeUndefined();
 });
+
+it("retains exact Go key cleanup markers without admitting native subscription accounts", () => {
+  const raw = (service: string) => `{"type":"subscription","subscription_service":"${service}","health":"disconnected","removal":${marker("9007199254740993")}}`;
+  const row = create(ResourceSchema, { ...resource(raw("opencode_go")), schemaVersion: 2 });
+  expect(accountRemovalMutation(row)).toEqual({ id, requestId, expectedRevision: 9007199254740993n });
+  for (const service of ["chatgpt", "claude", "grok", "unknown"]) {
+    expect(accountRemovalMutation(create(ResourceSchema, { ...row, documentJson: new TextEncoder().encode(raw(service)) }))).toBeUndefined();
+  }
+});
