@@ -861,7 +861,7 @@ describe("generated Connect identity/settings fixture", () => {
     const importReplace = within(importDialog).getByRole("button", { name: messages.en.replaceLocal });
     const more = screen.getByRole("button", { name: messages.en.more });
     await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
-    expect(importClose).toBe(document.activeElement);
+    await waitFor(() => expect(importClose).toBe(document.activeElement));
     fireEvent.click(more);
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
     expect(importClose).toBe(document.activeElement);
@@ -879,7 +879,8 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.importSettingsTitle }));
     expect(screen.getByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
-    expect(within(screen.getByRole("dialog", { name: messages.en.importSettingsTitle })).getByRole("button", { name: messages.en.close })).toBe(document.activeElement);
+    const reopenedImportClose = within(screen.getByRole("dialog", { name: messages.en.importSettingsTitle })).getByRole("button", { name: messages.en.close });
+    await waitFor(() => expect(reopenedImportClose).toBe(document.activeElement));
     await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
     expect(screen.getByText("$.appearance.theme")).toBeTruthy();
 
@@ -888,7 +889,7 @@ describe("generated Connect identity/settings fixture", () => {
     const conflictDialog = screen.getByRole("dialog", { name: messages.en.conflictTitle });
     const conflictClose = within(conflictDialog).getByRole("button", { name: messages.en.close });
     await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
-    expect(conflictClose).toBe(document.activeElement);
+    await waitFor(() => expect(conflictClose).toBe(document.activeElement));
     fireEvent.click(more);
     expect(screen.queryByRole("dialog", { name: messages.en.more })).toBeNull();
     expect(conflictClose).toBe(document.activeElement);
