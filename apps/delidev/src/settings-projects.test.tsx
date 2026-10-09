@@ -94,13 +94,17 @@ it.each([false, true])("retains cached content during refresh and reports failed
   await screen.findByText("Refresh failed. Showing the last successfully loaded results."); expect(screen.getByRole("alert").textContent).toContain(correlationId);
   if (empty) expect(screen.queryByText("No projects yet")).toBeNull(); else expect(screen.getByText("Retained project")).toBeTruthy();
 });
-it("preserves four field groups, repository order, primary clearing, restrictions and full documents", async () => {
+it("preserves four tabs, repository order, primary clearing, restrictions and full documents", async () => {
   const first = resource(EntityKind.REPOSITORY, { name: "First" }), second = resource(EntityKind.REPOSITORY, { name: "Second" }), row = project("Editable project");
   row.documentJson = encode({ name: "Editable project", repositories: [first.id, second.id], primary_repository: first.id, agents: { configured: true, ids: [newRequestId()] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
   const value = fixture([row, first, second]); openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `Edit Editable project · ${row.id}` }));
   expect(screen.getByText("The harness starts in this repository. Select it explicitly after adding repositories.")).toBeTruthy();
   expect(screen.queryByText(/The first repository you select becomes the primary repository/)).toBeNull();
-  for (const label of ["Name", "Repositories", "Agent Workers", "AI accounts"]) expect(screen.getByRole("group", { name: label })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("group", { name: "Name" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+  for (const label of ["Agent Workers", "AI accounts"]) expect(screen.getByRole("group", { name: label })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
   await within(screen.getByRole("combobox", { name: "Primary repository" })).findByRole("option", { name: "First" });
   expect(within(screen.getByRole("combobox", { name: "Primary repository" })).getByRole("option", { name: "Second" }).getAttribute("value")).toBe(second.id);
   const repositories = screen.getByRole("group", { name: "Repositories" }); const grip = within(repositories).getByRole("button", { name: "Move repository 2: Second" }); fireEvent.keyDown(grip, { key: " " }); fireEvent.keyDown(grip, { key: "ArrowUp" }); expect(value.save).not.toHaveBeenCalled(); fireEvent.keyDown(grip, { key: "Enter" });
@@ -109,6 +113,7 @@ it("preserves four field groups, repository order, primary clearing, restriction
   fireEvent.click(within(repositories).getByRole("button", { name: "Remove entry 2" }));
   const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement; expect(primary.value).toBe(""); expect(primary.required).toBe(true); expect(primary.checkValidity()).toBe(false);
   fireEvent.change(primary, { target: { value: second.id } });
+  fireEvent.click(screen.getByRole("tab", { name: "Access" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict agent workers" })); fireEvent.click(screen.getByRole("checkbox", { name: "Restrict agent workers" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" })); expect(screen.getAllByText("An empty selection permits none. Turning this restriction off permits every otherwise eligible entry.")).toHaveLength(2);
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" })); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
@@ -125,6 +130,7 @@ it("retries exact edit repository IDs without replacing unreadable names with se
     return { resource: [row, first, other].find(candidate => candidate.id === id) };
   });
   openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `Edit Name lookup project · ${row.id}` }));
+  fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
   const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement;
   const retry = await screen.findByRole("button", { name: "Retry repository loading" });
   expect(within(primary).getByRole("option", { name: "Repository name unavailable (entry 1)" })).toBeTruthy();
@@ -141,11 +147,13 @@ it.each(["revision", "failure"])("retains an edit draft and blocks Save after cu
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained draft"); expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(true); expect(value.save).not.toHaveBeenCalled();
 });
 it.each(["save", "delete"])("explicitly retries the exact project %s request within its opening", async action => {
-  const row = project("Retry project"), value = fixture([row]), operation = action === "save" ? value.save : value.remove; operation.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
+  const row = project("Retry project");
+  row.documentJson = encode({ name: "Retry project", repositories: [creationRepository.id], primary_repository: creationRepository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const value = fixture([row, creationRepository]), operation = action === "save" ? value.save : value.remove; operation.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `${action === "save" ? "Edit" : "Delete"} Retry project · ${row.id}` }));
   if (action === "delete") { expect(screen.getByText(/Retained sessions and history remain/)).toBeTruthy(); expect(screen.getByText(/Schedules using this configuration will be disabled/)).toBeTruthy(); }
   const submit = action === "save" ? "Save Project" : "Confirm configuration deletion";
-  // Submit directly to isolate retry identity from HTML required-field validation.
+  // A complete valid document isolates exact retry identity without bypassing validation.
   if (action === "save") fireEvent.submit((screen.getByRole("button", { name: submit }) as HTMLButtonElement).form!); else fireEvent.click(screen.getByRole("button", { name: submit }));
   const retry = await screen.findByRole("button", { name: action === "save" ? "Retry the same configuration" : "Retry the same deletion" });
   expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).disabled).toBe(false); expect((screen.getByRole("button", { name: submit }) as HTMLButtonElement).disabled).toBe(true);

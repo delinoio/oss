@@ -1,3 +1,4 @@
+import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -315,13 +316,14 @@ export function projectRepositoryOption(id: string, index: number, names: Readon
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
 }
-function ProjectFields({ data, change, active, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
+function ProjectFields({ data, change, active, disabled = false, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
   const { names, loading, error, retry } = useProjectRepositoryNames(repositories, active);
-  return <>
-    <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset>
+  return <ProjectEditTabs disabled={disabled} panels={{
+    [ProjectEditTab.General]: <>    <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset></>,
+    [ProjectEditTab.Repositories]: <>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
       <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p><LocalizedText id="configuration-fields.orderIsPreserved_62a111" components={{ s0: <>{copy("project-creation.workspaceHelp")}</> }} /></p>
         <ResourceChoice label={copy("configuration-fields.add_b69dce", { v0: kindNames[EntityKind.REPOSITORY] })} kind={EntityKind.REPOSITORY} value={selected} change={setSelected} active={active} />
@@ -332,11 +334,11 @@ function ProjectFields({ data, change, active, movementActive = active, supports
       {error ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={loading} onClick={retry}>{copy("project-creation.retryRead")}</SettingsActionButton> : null}
       <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
       <p>{copy("configuration-fields.theHarnessStartsInThisRepository_8c3af5")}</p>
-    </fieldset>
-    {supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} supportsSessionDefaults={supportsSessionDefaults} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>}
-    <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
-    <RestrictionFields label={copy("configuration-fields.aiAccounts_050a21")} kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} />
-  </>;
+    </fieldset></>,
+    [ProjectEditTab.Execution]: supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} supportsSessionDefaults={supportsSessionDefaults} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>,
+    [ProjectEditTab.Access]: <>    <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
+    <RestrictionFields label={copy("configuration-fields.aiAccounts_050a21")} kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} /></>,
+  }} />;
 }
 enum ReferenceType { Local = "local-branch", Remote = "remote-branch", Commit = "commit" }
 export function ReferenceFields({ label, value, change }: { label: string; value: unknown; change: (value: Document) => void }) {
