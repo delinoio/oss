@@ -804,6 +804,14 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 			return err
 		}
 	}
+	if kind == domain.ProviderKind {
+		// Preserve the original non-secret source metadata for read-only pricing
+		// and history. Live Get never consults this retired record, so deletion
+		// cannot restore configuration, refresh or execution authority.
+		if _, err := t.tx.ExecContext(t.ctx, "INSERT INTO retired_configurations("+recordColumns+") VALUES(?,?,?,?,?,?,?,?)", r.ID, r.Kind, r.Revision, r.SessionID, r.ProjectID, r.Data, r.CreatedAt.UnixMilli(), r.UpdatedAt.UnixMilli()); err != nil {
+			return storageError(err)
+		}
+	}
 	if _, err = t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
 		return storageError(err)
 	}
