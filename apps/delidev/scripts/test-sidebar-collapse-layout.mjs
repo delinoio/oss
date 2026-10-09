@@ -73,9 +73,17 @@ try {
     const draft = pane.locator(".pr-search-input input"); await draft.fill("Retained query draft");
     const draftHandle = await draft.elementHandle();
     await draft.evaluate(node => node.setSelectionRange(2, 8));
+    await toggle.focus();
+    const scroller = page.locator(".sidebar-list");
+    await scroller.evaluate(node => { node.style.maxHeight = "140px"; node.scrollTop = 90; });
+    const retainedScroll = await scroller.evaluate(node => node.scrollTop);
+    assert.ok(retainedScroll > 0, "supporting surface has a measurable retained scroll owner");
     await page.keyboard.press(`${primary}+b`); await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
     assert.equal(await toggle.evaluate(node => node === document.activeElement), true);
+    await page.getByRole("button", { name: language === "ko" ? "세션" : "Sessions", exact: true }).click();
+    await page.getByRole("button", { name: language === "ko" ? "풀 리퀘스트" : "Pull requests", exact: true }).click();
     await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    assert.equal(await scroller.evaluate(node => node.scrollTop), retainedScroll, "hidden navigation cannot overwrite the original scroll snapshot");
     assert.equal(await draft.inputValue(), "Retained query draft");
     assert.equal(await draft.evaluate((node, original) => node === original, draftHandle), true);
     assert.equal(await repository.getAttribute("aria-pressed"), "true");
