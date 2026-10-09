@@ -59,5 +59,7 @@
   "subscription-quota.creditDetailsMalformed": "개별 리셋권 상세 정보가 없거나 올바르지 않습니다.",
   "subscription-quota.noEligibleCredits": "반환된 리셋권 중 선택 가능한 항목이 없습니다.",
   "subscription-quota.serverNativeQuotaUnavailable": "선택한 서버의 Codex 설치와 네이티브 라우팅을 확인한 뒤 할당량을 다시 요청하세요.",
-  "subscription-quota.serverQuotaAuthenticationUnavailable": "선택한 서버 연결을 확인하세요. 계정 인증이 만료되었다면 명시적으로 갱신한 뒤 할당량을 다시 요청하세요."
+  "subscription-quota.serverQuotaAuthenticationUnavailable": "선택한 서버 연결을 확인하세요. 계정 인증이 만료되었다면 명시적으로 갱신한 뒤 할당량을 다시 요청하세요.",
+  "subscription-quota.creditNumber": "리셋권 {{v0}}",
+  "subscription-quota.creditId": "식별자: {{v0}}"
 }

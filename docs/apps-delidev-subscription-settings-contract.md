@@ -225,11 +225,19 @@ selection and focuses its heading; it never automatically selects or consumes a
 credit. Only explicitly null details with a valid positive fresh count permit the
 original native-next confirmation. Missing or malformed details grant no selector.
 The returned detail count remains separate from the authoritative available count.
-Rows show inert IDs, availability and valid supplied expiry timestamps.
+Rows show localized one-based Reset credit / 리셋권 names in the current returned
+detail order, including unavailable rows. Full inert original IDs appear below
+with a localized ID label, followed by availability and valid supplied expiry
+timestamps. Selection accessible names use the friendly number. Native titles
+and descriptions remain private. Numbers never become resource or request IDs.
 Selection uses the same strict RFC3339 calendar validation as expiry presentation.
 Omitted/null expiry retains ordinary eligibility; malformed or expired supplied
 expiry grants no selection or confirmation authority.
 
+Confirmation captures the selected ordinal alongside the original credit ID and
+account/revision/connection/generation/inventory/owner bindings. It displays that
+captured ordinal in the current locale and the complete original ID, even after
+returned rows change order or are replaced; stale bindings still disable sending.
 Confirmation names the original account and selection, explains that consumption
 spends a credit, and keeps quota recovery separate. Keep dismisses it without a
 request and restores its original selection opener or the section heading.
