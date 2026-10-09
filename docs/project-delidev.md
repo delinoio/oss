@@ -411,3 +411,10 @@ contracts define count, original authority, freshness, fallback locations and
 Quit ownership. System capability 80 and its complete RPC declarations belong
 to this feature; no storage migration or notification authority is added.
 Installed OS/shell/switcher acceptance remains separate from implementation.
+
+Detailed startup progress uses System 74/Worker 50 and a separately negotiated
+original-Worker RPC. Domain/server own bounded current-attempt descriptive JSON;
+workspace/process/native adapters own actual operation observations; desktop owns
+the grouped conversation and compact disclosure. Follow the startup, workspace,
+process, protocol and desktop contracts. No telemetry observation grants input,
+credentials, retry, cleanup or execution authority, and no migration is added.

@@ -137,6 +137,8 @@ Ordinary Session and General Chat share a read-only four-phase presentation insi
 
 Require a supported current session envelope, exact session/execution/input/preparation/job ownership, monotonic accepted resource revisions, a live successful connection and complete successfully accepted transcript coverage. Pending preparation comes first, then ready preparation with an independently observed eligible queued input and no claim, then the matching active claimed execution before acceptance, then matching running native acceptance without visible response. Native thread binding and READY startup are not input acceptance and reveal no live initialization subphases. Supported legacy acceptance needs an independently observed exact accepted queue input. Historical start-preparation compatibility metadata and preceding execution outcomes cannot establish live activity.
 
+Issue #2119 permits only the exact server `InitialExecutionPending` code, message and guidance to coexist with Preparing workspace or Waiting to start. Require blocked/not-started first-generation state, no prior/current/active execution or startup record, sequence/count one, complete current original queued-input proof without a claim/native request, and valid pending/ready preparation. Changed or extended problems retain failure precedence. Hide its compact blocked notice only while this valid projection is visible; preserve its original reason/guidance in Info. This exception grants no dispatch, retry or account/native readiness authority.
+
 Pause/Stop, archive, problems, budget blocks, recovery, startup failure, uncertainty, original approval/user-input waits and unconfirmed responses suppress generic activity. Failed, malformed, disconnected or stale observations keep original notices and controls. Incomplete/unread transcript or queue coverage never proves absence of a response or uncertainty; do not enumerate unread history to show progress. Current message evidence extends the existing bounded page projection with owner/input/sequence/kind metadata only, retaining no text, arguments, output or raw claim tokens. Preserve the three payload pages, bounded live tail, original tokens, revisions, removals and source-page focus protection. A per-original-claim/turn suppression latch survives removal, payload eviction and later empty revisions after response/content uncertainty was observed. Exact new execution ownership resets evidence; late older revisions cannot reanimate a stale phase.
 
 Use semantic colors, a decorative spinner and one stable polite status announcement. Repeated successful reads keep the same label/node; locale changes update that node without remounting controllers. Reduced motion disables animation; narrow and 200% reflow use wrapping within the existing region. Rendering/navigation/reconnect/polling never start, resume, retry, dispatch or duplicate execution. No RPC, allocation, persistence, migration, native bridge, dependency, feature flag, percentages, ETA or clone-specific progress is added. Fixture/type-check evidence and skipped owner-assigned native/platform acceptance remain separate.
@@ -3566,6 +3568,49 @@ app-switcher visibility is not claimed. There is no badge click action,
 notification permission request, new settings surface or persisted count.
 
 Accepted retained Inbox read-state mutations invalidate unread-count metadata through the connection-owned badge observer, including after detail-pane disposal. Retired connections and rejected/uncertain outcomes do not invalidate a successor.
+
+## Detailed session startup — issue #2120
+
+Ordinary Session and General Chat render authenticated original operation
+summaries under Workspace preparation and Agent startup in the conversation.
+The empty transcript uses an unboxed centered 380px maximum-width list headed
+Session startup / 세션 시작 준비. Confirmed completion uses checks; the current
+observed operation uses one decorative spinner and emphasis; applicable unobserved
+operations stay pending with muted circles. Local omits cloning and replacement
+checkout; General Chat omits repository operations. Original repository ordinals
+identify current work; aggregate completion requires all applicable operations.
+
+After the original initial input is visible, show a compact current row and a
+native keyboard-accessible details disclosure. Existing accepted-input and
+transcript projections alone prove first input completion and response waiting;
+READY or descriptive reports cannot supply that proof. Actual response/tool/
+progress content or terminal state ends startup. Original failure, Stop/archive,
+budget, approval, user-input, recovery and unavailable/connection guidance take
+precedence and suppress animation. Failure includes inert original observed-stage
+context alongside independent cleanup guidance. Reconnection performs reads only.
+
+Keep the polite status node, composer, drafts, tools, Info and all original
+controllers mounted. English/Korean labels and semantic tokens wrap within narrow
+or 200% layouts, reduced motion disables animation, and disclosure changes never
+move focus. Old peers retain the existing coarse presentation without fabricated
+details or execution rejection. The independently owned initial-readiness warning
+boundary remains separate.
+
+Detailed startup presence reads preserve the original closed Machine JSON shape
+for legacy strict Worker and client decoders. Read the original Machine network
+instance and server-projected heartbeat, then the existing bounded
+System.GetOverview.observed_at on the same authenticated transport and captured
+startup generation. Never dispatch the clock read before the Machine read completes.
+Compare only server-clock timestamps; browser wall-clock skew cannot grant a lease.
+Conservatively include monotonic elapsed time since the paired read began, so a
+stalled response or timer cannot extend the original lease; pending rechecks
+suspend animation until the complete pair succeeds.
+These paired reads are transient and read-only, leave original Machine revisions,
+storage and portable configuration unchanged, and grant no execution authority.
+Failed, missing or malformed responses, source/generation replacement, cancellation,
+conversation deactivation and the original 60-second lease boundary stop animation.
+A report timestamp or long-running step duration is never a freshness substitute.
+Rechecks suspend with the owning conversation; canceled late results cannot publish.
 
 ### Compact waiting inputs (issue #2141)
 

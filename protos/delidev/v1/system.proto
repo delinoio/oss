@@ -53,6 +53,8 @@ enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
   SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1 = 80;
 
+  SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1 = 74;
+
   // Owner/client waiting input movement and generation-bound pagination.
   SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1 = 75;
 
