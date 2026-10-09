@@ -2,6 +2,7 @@
 /* Repository inventory only; task dialogs and the shared Settings shell keep
    their existing geometry and control ownership. */
 .settings-content.settings-repositories .repository-list { display: grid; gap: 16px; }
+.settings-content.settings-repositories .repository-list > [data-payload-page] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .settings-content.settings-repositories .repository-row { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .settings-content.settings-repositories .repository-row-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .settings-content.settings-repositories .repository-icon-tile { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); background: var(--surface-muted); }
