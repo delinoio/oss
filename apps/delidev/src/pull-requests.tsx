@@ -143,7 +143,7 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const config = document(selected);
   const configured = Boolean(selected && selected.id === repositoryId && selected.kind === EntityKind.REPOSITORY && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
   const searchValid = plainSearch(search.trim());
-  const canLoad = Boolean(active && metadataConfirmed && configured && !selectedQuery.error && !selectedQuery.isFetching && searchValid && !composing);
+  const canLoad = Boolean(active && metadataConfirmed && configured && !selectedQuery.error && !selectedQuery.isFetching);
   const scopeKey = selected ? JSON.stringify([selected.id, selected.revision.toString(), state, appliedSearch, pageSize]) : "";
 
   useEffect(() => {
@@ -171,13 +171,13 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   useEffect(() => {
     if (!selected || !canLoad || loaded?.scopeKey === scopeKey) return;
     // A return during a pending search must not read the superseded term first.
-    if (!loaded && search.trim() !== appliedSearch) return;
+    if (!loaded && searchValid && !composing && search.trim() !== appliedSearch) return;
     const query: GitHubQuery = { kind: ItemKind.PullRequest, operation: appliedSearch ? QueryOperation.Search : QueryOperation.List, state, page: 1, page_size: pageSize, ...(appliedSearch ? { search: appliedSearch } : {}) };
     // Every effective query owns a new first-page scope. Existing pagination
     // owners cancel replacement reads and fence transports that ignore abort.
     setNavigation({ scopeKey, query, previous: [] });
     setLoaded({ repositoryId: selected.id, revision: selected.revision, scopeKey, state, search: appliedSearch, pageSize, query });
-  }, [canLoad, scopeKey, loaded, selected, state, pageSize, appliedSearch, search]);
+  }, [canLoad, scopeKey, loaded, selected, state, pageSize, appliedSearch, search, searchValid, composing]);
 
   const resultsCurrent = Boolean(active && loaded && selected && loaded.repositoryId === selected.id && loaded.revision === selected.revision);
   const listLayout = !navigation || navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search;

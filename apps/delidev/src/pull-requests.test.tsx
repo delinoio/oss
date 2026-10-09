@@ -461,3 +461,22 @@ it.each([false, true])("waits for fresh cached-repository proof on return, inclu
   if (removed) { await screen.findByText(/^This repository is no longer available\./); expect(value.query).toHaveBeenCalledTimes(1); }
   else { await screen.findByText("Original fixture title"); expect(value.query).toHaveBeenCalledTimes(2); expect(submitted(value, 1)).toMatchObject({ operation: "list", page: 1, state: "open", page_size: 20 }); }
 });
+
+
+it.each(["invalid", "composing"])("applies State and page size with the last valid search while the draft is %s", async draft => {
+ const value = fixture(); render(<App transport={value.transport} />);
+ const pane = await open(); await choose(value.rows[0]); await screen.findByText("Original fixture title");
+ const search = pane.getByLabelText("Search title and body");
+ fireEvent.change(search, { target: { value: "accepted" } });
+ await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2)); expect(submitted(value, 1).search).toBe("accepted");
+ if (draft === "composing") fireEvent.compositionStart(search);
+ fireEvent.change(search, { target: { value: draft === "invalid" ? "is:open" : "new composition" } });
+ fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
+ await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
+ expect(submitted(value, 2)).toMatchObject({ search: "accepted", state: "closed", page: 1, page_size: 20 });
+ fireEvent.change(pane.getByLabelText("PR page size"), { target: { value: "5" } });
+ await waitFor(() => expect(value.query).toHaveBeenCalledTimes(4));
+ expect(submitted(value, 3)).toMatchObject({ search: "accepted", state: "closed", page: 1, page_size: 5 });
+ await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+ expect(value.query).toHaveBeenCalledTimes(4);
+});
