@@ -1,0 +1,6 @@
+{
+  "identifier": "tray-status",
+  "description": "Exact auxiliary bundled tray document; retained snapshots and original-window activation only.",
+  "webviews": ["tray-status"],
+  "permissions": ["tray-status-panel"]
+}

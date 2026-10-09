@@ -110,6 +110,7 @@ pub enum Message {
     ResetMinute,
     ResetMinutes,
     ResetSoon,
+    OpenStatus,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -222,6 +223,7 @@ impl Message {
             Self::ResetMinute => "resetMinute",
             Self::ResetMinutes => "resetMinutes",
             Self::ResetSoon => "resetSoon",
+            Self::OpenStatus => "openStatus",
         }
     }
 }

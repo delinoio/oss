@@ -1,14 +1,8 @@
 import { EntityKind, UsageCoverage, type GetOverviewResponse, type GetUsageSummaryResponse, type ListResourcesResponse } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
 
-export enum TrayDestination { Sessions = "sessions", Inbox = "inbox", Usage = "usage", Settings = "settings" }
-export enum TrayQuotaState { Observed = "observed", Unknown = "unknown", Stale = "stale", Failed = "failed", Unsupported = "unsupported" }
-interface TrayQuota { state: TrayQuotaState; remaining_basis_points: number | null; observed_at: string | null; reset_at: string | null }
-export interface TraySummary {
-  overview: { observed_at: string; stale: boolean; active_sessions: string; pending_interactions: string; registered_workers: string; connected_workers: string } | null;
-  usage: { known_tokens: string | null; incomplete: boolean; estimates: { currency: string; known_amount: string | null }[] } | null;
-  accounts: { entries: { alias: string; alias_hidden?: boolean; windows: TrayQuota[]; more: boolean }[]; more: boolean } | null;
-}
+import { TrayQuotaState, TraySubscriptionService, type TrayQuota, type TraySummary } from "./tray-types";
+export { TrayDestination, TrayQuotaState, TraySubscriptionService, type TrayQuota, type TraySummary } from "./tray-types";
 export const unavailableTray = (): TraySummary => ({ overview: null, usage: null, accounts: null });
 const decimal = /^(0|[1-9][0-9]{0,79})$/;
 function timestamp(value: unknown): string | null {
@@ -49,12 +43,16 @@ export function traySummary(overview: GetOverviewResponse | undefined, overviewF
           if (!observed_at || remaining === null) state = TrayQuotaState.Unknown;
           else if (overviewFailed || now < Date.parse(observed_at) || now - Date.parse(observed_at) > 300000 || (reset_at !== null && Date.parse(reset_at) <= now)) state = TrayQuotaState.Stale;
         }
-        return { state, remaining_basis_points: remaining, observed_at, reset_at };
+        const id = text(quota.id);
+        const lowerId = id.toLowerCase();
+        const safeId = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id) && !["bearer", "sk-", "ghp_", "github_pat_", "token", "password", "api_key"].some(pattern => lowerId.includes(pattern));
+        return { ...(safeId ? { id } : {}), state, remaining_basis_points: remaining, observed_at, reset_at };
       });
       // Match the widget privacy policy before any alias crosses native IPC.
       const lower = alias.toLowerCase();
       const hidden = alias.includes("@") || ["bearer ", "sk-", "ghp_", "github_pat_", "token=", "password", "api_key"].some(pattern => lower.includes(pattern));
-      entries.push({ alias: hidden ? "Account alias hidden" : alias, ...(hidden ? { alias_hidden: true } : {}), windows, more: quotas.length > 8 });
+      const service = value.type === "subscription" && Object.values(TraySubscriptionService).includes(value.subscription_service as TraySubscriptionService) ? value.subscription_service as TraySubscriptionService : undefined;
+      entries.push({ ...(service ? { subscription_service: service } : {}), alias: hidden ? "Account alias hidden" : alias, ...(hidden ? { alias_hidden: true } : {}), windows, more: quotas.length > 8 });
     }
     summary.accounts = { entries, more: Boolean(accounts.nextPageToken) };
   }

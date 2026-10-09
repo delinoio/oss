@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+body { color: var(--text); background: var(--surface); font: 14px/1.45 system-ui, sans-serif; }
+.tray-status { width: 100%; height: 100%; max-width: 380px; max-height: 640px; padding: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: 0 2px 8px var(--shadow-soft); margin-inline: auto; }
+.tray-status header, .tray-status footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+.tray-status h1 { margin: 0; font-size: 18px; }
+.tray-status h2 { margin: 16px 0 8px; font-size: 16px; }
+.tray-status h3 { margin: 0 0 8px; font-size: 14px; overflow-wrap: anywhere; }
+.tray-status p { margin: 4px 0; overflow-wrap: anywhere; color: var(--muted); }
+.tray-status button, .tray-status select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--control-border); min-height: 40px; border-radius: 8px; padding: 8px; max-width: 100%; overflow-wrap: anywhere; }
+.tray-status button { cursor: pointer; }
+.tray-status button:disabled { cursor: default; opacity: .6; }
+.tray-status :is(button, select, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tray-status button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.tray-status-scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding: 2px; }
+.tray-window-selector { display: grid; gap: 4px; }
+.tray-window-selector select { width: 100%; }
+.tray-account { padding: 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.tray-quota + .tray-quota { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; }
+.tray-quota-id { overflow-wrap: anywhere; color: var(--muted); }
+.tray-quota-remaining { font-size: 32px; line-height: 1.2; display: block; overflow-wrap: anywhere; margin: 4px 0 8px; }
+.tray-quota progress { width: 100%; height: 6px; accent-color: var(--accent); display: block; }
+.tray-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 16px; }
+.tray-metrics button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; min-width: 0; gap: 4px; }
+.tray-metrics span { color: var(--muted); }
+.tray-metrics strong { overflow-wrap: anywhere; }
+.tray-status summary { cursor: pointer; min-height: 40px; padding-block: 8px; }
+@media (max-width: 260px) { .tray-status { padding: 8px; gap: 8px; } .tray-status footer { flex-wrap: wrap; } .tray-metrics { grid-template-columns: minmax(0, 1fr); } }
+@media (max-height: 240px) { .tray-status { padding: 8px; gap: 4px; } .tray-status header h1 { font-size: 16px; } }

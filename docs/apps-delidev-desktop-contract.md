@@ -579,13 +579,70 @@ Profile-owned Worker controls accept the same closed lifecycle action and origin
 ### Native tray and menu bar
 The native File menu binds New Window to `CmdOrCtrl+T`: Command+T on macOS and Control+T on Windows/Linux. Command/Control+N no longer opens a product window. Menu clicks and the shortcut share one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window retains `CmdOrCtrl+W`, and the existing menu order is preserved.
 
-One native tray groups the local window and each open saved-server window. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
+One native tray owns one quota-first auxiliary status panel and projects the original ready Local/Saved product windows. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
 
 Show server observation time, exact active-session and unanswered-request counts, connected/registered Workers, known UTC-day tokens with incomplete telemetry, and separate account quota windows. Preserve zero and decimal precision; failed or missing evidence is unavailable. Today's half-open UTC range comes from the server. A quota cannot become pooled remaining capacity: preserve its own state, observation/reset times and stale result. At most 20 account aliases and eight windows per account are shown, with explicit Settings links for additional records. Email-shaped aliases are masked before native IPC and again before native menu rendering.
 
 Each publication uses the calling window's fresh scope and a strictly increasing revision. Stale scopes, another window's scope and reordered revisions cannot overwrite the current presentation. A native monotonic timer marks unrefreshed data stale after 45 seconds even if renderer timers are suspended. Cached read failures are also visibly stale. Native menus use only closed Sessions, Inbox, Usage and Settings destinations; opening them does not enqueue input, resolve/read a request or grant execution authority. Activation rechecks the original saved-window instance, retains a ticket in memory until the receiving view acknowledges that exact ticket and rejects an older acknowledgment that would erase newer navigation. This preserves activation across delayed mounts and React Strict Mode cleanup.
 
 With a successfully installed tray, title-bar close hides the existing window without discarding unsent drafts. Show and navigation restore that same window while preserving its current geometry and maximization state. On macOS, the OS application-reopen event also unminimizes, shows and focuses the existing main window without recreating its renderer, resetting user-selected geometry or dispatching session work. Explicit Quit joins native presentation/supervision tasks and app-owned sidecars before terminating the desktop client; independently started servers and Workers remain running. A tray installation failure retains ordinary window-close behavior. Native initialization/build evidence is separate from actual menu activation and platform acceptance; Native notification delivery is defined below; the [macOS status widget](apps-delidev-widget-contract.md) reuses this projection in protected metadata snapshots, while signed updates remain a separate integration.
+
+#### Auxiliary tray status panel (issue #1967)
+
+The exact `tray-status` bundled CEF document is process-owned presentation, not a
+product window. Keep it outside Local/Saved admission, numbering, product
+bootstrap, credentials, filesystem operations and preference writes. Its separate
+entry mounts no Desktop, Connect transport, product queries or device preference
+controllers. Native admission requires the exact bundled origin/path and original
+instance query; external navigation and popups are denied. Only bounded retained
+snapshot reads, one instance-scoped IPC change channel (without generic event
+listen/emit permissions), closed activation and hide
+operations are permitted. Project committed language, theme and date-format state
+from their in-memory owners without inspecting preference files.
+
+The 380px border-box panel has a maximum 640px height, 16px padding, 12px corners,
+semantic themes and internal scrolling with reachable header/footer. Show the
+window selector, connection observation, account quotas, Manage subscriptions,
+secondary metrics and Open/Quit footer in that order. Select the most recently
+used ready original window initially; retain selection across hiding, fall back
+only when that instance disappears, and never mix windows' observations. Snapshots
+include at most 32 product windows, retain the recent window within that bound,
+and disclose overflow. Selecting only changes presentation; Settings remains the
+existing destination. Preserve the 20-account/eight-quota-window bounds and
+explicit additional-record guidance. Render optional closed `chatgpt | claude |
+grok` service only from explicit subscription-account metadata. Preserve complete
+masked aliases and safe exact 128-character ASCII quota IDs; missing, invalid or
+credential-shaped IDs use localized Quota N. Each independent quota retains
+basis-point precision, original observation/reset evidence, state and decorative
+bar; never pool quotas or infer duration labels. Expired reset times await new
+observation, and stale historical values remain visibly stale. Usage stays exact,
+incomplete and separated by currency in an initially collapsed disclosure. Reuse the shared native disclosure family with its original 40px header. Opening or closing it preserves the mounted retained snapshot and grants no product read or activation authority.
+
+On macOS/Windows, left-click toggles the panel adjacent to the native tray
+rectangle; Linux keeps its native Open status menu and centers the same panel on
+the pointer monitor, falling back to the primary monitor. Convert desired CSS
+size with the monitor scale and clamp physical placement to its work area,
+including negative origins and small monitors. Keep one hidden, undecorated,
+nonresizable, taskbar-excluded native window and reuse it. Close, Escape and focus
+loss hide only this panel. Opening focuses the selector; keyboard and native CEF
+accessibility remain supported. A bounded focus-loss/mouse-up correlation
+workaround prevents an icon click from reopening the panel it just dismissed.
+
+Preserve native Open status, Show and Quit fallback actions. Construction/show
+failure restores the full existing status menu with sanitized diagnostics. Panel
+snapshot reads, selection, repainting and preference projection perform no RPC,
+quota refresh, scope reset or product mutation. The existing polling, native
+45-second monotonic staleness and widget writer remain authoritative. Activation
+retains original window instance, scope and exact publication revision, rejects
+replacement/stale targets, hides the panel and uses the existing acknowledged
+navigation ticket. Open restores only the original window without changing its
+route or geometry. Never hold tray locks across native UI/URL authorization or
+storage. Quit fences auxiliary admission immediately and retires its window on
+the existing joined cleanup worker before native exit; preserve the original
+35-second sidecar grace and independent runtime lifetimes. Log only closed
+operation/phase/action classifications, never aliases, quotas, IDs or endpoints.
+Record automated fixtures/builds separately from owner-assigned installed
+macOS/Windows/Ubuntu X11, focus, accessibility and Quit acceptance.
 
 ### Native inbox notifications
 The React controller polls metadata-only `InboxService.ListNotificationCandidates` every 10 seconds while the process runs, including hidden windows. Server-side client preferences default to questions/approvals enabled and terminal notices disabled. The settings draft captures its original revision, remains mounted through visibility changes and exposes only the same retained request after uncertain saving. Preferences remain specific to the authenticated client and server; OS permission belongs to the app on the computer.

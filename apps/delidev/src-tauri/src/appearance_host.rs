@@ -59,6 +59,7 @@ pub async fn update_appearance(
         tauri::async_runtime::spawn_blocking(move || {
             let snapshot = store.update(theme, expected_revision);
             if snapshot.problem.is_none() {
+                super::tray_host::refresh(&app);
                 // Only committed changes are broadcast. Native URL
                 // authorization stays off the CEF UI loop and
                 // external child views receive none.

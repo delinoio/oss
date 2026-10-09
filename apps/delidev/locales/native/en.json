@@ -106,5 +106,6 @@
   "resetHoursMinutes": "Resets in {{hours}} hours {{minutes}} minutes",
   "resetMinute": "Resets in {{minutes}} minute",
   "resetMinutes": "Resets in {{minutes}} minutes",
-  "resetSoon": "Resets soon"
+  "resetSoon": "Resets soon",
+  "openStatus": "Open status"
 }

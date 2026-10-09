@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "tray-status-panel"
+description = "Read retained masked tray observations, activate the original product window or Quit, and hide the exact auxiliary panel. No product, credential or preference-write authority."
+commands.allow = ["watch_tray_status", "read_tray_status", "activate_tray_status", "dismiss_tray_status"]

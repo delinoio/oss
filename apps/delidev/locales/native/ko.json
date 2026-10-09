@@ -106,5 +106,6 @@
   "resetHoursMinutes": "{{hours}}시간 {{minutes}}분 뒤 리셋",
   "resetMinute": "{{minutes}}분 뒤 리셋",
   "resetMinutes": "{{minutes}}분 뒤 리셋",
-  "resetSoon": "곧 리셋"
+  "resetSoon": "곧 리셋",
+  "openStatus": "상태 열기"
 }

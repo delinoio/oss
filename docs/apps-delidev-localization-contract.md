@@ -233,3 +233,14 @@ unchanged. Expiry returns to the surface's original timestamp/fallback and canno
 prove quota recovery.
 
 Settings search (issue #1869) indexes only bundled category/target label and static help keys in the current display language. NFC-normalized case-insensitive all-token matching retains visit-scoped query and focus while locale changes recompute results. No cross-language aliases, resource/private/native content, query persistence or logging is permitted. Localization cannot restart category/native controllers or repeat a consumed search focus target.
+
+### Auxiliary tray status localization
+
+Issue #1967 uses the separate `tray-status` bundled entry and English/Korean
+catalog. Retained native snapshots project the committed resolved language,
+semantic theme and date format without mounting writable device controllers.
+Preference changes update the same panel and selection without a product read or
+scope reset. Localize state, unavailable/empty distinctions, quota fallback IDs,
+reset expiry, precision-preserving counts and existing navigation actions. Keep
+explicit service brands and exact safe quota IDs separate from translated copy.
+The auxiliary document has no preference-write or protected widget-store access.

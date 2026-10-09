@@ -105,3 +105,18 @@ it("retains ordinary account names and lets native menu escaping handle controls
   const accounts = create(ListResourcesResponseSchema, { resources: [create(ResourceSchema, { kind: EntityKind.ACCOUNT, schemaVersion: 1, documentJson: encode({ alias, quota: [] }) })] });
   expect(traySummary(overview(), false, undefined, accounts).accounts?.entries[0].alias).toBe(alias);
 });
+
+it("projects only explicit subscription services and safe original quota IDs", () => {
+  const original = create(ResourceSchema, { kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson: encode({ type: "subscription", alias: "Claude named alias", subscription_service: "chatgpt", quota: [
+    { id: "codex:primary", state: "observed", remaining: .5701, observed_at: "2026-09-27T00:01:00Z" },
+    { id: "sk-SECRET_SENTINEL", state: "failed" },
+    { id: "contains spaces", state: "unknown" },
+  ] }) });
+  const value = traySummary(overview(), false, undefined, create(ListResourcesResponseSchema, { resources: [original] }));
+  expect(value.accounts?.entries[0]).toMatchObject({ subscription_service: "chatgpt", windows: [{ id: "codex:primary", remaining_basis_points: 5701 }, { state: "failed" }, { state: "unknown" }] });
+  expect(value.accounts?.entries[0].windows[1].id).toBeUndefined();
+  expect(value.accounts?.entries[0].windows[2].id).toBeUndefined();
+  expect(JSON.stringify(value)).not.toContain("SECRET_SENTINEL");
+  original.documentJson = encode({ type: "api", alias: "ChatGPT", subscription_service: "chatgpt", quota: [] });
+  expect(traySummary(overview(), false, undefined, create(ListResourcesResponseSchema, { resources: [original] })).accounts?.entries[0].subscription_service).toBeUndefined();
+});
