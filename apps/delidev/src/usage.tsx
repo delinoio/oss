@@ -10,7 +10,7 @@ import { EstimateAmounts, EstimateCosts } from "./estimate-costs";
 import { ResourceChoice } from "./configuration-fields";
 import { Problem } from "./ui";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
-import { useUsageFilters, type UsageSelection } from "./usage-filters";
+import { useUsageFilters, UsageRangePreset, type UsageSelection } from "./usage-filters";
 import { UsageCharts } from "./usage-chart";
 import type { AccountingDisclosures } from "./usage-accounting-source";
 import "./usage.css";
@@ -93,7 +93,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
   const tabId = useId();
   const [expanded, setExpanded] = useState<AccountingDisclosures["expanded"]>({});
   const disclosures: AccountingDisclosures = { expanded, change: (kind, value) => setExpanded(current => current[kind] === value ? current : { ...current, [kind]: value }) };
-  const { draft, selection, invalid, pending, change, edit, reset: resetFilters, ready } = useUsageFilters(active, entry);
+  const { draft, selection, invalid, pending, preset, selectPreset, change, edit, reset: resetFilters, ready } = useUsageFilters(active, entry);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const nativeFilters = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
   const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active && ready });
@@ -113,6 +113,8 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
       <p><LocalizedText id="usage.last30DaysByDefaultTimes_70537d" components={{ s0: <>{detectedTimeZone}</> }} /></p>
       <form className="sidebar-form usage-sidebar-form" onSubmit={(event) => { event.preventDefault(); }}>
         <div className="usage-filter-scroll"><fieldset><legend>{copy("usage.timeRange")}</legend>
+        <div className="usage-range-presets">{([UsageRangePreset.Hours24, UsageRangePreset.Days7, UsageRangePreset.Days30] as const).map((value) => <button key={value} type="button" aria-pressed={preset === value} onClick={() => selectPreset(value)}>{copy(value === UsageRangePreset.Hours24 ? "usage.preset24Hours" : value === UsageRangePreset.Days7 ? "usage.preset7Days" : "usage.preset30Days")}</button>)}</div>
+        <p className="usage-range-helper">{copy("usage.rollingRangeHelp")}</p>
         <label><LocalizedText id="usage.fromTime_b9f8b1" components={{ s0: <>{detectedTimeZone}</> }} /><input type="datetime-local" value={draft.from} onChange={(event) => change("from", event.target.value)} /></label>
         <label><LocalizedText id="usage.untilTimeExclusive_4c9f27" components={{ s0: <>{detectedTimeZone}</> }} /><input type="datetime-local" value={draft.until} onChange={(event) => change("until", event.target.value)} /></label>
         </fieldset><fieldset><legend>{copy("usage.scope")}</legend>

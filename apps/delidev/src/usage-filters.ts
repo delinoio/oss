@@ -11,7 +11,9 @@ function defaults(timeZone: string) {
   return { ...filters, fromUnixMs: 0n, untilUnixMs: 0n, granularity: UsageTimeGranularity.DAY, timeZone, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 };
 }
 export type UsageSelection = ReturnType<typeof defaults>;
-interface State { draft: Filters; applied: Filters; selection: UsageSelection; invalid: boolean; pending: boolean }
+export enum UsageRangePreset { Hours24 = "hours24", Days7 = "days7", Days30 = "days30" }
+const presetDays: Record<UsageRangePreset, bigint> = { [UsageRangePreset.Hours24]: 1n, [UsageRangePreset.Days7]: 7n, [UsageRangePreset.Days30]: 30n };
+interface State { preset?: UsageRangePreset; draft: Filters; applied: Filters; selection: UsageSelection; invalid: boolean; pending: boolean }
 
 /** Own draft validation and timer disposal without changing focus or navigation. */
 export function useUsageFilters(active: boolean, entry?: UsageEntry) {
@@ -19,7 +21,8 @@ export function useUsageFilters(active: boolean, entry?: UsageEntry) {
   const current = useRef(state);
   const consumedEntry = useRef<string>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const cancel = () => { clearTimeout(timer.current); timer.current = undefined; };
+  const timerGeneration = useRef(0);
+  const cancel = () => { timerGeneration.current++; clearTimeout(timer.current); timer.current = undefined; };
   const publish = (next: State) => { current.current = next; setState(next); };
   const validate = (snapshot: State) => {
     const { draft, applied, selection } = snapshot;
@@ -47,19 +50,34 @@ export function useUsageFilters(active: boolean, entry?: UsageEntry) {
   }, [active, entry]);
   useLayoutEffect(() => {
     cancel();
-    if (active && current.current.pending) timer.current = setTimeout(() => validate(current.current), 300);
+    if (active && current.current.pending) {
+      const generation = timerGeneration.current;
+      timer.current = setTimeout(() => {
+        if (generation === timerGeneration.current && current.current.pending) validate(current.current);
+      }, 300);
+    }
     return cancel;
   }, [active, state.draft, state.pending]);
   const edit = (patch: Partial<Filters>, date = false) => {
     cancel();
-    const snapshot = { ...current.current, draft: { ...current.current.draft, ...patch }, pending: date, invalid: date ? false : current.current.invalid };
+    const snapshot = { ...current.current, draft: { ...current.current.draft, ...patch }, preset: date ? undefined : current.current.preset, pending: date, invalid: date ? false : current.current.invalid };
     if (date || !active) publish(snapshot);
     else validate(snapshot);
   };
   const change = <K extends keyof Filters>(key: K, value: Filters[K]) => edit({ [key]: value }, key === "from" || key === "until");
+  const selectPreset = (preset: UsageRangePreset) => {
+    if (!Object.hasOwn(presetDays, preset)) return;
+    cancel();
+    const snapshot = current.current;
+    const untilUnixMs = BigInt(Date.now());
+    const fromUnixMs = untilUnixMs - presetDays[preset] * 86_400_000n;
+    const draft = { ...snapshot.draft, from: unixMsToLocalDateTime(fromUnixMs, snapshot.selection.timeZone), until: unixMsToLocalDateTime(untilUnixMs, snapshot.selection.timeZone) };
+    const { from: _from, until: _until, ...filters } = draft;
+    publish({ draft, applied: draft, selection: { ...snapshot.selection, ...filters, fromUnixMs, untilUnixMs }, preset, invalid: false, pending: false });
+  };
   const reset = () => {
     cancel();
     publish({ draft: emptyFilters, applied: emptyFilters, selection: defaults(detectDeviceTimeZone()), invalid: false, pending: false });
   };
-  return { ...state, change, edit, reset, ready: !entry || consumedEntry.current === entry.key };
+  return { ...state, change, edit, selectPreset, reset, ready: !entry || consumedEntry.current === entry.key };
 }

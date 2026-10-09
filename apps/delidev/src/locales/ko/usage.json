@@ -113,5 +113,9 @@
   "usage.coverageDetails": "커버리지 세부 정보",
   "usage.rowDetails": "세부 정보",
   "usage.missingExecutions": "응답 사용량이 없는 실행 {{count}}개",
-  "usage.missingContextActions": "응답 사용량이 없는 컨텍스트 작업 {{count}}개"
+  "usage.missingContextActions": "응답 사용량이 없는 컨텍스트 작업 {{count}}개",
+  "usage.preset24Hours": "24시간",
+  "usage.preset7Days": "7일",
+  "usage.preset30Days": "30일",
+  "usage.rollingRangeHelp": "선택 시점 기준 최근 기간입니다."
 }

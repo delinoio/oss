@@ -113,7 +113,41 @@ try {
     const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); }
     const pane = page.locator(".usage-sidebar");
     assert.equal(await pane.getByRole("button", { name: /Apply filters|필터 적용/ }).count(), 0, context);
+    const presets = pane.locator(".usage-range-presets button");
+    assert.deepEqual(await presets.allTextContents(), language === "ko" ? ["24시간", "7일", "30일"] : ["24 hours", "7 days", "30 days"], context);
+    assert.deepEqual(await presets.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-pressed"))), ["false", "false", "false"], context);
+    assert.equal(await pane.locator(".usage-range-helper").textContent(), language === "ko" ? "선택 시점 기준 최근 기간입니다." : "Rolling range ending when selected.", context);
+    const presetGeometry = await presets.evaluateAll(nodes => nodes.map(node => ({ width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height, radius: getComputedStyle(node).borderRadius })));
+    assert(presetGeometry.every(value => value.height >= 40 && value.radius === "8px" && Math.abs(value.width - presetGeometry[0].width) < 1), `${context}: equal accessible preset geometry ${JSON.stringify(presetGeometry)}`);
+    await page.evaluate(() => { Date.now = () => Date.parse("2026-10-09T03:00:00.123Z"); });
+    await presets.nth(0).focus(); await presets.nth(0).press("Enter");
+    assert.equal(await presets.nth(0).evaluate(node => node === document.activeElement), true, context);
+    await page.waitForFunction(() => JSON.parse(window.__usageFixture.selections.at(-1)).untilUnixMs === String(Date.parse("2026-10-09T03:00:00.123Z")));
+    assert.equal(await presets.nth(0).getAttribute("aria-pressed"), "true", context);
+    assert(await presets.nth(0).evaluate(node => parseFloat(getComputedStyle(node).outlineWidth) > 0 && getComputedStyle(node).outlineStyle !== "none"), `${context}: visible keyboard focus`);
+    assert.equal(await page.evaluate(() => { const request = JSON.parse(window.__usageFixture.selections.at(-1)); return String(BigInt(request.untilUnixMs) - BigInt(request.fromUnixMs)); }), "86400000", context);
+    assert.equal(await pane.locator(".usage-range-presets").evaluate(node => getComputedStyle(node).gap), "8px", context);
+    await page.keyboard.press("Tab"); assert.equal(await presets.nth(1).evaluate(node => node === document.activeElement), true, context);
+    await presets.nth(1).press("Space");
+    await page.waitForFunction(() => { const request = JSON.parse(window.__usageFixture.selections.at(-1)); return BigInt(request.untilUnixMs) - BigInt(request.fromUnixMs) === 7n * 86400000n; });
+    await page.keyboard.press("Tab"); assert.equal(await presets.nth(2).evaluate(node => node === document.activeElement), true, context);
+    await presets.nth(2).press("Enter");
+    await page.waitForFunction(() => { const request = JSON.parse(window.__usageFixture.selections.at(-1)); return BigInt(request.untilUnixMs) - BigInt(request.fromUnixMs) === 30n * 86400000n; });
+    assert.deepEqual(await presets.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-pressed"))), ["false", "false", "true"], context);
+    assert(await pane.isVisible(), context);
+    const captured = await page.evaluate(() => window.__usageFixture.selections.at(-1));
+    const readCount = await page.evaluate(() => window.__usageFixture.summary);
+    await page.evaluate(() => { Date.now = () => Date.parse("2026-10-10T03:00:00.456Z"); });
+    // Close only the test drawer to reach the separate page action; selection never closes it.
+    if (width < 760) await page.keyboard.press("Escape");
+    await main.locator(".usage-header-actions button").click();
+    await page.waitForFunction(count => window.__usageFixture.summary > count, readCount);
+    assert.equal(await page.evaluate(() => window.__usageFixture.selections.at(-1)), captured, `${context}: Refresh retains captured bounds`);
+    if (await opener.isVisible()) { await opener.focus(); await opener.press("Enter"); }
+    await presets.nth(2).click();
+    await page.waitForFunction(() => JSON.parse(window.__usageFixture.selections.at(-1)).untilUnixMs === String(Date.parse("2026-10-10T03:00:00.456Z")));
     const date = pane.locator('input[type="datetime-local"]').first(); await date.focus(); await date.fill("2026-09-01T10:00");
+    assert.deepEqual(await presets.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-pressed"))), ["false", "false", "false"], context);
     assert.equal(await date.evaluate(node => node === document.activeElement), true, context);
     assert.equal(await pane.isVisible(), true, context);
     const reset = pane.locator(".actions button"); await reset.focus();
