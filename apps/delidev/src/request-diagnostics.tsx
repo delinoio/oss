@@ -109,7 +109,7 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     <header><h2>{copy("request-diagnostics.modelRequestDiagnostics_0c266b")}</h2><button onClick={close} aria-keyshortcuts={shortcuts.aria(ShortcutId.DiagnosticsClose)}>{copy("request-diagnostics.closeDiagnostics_143427")}</button></header>
     <p>{copy("request-diagnostics.nativeInputsAndIndividualHttpAttempts_6d3cf6")}</p>
     <p>{copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}</p>
-    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); if (draft === execution) result.reload(); else setExecution(draft); }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); if (draft !== execution) setExecution(draft); }}>
       <label>{copy("request-diagnostics.executionIdOptional_43c4ca")}<input ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>{copy("request-diagnostics.applyExecutionFilter_591b7d")}</button>
     </form>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error} /><Failure failure={result.error?.failure} />

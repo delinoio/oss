@@ -141,3 +141,10 @@ it.each(["expired", "stalled", "transient"])("retries %s diagnostic boundaries t
  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry read" })).toBeNull());
  expect(screen.getByText("resp_original")).toBeTruthy(); expect(screen.getByLabelText("Conversation draft")).toHaveProperty("value", "Retained draft");
 });
+
+it("does not refresh a successful diagnostics page for unchanged Apply filters", async () => {
+ const f=fixture();render(<f.View/>);await screen.findByText("resp_original");const initial=f.read.mock.calls.length;
+ fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial);
+ fireEvent.change(screen.getByLabelText("Execution ID (optional)"),{target:{value:f.execution}});fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(initial+1));
+ fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial+1);
+});
