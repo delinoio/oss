@@ -70,7 +70,7 @@ it("accepts direct branches without discovery and rejects invalid byte/syntax dr
  const f=fixture(),change=vi.fn(),validity=vi.fn();render(f.view([],change,false,f.project,validity));const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);await screen.findByText(/Branch discovery is unavailable/);fireEvent.change(input,{target:{value:"feature/new"}});await waitFor(()=>expect(change).toHaveBeenLastCalledWith([{repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"upstream",name:"feature/new"}}]));const count=change.mock.calls.length;
  fireEvent.change(input,{target:{value:"bad..branch"}});expect(input.getAttribute("aria-invalid")).toBe("true");expect(validity).toHaveBeenLastCalledWith(false);expect(change).toHaveBeenCalledTimes(count);expect((input as HTMLInputElement).checkValidity()).toBe(false);fireEvent.change(input,{target:{value:"한".repeat(342)}});expect(validity).toHaveBeenLastCalledWith(false);fireEvent.change(input,{target:{value:""}});expect(change).toHaveBeenLastCalledWith([]);expect(validity).toHaveBeenLastCalledWith(true);expect(f.discover).not.toHaveBeenCalled();
 });
-it.each(["bad..branch","@","-leading","/absolute","trailing/","x.lock","x/.hidden","x@{y}","a b","a".repeat(1025)])("checks Git branch syntax %s",name=>expect(validStartingBranch(name)).toBe(name==="-leading"||name==="@"));
+it.each(["bad..branch","@","-leading","/absolute","trailing/","x.lock","x/.hidden","x@{y}","a b","a".repeat(1025)])("checks Git branch syntax %s",name=>expect(validStartingBranch(name)).toBe(false));
 it("preserves manual commit/custom remote on focus Refresh and Enter; explicit typing replaces only its repository",async()=>{
  const f=fixture(),change=vi.fn(),secondary={repository_id:f.repositories[1].id,reference:{type:"commit",name:"original"}},manual={repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"custom",name:"main"}};render(f.view([manual,secondary],change));fireEvent.focus(screen.getByRole("combobox",{name:"Starting branch"}));await screen.findByRole("option",{name:"main"});fireEvent.click(screen.getByRole("button",{name:"Refresh"}));await waitFor(()=>expect(f.discover).toHaveBeenCalledTimes(2));const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.keyDown(input,{key:"Enter"});expect(change).not.toHaveBeenCalled();fireEvent.change(input,{target:{value:"new-branch"}});expect(change).toHaveBeenLastCalledWith([{repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"upstream",name:"new-branch"}},secondary]);
 });
@@ -79,4 +79,12 @@ it("keeps typing local, contains IME/Enter, retains input focus, and ignores dis
 });
 it("uses origin when unset and keeps valid direct input after failed or empty discovery",async()=>{
  const f=fixture(),change=vi.fn();f.repositories[0].documentJson=encode({name:"primary"});f.discover.mockRejectedValueOnce(new Error("lookup unavailable"));render(f.view([],change));const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);await waitFor(()=>expect(f.discover).toHaveBeenCalledTimes(1));fireEvent.change(input,{target:{value:"not-discovered"}});await waitFor(()=>expect(change).toHaveBeenLastCalledWith([{repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"origin",name:"not-discovered"}}]));f.discover.mockResolvedValueOnce({job:f.job(f.repositories[0],[])});fireEvent.click(screen.getByRole("button",{name:"Refresh"}));await screen.findByText("The remote has no branches.");expect((input as HTMLInputElement).value).toBe("not-discovered");fireEvent.change(input,{target:{value:"still-direct"}});expect(change).toHaveBeenLastCalledWith([{repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"origin",name:"still-direct"}}]);
+});
+
+
+it.each(["@", "-leading"])("blocks direct creation for server-rejected branch %s", async name => {
+ const f=fixture(),change=vi.fn(),validity=vi.fn();render(f.view([],change,false,f.project,validity));
+ const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);await screen.findByText(/Branch discovery is unavailable/);
+ fireEvent.change(input,{target:{value:name}});
+ expect(input.getAttribute("aria-invalid")).toBe("true");expect(validity).toHaveBeenLastCalledWith(false);expect(change).not.toHaveBeenCalled();
 });

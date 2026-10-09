@@ -38,7 +38,7 @@ export function readBranchInventory(row: Resource | undefined, identity: {projec
 }
 
 export function validStartingBranch(name: string): boolean {
- return Boolean(name) && new TextEncoder().encode(name).byteLength <= 1024 && !/[\x00-\x20\x7f-\x9f~^:?*\[\\]/.test(name) && !name.includes("..") && !name.includes("@{") && !name.startsWith("/") && !name.endsWith("/") && !name.endsWith(".") && !name.split("/").some(part => !part || part.startsWith(".") || part.endsWith(".lock"));
+ return Boolean(name) && name !== "@" && !name.startsWith("-") && new TextEncoder().encode(name).byteLength <= 1024 && !/[\x00-\x20\x7f-\x9f~^:?*\[\\]/.test(name) && !name.includes("..") && !name.includes("@{") && !name.startsWith("/") && !name.endsWith("/") && !name.endsWith(".") && !name.split("/").some(part => !part || part.startsWith(".") || part.endsWith(".lock"));
 }
 export function StartingBranches({project,machineId,starting,change,active,supported,validity}: {project:Resource;machineId:string;starting:unknown[];change:(value:unknown[])=>void;active:boolean;supported:boolean;validity?:(valid:boolean)=>void}) {
  useLocale(); const [additional,setAdditional]=useState(false); const invalid = useRef(new Set<string>()), latest = useRef(validity); latest.current = validity;
