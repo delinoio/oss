@@ -56,7 +56,7 @@ func codexCheckpointForContinuation(root string, input domain.ExecutionJobInput,
 	if c.PreviousAccountID != "" {
 		account, connection = c.PreviousAccountID, c.PreviousConnectionID
 	}
-	return ReadCodexExecutionCheckpoint(root, ExecutionCheckpointRef{Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: digest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	return ReadCodexExecutionCheckpoint(root, ExecutionCheckpointRef{ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: digest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 }
 
 func executeCodexSessionCompaction(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.SessionCompactionInput) (output json.RawMessage, returned error) {

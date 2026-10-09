@@ -1,0 +1,9 @@
+{
+  "native-auto-review.title": "AI approval review",
+  "native-auto-review.running": "Codex is reviewing this action.",
+  "native-auto-review.approved": "Codex approved this action.",
+  "native-auto-review.denied": "Codex denied this action.",
+  "native-auto-review.timedOut": "The AI approval review timed out.",
+  "native-auto-review.aborted": "The AI approval review was interrupted.",
+  "native-auto-review.unavailable": "The approval review observation is unavailable."
+}

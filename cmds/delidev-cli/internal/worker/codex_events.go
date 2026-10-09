@@ -70,6 +70,9 @@ func (c *CodexEventPublisher) BindThread(ctx context.Context, result codex.Threa
 		return publicationUncertain()
 	}
 	observed := domain.ObservedExecutionSettings{Model: result.Effective.Model, Effort: result.Effective.Effort, ServiceTier: result.Effective.ServiceTier, ApprovalPolicy: string(result.Effective.ApprovalPolicy)}
+	if c.publisher.input.Configuration.Options.ApprovalsReviewer != "" {
+		observed.ApprovalsReviewer = domain.ApprovalsReviewer(result.Effective.ApprovalsReviewer)
+	}
 	switch result.Effective.Sandbox.Type {
 	case codex.ReadOnly:
 		observed.Permission = domain.PermissionReadOnly
@@ -80,7 +83,7 @@ func (c *CodexEventPublisher) BindThread(ctx context.Context, result codex.Threa
 	default:
 		return domain.Fail(domain.Unsupported, "The native permission observation has no supported publication.", "Use a verified native profile before accepting input.")
 	}
-	if result.Effective.Provider != codexExecutionProvider(c.publisher.input.Configuration.Subscription) || result.Effective.ApprovalsReviewer != "user" {
+	if result.Effective.Provider != codexExecutionProvider(c.publisher.input.Configuration.Subscription) || result.Effective.ApprovalsReviewer != string(c.publisher.input.Configuration.Options.ApprovalsReviewer.Effective()) {
 		return publicationUncertain()
 	}
 	if err := observed.ValidateForInput(c.publisher.input.Configuration, c.publisher.input.Input.Mode); err != nil {
@@ -158,6 +161,11 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.AutoReviewEvent:
+		if event.AutoReview == nil || c.publisher.input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || event.ThreadID != c.thread || event.TurnID != c.turn || !event.Correlated {
+			return false, publicationUncertain()
+		}
+		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionProgressObserved, Progress: &domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.AutoReviewProgress, AutoReview: event.AutoReview}}})
 	case codex.SubagentEvent:
 		if err := c.publisher.input.Configuration.ValidateCodexChildModels(event.Subagents); err != nil {
 			return true, err
@@ -173,7 +181,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, nil
 	case codex.MetadataEvent:
 		switch event.Metadata {
-		case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded:
+		case codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded:
 			// These validated observations grant no new product authority.
 			return true, nil
 		default:

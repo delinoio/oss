@@ -2,7 +2,9 @@ package store
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -72,16 +74,20 @@ func (t *Tx) ExecutionGrantForJob(job domain.ID) (ExecutionGrant, error) {
 }
 
 type ExecutionReference struct {
+	Reviewer                                    bool
 	SessionID, AccountID, ConnectionID, ModelID domain.ID
 	Kind                                        domain.NativeReferenceKind
 	NativeID                                    string
 }
 
 func (r ExecutionReference) validate() error {
-	for _, id := range []domain.ID{r.SessionID, r.AccountID, r.ConnectionID, r.ModelID} {
+	for _, id := range []domain.ID{r.SessionID, r.AccountID, r.ConnectionID} {
 		if err := id.Validate(); err != nil {
 			return err
 		}
+	}
+	if r.ModelID.Validate() != nil && !(r.ModelID == "" && r.Reviewer) || r.Reviewer && r.ModelID != "" {
+		return domain.Fail(domain.PermissionDenied, "Invalid reviewer response scope.", "Retain original account and reviewer ownership.")
 	}
 	if r.Kind != domain.NativeResponseReference && r.Kind != domain.NativeConversationReference {
 		return domain.Fail(domain.Unsupported, "Unknown native reference kind.", "Use a supported execution-owned native reference.")
@@ -118,4 +124,36 @@ func (t *Tx) ObserveExecutionReference(ref ExecutionReference) error {
 	}
 	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO execution_references(session_id,account_id,connection_id,model_id,reference_kind,native_id) VALUES(?,?,?,?,?,?)", ref.SessionID, ref.AccountID, ref.ConnectionID, ref.ModelID, ref.Kind, ref.NativeID)
 	return storageError(err)
+}
+
+// Match original response identity without promoting it into public usage.
+// The empty model slot belongs only to the immutable builtin reviewer scope.
+func (t *Tx) ResponseModelAttribution(session, account, connection domain.ID, digest string) (domain.ID, bool, error) {
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT model_id,native_id FROM execution_references WHERE session_id=? AND account_id=? AND connection_id=? AND reference_kind=? LIMIT 10001", session, account, connection, domain.NativeResponseReference)
+	if err != nil {
+		return "", false, storageError(err)
+	}
+	defer rows.Close()
+	var result domain.ID
+	found := false
+	count := 0
+	for rows.Next() {
+		count++
+		if count > 10000 {
+			return "", false, corrupt()
+		}
+		var model domain.ID
+		var native string
+		if err := rows.Scan(&model, &native); err != nil {
+			return "", false, storageError(err)
+		}
+		sum := sha256.Sum256([]byte(native))
+		if hex.EncodeToString(sum[:]) == digest {
+			if found && result != model {
+				return "", false, corrupt()
+			}
+			result, found = model, true
+		}
+	}
+	return result, found, storageError(rows.Err())
 }

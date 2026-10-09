@@ -61,7 +61,7 @@ func (i SessionCompactionInput) Validate() error {
 	if i.Previous != nil && (i.Previous.Validate() != nil || i.Previous.ExecutionID != a.ExecutionID) {
 		return CompactionUncertain()
 	}
-	if (a.Configuration.Harness == Codex || a.Configuration.Harness == OpenCode) && (i.Dispatch != DispatchReady || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || !i.Restore.Continuation.Previous.NativeCompactions.Closed()) {
+	if (a.Configuration.Harness == Codex || a.Configuration.Harness == OpenCode) && (i.Dispatch != DispatchReady || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || (!i.Restore.Continuation.Previous.NativeCompactions.Closed() || !i.Restore.Continuation.Previous.AutoReviews.Closed())) {
 		return CompactionUncertain()
 	}
 	if i.Dispatch != DispatchReady && i.Dispatch != DispatchPaused && i.Dispatch != DispatchBlocked {

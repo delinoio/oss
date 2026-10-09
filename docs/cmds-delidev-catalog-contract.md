@@ -517,7 +517,7 @@ Saved Agent options retain bounded exact values, including selections that lack 
 
 | Harness | Forwarded native settings | Unavailable settings |
 | --- | --- | --- |
-| Codex API and subscription | All four permission modes; bounded exact root effort, approval policy, service tier, same-account child model/effort and uint32 concurrency | Approval-review model and Claude permission |
+| Codex API and subscription | All four permission modes; bounded exact root effort, approval policy, service tier, same-account child model/effort, uint32 concurrency and User/AI approval reviewer | Custom approval-review model and Claude permission |
 | Claude | Native permission modes, including auto, and bounded exact effort | Codex sandbox, approval policy, service tier and Codex child overrides |
 | OpenCode | Native Build/Plan primary-agent policy and exact model `options.reasoningEffort` | Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
 | Grok Build | Existing default permission and native Execute/Plan selection | Effort without an applied-setting observation adapter, Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
@@ -624,3 +624,7 @@ prefix choices with effective values and literal-input guidance. Preserve hidden
 fields, revision conflicts, exact uncertain requests, English/Korean text,
 Settings search, keyboard access and responsive presentation. Diagnostics retain
 operation identities, revisions and safe outcomes, never prefixes/instructions.
+
+## Codex reviewer selection — issue #1980
+
+Configure exposes a separate localized User / AI auto-review picker for Codex. AI selection explicitly sets `on-request` while preserving sandbox and unrelated native options. The server capability `CODEX_APPROVAL_REVIEW_V1 = 55` enables this configuration surface; the selected Runner must independently advertise Worker capability 30 before dispatch. Unsupported consumers fail without stripping a selected reviewer. The retained foreign option has an explicit Clear action; harness switching alone never clears it. Portable configuration and atomic Agent/Worker saves preserve this optional enum through the existing typed options document, without changing absent historical bytes or adding a database migration. Follow the [native reviewer profile](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980).

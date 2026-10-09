@@ -30,6 +30,7 @@ const (
 // RequestDiagnostic is a closed projection, never a native document or usage
 // sample. Native input observations and HTTP attempts have separate identities.
 type RequestDiagnostic struct {
+	Attribution          ModelAttribution           `json:"model_attribution,omitempty"`
 	ID                   ID                         `json:"id"`
 	Revision             uint64                     `json:"revision,string"`
 	SessionID            ID                         `json:"session_id"`
@@ -112,10 +113,13 @@ func SafeDiagnosticID(value string) bool {
 }
 
 func (d RequestDiagnostic) Validate() error {
-	for _, id := range []ID{d.ID, d.SessionID, d.ExecutionID, d.AccountID, d.ConnectionID, d.ModelID} {
+	for _, id := range []ID{d.ID, d.SessionID, d.ExecutionID, d.AccountID, d.ConnectionID} {
 		if id.Validate() != nil {
 			return invalidObservation()
 		}
+	}
+	if (d.Attribution == "" && d.ModelID.Validate() != nil) || d.Attribution != "" && (d.Attribution != BuiltinReviewerAttribution || d.ModelID != "" || d.Harness != Codex || d.Source != DiagnosticProxyHTTP) {
+		return invalidObservation()
 	}
 	if d.SubscriptionService == "" {
 		if d.ProviderID.Validate() != nil {

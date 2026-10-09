@@ -325,7 +325,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 			if event.Kind == domain.ExecutionTurnFinished {
-				if !progress.NativeCompactions.Closed() {
+				if !progress.NativeCompactions.Closed() || !progress.AutoReviews.Closed() {
 					return domain.CompactionUncertain()
 				}
 				if input.Configuration.Harness == domain.GrokBuild {
@@ -514,6 +514,30 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					return domain.CompactionUncertain()
 				}
 				observation := domain.ResponseUsageRecord{SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
+				if input.Configuration.Options.ApprovalsReviewer == domain.CodexReviewerAuto {
+					observation.ModelID = ""
+					observation.Attribution = domain.UnknownReviewAttribution
+					if !input.Configuration.Subscription {
+						model, known, err := tx.ResponseModelAttribution(sr.ID, input.AccountID, input.ConnectionID, event.ResponseUsage.ResponseDigest)
+						if err != nil {
+							return err
+						}
+						if known {
+							if model == "" && input.Configuration.ReviewerNativeModel == domain.CodexReviewerNativeModel {
+								observation.Attribution = domain.BuiltinReviewerAttribution
+							} else if model == input.Configuration.ModelID || input.Configuration.SubagentModel != nil && model == input.Configuration.SubagentModel.ModelID {
+								// A canonical model also used by the parent/child cannot distinguish a native reviewer response.
+								ambiguous := model == input.Configuration.ModelID && input.Configuration.NativeModel == domain.CodexReviewerNativeModel || input.Configuration.SubagentModel != nil && model == input.Configuration.SubagentModel.ModelID && input.Configuration.SubagentModel.NativeModel == domain.CodexReviewerNativeModel
+								if !ambiguous {
+									observation.ModelID = model
+									observation.Attribution = ""
+								}
+							} else {
+								return executionEventConflict()
+							}
+						}
+					}
+				}
 				id, _, err := tx.PutResponseUsage(event.ObservationID, observation)
 				if err != nil {
 					return err

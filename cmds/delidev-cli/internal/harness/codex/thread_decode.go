@@ -133,7 +133,7 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 		return &thread, nil, incompatible()
 	}
 
-	if response.Model != settings.Model || response.ModelProvider != settings.Provider || wire.ModelProvider != settings.Provider || !nativePathEqual(response.Cwd, settings.Cwd) || !nativePathEqual(wire.Cwd, settings.Cwd) || response.ApprovalsReviewer != "user" {
+	if response.Model != settings.Model || response.ModelProvider != settings.Provider || wire.ModelProvider != settings.Provider || !nativePathEqual(response.Cwd, settings.Cwd) || !nativePathEqual(wire.Cwd, settings.Cwd) || response.ApprovalsReviewer != string(settings.Options.ApprovalsReviewer.Effective()) {
 		return &thread, nil, incompatible()
 	}
 	for _, value := range []*string{response.ReasoningEffort, response.ServiceTier} {

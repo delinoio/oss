@@ -212,5 +212,10 @@
   "configuration-fields.useServerDefault": "서버 기본값 사용",
   "configuration-fields.overrideProject": "프로젝트에서 재정의",
   "configuration-fields.branchPrefixHelp": "접두사와 선택한 접미사를 그대로 연결합니다. 구분자를 추가하지 않습니다. 비워 두면 지침을 끕니다. 새로 구성한 세션에 적용됩니다.",
-  "configuration-fields.branchPrefixInvalid": "유효한 Git 브랜치 접두사를 UTF-8 256바이트 이내로 입력하거나 비워 두세요."
+  "configuration-fields.branchPrefixInvalid": "유효한 Git 브랜치 접두사를 UTF-8 256바이트 이내로 입력하거나 비워 두세요.",
+  "configuration-fields.approvalReview": "승인 검토",
+  "configuration-fields.approvalReviewUser": "사용자",
+  "configuration-fields.approvalReviewAI": "AI 자동 검토",
+  "configuration-fields.approvalReviewGuidance": "AI 자동 검토는 요청 시 승인 정책과 Codex의 기본 검토 기능을 사용합니다. 샌드박스 권한은 변경되지 않습니다.",
+  "configuration-fields.approvalReviewForeign": "Codex 승인 검토 설정이 유지되어 있습니다. 다른 하네스를 실행하기 전에 명시적으로 지우세요."
 }

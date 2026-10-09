@@ -11,6 +11,12 @@ func UnavailableNativeOption(harness Harness, option string) error {
 
 func (c ExecutionConfiguration) ValidateNativeOptions() error {
 	o := c.Options
+	if (o.ApprovalsReviewer == CodexReviewerAuto && !c.Subscription) != (c.ReviewerNativeModel == CodexReviewerNativeModel) || c.ReviewerNativeModel != "" && c.ReviewerNativeModel != CodexReviewerNativeModel {
+		return invalidObservation()
+	}
+	if err := o.ValidateReviewer(); err != nil {
+		return err
+	}
 	fields := []struct {
 		name                string
 		selected, available bool
@@ -18,6 +24,7 @@ func (c ExecutionConfiguration) ValidateNativeOptions() error {
 		{"claude_permission", o.ClaudePermission != "", c.Harness == ClaudeCode},
 		{"permission", o.Permission != PermissionDefault, c.Harness == Codex},
 		{"approval_policy", o.ApprovalPolicy != "", c.Harness == Codex},
+		{"approvals_reviewer", o.ApprovalsReviewer != "", c.Harness == Codex},
 		{"subagent_model", o.SubagentModel != "", c.Harness == Codex},
 		{"subagent_effort", o.SubagentEffort != "", c.Harness == Codex},
 		{"max_concurrency", o.MaxConcurrency != 0, c.Harness == Codex},
@@ -46,7 +53,7 @@ func (c ExecutionConfiguration) SelectedNativeOptionNames() []string {
 		selected bool
 	}{
 		{"permission", o.Permission != PermissionDefault}, {"claude_permission", o.ClaudePermission != ""},
-		{"effort", c.Effort != ""}, {"approval_policy", o.ApprovalPolicy != ""},
+		{"approvals_reviewer", o.ApprovalsReviewer != ""}, {"effort", c.Effort != ""}, {"approval_policy", o.ApprovalPolicy != ""},
 		{"subagent_model", o.SubagentModel != ""}, {"subagent_effort", o.SubagentEffort != ""},
 		{"max_concurrency", o.MaxConcurrency != 0}, {"approval_review_model", o.ApprovalReviewModel != ""}, {"service_tier", o.ServiceTier != ""},
 	} {

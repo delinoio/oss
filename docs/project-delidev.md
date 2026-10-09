@@ -374,3 +374,5 @@ Project settings and server defaults follow the [project behavior contract](cmds
 ### New-session defaults and branch prefixes
 
 Issues #2054/#2057 compose System 56, Worker 38, schema-3 Project/Settings and portable v6 under the catalog, desktop, session, harness, protocol/client and transfer contracts. Preserve existing capability52 and all historical configuration/native ownership. Automatic creation mode, explicit literal prefix overrides and immutable execution provenance grant no native/account/workspace support.
+
+Codex AI approval review composes the harness, catalog, sessions, proxy and usage domains under issue #1980. System 55 and Worker 30 retain separate configuration/adapter gates. Preserve immutable effective reviewer verification, original lifecycle observations, same-account bounded canonical relay and unproved model attribution; Sidechat always applies its original User/read-only/never overlay. This feature changes neither account ownership nor the database schema.

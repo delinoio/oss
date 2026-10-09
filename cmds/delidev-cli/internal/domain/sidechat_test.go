@@ -9,7 +9,7 @@ import (
 
 func TestSidechatSnapshotPreservesSelectionAndFreezesNativeAuthority(t *testing.T) {
 	id := NewID()
-	options := AgentOptions{Permission: PermissionWorkspaceWrite, ApprovalPolicy: "on-request", SubagentModel: "child", SubagentEffort: "low", MaxConcurrency: 4, ServiceTier: "fast"}
+	options := AgentOptions{ApprovalsReviewer: CodexReviewerAuto, Permission: PermissionWorkspaceWrite, ApprovalPolicy: "on-request", SubagentModel: "child", SubagentEffort: "low", MaxConcurrency: 4, ServiceTier: "fast"}
 	c, err := ResolveExecutionConfiguration(NewID(), 3, Agent{Name: "Parent", Harness: Codex, ModelID: NewID(), Effort: "high", Options: options, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Templates: []ID{id}}, 7, Model{Name: "Parent", NativeID: "native-parent", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}, Priority, []AppliedTemplate{{ID: id, Revision: 5, Contents: "Original parent instructions\n"}})
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestSidechatSnapshotPreservesSelectionAndFreezesNativeAuthority(t *testing.
 	if child.ID != parent.ID || child.InputID != parent.InputID || child.InitialAccountID != parent.InitialAccountID || child.ConnectionID != parent.ConnectionID || child.Configuration.NativeModel != c.NativeModel || child.Configuration.Effort != c.Effort || child.Configuration.Instructions != c.Instructions || child.Configuration.Options.ServiceTier != "fast" || child.ConfigurationDigest == parent.ConfigurationDigest {
 		t.Fatal("Sidechat changed original model, account, route or instructions")
 	}
-	if child.Configuration.Options.Permission != PermissionReadOnly || child.Configuration.Options.ApprovalPolicy != "never" || child.Configuration.Options.SubagentModel != "" || child.Configuration.SubagentModel != nil {
+	if child.Configuration.Options.ApprovalsReviewer.Effective() != CodexReviewerUser || child.Configuration.ReviewerNativeModel != "" || child.Configuration.Options.Permission != PermissionReadOnly || child.Configuration.Options.ApprovalPolicy != "never" || child.Configuration.Options.SubagentModel != "" || child.Configuration.SubagentModel != nil {
 		t.Fatal("overlay retained expanded native authority")
 	}
 	parent.Configuration.Templates[0].Contents = "Later edit"

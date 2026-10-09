@@ -9,6 +9,7 @@ import (
 // ExecutionRecoveryRequest contains comparison facts only. It cannot authorize
 // native input, replace the original assignment, or mint execution credentials.
 type ExecutionRecoveryRequest struct {
+	ApprovalsReviewer     ApprovalsReviewer           `json:"approvals_reviewer,omitempty"`
 	Startup               *PRStartupRecoveryReference `json:"startup,omitempty"`
 	Version               uint32                      `json:"version"`
 	Harness               Harness                     `json:"harness,omitempty"`
@@ -42,6 +43,9 @@ func ExecutionRecoveryUncertain() *Error {
 func (r ExecutionRecoveryRequest) Validate() error {
 	if r.Startup != nil {
 		return r.validatePRStartupRecovery()
+	}
+	if !r.ApprovalsReviewer.Valid() || r.NativeHarness() != Codex && r.ApprovalsReviewer != "" {
+		return ExecutionRecoveryUncertain()
 	}
 	if (r.NativeHarness() != Codex && r.NativeHarness() != OpenCode && r.NativeHarness() != ClaudeCode) || (r.NativeHarness() == OpenCode) != (r.OpenCode != nil) || (r.NativeHarness() == ClaudeCode) != (r.Claude != nil) || r.OpenCode != nil && r.OpenCode.Validate() != nil || r.Claude != nil && r.Claude.Validate() != nil {
 		return ExecutionRecoveryUncertain()

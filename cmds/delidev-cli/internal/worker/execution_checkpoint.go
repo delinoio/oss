@@ -40,6 +40,7 @@ type CodexExecutionCheckpoint struct {
 type ExecutionCheckpointRef struct {
 	// Copy this private comparison flag only from the accepted configuration.
 	Subscription          bool
+	ApprovalsReviewer     domain.ApprovalsReviewer
 	JobID                 domain.ID
 	SessionID             domain.ID
 	MachineID             domain.ID
@@ -124,7 +125,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
-	if p.Native.Status != status || p.Native.Effective.Provider != codexExecutionProvider(ref.Subscription) || p.Native.Effective.ApprovalsReviewer != "user" || domain.Text(p.Native.Effective.Model, "retained model", 256, true) != nil || !filepath.IsAbs(p.Native.Effective.Cwd) {
+	if p.Native.Status != status || p.Native.Effective.Provider != codexExecutionProvider(ref.Subscription) || !domain.ApprovalsReviewer(p.Native.Effective.ApprovalsReviewer).Valid() || p.Native.Effective.ApprovalsReviewer != string(ref.ApprovalsReviewer.Effective()) || domain.Text(p.Native.Effective.Model, "retained model", 256, true) != nil || !filepath.IsAbs(p.Native.Effective.Cwd) {
 		return false
 	}
 	for _, value := range []*string{p.Native.Effective.Effort, p.Native.Effective.ServiceTier} {
@@ -208,7 +209,7 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	if err != nil || !bytes.Equal(actual, expected) {
 		return "", executionCheckpointUncertain()
 	}
-	ref := ExecutionCheckpointRef{Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
+	ref := ExecutionCheckpointRef{ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
 	var manifest workspace.Manifest
 	if domain.Decode(input.Manifest, &manifest) != nil {
 		return "", executionCheckpointUncertain()

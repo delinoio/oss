@@ -37,7 +37,7 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 			return empty, domain.CompactionUncertain()
 		}
 	case domain.Codex, domain.OpenCode:
-		if session.Dispatch != domain.DispatchReady || session.Outcome != domain.ExecutionSucceeded || session.PendingInputs != 0 || session.PendingInputBytes != 0 || p.Waiting != (domain.NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || !p.NativeCompactions.Closed() {
+		if session.Dispatch != domain.DispatchReady || session.Outcome != domain.ExecutionSucceeded || session.PendingInputs != 0 || session.PendingInputBytes != 0 || p.Waiting != (domain.NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || (!p.NativeCompactions.Closed() || !p.AutoReviews.Closed()) {
 			return empty, domain.CompactionUncertain()
 		}
 	default:

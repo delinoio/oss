@@ -322,3 +322,9 @@ client decoding preserves exact decimal strings above JavaScript's safe integer
 range, source/status enums and original provenance; old absent-field replies
 remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
+
+## Codex reviewer attribution — issue #1980
+
+Raw native response-completion notifications lack a model field. With AI review selected, default their immutable event-time model attribution to `unknown-auto-review-model` instead of borrowing the parent model. Only the original same-account/connection response reference proved by the bounded API relay may establish root, child or the builtin canonical reviewer attribution `codex-reviewer-gpt-5.6-luna`. A canonical reviewer model also selected as root/child remains ambiguous. Managed native review and parent-model fallback without distinguishing evidence remain unknown.
+
+Retain observed counters and original session/execution/account ownership, separate unknown and builtin reviewer groups, and expose the canonical builtin name only when proved. Builtin/unknown rows have no catalog model detail authority, no inferred pricing or actual spend and explicit unpriced coverage. Existing JSON response records and summary projections carry the closed attribution type; existing relational tables retain independent private response references without a migration. Historical records and duplicate receipts keep their original attribution.

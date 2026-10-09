@@ -105,13 +105,13 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				prices[basis.ID].Add(estimate)
 			}
 			observed[record.ExecutionID] = true
-			key := string(record.SessionID) + ":" + string(record.AccountID) + ":" + string(record.ProviderID) + ":" + string(record.ModelID)
+			key := string(record.SessionID) + ":" + string(record.AccountID) + ":" + string(record.ProviderID) + ":" + string(record.ModelID) + ":" + string(record.Attribution)
 			group := groups[key]
 			if group == nil {
 				if len(groups) >= maxUsageGroups {
 					return usageReadLimit()
 				}
-				group = &domain.UsageGroup{SessionID: record.SessionID, ProjectID: record.ProjectID, AccountID: record.AccountID, ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID}
+				group = &domain.UsageGroup{SessionID: record.SessionID, ProjectID: record.ProjectID, AccountID: record.AccountID, ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID, Attribution: record.Attribution}
 				groups[key] = group
 			}
 			if group.ProjectID != record.ProjectID {
@@ -136,13 +136,13 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 				if f.AccountingProfile == domain.NativeUnitsV1Accounting {
 					dayBuckets[day].Totals.AddAccounting(domain.CodexResponse, domain.CodexAccountingTotal(record.Usage.Counts))
 				}
-				key := usageModelKey{Provider: record.ProviderID, Model: record.ModelID}
+				key := usageModelKey{Provider: record.ProviderID, Model: record.ModelID, Attribution: record.Attribution}
 				model := modelGroups[key]
 				if model == nil {
 					if len(modelGroups) >= maxUsageGroups || len(modelGroups) >= domain.UsageModelGroupLimit {
 						return usageReadLimit()
 					}
-					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID}
+					model = &domain.UsageAnalyticsModel{ProviderID: record.ProviderID, SubscriptionService: record.SubscriptionService, ModelID: record.ModelID, Attribution: record.Attribution}
 					modelGroups[key] = model
 				}
 				model.Totals.Add(record.Usage.Counts)
@@ -242,8 +242,9 @@ func (t *Tx) UsageSummary(f domain.UsageSelection) (domain.UsageSummary, error) 
 }
 
 type usageModelKey struct {
-	Provider domain.ID
-	Model    domain.ID
+	Attribution domain.ModelAttribution
+	Provider    domain.ID
+	Model       domain.ID
 }
 
 // This is an explicit coverage indicator for executions accepted in the same

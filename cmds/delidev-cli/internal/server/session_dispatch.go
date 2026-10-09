@@ -178,6 +178,9 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	protocol := domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:
+		if c.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) {
+			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks native AI approval review support.", "Update and reconnect that Runner Device; do not omit the selected reviewer.")
+		}
 		if (c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0) && !slices.Contains(machine.WorkerCapabilities, domain.CodexSubagentConfigurationV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks Codex child configuration support.", "Update and reconnect that Runner Device; the saved input and native defaults remain unchanged.")
 		}

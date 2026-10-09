@@ -115,7 +115,11 @@ func missingPriceEstimate() domain.ResponseEstimate {
 	return domain.ResponseEstimate{Coverage: domain.EstimateUnavailable, Input: unavailable, CachedInput: unavailable, Output: unavailable}
 }
 func (t *Tx) snapshotResponseEstimate(id domain.ID, record domain.ResponseUsageRecord) error {
-	basis, err := t.ActivePricing(record.ModelID)
+	var basis *PricingVersion
+	var err error
+	if record.Attribution == "" {
+		basis, err = t.ActivePricing(record.ModelID)
+	}
 	if err != nil {
 		return err
 	}

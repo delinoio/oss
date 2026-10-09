@@ -246,6 +246,7 @@ func (t *UsageTotals) Add(counts *NativeTokenCounts) {
 }
 
 type UsageGroup struct {
+	Attribution         ModelAttribution    `json:"model_attribution,omitempty"`
 	SessionID           ID                  `json:"session_id"`
 	ProjectID           ID                  `json:"project_id,omitempty"`
 	AccountID           ID                  `json:"account_id"`
@@ -263,6 +264,7 @@ type UsageAnalyticsDay struct {
 }
 
 type UsageAnalyticsModel struct {
+	Attribution         ModelAttribution    `json:"model_attribution,omitempty"`
 	ProviderID          ID                  `json:"provider_id,omitempty"`
 	SubscriptionService SubscriptionService `json:"subscription_service,omitempty"`
 	ModelID             ID                  `json:"model_id"`

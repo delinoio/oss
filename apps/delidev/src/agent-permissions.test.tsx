@@ -15,24 +15,39 @@ it("uses exact ordered local choices and keeps navigation separate from edits", 
 
 it("keeps retained unsupported values until explicit selection and preserves Claude options", () => {
  const change = vi.fn(); render(<AgentPermissions harness={Harness.Claude} options={{ permission: "workspace-write", approval_policy: "on-request", claude_permission: "future-mode", future: "keep" }} change={change} active disabled={false}/>);
- const trigger = screen.getByRole("combobox"); expect(trigger.textContent).toBe("Unsupported selection · future-mode"); expect(change).not.toHaveBeenCalled(); fireEvent.click(trigger);
+ const trigger = screen.getAllByRole("combobox")[0]; expect(trigger.textContent).toBe("Unsupported selection · future-mode"); expect(change).not.toHaveBeenCalled(); fireEvent.click(trigger);
  expect(screen.getAllByRole("option").map(row => row.dataset.pickerId)).toEqual(["future-mode", "default", "plan", "acceptEdits", "dontAsk", "bypassPermissions", "auto"]);
  fireEvent.click(screen.getByRole("option", { name: "auto" })); expect(change).toHaveBeenCalledExactlyOnceWith({ permission: "workspace-write", approval_policy: "on-request", claude_permission: "auto", future: "keep" });
 });
 
 for (const harness of [Harness.OpenCode, Harness.Grok]) it(`${harness} retains default-only eligibility`, () => {
- const change = vi.fn(); render(<AgentPermissions harness={harness} options={{ permission: "default" }} change={change} active disabled={false}/>); fireEvent.click(screen.getByRole("combobox"));
+ const change = vi.fn(); render(<AgentPermissions harness={harness} options={{ permission: "default" }} change={change} active disabled={false}/>); fireEvent.click(screen.getAllByRole("combobox")[0]);
  expect(screen.getAllByRole("option").map(row => row.dataset.pickerId)).toEqual(["default"]); expect(screen.getByText(/This tool uses its native permissions/)).toBeTruthy(); expect(change).not.toHaveBeenCalled();
 });
 
 for (const lock of ["inactive", "pending", "fieldset", "hidden", "disposed"]) it(`rejects queued permission choice after ${lock}`, () => {
  const change = vi.fn(), view = (active: boolean, disabled: boolean) => <fieldset data-owner><AgentPermissions harness={Harness.Codex} options={{ permission: "default" }} change={change} active={active} disabled={disabled}/></fieldset>;
- const result = render(view(true, false)); fireEvent.click(screen.getByRole("combobox")); const option = screen.getByRole("option", { name: "full-access" });
+ const result = render(view(true, false)); fireEvent.click(screen.getAllByRole("combobox")[0]); const option = screen.getByRole("option", { name: "full-access" });
  if (lock === "inactive") result.rerender(view(false, false)); else if (lock === "pending") result.rerender(view(true, true)); else if (lock === "disposed") result.unmount(); else if (lock === "fieldset") (result.container.querySelector("fieldset") as HTMLFieldSetElement).disabled = true; else result.container.querySelector("fieldset")!.hidden = true;
  fireEvent.click(option); expect(change).not.toHaveBeenCalled();
 });
 
 it("shows the native default for an omitted legacy permission without creating a value", () => {
  const change = vi.fn(); render(<AgentPermissions harness={Harness.Codex} options={{ future: "keep" }} change={change} active disabled={false}/>);
- const trigger = screen.getByRole("combobox"); expect(trigger.textContent).toBe("default"); expect(trigger.dataset.value).toBe(""); expect(change).not.toHaveBeenCalled();
+ const trigger = screen.getAllByRole("combobox")[0]; expect(trigger.textContent).toBe("default"); expect(trigger.dataset.value).toBe(""); expect(change).not.toHaveBeenCalled();
+});
+
+it("selects native AI review without expanding the sandbox", () => {
+ const change = vi.fn(); render(<AgentPermissions harness={Harness.Codex} options={{permission:"read-only",future:"keep"}} change={change} active disabled={false} reviewSupported />);
+ fireEvent.click(screen.getByRole("combobox",{name:"Approval review"}));fireEvent.click(screen.getByRole("option",{name:"AI auto-review"}));
+ expect(change).toHaveBeenCalledExactlyOnceWith({permission:"read-only",future:"keep",approvals_reviewer:"auto_review",approval_policy:"on-request"});
+});
+it("retains a foreign reviewer until explicit clearing", () => {
+ const change = vi.fn();render(<AgentPermissions harness={Harness.Claude} options={{permission:"default",approvals_reviewer:"auto_review",approval_policy:"on-request"}} change={change} active disabled={false}/>);
+ expect(change).not.toHaveBeenCalled();expect(screen.getByText(/A Codex approval reviewer is retained/)).toBeTruthy();fireEvent.click(screen.getByRole("button",{name:"Clear retained option"}));
+ expect(change).toHaveBeenCalledExactlyOnceWith({permission:"default",approval_policy:"on-request"});
+});
+it("does not offer reviewer authority before capability negotiation",()=>{
+ const change=vi.fn();render(<AgentPermissions harness={Harness.Codex} options={{permission:"default",approvals_reviewer:"auto_review"}} change={change} active disabled={false}/>);
+ expect(screen.getByRole("combobox",{name:"Approval review"}).hasAttribute("disabled")).toBe(true);expect(change).not.toHaveBeenCalled();
 });

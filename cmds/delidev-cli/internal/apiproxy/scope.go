@@ -43,6 +43,8 @@ type Scope struct {
 	ConnectionID         domain.ID
 	ProviderID           domain.ID
 	ModelID              domain.ID
+	Attribution          domain.ModelAttribution
+	ReviewerNativeModel  string
 	NativeModel          string
 	ChildModel           *domain.ExecutionSubagentModel
 	Purpose              domain.UsagePurpose
@@ -55,13 +57,23 @@ type Scope struct {
 }
 
 func (s Scope) Validate() error {
+	if s.ReviewerNativeModel != "" && (s.ReviewerNativeModel != domain.CodexReviewerNativeModel || s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.Purpose == domain.SessionTitleUsage || s.CompactionSourceTurn != "") {
+		return domain.Fail(domain.PermissionDenied, "Invalid native reviewer relay scope.", "Retain the original same-account reviewer model authorization.")
+	}
 	if s.SubscriptionService != "" {
 		return domain.Fail(domain.PermissionDenied, "Native subscription identity grants no API relay authority.", "Use the protected native subscription lease.")
 	}
-	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID, s.ProviderID, s.ModelID} {
+	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID, s.ProviderID} {
 		if err := id.Validate(); err != nil {
 			return err
 		}
+	}
+	if s.Attribution != "" {
+		if s.Attribution != domain.BuiltinReviewerAttribution || s.ModelID != "" || s.NativeModel != domain.CodexReviewerNativeModel || s.ReviewerNativeModel != s.NativeModel || len(s.Operations) != 1 || s.Operations[0] != ResponseCreate {
+			return domain.Fail(domain.PermissionDenied, "Invalid native reviewer attribution.", "Retain the proved canonical reviewer request.")
+		}
+	} else if err := s.ModelID.Validate(); err != nil {
+		return err
 	}
 	if err := domain.Text(s.NativeModel, "proxy model", 256, true); err != nil {
 		return err
