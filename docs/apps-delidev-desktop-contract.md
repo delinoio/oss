@@ -3555,17 +3555,22 @@ move focus. Old peers retain the existing coarse presentation without fabricated
 details or execution rejection. The independently owned initial-readiness warning
 boundary remains separate.
 
-Detailed startup presence reads use the original Machine network instance and
-server-projected heartbeat and same-read `heartbeat_observed_at` through the
-existing Resource query. Compare lease timestamps only in that server clock
-domain; browser-clock skew cannot grant or remove presence. Both projected
-timestamps are transient. The closed optional Machine observation member keeps
-original strict typed Worker reads compatible without relaxing unknown-field
-checks or native eligibility. These reads leave original Machine revisions, storage and
-portable configuration unchanged. Failed/missing
-reads, instance replacement and the original 60-second lease boundary stop
-animation; a report timestamp or long-running step duration is never a freshness
-substitute. Rechecks are read-only and suspend with the owning conversation.
+Detailed startup presence reads preserve the original closed Machine JSON shape
+for legacy strict Worker and client decoders. Read the original Machine network
+instance and server-projected heartbeat, then the existing bounded
+System.GetOverview.observed_at on the same authenticated transport and captured
+startup generation. Never dispatch the clock read before the Machine read completes.
+Compare only server-clock timestamps; browser wall-clock skew cannot grant a lease.
+Conservatively include monotonic elapsed time since the paired read began, so a
+stalled response or timer cannot extend the original lease; pending rechecks
+suspend animation until the complete pair succeeds.
+These paired reads are transient and read-only, leave original Machine revisions,
+storage and portable configuration unchanged, and grant no execution authority.
+Failed, missing or malformed responses, source/generation replacement, cancellation,
+conversation deactivation and the original 60-second lease boundary stop animation.
+A report timestamp or long-running step duration is never a freshness substitute.
+Rechecks suspend with the owning conversation; canceled late results cannot publish.
+
 ### Compact Home header and creation actions (issue #2139)
 
 Home on Sessions and both creation surfaces, including the shared compact drawer, uses a 32px minimum header with a 16px brand and 32px Inbox/Search controls containing 16px icons. Keep their original 2px control gap. The two full-width labelled creation actions retain their order and current-page predicates, with 30px minimum height, 13px text, 16px icons, 8px icon/text gap and horizontal padding, and 6px corners. Only header-to-first-action and inter-action gaps become 6px, yielding 104px in ordinary layouts. In the compact Home drawer, place the existing Close navigation control after both creation actions so its independent 40px target cannot interrupt this 104px block. Other sidebar contexts retain its original placement. Preserve 12px pane inset and existing list/footer spacing, rail/pane widths, other sidebar contexts, focus/navigation and independent drafts. Enlarged text may grow vertically without clipping. This changes presentation only.

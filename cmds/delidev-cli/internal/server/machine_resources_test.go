@@ -21,7 +21,7 @@ func TestMachineResourceProjectsOnlyOriginalWorkerHeartbeat(t *testing.T) {
 	seen := []time.Time{now.Add(-5 * time.Second), now.Add(-time.Minute), {}}
 	originals := map[domain.ID]store.Record{}
 	for i, id := range ids {
-		doctorPut(t, s, domain.MachineKind, id, 0, map[string]any{"name": "Original Runner", "os": "linux", "architecture": "amd64", "last_seen": now.Add(-6 * time.Hour), "future_metadata": "preserve"})
+		doctorPut(t, s, domain.MachineKind, id, 0, map[string]any{"name": "Original Runner", "os": "linux", "architecture": "amd64", "last_seen": now.Add(-6 * time.Hour), "future_metadata": "preserve", "heartbeat_observed_at": now})
 		if i < 2 {
 			_, err := s.Store.Mutate(context.Background(), domain.NewID(), "fixture.machine-lease", id, func(tx *store.Tx) (any, error) { return nil, tx.SetWorkerInstance(id, domain.NewID(), seen[i]) })
 			if err != nil {
@@ -46,6 +46,9 @@ func TestMachineResourceProjectsOnlyOriginalWorkerHeartbeat(t *testing.T) {
 		if json.Unmarshal(resource.DocumentJson, &fields) != nil || string(fields["future_metadata"]) != `"preserve"` {
 			t.Fatal("lost original metadata")
 		}
+		if _, present := fields["heartbeat_observed_at"]; present {
+			t.Fatal("public Machine added a field rejected by legacy strict readers")
+		}
 		if resource.Revision != original.Revision || resource.SchemaVersion != 1 {
 			t.Fatal("liveness changed entity revision/schema")
 		}
@@ -60,10 +63,6 @@ func TestMachineResourceProjectsOnlyOriginalWorkerHeartbeat(t *testing.T) {
 				return
 			}
 			var got time.Time
-			var observed time.Time
-			if json.Unmarshal(fields["heartbeat_observed_at"], &observed) != nil || observed.Before(now) {
-				t.Fatal("missing server-clock lease observation")
-			}
 			if json.Unmarshal(fields["last_seen"], &got) != nil || !got.Equal(seen[i]) {
 				t.Fatalf("wrong exact-machine lease: %s", resource.DocumentJson)
 			}
@@ -160,6 +159,25 @@ func TestMachineHeartbeatProjectionPreservesStrictTypedConsumers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Decode against the original closed Machine shape, without an observation field.
+	// Freeze the original public JSON member set independently of current types.
+	var legacy struct {
+		Network            json.RawMessage `json:"network"`
+		Name               string          `json:"name"`
+		OS                 string          `json:"os"`
+		Architecture       string          `json:"architecture"`
+		Version            string          `json:"version"`
+		Installations      json.RawMessage `json:"installations"`
+		WorkerCapabilities json.RawMessage `json:"worker_capabilities"`
+		DiscoveryRevision  uint64          `json:"discovery_revision"`
+		LastSeen           time.Time       `json:"last_seen"`
+		Disabled           bool            `json:"disabled"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(projected.Data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&legacy); err != nil {
+		t.Fatal("legacy strict decoder rejected public Machine JSON", err)
+	}
 	var machine domain.Machine
 	if err := domain.Decode(projected.Data, &machine); err != nil {
 		t.Fatal("original typed consumer rejected projected Machine", err)
@@ -167,18 +185,21 @@ func TestMachineHeartbeatProjectionPreservesStrictTypedConsumers(t *testing.T) {
 	if err := machine.Validate(); err != nil {
 		t.Fatal("descriptive observation changed original Machine validity", err)
 	}
-	if machine.HeartbeatObservedAt == nil || !machine.HeartbeatObservedAt.Equal(now) || !machine.LastSeen.Equal(now.Add(-5*time.Second)) {
-		t.Fatal("lost same-read server clock metadata")
+	if !machine.LastSeen.Equal(now.Add(-5 * time.Second)) {
+		t.Fatal("lost original heartbeat metadata")
 	}
-	if !bytes.Equal(record.Data, raw) || original.HeartbeatObservedAt != nil {
+	if !bytes.Equal(record.Data, raw) {
 		t.Fatal("projection changed original stored Machine")
+	}
+	if bytes.Contains(projected.Data, []byte("heartbeat_observed_at")) {
+		t.Fatal("legacy Machine JSON has an unsupported field")
 	}
 	unknown := append([]byte(nil), projected.Data...)
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(unknown, &fields); err != nil {
 		t.Fatal(err)
 	}
-	fields["unknown_machine_authority"] = json.RawMessage(`true`)
+	fields["heartbeat_observed_at"] = json.RawMessage(`true`)
 	unknown, _ = json.Marshal(fields)
 	if domain.Decode(unknown, &machine) == nil {
 		t.Fatal("typed compatibility relaxed closed unknown-field rejection")

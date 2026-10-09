@@ -8,6 +8,7 @@ import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
 import { initialExecutionPending, SessionProgressPhase, sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
+import { useStartupPresence } from "./session-startup-presence";
 import { startupOperations, startupWorkerCurrent } from "./session-startup-operations";
 import { SessionProgressStatus, StartupObservedOperation } from "./session-progress-status";
 import { currentTurn } from "./turn-timing";
@@ -535,8 +536,16 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // Retained startup metadata is historical. Presence is consumed only while
   // the original progress projection still has a current startup to display.
   const observeStartupOwner = conversationActive && hasStartupOperations && Boolean(observedProgress) && Boolean(data.machine_id);
-  const startupMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: text(data.machine_id) }, { enabled: observeStartupOwner, refetchInterval: observeStartupOwner ? 5000 : false, refetchOnWindowFocus: false, refetchOnReconnect: false });
-  const startupOwnerCurrent = !hasStartupOperations || startupWorkerCurrent(session, startupMachine.data?.resource, Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending);
+  const startupScopes = object(data.startup_progress);
+  const startupOwner = JSON.stringify({ session: id, execution: object(data.current_execution ?? data.initial_execution).id,
+    scopes: [startupScopes.workspace, startupScopes.native].map(value => {
+      const scope = object(value);
+      return [scope.job_id, scope.execution_id, scope.machine_id, scope.instance_id, scope.device_id, scope.server_epoch, scope.assignment_revision];
+    }) });
+  const startupMachine = useStartupPresence(text(data.machine_id), startupOwner, observeStartupOwner);
+  const startupOwnerCurrent = !hasStartupOperations || startupWorkerCurrent(session, startupMachine.data?.resource,
+    observeStartupOwner && Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending && !startupMachine.isFetching,
+    startupMachine.data?.observedAt, startupMachine.data ? performance.now() - startupMachine.data.startedAt : NaN);
   const progress = startupOwnerCurrent ? observedProgress : undefined;
   return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
