@@ -66,7 +66,7 @@ it("reads an empty continuation and renders later projects without claiming fina
 });
 
 it("groups rows in server order with complete identities, schema guards and no extra reads", async () => {
-  const last = project(`Zulu ${"long project name ".repeat(30)}`), first = project("Alpha"), future = create(ResourceSchema, { ...project("Future project"), schemaVersion: 2 });
+  const last = project(`Zulu ${"long project name ".repeat(30)}`), first = project("Alpha"), future = create(ResourceSchema, { ...project("Future project"), schemaVersion: 3 });
   const value = fixture([last, first, future]); openProjects(value);
   const list = await screen.findByRole("region", { name: "Saved projects" });
   expect(within(list).getAllByRole("heading").map(node => node.textContent)).toEqual(["Zulu " + "long project name ".repeat(30), "Alpha", "Unnamed"]);
