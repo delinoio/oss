@@ -306,3 +306,13 @@ Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-beha
 ## New-session defaults and branch prefix declarations
 
 Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+
+## Mobile consumer ownership
+
+`apps/delidev-mobile` consumes the generated client directly over its selected
+HTTPS profile. Mobile owns device-only credentials, immutable pending mutation
+requests, profile/cache isolation and foreground lifetime. Shared synchronization
+remains read-only; returning to the foreground cannot retry a mutation. A bounded
+Settings snapshot supplies a coherent event cursor while session/history pages
+remain independently paginated. No new business RPC or transport authority is
+added. Follow the [mobile contract](apps-delidev-mobile-contract.md).

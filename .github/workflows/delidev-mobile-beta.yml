@@ -1,0 +1,228 @@
+name: DeliDev mobile internal beta
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        default: dry-run
+        options: [dry-run, package, submit, resume]
+        required: true
+      source_sha:
+        description: Exact source commit for both platforms
+        type: string
+        required: true
+      version:
+        description: Shared app version (major.minor.patch)
+        type: string
+        required: true
+      ios_build:
+        description: Original explicit iOS build number
+        type: string
+        required: true
+      android_code:
+        description: Original explicit Android version code
+        type: string
+        required: true
+      candidate_artifact_id:
+        description: Original complete candidate artifact ID (submit/resume only)
+        type: string
+        default: ""
+      receipt_artifact_id:
+        description: Latest original recovery receipt artifact ID (resume only)
+        type: string
+        default: ""
+permissions: { contents: read, actions: read }
+concurrency:
+  group: delidev-mobile-beta-${{ inputs.version }}-${{ inputs.ios_build }}-${{ inputs.android_code }}
+  cancel-in-progress: false
+
+env:
+  DELIDEV_MOBILE_SOURCE_SHA: ${{ inputs.source_sha }}
+  DELIDEV_MOBILE_VERSION: ${{ inputs.version }}
+  DELIDEV_MOBILE_IOS_BUILD: ${{ inputs.ios_build }}
+  DELIDEV_MOBILE_ANDROID_CODE: ${{ inputs.android_code }}
+  DELIDEV_MOBILE_APPLE_SIGNER: ${{ vars.DELIDEV_MOBILE_APPLE_SIGNER }}
+  DELIDEV_MOBILE_ANDROID_SIGNER: ${{ vars.DELIDEV_MOBILE_ANDROID_SIGNER }}
+  CARGO_BUILD_JOBS: "2"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate immutable invocation
+        env:
+          {
+            MODE: "${{ inputs.mode }}",
+            CANDIDATE: "${{ inputs.candidate_artifact_id }}",
+            RECEIPTS: "${{ inputs.receipt_artifact_id }}",
+          }
+        run: |
+          node <<'JS'
+          const e=process.env;
+          if(e.DELIDEV_MOBILE_SOURCE_SHA!==e.GITHUB_SHA)throw Error('Workflow and original candidate must use the same exact source revision');
+          if(!/^[a-f0-9]{40}$/.test(e.DELIDEV_MOBILE_SOURCE_SHA)||!/^\d+\.\d+\.\d+$/.test(e.DELIDEV_MOBILE_VERSION)||!/^\d{1,18}$/.test(e.DELIDEV_MOBILE_IOS_BUILD)||!/^\d{1,10}$/.test(e.DELIDEV_MOBILE_ANDROID_CODE)||Number(e.DELIDEV_MOBILE_ANDROID_CODE)<1||Number(e.DELIDEV_MOBILE_ANDROID_CODE)>2100000000||!['dry-run','package','submit','resume'].includes(e.MODE))throw Error('Invalid mobile beta input');
+          if(['submit','resume'].includes(e.MODE)&&!/^\d+$/.test(e.CANDIDATE))throw Error('Original complete candidate artifact ID required');
+          if(e.RECEIPTS&&!/^\d+$/.test(e.RECEIPTS))throw Error('Invalid original receipt artifact ID');
+          if(e.MODE!=='resume'&&e.RECEIPTS)throw Error('Receipt reuse requires explicit resume');
+          JS
+  checks:
+    needs: validate
+    if: inputs.mode == 'dry-run' || inputs.mode == 'package'
+    strategy:
+      fail-fast: false
+      matrix: { platform: [ios, android] }
+    runs-on: ${{ matrix.platform == 'ios' && 'macos-26' || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          {
+            ref: "${{ inputs.source_sha }}",
+            lfs: true,
+            persist-credentials: false,
+          }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc }
+      - uses: pnpm/action-setup@v5
+        with: { version: 10.26.2 }
+      - uses: actions/setup-go@v6
+        with: { go-version-file: go.mod, cache: false }
+      - uses: actions/setup-java@v5
+        if: matrix.platform == 'android'
+        with: { distribution: temurin, java-version: "21" }
+      - uses: android-actions/setup-android@v3
+        if: matrix.platform == 'android'
+      - name: Install bounded native targets
+        shell: bash
+        run: |
+          if [ '${{ matrix.platform }}' = ios ]; then
+            brew install xcodegen
+            rustup target add aarch64-apple-ios-sim
+          else
+            sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+            echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+            rustup target add x86_64-linux-android
+          fi
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter delidev-mobile test
+      - run: pnpm --filter @delinoio/delidev-api-client test
+      - run: pnpm --filter delidev-mobile beta:dry-run
+      - name: Build actual test target without launch or credentials
+        shell: bash
+        run: |
+          if [ '${{ matrix.platform }}' = ios ]; then
+            pnpm --filter delidev-mobile build:ios:sim
+          else
+            pnpm --filter delidev-mobile build:android:emulator
+          fi
+  package:
+    needs: [validate, checks]
+    if: inputs.mode == 'package'
+    environment: delidev-mobile-beta
+    env:
+      DELIDEV_MOBILE_APPLE_SIGNER: ${{ vars.DELIDEV_MOBILE_APPLE_SIGNER }}
+      DELIDEV_MOBILE_ANDROID_SIGNER: ${{ vars.DELIDEV_MOBILE_ANDROID_SIGNER }}
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          {
+            ref: "${{ inputs.source_sha }}",
+            lfs: true,
+            persist-credentials: false,
+          }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc }
+      - uses: pnpm/action-setup@v5
+        with: { version: 10.26.2 }
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: "21" }
+      - uses: android-actions/setup-android@v3
+      - run: |
+          brew install xcodegen
+          sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          rustup target add aarch64-apple-ios aarch64-linux-android armv7-linux-androideabi
+      - run: pnpm install --frozen-lockfile
+      - name: Validate pinned source and signing inputs
+        run: node apps/delidev-mobile/scripts/pipeline.mjs plan
+      - name: Configure protected signing and build original candidates
+        env:
+          DELIDEV_MOBILE_APPLE_TEAM: ${{ vars.DELIDEV_MOBILE_APPLE_TEAM }}
+          DELIDEV_MOBILE_IOS_P12: ${{ secrets.DELIDEV_MOBILE_IOS_P12 }}
+          DELIDEV_MOBILE_IOS_P12_PASSWORD: ${{ secrets.DELIDEV_MOBILE_IOS_P12_PASSWORD }}
+          DELIDEV_MOBILE_IOS_PROFILE: ${{ secrets.DELIDEV_MOBILE_IOS_PROFILE }}
+          DELIDEV_MOBILE_ANDROID_KEYSTORE: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEYSTORE }}
+          DELIDEV_MOBILE_ANDROID_KEY_ALIAS: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEY_ALIAS }}
+          DELIDEV_MOBILE_ANDROID_KEY_PASSWORD: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEY_PASSWORD }}
+          DELIDEV_MOBILE_ANDROID_STORE_PASSWORD: ${{ secrets.DELIDEV_MOBILE_ANDROID_STORE_PASSWORD }}
+        run: node apps/delidev-mobile/scripts/signing.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: delidev-mobile-candidate-${{ inputs.source_sha }}-${{ inputs.version }}-${{ inputs.ios_build }}-${{ inputs.android_code }}
+          path: |
+            apps/delidev-mobile/artifacts/DeliDev.ipa
+            apps/delidev-mobile/artifacts/DeliDev.aab
+            apps/delidev-mobile/artifacts/ios.json
+            apps/delidev-mobile/artifacts/android.json
+            apps/delidev-mobile/artifacts/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+  submit:
+    needs: validate
+    if: inputs.mode == 'submit' || inputs.mode == 'resume'
+    environment: delidev-mobile-beta
+    env:
+      DELIDEV_MOBILE_APPLE_SIGNER: ${{ vars.DELIDEV_MOBILE_APPLE_SIGNER }}
+      DELIDEV_MOBILE_ANDROID_SIGNER: ${{ vars.DELIDEV_MOBILE_ANDROID_SIGNER }}
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+        with: { ref: "${{ inputs.source_sha }}", persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc }
+      - name: Verify original candidate provenance before download
+        env:
+          {
+            GH_TOKEN: "${{ github.token }}",
+            ARTIFACT_ID: "${{ inputs.candidate_artifact_id }}",
+            RECEIPT_ID: "${{ inputs.receipt_artifact_id }}",
+          }
+        run: node apps/delidev-mobile/scripts/provenance.mjs
+      - uses: actions/download-artifact@v8
+        with:
+          {
+            artifact-ids: "${{ inputs.candidate_artifact_id }}",
+            github-token: "${{ github.token }}",
+            path: apps/delidev-mobile/artifacts,
+          }
+      - uses: actions/download-artifact@v8
+        if: inputs.receipt_artifact_id != ''
+        with:
+          {
+            artifact-ids: "${{ inputs.receipt_artifact_id }}",
+            github-token: "${{ github.token }}",
+            path: apps/delidev-mobile/artifacts,
+          }
+      - name: Explicit internal-only submission or original reconciliation
+        env:
+          MODE: ${{ inputs.mode }}
+          DELIDEV_MOBILE_APPLE_ISSUER: ${{ secrets.DELIDEV_MOBILE_APPLE_ISSUER }}
+          DELIDEV_MOBILE_APPLE_KEY_ID: ${{ secrets.DELIDEV_MOBILE_APPLE_KEY_ID }}
+          DELIDEV_MOBILE_APPLE_PRIVATE_KEY: ${{ secrets.DELIDEV_MOBILE_APPLE_PRIVATE_KEY }}
+          DELIDEV_MOBILE_APPLE_TEAM: ${{ vars.DELIDEV_MOBILE_APPLE_TEAM }}
+          DELIDEV_MOBILE_APPLE_APP_ID: ${{ vars.DELIDEV_MOBILE_APPLE_APP_ID }}
+          DELIDEV_MOBILE_APPLE_INTERNAL_GROUP: ${{ vars.DELIDEV_MOBILE_APPLE_INTERNAL_GROUP }}
+          DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT: ${{ secrets.DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT }}
+          DELIDEV_MOBILE_GOOGLE_PRINCIPAL: ${{ vars.DELIDEV_MOBILE_GOOGLE_PRINCIPAL }}
+          DELIDEV_MOBILE_ANDROID_KEYSTORE: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEYSTORE }}
+          DELIDEV_MOBILE_ANDROID_KEY_ALIAS: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEY_ALIAS }}
+          DELIDEV_MOBILE_ANDROID_KEY_PASSWORD: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEY_PASSWORD }}
+          DELIDEV_MOBILE_ANDROID_STORE_PASSWORD: ${{ secrets.DELIDEV_MOBILE_ANDROID_STORE_PASSWORD }}
+        run: node apps/delidev-mobile/scripts/pipeline.mjs "$MODE"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: delidev-mobile-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/delidev-mobile/artifacts/*-receipt.json
+          if-no-files-found: warn
+          retention-days: 30

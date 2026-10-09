@@ -42,6 +42,7 @@ Each project must have one project index document and one or more domain contrac
 ## Project Catalog
 
 ### delidev
+- [Mobile HTTPS client](apps-delidev-mobile-contract.md)
 - [Desktop English/Korean localization](apps-delidev-localization-contract.md)
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
