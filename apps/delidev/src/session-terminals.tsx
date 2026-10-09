@@ -85,7 +85,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
           for (const row of reply.resources) {
             const data = document(row);
             if (row.kind !== EntityKind.TERMINAL || row.sessionId !== session.id || row.schemaVersion !== 1 || !isEntityId(row.id) || row.revision <= 0n || seen.has(row.id) || !["starting", "running", "exited", "closed", "uncertain"].includes(text(data.state)) || data.pending != null && (typeof data.pending !== "object" || Array.isArray(data.pending))) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
-            if (data.close_request_id != null && !isEntityId(data.close_request_id) || data.cleanup_verified != null && typeof data.cleanup_verified !== "boolean" || Object.keys(object(data.pending)).length && !["create", "input", "resize", "close"].includes(text(object(data.pending).action))) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
+            if (data.close_request_id != null && (typeof data.close_request_id !== "string" || !isEntityId(data.close_request_id)) || data.cleanup_verified != null && typeof data.cleanup_verified !== "boolean" || Object.keys(object(data.pending)).length && !["create", "input", "resize", "close"].includes(text(object(data.pending).action))) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
             seen.add(row.id); records.push(row);
           }
           token = reply.nextPageToken;

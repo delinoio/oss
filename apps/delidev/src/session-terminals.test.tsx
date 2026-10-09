@@ -354,3 +354,26 @@ it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit o
     }
   } finally { view.unmount(); client.clear(); }
 });
+
+it.each([{}, [], 12, true, "invalid-id"])("rejects malformed close-request metadata before reusing or creating a terminal (%j)", async closeRequest => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ archive: "active" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running", close_request_id: closeRequest }) });
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [terminal] }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await screen.findByRole("button", { name: "Retry terminal inventory read" });
+    expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
+  } finally { view.unmount(); client.clear(); }
+});
