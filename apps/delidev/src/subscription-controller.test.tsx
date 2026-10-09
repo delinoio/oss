@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { CodexDiagnosticSchema, CodexDiagnosticPhase, AccountService, ConfigurationService, EntityKind, ProviderService, ResourceSchema, ResourceService, SubscriptionService, SystemCapability, SystemService, SubscriptionLoginState, newRequestId } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
@@ -20,7 +20,7 @@ function fixture() {
   let failure: Code | undefined;
   let release: (() => void) | undefined;
   const list = vi.fn((request) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? accounts : request.filter?.kind === EntityKind.MACHINE ? [machine] : [] }));
-  const status = vi.fn(() => { if (failure) throw new ConnectError("Capability fixture failure", failure); return { capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }; });
+  const status = vi.fn(async () => { if (failure) throw new ConnectError("Capability fixture failure", failure); return { capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1] }; });
   const provider = vi.fn(() => ({})), apiLifecycle = vi.fn(() => ({}));
   const save = vi.fn(async (request) => {
     const result = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: request.schemaVersion, documentJson: request.documentJson });
@@ -260,4 +260,19 @@ it.each([true,false])("negotiates row quota refresh for a server-owned account (
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SubscriptionAccounts active editAccount={()=>{}} deleteAccount={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>);
  const button=await screen.findByRole("button",{name:"Refresh Existing subscription"});expect((button as HTMLButtonElement).disabled).toBe(!supported);fireEvent.click(button);
  if(supported){await waitFor(()=>expect(refresh).toHaveBeenCalledOnce());expect(refresh.mock.calls[0][0]).toMatchObject({machineId:"",connectionId:connection,generationId:generation,mutation:{id:row.id,expectedRevision:row.revision}})}else{expect(refresh).not.toHaveBeenCalled()}
+});
+
+it("keeps retained paid-credit rows loading while the capability read is unresolved", async () => {
+ const value=fixture();render(<value.Harness/>);
+ const row=await screen.findByRole("article",{name:"Existing subscription"});
+ expect(within(row).getByText(/Paid credits: Unavailable/)).toBeTruthy();
+ let release: (()=>void)|undefined;
+ value.status.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{release=resolve});return {capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1]};});
+ const queries=value.client.getQueryCache().findAll().filter(query=>JSON.stringify(query.queryKey).toLowerCase().includes("getstatus"));
+ expect(queries).toHaveLength(1);
+ act(()=>{void value.client.resetQueries({queryKey:queries[0].queryKey,exact:true});});
+ await waitFor(()=>expect(within(screen.getByRole("article",{name:"Existing subscription"})).getByText(/Paid credits: Loading paid-credit support/)).toBeTruthy());
+ expect(within(screen.getByRole("article",{name:"Existing subscription"})).queryByText(/Paid credits: Unavailable/)).toBeNull();
+ await act(async()=>{release?.();});
+ await waitFor(()=>expect(within(screen.getByRole("article",{name:"Existing subscription"})).getByText(/Paid credits: Balance unknown/)).toBeTruthy());
 });
