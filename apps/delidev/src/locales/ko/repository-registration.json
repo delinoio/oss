@@ -86,5 +86,10 @@
   "repository-registration.inline.3f0ac0a40a": "동일한 복제 요청 재시도",
   "repository-registration.boundedCheckoutPath": "길이가 제한된 절대 체크아웃 경로를 입력하세요.",
   "repository-registration.selectCheckoutComputer": "이 체크아웃을 소유한 컴퓨터를 선택하세요.",
-  "repository-registration.confirmationUnavailable": "등록은 성공했지만 유효한 저장소 식별자가 없습니다. 저장된 저장소를 다시 확인하세요. 등록을 반복하지 마세요."
+  "repository-registration.confirmationUnavailable": "등록은 성공했지만 유효한 저장소 식별자가 없습니다. 저장된 저장소를 다시 확인하세요. 등록을 반복하지 마세요.",
+  "repository-registration.checkout.localTitle": "Local 폴더 연결",
+  "repository-registration.checkout.cloneTitle": "이 컴퓨터에 복제",
+  "repository-registration.checkout.optional": "선택 사항",
+  "repository-registration.checkout.localDescription": "Local 세션에 기존 체크아웃을 사용합니다.",
+  "repository-registration.checkout.cloneDescription": "이 컴퓨터에 체크아웃을 만듭니다."
 }
