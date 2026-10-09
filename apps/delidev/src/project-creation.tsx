@@ -168,7 +168,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
       {step === Step.Restrictions ? <SettingsActionButton icon={SettingsActionIcon.Save} key="save" type="submit" className="primary" disabled={saveDisabled}>{copy("project-creation.save")}</SettingsActionButton> : <SettingsActionButton icon={SettingsActionIcon.Next} key="next" type="button" className="primary" disabled={blocked || (step === Step.Repositories ? !validRepositories : !configured)} onClick={event => { event.preventDefault(); next(); }}>{copy("project-creation.next")}</SettingsActionButton>}
     </SettingsTaskActions>
   </form>
-    {registration && active && visible ? <ProjectRepositoryRegistrationDialog title={copy("project-creation.addRepository")} size={SettingsDialogSize.Form} close={() => setRegistration(false)} fallbackFocus={() => registrationOpener.current}><ProjectRegistration active={active} adapters={registrationAdapters} close={() => setRegistration(false)} saved={value => { setRegistration(false); setConfirmed(value); catalog.reload(); }} /></ProjectRepositoryRegistrationDialog> : null}
+    {registration && active && visible ? <ProjectRepositoryRegistrationDialog subtitle={copy("settings.savedOnTheSelectedServer_93dbee")} title={copy("project-creation.addRepository")} size={SettingsDialogSize.Form} close={() => setRegistration(false)} fallbackFocus={() => registrationOpener.current}><ProjectRegistration active={active} adapters={registrationAdapters} close={() => setRegistration(false)} saved={value => { setRegistration(false); setConfirmed(value); catalog.reload(); }} /></ProjectRepositoryRegistrationDialog> : null}
   </>;
 }
 export const ProjectCreation = ProjectCreationWizard;

@@ -86,5 +86,10 @@
   "repository-registration.inline.3f0ac0a40a": "Retry the same clone request",
   "repository-registration.boundedCheckoutPath": "Enter a bounded absolute checkout path.",
   "repository-registration.selectCheckoutComputer": "Select the computer that owns this checkout.",
-  "repository-registration.confirmationUnavailable": "Registration succeeded without a valid repository identity. Reinspect the saved repository; do not repeat registration."
+  "repository-registration.confirmationUnavailable": "Registration succeeded without a valid repository identity. Reinspect the saved repository; do not repeat registration.",
+  "repository-registration.checkout.localTitle": "Connect a Local folder",
+  "repository-registration.checkout.cloneTitle": "Clone to this computer",
+  "repository-registration.checkout.optional": "Optional",
+  "repository-registration.checkout.localDescription": "Use an existing checkout for Local sessions.",
+  "repository-registration.checkout.cloneDescription": "Create a checkout on this computer."
 }

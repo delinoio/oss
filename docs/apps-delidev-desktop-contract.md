@@ -3530,9 +3530,15 @@ Publication uses a synced same-directory temporary file and atomic create-new li
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
 
+### Compact Add repository hierarchy
+The shared 640px Add repository dialog, including New Project's registration child, retains 16px viewport margins/corners, 24px internal horizontal padding, 22px title, 14px body, 12px hints and 40px controls with 8px corners. Its fixed title/X header includes Saved on the selected server. The body orders full-width Git URL, conditional Choose from GitHub, Repository name after 20px, muted Worktree cloning guidance, then one bordered group after 20px. Two independent initially-collapsed full-width disclosure rows have 16px padding, decorative folder/title/Optional/description/trailing chevron and one divider. Connect a Local folder says Use an existing checkout for Local sessions; Clone to this computer says Create a checkout on this computer. Conditional Optional settings follows. The fixed footer has one separator and Cancel/current Add or original Clone action at right.
+
+Keep every existing expanded field, inspection/job/error/remediation/retry, URL suggestion/manual names, System 37/legacy folder admission, edited-draft Clone restriction and original Worker/native proofs unchanged. URL-only registration requires no Worker/clone. Preserve separate read-only GitHub child containment/opener restoration, mounted parent drafts and late-callback disposal with independent accepted business jobs. Only body scrolls; localized themes/narrow/zoom layouts wrap and keep header/footer/focus reachable. No registration authority or protocol/schema changes are added.
+
 ### Explicit first-terminal opening (issue #2112)
 
 The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
+
 ## Detailed session startup — issue #2120
 
 Ordinary Session and General Chat render authenticated original operation
@@ -3576,6 +3582,7 @@ conversation deactivation and the original 60-second lease boundary stop animati
 A report timestamp or long-running step duration is never a freshness substitute.
 Rechecks suspend with the owning conversation; canceled late results cannot publish.
 
+
 ### Compact waiting inputs (issue #2141)
 
 Ordinary reconciled waiting inputs use a compact list immediately above the
@@ -3603,10 +3610,12 @@ Only negotiated System 75 exposes six-dot drag handles, a bounded insertion line
 
 A session-scoped retained mutation owner survives row eviction/removal, menu closure and temporary invisibility. Pending/uncertain movement blocks new movements; uncertain transport retries only the exact original request. Conflict refreshes current order and never silently resubmits. Signed-cursor expiration reloads from the first page rather than mixing generations. Private payload retention uses the existing three-page pagination window and metadata-only projections. Empty authoritative waiting queues retain the existing no-card presentation. Existing Edit/Remove/Steer originals, full drafts, image rejection and claimed/native history remain independently owned.
 
+
 ### Project editor tabs
 Both saved-project edit entries share General, Repositories, Execution and Access tabs in that order, initially General. General owns the required name; Repositories owns ordered additions/grip reordering/removal and explicit primary selection; Execution retains routing, fetch, plan approval, effective inheritance and the complete remediation override/return-to-global; Access retains configured-empty deny-all Agent Worker/account restrictions and ordered selections. Preserve optional session-default fields, complete unknown document values, schema/capability gates, original revisions and immutable execution snapshots. New Project retains its three-step wizard.
 
 The original 768px task header, tab strip and Save Project footer stay fixed while the active mounted panel scrolls with 24px padding. Hidden panels leave interaction/accessibility without disabling their fields for visibility, retain their scroll/draft/controller/request owners and remain part of complete-document validation. Reveal the first invalid field's panel/disclosure, focus and report it before a write. Mutation locks disable fields while tab navigation remains available; shared failures/exact retries stay outside panels. Use stable tab IDs and manual activation: arrows/Home/End move focus, Enter/Space select, Tab enters the panel. Keep 40px controls, 8px corners, selected blue underline, semantic themes and horizontally scrollable narrow tab strip with visible focus. Preserve dialog dismissal/opener restoration, drag Escape and original pending/recovery owners; tab changes grant no extra authority.
+
 
 ### Compact Home header and creation actions (issue #2139)
 
