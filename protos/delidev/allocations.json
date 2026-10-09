@@ -2643,6 +2643,15 @@
         "refresh_confirmed": 8,
         "succeeded": 9
       }
+    },
+    "CreateTerminalRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "shell_override": 2,
+        "rows": 3,
+        "columns": 4
+      }
     }
   },
   "reservations": [
@@ -12117,32 +12126,28 @@
       "kind": "message",
       "declaration": "CreateTerminalRequest",
       "member": "mutation",
-      "number": 1,
-      "newDeclaration": true
+      "number": 1
     },
     {
       "issue": 2138,
       "kind": "message",
       "declaration": "CreateTerminalRequest",
       "member": "shell_override",
-      "number": 2,
-      "newDeclaration": true
+      "number": 2
     },
     {
       "issue": 2138,
       "kind": "message",
       "declaration": "CreateTerminalRequest",
       "member": "rows",
-      "number": 3,
-      "newDeclaration": true
+      "number": 3
     },
     {
       "issue": 2138,
       "kind": "message",
       "declaration": "CreateTerminalRequest",
       "member": "columns",
-      "number": 4,
-      "newDeclaration": true
+      "number": 4
     },
     {
       "issue": 2138,
@@ -13166,6 +13171,36 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
       "number": 50
+    },
+    {
+      "issue": 2112,
+      "kind": "message",
+      "declaration": "CreateTerminalRequest",
+      "member": "creation_mode",
+      "number": 5
+    },
+    {
+      "issue": 2112,
+      "kind": "enum",
+      "declaration": "TerminalCreationMode",
+      "member": "TERMINAL_CREATION_MODE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2112,
+      "kind": "enum",
+      "declaration": "TerminalCreationMode",
+      "member": "TERMINAL_CREATION_MODE_REUSE_OR_CREATE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2112,
+      "declaration": "CreateTerminalRequest",
+      "kind": "message",
+      "member": "preferred_terminal_id",
+      "number": 6
     }
   ],
   "rpcReservations": [

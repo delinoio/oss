@@ -1,3 +1,4 @@
+import { StrictMode, useState } from "react";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -5,9 +6,10 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, TerminalCreationMode, TerminalQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { MutationIntents } from "./mutation";
+import { MutationIntents, useRetainedMutation } from "./mutation";
+import { SessionTabsProvider, useSessionTabsStore } from "./session-tabs";
 import { SessionTerminals } from "./session-terminals";
 
 // Component tests use a text fixture; real parser/WebGL/CSP acceptance runs in
@@ -310,4 +312,202 @@ it("keeps every existing terminal picker keyboard reachable in the single-pane w
  const open=vi.fn(),transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:()=>({resources:terminals})});});
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} tabbed close={()=>{}} openTerminal={open}/></MutationIntents></TransportProvider></QueryClientProvider>);
  const first=await screen.findByRole("button",{name:/Terminal 1/}),second=screen.getByRole("button",{name:/Terminal 2/});expect(first.tabIndex).toBe(0);expect(second.tabIndex).toBe(0);first.focus();expect(fireEvent.keyDown(first,{key:"ArrowRight"})).toBe(true);expect(open).not.toHaveBeenCalled();second.focus();expect(document.activeElement).toBe(second);view.unmount();client.clear();
+});
+
+
+it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit opening once under Strict Mode (%s)", async (scenario) => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const row = (state: string, cleanup = false) => create(ResourceSchema, { id: newRequestId(), sessionId: session.id, kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 2n, documentJson: encode({ state, cleanup_verified: cleanup }) });
+  const terminal = row("running"), history = Array.from({ length: 50 }, () => row("closed", true));
+  const opened = vi.fn(), createTerminal = vi.fn((_request: unknown) => ({ terminal }));
+  const pages: string[] = [];
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: request => {
+      pages.push(request.filter?.pageToken ?? "");
+      if (scenario === "read-error") throw new ConnectError("Fixture read failure", Code.Unavailable);
+      if (scenario === "later-page") return request.filter?.pageToken ? { resources: [terminal] } : { resources: history, nextPageToken: "next" };
+      return { resources: scenario === "uncertain" ? [row("uncertain")] : [] };
+    } });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent(value => value ?? { requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<StrictMode><QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider></StrictMode>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    expect(createTerminal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    if (scenario === "empty") {
+      await waitFor(() => expect(createTerminal).toHaveBeenCalledOnce());
+      expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 7n }, rows: 24, columns: 80, shellOverride: "", creationMode: TerminalCreationMode.REUSE_OR_CREATE });
+      await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
+    } else if (scenario === "later-page") {
+      await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id)); expect(pages).toContain("next"); expect(createTerminal).toHaveBeenCalledOnce();
+      expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: terminal.id });
+    } else {
+      await screen.findByRole("button", { name: "Retry terminal inventory read" });
+      expect(createTerminal).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Retry terminal inventory read" }));
+      expect(createTerminal).not.toHaveBeenCalled(); expect(opened).not.toHaveBeenCalled();
+    }
+  } finally { view.unmount(); client.clear(); }
+});
+
+it.each([{}, [], 12, true, "invalid-id"])("rejects malformed close-request metadata before reusing or creating a terminal (%j)", async closeRequest => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ archive: "active" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running", close_request_id: closeRequest }) });
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [terminal] }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await screen.findByRole("button", { name: "Retry terminal inventory read" });
+    expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it("reopens the last content-tab selection instead of the first inventory terminal", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const terminals = [1, 2].map(() => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) }));
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal: terminals[1] }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: terminals }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [selected, select] = useState(terminals[0]!.id), [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => select(terminals[1]!.id)}>Select second content tab</button><button onClick={() => { select(""); setIntent({ requestId: newRequestId(), revision: session.revision }); }}>Open fixture</button><SessionTerminals session={session} selectedId={selected} tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: /Terminal 2/ });
+    fireEvent.click(screen.getByRole("button", { name: "Select second content tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith(terminals[1]!.id));
+    expect(createTerminal).toHaveBeenCalledOnce();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it.each([TerminalAction.INPUT, TerminalAction.RESIZE, TerminalAction.CLOSE])("reopens non-close uncertain controls while retaining exact ownership (action %s)", async action => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) });
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal })), controlTerminal = vi.fn(() => { throw new ConnectError("Original acknowledgment lost", Code.Unavailable); });
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [terminal] }) });
+    router.service(TerminalService, { createTerminal, controlTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const control = useRetainedMutation(`terminal-control:${terminal.id}`, TerminalQuery.controlTerminal);
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => void control.send({ mutation: { id: terminal.id, expectedRevision: 1n, requestId: newRequestId() }, action, input: action === TerminalAction.INPUT ? new Uint8Array([13]) : undefined, rows: action === TerminalAction.RESIZE ? 24 : undefined, columns: action === TerminalAction.RESIZE ? 80 : undefined })}>Control fixture</button>{control.uncertain ? <p>Retained control</p> : null}<button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Control fixture" }));
+    await screen.findByText("Retained control");
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    if (action === TerminalAction.CLOSE) { await screen.findByRole("button", { name: "Retry terminal inventory read" }); expect(opened).not.toHaveBeenCalled(); }
+    else await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
+    expect(createTerminal).toHaveBeenCalledTimes(action === TerminalAction.CLOSE ? 0 : 1); expect(controlTerminal).toHaveBeenCalledOnce();
+    expect(screen.getByText("Retained control")).toBeTruthy();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it("rejects empty nonterminal inventory pages before another gesture-owned request", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const opened = vi.fn(), createTerminal = vi.fn(), reads = vi.fn(() => ({ resources: [], nextPageToken: newRequestId() }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: reads }); router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(reads).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await screen.findByRole("button", { name: "Retry terminal inventory read" });
+    expect(reads).toHaveBeenCalledTimes(2); expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it.each([false, true])("does not revive a hidden terminal from stale running inventory (replacement %s)", async otherEligible => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const stale = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) });
+  const exited = create(ResourceSchema, { ...stale, revision: 2n, documentJson: encode({ state: "exited", cleanup_verified: true }) });
+  const replacement = create(ResourceSchema, { ...stale, id: newRequestId() });
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal: replacement }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: otherEligible ? [stale, replacement] : [stale] }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const store = useSessionTabsStore(); store.terminalPresentation(session.id).observe(session.id, exited);
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTabsProvider><View /></SessionTabsProvider></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
+    expect(opened).not.toHaveBeenCalledWith(stale.id);
+    expect(createTerminal).toHaveBeenCalledOnce();
+    if (!otherEligible) expect(createTerminal.mock.calls[0]).toBeTruthy();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it("selects only the atomically admitted replacement after a listed terminal retires", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const stale = create(ResourceSchema, { id: newRequestId(), sessionId: session.id, kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "running" }) });
+  const replacement = create(ResourceSchema, { ...stale, id: newRequestId() });
+  const opened = vi.fn(), createTerminal = vi.fn((_request: unknown) => ({ terminal: replacement }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [stale] }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: /Terminal 1/ });
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
+    expect(opened).not.toHaveBeenCalledWith(stale.id);
+    expect(createTerminal).toHaveBeenCalledOnce();
+    expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: stale.id });
+  } finally { view.unmount(); client.clear(); }
 });

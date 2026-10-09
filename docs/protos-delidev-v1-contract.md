@@ -1056,6 +1056,31 @@ Authenticated Session progress and primary-user Message resources may include op
 
 Protocol 2 preserves the `delidev.v1` package and all original numeric ownership. System42/Worker22 identify inline source models separately from direct startup43/23. Exact `ModelIdentity` values use Provider UUID or service plus native ID; obsolete Model UUID fields are not reinterpreted as source keys. Current endpoint and price RPC declarations activate the original #964 reservations; price mode, freshness/provenance and refresh fields retain their recorded owning issue. The legacy monolithic public import and aggregate Go/TypeScript/query facades are retired. Current canonical split descriptors register once. `SetTokenPricingModeRequest.expected_revision = 6` carries the original displayed active price revision, independently of existing policy field 3 and Provider field 5. Check all three atomically before changing policy; zero means that the original active price was unavailable. Preserve these exact values in accepted and uncertain-retry receipts. Breaking comparison projects only the empty retired import file out of its baseline and preserves all other FILE checks plus original declaration semantics.
 
+
+## Atomic toolbar terminal admission — issue #2112 / PR #2260
+
+`CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
+session candidate preference under the same #2112 / PR #2260 ownership. Every
+toolbar gesture uses atomic admission after complete inventory inspection;
+inventory alone cannot select a terminal. Admission prefers that ID only if it
+remains eligible in the same original session and current Worker instance, then
+uses the first eligible terminal. Empty, missing, foreign or retired preferences
+grant no authority and fall back to ordinary eligibility. Unknown IDs are not
+read outside the original session; malformed IDs and preferences on additional
+creation are rejected. Exact receipts retain the preference bytes.
+
+`CreateTerminalRequest.creation_mode = 5` owns the closed
+`TerminalCreationMode` enum: `UNSPECIFIED = 0` preserves explicit additional
+creation, including existing clients and +; `REUSE_OR_CREATE = 1` resolves
+explicit toolbar admission in the authenticated receipt transaction. Preserve
+fields 1–4, existing responses, System 14 / Worker 4 and every original native
+claim. Unknown modes are rejected. Reuse returns a reference to an original
+starting/running terminal on the current Worker instance without close intent,
+including pending input/resize. Otherwise every original terminal must be exited
+or closed with independent cleanup verified and no pending operation before
+creation. Concurrent clients receive the same newly accepted terminal. Exact
+request replay retains actor-bound receipts without dispatching another shell.
+No capability, migration or native protocol change is added.
 ## Session startup progress — issue #2120
 
 System 74 / Worker 50 and the complete `ReportSessionStartupProgress` closed
@@ -1078,3 +1103,5 @@ System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
 
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
+
+The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. Issue #2138 records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. Issue #2112 owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
