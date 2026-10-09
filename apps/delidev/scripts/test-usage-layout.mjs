@@ -71,7 +71,12 @@ try {
     const context = `${language}/${theme}/${width}x${height}/empty=${empty}`;
     await page.setViewportSize({ width, height }); await page.goto(`${origin}/?theme=${theme}&language=${language}&empty=${empty}`);
     await page.getByRole("button", { name: language === "ko" ? "사용량" : "Usage", exact: true }).click();
-    const main = page.locator(".usage-page"); await main.locator(".usage-summary").waitFor();
+    const main = page.locator(".usage-page");
+    assert.equal(await main.getByRole("tab").nth(0).getAttribute("aria-selected"), "true", context);
+    assert(await main.evaluate(node => node.firstElementChild.classList.contains("usage-tabs")), context);
+    assert.deepEqual(await main.getByRole("tab").allTextContents(), language === "ko" ? ["개요", "사용 기록", "모델 단가"] : ["Overview", "Usage history", "Model prices"], context);
+    assert.equal(await main.getByRole("heading", { name: /Model details|모델 상세/ }).count(), 0, context);
+    await main.getByRole("tab").nth(1).click(); await main.getByRole("tab").nth(1).click(); await main.locator(".usage-summary").waitFor();
     assert.equal(await main.getByRole("tab").count(), 3, context);
     assert.equal(await main.getByRole("tabpanel").count(), 1, context);
     assert.equal(await main.locator(".usage-trends").evaluate(node => node.tagName), "SECTION", context);
@@ -167,7 +172,7 @@ try {
     assert((await alert.textContent()).includes(language === "ko" ? "읽기 실패" : "failed read does not establish zero"), context);
     assert.equal(await alert.locator("details").evaluate(node => node.open), false, context);
     const refresh = main.getByRole("button", { name: language === "ko" ? "새로고침" : "Refresh", exact: true });
-    await refresh.focus(); await refresh.press("Enter"); await main.locator(".usage-summary").waitFor();
+    await refresh.focus(); await refresh.press("Enter"); await main.getByRole("tab").nth(1).click(); await main.locator(".usage-summary").waitFor();
     const requests = await page.evaluate(() => window.__usageFixture);
     assert.equal(requests.summary, 2, context); assert.equal(requests.selections[0], requests.selections[1], context); assert.equal(requests.writes, 0, context);
     await main.getByRole("tab").nth(1).click();
@@ -180,7 +185,7 @@ try {
     await page.setViewportSize({width,height}); await page.goto(`${origin}/?${scenario}=true&language=${language}`); await page.getByRole("button",{name:language==="ko" ? "사용량" : "Usage",exact:true}).click();
     const main=page.locator(".usage-page");
     if(scenario==="loading") { await main.locator(".usage-skeletons").waitFor(); assert.equal(await main.locator(".usage-summary").count(),0); await page.evaluate(()=>window.releaseUsage()); }
-    await main.locator(".usage-summary").waitFor();
+    await main.getByRole("tab").nth(1).click(); await main.getByRole("tab").nth(1).click(); await main.locator(".usage-summary").waitFor();
     if(scenario==="unsupported") assert(await main.locator(".usage-charts-unavailable").isVisible());
     if(scenario==="refreshFailure") { await main.locator(".usage-row-detail summary").first().click(); await main.locator(".usage-header-actions button").click(); await main.locator(".usage-stale-indicator").waitFor(); assert(await main.locator(".usage-row-detail details").first().evaluate(node=>node.open)); assert(await main.locator(".usage-summary").isVisible()); }
     if(scenario==="newQueryFailure") { const opener=page.locator(".sidebar-context-trigger"); if(await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); } await page.locator('.usage-sidebar input[type="datetime-local"]').first().fill("2026-09-02T10:00"); if(width<760) await page.keyboard.press("Escape"); await main.getByRole("alert").waitFor(); assert.equal(await main.locator(".usage-summary").count(),0); }

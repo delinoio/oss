@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
-import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -81,7 +80,6 @@ export interface SubscriptionSettingsViewProps {
   serviceLoginAvailable?: (brand: SubscriptionBrand) => boolean;
   activeFilter?: string;
   clearFilter: () => void;
-  advanced: ReactNode;
   pagination?: ReactNode;
   now?: number;
   active?: boolean;
@@ -210,7 +208,7 @@ const readLabels: Partial<Record<SubscriptionReadState, string>> = {
 };
 
 /** Presentation only; the owning controller negotiates every native action. */
-export function SubscriptionSettingsView({ accounts, accountList, accountIds, manageDetails, completeEmpty = true, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, advanced, pagination, now, active = true }: SubscriptionSettingsViewProps) {
+export function SubscriptionSettingsView({ accounts, accountList, accountIds, manageDetails, completeEmpty = true, state, problem, retryRead, refreshAll, refreshAllOperation, cleanup, cleanupBusy, cleanupBlocked, cleanupUnavailable, cleanupStatus, actionsBlocked = false, lifecycleUnavailable = copy("subscription-settings.extra.f874aed4a97c"), selectService, serviceLoginAvailable = () => true, activeFilter, clearFilter, pagination, now, active = true }: SubscriptionSettingsViewProps) {
   useLocale();
   const noticeId = useId(), cleanupId = useId();
   const category = useRef<HTMLElement>(null);
@@ -272,6 +270,5 @@ export function SubscriptionSettingsView({ accounts, accountList, accountIds, ma
         if (manageDetails) manageDetails(displayed, detailsOpener.current); else latest?.details();
       }}>{copy("subscription-settings.manageMetadata_ddc14e")}</SettingsActionButton></SettingsTaskActions>
     </SettingsTaskDialog> : null}
-    <Disclosure density={DisclosureDensity.Settings} className="subscription-advanced"><DisclosureSummary>{copy("subscription-settings.advancedSettings_7b0bd2")}</DisclosureSummary><div>{advanced}</div></Disclosure>
   </section>;
 }

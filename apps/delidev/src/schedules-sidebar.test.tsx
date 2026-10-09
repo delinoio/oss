@@ -8,6 +8,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { ActivityService, EntityKind, InboxService, ResourceSchema, ResourceService, ScheduleService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { copy, i18n, SupportedLanguage } from "./localization";
 import { chooseScrollOption } from "./test-scroll-picker";
 import { ResourceChoice } from "./configuration-fields";
 import { encode } from "./documents";
@@ -47,7 +48,6 @@ function fixture() {
 }
 
 function pane() { return within(screen.getByRole("region", { name: "Schedules navigation and filters" })); }
-function disclosure() { return pane().getByRole("button", { name: "Retained history" }); }
 function selectMorning() { fireEvent.click(pane().getByRole("button", { name: /^Morning review/ })); }
 
 it("shows explicit state and complete UTC with selection over the whole row", async () => {
@@ -149,86 +149,38 @@ it("keeps same-scope cached rows after failure and drops them when the filter sc
   expect(screen.queryByText("No saved schedules.")).toBeNull();
 });
 
-it("focuses only explicit history expansion, keeps the hidden form and draft, and submits the trimmed ID", async () => {
-  const value = fixture(), rendered = render(value.view());
-  await screen.findByRole("button", { name: /^Morning review/ });
-  const toggle = disclosure(), regionId = toggle.getAttribute("aria-controls")!;
-  const region = document.getElementById(regionId)!;
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  expect(region.hidden).toBe(true);
-  expect(pane().queryByRole("textbox", { name: "Retained schedule ID" })).toBeNull();
-  fireEvent.click(toggle);
-  const input = pane().getByRole("textbox", { name: "Retained schedule ID" }) as HTMLInputElement;
-  expect(document.activeElement).toBe(input);
-  expect(input.maxLength).toBe(36);
-  const id = newRequestId();
-  fireEvent.change(input, { target: { value: id } });
-  fireEvent.click(toggle);
-  expect(region.hidden).toBe(true);
-  expect(region.querySelector("input")).toBe(input);
-  fireEvent.click(toggle);
-  expect(input.value).toBe(id);
-  const refresh = pane().getByRole("button", { name: "Refresh" });
-  refresh.focus();
-  fireEvent.click(refresh);
-  rendered.rerender(value.view(false));
-  rendered.rerender(value.view());
-  expect(document.activeElement).toBe(refresh);
-  expect(disclosure().getAttribute("aria-controls")).toBe(regionId);
+it.each([false, true].flatMap(populated => Object.values(SupportedLanguage).map(language => ({ populated, language }))))("omits retained-history lookup controls from $language sidebars (populated: $populated)", async ({ populated, language }) => {
+  const value = fixture();
+  if (!populated) value.list.mockResolvedValue({ schedules: [], nextPageToken: "" });
+  render(value.view());
+  await waitFor(() => expect(value.list).toHaveBeenCalled());
+  if (populated) await screen.findByRole("button", { name: /^Morning review/ });
+  else await screen.findByText("No saved schedules.");
+  await act(async () => { await i18n.changeLanguage(language); });
+  const sidebar = document.querySelector<HTMLElement>(".schedules-sidebar")!;
+  expect(sidebar.querySelector("form")).toBeNull();
+  expect(sidebar.querySelector('[aria-label="Retained schedule history lookup"]')).toBeNull();
+  expect(within(sidebar).queryByRole("button", { name: /retained history/i, hidden: true })).toBeNull();
+  expect(within(sidebar).queryByLabelText("Retained schedule ID")).toBeNull();
+  expect(within(sidebar).getByRole("button", { name: copy("schedules.newSchedule_3bfe90") })).toBeTruthy();
+  expect(within(sidebar).getByRole("button", { name: copy("schedules.refresh_0e9161") })).toBeTruthy();
   expect(value.history).not.toHaveBeenCalled();
-  expect(value.closeDrawer).not.toHaveBeenCalled();
-  fireEvent.change(input, { target: { value: ` ${id} ` } });
-  fireEvent.submit(input.closest("form")!);
-  await waitFor(() => expect(value.history.mock.lastCall?.[0]).toMatchObject({ scheduleId: id, pageSize: 50, pageToken: "" }));
-  expect(screen.getByRole("heading", { name: "Occurrence history" })).toBeTruthy();
-  expect(value.closeDrawer).toHaveBeenCalledTimes(1);
 });
 
-it("distinguishes the history disclosure and submit action by accessible name", async () => {
+it("retains detail occurrence history while sidebar refresh does not open history", async () => {
   const value = fixture();
   render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
-  const toggle = disclosure();
-  expect(pane().queryByRole("button", { name: "Open retained history" })).toBeNull();
-  fireEvent.click(toggle);
-  expect(pane().getAllByRole("button", { name: "Retained history" })).toHaveLength(1);
-  const submit = pane().getByRole("button", { name: "Open retained history" });
-  expect(submit.textContent).toBe("Retained history");
+  fireEvent.click(pane().getByRole("button", { name: "Refresh" }));
   expect(value.history).not.toHaveBeenCalled();
-  const id = newRequestId();
-  fireEvent.change(pane().getByRole("textbox", { name: "Retained schedule ID" }), { target: { value: id } });
-  fireEvent.click(submit);
-  await waitFor(() => expect(value.history.mock.lastCall?.[0]).toMatchObject({ scheduleId: id, pageSize: 50, pageToken: "" }));
-  expect(value.closeDrawer).toHaveBeenCalledTimes(1);
+  selectMorning();
+  await waitFor(() => expect(value.history.mock.lastCall?.[0]).toMatchObject({ scheduleId: value.schedules[0].id, pageSize: 50, pageToken: "" }));
+  expect(screen.getByRole("heading", { name: "Occurrence history" })).toBeTruthy();
 });
 
-it("does not refocus history when the retained portal is moved or navigation returns", async () => {
-  const value = fixture(), target = document.createElement("div");
-  document.body.append(target);
-  const rendered = render(value.view());
-  fireEvent.click(disclosure());
-  const id = newRequestId();
-  fireEvent.change(pane().getByLabelText("Retained schedule ID"), { target: { value: id } });
-  const outsider = document.createElement("button");
-  document.body.append(outsider);
-  outsider.focus();
-  rendered.rerender(value.view(true, target));
-  expect(document.activeElement).toBe(outsider);
-  expect((pane().getByLabelText("Retained schedule ID") as HTMLInputElement).value).toBe(id);
-  expect(disclosure().getAttribute("aria-expanded")).toBe("true");
-  rendered.rerender(value.view(false, target));
-  rendered.rerender(value.view(true, target));
-  expect(document.activeElement).toBe(outsider);
-  expect(value.history).not.toHaveBeenCalled();
-  rendered.unmount(); target.remove(); outsider.remove();
-});
-
-it.each(["editor", "confirmation", "in-flight", "uncertain"] as const)("protects history and every schedule replacement during %s across navigation", async (state) => {
+it.each(["editor", "confirmation", "in-flight", "uncertain"] as const)("protects every schedule replacement during %s across navigation", async (state) => {
   const value = fixture(), gate = deferred(), rendered = render(value.view());
   await screen.findByRole("button", { name: /^Morning review/ });
-  fireEvent.click(disclosure());
-  const id = newRequestId();
-  fireEvent.change(pane().getByLabelText("Retained schedule ID"), { target: { value: id } });
   if (state === "editor") fireEvent.click(pane().getByRole("button", { name: "New schedule" }));
   else {
     selectMorning();
@@ -244,13 +196,8 @@ it.each(["editor", "confirmation", "in-flight", "uncertain"] as const)("protects
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(button);
   }
-  const input = pane().getByLabelText("Retained schedule ID") as HTMLInputElement;
-  expect(input.disabled).toBe(true);
   expect((pane().getByLabelText("Filter by project") as HTMLSelectElement).disabled).toBe(true);
-  fireEvent.submit(input.closest("form")!);
-  expect(value.history.mock.calls.some(([request]) => request.scheduleId === id)).toBe(false);
   expect(screen.getByRole("heading", { name: state === "editor" ? "New schedule" : "Morning review" })).toBeTruthy();
-  expect(input.value).toBe(id);
   if (state === "uncertain") {
     fireEvent.click(screen.getByRole("button", { name: "Retry the same Run now" }));
     await waitFor(() => expect(value.run).toHaveBeenCalledTimes(2));
@@ -280,21 +227,14 @@ it("retains Schedules connection memory on same-identity reconnect and resets on
   fireEvent.click(pane().getByRole("button", { name: "Enabled" }));
   await waitFor(() => expect(value.list.mock.lastCall?.[0].enabled).toBe(true));
   selectMorning();
-  fireEvent.click(disclosure());
-  const id = newRequestId();
-  fireEvent.change(pane().getByLabelText("Retained schedule ID"), { target: { value: id } });
   fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   fireEvent.click(screen.getByRole("button", { name: "Schedules" }));
   rendered.rerender(<App transport={value.transport()} pairingAuthority={{ ...authority }} currentDeviceId={deviceId} connectionEpoch={1} />);
-  expect(disclosure().getAttribute("aria-expanded")).toBe("true");
-  expect((pane().getByLabelText("Retained schedule ID") as HTMLInputElement).value).toBe(id);
   expect(pane().getByRole("button", { name: "Enabled" }).getAttribute("aria-pressed")).toBe("true");
   expect((await pane().findByRole("button", { name: /^Morning review/ })).getAttribute("aria-current")).toBe("true");
   rendered.rerender(<App transport={value.transport()} pairingAuthority={{ ...authority, serverId: newRequestId() }} currentDeviceId={deviceId} />);
   fireEvent.click(screen.getByRole("button", { name: "Schedules" }));
-  expect(disclosure().getAttribute("aria-expanded")).toBe("false");
   expect(pane().getByRole("button", { name: "All schedules" }).getAttribute("aria-pressed")).toBe("true");
-  expect(document.querySelector<HTMLInputElement>(".schedules-sidebar input")?.value).toBe("");
   await screen.findByRole("button", { name: /^Morning review/ });
   expect(pane().getByRole("button", { name: /^Morning review/ }).getAttribute("aria-current")).toBeNull();
   expect(value.activity).not.toHaveBeenCalled();
