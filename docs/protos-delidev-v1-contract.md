@@ -1076,3 +1076,11 @@ or closed with independent cleanup verified and no pending operation before
 creation. Concurrent clients receive the same newly accepted terminal. Exact
 request replay retains actor-bound receipts without dispatching another shell.
 No capability, migration or native protocol change is added.
+
+## Paid-credit observations — issue #2124
+
+System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
+
+Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
+
+Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
