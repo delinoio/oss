@@ -187,7 +187,12 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 			f.input.Configuration.Subscription = true
 			f.input.Configuration.SubscriptionService = domain.SubscriptionChatGPT
 			f.input.Configuration.ProviderID = ""
-			f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
+			f.input.Configuration.ModelID = (domain.ModelIdentity{SubscriptionService: domain.SubscriptionChatGPT, NativeID: f.input.Configuration.NativeModel}).Key()
+			configurationDigest, err := f.input.Configuration.Digest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.input.ConfigurationDigest = configurationDigest
 			binary, _ := os.Executable()
 			f.input.Installation.ResolvedPath, _ = filepath.EvalSymlinks(binary)
 			manager := &workspace.Manager{Root: f.root}
@@ -303,7 +308,12 @@ func TestManagedIndependentForkWorkerOriginalAuthenticationAndTools(t *testing.T
 			f.input.Configuration.Subscription = true
 			f.input.Configuration.SubscriptionService = domain.SubscriptionChatGPT
 			f.input.Configuration.ProviderID = ""
-			f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
+			f.input.Configuration.ModelID = (domain.ModelIdentity{SubscriptionService: domain.SubscriptionChatGPT, NativeID: f.input.Configuration.NativeModel}).Key()
+			configurationDigest, err := f.input.Configuration.Digest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.input.ConfigurationDigest = configurationDigest
 			binary, _ := os.Executable()
 			f.input.Installation.ResolvedPath, _ = filepath.EvalSymlinks(binary)
 			manager := &workspace.Manager{Root: f.root}
