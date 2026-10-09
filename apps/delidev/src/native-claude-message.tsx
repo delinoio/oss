@@ -40,6 +40,10 @@ function message(value: unknown, state: string): { blocks: Block[]; reason: stri
   return { blocks, reason: data.stop_reason as string | null, sequence: data.stop_sequence as string | null };
 }
 
+export function validNativeClaudeMessage(content: unknown, state: string): boolean {
+  return message(content, state) !== undefined;
+}
+
 // Native text stays inert and ordered. Redacted reasoning has no reconstructed
 // content; a provider message closing cannot imply successful session outcome.
 export function NativeClaudeMessage({ content, state }: { content: unknown; state: string }) {

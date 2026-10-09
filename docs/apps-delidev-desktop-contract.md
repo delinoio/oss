@@ -1927,8 +1927,15 @@ and keyboard focus. Generic assistant roots, validated Grok text roots and the
 validated Claude assistant wrapper are left-aligned without an outer background,
 border, rounded container or card padding. Invalid native records, unknown roles,
 tools, progress, artifacts and interruption presentations retain their existing
-treatment. Native details keep their own borders and disclosures. Preserve role
-headers, status labels, inert exact text/whitespace and wrapping. Use 16px item
+treatment. Native details keep their own borders and disclosures. Recognized
+conversation roots omit visible User/Assistant labels and routine complete or
+completed badges, including Grok response-text completion. Omit empty header
+rows. Projected user submissions omit the visible role label while retaining
+every delivery status. Keep localized accessible user/assistant identification,
+streaming, interruption, failure and recovery states, and Grok verified native
+history provenance. Suppress completion only in conversation presentation; keep
+the shared statusLabel mapping unchanged. Preserve inert exact text/whitespace
+and wrapping. Use 16px item
 spacing within historical payload wrappers and between historical/live rows,
 without replacing the measured wrappers, pagination, ordering or revision owners.
 The shared Conversation includes ordinary sessions and General Chat. Browser

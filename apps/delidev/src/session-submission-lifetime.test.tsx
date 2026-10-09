@@ -56,7 +56,7 @@ it("shows Sending before enqueue settles, then advances through queue and one na
   const f = fixture(); let finish!: () => void;
   f.enqueue.mockImplementationOnce(async request => { await new Promise<void>(resolve => { finish = resolve; }); return f.receipt(request); });
   render(<App transport={f.transport} />); const input = await f.send();
-  const projected = screen.getByRole("article", { name: "Submitted message" });
+  const projected = screen.getByRole("article", { name: "Submitted user message" });
   expect(within(projected).getByText("웹 검색 할 줄 알아?")).toBeDefined(); expect(within(projected).getByRole("status").textContent).toBe("Sending");
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce()); expect(input).toHaveProperty("disabled", true);
   await act(async () => finish()); await within(projected).findByText("Queued"); expect(input).toHaveProperty("value", "");
@@ -66,7 +66,7 @@ it("shows Sending before enqueue settles, then advances through queue and one na
     await within(projected).findByText(label);
   }
   await act(async () => f.publish(create(ResourceSchema, { id: newRequestId(), sessionId: f.original.id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode({ role: "user", state: "complete", input_id: queue.id, text: "웹 검색 할 줄 알아?" }) })));
-  await waitFor(() => expect(screen.queryByRole("article", { name: "Submitted message" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("article", { name: "Submitted user message" })).toBeNull());
   expect(within(screen.getByLabelText("Conversation", { selector: ".transcript" })).getAllByText("웹 검색 할 줄 알아?")).toHaveLength(1); expect(f.control).not.toHaveBeenCalled();
 });
 
@@ -85,7 +85,7 @@ it("keeps the immediate projection beside retained historical messages without i
   await within(transcript).findByText("Historical assistant without input identity");
   fireEvent.change(input, { target: { value: "웹 검색 할 줄 알아?" } });
   fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
-  const projected = within(transcript).getByRole("article", { name: "Submitted message" });
+  const projected = within(transcript).getByRole("article", { name: "Submitted user message" });
   expect(within(projected).getByRole("status").textContent).toBe("Sending");
   expect(within(transcript).getAllByText("웹 검색 할 줄 알아?")).toHaveLength(2);
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
@@ -93,7 +93,7 @@ it("keeps the immediate projection beside retained historical messages without i
   await within(projected).findByText("Queued");
   const queue = (await f.enqueue.mock.results[0].value).change.input;
   await act(async () => f.publish(create(ResourceSchema, { id: newRequestId(), sessionId: f.original.id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode({ role: "user", state: "complete", input_id: queue.id, text: "웹 검색 할 줄 알아?" }) })));
-  await waitFor(() => expect(within(transcript).queryByRole("article", { name: "Submitted message" })).toBeNull());
+  await waitFor(() => expect(within(transcript).queryByRole("article", { name: "Submitted user message" })).toBeNull());
   // The historical identical prompt remains separate from the exact new input.
   expect(within(transcript).getAllByText("웹 검색 할 줄 알아?")).toHaveLength(2);
   expect(within(transcript).getByText("Historical assistant without input identity")).toBeDefined();
@@ -124,7 +124,7 @@ it("settles the original queue mapping while unmounted through same-identity rec
   await act(async () => finish()); expect(other).toHaveProperty("value", "Keep independent draft");
   await f.enter(); await screen.findByText("Queued"); expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "");
   mounted.rerender(<App transport={f.transport} {...identity} currentDeviceId={newRequestId()} />);
-  await f.enter(); expect(screen.queryByRole("article", { name: "Submitted message" })).toBeNull();
+  await f.enter(); expect(screen.queryByRole("article", { name: "Submitted user message" })).toBeNull();
 });
 
 it("adopts a stream-before-receipt edit and replaces a stream-before-receipt native message", async () => {
@@ -133,7 +133,7 @@ it("adopts a stream-before-receipt edit and replaces a stream-before-receipt nat
   f.enqueue.mockImplementationOnce(async request => { receipt = f.receipt(request); await new Promise<void>(resolve => { finish = resolve; }); return receipt; });
   render(<App transport={f.transport} />); await f.send(); await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
   await act(async () => f.publish(create(ResourceSchema, { ...receipt.change.input, revision: 5n, documentJson: encode({ prompt: "Authoritative edited input", mode: "execute", delivery: "queued" }) })));
-  await act(async () => finish()); await within(screen.getByRole("article", { name: "Submitted message" })).findByText("Authoritative edited input");
+  await act(async () => finish()); await within(screen.getByRole("article", { name: "Submitted user message" })).findByText("Authoritative edited input");
   expect(screen.queryByText("웹 검색 할 줄 알아?", { selector: "article[data-submission] pre" })).toBeNull();
   // A distinct identical prompt stays projected until its own input identity arrives.
   let secondFinish!: () => void; let secondReceipt!: ReturnType<typeof sessionInputReceipt>;
@@ -141,7 +141,7 @@ it("adopts a stream-before-receipt edit and replaces a stream-before-receipt nat
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Authoritative edited input" } }); fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledTimes(2));
   await act(async () => f.publish(create(ResourceSchema, { id: newRequestId(), sessionId: f.original.id, kind: EntityKind.MESSAGE, schemaVersion: 1, revision: 1n, documentJson: encode({ role: "user", state: "complete", input_id: secondReceipt.change.input.id, text: "Authoritative edited input" }) })));
-  await act(async () => secondFinish()); await waitFor(() => expect(screen.getAllByRole("article", { name: "Submitted message" })).toHaveLength(1));
+  await act(async () => secondFinish()); await waitFor(() => expect(screen.getAllByRole("article", { name: "Submitted user message" })).toHaveLength(1));
 });
 
 it("reinspects a removed original queue identity after navigation without loading all history", async () => {
@@ -149,8 +149,8 @@ it("reinspects a removed original queue identity after navigation without loadin
   const queue = (await f.enqueue.mock.results[0].value).change.input;
   fireEvent.click(screen.getByRole("button", { name: /General Chat Immediate other/ })); await screen.findByRole("heading", { name: "Immediate other" });
   f.resources.set(queue.id, create(ResourceSchema, { ...queue, revision: 4n, documentJson: encode({ prompt: "", delivery: "removed", mode: "execute" }) }));
-  await f.enter(); await within(screen.getByRole("article", { name: "Submitted message" })).findByText("Removed");
-  expect(within(screen.getByRole("article", { name: "Submitted message" })).queryByText("웹 검색 할 줄 알아?")).toBeNull();
+  await f.enter(); await within(screen.getByRole("article", { name: "Submitted user message" })).findByText("Removed");
+  expect(within(screen.getByRole("article", { name: "Submitted user message" })).queryByText("웹 검색 할 줄 알아?")).toBeNull();
   expect(f.enqueue).toHaveBeenCalledOnce(); expect(f.control).not.toHaveBeenCalled();
   expect(f.list.mock.calls.every(call => !call.length || !((call[0] as { filter?: { kind?: EntityKind; pageToken?: string } }).filter?.pageToken))).toBe(true);
 });
@@ -161,5 +161,5 @@ it("ignores a late accepted response after connection identity replacement", asy
   const mounted = render(<App transport={f.transport} {...identity} />); await f.send(); await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
   mounted.rerender(<App transport={f.transport} {...identity} currentDeviceId={newRequestId()} />);
   const input = await f.enter(); fireEvent.change(input, { target: { value: "Replacement connection draft" } });
-  await act(async () => finish()); expect(input).toHaveProperty("value", "Replacement connection draft"); expect(screen.queryByRole("article", { name: "Submitted message" })).toBeNull();
+  await act(async () => finish()); expect(input).toHaveProperty("value", "Replacement connection draft"); expect(screen.queryByRole("article", { name: "Submitted user message" })).toBeNull();
 });
