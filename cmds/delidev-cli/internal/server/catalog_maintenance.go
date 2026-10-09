@@ -113,30 +113,6 @@ func (s *Service) maintainAPIAccount(ctx context.Context, record store.Record) {
 			return
 		}
 	}
-	// Validation publication increments the account revision. Read the confirmed
-	// latest record before discovery, while retaining this worker's original connection.
-	record, err = s.Store.Get(ctx, domain.AccountKind, record.ID)
-	if err != nil || ctx.Err() != nil {
-		return
-	}
-	account, err = store.Decode[domain.Account](record)
-	if err != nil || account.Connection == nil || account.Connection.ID != original.Connection.ID || !account.Enabled || account.Removal != nil {
-		return
-	}
-	providerRecord, err := s.Store.Get(ctx, domain.ProviderKind, account.ProviderID)
-	if err != nil {
-		return
-	}
-	provider, err := store.Decode[domain.Provider](providerRecord)
-	if err != nil || !provider.EnabledValue() || !provider.Discovery {
-		return
-	}
-	if c := account.Catalog; c != nil && !accountObservationDue(account.Connection.ID, c.ConnectionID, c.ObservedAt, c.RetryAfterSeconds, time.Now()) {
-		return
-	}
-	request := domain.NewID()
-	_, err = s.discoverModels(ctx, &pb.Mutation{Id: string(record.ID), ExpectedRevision: record.Revision, RequestId: string(request)}, string(request))
-	if err != nil && ctx.Err() == nil {
-		s.logger.Warn("catalog_maintenance_unpublished", "account_id", record.ID, "request_id", request, "error_code", domain.SafeError(err).Code)
-	}
+	// Persistent catalog refresh is retired. Authentication validation remains
+	// independently owned; endpoint suggestions require an explicit UI read.
 }

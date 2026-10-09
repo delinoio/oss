@@ -260,7 +260,11 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 
 	priceManager := service.tokenPrices()
 	service.Store.SetAutomaticPricing(func(tx *store.Tx, model domain.ModelIdentity) error {
-		return service.applyReference(tx, model, priceManager.Snapshot())
+		snapshot, err := service.tokenPriceSnapshot(tx, model)
+		if err != nil {
+			return err
+		}
+		return service.applyReference(tx, model, snapshot)
 	})
 	pricesCtx, stopPrices := context.WithCancel(child)
 	pricesDone := make(chan struct{})

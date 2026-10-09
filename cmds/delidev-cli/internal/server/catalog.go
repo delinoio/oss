@@ -238,60 +238,7 @@ func (s *Service) DiscoverModels(ctx context.Context, req *connect.Request[pb.Di
 }
 
 func (s *Service) discoverModels(ctx context.Context, meta *pb.Mutation, correlation string) (store.Result, error) {
-	result, err := s.inspectAccount(ctx, meta, catalogInspection, correlation, func(tx *store.Tx, account domain.Account, result accountInspection) (any, error) {
-		observation := domain.CatalogObservation{RequestID: domain.ID(meta.RequestId), ConnectionID: account.Connection.ID, ObservedAt: result.ObservedAt, State: domain.Observed, Received: uint32(len(result.Models)), RetryAfterSeconds: result.RetryAfterSeconds, Problem: result.Problem}
-		if account.Catalog != nil {
-			observation.LastSuccessAt = account.Catalog.LastSuccessAt
-		}
-		if observation.Problem == nil {
-			plan, err := catalogPlan(tx, account.ProviderID, result)
-			if err != nil {
-				if domain.SafeError(err).Code != domain.ResourceExhausted {
-					return nil, err
-				}
-				observation.Problem = domain.SafeError(err)
-			} else {
-				for _, change := range plan {
-					if _, err := tx.Put(domain.ModelKind, change.record.ID, change.record.Revision, "", "", change.model); err != nil {
-						return nil, err
-					}
-					if change.record.Revision == 0 {
-						observation.Added++
-					} else {
-						observation.Updated++
-					}
-				}
-				observed := result.ObservedAt
-				observation.LastSuccessAt = &observed
-			}
-		}
-		if observation.Problem != nil {
-			observation.State = domain.ObservationFailed
-			if observation.Problem.Code == domain.Unsupported {
-				observation.State = domain.ObservationUnsupported
-			}
-			copy := *observation.Problem
-			copy.CorrelationID = correlation
-			observation.Problem = &copy
-		}
-		account.Catalog = &observation
-		if _, err := tx.Put(domain.AccountKind, domain.ID(meta.Id), meta.ExpectedRevision, "", "", account); err != nil {
-			return nil, err
-		}
-		return catalogReceipt{ID: domain.ID(meta.Id), Observation: observation}, nil
-	})
-	if err == nil && !result.Replayed {
-		var receipt catalogReceipt
-		if domain.Decode(result.Data, &receipt) == nil {
-			o := receipt.Observation
-			var problemCode domain.Code
-			if o.Problem != nil {
-				problemCode = o.Problem.Code
-			}
-			s.logger.Info("catalog_published", "account_id", receipt.ID, "request_id", o.RequestID, "state", o.State, "received", o.Received, "added", o.Added, "updated", o.Updated, "error_code", problemCode, "correlation_id", correlation)
-		}
-	}
-	return result, err
+	return store.Result{}, domain.Fail(domain.Unsupported, "Persistent Model discovery is retired.", "Use read-only endpoint suggestions through the original account.")
 }
 
 type modelChange struct {
@@ -379,74 +326,7 @@ func catalogPlan(tx *store.Tx, provider domain.ID, result accountInspection) ([]
 	return plan, nil
 }
 func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.SearchModelsRequest]) (*connect.Response[pb.SearchModelsResponse], error) {
-	f := store.ModelSearch{SubscriptionService: rpc.SubscriptionService(req.Msg.SubscriptionService), Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, EnabledProvidersOnly: req.Msg.EnabledProvidersOnly, Limit: int(req.Msg.PageSize)}
-	if f.Limit == 0 {
-		f.Limit = 50
-	}
-	raw, _ := json.Marshal(f)
-	hash := sha256.Sum256(raw)
-	scope := "models:" + hex.EncodeToString(hash[:])
-	if req.Msg.PageToken != "" {
-		cursor, err := s.Identity.DecodeCursor(req.Msg.PageToken, scope)
-		if err != nil {
-			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-		}
-		f.After = cursor.After
-		f.Epoch = cursor.Sequence
-	}
-	models, providers, epoch, err := s.Store.SearchModels(ctx, f)
-	if err != nil {
-		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-	}
-	message := &pb.SearchModelsResponse{}
-	available := make(map[domain.ID]store.Record, len(providers))
-	for _, record := range providers {
-		available[record.ID] = record
-	}
-	included := map[domain.ID]bool{}
-	more := len(models) == f.Limit
-	for i, record := range models {
-		model, e := store.Decode[domain.Model](record)
-		if e != nil {
-			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
-		}
-		providerCount := len(message.Providers)
-		message.Models = append(message.Models, rpc.Resource(record))
-		if provider, ok := available[model.ProviderID]; ok && !included[model.ProviderID] {
-			message.Providers = append(message.Providers, rpc.Resource(provider))
-		}
-		message.NextPageToken = ""
-		if more || i+1 < len(models) {
-			message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: record.ID, Sequence: epoch})
-			if err != nil {
-				return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-			}
-		}
-		fits, e := resourcePageFits(message)
-		if e != nil {
-			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
-		}
-		if !fits {
-			message.Models = message.Models[:len(message.Models)-1]
-			message.Providers = message.Providers[:providerCount]
-			if len(message.Models) == 0 {
-				return nil, rpc.Error(resourcePageTooLarge(), req.Header().Get(rpc.CorrelationHeader))
-			}
-			more = true
-			break
-		}
-		included[model.ProviderID] = true
-	}
-	message.NextPageToken = ""
-	if more && len(message.Models) > 0 {
-		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(message.Models[len(message.Models)-1].Id), Sequence: epoch})
-		if err != nil {
-			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-		}
-	}
-	response := connect.NewResponse(message)
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
+	return nil, rpc.Error(domain.Fail(domain.Unsupported, "Persistent Model search is retired.", "Use source-native configuration and optional endpoint suggestions."), req.Header().Get(rpc.CorrelationHeader))
 }
 func (s *Service) ResolveModel(ctx context.Context, req *connect.Request[pb.ResolveModelRequest]) (*connect.Response[pb.ResolveModelResponse], error) {
 	model, err := s.Store.ResolveModel(ctx, req.Msg.Selector, domain.ID(req.Msg.ProviderId))

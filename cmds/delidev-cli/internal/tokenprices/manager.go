@@ -100,6 +100,19 @@ func New(root string, transport http.RoundTripper, logger *slog.Logger, publish 
 // Snapshot returns independent metadata so callers cannot alter the manager's
 // validated cache or a concurrent refresh's publication input.
 func (m *Manager) Snapshot() Snapshot { m.mu.Lock(); defer m.mu.Unlock(); return clone(m.state) }
+
+// SnapshotFor returns only the exact requested upstream key. Keeping transaction
+// reads bounded avoids copying the complete catalog for each observed response.
+func (m *Manager) SnapshotFor(key string) Snapshot {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.state
+	s.Catalog = Catalog{Digest: s.Catalog.Digest, References: map[string]Reference{}}
+	if r, ok := m.state.Catalog.References[key]; ok {
+		s.Catalog.References[key] = r
+	}
+	return clone(s)
+}
 func clone(s Snapshot) Snapshot {
 	c := Catalog{Digest: s.Catalog.Digest, References: map[string]Reference{}}
 	for k, r := range s.Catalog.References {

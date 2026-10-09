@@ -371,6 +371,7 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(domain.Fail(domain.NotFound, "The accepted entity was subsequently deleted.", "The original request cannot recreate it; use a new request ID for new work."), correlation)
 	}
 	if kind == domain.ProviderKind {
+		s.cancelEndpointChecks(record.ID, true)
 		current, err := s.Store.Get(ctx, domain.ProviderKind, record.ID)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
@@ -387,6 +388,7 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		}
 	}
 	if kind == domain.AccountKind {
+		s.cancelEndpointChecks(record.ID, false)
 		current, err := s.Store.Get(ctx, domain.AccountKind, record.ID)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)

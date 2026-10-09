@@ -120,3 +120,23 @@ func TestShutdownCancelsAndJoinsExplicitRefresh(t *testing.T) {
 		t.Fatal("closed manager admitted work")
 	}
 }
+
+func TestExactSnapshotIsIndependentAndBounded(t *testing.T) {
+	m := &Manager{state: Snapshot{State: Current, Catalog: Catalog{Digest: strings.Repeat("a", 64), References: map[string]Reference{
+		"openai\x00exact":    {Provider: "openai", Model: "exact", Costs: []byte(`{"input":0}`)},
+		"anthropic\x00exact": {Provider: "anthropic", Model: "exact"},
+	}}}}
+	snapshot := m.SnapshotFor("openai\x00exact")
+	if len(snapshot.Catalog.References) != 1 {
+		t.Fatal("cross-source or catalog data copied")
+	}
+	r := snapshot.Catalog.References["openai\x00exact"]
+	r.Costs[0] = 'x'
+	snapshot.Catalog.References["openai\x00exact"] = r
+	if m.SnapshotFor("openai\x00exact").Catalog.References["openai\x00exact"].Costs[0] != '{' {
+		t.Fatal("caller changed cache")
+	}
+	if len(m.SnapshotFor("openai\x00missing").Catalog.References) != 0 {
+		t.Fatal("non-exact fallback")
+	}
+}

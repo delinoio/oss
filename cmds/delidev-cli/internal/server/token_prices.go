@@ -57,12 +57,16 @@ func priceNamespace(tx *store.Tx, m domain.ModelIdentity) (string, uint64, error
 		return "", 0, nil
 	}
 	row, e := tx.Get(domain.ProviderKind, m.ProviderID)
-	if domain.SafeError(e).Code == domain.NotFound {
+	retired := domain.SafeError(e).Code == domain.NotFound
+	if retired {
 		row, e = tx.RetiredConfiguration(domain.ProviderKind, m.ProviderID)
 	}
 	if e != nil {
 		return "", 0, e
 	}
+	if retired {
+		row.Revision = 0
+	} // Historical source metadata grants no current edit authority.
 	var p domain.Provider
 	if domain.Decode(row.Data, &p) != nil {
 		return "", 0, invalidUsageSummary()
@@ -83,6 +87,13 @@ func priceNamespace(tx *store.Tx, m domain.ModelIdentity) (string, uint64, error
 		}
 	}
 	return "", row.Revision, nil
+}
+func (s *Service) tokenPriceSnapshot(tx *store.Tx, m domain.ModelIdentity) (tokenprices.Snapshot, error) {
+	namespace, _, err := priceNamespace(tx, m)
+	if err != nil {
+		return tokenprices.Snapshot{}, err
+	}
+	return s.tokenPrices().SnapshotFor(namespace + "\x00" + m.NativeID), nil
 }
 func priceReference(tx *store.Tx, m domain.ModelIdentity, snapshot tokenprices.Snapshot) (*tokenprices.Reference, uint64, error) {
 	namespace, rev, e := priceNamespace(tx, m)
@@ -171,7 +182,10 @@ func (s *Service) readTokenPrice(tx *store.Tx, m domain.ModelIdentity) (*pb.GetT
 	if e != nil {
 		return nil, e
 	}
-	snapshot := s.tokenPrices().Snapshot()
+	snapshot, e := s.tokenPriceSnapshot(tx, m)
+	if e != nil {
+		return nil, e
+	}
 	ref, revision, e := priceReference(tx, m, snapshot)
 	if e != nil {
 		return nil, e
@@ -254,7 +268,11 @@ func (s *Service) mutateTokenPrice(ctx context.Context, id domain.ID, identity t
 		if identity.Basis != nil {
 			_, e = tx.PutPricing(identity.Model.Key(), identity.PriceRevision, domain.NewID(), *identity.Basis)
 		} else {
-			e = s.applyReference(tx, identity.Model, s.tokenPrices().Snapshot())
+			snapshot, snapshotErr := s.tokenPriceSnapshot(tx, identity.Model)
+			if snapshotErr != nil {
+				return nil, snapshotErr
+			}
+			e = s.applyReference(tx, identity.Model, snapshot)
 		}
 		if e != nil {
 			return nil, e
