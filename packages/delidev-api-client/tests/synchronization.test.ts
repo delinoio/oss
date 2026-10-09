@@ -4,7 +4,7 @@ import { expect, it, vi } from "vitest";
 import {
   EntityKind, ErrorDetailSchema, EventAction, ResourceSchema, ResourceService, WatchEventsResponseSchema,
   type Resource, type GetResourceRequest,
-} from "../src/gen/delidev/v1/delidev_pb.js";
+} from "../src/index.js";
 import { ConnectionState, SyncKind, synchronizeResources, type SyncUpdate } from "../src/synchronization.js";
 import { newRequestId } from "../src/validation.js";
 
