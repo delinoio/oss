@@ -915,3 +915,28 @@ it.each(["project", "general-chat", "sidechat"])("clears retained %s row selecti
     expect(row.getAttribute("aria-current")).toBe("true");
   }
 });
+
+
+it("keeps the drawer close affordance outside the compact Home header and creation block", () => {
+  const setDrawerOpen = vi.fn();
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { setDrawerOpen } });
+  for (const surface of [Surface.Sessions, Surface.NewSession, Surface.NewGeneralChat]) {
+    value.setProps({ surface });
+    const pane = value.container.querySelector(".sidebar-pane")!;
+    const header = pane.querySelector(".sidebar-header")!;
+    const session = pane.querySelector(".sidebar-new-session")!;
+    const chat = pane.querySelector(".sidebar-new-general-chat")!;
+    const close = pane.querySelector<HTMLButtonElement>(".sidebar-drawer-close")!;
+    expect(header.nextElementSibling).toBe(session);
+    expect(session.nextElementSibling).toBe(chat);
+    expect(chat.nextElementSibling).toBe(close);
+    expect(close.nextElementSibling).toBe(pane.querySelector(".sidebar-list"));
+    fireEvent.click(close);
+    expect(setDrawerOpen).toHaveBeenLastCalledWith(false);
+    expect(value.newSession).not.toHaveBeenCalled();
+    expect(value.newGeneralChat).not.toHaveBeenCalled();
+  }
+  value.setProps({ surface: Surface.Search });
+  const header = value.container.querySelector(".sidebar-header")!;
+  expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
+});
