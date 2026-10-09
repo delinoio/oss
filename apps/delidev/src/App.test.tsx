@@ -164,9 +164,9 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const enqueues = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session, request));
   const controls = vi.fn(async () => ({ change: { session } }));
   const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
-  const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
+  const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: encode({ name: "Agent One", harness: "codex", routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-model" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "default" } }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
-  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
+  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
   const githubQuery = vi.fn(async (_request: { repositoryId: string; schemaVersion: number; queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
