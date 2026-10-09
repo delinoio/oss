@@ -34,6 +34,7 @@ service WorkerService {
   rpc InspectRepository(InspectRepositoryRequest) returns (InspectRepositoryResponse);
   rpc CloneRepository(CloneRepositoryRequest) returns (CloneRepositoryResponse);
   rpc DiscoverHarnesses(DiscoverHarnessesRequest) returns (DiscoverHarnessesResponse);
+  rpc ReportSessionStartupProgress(ReportSessionStartupProgressRequest) returns (ReportSessionStartupProgressResponse);
   rpc ReportExecutionStartup(ReportExecutionStartupRequest) returns (ReportExecutionStartupResponse);
   rpc RegisterExecution(RegisterExecutionRequest) returns (RegisterExecutionResponse);
   rpc PublishExecution(PublishExecutionRequest) returns (PublishExecutionResponse);
@@ -128,6 +129,7 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1 = 50;
   WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1 = 29;
   WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1 = 30;
 
@@ -460,3 +462,35 @@ message DiscoverRepositoryBranchesResponse {
   string request_id = 2;
   bool replayed = 3;
 }
+
+// Descriptive observations only. These declarations grant no input or cleanup authority.
+enum SessionStartupWorkspaceOperation {
+  SESSION_STARTUP_WORKSPACE_OPERATION_UNSPECIFIED = 0;
+  SESSION_STARTUP_WORKSPACE_OPERATION_SETUP = 1;
+  SESSION_STARTUP_WORKSPACE_OPERATION_INSPECT = 2;
+  SESSION_STARTUP_WORKSPACE_OPERATION_CLONE = 3;
+  SESSION_STARTUP_WORKSPACE_OPERATION_REFERENCE = 4;
+  SESSION_STARTUP_WORKSPACE_OPERATION_CHECKOUT = 5;
+  SESSION_STARTUP_WORKSPACE_OPERATION_VERIFY = 6;
+  SESSION_STARTUP_WORKSPACE_OPERATION_PUBLISH = 7;
+}
+enum SessionStartupProgressState {
+  SESSION_STARTUP_PROGRESS_STATE_UNSPECIFIED = 0;
+  SESSION_STARTUP_PROGRESS_STATE_RUNNING = 1;
+  SESSION_STARTUP_PROGRESS_STATE_COMPLETED = 2;
+}
+message ReportSessionStartupProgressRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string session_id = 4;
+  string execution_id = 5;
+  uint64 sequence = 6;
+  SessionStartupWorkspaceOperation workspace_operation = 7;
+  ExecutionStartupPhase native_phase = 8;
+  SessionStartupProgressState state = 9;
+  string repository_id = 10;
+  uint32 repository_ordinal = 11;
+  uint32 repository_count = 12;
+}
+message ReportSessionStartupProgressResponse { bool replayed = 1; }

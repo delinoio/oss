@@ -275,6 +275,8 @@ func openAPISessionRestoring(ctx context.Context, config apiSessionConfig, resto
 	if validateSchemaOperations(schema, initializationOperations) != nil {
 		return nil, incompatible()
 	}
+	process.ObserveStartup(prepared, domain.StartupInitialize, domain.StartupProgressCompleted)
+	process.ObserveStartup(prepared, domain.StartupSettings, domain.StartupProgressRunning)
 	phase = configPhase
 	if err := inspectManagedConfig(managed); err != nil {
 		return nil, err

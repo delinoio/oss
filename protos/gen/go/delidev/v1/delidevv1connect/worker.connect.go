@@ -89,6 +89,9 @@ const (
 	// WorkerServiceDiscoverHarnessesProcedure is the fully-qualified name of the WorkerService's
 	// DiscoverHarnesses RPC.
 	WorkerServiceDiscoverHarnessesProcedure = "/delidev.v1.WorkerService/DiscoverHarnesses"
+	// WorkerServiceReportSessionStartupProgressProcedure is the fully-qualified name of the
+	// WorkerService's ReportSessionStartupProgress RPC.
+	WorkerServiceReportSessionStartupProgressProcedure = "/delidev.v1.WorkerService/ReportSessionStartupProgress"
 	// WorkerServiceReportExecutionStartupProcedure is the fully-qualified name of the WorkerService's
 	// ReportExecutionStartup RPC.
 	WorkerServiceReportExecutionStartupProcedure = "/delidev.v1.WorkerService/ReportExecutionStartup"
@@ -131,6 +134,7 @@ type WorkerServiceClient interface {
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	CloneRepository(context.Context, *connect.Request[v1.CloneRepositoryRequest]) (*connect.Response[v1.CloneRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
+	ReportSessionStartupProgress(context.Context, *connect.Request[v1.ReportSessionStartupProgressRequest]) (*connect.Response[v1.ReportSessionStartupProgressResponse], error)
 	ReportExecutionStartup(context.Context, *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error)
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
@@ -264,6 +268,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(workerServiceMethods.ByName("DiscoverHarnesses")),
 			connect.WithClientOptions(opts...),
 		),
+		reportSessionStartupProgress: connect.NewClient[v1.ReportSessionStartupProgressRequest, v1.ReportSessionStartupProgressResponse](
+			httpClient,
+			baseURL+WorkerServiceReportSessionStartupProgressProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportSessionStartupProgress")),
+			connect.WithClientOptions(opts...),
+		),
 		reportExecutionStartup: connect.NewClient[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse](
 			httpClient,
 			baseURL+WorkerServiceReportExecutionStartupProcedure,
@@ -305,31 +315,32 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
-	syncWorkerNetwork          *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
-	reportWorkerNativeRoute    *connect.Client[v1.ReportWorkerNativeRouteRequest, v1.ReportWorkerNativeRouteResponse]
-	listSessionDeletionWork    *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
-	reportSessionDeletion      *connect.Client[v1.ReportSessionDeletionRequest, v1.ReportSessionDeletionResponse]
-	watchTerminals             *connect.Client[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse]
-	claimTerminal              *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
-	reportTerminal             *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
-	publishTerminalOutput      *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
-	watchForwardRequests       *connect.Client[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse]
-	watchWorkspaceReads        *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
-	reportWorkspaceRead        *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
-	attachWorker               *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
-	watchWork                  *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
-	watchAuxiliaryWork         *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
-	reportWork                 *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
-	discoverRepositoryBranches *connect.Client[v1.DiscoverRepositoryBranchesRequest, v1.DiscoverRepositoryBranchesResponse]
-	inspectRepository          *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
-	cloneRepository            *connect.Client[v1.CloneRepositoryRequest, v1.CloneRepositoryResponse]
-	discoverHarnesses          *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
-	reportExecutionStartup     *connect.Client[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse]
-	registerExecution          *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
-	publishExecution           *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
-	claimQuestionResponse      *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
-	claimApprovalResponse      *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
-	claimSteerInput            *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+	syncWorkerNetwork            *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
+	reportWorkerNativeRoute      *connect.Client[v1.ReportWorkerNativeRouteRequest, v1.ReportWorkerNativeRouteResponse]
+	listSessionDeletionWork      *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
+	reportSessionDeletion        *connect.Client[v1.ReportSessionDeletionRequest, v1.ReportSessionDeletionResponse]
+	watchTerminals               *connect.Client[v1.WatchTerminalsRequest, v1.WatchTerminalsResponse]
+	claimTerminal                *connect.Client[v1.ClaimTerminalRequest, v1.ClaimTerminalResponse]
+	reportTerminal               *connect.Client[v1.ReportTerminalRequest, v1.ReportTerminalResponse]
+	publishTerminalOutput        *connect.Client[v1.PublishTerminalOutputRequest, v1.PublishTerminalOutputResponse]
+	watchForwardRequests         *connect.Client[v1.WatchForwardRequestsRequest, v1.WatchForwardRequestsResponse]
+	watchWorkspaceReads          *connect.Client[v1.WatchWorkspaceReadsRequest, v1.WatchWorkspaceReadsResponse]
+	reportWorkspaceRead          *connect.Client[v1.ReportWorkspaceReadRequest, v1.ReportWorkspaceReadResponse]
+	attachWorker                 *connect.Client[v1.AttachWorkerRequest, v1.AttachWorkerResponse]
+	watchWork                    *connect.Client[v1.WatchWorkRequest, v1.WatchWorkResponse]
+	watchAuxiliaryWork           *connect.Client[v1.WatchAuxiliaryWorkRequest, v1.WatchAuxiliaryWorkResponse]
+	reportWork                   *connect.Client[v1.ReportWorkRequest, v1.ReportWorkResponse]
+	discoverRepositoryBranches   *connect.Client[v1.DiscoverRepositoryBranchesRequest, v1.DiscoverRepositoryBranchesResponse]
+	inspectRepository            *connect.Client[v1.InspectRepositoryRequest, v1.InspectRepositoryResponse]
+	cloneRepository              *connect.Client[v1.CloneRepositoryRequest, v1.CloneRepositoryResponse]
+	discoverHarnesses            *connect.Client[v1.DiscoverHarnessesRequest, v1.DiscoverHarnessesResponse]
+	reportSessionStartupProgress *connect.Client[v1.ReportSessionStartupProgressRequest, v1.ReportSessionStartupProgressResponse]
+	reportExecutionStartup       *connect.Client[v1.ReportExecutionStartupRequest, v1.ReportExecutionStartupResponse]
+	registerExecution            *connect.Client[v1.RegisterExecutionRequest, v1.RegisterExecutionResponse]
+	publishExecution             *connect.Client[v1.PublishExecutionRequest, v1.PublishExecutionResponse]
+	claimQuestionResponse        *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
+	claimApprovalResponse        *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
+	claimSteerInput              *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
 }
 
 // SyncWorkerNetwork calls delidev.v1.WorkerService.SyncWorkerNetwork.
@@ -427,6 +438,11 @@ func (c *workerServiceClient) DiscoverHarnesses(ctx context.Context, req *connec
 	return c.discoverHarnesses.CallUnary(ctx, req)
 }
 
+// ReportSessionStartupProgress calls delidev.v1.WorkerService.ReportSessionStartupProgress.
+func (c *workerServiceClient) ReportSessionStartupProgress(ctx context.Context, req *connect.Request[v1.ReportSessionStartupProgressRequest]) (*connect.Response[v1.ReportSessionStartupProgressResponse], error) {
+	return c.reportSessionStartupProgress.CallUnary(ctx, req)
+}
+
 // ReportExecutionStartup calls delidev.v1.WorkerService.ReportExecutionStartup.
 func (c *workerServiceClient) ReportExecutionStartup(ctx context.Context, req *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error) {
 	return c.reportExecutionStartup.CallUnary(ctx, req)
@@ -479,6 +495,7 @@ type WorkerServiceHandler interface {
 	InspectRepository(context.Context, *connect.Request[v1.InspectRepositoryRequest]) (*connect.Response[v1.InspectRepositoryResponse], error)
 	CloneRepository(context.Context, *connect.Request[v1.CloneRepositoryRequest]) (*connect.Response[v1.CloneRepositoryResponse], error)
 	DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error)
+	ReportSessionStartupProgress(context.Context, *connect.Request[v1.ReportSessionStartupProgressRequest]) (*connect.Response[v1.ReportSessionStartupProgressResponse], error)
 	ReportExecutionStartup(context.Context, *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error)
 	RegisterExecution(context.Context, *connect.Request[v1.RegisterExecutionRequest]) (*connect.Response[v1.RegisterExecutionResponse], error)
 	PublishExecution(context.Context, *connect.Request[v1.PublishExecutionRequest]) (*connect.Response[v1.PublishExecutionResponse], error)
@@ -608,6 +625,12 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(workerServiceMethods.ByName("DiscoverHarnesses")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workerServiceReportSessionStartupProgressHandler := connect.NewUnaryHandler(
+		WorkerServiceReportSessionStartupProgressProcedure,
+		svc.ReportSessionStartupProgress,
+		connect.WithSchema(workerServiceMethods.ByName("ReportSessionStartupProgress")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceReportExecutionStartupHandler := connect.NewUnaryHandler(
 		WorkerServiceReportExecutionStartupProcedure,
 		svc.ReportExecutionStartup,
@@ -684,6 +707,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 			workerServiceCloneRepositoryHandler.ServeHTTP(w, r)
 		case WorkerServiceDiscoverHarnessesProcedure:
 			workerServiceDiscoverHarnessesHandler.ServeHTTP(w, r)
+		case WorkerServiceReportSessionStartupProgressProcedure:
+			workerServiceReportSessionStartupProgressHandler.ServeHTTP(w, r)
 		case WorkerServiceReportExecutionStartupProcedure:
 			workerServiceReportExecutionStartupHandler.ServeHTTP(w, r)
 		case WorkerServiceRegisterExecutionProcedure:
@@ -779,6 +804,10 @@ func (UnimplementedWorkerServiceHandler) CloneRepository(context.Context, *conne
 
 func (UnimplementedWorkerServiceHandler) DiscoverHarnesses(context.Context, *connect.Request[v1.DiscoverHarnessesRequest]) (*connect.Response[v1.DiscoverHarnessesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.DiscoverHarnesses is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportSessionStartupProgress(context.Context, *connect.Request[v1.ReportSessionStartupProgressRequest]) (*connect.Response[v1.ReportSessionStartupProgressResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportSessionStartupProgress is not implemented"))
 }
 
 func (UnimplementedWorkerServiceHandler) ReportExecutionStartup(context.Context, *connect.Request[v1.ReportExecutionStartupRequest]) (*connect.Response[v1.ReportExecutionStartupResponse], error) {

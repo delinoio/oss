@@ -3520,3 +3520,36 @@ The dedicated `export_generated_image` native operation accepts one bounded orig
 Publication uses a synced same-directory temporary file and atomic create-new link. Existing destinations, including symlinks, are never replaced; the user chooses a new filename. Cancellation is terminal and writes nothing. A failure after destination publication reports uncertainty and retains its original receipt. Quit fences new export admission and late dialogs on the UI loop, then joins original disk publication off that loop before native exit. The process owns one pending export and at most 128 immutable receipts; receipts are never evicted into new write authority. A changed request or another window instance cannot replay or read one. Frontend remounts retain the uncertainty fence and can explicitly observe the original receipt. Exported files are user-owned independent copies and session deletion never removes them. Downloads, general file dialogs and navigation remain denied under their existing boundaries.
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
+
+## Detailed session startup — issue #2120
+
+Ordinary Session and General Chat render authenticated original operation
+summaries under Workspace preparation and Agent startup in the conversation.
+The empty transcript uses an unboxed centered 380px maximum-width list headed
+Session startup / 세션 시작 준비. Confirmed completion uses checks; the current
+observed operation uses one decorative spinner and emphasis; applicable unobserved
+operations stay pending with muted circles. Local omits cloning and replacement
+checkout; General Chat omits repository operations. Original repository ordinals
+identify current work; aggregate completion requires all applicable operations.
+
+After the original initial input is visible, show a compact current row and a
+native keyboard-accessible details disclosure. Existing accepted-input and
+transcript projections alone prove first input completion and response waiting;
+READY or descriptive reports cannot supply that proof. Actual response/tool/
+progress content or terminal state ends startup. Original failure, Stop/archive,
+budget, approval, user-input, recovery and unavailable/connection guidance take
+precedence and suppress animation. Failure includes inert original observed-stage
+context alongside independent cleanup guidance. Reconnection performs reads only.
+
+Keep the polite status node, composer, drafts, tools, Info and all original
+controllers mounted. English/Korean labels and semantic tokens wrap within narrow
+or 200% layouts, reduced motion disables animation, and disclosure changes never
+move focus. Old peers retain the existing coarse presentation without fabricated
+details or execution rejection. The independently owned initial-readiness warning
+boundary remains separate.
+
+Detailed startup presence reads use the original Machine network instance and
+server-projected heartbeat through the existing Resource query. Failed/missing
+reads, instance replacement and the original 60-second lease boundary stop
+animation; a report timestamp or long-running step duration is never a freshness
+substitute. Rechecks are read-only and suspend with the owning conversation.

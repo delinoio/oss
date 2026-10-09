@@ -273,6 +273,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	if err := request.validate(); err != nil {
 		return Manifest{}, err
 	}
+	startupProgress(ctx, domain.StartupWorkspaceSetup, domain.StartupProgressRunning)
 	// Failure to inspect an existing scope or persist its ownership journal does
 	// not prove cleanup. Only the failed() path below can certify that an attempt
 	// with side effects was removed; callers must retain uncertainty otherwise.
@@ -366,6 +367,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	if err := write(); err != nil {
 		return uncertain(err)
 	}
+	startupProgress(ctx, domain.StartupWorkspaceSetup, domain.StartupProgressCompleted)
 	m.Logger.Info("workspace_preparation_started", "session_id", request.SessionID, "machine_id", request.MachineID, "workspace_type", request.Type)
 	failed := func(cause error) (Manifest, error) {
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -398,12 +400,13 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			copies = append(copies, copy)
 		}
 	} else {
-		for _, spec := range request.Repositories {
+		for ordinal, spec := range request.Repositories {
+			repositoryCtx := startupRepository(ctx, spec.ID, ordinal+1, len(request.Repositories))
 			if err := ctx.Err(); err != nil {
 				return failed(domain.SafeError(err))
 			}
 			if spec.SourceKind.managed() {
-				prepared, copy, err := m.prepareIndependentRepository(ctx, git, root, spec, &manifest, write)
+				prepared, copy, err := m.prepareIndependentRepository(repositoryCtx, git, root, spec, &manifest, write)
 				if err != nil {
 					return failed(err)
 				}
@@ -418,6 +421,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				}
 				continue
 			}
+			startupProgress(repositoryCtx, domain.StartupWorkspaceInspect, domain.StartupProgressRunning)
 			inspection, err := git.Inspect(ctx, spec.Checkout)
 			if err != nil {
 				return failed(err)
@@ -434,6 +438,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 					return failed(err)
 				}
 			}
+			startupProgress(repositoryCtx, domain.StartupWorkspaceInspect, domain.StartupProgressCompleted)
 			prepared := PreparedRepository{ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
 			if spec.ForkRegistrationSource != "" {
 				// Both authorities must still identify one common Git directory before
@@ -466,6 +471,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 					return failed(err)
 				}
 			} else {
+				startupProgress(repositoryCtx, domain.StartupWorkspaceReference, domain.StartupProgressRunning)
 				if spec.PRTarget != nil {
 					target := *spec.PRTarget
 					prepared.PRTarget = &target
@@ -496,6 +502,8 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 						return failed(err)
 					}
 				}
+				startupProgress(repositoryCtx, domain.StartupWorkspaceReference, domain.StartupProgressCompleted)
+				startupProgress(repositoryCtx, domain.StartupWorkspaceCheckout, domain.StartupProgressRunning)
 				prepared.Path = filepath.Join(root, string(spec.ID))
 				// Journal ownership before starting Git so a crash or partial worktree-add
 				// can be reconciled without touching any original checkout.
@@ -530,6 +538,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 					}
 					copies = append(copies, copy)
 				}
+				startupProgress(repositoryCtx, domain.StartupWorkspaceCheckout, domain.StartupProgressCompleted)
 			}
 			if !prepared.Owned {
 				manifest.Repositories = append(manifest.Repositories, prepared)
@@ -545,12 +554,18 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	if err := ctx.Err(); err != nil {
 		return failed(domain.SafeError(err))
 	}
+	startupProgress(ctx, domain.StartupWorkspaceVerify, domain.StartupProgressRunning)
 	// Compare every source again after the final repository has been copied.
 	// A valid per-repository prefix alone cannot prove an all-repository snapshot.
 	for _, copy := range copies {
 		if err := copy.verify(ctx, git); err != nil {
 			return failed(err)
 		}
+	}
+	// The final descriptive verification must follow an actual read of every
+	// prepared directory, including Local and General Chat workspaces.
+	if err := m.verify(manifest); err != nil {
+		return failed(err)
 	}
 	manifest.State = Ready
 	if forkSnapshot != nil {
@@ -563,9 +578,12 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return failed(err)
 		}
 	}
+	startupProgress(ctx, domain.StartupWorkspaceVerify, domain.StartupProgressCompleted)
+	startupProgress(ctx, domain.StartupWorkspacePublish, domain.StartupProgressRunning)
 	if err := write(); err != nil {
 		return failed(domain.SafeError(err))
 	}
+	startupProgress(ctx, domain.StartupWorkspacePublish, domain.StartupProgressCompleted)
 	m.Logger.Info("workspace_preparation_ready", "session_id", request.SessionID, "machine_id", request.MachineID)
 	return manifest, nil
 }

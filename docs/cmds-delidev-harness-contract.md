@@ -1966,3 +1966,12 @@ profile or retained private checkpoint; legacy profiles retain their closed
 metadata/history checks. Native method or schema rejection does not permit
 rollback, fallback, omission, resend or a fresh target. A retained empty prefix
 is separately proved and never manufactures an old turn or input.
+
+## Descriptive startup observer — issue #2120
+
+The original execution process carries one transient nonblocking startup observer.
+Validated Codex handshake, Claude initialize, OpenCode initialization schema and
+Grok initialize responses confirm initialization and begin actual settings
+validation. Original successful settings publication confirms settings only.
+Preserve account/history/protocol/input claims and independent cleanup; no observer
+value grants readiness, native support, credential release or input acceptance.

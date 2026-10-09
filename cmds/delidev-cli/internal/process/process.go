@@ -39,6 +39,8 @@ func (s TerminalSize) Validate() error {
 }
 
 type Config struct {
+	// Nonblocking descriptive observer for the original interactive native child.
+	StartupObserver func(domain.ExecutionStartupPhase, domain.StartupProgressState) `json:"-"`
 	// Transient native-output guards, never journal or launch metadata.
 	ProtectedValues []string
 	Terminal        *TerminalSize
@@ -52,17 +54,27 @@ type Config struct {
 	Stderr          io.Writer
 	Logger          *slog.Logger
 }
+
+// ObserveStartup publishes bounded descriptive metadata after an actual native
+// boundary. Callbacks cannot grant input, lifecycle or cleanup authority.
+func ObserveStartup(config Config, phase domain.ExecutionStartupPhase, state domain.StartupProgressState) {
+	if config.StartupObserver != nil {
+		config.StartupObserver(phase, state)
+	}
+}
+
 type Handle struct {
-	startContext context.Context
-	native       *managedProcess
-	mu           sync.Mutex
-	resumed      bool
-	done         chan struct{}
-	result       error
-	logger       *slog.Logger
-	controller   *security.Lock
-	closeOnce    sync.Once
-	closeErr     error
+	startupObserver func(domain.ExecutionStartupPhase, domain.StartupProgressState)
+	startContext    context.Context
+	native          *managedProcess
+	mu              sync.Mutex
+	resumed         bool
+	done            chan struct{}
+	result          error
+	logger          *slog.Logger
+	controller      *security.Lock
+	closeOnce       sync.Once
+	closeErr        error
 }
 type commandExitError int
 
@@ -142,12 +154,15 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 	command.Dir = config.Cwd
 	command.Stdout = config.Stdout
 	command.Stderr = config.Stderr
+	if config.StartupObserver != nil {
+		config.StartupObserver(domain.StartupLaunch, domain.StartupProgressRunning)
+	}
 	p, err := startProcess(command, scope, config.OwnerID, config.Terminal)
 	if err != nil {
 		_ = controller.Close()
 		return nil, err
 	}
-	h := &Handle{startContext: ctx, native: p, done: make(chan struct{}), logger: logger, controller: controller}
+	h := &Handle{startupObserver: config.StartupObserver, startContext: ctx, native: p, done: make(chan struct{}), logger: logger, controller: controller}
 	logger.InfoContext(ctx, "native process prepared", "pid", p.snapshot().PID)
 	go func() {
 		h.result = p.wait()
@@ -234,6 +249,10 @@ func (h *Handle) Resume() error {
 		return err
 	}
 	h.resumed = true
+	if h.startupObserver != nil {
+		h.startupObserver(domain.StartupLaunch, domain.StartupProgressCompleted)
+		h.startupObserver(domain.StartupInitialize, domain.StartupProgressRunning)
+	}
 	h.logger.Info("native process resumed")
 	return nil
 }
@@ -265,6 +284,8 @@ func (h *Handle) Close() error {
 	return h.closeErr
 }
 func Run(ctx context.Context, config Config) error {
+	// Noninteractive inspection/helper children are not the original agent.
+	config.StartupObserver = nil
 	h, err := Start(ctx, config)
 	if err != nil {
 		return err

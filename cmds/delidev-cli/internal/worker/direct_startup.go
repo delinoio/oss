@@ -80,6 +80,7 @@ func resolveExecutionStartup(ctx context.Context, config Config, job domain.ID, 
 		return domain.Installation{}, publicationUncertain()
 	}
 	config.startup.executable = installation.ResolvedPath
+	config.progress.native(domain.StartupResolve, domain.StartupProgressCompleted)
 	return installation, nil
 }
 
@@ -88,6 +89,9 @@ func (a *executionStartupAttempt) setPhase(phase domain.ExecutionStartupPhase) {
 		return
 	}
 	a.observation.Phase = phase
+	if phase >= domain.StartupSettings && phase <= domain.StartupExecution {
+		a.config.progress.native(phase, domain.StartupProgressRunning)
+	}
 	if a.config.Logger != nil {
 		a.config.Logger.Info("execution_startup_phase", "job_id", a.job, "phase", phase)
 	}
@@ -141,6 +145,9 @@ func (a *executionStartupAttempt) ready(ctx context.Context, version string) err
 		return err
 	}
 	a.readyReported = true
+	// Settings completion follows the original validated live process and
+	// successful settings receipt, never phase order or input acceptance.
+	a.config.progress.native(domain.StartupSettings, domain.StartupProgressCompleted)
 	return nil
 }
 

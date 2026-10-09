@@ -10201,6 +10201,212 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
       "number": 35
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "session_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "execution_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "sequence",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "workspace_operation",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "native_phase",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "state",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "repository_id",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "repository_ordinal",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressRequest",
+      "member": "repository_count",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "message",
+      "declaration": "ReportSessionStartupProgressResponse",
+      "member": "replayed",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_SETUP",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_INSPECT",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_CLONE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_REFERENCE",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_CHECKOUT",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_VERIFY",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupWorkspaceOperation",
+      "member": "SESSION_STARTUP_WORKSPACE_OPERATION_PUBLISH",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupProgressState",
+      "member": "SESSION_STARTUP_PROGRESS_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupProgressState",
+      "member": "SESSION_STARTUP_PROGRESS_STATE_RUNNING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SessionStartupProgressState",
+      "member": "SESSION_STARTUP_PROGRESS_STATE_COMPLETED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
+      "number": 74
+    },
+    {
+      "issue": 2120,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
+      "number": 50
     }
   ],
   "rpcReservations": [
@@ -10336,6 +10542,15 @@
       "method": "RevertSession",
       "input": "RevertSessionRequest",
       "output": "RevertSessionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2120,
+      "service": "WorkerService",
+      "method": "ReportSessionStartupProgress",
+      "input": "ReportSessionStartupProgressRequest",
+      "output": "ReportSessionStartupProgressResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

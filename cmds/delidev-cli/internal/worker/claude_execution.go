@@ -150,7 +150,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		return nil, err
 	}
 	nativeConfig := claude.APIStreamConfig{OrdinaryTools: ordinaryTools,
-		Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
+		Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
 	}

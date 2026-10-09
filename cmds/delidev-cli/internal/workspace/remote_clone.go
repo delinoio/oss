@@ -314,6 +314,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err != nil || security.SyncParent(prepared.Path) != nil || write() != nil {
 		return prepared, nil, ResultUncertain()
 	}
+	startupProgress(ctx, domain.StartupWorkspaceClone, domain.StartupProgressRunning)
 	m.Logger.InfoContext(ctx, "workspace_clone_started", "session_id", manifest.SessionID, "repository_id", spec.ID, "source_kind", spec.SourceKind)
 	source, remote := spec.RemoteURL, spec.PreferredRemote
 	if remote == "" {
@@ -348,6 +349,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err != nil || write() != nil {
 		return *entry, nil, ResultUncertain()
 	}
+	startupProgress(ctx, domain.StartupWorkspaceClone, domain.StartupProgressCompleted)
 	if spec.SourceKind == IndependentForkSource {
 		if _, err := clone.run(bounded, prepared.Path, "remote", "set-url", remote, spec.RemoteURL); err != nil {
 			return *entry, nil, err
@@ -359,10 +361,13 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err := materializeManagedCloneBranches(bounded, clone, prepared.Path, spec, remote); err != nil {
 		return *entry, nil, err
 	}
+	startupProgress(ctx, domain.StartupWorkspaceInspect, domain.StartupProgressRunning)
 	inspection, err := clone.Inspect(bounded, prepared.Path)
 	if err != nil {
 		return *entry, nil, err
 	}
+	startupProgress(ctx, domain.StartupWorkspaceInspect, domain.StartupProgressCompleted)
+	startupProgress(ctx, domain.StartupWorkspaceReference, domain.StartupProgressRunning)
 	if spec.PRTarget != nil {
 		if err := clone.preparePRObjects(bounded, inspection, spec); err != nil {
 			return *entry, nil, err
@@ -391,6 +396,8 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err := write(); err != nil {
 		return *entry, nil, ResultUncertain()
 	}
+	startupProgress(ctx, domain.StartupWorkspaceReference, domain.StartupProgressCompleted)
+	startupProgress(ctx, domain.StartupWorkspaceCheckout, domain.StartupProgressRunning)
 	if spec.SourceKind == IndependentForkSource {
 		if _, err := clone.run(bounded, prepared.Path, "update-ref", "--no-deref", "HEAD", entry.StartingCommit); err != nil {
 			return *entry, nil, err
@@ -409,6 +416,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err := verifyIndependentDirectory(*entry, true); err != nil {
 		return *entry, nil, err
 	}
+	startupProgress(ctx, domain.StartupWorkspaceCheckout, domain.StartupProgressCompleted)
 	m.Logger.InfoContext(ctx, "workspace_clone_ready", "session_id", manifest.SessionID, "repository_id", spec.ID)
 	return *entry, copy, nil
 }

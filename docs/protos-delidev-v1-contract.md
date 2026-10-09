@@ -1051,3 +1051,14 @@ ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKin
 ## Server-owned turn timing JSON (issue #2052)
 
 Authenticated Session progress and primary-user Message resources may include optional `turn_timing` with UTC `accepted_at` and optional `terminal_at`. Go owns capture in the original acceptance/terminal transactions and exact receipt replay. This additive resource metadata changes no protobuf declaration, RPC, capability or allocation. Closed Worker execution event/update documents reject injected timing. Native assignment, continuation/Fork/compaction and checkpoint/digest projections retain their prior closed shapes without timing. Historical omission is unavailable display evidence, never a synthesized zero or changed native outcome.
+
+## Session startup progress — issue #2120
+
+System 74 / Worker 50 and the complete `ReportSessionStartupProgress` closed
+request/response and workspace-operation/progress-state enum profiles are
+allocated and activated together. Preserve System 43/Worker 23 and all
+`ExecutionStartupObservation` fields. Descriptive negotiation grants no native,
+account, input, cleanup or execution support. Original authenticated
+assignment/revision and bounded Session-summary ownership follow the
+[startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+Regenerate bindings from reconciled sources; no migration is introduced.

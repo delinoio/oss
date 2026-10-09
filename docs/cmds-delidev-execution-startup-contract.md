@@ -226,3 +226,41 @@ ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureK
 The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
 
 The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies image support requirements, preserves visible original rejected input/images and never substitutes attachments or starts another send.
+
+## Operational startup progress — issue #2120
+
+System `SESSION_STARTUP_PROGRESS_V1 = 74` and Worker
+`SESSION_STARTUP_PROGRESS_V1 = 50` own the separately negotiated
+`ReportSessionStartupProgress` RPC. System 43/Worker 23 and all original startup
+observations remain unchanged. The request binds mutation/job/revision,
+machine/instance, session, optional execution, monotonic sequence, one closed
+workspace operation or existing native phase, running/completed state and
+optional original repository ID/ordinal/count. All twelve request fields, the
+replayed response field and both closed enums are recorded in the allocation
+ledger. These observations grant no input, credentials, execution, retry or
+cleanup authority; unavailable telemetry never rejects ordinary execution.
+
+The server authenticates the original claimed job/device/instance/server epoch,
+current preparation or execution and original applicable repositories before
+publication and exact receipt replay. Stop, terminal settlement and departed or
+changed owners reject later reports. Reports change only Session JSON and its
+existing resource events, never the job revision, original assignment or native
+startup/terminal receipts. Each current preparation/native attempt retains one
+entry per original applicable operation, at most 100 repositories, 403 workspace
+entries and six native entries. There is no observation log or migration.
+
+Workspace callbacks describe actual setup, inspection, clone, reference,
+checkout, verification and manifest publication boundaries. Completion follows
+successful return only. The original interactive child reports launch completion
+only after its retained Resume barrier; native adapters report initialization
+completion from validated original responses and settings work at its actual
+validation boundary. A successful original settings receipt confirms settings
+alone, never input delivery. Noninteractive helper processes do not report agent
+launch. The Worker uses one bounded nonblocking queue and joined report owner per
+job; a failed report permits one exact receipt retry within the same short
+transmission deadline. It never retries an operation or renews authority.
+
+Metadata and structured logs contain only safe IDs, closed stage/state/sequence
+and classified errors. Paths, URLs, prompt/credential/native/Git content,
+percentages and ETA are excluded. Retained failed-stage context supplements the
+original failure and independent cleanup guidance without animation or controls.

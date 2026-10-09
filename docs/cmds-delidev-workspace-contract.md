@@ -369,3 +369,17 @@ retain their thirty-one-second admission ceiling and reject expired deadlines.
 Creation/unprepared inventory, selected-package preparation and independent
 cleanup retain their original operation context and ownership checks. Follow the
 [explicit native skills contract](cmds-delidev-sessions-contract.md#explicit-native-skills).
+
+## Descriptive startup operations — issue #2120
+
+The invocation-scoped typed observer in `startup_progress.go` reports actual
+setup, per-original-repository inspection/clone/reference/checkout, final
+verification and publication. Local omits clone/reference/replacement checkout;
+General Chat omits repository operations. The server derives the applicable
+bounded operation plan from the accepted request, including the original ordinal
+and total count. A multi-repository group completes only after every applicable
+original operation is observed complete. Success of a later stage cannot fill a
+missing earlier observation. Callbacks carry no paths, remote URLs or Git output.
+Worker reporting is nonblocking and independently joined; it changes neither
+Git deadlines, original journals, leases, return values nor cleanup ownership.
+See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).

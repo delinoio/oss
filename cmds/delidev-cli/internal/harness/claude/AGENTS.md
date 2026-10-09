@@ -11,3 +11,5 @@ Follow parent instructions and the harness/subscription contracts in `docs/`.
 
 - Register the exact original API execution token and caller-protected values in transient native reflection guards. Refuse supported literal, decoded JSON and Base64 reflections before event retention, public content or retained-history proof; keep original cleanup/recovery and once-only input claims. Never redact or replace native content. Guard values remain private runtime state and grant no operating-system sandbox guarantee.
 - Preserve transient original guard values across closed controller handoff and new-process continuation, including main and child history reads, while excluding them from checkpoints and ordinary serialization.
+
+- Issue #2120 permits only transient nonblocking descriptive observations from the original interactive native process and validated initialization/settings boundaries. Preserve exact native/protocol/account/input/history/cleanup checks; observed stage success grants no input or recovery authority, and no helper/probe may stand in for agent launch. Follow the startup and harness contracts.
