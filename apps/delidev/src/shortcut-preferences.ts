@@ -30,7 +30,7 @@ export const shortcutCatalog = [...editableShortcutCatalog, ...readOnlyShortcutC
 // Native menu bindings are read-only and never enter the seven override IDs.
 export enum NativeShortcutId { NewWindow="native-new-window", CloseWindow="native-close-window", Quit="native-quit", Hide="native-hide", Minimize="native-minimize" }
 export const fixedNativeShortcutCatalog: readonly {id:NativeShortcutId;label:MessageKey;key:string;macOnly:boolean}[]=[
- {id:NativeShortcutId.NewWindow,label:"shortcuts.nativeNewWindow",key:"t",macOnly:false},
+ {id:NativeShortcutId.NewWindow,label:"shortcuts.nativeNewWindow",key:"n",macOnly:false},
  {id:NativeShortcutId.CloseWindow,label:"shortcuts.nativeCloseWindow",key:"w",macOnly:false},
  {id:NativeShortcutId.Quit,label:"shortcuts.nativeQuit",key:"q",macOnly:true},
  {id:NativeShortcutId.Hide,label:"shortcuts.nativeHide",key:"h",macOnly:true},

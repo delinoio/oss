@@ -159,9 +159,9 @@ optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
 override. An absent override selects the original default. Native newline,
 Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
-primary+N, primary+T (the current native New Window binding), primary+W,
+primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. No palette, window action or tab action is added.
+chords cannot be assigned. The former New Window primary+T chord is editable; no T alias remains. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an
@@ -705,7 +705,7 @@ Completed removals have a separately paginated, read-only history in Saved serve
 Profile-owned Worker controls accept the same closed lifecycle action and original stop generation as local controls, with no renderer-selected profile ID. Go's `connection worker-*` commands validate the pinned client and retain grant/pairing requests before network effects. Native reads validate the same profile before and after private Worker proof retrieval; the command handler also rechecks the original window instance before returning. A saved window can therefore select Local sessions/schedules with fresh proof for this computer while its server runs elsewhere. Independent profile Workers have independent device/machine identities and process generations. Registration, current server authorization, controller status and session cleanup remain separate facts; no mutation is automatically repeated by status polling or window reopening.
 
 ### Native tray and menu bar
-The native File menu binds New Window to `CmdOrCtrl+T`: Command+T on macOS and Control+T on Windows/Linux. Command/Control+N no longer opens a product window. Menu clicks and the shortcut share one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window retains `CmdOrCtrl+W`, and the existing menu order is preserved.
+The native File menu binds New Window to `CmdOrCtrl+N`: Command+N on macOS and Control+N on Windows/Linux. Command/Control+T no longer opens a product window. Menu clicks and the shortcut share one app-level handler, creating one window per activation through the existing Local/Saved window admission. Close Window retains `CmdOrCtrl+W`, and the existing menu order is preserved.
 
 One native tray owns one quota-first auxiliary status panel and projects the original ready Local/Saved product windows. TypeScript reads `SystemService.GetOverview`, today's existing usage summary and bounded account pages directly through Connect Query. Overview and today's usage summary poll every 15 seconds, and account reads every 30 seconds while the app process runs, including hidden windows. A failed or missing usage read remains unavailable on publication instead of carrying an old total forward. Rust receives only a validated presentation projection, never RPC authority, account credentials, prompts, native tool identities or paths.
 

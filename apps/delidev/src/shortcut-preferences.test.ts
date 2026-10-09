@@ -27,9 +27,14 @@ it("capture requires the renderer primary and rejects unsafe input without match
  for(const input of [{key:"j"},{key:"k",ctrlKey:true},{key:"j",ctrlKey:true,repeat:true},{key:"j",ctrlKey:true,isComposing:true},{key:"j",ctrlKey:true,altKey:true},{key:"j",ctrlKey:true,metaKey:true}])expect(captureShortcut(new KeyboardEvent("keydown",input),ShortcutPlatform.Other)).toBeUndefined();
 });
 
-it("rejects fixed native menu chords throughout the complete editable map",()=>{for(const action of editableShortcutCatalog)for(const key of ["q","h","m","t","w"]){expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key,shift:false}}})).toThrow();expect(validShortcutChord({key,shift:true})).toBe(true);}});
+it("rejects fixed native menu chords throughout the complete editable map",()=>{for(const action of editableShortcutCatalog)for(const key of ["q","h","m","n","w"]){expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key,shift:false}}})).toThrow();expect(validShortcutChord({key,shift:true})).toBe(true);}});
 
 it("keeps native menu bindings in a typed read-only catalog separate from seven editable IDs",()=>{
- expect(editableShortcutCatalog).toHaveLength(7);expect(fixedNativeShortcutCatalog.map(action=>action.key)).toEqual(["t","w","q","h","m"]);
+ expect(editableShortcutCatalog).toHaveLength(7);expect(fixedNativeShortcutCatalog.map(action=>action.key)).toEqual(["n","w","q","h","m"]);
  for(const native of fixedNativeShortcutCatalog){expect(editableShortcutCatalog.some(action=>String(action.id)===String(native.id))).toBe(false);for(const action of editableShortcutCatalog)expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:native.key,shift:false}}})).toThrow();}
+});
+
+it("permits the retired New Window T chord for all seven overrides and capture platforms",()=>{
+ for(const action of editableShortcutCatalog){const overrides={[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:"t",shift:false}}};expect(parseShortcutOverrides(overrides)).toEqual(overrides);}
+ for(const platform of [ShortcutPlatform.Mac,ShortcutPlatform.Other]){const modifier=platform===ShortcutPlatform.Mac?{metaKey:true}:{ctrlKey:true};expect(captureShortcut(new KeyboardEvent("keydown",{key:"t",...modifier}),platform)).toEqual({key:"t",shift:false});expect(captureShortcut(new KeyboardEvent("keydown",{key:"n",...modifier}),platform)).toBeUndefined();}
 });
