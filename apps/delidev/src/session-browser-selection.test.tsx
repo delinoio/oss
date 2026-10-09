@@ -84,7 +84,7 @@ it.each([false, true])("switches the open browser before Resume and retains the 
   };
   try {
     await waitFor(() => expect(publish).toBeTypeOf("function"));
-    fireEvent.click(screen.getByRole("button", { name: "Browser" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
     await open();
     expect(register.mock.calls[0][0]).toMatchObject({ accountId: accountA, session: { expectedRevision: 1n } });
     const first = native.mock.calls.find(([op]) => op === "open_browser")![1];
