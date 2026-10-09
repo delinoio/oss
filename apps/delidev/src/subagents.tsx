@@ -39,6 +39,16 @@ function ChildRows({ rows, technical = true, labels }: { rows: readonly Subagent
   </table>;
 }
 
+// Retain only identity/ordinal metadata for reached validated children, just as
+// the original pagination owner retains its reached identity projections. An
+// arbitrary friendly-label cap must not erase valid later child relationships.
+export function retainSubagentLabels(labels: Map<string, number>, rows: readonly SubagentRow[]) {
+  for (const row of rows) {
+    const key = `${row.record.execution_id}:${row.child.native_id}`;
+    if (!labels.has(key)) labels.set(key, labels.size + 1);
+  }
+}
+
 export function Subagents({ sessionId, revision, visible = true, emptyChanged, diagnosticsTarget }: { sessionId: string; revision: string; visible?: boolean; emptyChanged?: (value: boolean) => void; diagnosticsTarget?: HTMLElement | null }) {
   useLocale();
   const active=useSessionActive();
@@ -59,7 +69,7 @@ export function Subagents({ sessionId, revision, visible = true, emptyChanged, d
     return pages.every((page): page is SubagentRow[] => page !== undefined) ? pages.flat() : undefined;
   }, [query.loaded, query.payloadPages, sessionId]);
   const labels = useRef(new Map<string, number>());
-  for (const row of rows ?? []) { const key = `${row.record.execution_id}:${row.child.native_id}`; if (!labels.current.has(key) && labels.current.size < 1000) labels.current.set(key, labels.current.size + 1); }
+  retainSubagentLabels(labels.current, rows ?? []);
   useEffect(() => { emptyChanged?.(supported && query.loaded && !query.error && !query.loading && !query.nextPageToken && query.rows.length === 0); }, [supported, query.loaded, query.error, query.loading, query.nextPageToken, query.rows.length, emptyChanged]);
   const needsOpenCodeUpdate = rows?.some(row => row.record.harness === "opencode") === true && !openCodeSupported;
   return <div ref={root} className="conversation-page-scroll">

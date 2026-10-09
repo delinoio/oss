@@ -6,7 +6,8 @@ import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ResourceService, SystemService, SystemCapability } from "@delinoio/delidev-api-client";
-import { Subagents, SubagentRows } from "./subagents";
+import { Subagents, SubagentRows, retainSubagentLabels } from "./subagents";
+import { validateSubagentPage } from "./subagent-record";
 import { document, encode, object } from "./documents";
 import { openCodeSubagentFixture, subagentFixture } from "./subagent-test-fixture";
 
@@ -130,4 +131,22 @@ test("keeps a failed child read halted across native revisions until explicit re
   await screen.findByText("No native child observations are available.");
   expect(tokens).toEqual(["", ""]);
   client.clear();
+});
+
+
+test("retains friendly identity and parent labels through the full native bound and later executions", () => {
+  const session = newRequestId(), children = Array.from({ length: 1024 }, () => subagentFixture(session));
+  const first = document(children[0]), parentId = String(object(first.observation).native_id);
+  for (const row of children) { const record = document(row); record.execution_id = first.execution_id; record.root_id = first.root_id; row.documentJson = encode(record); }
+  const last = document(children[1023]); object(last.observation).parent_id = parentId; children[1023].documentJson = encode(last);
+  const labels = new Map<string, number>();
+  for (let start = 0; start < children.length; start += 50) retainSubagentLabels(labels, validateSubagentPage(children.slice(start, start + 50), session)!);
+  const later = subagentFixture(session), laterRecord = document(later);
+  object(laterRecord.observation).native_id = object(last.observation).native_id; later.documentJson = encode(laterRecord);
+  retainSubagentLabels(labels, validateSubagentPage([later], session)!);
+  render(<><SubagentRows rows={[children[1023]]} sessionId={session} technical={false} labels={labels} /><SubagentRows rows={[later]} sessionId={session} technical={false} labels={labels} /></>);
+  expect(screen.getByText("Subagent 1024")).toBeTruthy(); expect(screen.getByText("Subagent 1025")).toBeTruthy(); expect(screen.getByText("Subagent 1")).toBeTruthy();
+  expect(screen.queryByText("Subagent —")).toBeNull();
+  retainSubagentLabels(labels, validateSubagentPage([children[1023]], session)!);
+  expect(labels.get(`${first.execution_id}:${object(last.observation).native_id}`)).toBe(1024);
 });
