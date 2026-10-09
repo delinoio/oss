@@ -175,3 +175,11 @@ it("hides nested routine history refreshes in Info and keeps original failed-rea
  await screen.findByText("<script>original approved feedback</script>");
  expect(f.list).toHaveBeenCalledTimes(2); expect(f.collect).not.toHaveBeenCalled();
 });
+
+it("retries failed Info history reads without a routine Refresh action", async () => {
+  const f = fixture(); f.list.mockRejectedValueOnce(new ConnectError("Read unavailable", Code.Unavailable));
+  render(f.view(false, false));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry current read" }));
+  await waitFor(() => expect(f.list).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("button", { name: "Refresh retained history" })).toBeNull();
+});
