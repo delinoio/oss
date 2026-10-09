@@ -85,7 +85,7 @@ function dismissTask(method: "X" | "Escape") {
 it.each([
   ["Delete account", "X"], ["Delete account", "Escape"],
   ["Edit preferences", "X"], ["Edit preferences", "Escape"],
-] as const)("keeps subscription content and disclosures visible beneath %s through %s dismissal", async (action, dismissal) => {
+] as const)("keeps subscription content visible beneath %s through %s dismissal", async (action, dismissal) => {
   const value = fixture();
   render(<value.Harness settings />);
   const inventory = await screen.findByRole("article", { name: alias });
@@ -94,9 +94,7 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "Account details" }));
   expect(screen.getByRole("dialog", { name: "Account details" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Close Account details" }));
-  const advanced = screen.getByText("Advanced settings").closest("details")!;
-  fireEvent.click(advanced.querySelector("summary")!);
-  expect(advanced.open).toBe(true);
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: action }));
   const dialog = screen.getByRole("dialog");
@@ -104,7 +102,7 @@ it.each([
   expect(inventory.isConnected).toBe(true);
   expect(inventory.closest("[hidden]")).toBeNull();
   expect(screen.queryByRole("dialog", { name: "Account details" })).toBeNull();
-  expect(advanced.open).toBe(true);
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   expect(background.disabled).toBe(true);
   expect(background.hasAttribute("inert")).toBe(true);
   expect(background.getAttribute("aria-hidden")).toBe("true");
@@ -115,7 +113,7 @@ it.each([
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("article", { name: alias })).toBe(inventory);
   expect(within(inventory).queryByRole("heading", { name: "Account details" })).toBeNull();
-  expect(advanced.open).toBe(true);
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   await waitFor(() => expect(globalThis.document.activeElement).toBe(opener));
   expect(background.disabled).toBe(false);
   expect(background.hasAttribute("inert")).toBe(false);

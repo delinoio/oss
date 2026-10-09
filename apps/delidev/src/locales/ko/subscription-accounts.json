@@ -23,7 +23,6 @@
   "subscription-accounts.subscriptionAccountPages_6c8f61": "구독 계정 페이지",
   "subscription-accounts.firstPage_0bdbb7": "첫 페이지",
   "subscription-accounts.nextPage_c08ac7": "다음 페이지",
-  "subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6": "서비스 ID는 API 제공업체와 독립적입니다. 계정 메뉴에서 환경설정을 편집하세요. 복구 알림은 기본적으로 비활성화됩니다. 종료된 이전 설정은 과거 귀속 정보를 유지하며 에이전트 워커와 예약 실행을 직접 다시 설정해야 합니다.",
   "subscription-accounts.retryOriginalQuotaRefresh_8a9eca": "원래 할당량 새로고침 다시 시도",
   "subscription-accounts.extra.22fc4e1096f2": "서비스 자체 계정"
 }

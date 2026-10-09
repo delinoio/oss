@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .settings-search { display: grid; gap: 8px; margin: 0 0 16px; min-width: 0; }
-.settings-search-header { position: sticky; top: 0; z-index: 2; display: grid; gap: 8px; padding-block: 8px; background: var(--surface-muted); }
+.settings-search-header { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-block: 8px; background: var(--surface-muted); }
 .settings-search-header h2 { margin: 3px 4px 4px; color: var(--text); font-size: 16px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
 .settings-search-field { position: relative; min-width: 0; }
 .settings-search-field svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; pointer-events: none; color: var(--muted); }
