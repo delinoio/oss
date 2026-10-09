@@ -25,18 +25,19 @@ export function QuitConfirmation({ ready, transport }: { ready:boolean; transpor
  const [attempt,setAttempt]=useState<QuitAttempt>(), [error,setError]=useState<unknown>();
  const dialog=useRef<HTMLDialogElement>(null),cancel=useRef<HTMLButtonElement>(null),seen=useRef(new Set<string>()),currentAttempt=useRef<string|null>(null),controllersRetired=useRef<(()=>void)|undefined>(undefined);
  useEffect(()=>{
-  if(!isTauri())return;let disposed=false, unlisten:(()=>void)|undefined;const controllers=new Set<AbortController>();controllersRetired.current=()=>controllers.forEach(value=>value.abort());let sequence=0;
+  if(!isTauri())return;let disposed=false, unlisten:(()=>void)|undefined, timer:ReturnType<typeof setInterval>|undefined;const controllers=new Set<AbortController>();controllersRetired.current=()=>{controllers.forEach(value=>value.abort());clearInterval(timer);timer=undefined;};let sequence=0;
   const update=async()=>{const generation=++sequence;try{const next=await invoke<QuitAttempt|null>("read_quit_attempt");if(disposed||generation!==sequence)return;
     if(next && (!validQuitCount(next.count) || !/^[a-f0-9-]{36}$/.test(next.id)))return;
     if(currentAttempt.current!==(next?.id??null)){controllers.forEach(value=>value.abort());currentAttempt.current=next?.id??null;}
     setAttempt(next?.present?next:undefined);setError(undefined);
+    if(next?.present&&timer===undefined)timer=setInterval(()=>void update(),1000);
+    else if(!next?.present){clearInterval(timer);timer=undefined;}
     if(next?.checking && next.observe && !seen.current.has(next.id)) {seen.current.add(next.id);if(seen.current.size>128)seen.current.delete(seen.current.values().next().value!);const abort=new AbortController();controllers.add(abort);const timeout=setTimeout(()=>abort.abort(),4900);
       let count:string|null=null;try {if(ready && client){const result=await client.getOverview({}, {signal:abort.signal,timeoutMs:4900});if(result.activeSessions>=0n && result.activeSessions<1n<<64n && result.observedAt.length<=64 && Number.isFinite(Date.parse(result.observedAt)) && !abort.signal.aborted)count=result.activeSessions.toString();}}catch{/* Native retains unknown status for unavailable fresh observations. */}finally{clearTimeout(timeout);controllers.delete(abort);}
       if(!disposed&&!abort.signal.aborted&&currentAttempt.current===next.id)await invoke("observe_quit_attempt",{id:next.id,count});
     }
   }catch{if(!disposed&&generation===sequence)setError(copy("quit-confirmation.unavailable"));}};
   void listen("quit-attempt",()=>void update()).then(value=>{if(disposed)value();else{unlisten=value;void update();}}).catch(()=>{});
-  const timer=setInterval(()=>void update(),1000);
   return()=>{clearInterval(timer);disposed=true;unlisten?.();controllers.forEach(value=>value.abort());controllersRetired.current=undefined;};
  },[client,ready]);
  useEffect(()=>{if(!attempt?.present)return;const opener=document.activeElement as HTMLElement|null;try {dialog.current?.showModal();cancel.current?.focus();void invoke("present_quit_attempt",{id:attempt.id}).catch(()=>{if(currentAttempt.current===attempt.id)setError(copy("quit-confirmation.unavailable"));});} catch { setError(copy("quit-confirmation.unavailable")); }return()=>{dialog.current?.close();if(opener?.isConnected&&!opener.closest('[hidden],[inert]'))opener.focus({preventScroll:true});};},[attempt?.id]);

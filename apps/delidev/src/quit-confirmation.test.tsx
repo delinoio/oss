@@ -51,3 +51,19 @@ it("includes the error disclosure in the dialog keyboard cycle",async()=>{
  summary.focus();expect(fireEvent.keyDown(dialog,{key:"Tab",shiftKey:true})).toBe(false);expect(document.activeElement).toBe(quit);
  quit.focus();expect(fireEvent.keyDown(dialog,{key:"Tab"})).toBe(false);expect(document.activeElement).toBe(summary);
 });
+
+it("keeps native reads idle outside the original presented attempt",async()=>{
+ fixture();native.view=null;vi.useFakeTimers();
+ try {
+  render(<QuitConfirmation ready={false}/>);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+  const reads=()=>native.invoke.mock.calls.filter(([method])=>method==="read_quit_attempt").length;
+  expect(reads()).toBe(1);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});expect(reads()).toBe(1);
+  native.view={id:"12345678-1234-7234-8234-123456789012",checking:false,unknown:true,count:"0",present:true,observe:false};
+  await act(async()=>native.event());expect(reads()).toBe(2);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});expect(reads()).toBe(4);
+  fireEvent.click(screen.getByRole("button",{name:"Cancel"}));await act(async()=>{});
+  const retired=reads();await act(async()=>{await vi.advanceTimersByTimeAsync(10000);});expect(reads()).toBe(retired);
+ } finally {vi.useRealTimers();}
+});

@@ -3536,3 +3536,5 @@ Final silent-zero admission checks the captured scope set and Local revision whi
 Linux native Quit fallback is retained and waited by the joined original confirmation task. Its child installs a parent-death signal before exec and rechecks the original parent, retaining crash/forced-exit containment independently of ordinary Quit joining.
 
 One Quit presenter precedes the Desktop connection-context gate and stays mounted through original role discovery. Pending or failed context has unknown readiness and supports checking/Cancel without a transport; resolved Local/Saved children publish their current observation transport to this same owner.
+
+Quit discovery uses the native event and one initial read for the current observation binding. Only a presented active attempt enables its native liveness heartbeat; cancellation, retirement and disposal stop polling. Late reads and original-attempt observation/presentation/decision errors cannot alter a successor. Visible enabled failure disclosures participate in the alert keyboard cycle, preserving initial Cancel focus.
