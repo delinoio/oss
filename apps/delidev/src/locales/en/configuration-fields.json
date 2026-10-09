@@ -31,7 +31,7 @@
   "configuration-fields.bypassSkipsNativePermissionPromptsSelect_8c3404": "Bypass skips native permission prompts. Select it only for an environment you intend to give this access.",
   "configuration-fields.retainedSandboxOrApprovalPolicySettings_7733d3": "Retained sandbox or approval-policy settings do not apply to Claude: <s0/> · <s1/>. Clear them explicitly before saving.",
   "configuration-fields.clearIncompatiblePermissionSettings_2e8a8c": "Clear incompatible permission settings",
-  "configuration-fields.savingSettingsDoesNotEnableClaude_05773c": "Saving settings does not enable Claude execution; its public execution integration is still unavailable.",
+  "configuration-fields.savingSettingsDoesNotEnableClaude_05773c": "Saving settings does not authorize or start Claude execution.",
   "configuration-fields.permissionMode_c7a8e6": "Permission mode",
   "configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d": "Uses the harness default. Review permissions before execution.",
   "configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a": "Full access permits operations beyond the workspace. With a Codex subscription, native tools can also access the managed authentication file.",
@@ -217,5 +217,6 @@
   "configuration-fields.approvalReviewUser": "User",
   "configuration-fields.approvalReviewAI": "AI auto-review",
   "configuration-fields.approvalReviewGuidance": "AI auto-review uses native Codex review with on-request approvals. Your sandbox permissions stay unchanged.",
-  "configuration-fields.approvalReviewForeign": "A Codex approval reviewer is retained. Clear it explicitly before executing another harness."
+  "configuration-fields.approvalReviewForeign": "A Codex approval reviewer is retained. Clear it explicitly before executing another harness.",
+  "configuration-fields.claudeExecutionRequirements": "Claude execution requires a verified selected account or supported subscription, a matching Anthropic Messages profile, and a selected Runner Device with a supported Claude installation. Account permissions, native model/version, input mode and continuation history are checked for each execution. If any requirement is unverified or unsupported, review that account, profile or Runner Device; saving settings does not bypass these checks."
 }

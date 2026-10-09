@@ -31,7 +31,7 @@
   "configuration-fields.bypassSkipsNativePermissionPromptsSelect_8c3404": "우회는 네이티브 권한 확인을 건너뜁니다. 이 접근을 허용하려는 환경에서만 선택하세요.",
   "configuration-fields.retainedSandboxOrApprovalPolicySettings_7733d3": "저장된 샌드박스 또는 승인 정책 설정은 Claude에 적용되지 않습니다: <s0/> · <s1/>. 저장하기 전에 직접 해제하세요.",
   "configuration-fields.clearIncompatiblePermissionSettings_2e8a8c": "호환되지 않는 권한 설정 지우기",
-  "configuration-fields.savingSettingsDoesNotEnableClaude_05773c": "설정을 저장해도 Claude 실행은 활성화되지 않습니다. 공개 실행 연동은 아직 사용할 수 없습니다.",
+  "configuration-fields.savingSettingsDoesNotEnableClaude_05773c": "설정을 저장하는 것만으로 Claude 실행이 허용되거나 시작되지는 않습니다.",
   "configuration-fields.permissionMode_c7a8e6": "권한 모드",
   "configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d": "하네스 기본값을 사용합니다. 실행 전에 권한을 검토하세요.",
   "configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a": "full-access는 작업 공간 밖의 작업을 허용합니다. Codex 구독에서는 네이티브 도구가 관리 인증 파일에도 접근할 수 있습니다.",
@@ -217,5 +217,6 @@
   "configuration-fields.approvalReviewUser": "사용자",
   "configuration-fields.approvalReviewAI": "AI 자동 검토",
   "configuration-fields.approvalReviewGuidance": "AI 자동 검토는 요청 시 승인 정책과 Codex의 기본 검토 기능을 사용합니다. 샌드박스 권한은 변경되지 않습니다.",
-  "configuration-fields.approvalReviewForeign": "Codex 승인 검토 설정이 유지되어 있습니다. 다른 하네스를 실행하기 전에 명시적으로 지우세요."
+  "configuration-fields.approvalReviewForeign": "Codex 승인 검토 설정이 유지되어 있습니다. 다른 하네스를 실행하기 전에 명시적으로 지우세요.",
+  "configuration-fields.claudeExecutionRequirements": "Claude 실행에는 검증된 선택 계정 또는 지원되는 구독, 일치하는 Anthropic Messages 프로필, 지원되는 Claude 설치가 있는 선택 실행 장치가 필요합니다. 실행할 때마다 계정 권한, 네이티브 모델과 버전, 입력 모드 및 이어지는 대화 이력을 확인합니다. 검증되지 않았거나 지원되지 않는 조건이 있으면 해당 계정, 프로필 또는 실행 장치를 확인하세요. 설정 저장으로 이러한 검사를 건너뛸 수 없습니다."
 }
