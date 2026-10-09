@@ -12,9 +12,10 @@ Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DI
 
 
 Buf generates service-specific modules. The normal protocol generation command
-also runs `scripts/delidev/proto-compat.mjs` to reproduce historical module and
-Connect Query import paths. Package-root exports and existing `./gen/*` consumers
-remain compatible; facades contain re-exports, never handwritten descriptors.
+also runs `scripts/delidev/proto-compat.mjs` to remove retired historical aggregate
+module, Connect Query and Go descriptor facades. Protocol-2 consumers import the
+canonical split service modules or package-root exports. Earlier facade paths
+are unsupported; original field and capability allocations keep their meanings.
 
 ## Scope
 `packages/delidev-api-client` owns private `@delinoio/delidev-api-client`, generated messages and service-specific Connect Query namespaces, explicit transport, typed errors, UUID-v7 request identities and bounded resource synchronization. This is the client integration boundary for desktop implementation; it does not itself constitute a desktop app or complete issue #964.
@@ -316,3 +317,5 @@ remains read-only; returning to the foreground cannot retry a mutation. A bounde
 Settings snapshot supplies a coherent event cursor while session/history pages
 remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
+
+Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
-import { EntityKind, ResourceSchema } from "./gen/delidev/v1/delidev_pb.js";
+import { EntityKind, ResourceSchema } from "./gen/delidev/v1/common_pb.js";
 import { decodeResourceDocument, supportsResourceSchema } from "./configuration-identity.js";
 import { newRequestId } from "./validation.js";
 

@@ -1,8 +1,6 @@
 import { Code, ConnectError, type Client } from "@connectrpc/connect";
-import {
-  EntityKind, EventAction, ErrorDetailSchema, ResourceService,
-  type Resource, type WatchEventsResponse,
-} from "./gen/delidev/v1/delidev_pb.js";
+import { EntityKind, ErrorDetailSchema, type Resource } from "./gen/delidev/v1/common_pb.js";
+import { EventAction, ResourceService, type WatchEventsResponse } from "./gen/delidev/v1/resource_pb.js";
 import { clientFailure, type ClientFailure } from "./errors.js";
 import { supportsResourceSchema } from "./configuration-identity.js";
 import { requireEntityId } from "./validation.js";

@@ -22,6 +22,10 @@ try {
     // A package comparison independently protects all original API semantics.
     run('breaking', '--against', original, '--config', JSON.stringify({ version: 'v2', modules: [{ path: 'protos' }], breaking: { use: ['PACKAGE'] } }));
   }
+  // The authorized protocol-2 reset retires only this empty historical public
+  // import file. Preserve every declaration and all other FILE comparisons.
+  relocated.file = relocated.file.filter(file => file.name !== 'delidev/v1/delidev.proto' ||
+    ['messageType', 'enumType', 'service', 'extension'].some(key => file[key]?.length));
   writeFileSync(projected, JSON.stringify(relocated));
   // Keep the repository's actual FILE policy and all other package checks.
   run('breaking', '--against', projected);

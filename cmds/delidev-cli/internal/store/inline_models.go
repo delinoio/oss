@@ -17,6 +17,7 @@ func inlineModelRecord(key domain.ID) (Record, error) {
 	m := domain.Model{Name: identity.NativeID, NativeID: identity.NativeID, ProviderID: identity.ProviderID, SubscriptionService: identity.SubscriptionService, Harnesses: []domain.Harness{domain.Codex, domain.ClaudeCode, domain.OpenCode, domain.GrokBuild}, MetadataSource: domain.Unknown}
 	if identity.SubscriptionService != "" {
 		m.SourceKind = domain.SubscriptionModel
+		m.Harnesses = []domain.Harness{identity.SubscriptionService.Harness()}
 	}
 	raw, e := json.Marshal(m)
 	return Record{ID: key, Revision: 1, Data: raw}, e

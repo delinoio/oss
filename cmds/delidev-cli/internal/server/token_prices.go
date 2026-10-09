@@ -235,6 +235,11 @@ func (s *Service) mutateTokenPrice(ctx context.Context, id domain.ID, identity t
 		if e := tx.Authorize(); e != nil {
 			return nil, e
 		}
+		if identity.Model.ProviderID != "" {
+			if _, e := tx.Get(domain.ProviderKind, identity.Model.ProviderID); e != nil {
+				return nil, e
+			}
+		}
 		_, revision, e := priceNamespace(tx, identity.Model)
 		if e != nil {
 			return nil, e
