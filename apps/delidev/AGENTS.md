@@ -1,3 +1,5 @@
+- Repository heartbeat guidance follows `docs/apps-delidev-desktop-contract.md`: use the selected Machine's projected original Worker lease, classify offline only above 45,000 ms, and keep missing/failed current observations unknown. Read-only rechecks preserve selected machine/canonical root/drafts and never inspect, save, start or adopt another Worker.
+
 - Terminal dependencies retain their MIT licenses and the three original copyright/license files in `public/terminal-notices`, copied into frontend distributions. Preserve the CSP/ESM modification notice and pinned xterm/WebGL/Fit versions; follow the desktop and repository license contracts.
 - Subscription cleanup includes fully disconnected service-native accounts without synthetic login IDs. Explicit failed initial ChatGPT deletion uses the shared durable cleanup controller, preserves the original public deletion revision/receipt while checkpoint revisions advance, and never retries a terminal attempt without fresh explicit confirmation. Retain original actor/native/vault/reference checks; no new RPC, protocol allocation or migration. Follow the subscription and account contracts.
 

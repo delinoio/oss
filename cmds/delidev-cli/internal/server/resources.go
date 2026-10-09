@@ -169,7 +169,7 @@ func (s *Service) GetResource(ctx context.Context, req *connect.Request[pb.GetRe
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	resource, err := resourceProjection(record)
+	resource, err := s.resourceProjection(ctx, record)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -195,7 +195,7 @@ func (s *Service) ListResources(ctx context.Context, req *connect.Request[pb.Lis
 	result := &pb.ListResourcesResponse{}
 	used := 0
 	for _, r := range records {
-		resource, err := resourceProjection(r)
+		resource, err := s.resourceProjection(ctx, r)
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}
@@ -238,7 +238,7 @@ func (s *Service) GetSnapshot(ctx context.Context, req *connect.Request[pb.GetSn
 	result := &pb.GetSnapshotResponse{}
 	used := 0
 	for _, r := range records {
-		resource, err := resourceProjection(r)
+		resource, err := s.resourceProjection(ctx, r)
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}
