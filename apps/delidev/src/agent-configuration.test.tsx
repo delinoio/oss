@@ -10,6 +10,7 @@ import { ConfigurationService, SystemService, SystemCapability, EntityKind, Prov
 import { encode, type Document } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ConfigurationEditor, Settings } from "./settings";
+import { chooseScrollOption, waitScrollChoices, scrollChoiceValue } from "./test-scroll-picker";
 
 function resource(kind: EntityKind, data: Document, revision = 1n) {
   return create(ResourceSchema, { id: newRequestId(), kind, revision, schemaVersion: 1, documentJson: encode(data) });
@@ -43,7 +44,8 @@ function decoded(request: unknown) { return JSON.parse(new TextDecoder().decode(
 function change(label: string, value: string) { fireEvent.change(screen.getByLabelText(label), { target: { value } }); }
 // A fresh Settings opening performs capability discovery before model search.
 // This fixture budget allows both ordinary asynchronous replies; it is not a product SLA.
-async function ready(value: ReturnType<typeof fixture>) { await screen.findByRole("option", { name: "Fixture model" }, { timeout: 5000 }); await waitFor(() => expect(value.client.isFetching()).toBe(0), { timeout: 5000 }); }
+async function ready(value: ReturnType<typeof fixture>) { await waitScrollChoices(screen.getByRole("combobox", { name: "Model" })); await waitFor(() => expect(value.client.isFetching()).toBe(0), { timeout: 5000 }); }
+async function choose(label: string, id: string) { await chooseScrollOption(screen.getByRole("combobox", { name: label }), id); }
 
 it("creates an accountless Agent with only the original defaults and visible core controls", async () => {
   const value = fixture();
@@ -56,7 +58,7 @@ it("creates an accountless Agent with only the original defaults and visible cor
   expect(Array.from(core.querySelectorAll<HTMLElement>(".agent-required"), marker => marker.parentElement?.textContent)).toEqual(["Name *", "Model *"]);
   expect(screen.getByText("Can be saved without accounts; execution requires an eligible account.").closest("details")).toBeNull();
   expect(Array.from(document.querySelectorAll(".agent-footer button"), button => button.textContent)).toEqual(["Cancel edit", "Save Agent Worker"]);
-  change("Name", "Minimal agent"); change("Model", value.model.id);
+  change("Name", "Minimal agent"); await choose("Model", value.model.id);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0])).toEqual({ name: "Minimal agent", harness: "codex", model_id: value.model.id, accounts: [], templates: [], options: { permission: "default" } });
@@ -73,6 +75,11 @@ it("changes only Name while preserving the complete document, exact revision and
   const accountSelector = screen.getByLabelText("Add AI account");
   const before = [value.list.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length, value.get.mock.calls.length];
   for (const section of document.querySelectorAll<HTMLDetailsElement>(".agent-disclosure")) { toggle(section, true); toggle(section, false); }
+  for (const [title, label] of [["Reasoning", "Reasoning effort"], ["Native harness options", "Subagent effort"]]) {
+    const section = disclosure(title!); toggle(section, true);
+    const input = screen.getByRole("combobox", { name: label! }); fireEvent.focus(input); fireEvent.keyDown(input, { key: "Escape" });
+    toggle(section, false);
+  }
   fireEvent(window, new Event("resize"));
   expect(screen.getByLabelText("Add AI account")).toBe(accountSelector);
   expect([value.list.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length, value.get.mock.calls.length]).toEqual(before);
@@ -82,13 +89,46 @@ it("changes only Name while preserving the complete document, exact revision and
   expect(value.save.mock.calls[0][0]).toMatchObject({ mutation: { id: agent.id, expectedRevision: 9n } });
 });
 
+it("changes harness hints while preserving both effort drafts and unrelated fields", async () => {
+  const value = fixture();
+  const original = { name: "Hints", harness: "codex", model_id: value.model.id, accounts: [], templates: [], options: { permission: "default", future_option: "retained" }, future_field: { retained: true } };
+  const agent = resource(EntityKind.AGENT, original); value.resources.push(agent);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value);
+  toggle(disclosure("Reasoning"), true); toggle(disclosure("Native harness options"), true);
+  for (const [harness, expected] of [["codex", 9], ["claude-code", 5], ["opencode", 0], ["grok-build", 0]] as const) {
+    change("Harness", harness); change("Reasoning effort", "");
+    const input = screen.getByRole("combobox", { name: "Reasoning effort" }) as HTMLInputElement;
+    expect(input.disabled).toBe(harness === "grok-build");
+    if (!input.disabled) {
+      fireEvent.focus(input);
+      expect(within(screen.getByRole("listbox", { name: "Reasoning effort suggestions" })).getAllByRole("option")).toHaveLength(expected + 1);
+      fireEvent.keyDown(input, { key: "Escape" });
+    }
+    const child = screen.getByRole("combobox", { name: "Subagent effort" }) as HTMLInputElement;
+    expect(child.disabled).toBe(harness !== "codex");
+    if (harness === "codex") {
+      fireEvent.focus(child);
+      expect(within(screen.getByRole("listbox", { name: "Subagent effort suggestions" })).getAllByRole("option")).toHaveLength(10);
+      fireEvent.keyDown(child, { key: "Escape" });
+    }
+  }
+  change("Harness", "codex");
+  change("Reasoning effort", " Future-Effort "); change("Subagent effort", " Future-Child ");
+  change("Harness", "claude-code");
+  expect((screen.getByRole("combobox", { name: "Reasoning effort" }) as HTMLInputElement).value).toBe(" Future-Effort ");
+  expect((screen.getByRole("combobox", { name: "Subagent effort" }) as HTMLInputElement).value).toBe(" Future-Child ");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(decoded(value.save.mock.calls[0][0])).toEqual({ ...original, harness: "claude-code", effort: " Future-Effort ", options: { ...original.options, subagent_effort: " Future-Child " } });
+});
+
 it("keeps ordered reference operations, relative weights and duplicate prevention through collapse", async () => {
   const value = fixture(); render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
-  change("Name", "Ordered"); change("Model", value.model.id);
+  change("Name", "Ordered"); await choose("Model", value.model.id);
   const accounts = disclosure("Accounts & routing"); toggle(accounts, true);
   const accountFields = within(accounts);
-  for (const account of value.accounts) { change("Add AI account", account.id); fireEvent.click(accountFields.getByRole("button", { name: "Add selected" })); }
-  change("Add AI account", value.accounts[0].id);
+  for (const account of value.accounts) { await choose("Add AI account", account.id); fireEvent.click(accountFields.getByRole("button", { name: "Add selected" })); }
+  await choose("Add AI account", value.accounts[0].id);
   expect((accountFields.getByRole("button", { name: "Add selected" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(accountFields.getAllByLabelText("Relative weight")[1], { target: { value: "7" } });
   fireEvent.click(accountFields.getByRole("button", { name: "Move entry 2 up" }));
@@ -96,25 +136,30 @@ it("keeps ordered reference operations, relative weights and duplicate preventio
   toggle(accounts, false); toggle(accounts, true);
   expect((accountFields.getByLabelText("Relative weight") as HTMLInputElement).value).toBe("7");
   const instructions = disclosure("Instructions"); toggle(instructions, true);
-  for (const template of value.templates) { change("Add Instructions", template.id); fireEvent.click(within(instructions).getByRole("button", { name: "Add selected" })); }
+  for (const template of value.templates) { await choose("Add Instructions", template.id); fireEvent.click(within(instructions).getByRole("button", { name: "Add selected" })); }
   fireEvent.click(within(instructions).getByRole("button", { name: "Move entry 2 up" }));
   fireEvent.click(within(instructions).getByRole("button", { name: "Remove entry 2" })); toggle(instructions, false);
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0])).toMatchObject({ accounts: [{ id: value.accounts[1].id, weight: 7 }], templates: [value.templates[1].id] });
 });
 
-it("retains pagination and exact off-page reference selection when disclosures toggle", async () => {
+it("retains cumulative choices and exact reference selection when disclosures toggle", async () => {
   const value = fixture();
   value.list.mockImplementation(async (kind, page) => kind === EntityKind.ACCOUNT ? page ? { resources: [value.accounts[1]] } : { resources: [value.accounts[0]], nextPageToken: "next-accounts" } : { resources: value.resources.filter(row => row.kind === kind) });
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
-  const section = disclosure("Accounts & routing"); toggle(section, true); change("Add AI account", value.accounts[0].id);
-  fireEvent.click(within(section).getByRole("button", { name: "More choices" }));
+  const section = disclosure("Accounts & routing"); toggle(section, true); await choose("Add AI account", value.accounts[0].id);
+  fireEvent.click(screen.getByRole("combobox", { name: "Add AI account" }));
+  fireEvent.click(within(section).getByRole("button", { name: "Load more Add AI account" }));
   await screen.findByRole("option", { name: /Second account/ });
+  expect(value.list.mock.calls.filter(([kind]) => kind === EntityKind.ACCOUNT).map(([, token]) => token)).toEqual(["", "", "next-accounts"]);
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Add AI account" }), { key: "Escape" });
   const before = value.list.mock.calls.length; toggle(section, false); toggle(section, true); fireEvent(window, new Event("resize"));
-  expect((screen.getByLabelText("Add AI account") as HTMLSelectElement).value).toBe(value.accounts[0].id);
-  expect(screen.getByText(/The selected Add AI account is outside this page or unavailable/)).toBeTruthy();
+  expect(scrollChoiceValue(screen.getByRole("combobox", { name: "Add AI account" }))).toBe(value.accounts[0].id);
+  fireEvent.click(screen.getByRole("combobox", { name: "Add AI account" }));
+  expect(screen.getByRole("option", { name: /First account/ })).toBeTruthy();
+  expect(screen.getByRole("option", { name: /Second account/ })).toBeTruthy();
   expect(value.list.mock.calls.length).toBe(before);
-  expect((within(section).getByRole("button", { name: "First choices" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(within(section).queryByRole("button", { name: "First choices" })).toBeNull();
 });
 
 it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("exposes collapsed read problems without claiming an empty inventory (%s)", async code => {
@@ -130,8 +175,8 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("expose
 it("keeps model capability failures scoped to the model selector", async () => {
   const value = fixture(); value.inventory.mockImplementation(() => { throw new ConnectError("Inventory unavailable", Code.Unavailable); });
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
-  expect(await screen.findByText(/server connection failed while loading these choices/)).toBeTruthy();
-  await screen.findByRole("option", { name: /First account/ });
+  expect(await within(screen.getByRole("combobox", { name: "Model" }).closest(".resource-choice") as HTMLElement).findByText(/server connection failed while loading these choices/)).toBeTruthy();
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Add AI account" }));
   await waitFor(() => expect(value.client.isFetching()).toBe(0));
   for (const title of ["Accounts & routing", "Instructions"]) {
     expect(disclosure(title).querySelector("summary")?.textContent).not.toContain("Needs attention");
@@ -149,21 +194,21 @@ it("distinguishes delayed, empty first/later pages and failed cached refresh", a
   await act(async () => release()); await ready(value);
   expect(within(section).getByText("No selectable Add AI account choices are on this page. More choices are available.")).toBeTruthy();
   toggle(section, true); value.list.mockImplementation(async () => ({ resources: [], nextPageToken: "another" }));
-  fireEvent.click(within(section).getByRole("button", { name: "More choices" })); await waitFor(() => expect(value.client.isFetching()).toBe(0));
+  fireEvent.click(screen.getByRole("combobox", { name: "Add AI account" })); fireEvent.click(within(section).getByRole("button", { name: "Load more Add AI account" })); await waitFor(() => expect(value.client.isFetching()).toBe(0));
   expect(within(section).getByText(/No selectable Add AI account choices are on this page. More choices are available/)).toBeTruthy();
   value.list.mockImplementation(async kind => ({ resources: kind === EntityKind.ACCOUNT ? value.accounts : [] }));
-  await act(async () => { await value.client.invalidateQueries(); }); await screen.findByRole("option", { name: /First account/ }); change("Add AI account", value.accounts[0].id);
+  await act(async () => { await value.client.invalidateQueries(); }); await screen.findByRole("button", { name: "Reload list" }); fireEvent.click(screen.getByRole("button", { name: "Reload list" })); await screen.findByRole("option", { name: /First account/ }); fireEvent.keyDown(screen.getByRole("combobox", { name: "Add AI account" }), { key: "Escape" }); await choose("Add AI account", value.accounts[0].id);
   value.list.mockImplementation(async kind => { if (kind === EntityKind.ACCOUNT) throw new ConnectError("Unavailable", Code.Unavailable); return { resources: [] }; });
   toggle(section, false); await act(async () => { await value.client.invalidateQueries(); });
   await waitFor(() => expect(section.querySelector("summary")?.textContent).toContain("Needs attention"));
   expect(within(section).getByText(/Showing cached Add AI account choices/)).toBeTruthy();
-  expect((screen.getByLabelText("Add AI account") as HTMLSelectElement).value).toBe(value.accounts[0].id);
+  expect(scrollChoiceValue(screen.getByRole("combobox", { name: "Add AI account" }))).toBe(value.accounts[0].id);
 });
 
 it("reveals a hidden invalid control and keeps unrelated draft values", async () => {
   const value = fixture(); render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
-  change("Name", "Retained draft"); change("Model", value.model.id);
-  const section = disclosure("Native harness options"); toggle(section, true); change("Maximum concurrency (0 uses native default)", "65"); toggle(section, false);
+  change("Name", "Retained draft"); await choose("Model", value.model.id);
+  const section = disclosure("Native harness options"); toggle(section, true); change("Maximum concurrency (0 uses native default)", "4294967296"); toggle(section, false);
   expect(section.querySelector("summary")?.textContent).toContain("Needs attention");
   const input = screen.getByLabelText("Maximum concurrency (0 uses native default)") as HTMLInputElement;
   expect(document.querySelector<HTMLFormElement>(".agent-configuration")!.checkValidity()).toBe(false);
@@ -208,7 +253,7 @@ it("shows unsupported stored enums and native options without changing them", as
 it("keeps the byte-identical uncertain request through disclosure and resize", async () => {
   const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
-  change("Name", "Exact retry"); change("Model", value.model.id); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  change("Name", "Exact retry"); await choose("Model", value.model.id); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   const retry = await screen.findByRole("button", { name: "Retry the same configuration" });
   for (const section of document.querySelectorAll<HTMLDetailsElement>(".agent-disclosure")) { toggle(section, true); toggle(section, false); } fireEvent(window, new Event("resize")); fireEvent.click(retry);
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2)); expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
@@ -221,37 +266,38 @@ it("blocks a stale revision without losing the Agent draft", async () => {
   await act(async () => { await value.client.invalidateQueries(); }); expect(await screen.findByText(/This entry changed elsewhere/)).toBeTruthy(); expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true); expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Unsaved");
 });
 
-it.each(["navigation", "Escape then navigation", "reselection then navigation"])("disposes Agent disclosures, draft and uncertain retry on %s", async route => {
-  const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
-  function Harness() { const [visible, setVisible] = useState(false); return <><button onClick={() => setVisible(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Navigate away fixture</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
-  render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Abandoned"); change("Model", value.model.id); toggle(disclosure("Reasoning"), true); change("Reasoning effort", "high"); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await screen.findByRole("button", { name: "Retry the same configuration" });
-  if (route === "Escape then navigation") fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { key: "Escape" });
-  if (route === "reselection then navigation") fireEvent.click(opener);
-  expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Navigate away fixture" }));
-  expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(""); expect(disclosure("Reasoning").open).toBe(false); expect((screen.getByLabelText("Reasoning effort") as HTMLInputElement).value).toBe(""); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull(); expect(value.save).toHaveBeenCalledTimes(1);
+it("keeps all Codex permissions selectable and saves concurrency above the former product cap", async () => {
+  const value = fixture();
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
+  await ready(value);
+  const permission = screen.getByLabelText("Permission mode");
+  expect(within(permission).getAllByRole("option").map(option => (option as HTMLOptionElement).value)).toEqual(["default", "read-only", "workspace-write", "full-access"]);
+  for (const mode of ["default", "read-only", "workspace-write", "full-access"]) {
+    change("Permission mode", mode);
+    expect((permission as HTMLSelectElement).value).toBe(mode);
+  }
+  expect(screen.getByText(/managed authentication file/)).toBeTruthy();
+  toggle(disclosure("Native harness options"), true);
+  change("Maximum concurrency (0 uses native default)", "1024");
+  change("Name", "Native concurrency"); await choose("Model", value.model.id);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(decoded(value.save.mock.calls[0][0]).options).toEqual({ permission: "full-access", max_concurrency: 1024 });
 });
 
-it("ignores a late accepted Agent response after closing and replacing the opening", async () => {
-  const value = fixture(); let release!: () => void; let pendingSignal: AbortSignal | undefined;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  const delayed: Transport = { ...value.transport, unary: async (method, signal, ...args) => {
-    if (method.name !== "SaveConfiguration") return value.transport.unary(method, signal, ...args);
-    const accepted = await value.transport.unary(method, undefined, ...args); pendingSignal = signal;
-    await gate; return accepted;
-  } };
-  const view = render(value.view(<Settings visible />, delayed));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Original accepted Agent"); change("Model", value.model.id); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await waitFor(() => expect(pendingSignal).toBeTruthy());
-  view.rerender(value.view(<Settings visible={false} />, delayed)); expect(pendingSignal!.aborted).toBe(true);
-  view.rerender(value.view(<Settings visible />, delayed));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" })); fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" })); await ready(value);
-  change("Name", "Replacement draft"); await act(async () => release());
-  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Replacement draft"); expect(value.save).toHaveBeenCalledTimes(1);
-  expect(disclosure("Reasoning").open).toBe(false); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
+it("disables unavailable Claude settings and clears only the explicitly selected retained value", async () => {
+  const value = fixture();
+  const data = { name: "Retained Claude", harness: "claude-code", model_id: value.model.id, effort: "Future-Effort", options: { permission: "default", service_tier: "future-tier", subagent_effort: "future-child", max_concurrency: 1024, future_option: "keep" } };
+  const agent = resource(EntityKind.AGENT, data, 5n); value.resources.push(agent);
+  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
+  await ready(value);
+  toggle(disclosure("Native harness options"), true);
+  expect((screen.getByLabelText("Service tier") as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Service tier") as HTMLInputElement).value).toBe("future-tier");
+  expect((screen.getByLabelText("Subagent effort") as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Clear retained option: Service tier" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = decoded(value.save.mock.calls[0][0]);
+  expect(saved).toEqual({ ...data, options: { ...data.options, service_tier: "" } });
 });

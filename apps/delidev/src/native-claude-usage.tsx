@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 enum Source { Start = "provider-message-start", Block = "block-complete", Metadata = "provider-message-metadata", Result = "input-result" }
@@ -42,36 +43,41 @@ function valid(v: Record<string, unknown>) {
   if (v.source === Source.Result) return result(v.result) && v.provider === undefined && v.message_id === undefined && v.native_message_id === undefined && v.model === undefined && v.index === undefined;
   return Object.values(Source).includes(v.source as Source) && provider(v.provider) && v.result === undefined && messageID(v.message_id) && text(v.native_message_id, 1024) && v.native_message_id.trim().length > 0 && label(v.model) && (v.source === Source.Block ? v.index !== undefined : v.index === undefined);
 }
-const labels = [["input_tokens", "Input excluding cache"], ["cache_read_input_tokens", "Cache read input"], ["cache_creation_input_tokens", "Cache creation input"], ["output_tokens", "Output including thinking"]] as const;
+const labels = () => [["input_tokens", copy("native-claude-usage.extra.7fa3de9600ee")], ["cache_read_input_tokens", copy("native-claude-usage.extra.085171a719a1")], ["cache_creation_input_tokens", copy("native-claude-usage.extra.7018ea47815e")], ["output_tokens", copy("native-claude-usage.extra.ca019159180d")]] as const;
 function ProviderCounts({ value }: { value: unknown }) {
-  if (value == null) return <p>Main-loop usage unavailable.</p>;
+  useLocale();
+  if (value == null) return <><p>{copy("native-claude-usage.mainLoopUsageUnavailable_8890bb")}</p><p>{copy("native-claude-usage.evidenceHelp")}</p></>;
   const p = object(value);
-  return <><dl>{labels.map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? "Unavailable" : p[key] as string}</dd></div>)}</dl><details><summary>Native usage details</summary><pre>{JSON.stringify(p, null, 2)}</pre></details></>;
+  return <><dl>{labels().map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><details><summary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</summary><pre>{JSON.stringify(p, null, 2)}</pre></details></>;
 }
 
 export function NativeClaudeProviderUsage({ value }: { value: unknown }) {
-  return provider(value) ? <ProviderCounts value={value} /> : <p>Native provider usage unavailable.</p>;
+  useLocale();
+  return provider(value) ? <ProviderCounts value={value} /> : <><p>{copy("native-claude-usage.nativeProviderUsageUnavailable_e70578")}</p><p>{copy("native-claude-usage.evidenceHelp")}</p></>;
 }
 
 export function NativeClaudeUsage({ value }: { value: Record<string, unknown> }) {
-  if (!valid(value)) return <p>The retained Claude usage observation is unavailable or inconsistent.</p>;
+  useLocale();
+  if (!valid(value)) return <><p>{copy("native-claude-usage.theRetainedClaudeUsageObservationIs_5789fe")}</p><p>{copy("native-claude-usage.evidenceHelp")}</p></>;
   const retained = object(value.result);
-  return <section aria-label="Claude native usage">
-    <p>Source: {value.source === Source.Result ? "Original input result" : value.source === Source.Start ? "Provider message start" : value.source === Source.Block ? `Completed native block ${Number(value.index) + 1}` : "Provider message metadata"}</p>
+  return <section aria-label={copy("native-claude-usage.claudeNativeUsage_53a311")}>
+    <p><LocalizedText id="native-claude-usage.source_590a7b" components={{ s0: <>{value.source === Source.Result ? copy("native-claude-usage.originalInputResult_8746ee") : value.source === Source.Start ? copy("native-claude-usage.providerMessageStart_1f2c60") : value.source === Source.Block ? copy("native-claude-usage.completedNativeBlock_9f2f2e", { v0: Number(value.index) + 1 }) : copy("native-claude-usage.providerMessageMetadata_9b71ca")}</> }} /></p>
     {value.source === Source.Result ? <>
       <NativeClaudeResultUsage value={retained} />
     </> : <ProviderCounts value={value.provider} />}
-    <p>Native reports overlap. Main-loop usage excludes auxiliary and subagent calls; cumulative model values belong to the original native runtime. Output includes thinking. These reports and native estimates are not added to billed usage, price estimates or session budgets.</p>
+    <p>{copy("native-claude-usage.nativeReportsOverlapMainLoopUsage_9fa040")}</p>
   </section>;
 }
 
 export function NativeClaudeResultUsage({ value }: { value: unknown }) {
-  if (!result(value)) return <p>The retained Claude result usage is unavailable or inconsistent.</p>;
+  useLocale();
+  if (!result(value)) return <><p>{copy("native-claude-usage.theRetainedClaudeResultUsageIs_c820c7")}</p><p>{copy("native-claude-usage.evidenceHelp")}</p></>;
   const retained = object(value), models = object(retained.native_cumulative_models);
-  return <section aria-label="Claude result usage">
-      <h4>Native main-loop turn</h4><ProviderCounts value={retained.main_loop_turn} />
-      <h4>Native cumulative model ledger</h4>
-      {retained.native_cumulative_models == null ? <p>Unavailable</p> : Object.keys(models).length === 0 ? <p>No model entries reported.</p> : Object.entries(models).map(([name, usage]) => <details key={name}><summary>{name}</summary><pre>{JSON.stringify(usage, null, 2)}</pre></details>)}
-      <dl><dt>Native cumulative USD estimate</dt><dd>{retained.native_cumulative_cost_usd == null ? "Unavailable" : retained.native_cumulative_cost_usd as string}</dd></dl>
+  return <section aria-label={copy("native-claude-usage.claudeResultUsage_3e6c8f")}>
+      <h4>{copy("native-claude-usage.nativeMainLoopTurn_7fae43")}</h4><ProviderCounts value={retained.main_loop_turn} />
+      <h4>{copy("native-claude-usage.nativeCumulativeModelLedger_46974a")}</h4>
+      {retained.native_cumulative_models == null ? <p>{copy("native-claude-usage.unavailable_ca1844")}</p> : Object.keys(models).length === 0 ? <p>{copy("native-claude-usage.noModelEntriesReported_d168a7")}</p> : Object.entries(models).map(([name, usage]) => <details key={name}><summary>{name}</summary><pre>{JSON.stringify(usage, null, 2)}</pre></details>)}
+      {retained.native_cumulative_models == null || retained.native_cumulative_cost_usd == null ? <p>{copy("native-claude-usage.evidenceHelp")}</p> : null}
+      <dl><dt>{copy("native-claude-usage.nativeCumulativeUsdEstimate_f82a7c")}</dt><dd>{retained.native_cumulative_cost_usd == null ? copy("native-claude-usage.unavailable_ca1844") : retained.native_cumulative_cost_usd as string}</dd></dl>
   </section>;
 }

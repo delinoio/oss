@@ -32,7 +32,7 @@ impl Connector {
             "device".into(),
             "inspect-local".into(),
             "--expected-endpoint".into(),
-            format!("http://{}", self.listen).into(),
+            self.runtime_endpoint()?.into(),
         ]);
         let value: DesktopRegistration =
             serde_json::from_value(result?).map_err(|_| NativeFailure::InvalidEvidence)?;
@@ -77,7 +77,7 @@ impl Connector {
                 // Go enforces the native-owned endpoint before any recovery
                 // intent or pairing mutation, using the same client authority.
                 "--expected-endpoint".into(),
-                format!("http://{}", self.listen).into(),
+                self.runtime_endpoint()?.into(),
             ])?)
             .map_err(|_| NativeFailure::InvalidEvidence)?;
             if metadata.device_id == device {
@@ -85,7 +85,18 @@ impl Connector {
             }
             // Reinspect the fixed active files after Go's durable publication.
             // No owner token, candidate path or argv selector crosses this API.
-            self.read_local_connection(metadata)
+            let connection = self.read_local_connection(metadata)?;
+            let generation = connection
+                .runtime_generation
+                .as_deref()
+                .ok_or(NativeFailure::InvalidEvidence)?;
+            self.reconcile_credential_access_after_registration_recovery(
+                &connection.server_id,
+                generation,
+                device,
+                &connection.device_id,
+            )?;
+            Ok(connection)
         })();
         match &result {
             Ok(_) => tracing::info!(
@@ -128,7 +139,8 @@ exit 1
         )
         .unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-        let connector = Connector::new(executable, temporary.path().join("server")).unwrap();
+        let connector =
+            crate::tests::fixture_connector(executable, temporary.path().join("server")).unwrap();
         assert!(matches!(
             connector.inspect_desktop_registration(),
             Err(NativeFailure::Incompatible)

@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "device-date-format"
+description = "Read or select the device-local date preset; no server configuration, arbitrary paths, or timestamp mutation."
+commands.allow = ["read_date_format", "update_date_format"]

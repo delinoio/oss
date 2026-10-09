@@ -8,7 +8,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { EntityKind, ErrorDetailSchema, ProviderService, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { LocalWorkerAction, LocalWorkerState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
+import { LocalWorkerAction, LocalWorkerManagementState, LocalWorkerState, type ControlLocalWorker, type LocalWorkerStatus } from "./local-worker-controls";
 import { Settings } from "./settings";
 
 type Page = { resources: Resource[]; nextPageToken?: string };
@@ -39,11 +39,36 @@ function failure(code: Code) {
   return { correlationId, error: new ConnectError("The server denied this read.", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "unavailable", guidance: "Retry the selected server read.", correlationId }) }]) };
 }
 
+it("preserves automatic presentation through the category lifetime before native status arrives", async () => {
+  const value = fixture(), pending = deferred<LocalWorkerStatus>();
+  const control = Object.assign(vi.fn(async (_action: LocalWorkerAction) => pending.promise), { automatic: true });
+  open(value, control);
+  expect(screen.getByText("DeliDev automatically starts and maintains this Worker while the app is running. Harnesses must already be installed.")).toBeTruthy();
+  expect(screen.getByText("Waiting for the authenticated local connection before checking this Worker.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Register this computer" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
+  await act(async () => pending.resolve({ ...status(LocalWorkerState.Running), controller_active: true, management: { state: LocalWorkerManagementState.Running, attempts: 0, retry_ms: 0, owned_by_app: false } }));
+  await screen.findByText("Running");
+  expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+});
+
+it("keeps the original Runner Devices controller mounted under the local problem dialog", async () => {
+ const value = fixture(), current: LocalWorkerStatus = { ...status(), management: { state:LocalWorkerManagementState.Blocked,attempts:1,retry_ms:0,owned_by_app:false,failure:"unconfirmed-exit" } };
+ const control = Object.assign(vi.fn(async (_action:LocalWorkerAction) => current),{automatic:true});
+ open(value,control);
+ const opener = await screen.findByRole("button",{name:"View problem details"});opener.focus();fireEvent.click(opener);
+ const dialog = screen.getByRole("dialog",{name:"Local Worker problem"});
+ expect(screen.getByRole("heading",{level:1,name:"Runner Devices"})).toBeTruthy();
+ const reads = control.mock.calls.length; expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
+ fireEvent.click(within(dialog).getByRole("button",{name:"Close Local Worker problem"}));
+ expect(document.activeElement).toBe(opener);expect(control).toHaveBeenCalledTimes(reads);
+});
+
 it("renders the approved uncertain/loading hierarchy without duplicate guidance or fake records", async () => {
   const value = fixture(), pending = deferred<Page>(), current = status(); value.list.mockReturnValue(pending.promise);
   const control = vi.fn(async (_action: LocalWorkerAction) => current); open(value, control);
   await screen.findByText("Exit unconfirmed");
-  expect(screen.getAllByText("Worker exit is unconfirmed. Inspect its private log and original session recovery before explicitly replacing the controller.")).toHaveLength(1);
+  expect(screen.getAllByText("Worker exit is unconfirmed. Refresh its original status and review the affected session recovery before explicitly replacing the controller.")).toHaveLength(1);
   expect(screen.getByText(`Execution machine: ${current.machine_id}`)).toBeTruthy();
   const inventory = screen.getByRole("region", { name: "Saved runner devices" });
   expect(within(inventory).getByRole("status").textContent).toBe("Loading runner devices...");
@@ -53,7 +78,7 @@ it("renders the approved uncertain/loading hierarchy without duplicate guidance 
   expect(screen.queryByText("No saved entries.")).toBeNull();
   expect(screen.getByRole("button", { name: "Start local Worker" }).className).toBe("primary");
   expect((screen.getByRole("button", { name: "Stop local Worker" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull();
   await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.MACHINE, "", 50));
   expect(control.mock.calls.every(([action]) => action === LocalWorkerAction.Status)).toBe(true);
 });
@@ -74,12 +99,10 @@ it("hides pages only for successful empty first pages without continuation", asy
 it("retains empty continuation/later pages and uses the original opaque cursor", async () => {
   const value = fixture(), token = "opaque/+==?token";
   value.list.mockImplementation(async (_kind, page) => ({ resources: [], nextPageToken: page ? "" : token })); open(value);
-  await screen.findByText("No saved entries on this page."); fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByText("No saved entries on this page."); fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
   await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.MACHINE, token, 50));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true));
-  expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  expect(screen.getByRole("navigation", { name: "Settings pages" })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull());
+  expect(screen.getByText("No saved entries.")).toBeTruthy();
 });
 it.each([Code.PermissionDenied, Code.Unavailable])("keeps initial failure %s distinct from successful emptiness", async code => {
   const value = fixture(), pending = deferred<Page>(), problem = failure(code); value.list.mockReturnValue(pending.promise); open(value);
@@ -88,7 +111,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])("keeps initial failure %s dis
   expect((await screen.findByRole("alert")).textContent).toContain(problem.correlationId);
   expect(screen.queryByText(/No saved entries/)).toBeNull();
   expect(screen.queryByText("Loading runner devices...")).toBeNull();
-  expect(screen.getByRole("navigation", { name: "Settings pages" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Refresh settings" })).toBeTruthy();
 });
 it.each([false, true])("retains the previous observation on failed refresh (empty=%s) without a Worker read", async empty => {
   const value = fixture(empty ? [] : [machine("Retained machine")]), current = status(), control = vi.fn(async (_action: LocalWorkerAction) => current); open(value, control);
@@ -102,12 +125,18 @@ it.each([false, true])("retains the previous observation on failed refresh (empt
   expect(screen.getByRole("alert").textContent).toContain(problem.correlationId);
   expect(control.mock.calls).toHaveLength(calls);
 });
-it("removes the list-only scope for machine detail and other categories", async () => {
-  const row = machine("Detail machine"), value = fixture([row]); open(value);
+it("retains the Runner Devices list beneath detail and removes its scope for other categories", async () => {
+  const row = machine("Detail machine"), value = fixture([row]); open(value, async () => status());
+  const worker = await screen.findByRole("region", { name: "Worker on this computer" });
+  const column = worker.closest(".settings-runner-column");
+  expect(column).not.toBeNull();
   const content = screen.getByRole("region", { name: "Settings content" }); expect(content.classList.contains("settings-runner-devices")).toBe(true);
   fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
-  expect(content.classList.contains("settings-runner-devices")).toBe(false); expect(screen.queryByRole("heading", { name: "Saved runner devices" })).toBeNull();
-  expect(screen.getByText(/Checks run on this Worker/)).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: "Back to Runner Devices" }));
+  expect(content.classList.contains("settings-runner-devices")).toBe(true); expect(screen.getByRole("heading", { name: "Saved runner devices", hidden: true })).toBeTruthy();
+  expect(worker.closest("[hidden]")).toBeNull();
+  expect(worker.closest(".settings-runner-column")).toBe(column);
+  expect(worker.closest("fieldset")?.hasAttribute("inert")).toBe(true);
+  expect(screen.getByText(/These optional checks help troubleshoot failures/)).toBeTruthy(); fireEvent.click(screen.getByRole("button", { name: /^Close / }));
   expect(content.classList.contains("settings-runner-devices")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-runner-devices")).toBe(false);
 });

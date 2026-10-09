@@ -5,6 +5,16 @@
 import { SubscriptionService } from "./subscription_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SubscriptionService.CleanupFailedSubscriptions
+ */
+export const cleanupFailedSubscriptions = SubscriptionService.method.cleanupFailedSubscriptions;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.GetFailedSubscriptionCleanup
+ */
+export const getFailedSubscriptionCleanup = SubscriptionService.method.getFailedSubscriptionCleanup;
+
+/**
  * @generated from rpc delidev.v1.SubscriptionService.RequestSubscriptionObservation
  */
 export const requestSubscriptionObservation = SubscriptionService.method.requestSubscriptionObservation;
@@ -43,6 +53,16 @@ export const cancelSubscription = SubscriptionService.method.cancelSubscription;
  * @generated from rpc delidev.v1.SubscriptionService.GetSubscriptionProgress
  */
 export const getSubscriptionProgress = SubscriptionService.method.getSubscriptionProgress;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.SubmitSubscriptionLoginCode
+ */
+export const submitSubscriptionLoginCode = SubscriptionService.method.submitSubscriptionLoginCode;
+
+/**
+ * @generated from rpc delidev.v1.SubscriptionService.TakeSubscriptionLoginCode
+ */
+export const takeSubscriptionLoginCode = SubscriptionService.method.takeSubscriptionLoginCode;
 
 /**
  * @generated from rpc delidev.v1.SubscriptionService.ForwardSubscriptionCallback

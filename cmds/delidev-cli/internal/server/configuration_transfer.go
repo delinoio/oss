@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -41,7 +42,7 @@ func transferLimit() error {
 // Observed readiness/provenance cannot cross a server boundary. In particular,
 // even keyless accounts require a fresh explicit connection and validation.
 func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, error) {
-	value, err := configurationValue(kind, raw)
+	value, err := configurationValue(kind, raw, incoming)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	switch v := value.(type) {
 	case *domain.Agent:
 		if v.ReconfigurationRequired {
-			return nil, domain.SubscriptionReconfigurationRequired()
+			return nil, domain.AgentReconfigurationRequired()
 		}
 	case *domain.Provider:
 		if v.Protocol == domain.NativeSubscription {
@@ -78,6 +79,7 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		}
 	case *domain.Account:
 		v.Subscription = nil
+		v.RetainedConnections = nil
 		v.Health = domain.AccountDisconnected
 		v.Quota = []domain.QuotaWindow{}
 		v.ConfirmedExhausted = false
@@ -105,6 +107,9 @@ func portableDocument(kind domain.Kind, raw []byte) (json.RawMessage, error) {
 	value, err := portableValue(kind, raw, false)
 	if err != nil {
 		return nil, err
+	}
+	if provider, ok := value.(*domain.Provider); ok {
+		*provider = providers.WithAPIFormats(*provider)
 	}
 	return json.Marshal(value)
 }
@@ -156,13 +161,15 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 				if v.Remediation.MachineID != "" {
 					machineIDs[v.Remediation.MachineID] = true
 				}
+			case *domain.Provider:
+				*v = providers.WithAPIFormats(*v)
 			}
 			raw, err := json.Marshal(value)
 			if err != nil {
 				return bundle, err
 			}
 			size += len(raw)
-			if size > domain.MaxConfigurationBundleBytes || checkouts > domain.MaxConfigurationCheckouts {
+			if size > domain.MaxConfigurationBundleBytes || checkouts > domain.MaxConfigurationCheckouts || len(machineIDs) > domain.MaxConfigurationCheckouts {
 				return bundle, transferLimit()
 			}
 			bundle.Entries = append(bundle.Entries, domain.ConfigurationEntry{ID: row.ID, Kind: kind, Document: raw})
@@ -299,7 +306,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if (bundle.Version != 1 && bundle.Version != domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
+	if (bundle.Version < 1 || bundle.Version > domain.ConfigurationBundleVersion) || len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
@@ -311,6 +318,18 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
+		}
+		if bundle.Version < 4 && (entry.Kind == domain.ProviderKind || entry.Kind == domain.AccountKind) {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(entry.Document, &fields) != nil {
+				return plan, transferInvalid()
+			}
+			if _, present := fields["api_formats"]; present {
+				return plan, domain.Fail(domain.Unsupported, "API profiles require portable version 4.", "Export the complete current configuration.")
+			}
+			if _, present := fields["api_protocol"]; present {
+				return plan, domain.Fail(domain.Unsupported, "Account API formats require portable version 4.", "Export the complete current configuration.")
+			}
 		}
 		if bundle.Version == 1 {
 			var legacy struct {
@@ -434,7 +453,27 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				err = rewrite(&v.ProviderID, domain.ProviderKind)
 			}
 		case *domain.Agent:
-			if err = rewrite(&v.ModelID, domain.ModelKind); err == nil {
+			if len(v.Routes) == 0 {
+				err = rewrite(&v.ModelID, domain.ModelKind)
+			} else {
+				if bundle.Version < 3 {
+					return plan, domain.Fail(domain.Unsupported, "Account source routes require portable version 3.", "Export the complete current configuration.")
+				}
+				for i := range v.Routes {
+					if err = rewrite(&v.Routes[i].ModelID, domain.ModelKind); err != nil {
+						break
+					}
+					for j := range v.Routes[i].Accounts {
+						if err = rewrite(&v.Routes[i].Accounts[j].ID, domain.AccountKind); err != nil {
+							break
+						}
+					}
+					if err != nil {
+						break
+					}
+				}
+			}
+			if err == nil {
 				err = rewriteIDs(v.Templates, domain.TemplateKind)
 			}
 			if err == nil {
@@ -492,6 +531,15 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			change.Before, err = portableDocument(old.Kind, old.Data)
 			if err != nil {
 				return plan, err
+			}
+			if change.Action == domain.ConfigurationReuse && change.Kind == domain.ProviderKind {
+				// Managed presets expose current profiles without rewriting legacy
+				// rows. Compare both reused documents through that same projection,
+				// including old portable bundles; reuse never updates the stored row.
+				change.After, err = portableDocument(change.Kind, change.After)
+				if err != nil {
+					return plan, err
+				}
 			}
 			if change.Action == domain.ConfigurationReuse && !bytes.Equal(change.Before, change.After) {
 				return plan, domain.Fail(domain.Conflict, "Explicitly reused configuration does not match the imported values.", "Preserve both configurations as separate entries, or edit the import before requesting another preview.")

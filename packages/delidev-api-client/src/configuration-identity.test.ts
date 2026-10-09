@@ -48,3 +48,15 @@ it("maps only closed generated service enums without inferring an API provider",
   expect(subscriptionServiceFromWire(SubscriptionServiceIdentity.UNSPECIFIED)).toBeUndefined();
   expect(subscriptionServiceFromWire(99 as SubscriptionServiceIdentity)).toBeUndefined();
 });
+
+it("accepts only the ordered Agent schema-3 family and preserves legacy versions", () => {
+  const body = { routes: [{ model_id: "model", accounts: [{ id: "account", weight: 1 }] }] };
+  expect(supportsResourceSchema(resource(EntityKind.AGENT, body, 3))).toBe(true);
+  expect(configurationSchemaVersion(EntityKind.AGENT, body)).toBe(3);
+  expect(supportsResourceSchema(resource(EntityKind.AGENT, { ...body, reconfiguration_required: true }, 3))).toBe(true);
+  for (const invalid of [{ routes: [] }, { ...body, model_id: "other" }, { ...body, accounts: [{ id: "other" }] }, { ...body, routing: "priority" }]) {
+    expect(supportsResourceSchema(resource(EntityKind.AGENT, invalid, 3))).toBe(false);
+  }
+  expect(supportsResourceSchema(resource(EntityKind.MODEL, body, 3))).toBe(false);
+  expect(supportsResourceSchema(resource(EntityKind.AGENT, body, 4))).toBe(false);
+});

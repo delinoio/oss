@@ -1,5 +1,20 @@
 # DeliDev provider inspection
 
+## Inference profiles and inspection profiles
+
+The [REST registry](cmds-delidev-catalog-contract.md#official-rest-profile-registry)
+declares each offered API format separately. The common server resolver first
+selects the account's declared format or original legacy tuple and checks its
+connection-generation pin. The inspector then matches that complete official
+tuple to the fixed canonical catalog/authentication routes already owned here.
+Inference suffixes never become model-list or key-inspection paths. OpenRouter
+Messages and Responses both use `GET /api/v1/key` and `GET /api/v1/models` with
+Bearer and the OpenAI catalog parser; neither sends Messages or Responses during
+validation. Custom URLs remain advisory. Credential state, late-publication
+revision/connection checks, bounded GET inspection, outbound routing and secret
+clearing retain their existing ownership.
+
+
 ## Ownership and scope
 
 The server owns non-inference API checks in `cmds/delidev-cli/internal/providers`, exposed through `AccountService.ValidateAccount` and `account validate --id ID --revision N`. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This inspector implements bounded model-list inspection and credential evidence. Automatic catalog publication and provider presets are integrated through the separate [catalog contract](cmds-delidev-catalog-contract.md). Quota refresh, subscription authentication, API proxy execution and selected-model/harness validation remain required work and must preserve the same explicit authority and secret boundaries.
@@ -8,13 +23,13 @@ Only owner/paired-client RPCs can invoke validation. The key is read from the cu
 
 ## HTTP boundary
 
-Inspection uses only `GET` requests under the saved provider's API base path or the exact documented native/private endpoints below. OpenAI Chat Completions/Responses-compatible providers use `/models`; Anthropic Messages-compatible providers use `/models?limit=1000` and bounded `after_id` pagination. The exact OpenRouter profile uses explicit `limit=500`, numeric `offset` and `output_modalities=all`; it validates `total_count` when present and accepts older count-less responses only through a bounded short-page walk. It never follows response pagination URLs. It sends the configured bearer or `x-api-key` authentication, adds the Anthropic API version where applicable, and fixes `HTTP-Referer: https://deli.dev`. It accepts no caller-supplied headers or destination overrides. Configuration rejects credentials, queries (including an empty query marker), fragments, encoded path components, backslashes and traversal segments in base URLs.
+Inspection uses only `GET` requests under the saved provider's API base path or the exact documented native/private endpoints below. OpenAI Chat Completions/Responses-compatible providers use `/models`; Anthropic Messages-compatible providers use `/models?limit=1000` and bounded `after_id` pagination. The exact OpenRouter profile uses explicit `limit=500`, numeric `offset` and `output_modalities=text`; it validates `total_count` when present and accepts older count-less responses only through a bounded short-page walk. The text-output filter retains models with image/audio inputs and excludes image-, audio- and video-only output models whose token context may be zero. Context-limit validation remains strictly positive; this filtered observation never deletes previously saved models. It never follows response pagination URLs. It sends the configured bearer or `x-api-key` authentication, adds the Anthropic API version where applicable, and fixes `HTTP-Referer: https://deli.dev`. It accepts no caller-supplied headers or destination overrides. Configuration rejects credentials, queries (including an empty query marker), fragments, encoded path components, backslashes and traversal segments in base URLs.
 
 HTTPS verifies the system trust roots and hostname; plaintext is allowed only on explicit loopback. Direct and exact-bypass routing dial literal `localhost` through actual loopback IPs instead of an external resolver. Explicit proxy routing retains the original destination authority. Plaintext loopback provider requests require Direct or an explicit matching bypass and are rejected before connection otherwise; they never expose an account key through a proxy tunnel or silently change routes. Verified HTTPS destinations may use the selected proxy. Requests do not inherit environment proxy settings or cookies. Production inspection now applies the explicit selected server profile through the [outbound networking contract](cmds-delidev-network-contract.md), including catalog and credential checks. Worker selections cannot affect it, and failures never fall back.
 
 The entire inspection has a 20-second context deadline, with bounded dial, TLS handshake and response-header waits. Response headers are limited to 32 KiB. Successful JSON bodies are limited to 4 MiB each and private checks plus model pages to 16 MiB in aggregate, 32 pages and 10,000 models. Connections are not reused, avoiding transport retries on a previously used connection. No HTTP redirect, provider retry, protocol translation, inference or account/model fallback occurs.
 
-Provider JSON may contain future fields, but known fields use exact names. Invalid UTF-8, duplicate keys, extra documents, excessive nesting, malformed model identity, duplicate identities and incomplete/looping pagination fail the whole inspection. Model identifiers and advisory display names are bounded; native IDs remain exact and are sorted only for stable output. Optional context limits, input/output modalities and supported tool/reasoning parameter evidence remain advisory. Missing/null fields remain unknown; an explicit supported-parameter list can establish an advisory false. Invalid known metadata rejects the complete response. Reflected raw/Base64 key strings in retained fields are rejected. Error bodies, arbitrary diagnostic headers, redirect locations, account labels and provider request IDs are discarded. Only typed failures, HTTP status and a parsed bounded Retry-After value leave the HTTP layer. The inspector never retries a request. The separate periodic catalog task uses an accepted retry delay as a minimum interval for its next new observation.
+Provider JSON may contain future fields, but known fields use exact names. Invalid UTF-8, duplicate keys, extra documents, excessive nesting, malformed model identity, duplicate identities and incomplete/looping pagination fail the whole inspection. Model identifiers and advisory display names are bounded; native IDs remain exact and are sorted only for stable output. The bounded model-ID character set includes `~`, preserving OpenRouter latest aliases without resolving or rewriting them. Optional context limits, input/output modalities and supported tool/reasoning parameter evidence remain advisory. Missing/null fields remain unknown; an explicit supported-parameter list can establish an advisory false. Invalid known metadata rejects the complete response. Reflected raw/Base64 key strings in retained fields are rejected. Error bodies, arbitrary diagnostic headers, redirect locations, account labels and provider request IDs are discarded. Only typed failures, closed content-free diagnostic classifications, HTTP status and a parsed bounded Retry-After value leave the HTTP layer. The inspector never retries a request. The separate periodic catalog task uses an accepted retry delay as a minimum interval for its next new observation.
 
 Context limits use the same raw/Base64 key comparison as string metadata, applied to the exact decimal representation that will be retained. A reflected numeric credential rejects the whole model page without exposing a partial catalog.
 
@@ -37,7 +52,7 @@ Disconnection cancels that account's outstanding check before credential cleanup
 
 Account metadata contains the connection-bound `validation` observation: request identity, timestamp, state, authentication evidence, model count, bounded status/retry metadata and sanitized problem. General configuration cannot forge or remove it. Disconnect clears the current observation. `ValidateAccount` returns both the current account and the accepted observation; CLI output retains both when a validation problem produces a nonzero typed exit code.
 
-Logs record account/request/correlation identities, phase, state, authentication evidence, failure classification and duration. They exclude keys, raw responses, endpoints and model content. Account validation never persists models. The separate catalog publication operation preserves manual registrations, display preferences and canonical identity as specified in its contract.
+Logs record account/request/correlation identities, phase, state, authentication evidence, failure classification and duration. Credential and model-catalog failures also log closed `inspection_stage` and `inspection_reason` classifications; parser error prose never enters logs. These fields are transient diagnostics, not public RPC or durable receipt fields. They exclude keys, raw responses, endpoints and model content. Account validation never persists models. The separate catalog publication operation preserves manual registrations, display preferences and canonical identity as specified in its contract.
 
 ## Verification and references
 
@@ -111,3 +126,20 @@ Official model-interface sources for the additions:
 - [Alibaba Model Studio — Hong Kong](https://help.aliyun.com/en/model-studio/list-models)
 
 The generated native guidance JSON uses exact-path LF normalization so Windows checkouts preserve the canonical Go-generated bytes. Registry freshness is compared byte-for-byte on every supported test host; line-ending differences cannot hide stale guidance.
+
+## Inline Worker models and endpoint-only completion reservation
+
+ListEndpointModels reuses fixed listing profiles and existing pagination/redaction/outbound/cancellation bounds, without gateway credential-validation requests. Its read neither changes account state nor stores catalogs, resources, events or receipts. Account validation keeps its independent credential-evidence behavior.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+
+## Automatic API verification
+
+The joined server maintenance owner validates enabled connected API accounts whose providers are enabled and whose credential removal is absent. Reuse the explicit `ValidateAccount` implementation, protected selected-profile resolver, once-only receipts and atomic observation/health publication. No inference is performed. Custom public model listings cannot establish credential authentication; unsupported remains unverified. Discovery alone never changes authentication health or clears exhaustion.
+
+Missing validation for the current connection is immediately due, including after restart and API format changes. Later validation uses its own persisted completion time plus the greater of 15 minutes and accepted Retry-After. Catalog due time remains independent. When both are due, validation runs first, then the worker rereads the confirmed account revision and original connection before permitted discovery. Accepted failed/unsupported validation does not prevent discovery. Provider discovery disablement prevents catalog publication but does not prevent validation; validation may itself inspect a model endpoint.
+
+Automatic-only admission and publication require enabled account/provider authority. Account or provider disablement cancels the applicable automatic check under the account gate; discovery disablement preserves its catalog-only cancellation. Disconnect, deletion, connection replacement, revision/profile change, authorization and shutdown retain the original inspector fences. Explicit RPC/replay semantics remain unchanged. Keep the four-worker joined pool, eight-inspection bound, one operation per account, two-second ticker, 100-ms scan spacing and 30-second cooldown for unaccepted work. Shutdown joins work before vault/database release. Logs retain safe operation/account/request/correlation identities, closed outcomes and duration only.
+
+CLI account validation and explicit provider discovery use 50-second outer and response-header limits: up to 20 seconds for an optional OAuth refresh, five seconds for independent settlement, 20 seconds for inspection and five seconds for the typed response. Earlier caller cancellation wins. Ordinary provider reads/account connection and every upstream limit remain unchanged; this adds no retry or fallback.

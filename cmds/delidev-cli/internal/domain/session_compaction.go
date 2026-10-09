@@ -51,7 +51,7 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
-	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && a.Installation.Version == ClaudeProtocolVersion || i.Version == 2 && a.Configuration.Harness == Codex && CodexVersionAllowed(a.Installation.Version) || i.Version == 3 && a.Configuration.Harness == OpenCode && a.Installation.Version == OpenCodeProtocolVersion
+	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version)) || i.Version == 2 && a.Configuration.Harness == Codex && (a.Version == 4 || CodexVersionAllowed(a.Installation.Version)) || i.Version == 3 && a.Configuration.Harness == OpenCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version))
 	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
 		return CompactionUncertain()
 	}
@@ -67,11 +67,15 @@ func (i SessionCompactionInput) Validate() error {
 	if i.Dispatch != DispatchReady && i.Dispatch != DispatchPaused && i.Dispatch != DispatchBlocked {
 		return CompactionUncertain()
 	}
-	// Every nested restore field remains the immutable original assignment;
-	// only fresh operation identities and the verified predecessor may differ.
+	// Preserve the immutable source while deriving a fresh continuation.
+	// Its one-shot retry/Fork imports cannot run again during restoration.
 	c := i.Restore.Continuation
 	want := a
 	want.Version, want.ExecutionID, want.InputID = 2, i.ActionID, i.Restore.InputID
+	if a.Version == 4 {
+		want.Version = 4
+	}
+	want.Retry, want.Fork = nil, nil
 	want.ThreadRequestID, want.TurnRequestID, want.Continuation = i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c
 	expected, err := json.Marshal(want)
 	actual, actualErr := json.Marshal(i.Restore)
@@ -79,9 +83,11 @@ func (i SessionCompactionInput) Validate() error {
 	history := a.ExecutionID
 	if a.Continuation != nil {
 		history = a.Continuation.HistoryExecutionID
+	} else if a.Fork != nil {
+		history = a.Fork.RuntimeID
 	}
 	sameRef := i.Previous == nil && c.Compaction == nil || i.Previous != nil && c.Compaction != nil && *i.Previous == *c.Compaction
-	if err != nil || actualErr != nil || originalErr != nil || !bytes.Equal(expected, actual) || !sameRef || c.HistoryExecutionID != history || c.Previous.ExecutionID != a.ExecutionID || c.Previous.InputID != a.InputID || c.AssignmentInputDigest != compactionDigest(original) || c.PromptDigest != compactionDigest([]byte(a.Input.Prompt)) || UniqueIDs([]ID{i.ActionID, i.Restore.InputID, i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c.HistoryRequestID, a.InputID}) != nil || i.Intent != "" && i.Intent != ContinueAutomatically && i.Intent != ContinueExplicitly {
+	if err != nil || actualErr != nil || originalErr != nil || !bytes.Equal(expected, actual) || !sameRef || c.HistoryExecutionID != history || c.Previous.ExecutionID != a.ExecutionID || c.Previous.InputID != a.InputID || c.AssignmentInputDigest != compactionDigest(original) || c.PromptDigest != BindSessionInput(a.InputID, a.Input).PromptDigest || UniqueIDs([]ID{i.ActionID, i.Restore.InputID, i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c.HistoryRequestID, a.InputID}) != nil || i.Intent != "" && i.Intent != ContinueAutomatically && i.Intent != ContinueExplicitly {
 		return CompactionUncertain()
 	}
 	return nil

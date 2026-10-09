@@ -1,14 +1,121 @@
-# DeliDev managed Codex subscriptions
+# DeliDev native subscriptions
+
+## Direct execution startup
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes manual installation inspection and separate execution probes from new negotiated assignments. Initialize the actual selected process and validate its protocol, credential mode and settings before input. Optional observed version metadata cannot grant or deny execution by numeric comparison. Existing protected generation, original account lease, server-owned OAuth and credential write-back/cleanup remain required; readiness never grants login, account refresh or credential ownership.
+
+## Failed subscription cleanup reservations
+
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
+
+One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
+
+The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch. An explicit `DeleteConfiguration` can admit one failed initial ChatGPT LOGIN through the same controller under the original deletion request ID. The child freezes that requester, account, confirmed revision, LOGIN and deletion command; cleanup checkpoints advance only its effective revision. The final deletion receipt retains the original public revision and request bytes. Before that receipt exists, mutation and replay use the immutable child under the existing job parent index to reserve the public request ID for that exact deletion command; admission rejects previously used IDs transactionally. Accepted single-account work survives client departure; terminal failures require fresh observation and explicit confirmation, and receipt/status reads never retry cleanup.
+
+Confirmed deletion, tombstone/browser obligations, the existing configuration receipt, child result and aggregate counts commit together. Restart reads only original jobs and confirmed cleanup checkpoints, never login or callbacks. An interrupted attempt without a native checkpoint remains retained; confirmed native cleanup may resume protected cleanup. Shutdown cancels and joins the controller before store/vault closure. Revocation permits server-owned retained-result bookkeeping only, never substituted account deletion authority. Restore blocks queued/pending cleanup jobs and quarantines historical nonterminal jobs and receipts, so restored work cannot regain deletion authority.
+
+`GetFailedSubscriptionCleanup(job_id, page_token)` returns current revision/state, total/processed/deleted/retained counts and at most 50 original account results. Signed cursors bind the actor and batch. Result metadata contains only the original alias, account ID, closed outcome/reason and safe problem code. Logs contain job/operation IDs, counts, phases and safe codes. Existing generic jobs/receipts need no migration or Rust/native change.
+
+## Native Claude subscriptions
+
+PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
+closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature
+implementation. The server advertises 38 for the existing SubscriptionService's
+Claude branch. An original Worker advertises 20 only after verifying installed
+Claude Code `2.1.236` through an isolated empty profile and confirmed cleanup.
+A reserved number or ordinary installation observation never grants this lane.
+
+An owner or authorized paired client explicitly selects a local or remote
+Runner Device for login. `claude auth login --claudeai`, `auth status` and
+`auth logout` run on that Worker with an account-specific private
+`CLAUDE_CONFIG_DIR` and matching secure-storage directory. DeliDev reconstructs
+the native environment; personal profiles, imported/external tokens,
+Console/API login and API relay authentication are excluded. The original CLI
+owns OAuth exchange, credentials and automatic renewal. DeliDev does not read
+native authentication files or distribute their bytes to the server or another
+machine. Claude quota/credit inspection and redemption remain excluded.
+
+Server-owned optional Account JSON retains an opaque native profile UUID,
+original owner machine, keyed identity commitment, authentication generation
+and original operation/lease metadata. The Worker computes the commitment from
+bounded native identity under its private server-scoped key. The original login
+also pins that commitment in its private profile owner record; fresh native
+status must match before reauthentication completion or execution input. A
+missing pin or changed account retains the ownership fence. Raw identity stays
+local. Authentication success requires the original login process to exit,
+joined owned descendants and `auth status` proving first-party `claude.ai`
+subscription authentication with no API-key source. Reauthentication reuses the
+same owned profile and identity, creates a new generation and preserves the
+connection ID. A different native identity cannot replace that account.
+
+One exclusive account lease serializes login, reauthentication, execution and
+logout. Login/reauthentication cannot enter behind another lease. Logout may
+queue behind execution after atomically revoking readiness and canceling that
+execution. Execution checks the service/model/harness, dedicated capability,
+original owner Runner, profile and generation before consuming an input. Wrong
+Runner, old Worker and API-authentication selections fail without a fallback.
+Existing native permission, model, effort, continuation, history, usage,
+publication and Stop checks remain required. Native subscription execution has
+no API proxy path and injects no API key or relay token into the CLI.
+
+`SubmitSubscriptionLoginCode` is an owner/client write-only operation bound to
+the original actor, account revision, operation and live native login. It
+accepts one bounded visible-ASCII readline input only for the native
+browser-code method. The server records the original request claim before
+retaining bytes in memory. `TakeSubscriptionLoginCode` permits only the original
+Worker/device/instance/lease and records consumption before releasing bytes
+once. Exact submit receipt replay never replenishes input. Lost memory, a lost
+Take response or canceled/expired/revoked ownership never permits another code
+submission or native launch. Neither code nor original browser URL enters jobs,
+receipts, resources, synchronized state, shared caches or logs.
+
+Progress exposes only the original initiating principal's live native URL,
+closed login method and safe diagnostic metadata. URL validation pins the
+original CLI's HTTPS host/path, client, PKCE and subscription scopes; DeliDev
+never reconstructs or repairs the URL. Native browser presentation binds the
+original trusted desktop window, server/lifetime, operation and exact URL.
+Explicit reopening uses that same binding. Claude presentation creates no
+DeliDev callback listener or code-exchange authority.
+
+Cancellation wins before successful connection publication. A claimed operation
+remains fenced until its original process joins and native logout/status plus
+owned-profile removal are confirmed. Restart, offline/replaced Worker,
+uncertain delivery and failed cleanup retain the original operation/lease and
+recovery ownership. Reconnect does not repeat Take, native login or code input.
+The original Worker may reconcile its durable original process journal and
+report cleanup-only recovery under the retained lease; that path cannot publish
+a login success or authorize execution. Closed success receipts remain
+immutable even if their response is lost.
+
+Logout runs the official CLI, independently proves disconnected status and then
+removes only the canonical, inode-bound owned profile under the existing
+2,048-file/64 MiB cleanup bound. Oversized, symlinked, replaced or uncertain
+profiles retain recovery; they are not reported as removed. Account deletion
+requires confirmed native logout/profile cleanup and no retained owner,
+generation, lease or operation. Session checkpoints retain a digest-bound
+profile reference and independently bounded native history, never authentication
+files. Restored ownership metadata is quarantined and cannot adopt another
+Worker's credentials. Portable configuration contains no native ownership.
+No SQLite migration is added; real migrations 1–31 and reserved baseline 32
+remain unchanged.
+
+Fixture, build and browser-layout results do not establish actual account login
+or packaged macOS/Windows/Linux acceptance. Each platform requires real original
+CLI login, multiple-account isolation, first/follow-up input, Stop/Resume,
+logout/deletion and original offline/restart/cleanup evidence before support is
+reported complete. Keep the outstanding matrix visible in PR/CI evidence.
+Follow the desktop, protocol, harness, storage and structure contracts.
 
 ## Scope
 
 Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens`, Claude subscriptions and concurrent use of one managed bundle are excluded. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens` and concurrent use of one managed Codex bundle are excluded. Claude follows its independently negotiated device-owned lane above. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
 
 ## Runtime and Language
 
-Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. The current native Fork coordinator uses that API profile and rejects managed subscription sources before accepting work. Source inspection cannot grant credentials; managed Fork requires its own verified protected lease and joined write-back.
+Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. Independent native Fork uses that API profile and rejects managed subscription sources before accepting work. Managed ChatGPT Sidechat uses its separately negotiated protected Fork lease under the Sidechat contract. Source inspection cannot grant credentials; the exact claimed Sidechat job owns protected Take, joined native/plaintext cleanup and original-account write-back before publication.
 
 ## Users and Operators
 
@@ -44,11 +151,15 @@ One durable account lease spans login, refresh, execution or logout. Refresh/log
 
 A lifecycle Take that races another lease grant retries only a definite busy refusal, using the exact original claim, account, operation and revision. This wait preserves the shared Worker connection and the execution that won ownership; caller cancellation joins it. Unknown delivery still closes the ownership lane and cannot be retried. The lifecycle revision remains its original positive account observation, not a requirement that later cleanup or metadata edits leave the account unchanged. Take rejects future observations and independently requires the same uncanceled queued operation, action, selected machine and currently authorized initiating actor; cancellation, replacement and recovery cannot gain authority from an old observation. Owner lifecycle requests still require the current account revision, and execution Take still requires its exact claimed job revision.
 
+A fresh lifecycle Take returns `Canceled` with exact `ErrorDetail.cause = subscription_take_not_admitted` only from a rolled-back admission transaction after current account, Worker, instance, installation and update fences when the queued original is absent, replaced or canceled. It grants no lease, bundle or native authority. Replay, claimed/recovery ownership, wrong action/machine, transport cancellation and post-commit errors never supply this proof. The Worker recognizes both the code and exact cause, retires only that original private claim, and leaves independent account operations on the shared lane running without Finish, retry or native launch. Every unproven refusal retains the existing lane and recovery fences.
+
 A confirmed pre-native execution failure returns the byte-identical unused original bundle over protected Finish with cleanup true and success/refresh false. This includes a failed Open only when owned process closure and unchanged-file cleanup are independently confirmed. The server compares the returned bytes with the immutable vault generation before releasing the lease, preserving its generation, connection, health and any independently queued refresh/logout. Cleanup alone, missing bytes or changed authentication cannot establish this outcome; uncertain execution/refresh retains blocked original vault material and recovery ownership. Explicit logout retains its separately authorized credential-removal semantics.
 
 If an atomic authentication write fails before publishing its destination and before native ownership, confirmed cleanup instead requires the original private home, synchronized and rechecked destination absence, and the complete bounded retained-file credential scan. A leftover temporary credential file, a missing/foreign home or an uncertain observation retains the fence. Reject every retained entry in the atomic writer's `.pending-` namespace, including empty or partial files and nested entries, independently of token matching. Published authentication follows the unchanged original-byte comparison/removal path; native-owned cleanup cannot substitute file absence for its captured-bundle proof.
 
 The lease pins operation, account generation, Worker machine/device/instance, server epoch and original lease revision. Completion checks that original revision while preserving later metadata edits and cancellation. The connection ID remains stable across bundle rotations. The final native bundle is saved under a new immutable generation, old protected references are tombstoned, and independently confirmed native/file cleanup precedes another grant.
+
+Read-only Doctor inspection follows the [ChatGPT saved-storage adapter](cmds-delidev-diagnostics-contract.md#chatgpt-saved-storage-adapter). Only a valid idle service-native ChatGPT account can read its exact saved `AccountLogin` generation. Pending lifecycle, leases, active/native server work, active or uncertain quota/reset-credit work, removal, recovery and unresolved cleanup exclude the read. Completed history alone does not exclude it. Request-local selectors fence same-connection rotations and changed eligibility at report publication. Readability grants no authentication, native cleanup, recovery or retry authority; native-only Claude and unactivated Grok remain unsupported. This adapter never changes subscription state or protected storage.
 
 Finish's ownership-error guard ends after the ownership mutation and final required vault cleanup commit, before its response-resource observation. A canceled or failed presentation read cannot add a recovery fence to settled state. Failed final cleanup still fences ownership, and accepted receipt replay preserves that fence without repeating vault work.
 
@@ -59,11 +170,27 @@ The pinned native login-completed envelope includes nullable `onboardingEntrypoi
 
 ## Server browser login and account naming
 
-System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by PR #1332. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude Code and Grok remain unsupported. API authentication, execution selection and existing quota authority do not change.
+System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by PR #1332. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude requires the explicit Runner lane under capability 38; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
 
 Go records the original actor, operation, server epoch, bounded lifetime, finish identity and closed progress state in optional server-owned `server_operation` metadata. Accepted request replay returns the original receipt without another native launch. Claiming requires the original queued pending operation and no Worker credential lease; `native_started` is an exclusive credential fence. An existing execution lease retains ownership while queued refresh/logout waits. Cancellation is serialized with final publication. Successful native completion, joined process closure, final-file comparison, private-runtime removal, vault staging and old-reference cleanup precede confirmed success. Uncertain cleanup and previous-epoch operations retain recovery ownership and cannot relaunch or redistribute credentials. Optional JSON metadata requires no database migration and does not alter migrations 26–30.
 
+### Failed initial server login cleanup
+
+A failed, canceled or interrupted initial ChatGPT server login can release its account for explicit configuration deletion after independently confirmed cleanup. This applies only to the original server login with no connection, credential generation, identity commitment, Worker lease, native machine owner, quota/reset-credit operation or account removal. Refresh, logout, connected accounts, restored credential generations and Worker ownership retain their separate recovery boundaries. Cleanup never repeats authentication or callback forwarding and never claims provider-wide revocation.
+
+The optional server-owned `server_operation.cleanup_phase` uses the closed values `native-confirmed` and `credentials-confirmed`; omission preserves legacy metadata and means no checkpoint. Joined native closure and synchronized private-runtime removal establish the first phase. The pre-native path can also establish it when the opener never ran. Removing every account-owned `account-login` protected reference precedes the second phase. Only that final transaction clears pending/native/recovery fences and sets disconnected health. Preserve the original operation, failed/canceled/expired/unsupported outcome, safe diagnostic and current configuration preferences. A canceled server context alone cannot retain recovery after both cleanup phases are confirmed.
+
+A later explicitly accepted server or Worker login supersedes this completed server attempt. Worker admission retires only its fully confirmed terminal server metadata before creating the new independent pending operation; an unsettled checkpoint never permits replacement.
+
+Server maintenance makes one 30-second cleanup attempt per original operation in each server process, using the existing shared 16-account lane and account gate. It joins these children at shutdown and excludes a still-running original login. A retry after server restart resumes its durable native checkpoint without another native login. Failed attempts keep their original ownership and do not run again on every 250-millisecond scan.
+
+Legacy claimed logins without a checkpoint require the original private process owner index and valid journals. Independently held native controller locks block recovery; a released controller permits the existing platform ownership reconciler to confirm or stop only that original process tree. Retain the index after journal retirement. Missing individual journals, foreign ownership and file/PID absence alone grant no cleanup proof. After process confirmation, remove only identity-checked original auth and discovery-probe directories, rejecting symlinks and preserving other operations. Legacy metadata with `native_started=false` proves either no native claim or previously joined cleanup; unexpected retained auth/probe files contradict that proof and remain blocked.
+
+Vault, filesystem, authorization or state-publication failure retains the configuration and cleanup checkpoint for a later server process. The Settings deletion screen continues to require a fresh account read and explicit confirmation; cleanup never deletes configuration. Existing revision, retained-reference and independently observed browser-profile cleanup checks remain authoritative. Logs contain only original operation references, cleanup phases and stable codes. Tests use temporary synthetic accounts and native process fixtures; they do not establish installed-app, real-account or all-platform acceptance.
+
 Browser login uses the ordinary `account/login/start` ChatGPT profile, never automatic device-code fallback. The pinned app-server disables its own browser opening; the trusted native desktop opens the returned original address once. Exact native binding replay cannot open another browser. Deliberate reopening uses only that same operation/address. Local desktop login retains the original installed Codex callback. Remote desktop login binds its registered loopback callback on both address families and forwards one bounded code/state/scope query through authenticated `ForwardSubscriptionCallback` to the original server's Codex callback. The callback requires the original state, actor, current server epoch, operation and trusted window/opening lifetime. Duplicate, foreign, expired, canceled and late callbacks are refused. Go durably claims forwarding before HTTP, inherits no proxy, follows no redirects and never resends uncertain delivery or performs another exchange.
+
+Browser callbacks accept exactly `http://localhost:1457/auth/callback` (Codex 0.151.0) or `http://127.0.0.1:1457/auth/callback` (Codex 0.159.2). Preserve the original URL, state and callback authority through browser binding and forwarding; the two spellings cannot replace one another within an accepted operation. Forward only to fixed IPv4 loopback and retain the original callback HTTP Host. Remote native receivers retain both loopback listeners and require that original Host. Other hosts, numeric IPv4 spellings, ports, paths and duplicate query fields are rejected. URL rejection logs contain only the fixed failure classification and original operation reference. This compatibility rule does not recover prior failed accounts or establish actual account/platform acceptance.
 
 Codex 0.151.0 can send `/cancel` to an occupied preferred port 1455 before using its registered fallback 1457. The server first owns a private 1455 listener, refuses a conflict, and retains it through joined native closure. This prevents cancellation of another login and lets the original Codex listener choose its registered 1457 callback. A fallback conflict fails explicitly. Remove this bounded workaround only when the pinned native protocol provides an exclusively owned callback port without foreign cancellation. The remote desktop never remaps its callback or substitutes device authentication.
 
@@ -81,13 +208,17 @@ Uncertain delivery or completion closes the Worker subscription lane and joins i
 
 ## Security
 
+Disposable subscription lifecycle processes disable native plugins before launch and verify the normalized disabled feature through the harness profile. This prevents unrelated startup/account-change catalog downloads from overflowing cleanup inventory. Discovery uses the same download restriction; actual session execution retains independent feature authority. Keep the original 2,048-file and 64 MiB runtime cleanup limits, identity checks, symlink refusal, original process joins and final auth-file comparison. Disabling downloads grants no recovery of prior failed logins, credential adoption, automatic retry or authentication authority.
+
 Uncertain protected execution completion escapes ordinary job-error reporting and closes the primary work lane after joined cleanup. The original started job claim and protected completion journal remain retained; the server records the lost execution lease as recovery-required. Workspace cleanup failures preserve this completion uncertainty, and receipt replay cannot manufacture a successful write-back. A successful protected Finish RPC can acknowledge a fenced account; it permits ordinary execution reporting only after final bundle capture and independent cleanup, or the separately verified unused-original pre-native outcome. Acknowledgment alone cannot replace the started job claim.
 
 Once subscription ownership is recovery-required, every new Finish is denied before vault staging or deletion and again at its final transaction. Only an already accepted receipt may replay through this handler; that read-only replay preserves any later retained lease, pending operation and recovery fence. A late background completion cannot replace the independent recovery path.
 
 Remote transport retains authenticated TLS; loopback development retains the existing protected local RPC boundary. Authorization is rechecked after vault I/O and at publication, including the original initiating client's revocation. Managed login starts with no existing authentication file and requires the original native login-completed observation. Bundle validation rejects API keys, external auth modes, unknown credential fields, foreign identities, symlinks and oversized files. JWT claim comparisons are identity consistency checks, not signature verification or substitutes for native OAuth completion.
 
-The merged native configuration must retain file storage, ChatGPT login and the built-in OpenAI provider without inherited endpoint, command authentication, bearer, query or header overrides. Native execution never inherits unrelated system logins. Private files do not promise an OS sandbox against unrestricted same-user access. Managed execution nevertheless requires an explicit native read-only or workspace-write permission, keeps the fresh `CODEX_HOME` outside every accepted workspace root after canonical-path checks, and refuses default/full-access or overlapping/aliased paths before writing `auth.json`; this bounds native tool access without claiming unrestricted same-user isolation. All tests use isolated temporary state and synthetic credentials.
+Login confirmation, refresh and logout share one strict native `account/read` response profile. Codex 0.159.2 serializes the known optional `workspaceRouting` field even with `experimentalApi: false`. Omission and null remain valid for earlier/native disconnected responses. A present object requires the exact original bundle's `chatgptAccountId`, a nonempty account ID of at most 24 KiB without credential-field whitespace/control separators, an HTTPS origin of at most 8,192 bytes without user information, path, query or fragment, and the closed `accountRoutingOverride` enum `NO_CONSTRAINT`, `us` or `us_cr`. An explicit origin port must be nonempty decimal in the unsigned 16-bit range. Discard this metadata after validation; it cannot select Go endpoints, supply credentials, grant authentication or enter resources, receipts or logs. Continue rejecting unknown and duplicate fields at every object depth. Logout requires explicit `account: null`, required OpenAI authentication, absent/null routing and independently absent native `auth.json`. The original native login completion and independently changed file/token evidence for refresh remain mandatory; compatibility never clears an existing recovery fence.
+
+The merged native configuration must retain file storage, ChatGPT login and the built-in OpenAI provider without inherited endpoint, command authentication, bearer, query or header overrides. Native execution never inherits unrelated system logins. Private files do not promise an OS sandbox against unrestricted same-user access. Managed execution accepts `default`, `read-only`, `workspace-write` and `full-access` for both API and subscription accounts. Default leaves native sandbox selection unset; full-access permits native tools to access managed authentication files. Keep the fresh `CODEX_HOME` outside every accepted workspace root after canonical-path checks and reject overlapping/aliased paths before writing `auth.json`. These location and cleanup checks do not promise isolation from unrestricted native tools. All tests use isolated temporary state and synthetic credentials.
 
 Both native thread start and resume recheck the merged configuration for the actual execution workspace before sending the mutation. A successful startup-directory handshake cannot authorize a workspace-specific provider or authentication override.
 
@@ -97,15 +228,25 @@ Managed execution captures native identity and the final authentication bundle o
 
 Credential cleanup scans retained native files for raw token material and padded or unpadded standard/URL Base64 copies under the existing file/count/byte bounds. Finding a remnant leaves cleanup unconfirmed and retains recovery ownership without erasing the original native history.
 
+Ordinary Codex closure fences new protocol writes, closes stdin on the retained original process and allows at most three seconds for native EOF shutdown before forced cancellation. Join the original process controller and any input-close operation before returning. Codex's temporary helper aliases require normal native destructor cleanup; forced cancellation can leave them behind. Protocol failure, caller cancellation and expired grace retain immediate original-owner termination. The subsequent authentication scan still refuses symlinks and credential remnants. A graceful exit is process evidence only: it cannot release an existing recovery fence, change a protected completion receipt or establish bundle/file cleanup by itself. Closed structured shutdown logs distinguish timeout and joined cleanup without paths or native content.
+
 ## Logging
 
 Use structured `slog` events for accepted operations, grants, completion, capability availability and recovery failures. Log only opaque account/operation/lease/machine identities, closed action, cleanup classification and stable error code. Native protocol messages, token bundles, JWT identities, URLs, device codes and filesystem paths never enter these logs.
+
+Managed native failure logs additionally retain the closed internal `stage`: `login-start`, `login-completion`, `login-cancel`, `account-read`, `bundle-validation` or `local-logout`. The stage identifies the first failed check within its existing safe phase and original operation correlation. It does not change public diagnostic schemas, retain native field values or authorize retry.
+
+Server cleanup failures additionally emit `server_subscription_cleanup_failed` with the original operation reference, closed stage/reason and bounded `file_count`, `observed_bytes`, `file_limit` and `byte_limit` counters. Stages distinguish `native-process`, `auth-file`, `runtime-validation`, `runtime-inventory`, `runtime-removal` and `runtime-sync`. Reasons distinguish unconfirmed native cleanup, failed protected reads, bundle mismatch, filesystem/identity failure, symlink/non-regular entries and file/byte limit overflow. Inventory counters stop at the first failure; an individual file size above the byte limit is capped at limit plus one before accumulation to prevent overflow. No path, filesystem error text, native output, content, identity or credential is retained. Internal typed runtime failures preserve the original public recovery error and cannot alter cleanup proof, account state or retry authority.
 
 ## Build and Test
 
 Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, and the API client's tests/typecheck. Generate bindings through pinned root Buf tooling. Controlled native-process fixtures cover browser/device progress, completion, cancellation, file rotation, unchanged refresh evidence, logout and symlink refusal. Real loopback Connect/SQLite fixtures cover lease races, protected-channel authorization, generation fencing, lost write-back, cancellation, identity uniqueness, independent accounts, API relay denial and secret-free outputs/database files.
 
 These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks, source revisions and unresolved limits in issue #1095, its pull requests and CI logs/artifacts.
+
+Lifecycle fixtures verify normalized plugin disablement before any login request, rejection of incomplete observations, unchanged thread feature policy and sequential independent account login without changing the first saved configuration or protected generation. Cleanup fixtures preserve exact file/byte limits, identity/symlink refusal, auth-file equality and secret-free failure counters. The opt-in installed empty-home logout smoke waits for asynchronous startup work, rejects plugin cache creation and checks joined private-runtime removal after native closure. It uses no browser, real account credentials, OAuth completion or inference.
+
+Account-response fixtures cover omitted/null/validated routing across browser/device completion, refresh and logout, malformed/foreign metadata, unknown/duplicate fields and secret-free stage logs. The explicit `DELIDEV_NATIVE_INITIALIZE_EXECUTABLE` empty-home logout smoke exercises an installed Codex's actual `account/read` response and joined process/private-runtime cleanup without opening a browser, authenticating a user or invoking inference. This check cannot establish real OAuth completion or packaged-platform acceptance.
 
 ## Dependencies and Integrations
 
@@ -126,13 +267,14 @@ Update the account/harness/session/protocol/client contracts and affected scoped
 - [Wire contract](protos-delidev-v1-contract.md)
 - [Pinned official account protocol](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 - [Pinned native authentication storage](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/login/src/auth/storage.rs)
+- [Codex 0.159.2 account response profile](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 
 
 ## Native quota and reset credits — issues #1096 and #1104
 
 System capabilities 18 (`SUBSCRIPTION_QUOTA_V1`) and 19
 (`SUBSCRIPTION_RESET_CREDITS_V1`) negotiate the two product operations separately.
-Worker capability 8 requires the verified managed Codex 0.151.0 profile. The
+Worker capability 8 retains the verified managed Codex profile for fresh idle native-owner admission. Active original Execute quota reads use the initialized execution protocol as described below. The
 pinned upstream source is commit `78c290807ce710180111df227df3b7a4fe845452`.
 `account/rateLimits/read` omits its unit parameters; the native wire encoder's
 explicit `OmittedParams` profile preserves the ordinary structured-parameter
@@ -144,7 +286,18 @@ refreshes are authenticated SubscriptionService operations with UUID-v7 receipts
 refresh-all derives its complete account set on the server, independent of client
 pagination. An idle read takes a short exclusive credential lease. An active
 execution uses its registered original Codex process and lease; it cannot create
-a second credential writer. Original native rate-limit updates pass the same
+a second credential writer. Explicit-original, omitted-machine, Refresh all and due
+maintenance use the same active-execution eligibility. For that read, missing or
+unverified saved installation discovery and numeric version metadata cannot deny
+an already initialized direct-v4 execution. Admission and send/publication retain
+the original account, connection, credential generation, Execute lease/revision,
+server epoch, authenticated Worker device, current machine/instance, negotiated
+managed subscription and observation capabilities, and initiating actor. The
+Worker observation registry uses only the actual original initialized Codex
+client; an absent registry owner permits no read or replacement process. Idle
+quota, lifecycle operations and reset-credit consumption/reconciliation retain
+their existing saved-installation and independent cleanup requirements. This
+boundary adds no RPC, capability or database migration. Original native rate-limit updates pass the same
 bounded projection. Failed observations preserve the last successful timestamp,
 values and exhaustion state. Sparse null fields retain original values, window
 identities and individual observation times. Comparable windows use their minimum
@@ -167,6 +320,8 @@ explicit confirmation tied to the displayed account revision, connection,
 generation and inventory identity. The CLI requires `--confirm`, with either the
 returned credit ID or explicit native next-credit selection when only the count
 is available. Configuration saves cannot manufacture observations.
+
+Codex quota reflection validation checks exact original bucket IDs after removing only the adapter-owned final `primary`, `secondary` or `spend` suffix, and exact reset-credit IDs, against every nonempty protected identity/token and its complete standard/URL Base64 forms at any length. Existing long substring checks remain; incidental short substrings stay valid. Worker explicit reads, rolling updates and server-owned quota reads share this guard before publication. Rejection preserves the last good quota and exhaustion state independently of native cleanup.
 
 The accepted UUID-v7 operation is the official `idempotencyKey` for
 `account/rateLimitResetCredit/consume`. Uncertain consumption never automatically
@@ -201,3 +356,95 @@ Unpublished quota reads become failed after independently joined successful nati
 Codex sign-in attempts share the harness contract's minimum SemVer `0.151.0`, with no upper bound. Discovery of an executable, verified initialization and actual account login remain separate. Server operations retain optional safe `diagnostic` metadata in their existing versioned document; no SQLite migration is needed. Progress publishes it only to the authenticated original initiator. Retain the actual detected version, minimum, closed discovery/version/profile/runtime/launch/initialize/confirm/login/models/execution/history/cleanup phase, stable error code, locally reconstructed reason/guidance and original operation correlation ID. Validate closed metadata rather than retaining arbitrary Worker/native error strings.
 
 Missing executables report discovery with no detected version. Invalid or lower versions report version validation; newer versions run actual initialization. Keep the first native failure when cancellation, process cleanup or protected-file cleanup subsequently fails; the independent recovery state and cleanup result remain authoritative. A cleanup-only failure uses cleanup phase. Persist metadata through restart and transient presentation disposal without login URLs, device codes, credentials, identity, paths or raw output. Success clears failure metadata. Logs retain bounded version/phase/code/operation correlation and separate original outcome from cleanup/recovery, without account identifiers. No diagnostic may trigger login replay, callback resend or automatic retry.
+
+## Server-owned ChatGPT quota — issue #1728
+
+System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` separately negotiates quota reads for idle server-owned ChatGPT accounts. For this issue, the owner's explicit batch instruction permits allocation and activation in one complete feature PR without a prior main reservation merge. This exception changes no other allocation, migration or native authority rule.
+
+The existing QUOTA request can omit `machine_id` under capability 46. Explicit machines retain capability 18 and the strict Worker claim/receipt lane. An active execution uses its original Worker process and lease, including an omitted-machine request resolved to that original lease. Worker reset-credit consumption retains capability 19 and original Worker ownership. The separately negotiated server lane is defined under issue #1809 below. Authentication success or capability 30 alone grants no server quota authority.
+
+Optional `server_quota_generation` records eligibility only after successful original server login/authentication refresh and final protected-reference cleanup. First observation, complete Refresh all and five-minute maintenance derive eligible accounts on the server. A previous settled server generation can become eligible at startup only from its original successful non-native-active owner, valid current protected reference and confirmed reference cleanup. Missing, restored or uncertain evidence grants no eligibility. No SQLite migration or credential format conversion occurs.
+
+The independent `server_quota` record retains original actor, server epoch, operation, finish receipt, connection, credential generation, request time and closed queued/sending/succeeded/failed/uncertain phases. A durable claim grants one bounded quota read in the verified original Codex process. The shared private-home adapter performs no inference, login, authentication refresh or credit consumption. It uses sanitized native environment and checks the explicit server network selection before native startup. The current subscription profile has no proxy adapter; non-Direct selections return Unsupported without direct fallback, network traffic or proxy credential access.
+
+Server quota ownership excludes lifecycle requests, Worker credential grants, observations, configuration deletion, saved-storage diagnostics and database restore. Sixteen joined account tasks run independently; shutdown cancels and joins them before protected stores close. Original native/process/file closure and unchanged final authentication bytes precede the durable cleanup checkpoint and quota/result publication. Read failures after confirmed cleanup retain last-success windows/time and permit a later explicit or due read. Unconfirmed cleanup retains original recovery and cannot relaunch. Publication rechecks actor, generation and connection; stale or revoked reads settle as failed after cleanup without publishing windows. Restart never repeats a previous queued or sending operation. Independently checkpointed cleanup can settle a failed original read; absent confirmation preserves recovery.
+
+Successful projection shares sparse-window merging, minimum remaining fractions and atomic recovery Inbox deduplication. Elapsed resets alone grant no recovery. Frontend and CLI refresh negotiate capability 46 before omitting the machine, retain exact revisions/selectors/retries and expose unsupported/failed/pending states. Capability 46 alone grants no server reset-credit consumption; that operation independently requires capability 49. Structured logs contain operation/generation references, closed phases, safe error codes and cleanup confirmation only.
+
+The owner will perform real-account, installed-native, remote and platform acceptance separately. This batch's automated fixture/build validation does not establish those results; that skipped acceptance is nonblocking for this feature PR under the owner's explicit instruction.
+
+Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork remains unsupported.
+
+Managed subscription installation refusal describes missing verified Codex installation evidence, not an exact or minimum native version. Existing bounded version metadata, detected state, path, protocol, observation and capability predicates remain authoritative. Safe guidance directs the user to the selected Runner Device’s installed Codex and protocol verification without exposing native paths or output.
+
+## Server-owned ChatGPT reset credits — issue #1809
+
+Managed Sidechat admission rejects an active original server-credit owner before
+creating a Fork job. Protected Take and Finish retain their original account,
+credential generation and independent cleanup fences.
+
+System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` independently enables explicit
+reset-credit consumption for an idle eligible server-owned ChatGPT account.
+Record allocation and complete implementation together under the allocation
+workflow. Preserve capabilities 19, 30 and 46. Reuse RequestSubscriptionObservation
+and ReconcileSubscriptionCredit without a new RPC, Worker capability, database
+migration or credential conversion.
+
+An omitted machine selects the original settled server credential generation
+and protected AccountLogin reference. An active execution resolves an omitted
+selector to its exact original Worker; explicit-machine requests retain the
+Worker lane. Never manufacture a Runner, transfer accepted consumption or acquire
+a second credential writer. Fresh inventory and explicit confirmation bind the
+account revision, connection, generation and inventory ID. A positive count
+permits an available unexpired exact credit, or explicit native next-credit
+selection only when details are unavailable. Unknown, future or stale inventory
+requires a successful quota refresh first.
+
+The separate optional `server_credit` record retains the original UUID as the
+official idempotencyKey, actor, epoch, connection, credential generation,
+inventory identity and immutable credit/next selector. Each explicit attempt
+has separate current server epoch, attempt/finish IDs, a durable send claim,
+provider outcome and independent cleanup checkpoint. A monotonic ever-sent flag
+retains possible earlier consumption even when reconciliation has not sent. Quota-only records retain
+their meaning. The shared narrow native selector validates Worker and server
+ownership separately. Verify actual native readiness, original authorization and
+the configured Direct route before send. Unsupported routing fails before launch
+without direct fallback, native traffic or proxy-secret access.
+
+Receipt replay, status, polling, reconnect and restart never relaunch consumption.
+Possible-send uncertainty retains the original key and selection. Only explicit
+reconciliation by the still-valid original actor, connection and generation can
+create a new attempt after independently confirmed original process/file cleanup.
+The provider key and selector remain unchanged, including alreadyRedeemed results.
+Unconfirmed cleanup keeps recovery fenced. Another actor or new inventory cannot
+transfer a retained attempt.
+
+Checkpoint reset/alreadyRedeemed/nothingToReset/noCredit before a separate quota
+read and cleanup. Read failure cannot erase consumption, replace last-success
+quota or invent recovery. Active credit ownership fences lifecycle, execution
+credentials, account deletion, failed-subscription cleanup, saved-storage
+inspection and backup/restore. The existing bounded controller joins native tasks
+before protected stores close. Cleanup checkpoints remain independent of outcome
+and finish publication; lost finish or restart cannot authorize another send.
+
+Desktop Review, Confirm and original-operation reconciliation negotiate 49,
+retain exact request retries and preserve English/Korean guidance and Settings
+lifetime. CLI consumption/reconciliation require --confirm; omitted-machine
+consumption independently negotiates 49. Missing support, zero/unknown inventory,
+pending ownership and failures remain truthful product states. Logs retain only
+closed operation/code/cleanup metadata without native content or credentials.
+Fixture/build/package evidence remains separate from installed-native,
+real-account, remote-machine and platform acceptance. Record revision, commands,
+results and unresolved limits in PRs, issues and CI artifacts.
+
+## Server-owned ChatGPT quota V2 — issue #1854
+
+System `SERVER_SUBSCRIPTION_QUOTA_V2 = 50` expands omitted-machine QUOTA, Refresh all and five-minute maintenance to the selected server, independent of Worker registration, connectivity, verified installation, retained Worker ownership or an active Execute lease. Record allocation, declarations, generated bindings and complete activation together in the owning feature PR under the allocation workflow. Preserve System 18, 46 and 49 and explicit-machine legacy QUOTA/reset-credit semantics. No Worker capability, RPC, credential conversion or SQLite migration is added. Clients require capability 50 before issuing the expanded omitted-machine or batch request; older servers receive compatibility guidance without an automatic Worker fallback.
+
+V2 uses a separate quota-only native profile. Go reads the exact sealed AccountLogin generation, validates the original account/user commitment and supplies only access token, account and plan to official `account/login/start` external `chatgptAuthTokens` authentication. The native process uses ephemeral authentication, disabled plugins and the official provider, receives no ID or refresh token and writes no managed auth.json. Refuse every external-token refresh callback with one fixed safe error; rejected/expired access tokens fail the observation without renewing credentials. Native initialization includes bounded configuration and readiness reads and is not claimed to emit only the quota HTTP request. Validate and discard the pinned external login’s once-only `account/login/completed` success notification (`loginId`/`error`/`onboardingEntrypoint` null or omitted, typed `success: true`) before the quota request; failed, foreign, malformed and unknown completion fields fail closed. This private completion metadata grants no managed-login, callback or renewal authority. Use one bounded `account/rateLimits/read`, existing strict sparse projection and explicit server network routing. Unsupported server profiles fail with server guidance and never select a Worker.
+
+The V2 durable quota operation records `access_only: true` to separate its ownership from historical managed-auth quota claims. Capture original actor, epoch, operation, connection and generation; recheck them before protected-reference use, before external authentication and before publication. Lifecycle changes, removal, actor revocation and unresolved account recovery retain their original fences. Serialize account admission and protected-reference capture only for bounded store/vault work; hold no account transaction or lock during native/network work. Cancel the original read on binding changes and discard stale results.
+
+Access-only quota can coexist with an original Execute credential writer. Its durable process/cleanup obligation and retained AccountLogin reference are independent of that lease. Execution completion can rotate its generation, but must retain the captured observer reference until quota process cleanup is confirmed and its exact reference retirement is checked. Before terminal quota publication, account serialization validates the original operation/actor/connection/generation and deletes only an obsolete captured AccountLogin reference. Preserve the current generation, every other reference and any still-owning lease/observation/credit/native writer. Confirm the current reference exists and independently enumerate completed removal. Failed reference deletion or publication retains the original quota fence with its durable native-cleanup checkpoint; it never changes Execute ownership. Prior-epoch confirmed native cleanup retries only this bounded reference retirement before terminal settlement, without reopening native work. Rejected queued claims use positive no-native-work cleanup through the same retirement boundary. Quota cleanup uncertainty blocks another quota launch, lifecycle/reference deletion and database restore; it does not release, replace or fail the original Execute lease or account. Restart and receipt replay never send an accepted quota operation again. Startup reconciles prior-epoch quota cleanup only through the retained original process owner index and independently released controller proof, plus bounded original private runtime/probe cleanup. Missing ownership evidence remains uncertain; reconciliation never launches authentication or a quota read. Join quota tasks on shutdown. Historical quota claims without access_only retain their exclusive managed-auth interpretation and are never relaunched through V2.
+
+Preserve last-success quota windows/timestamps on failures, truthful pending/failed/stale status, observed-recovery deduplication and bounded private reflection checks. Log only closed phases/errors/cleanup and operation identities, excluding authentication, user/account identities, quota values and native bodies. Synthetic protocol/ownership fixtures and build checks remain distinct from real native/account/remote/platform acceptance, which the owner performs separately and has explicitly made nonblocking for this batch.

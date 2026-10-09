@@ -55,7 +55,7 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 			return nil, err
 		}
 		progress := session.Execution
-		primary := domain.BindExecutionInput(assignment.InputID, assignment.Input.Prompt)
+		primary := domain.BindSessionInput(assignment.InputID, assignment.Input)
 		bindings, err := domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, progress.AcceptedInputs)
 		if err != nil {
 			return nil, err
@@ -71,8 +71,11 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if ir.SessionID != sr.ID || ir.Revision != identity.Revision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" || input.ContentRevision == 0 || input.Mode != assignment.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
+		if ir.SessionID != sr.ID || ir.Revision != identity.Revision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" || input.ContentRevision == 0 || len(input.Skills) > 0 || input.Mode != assignment.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
 			return nil, steerConflict()
+		}
+		if len(input.Attachments) > 0 || len(assignment.Input.Attachments) > 0 {
+			return nil, domain.UnsupportedImageInput()
 		}
 		binding := domain.BindExecutionInput(ir.ID, input.Prompt)
 		attempt := domain.SteerAttempt{Version: 1, JobID: grant.JobID, ExecutionID: identity.Execution, InputID: ir.ID, ContentRevision: input.ContentRevision, NativeThreadID: domain.ID(progress.NativeThreadID), NativeTurnID: identity.Turn, Mode: input.Mode, PromptDigest: binding.PromptDigest, State: domain.SteerQueued, AcceptedAt: time.Now().UTC()}

@@ -1,3 +1,4 @@
+import { LocalizedText, copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
 import type { Resource } from "@delinoio/delidev-api-client";
 import { NativeClaudeResponse, type ClaudeQuestion } from "./native-claude-response";
@@ -10,7 +11,7 @@ const exact = (v: Document, fields: string[]) => Object.keys(v).length === field
 const bounded = (v: unknown, max: number): v is string => typeof v === "string" && v.length <= max && !v.includes("\0") && !/[\uD800-\uDFFF]/u.test(v) && new TextEncoder().encode(v).length <= max;
 const label = (v: unknown, max: number): v is string => bounded(v, max) && v.trim().length > 0;
 const optionalText = (v: unknown) => v === null || bounded(v, 4096);
-const modes = ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"];
+const modes = ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions", "auto"];
 function suggestion(value: unknown) {
   const p = object(value);
   if (!Object.keys(p).every((k) => ["type", "rules", "behavior", "mode", "directories", "destination"].includes(k)) || (p.destination !== undefined && !["userSettings", "projectSettings", "localSettings", "session"].includes(text(p.destination)))) return false;
@@ -72,20 +73,21 @@ function validResponse(data: Document, original: Document, input: Document) {
 }
 
 export function NativeClaudeInteraction({ data, resource, accepted, draft, saveDraft, submissionAllowed = true, receiptRetryAllowed = true }: { data: Document; resource?: Resource; accepted?: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
+  useLocale();
   const r = request(data);
-  if (!r) return <section aria-label="Claude request unavailable"><p>The retained Claude request is unavailable or inconsistent.</p></section>;
-  return <section aria-label="Original Claude request">
-    <p>{r.name} · {r.original.kind === Kind.Question ? "User question" : r.original.kind === Kind.Plan ? "Plan approval" : "Tool permission"}</p>
+  if (!r) return <section aria-label={copy("native-claude-interaction.claudeRequestUnavailable_ae878e")}><p>{copy("native-claude-interaction.theRetainedClaudeRequestIsUnavailable_240920")}</p></section>;
+  return <section aria-label={copy("native-claude-interaction.originalClaudeRequest_acfe41")}>
+    <p>{r.name} · {r.original.kind === Kind.Question ? copy("native-claude-interaction.userQuestion_c49daf") : r.original.kind === Kind.Plan ? copy("native-claude-interaction.planApproval_2df6eb") : copy("native-claude-interaction.toolPermission_8bfc4d")}</p>
     {typeof r.metadata.title === "string" ? <p>{r.metadata.title}</p> : null}
     {typeof r.metadata.description === "string" ? <p>{r.metadata.description}</p> : null}
-    {r.original.kind === Kind.Question ? <ol>{(r.input.questions as Document[]).map((q, index) => <li key={index}><strong>{text(q.header)}</strong><p>{text(q.question)}</p><p>{q.multiSelect ? "Multiple selections offered" : "Single selection offered"}</p><ul>{(q.options as Document[]).map((o, index) => <li key={index}>{text(o.label)} — {text(o.description)}</li>)}</ul></li>)}</ol> : null}
-    {r.original.kind === Kind.Plan ? <><pre>{text(r.input.plan)}</pre>{typeof r.input.planFilePath === "string" ? <p>Native plan path: {r.input.planFilePath}</p> : null}</> : null}
-    <details><summary>Original callback input</summary><pre>{text(r.original.input_json)}</pre></details>
-    <details><summary>Original callback metadata</summary><pre>{JSON.stringify(r.metadata, null, 2)}</pre></details>
-    <p>{data.claude_settlement != null ? "Claude processed the original callback. Tool outcome and execution outcome remain separate." : data.closure === "native-closed" ? "The original native request was canceled. Cancellation does not prove that a response was accepted." : data.response != null || data.approval_response != null ? "The response is retained. Transmission and native acceptance are separate observations." : "The original request is waiting for a response."}</p>
-    {data.claude_settlement == null && object(data.response ?? data.approval_response).claude_echo != null ? <p>Claude echoed the original response. This does not prove that the tool or plan ran, or that the answer was accepted.</p> : null}
-    {data.response != null || data.approval_response != null ? <details><summary>Retained response</summary><pre>{JSON.stringify(object(data.response ?? data.approval_response).input, null, 2)}</pre></details> : null}
+    {r.original.kind === Kind.Question ? <ol>{(r.input.questions as Document[]).map((q, index) => <li key={index}><strong>{text(q.header)}</strong><p>{text(q.question)}</p><p>{q.multiSelect ? copy("native-claude-interaction.multipleSelectionsOffered_be4e07") : copy("native-claude-interaction.singleSelectionOffered_fb90f6")}</p><ul>{(q.options as Document[]).map((o, index) => <li key={index}>{text(o.label)} — {text(o.description)}</li>)}</ul></li>)}</ol> : null}
+    {r.original.kind === Kind.Plan ? <><pre>{text(r.input.plan)}</pre>{typeof r.input.planFilePath === "string" ? <p><LocalizedText id="native-claude-interaction.nativePlanPath_94127a" components={{ s0: <>{r.input.planFilePath}</> }} /></p> : null}</> : null}
+    <details><summary>{copy("native-claude-interaction.originalCallbackInput_7f60bc")}</summary><pre>{text(r.original.input_json)}</pre></details>
+    <details><summary>{copy("native-claude-interaction.originalCallbackMetadata_b7c760")}</summary><pre>{JSON.stringify(r.metadata, null, 2)}</pre></details>
+    <p>{data.claude_settlement != null ? copy("native-claude-interaction.claudeProcessedTheOriginalCallbackTool_ec8044") : data.closure === "native-closed" ? copy("native-claude-interaction.theOriginalNativeRequestWasCanceled_35a80b") : data.response != null || data.approval_response != null ? copy("native-claude-interaction.theResponseIsRetainedTransmissionAnd_d838b2") : copy("native-claude-interaction.theOriginalRequestIsWaitingFor_e922dd")}</p>
+    {data.claude_settlement == null && object(data.response ?? data.approval_response).claude_echo != null ? <p>{copy("native-claude-interaction.claudeEchoedTheOriginalResponseThis_509c6a")}</p> : null}
+    {data.response != null || data.approval_response != null ? <details><summary>{copy("native-claude-interaction.retainedResponse_690778")}</summary><pre>{JSON.stringify(object(data.response ?? data.approval_response).input, null, 2)}</pre></details> : null}
     {resource && accepted ? <NativeClaudeResponse key={resource.id} resource={resource} accepted={accepted} questions={r.original.kind === Kind.Question ? r.input.questions as ClaudeQuestion[] : undefined} closed={data.closure !== "open" || data.response != null || data.approval_response != null} draft={draft} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : null}
-    <p>Native suggestions do not grant access or change saved permissions.</p>
+    <p>{copy("native-claude-interaction.nativeSuggestionsDoNotGrantAccess_c03ab1")}</p>
   </section>;
 }

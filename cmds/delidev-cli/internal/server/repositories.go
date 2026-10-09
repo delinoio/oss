@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -23,7 +24,7 @@ type repositorySaveOutput struct {
 func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
 	record, err := tx.Get(domain.RepositoryKind, id)
 	if expected == 0 && domain.SafeError(err).Code == domain.NotFound {
-		return nil
+		return tx.RequireUnusedID(id)
 	}
 	if err != nil {
 		return err
@@ -65,7 +66,21 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			}
 		}
 		for _, checkout := range repository.Checkouts {
-			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required})
+			identity := ""
+			_, machine, machineErr := activeMachine(tx, checkout.MachineID)
+			if machineErr != nil {
+				return nil, machineErr
+			}
+			// The identity field was added after the original inspection input.
+			// Keep it omitted for older Workers so their strict decoder retains the
+			// legacy inspection path; newer Workers enforce the source binding.
+			if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
+				identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+				if err != nil {
+					return nil, err
+				}
+			}
+			raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required, ExpectedRemoteIdentity: identity})
 			if err != nil {
 				return nil, err
 			}
@@ -73,6 +88,12 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			if err != nil {
 				return nil, err
 			}
+		}
+		if len(repository.Checkouts) == 0 {
+			if err := finishRepositorySave(tx, parent.ID); err != nil {
+				return nil, err
+			}
+			return tx.Get(domain.JobKind, parent.ID)
 		}
 		return parent, nil
 	})
@@ -168,11 +189,18 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 		} else {
 			saved, e := tx.Put(domain.RepositoryKind, input.ID, input.ExpectedRevision, "", "", input.Repository)
 			if e != nil {
-				return e
-			}
-			parent.Output, err = json.Marshal(repositorySaveOutput{ID: saved.ID, Revision: saved.Revision})
-			if err != nil {
-				return err
+				// Known immutable identity refusal is a settled validation result,
+				// not a reason to roll back the original successful child report.
+				// Unexpected storage failure still rolls back for exact retry.
+				if domain.SafeError(e).Code != domain.Conflict {
+					return e
+				}
+				problem = domain.SafeError(e)
+			} else {
+				parent.Output, err = json.Marshal(repositorySaveOutput{ID: saved.ID, Revision: saved.Revision})
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

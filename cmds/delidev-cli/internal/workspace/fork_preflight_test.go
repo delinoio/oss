@@ -123,3 +123,35 @@ func TestForkPreparationRetainsScopeAfterNativeHEADFailure(t *testing.T) {
 		t.Fatal("native HEAD failure changed the first source HEAD")
 	}
 }
+
+func TestForkPreparationRetainsOriginalIndexIdentityAndRejectsForeignOwners(t *testing.T) {
+	m := manager(t)
+	input, _ := requestFor(repository(t))
+	source, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := domain.NewID()
+	fork, err := m.ForkPreparation(context.Background(), source, child, domain.Worktree)
+	if err != nil || fork.ForkProcessIdentity() == nil {
+		t.Fatal("original index not retained", err)
+	}
+	raw, err := json.Marshal(fork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded PrepareRequest
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ForkProcessIdentity() != nil {
+		t.Fatal("serialized metadata recreated native proof")
+	}
+	if _, err := m.ForkPreparation(context.Background(), source, child, domain.Worktree); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("existing child owner adopted", err)
+	}
+	current, err := os.Lstat(filepath.Join(m.Root, "processes", string(child)))
+	if err != nil || !os.SameFile(fork.ForkProcessIdentity(), current) {
+		t.Fatal("original owner changed", err)
+	}
+}

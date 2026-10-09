@@ -65,6 +65,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 		}
 		input, err := executionRecoveryRequest(tx, s.Identity.ServerID, sr, session)
 		if err != nil {
+			s.logger.WarnContext(ctx, "session_execution_recovery_rejected", "session_id", sr.ID, "execution_id", execution, "phase", "original-ownership", "code", domain.SafeError(err).Code)
 			return nil, err
 		}
 		raw, err := json.Marshal(input)
@@ -149,10 +150,10 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		return result, err
 	}
 	primaryInput, err := store.Decode[domain.QueuedInput](primary)
-	if err != nil || primaryInput.NativeRequestID != input.TurnRequestID {
+	if err != nil || primaryInput.NativeRequestID != input.TurnRequestID || !queuedSessionInput(primaryInput).Equal(input.Input) {
 		return result, domain.ExecutionRecoveryUncertain()
 	}
-	bindings, err := domain.CheckedExecutionInputs(input.InputID, continuationDigest([]byte(input.Input.Prompt)), progress.AcceptedInputs)
+	bindings, err := domain.CheckedExecutionInputs(input.InputID, domain.BindSessionInput(input.InputID, input.Input).PromptDigest, progress.AcceptedInputs)
 	if err != nil {
 		return result, err
 	}
@@ -178,7 +179,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	result = domain.ExecutionRecoveryRequest{
 		Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
 		AssignmentRevision: assigned.Revision, AssignmentDigest: continuationDigest(assigned.Data), AssignmentInputDigest: continuationDigest(claim.Input), ConfigurationDigest: input.ConfigurationDigest,
-		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: continuationDigest([]byte(input.Input.Prompt)), AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
+		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: domain.BindSessionInput(input.InputID, input.Input).PromptDigest, AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
 		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(progress.NativeThreadID), NativeTurnID: domain.NativeIdentity(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
 	}
 	if input.Configuration.Harness == domain.OpenCode {
@@ -186,20 +187,25 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 		}
 		creation := input.ThreadRequestID
-		if input.Continuation != nil {
+		if session.Fork != nil {
+			creation, err = openCodeForkRecoveryCreation(tx, sr, session, input, history, grant.DeviceID)
+			if err != nil {
+				return domain.ExecutionRecoveryRequest{}, err
+			}
+		} else if input.Continuation != nil {
 			first, err := tx.SessionExecutionJob(sr.ID, history)
 			if err != nil {
 				return result, err
 			}
 			initial, err := store.Decode[domain.Job](first)
 			var original domain.ExecutionJobInput
-			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || original.Version != 1 || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
+			if err != nil || domain.Decode(initial.Input, &original) != nil || original.Validate() != nil || (original.Version != 1 && original.Version != 4) || original.Configuration.Harness != domain.OpenCode || original.ExecutionID != history || original.SessionID != sr.ID || original.MachineID != input.MachineID || original.ConfigurationDigest != input.ConfigurationDigest || original.AccountID != input.AccountID || original.ConnectionID != input.ConnectionID {
 				return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 			}
 			creation = original.ThreadRequestID
 		}
 		result.Harness = domain.OpenCode
-		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: input.Version, CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		result.OpenCode = &domain.OpenCodeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), CreationRequestID: creation, BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
 	} else if input.Configuration.Harness == domain.ClaudeCode {
 		permission, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode)
 		if err != nil || !progress.ClaudeContinuationBoundary(input.InputID) {
@@ -213,7 +219,16 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 			return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 		}
 		result.Harness = domain.ClaudeCode
-		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: input.Version, Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		result.Claude = &domain.ClaudeRecoveryReference{ClaimVersion: nativeRecoveryClaimVersion(input), Version: input.Installation.Version, Executable: input.Installation.ResolvedPath, Model: input.Configuration.NativeModel, Effort: input.Configuration.Effort, Permission: permission, InstructionsDigest: continuationDigest([]byte(input.Configuration.Instructions)), BindingRequestID: input.ThreadRequestID, InputRequestID: input.TurnRequestID}
+		if input.Version == 4 {
+			if session.Startup == nil || session.Startup.Ready == nil || session.Startup.Ready.Validate() != nil {
+				return result, domain.ExecutionRecoveryUncertain()
+			}
+			selection := *input.Startup
+			selection.ExecutableSHA256 = session.Startup.Ready.ExecutableSHA256
+			result.Claude.Startup = &selection
+			result.Claude.Version = ""
+		}
 	} else if input.Configuration.Harness != domain.Codex {
 		return domain.ExecutionRecoveryRequest{}, domain.ExecutionRecoveryUncertain()
 	}
@@ -325,4 +340,53 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 	}
 	_, err = tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session)
 	return err
+}
+
+func nativeRecoveryClaimVersion(input domain.ExecutionJobInput) uint32 {
+	if input.Continuation != nil || input.Fork != nil {
+		return 2
+	}
+	return 1
+}
+
+// The child owns its immutable creation marker independently of its parent.
+// Legacy seeds may derive it only from the exact retained completed Fork input.
+func openCodeForkRecoveryCreation(tx *store.Tx, row store.Record, session domain.Session, input domain.ExecutionJobInput, history, device domain.ID) (domain.ID, error) {
+	f := session.Fork
+	if f == nil || f.Validate() != nil || f.Snapshot.Configuration.Harness != domain.OpenCode || f.RuntimeID != history || f.NativeThreadID != domain.NativeIdentity(session.Execution.NativeThreadID) || f.WorkerDeviceID != device || f.Snapshot.ConfigurationDigest != input.ConfigurationDigest || f.Snapshot.InitialAccountID != input.AccountID || f.Snapshot.ConnectionID != input.ConnectionID || session.InitialExecution.ID != history {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	if input.Fork != nil && (input.Fork.JobID != f.JobID || input.Fork.RuntimeID != f.RuntimeID || input.Fork.NativeThreadID != f.NativeThreadID || input.Fork.NativeTurnID != f.ChildTurn() || input.Fork.CheckpointDigest != f.CheckpointDigest) {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	if f.OpenCodeCreationProof != nil {
+		if !f.VerifyOpenCodeCreation(row.ID) {
+			return "", domain.ExecutionRecoveryUncertain()
+		}
+		return f.OpenCodeCreationRequestID, nil
+	}
+	original, err := tx.Get(domain.JobKind, f.JobID)
+	if err != nil {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	job, err := store.Decode[domain.Job](original)
+	var seed domain.ForkJobInput
+	if err != nil || original.SessionID != f.SourceSessionID || job.Type != domain.ForkSessionJob || job.State != domain.JobSucceeded || job.MachineID != session.MachineID || job.AssignedDeviceID != f.WorkerDeviceID || forkInputDigest(job.Input) != f.JobInputDigest || domain.Decode(job.Input, &seed) != nil || seed.Validate() != nil || seed.OpenCode == nil || seed.ChildSessionID != row.ID || seed.SourceSessionID != f.SourceSessionID || seed.SourceRevision != f.SourceRevision || seed.RuntimeID != f.RuntimeID || seed.Completion.ExecutionID != f.SourceExecutionID || seed.Completion.NativeTurnID != f.SourceTurnID || seed.SourceAssignment.ConfigurationDigest != input.ConfigurationDigest || seed.SourceAssignment.AccountID != input.AccountID || seed.SourceAssignment.ConnectionID != input.ConnectionID {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	var completion domain.ForkJobResult
+	if domain.Decode(job.Output, &completion) != nil || completion.ValidateIdentity(seed) != nil || completion.ChildSessionID != row.ID || completion.RuntimeID != f.RuntimeID || completion.NativeThreadID != f.NativeThreadID || completion.NativeTurnID != f.ChildTurn() || completion.CheckpointDigest != f.CheckpointDigest {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	actual, _ := json.Marshal(f.Snapshot)
+	expected, _ := json.Marshal(seed.Snapshot)
+	selected, _ := json.Marshal(f.Startup)
+	originalSelection, _ := json.Marshal(seed.Startup)
+	if !bytes.Equal(actual, expected) || !bytes.Equal(selected, originalSelection) {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	if f.OpenCodeCreationRequestID != "" && f.OpenCodeCreationRequestID != seed.OpenCode.Fork {
+		return "", domain.ExecutionRecoveryUncertain()
+	}
+	return seed.OpenCode.Fork, nil
 }

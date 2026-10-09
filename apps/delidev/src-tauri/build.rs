@@ -7,10 +7,22 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "account_oauth_native",
+            "desktop_update_context",
+            "desktop_update_native",
+            "desktop_credential_access",
             "choose_repository_folder",
+            "read_runner_device_preferences",
+            "update_runner_device_preferences",
+            "read_session_creation_preferences",
+            "update_session_creation_preferences",
             "read_appearance",
+            "read_date_format",
+            "update_date_format",
             "update_appearance",
+            "read_language",
+            "update_language",
             "open_github",
+            "open_provider_guidance",
             "connect_local",
             "launch_local",
             "retry_local",
@@ -63,6 +75,7 @@ fn build_widget_bridge() {
     assert!(sdk.status.success(), "Cannot resolve the macOS SDK");
     let sources = [
         "../macos-widget/Shared/Snapshot.swift",
+        "../macos-widget/Shared/Localization.swift",
         "../macos-widget/Shared/SnapshotStore.swift",
         "../macos-widget/Bridge/Bridge.swift",
     ];

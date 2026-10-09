@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 )
 
 type ContinuationIntent string
@@ -20,8 +19,23 @@ const (
 // HistoricalInput retains only the native input identity and exact UTF-8 prompt
 // digest. The original content remains in the owning coordinator's transcript.
 type HistoricalInput struct {
+	SkillDigest  [sha256.Size]byte `json:",omitempty"`
 	ID           domain.ID
 	PromptDigest [sha256.Size]byte
+}
+
+// MarshalJSON preserves the original text-only checkpoint size and spelling.
+// Arrays do not honor omitempty for zero bytes, so use presence explicitly.
+func (input HistoricalInput) MarshalJSON() ([]byte, error) {
+	type legacy HistoricalInput
+	var digest *[sha256.Size]byte
+	if input.SkillDigest != ([sha256.Size]byte{}) {
+		digest = &input.SkillDigest
+	}
+	return json.Marshal(struct {
+		*legacy
+		SkillDigest *[sha256.Size]byte `json:",omitempty"`
+	}{(*legacy)(&input), digest})
 }
 
 // ContinuationCheckpoint must come from the preceding accepted execution, after
@@ -129,7 +143,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	if response.ErrorCode != nil {
 		return result, nativeRejected(*response.ErrorCode)
 	}
-	turn, err := decodeContinuation(response.Result, checkpoint)
+	turn, err := decodeContinuation(response.Result, checkpoint, c.nativeImageInput)
 	if err != nil {
 		return mismatch()
 	}
@@ -143,7 +157,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	}
 	retained := trackedTurn{Turn: turn, Mode: checkpoint.Mode}
 	for _, input := range checkpoint.Inputs {
-		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, TurnID: turn.ID}
+		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, SkillDigest: input.SkillDigest, TurnID: turn.ID}
 		retained.Inputs = append(retained.Inputs, input.ID)
 	}
 	state.turns[turn.ID] = retained
@@ -180,8 +194,8 @@ func sameEffectiveSettings(a, b EffectiveSettings) bool {
 	return true
 }
 
-func decodeContinuation(raw json.RawMessage, checkpoint ContinuationCheckpoint) (Turn, error) {
-	turn, inputs, err := decodeLatestTurnInputs(raw)
+func decodeContinuation(raw json.RawMessage, checkpoint ContinuationCheckpoint, readers ...func([]json.RawMessage) (domain.SessionInput, error)) (Turn, error) {
+	turn, inputs, err := decodeLatestTurnInputs(raw, readers...)
 	if err != nil || turn.ID != checkpoint.TurnID || turn.Status != checkpoint.Status || !slices.Equal(inputs, checkpoint.Inputs) {
 		return Turn{}, incompatible()
 	}
@@ -190,7 +204,7 @@ func decodeContinuation(raw json.RawMessage, checkpoint ContinuationCheckpoint) 
 
 // The complete most-recent turn is shared by continuation and Steer inspection.
 // This parser returns only input identities/digests, never retained prompt text.
-func decodeLatestTurnInputs(raw json.RawMessage) (Turn, []HistoricalInput, error) {
+func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessage) (domain.SessionInput, error)) (Turn, []HistoricalInput, error) {
 	var page struct {
 		Data            []json.RawMessage `json:"data"`
 		NextCursor      *string           `json:"nextCursor"`
@@ -229,25 +243,31 @@ func decodeLatestTurnInputs(raw json.RawMessage) (Turn, []HistoricalInput, error
 		if identity.Type != "userMessage" {
 			continue
 		}
+
 		var item struct {
-			Type     string    `json:"type"`
-			ID       string    `json:"id"`
-			ClientID domain.ID `json:"clientId"`
-			Content  []struct {
-				Type     string            `json:"type"`
-				Text     *string           `json:"text"`
-				Elements []json.RawMessage `json:"text_elements"`
-			} `json:"content"`
+			Type     string            `json:"type"`
+			ID       string            `json:"id"`
+			ClientID domain.ID         `json:"clientId"`
+			Content  []json.RawMessage `json:"content"`
 		}
-		if domain.Decode(rawItem, &item) != nil || item.ClientID.Validate() != nil || identities[item.ClientID] || len(item.Content) != 1 {
+		if domain.Decode(rawItem, &item) != nil || item.ClientID.Validate() != nil || identities[item.ClientID] {
 			return Turn{}, nil, incompatible()
 		}
-		part := item.Content[0]
-		if part.Type != "text" || part.Text == nil || len(part.Elements) != 0 || domain.Text(*part.Text, "retained native input", nativewire.MaxFrame, true) != nil {
+		plainParts, selected, err := nativeInputSkills(item.Content)
+		if err != nil {
+			return Turn{}, nil, incompatible()
+		}
+		var decoded domain.SessionInput
+		if len(readers) > 0 {
+			decoded, err = readers[0](plainParts)
+		} else {
+			decoded, err = decodeNativeInputParts(plainParts, nil)
+		}
+		if err != nil {
 			return Turn{}, nil, incompatible()
 		}
 		identities[item.ClientID] = true
-		inputs = append(inputs, HistoricalInput{ID: item.ClientID, PromptDigest: sha256.Sum256([]byte(*part.Text))})
+		inputs = append(inputs, HistoricalInput{ID: item.ClientID, PromptDigest: decoded.InputDigest(), SkillDigest: nativeSkillDigest(selected)})
 	}
 	if len(inputs) == 0 {
 		return Turn{}, nil, incompatible()

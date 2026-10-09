@@ -28,7 +28,20 @@ func init() {
 			os.Exit(70)
 		}
 	}
-	if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" || os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" || os.Getenv("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS") != "1" {
+	nativeSubscription := strings.HasPrefix(mode, "native-subscription-")
+	if nativeSubscription {
+		for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"} {
+			if os.Getenv(key) != "" {
+				os.Exit(71)
+			}
+		}
+		if os.Getenv("CLAUDE_CONFIG_DIR") != filepath.Join(root, "owned-profile", "claude") || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != os.Getenv("CLAUDE_CONFIG_DIR") {
+			os.Exit(71)
+		}
+	} else if os.Getenv("ANTHROPIC_API_KEY") != nativeAPIFixtureToken || os.Getenv("ANTHROPIC_AUTH_TOKEN") != nativeAPIFixtureToken || os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR") != filepath.Join(root, "claude") || os.Getenv("ANTHROPIC_BASE_URL") != "https://relay.example/api-proxy" || os.Getenv("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") != "1" {
+		os.Exit(71)
+	}
+	if os.Getenv("CLAUDE_CODE_RESUME_INTERRUPTED_TURN") != "0" || os.Getenv("CLAUDE_CODE_PROJECT_DIR_NAME") != "delidev" || os.Getenv("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS") != "1" {
 		os.Exit(71)
 	}
 	cwd, _ := os.Getwd()
@@ -65,10 +78,22 @@ func init() {
 		os.Exit(77)
 	}
 	result := fixtureResult()
+	if strings.HasPrefix(mode, "reflect-init-") {
+		result["agents"].([]any)[0].(map[string]any)["description"] = protectedFixtureForm(os.Getenv("ANTHROPIC_AUTH_TOKEN"), strings.TrimPrefix(mode, "reflect-init-"))
+	}
 	result["current_permission_mode"] = "plan"
 	result["commands"] = []any{map[string]any{"name": "compact", "description": "Compact native context", "argumentHint": "[instructions]"}}
 	result["account"].(map[string]any)["tokenSource"] = "ANTHROPIC_AUTH_TOKEN"
 	result["account"].(map[string]any)["apiKeySource"] = "ANTHROPIC_API_KEY"
+	if nativeSubscription {
+		result["account"] = map[string]any{"apiProvider": "firstParty", "email": "fixture@example.invalid", "organization": "Fixture", "subscriptionType": "pro"}
+		if mode == "native-subscription-api-source" {
+			result["account"].(map[string]any)["apiKeySource"] = "apiKeyHelper"
+		}
+		if mode == "native-subscription-foreign-provider" {
+			result["account"].(map[string]any)["apiProvider"] = "bedrock"
+		}
+	}
 	switch mode {
 	case "permission":
 		result["current_permission_mode"] = "default"
@@ -232,7 +257,7 @@ func TestAPIStreamRejectsInvalidLaunchBeforeCreatingNativeState(t *testing.T) {
 			path := filepath.Join(filepath.Dir(cfg.Home), "instructions.txt")
 			switch change {
 			case "version":
-				cfg.Version = "2.1.237"
+				cfg.Version = "invalid/version"
 			case "owner":
 				cfg.Process.OwnerID = "invalid"
 			case "executable":
@@ -242,7 +267,7 @@ func TestAPIStreamRejectsInvalidLaunchBeforeCreatingNativeState(t *testing.T) {
 			case "model":
 				cfg.Model = ""
 			case "effort":
-				cfg.Effort = "unknown"
+				cfg.Effort = "invalid\x00effort"
 			case "permission":
 				cfg.Permission = "unknown"
 			case "token":

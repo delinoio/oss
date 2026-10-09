@@ -110,13 +110,13 @@ func TestClaudeRecoveryRequiresExplicitOriginalComparison(t *testing.T) {
 			case "claim-version":
 				native.ClaimVersion = 3
 			case "protocol":
-				native.Version = "unverified"
+				native.Version = "invalid/version"
 			case "executable":
 				native.Executable = ""
 			case "model":
 				native.Model = ""
 			case "effort":
-				native.Effort = "unknown"
+				native.Effort = "invalid\x00effort"
 			case "permission":
 				native.Permission = "unknown"
 			case "instructions":

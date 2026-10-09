@@ -61,7 +61,7 @@ func checkForkCheckpointCapacity(source nativeCheckpoint) error {
 	sourceReference := source.Reference
 	sourceReference.SHA256 = digest
 	proof := &nativeCheckpointFork{Version: 1, RequestID: domain.NewID(), SourceReference: sourceReference, SourceWorkspace: source.Workspace, SourceHistories: histories, ClonedHistories: cloned, Identities: identities, SelectionPending: true}
-	value := nativeCheckpoint{Version: 1, NativeVersion: SupportedVersion, Reference: ref, RuntimeHome: path, Workspace: path, NativeRoot: "/", Project: "global", Slug: strings.Repeat("\x01", 256), Created: 9007199254740991, SettingsSHA256: digest, CredentialSHA256: digest, History: cloned[len(cloned)-1], Files: files, Fork: proof}
+	value := nativeCheckpoint{Version: 1, NativeVersion: strings.Repeat("v", 64), Reference: ref, RuntimeHome: path, Workspace: path, NativeRoot: "/", Project: "global", Slug: strings.Repeat("\x01", 256), Created: 9007199254740991, SettingsSHA256: digest, CredentialSHA256: digest, History: cloned[len(cloned)-1], Files: files, Fork: proof}
 	if len(cloned) > 1 {
 		value.Previous, value.PredecessorSHA256 = cloned[:len(cloned)-1], digest
 	}

@@ -41,13 +41,21 @@ type managedSubscriptionLease struct {
 type managedJournalState string
 
 const (
-	managedClaimed  managedJournalState = "claimed"
-	managedClosed   managedJournalState = "closed"
-	managedReported managedJournalState = "reported"
+	managedNotAdmitted managedJournalState = "not-admitted"
+	managedClaimed     managedJournalState = "claimed"
+	managedClosed      managedJournalState = "closed"
+	managedReported    managedJournalState = "reported"
 )
 
 type managedSubscriptionJournal struct {
-	Version                                                 uint32 `json:"version"`
+	CleanupFinish                                           domain.ID `json:"cleanup_finish,omitempty"`
+	LeaseRevision                                           uint64    `json:"lease_revision,omitempty"`
+	Version                                                 uint32    `json:"version"`
+	NativeProfileID                                         domain.ID `json:"native_profile_id,omitempty"`
+	NativeIdentity                                          string    `json:"native_identity,omitempty"`
+	ExecutionStarted                                        bool      `json:"execution_started,omitempty"`
+	NativeStarted                                           bool      `json:"native_started,omitempty"`
+	CodeSubmissionID                                        domain.ID `json:"code_submission_id,omitempty"`
 	Lease, Account, Operation, Instance, Finish, Generation domain.ID
 	Action                                                  pb.SubscriptionAction
 	State                                                   managedJournalState
@@ -84,7 +92,18 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 			break
 		}
 		problem := rpc.ClientError(err)
-		if domain.SafeError(problem).Code != domain.ResourceExhausted {
+		safe := domain.SafeError(problem)
+		lifecycle := action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN || action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH || action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT
+		if lifecycle && safe.Code == domain.Canceled && safe.Cause == "subscription_take_not_admitted" {
+			// This exact server proof precedes every lease/native side effect.
+			// Record local retirement without fabricating a Finish acknowledgment.
+			claim.State = managedNotAdmitted
+			if err := writeJSON(journalPath, claim); err != nil {
+				return nil, subscription.Invalid()
+			}
+			return nil, &managedTakeNotAdmitted{problem}
+		}
+		if safe.Code != domain.ResourceExhausted {
 			code := domain.SafeError(problem).Code
 			if action == pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE && (code == domain.ServerUnavailable || code == domain.Unavailable || code == domain.Canceled || code == domain.Internal || code == domain.RecoveryRequired) {
 				return nil, &managedExecutionUncertain{problem}
@@ -110,7 +129,9 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
+	claim.LeaseRevision = response.Msg.LeaseRevision
 	claim.Generation = domain.ID(response.Msg.GenerationId)
+	claim.NativeProfileID = domain.ID(response.Msg.NativeProfileId)
 	if err := writeJSON(journalPath, claim); err != nil {
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
@@ -142,6 +163,10 @@ func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, succe
 
 // A failed operation with acknowledged completion no longer owns a lease.
 // It must not interrupt unrelated accounts still running on this lane.
+type managedTakeNotAdmitted struct{ error }
+
+func (e *managedTakeNotAdmitted) Unwrap() error { return e.error }
+
 type managedReportedFailure struct{ error }
 
 func (e *managedReportedFailure) Unwrap() error { return e.error }
@@ -186,12 +211,14 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 			continue
 		}
 		var account domain.Account
-		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil {
+		if domain.Decode(r.DocumentJson, &account) != nil || account.Subscription == nil || account.Subscription.Pending == nil && account.Subscription.Observation == nil && !(account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil) {
 			return subscription.Invalid()
 		}
 		var op domain.SubscriptionOperation
 		var observation *domain.SubscriptionObservationOperation
-		if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
+		if account.SubscriptionService == domain.SubscriptionClaude && account.Subscription.RecoveryRequired && account.Subscription.Lease != nil {
+			op = domain.SubscriptionOperation{ID: account.Subscription.Lease.OperationID}
+		} else if account.Subscription.Observation != nil && account.Subscription.Observation.Phase == domain.SubscriptionObservationQueued {
 			observation = account.Subscription.Observation
 			op = domain.SubscriptionOperation{ID: observation.ID, Action: observation.Action, MachineID: observation.MachineID, Actor: observation.Actor}
 		} else if account.Subscription.Pending != nil {
@@ -218,9 +245,22 @@ func watchSubscriptions(ctx context.Context, config Config, credential Credentia
 					}
 					return err
 				}
+				if account.SubscriptionService == domain.SubscriptionClaude {
+					if account.Subscription.RecoveryRequired {
+						return runClaudeRecovery(ctx, config, client, credential, domain.ID(r.Id), account)
+					}
+					return runClaudeAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
+				}
 				return runManagedAccount(ctx, config, client, credential, instance, domain.ID(r.Id), r.Revision, op)
 			}
 			if err := run(); err != nil {
+				var refused *managedTakeNotAdmitted
+				if errors.As(err, &refused) {
+					if config.Logger != nil {
+						config.Logger.InfoContext(ctx, "subscription_take_not_admitted", "account_id", r.Id, "operation_id", op.ID, "action", op.Action)
+					}
+					return
+				}
 				if config.Logger != nil {
 					config.Logger.WarnContext(ctx, "managed_subscription_requires_reconciliation", "account_id", r.Id, "operation_id", op.ID, "action", op.Action, "code", domain.SafeError(err).Code)
 				}
@@ -289,7 +329,7 @@ func runManagedAccount(ctx context.Context, config Config, client delidevv1conne
 	if err != nil {
 		return domain.SafeError(err)
 	}
-	homeInfo, err := os.Stat(home)
+	homeInfo, err := security.StableStat(home)
 	if err != nil {
 		return subscription.Invalid()
 	}
@@ -534,7 +574,7 @@ func managedSubscriptionCapability(resource *pb.Resource) bool {
 
 func slicesContainManagedCapability(values []domain.WorkerCapability) bool {
 	for _, v := range values {
-		if v == domain.ManagedCodexSubscriptionsV1 {
+		if v == domain.ManagedCodexSubscriptionsV1 || v == domain.NativeClaudeSubscriptionsV1 {
 			return true
 		}
 	}
@@ -556,7 +596,7 @@ func verifyManagedSubscriptionProfile(ctx context.Context, config Config, execut
 	if err != nil {
 		return false, domain.SafeError(err)
 	}
-	info, err := os.Stat(home)
+	info, err := security.StableStat(home)
 	if err != nil {
 		return false, subscription.Invalid()
 	}

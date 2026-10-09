@@ -25,17 +25,18 @@ function fixture(options: { local?: boolean; sidechat?: boolean; supported?: boo
  const requests:unknown[]=[];const deletes:unknown[]=[];
  const request=vi.fn(async(value:{action:WorkspaceStorageAction})=>{requests.push(value);if(requests.length===1)throw new ConnectError("lost response",Code.Unavailable);current={...current,revision:9n};return {job:value.action===WorkspaceStorageAction.CLEANUP || value.action===WorkspaceStorageAction.RECOVER?cleanup:job};});
  const cancel=vi.fn(async(_value:unknown)=>({job:{...cleanup,revision:3n}}));
+ const getOperation=vi.fn((value:{id:string})=>({job:value.id===job.id?job:cleanup}));
  const remove=vi.fn(async(value:unknown)=>{deletes.push(value);if(deletes.length===1)throw new ConnectError("lost deletion response",Code.Unavailable);return {job:deletion};});
- const getDeletion=vi.fn(async()=>({job:deletion}));
+ const getDeletion=vi.fn(async(_request: {sessionId: string})=>({job:deletion}));
  const transport=createRouterTransport((router)=>{
   router.service(SystemService,{getStatus:()=>({capabilities:options.supported===false?[]:[SystemCapability.WORKSPACE_STORAGE_V1,SystemCapability.PERMANENT_SESSION_DELETION_V1]})});
   router.service(ResourceService,{getResource:()=>({resource:current}),listResources:(value)=>({resources:value.filter?.kind===EntityKind.SNAPSHOT?[snapshot]:[]})});
-  router.service(WorkspaceStorageService,{requestWorkspaceStorage:request,getWorkspaceStorageOperation:(value)=>({job:value.id===job.id?job:cleanup}),cancelWorkspaceStorageOperation:cancel});
+  router.service(WorkspaceStorageService,{requestWorkspaceStorage:request,getWorkspaceStorageOperation:getOperation,cancelWorkspaceStorageOperation:cancel});
   router.service(SessionService,{deleteSession:remove,getSessionDeletion:getDeletion});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=(active:boolean)=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionStorageProvider>{active?<SessionStorageAction source={session}/>:<p>Other session</p>}</SessionStorageProvider></MutationIntents></QueryClientProvider></TransportProvider>;
- return {view,session,job,cleanup,deletion,request,requests,cancel,remove,deletes,getDeletion};
+ return {client,view,session,job,cleanup,deletion,request,requests,cancel,remove,deletes,getDeletion,getOperation};
 }
 async function open(){fireEvent.click(screen.getByRole("button",{name:"Workspace storage and permanent deletion"}));await screen.findByRole("button",{name:"Preview workspace usage"});}
 
@@ -74,7 +75,7 @@ it("observes permanent deletion independently of the removed resource and retain
  expect(f.deletes[1]).toEqual(f.deletes[0]);expect(f.deletes[0]).toMatchObject({mutation:{id:f.session.id,expectedRevision:8n}});
  expect(f.getDeletion).toHaveBeenCalled();
  f.deletion.state=SessionDeletionState.SUCCEEDED;f.deletion.databaseRemoved=true;f.deletion.backupsRemoved=true;
- fireEvent.click(screen.getByRole("button",{name:"Refresh permanent deletion"}));
+ await f.client.invalidateQueries();
  await screen.findByText("Permanent deletion completed.");
  expect(f.remove).toHaveBeenCalledTimes(2);
 });
@@ -89,12 +90,12 @@ it.each([{local:true},{sidechat:true},{supported:false}])("preserves Local/Sidec
 
 it.each(["failed", "canceled"] as const)("retains the restored predecessor after %s recovery without reopening", async(recoveryState)=>{
  const f=fixture({recoveryState});render(f.view(true));await open();
- await screen.findByText("Storage operation: uncertain. Acceptance does not establish native cleanup.");
+ await screen.findByText("The Worker outcome is uncertain. Inspect the original operation before starting another.");
  await waitFor(()=>expect((screen.getByRole("button",{name:"Reconcile original storage operation"}) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
  fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
  fireEvent.click(await screen.findByRole("button",{name:"Retry the same storage request"}));
- await screen.findByText(`Storage operation: ${recoveryState}. Acceptance does not establish native cleanup.`);
+ await screen.findByText(recoveryState === "failed" ? "The work failed. Review the problem before trying again." : "The work was canceled. Any remaining cleanup still requires confirmation.");
  await waitFor(()=>expect((screen.getByRole("button",{name:"Reconcile original storage operation"}) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
  fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
@@ -130,4 +131,55 @@ it.each([Code.NotFound, Code.Unavailable])("makes an externally removed session 
   expect(getDeletion).not.toHaveBeenCalled();
  }
  expect(mutate).not.toHaveBeenCalled();
+});
+
+
+it("retries only the original deletion read after a foreign successful observation", async () => {
+ const f = fixture();
+ f.remove.mockResolvedValueOnce({ job: f.deletion });
+ f.getDeletion.mockResolvedValueOnce({ job: { ...f.deletion, sessionId: newRequestId(), state: SessionDeletionState.SUCCEEDED } });
+ f.deletion.state = SessionDeletionState.SUCCEEDED;
+ render(f.view(true)); await open();
+ fireEvent.click(screen.getByRole("button", { name: "Permanently delete session" }));
+ fireEvent.click(screen.getByRole("button", { name: "Confirm permanent session deletion" }));
+ const retry = await screen.findByRole("button", { name: "Retry original status read" });
+ expect(screen.queryByText("Permanent deletion completed.")).toBeNull();
+ expect(screen.queryByRole("button", { name: "Finish deletion operation" })).toBeNull();
+ await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(retry);
+ await screen.findByText("Permanent deletion completed.");
+ expect(f.getDeletion).toHaveBeenCalledTimes(2);
+ expect(f.getDeletion.mock.calls.every(call => (call[0] as unknown as { sessionId: string }).sessionId === f.session.id)).toBe(true);
+ expect(f.remove).toHaveBeenCalledTimes(1);
+});
+
+it.each(["queued", "claimed", "succeeded", "failed", "canceled"])("renders large original recovery in %s state with its existing controls", async state => {
+ const f=fixture({recoveryState:"failed"});
+ const body={type:"workspace-storage",state,input:{action:"recover"},output:{cleanup_verified:true,source_bytes:"123",retained_snapshot_bytes:"16",removed_source_bytes:"0",workspace_state:"present"},...(state==="failed"?{problem:{code:"recovery_required",message:"Original recovery needs inspection",guidance:"Inspect original ownership."}}:{})};
+ f.cleanup.documentJson=new TextEncoder().encode(JSON.stringify(body)+" ".repeat(2<<20));
+ render(f.view(true));await open();
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Reconcile original storage operation"})).toHaveProperty("disabled",false));
+ fireEvent.click(screen.getByRole("button",{name:"Reconcile original storage operation"}));
+ fireEvent.click(screen.getByRole("button",{name:"Confirm selected storage action"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Retry the same storage request"}));
+ await screen.findByText("Original action: recover");
+ expect(f.requests[1]).toEqual(f.requests[0]);
+ if(state==="queued"||state==="claimed") {
+  expect(screen.getByRole("button",{name:"Cancel original storage operation"})).toHaveProperty("disabled",false);
+ } else {
+  expect(screen.queryByRole("button",{name:"Cancel original storage operation"})).toBeNull();
+  expect(screen.getByRole("button",{name:"Reconcile original storage operation"})).toHaveProperty("disabled",false);
+ }
+ if(state==="succeeded") {
+  expect(screen.getByText(/Source: 123 bytes/)).toBeTruthy();
+  const reads=f.getOperation.mock.calls.length;
+  await new Promise(resolve=>setTimeout(resolve,2100));
+  expect(f.getOperation).toHaveBeenCalledTimes(reads);
+ }
+ if(state==="failed") expect(screen.getByText(/Original recovery needs inspection/)).toBeTruthy();
+ if(["succeeded","failed","canceled"].includes(state)) {
+  fireEvent.click(screen.getByRole("button",{name:"Finish storage view"}));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(f.requests).toHaveLength(2);
+ }
 });

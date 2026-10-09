@@ -55,6 +55,11 @@ func init() {
 		case "initialized":
 		case "thread/loaded/list":
 			write(req.ID, map[string]any{"data": []string{}, "nextCursor": nil})
+		case "experimentalFeature/list":
+			if !strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
+				os.Exit(40)
+			}
+			write(req.ID, map[string]any{"data": []any{map[string]any{"name": "plugins", "enabled": false}}, "nextCursor": nil})
 		case "config/read":
 			write(req.ID, map[string]any{"config": map[string]any{"cli_auth_credentials_store": "file", "model_provider": "openai", "forced_login_method": "chatgpt", "model_providers": map[string]any{}}, "origins": nil, "layers": nil})
 		case "account/login/start":
@@ -110,6 +115,14 @@ func init() {
 			}
 			write(req.ID, map[string]string{"outcome": outcome})
 		case "account/rateLimits/read":
+			if mode == "active-quota" {
+				file, err := os.OpenFile(filepath.Join(home, "quota-reads"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					os.Exit(42)
+				}
+				_, _ = file.WriteString("read\n")
+				_ = file.Close()
+			}
 			write(req.ID, map[string]any{"rateLimits": map[string]any{"limitId": "codex", "primary": nil, "secondary": nil}, "rateLimitsByLimitId": nil})
 		case "account/logout":
 			if os.Remove(filepath.Join(home, "auth.json")) != nil {

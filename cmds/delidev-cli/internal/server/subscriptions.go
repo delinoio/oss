@@ -52,6 +52,13 @@ func subscriptionDenied() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "The managed account cannot grant authentication authority.", "Reconcile its original lease, credential generation and confirmed native cleanup; never redistribute an older bundle.")
 }
 
+// Only an uncommitted fresh lifecycle claim can prove that no lease was granted.
+func subscriptionTakeNotAdmitted() *domain.Error {
+	problem := domain.Fail(domain.Canceled, "The original queued subscription operation is no longer available.", "Inspect the current account operation before requesting another lifecycle action.")
+	problem.Cause = "subscription_take_not_admitted"
+	return problem
+}
+
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	if actor.Type == domain.OwnerDevice {
 		return nil
@@ -87,6 +94,13 @@ func cancelQueuedSubscriptionInitiator(tx *store.Tx, device domain.ID) error {
 		if o := state.ServerOperation; o != nil && o.ID == state.Pending.ID {
 			o.State = domain.SubscriptionCanceled
 		}
+		if o := state.NativeOperation; o != nil && o.ID == state.Pending.ID {
+			o.State = domain.SubscriptionCanceled
+			if state.Pending.Action == domain.SubscriptionLogin && state.Lease == nil && state.Generation == "" {
+				state.NativeProfileID = ""
+				state.OwnerMachineID = ""
+			}
+		}
 		state.Pending = nil
 		if _, err := tx.Put(domain.AccountKind, record.ID, record.Revision, "", "", account); err != nil {
 			return err
@@ -115,7 +129,7 @@ func subscriptionInstallation(tx *store.Tx, machineID domain.ID) (domain.Install
 	if selected != nil && domain.CodexVersionAllowed(selected.Version) && selected.State == domain.InstallationDetected && selected.ProtocolVerified && selected.ResolvedPath != "" && selected.Problem == nil && selected.Protocol != nil && selected.Protocol.Protocol == domain.ProtocolFor(domain.Codex) && selected.Protocol.State == domain.ProtocolVerified && selected.Protocol.Problem == nil && selected.ObservedAt != nil && !selected.ObservedAt.IsZero() && !selected.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
 		return *selected, nil
 	}
-	return domain.Installation{}, domain.Fail(domain.Unsupported, "Managed subscriptions require installed Codex 0.151.0.", "Discover and verify that exact native installation on the explicitly selected Runner Device.")
+	return domain.Installation{}, domain.Fail(domain.Unsupported, "The selected Runner Device has no verified Codex installation.", "Check the selected Runner Device's installed Codex and protocol verification.")
 }
 
 func subscriptionAccount(tx *store.Tx, id domain.ID, revision uint64) (store.Record, domain.Account, error) {
@@ -137,6 +151,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 	m := req.Msg.Mutation
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.requestClaudeSubscription(ctx, req)
 	}
 	if req.Msg.MachineId == "" {
 		return s.requestServerSubscription(ctx, req)
@@ -168,7 +187,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
+		if state.ServerObservationActive() || state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -176,6 +195,11 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		}
 		if action != domain.SubscriptionLogin && (a.Connection == nil || state.Generation == "") {
 			return nil, subscriptionDenied()
+		}
+		if state.ServerOperation != nil && state.ServerOperation.CleanupPhase == domain.SubscriptionCredentialCleanupConfirmed {
+			// A fresh explicit Worker login supersedes the settled server attempt.
+			// Its cleanup checkpoint cannot describe the new pending/native owner.
+			state.ServerOperation = nil
 		}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, MachineID: input.Machine, Actor: actor, DeviceCode: input.DeviceCode, Phase: domain.SubscriptionQueued}
 		if action == domain.SubscriptionLogout {
@@ -211,6 +235,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 	m := req.Msg.Mutation
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
+	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.cancelClaudeSubscription(ctx, req)
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.cancel", disconnectAccountInput{domain.ID(m.Id), m.ExpectedRevision}, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, domain.ID(m.Id), m.ExpectedRevision)
@@ -248,6 +277,11 @@ func (s *Service) CancelSubscription(ctx context.Context, req *connect.Request[p
 
 func (s *Service) GetSubscriptionProgress(ctx context.Context, req *connect.Request[pb.GetSubscriptionProgressRequest]) (*connect.Response[pb.GetSubscriptionProgressResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
+	if matched, err := s.isClaudeSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.getClaudeSubscriptionProgress(ctx, req)
+	}
 	unlock, err := s.lockAccounts(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, c)
@@ -306,8 +340,19 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 			if err := currentInstance(tx, domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId)); err != nil {
 				return err
 			}
-			if _, err := subscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
+			_, machine, err := activeMachine(tx, domain.ID(req.Msg.MachineId))
+			if err != nil {
 				return err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+				return subscriptionDenied()
+			}
+			// A current adapter may wait for explicitly accepted lifecycle work
+			// without an installed harness. Acceptance/Take still own authority.
+			if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+				if _, err := subscriptionInstallation(tx, domain.ID(req.Msg.MachineId)); err != nil {
+					return err
+				}
 			}
 			accounts, err := all(tx, domain.AccountKind)
 			if err != nil {
@@ -318,7 +363,17 @@ func (s *Service) WatchSubscription(ctx context.Context, req *connect.Request[pb
 				if err != nil {
 					return err
 				}
+				if a.SubscriptionService == domain.SubscriptionClaude && !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1) || a.SubscriptionService == domain.SubscriptionChatGPT && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+					continue
+				}
 				state := a.Subscription
+				if state != nil && a.SubscriptionService == domain.SubscriptionClaude && state.RecoveryRequired && state.Lease != nil && state.Lease.MachineID == domain.ID(req.Msg.MachineId) {
+					records = append(records, r)
+					if len(records) == 4 {
+						break
+					}
+					continue
+				}
 				if state != nil && state.Observation != nil && state.Observation.Phase == domain.SubscriptionObservationQueued && state.Observation.MachineID == domain.ID(req.Msg.MachineId) && !state.RecoveryRequired && (state.Lease == nil || state.Lease.Action == domain.SubscriptionExecute && state.Lease.InstanceID == domain.ID(req.Msg.InstanceId)) {
 					records = append(records, r)
 					if len(records) == 4 {
@@ -393,6 +448,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.takeClaudeSubscription(ctx, req)
+	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -412,6 +472,8 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		return nil, rpc.Error(err, c)
 	}
 	defer unlock()
+	directExecution := false
+	var forkRevision uint64
 	result, err := s.Store.Mutate(ctx, input.Lease, "subscription.take", input, func(tx *store.Tx) (any, error) {
 		// Take retains the original observation while another lease or metadata
 		// update advances the account. Lifecycle authority is the exact still-queued
@@ -427,14 +489,16 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if state == nil || state.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
+		if state.ExclusiveServerObservationActive() || state.Lease != nil || state.ServerOperation != nil && state.ServerOperation.NativeStarted {
 			return nil, domain.Fail(domain.ResourceExhausted, "The selected account is exclusively leased.", "Wait for its original cleanup; never switch accounts automatically.")
 		}
 		if err := currentInstance(tx, input.Machine, input.Instance); err != nil {
 			return nil, err
 		}
-		if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
-			return nil, err
+		if action != domain.SubscriptionExecute {
+			if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
+				return nil, err
+			}
 		}
 		if action == domain.SubscriptionExecute {
 			if state.Observation != nil && state.Observation.Active() {
@@ -460,6 +524,17 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if domain.Decode(job.Input, &execution) != nil || execution.Validate() != nil {
 					return nil, subscriptionDenied()
 				}
+
+			case domain.ForkSessionJob:
+				var fork domain.ForkJobInput
+				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != state.Generation || fork.SourceSessionID != jr.SessionID {
+					return nil, subscriptionDenied()
+				}
+				if err := validateForkAuthority(tx, fork); err != nil {
+					return nil, err
+				}
+				execution = fork.SourceAssignment
+				forkRevision = jr.Revision
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
 				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
@@ -470,7 +545,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				if err != nil || machineErr != nil || !machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
 					return nil, subscriptionDenied()
 				}
-				if _, err := checkedExecutionAssignment(tx, sr, session, machine, compact.Assignment); err != nil {
+				if err := checkedExecutionSource(tx, sr, session, machine, compact.Assignment); err != nil {
 					return nil, err
 				}
 				if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
@@ -480,6 +555,16 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			default:
 				return nil, subscriptionDenied()
 			}
+			if execution.Version == 4 {
+				_, machine, err := activeMachine(tx, input.Machine)
+				if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+					return nil, subscriptionDenied()
+				}
+				directExecution = true
+			} else if _, err := subscriptionInstallation(tx, input.Machine); err != nil {
+				return nil, err
+			}
+
 			if execution.AccountID != r.ID || execution.ConnectionID != a.Connection.ID || !execution.Configuration.Subscription || execution.Configuration.SubscriptionService != domain.SubscriptionChatGPT || execution.Configuration.Harness != domain.Codex {
 				return nil, subscriptionDenied()
 			}
@@ -493,8 +578,14 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 		} else {
 			op := state.Pending
-			if op == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued || op.Canceled {
+			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
+				return nil, err
+			}
+			if op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued) {
 				return nil, subscriptionDenied()
+			}
+			if op == nil || op.ID != input.Operation || op.Canceled {
+				return nil, subscriptionTakeNotAdmitted()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {
 				return nil, err
@@ -504,7 +595,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
 			return nil, err
 		}
-		state.Lease = &domain.SubscriptionLease{ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
+		state.Lease = &domain.SubscriptionLease{ForkRevision: forkRevision, ID: input.Lease, OperationID: input.Operation, Revision: r.Revision + 1, Action: action, MachineID: input.Machine, InstanceID: input.Instance, DeviceID: actor.DeviceID, Epoch: s.subscriptionServerEpoch(), Generation: state.Generation, StartedAt: time.Now().UTC()}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
@@ -527,7 +618,11 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 		if err == nil {
 			generation = a.Subscription.Generation
 			leaseRevision = a.Subscription.Lease.Revision
-			installation, err = subscriptionInstallation(tx, input.Machine)
+			// The v4 job already owns its immutable startup selection. Protected
+			// bundle delivery cannot reintroduce discovery or version admission.
+			if !directExecution {
+				installation, err = subscriptionInstallation(tx, input.Machine)
+			}
 		}
 		return err
 	})
@@ -591,6 +686,11 @@ var subscriptionUserCode = regexp.MustCompile(`^[A-Z0-9-]{4,32}$`)
 
 func (s *Service) PublishSubscriptionProgress(ctx context.Context, req *connect.Request[pb.PublishSubscriptionProgressRequest]) (*connect.Response[pb.PublishSubscriptionProgressResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
+	if matched, err := s.isClaudeSubscription(ctx, req.Msg.AccountId); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.publishClaudeSubscriptionProgress(ctx, req)
+	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -645,6 +745,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 	if err := validateAccountMutation(m); err != nil {
 		return nil, rpc.Error(err, c)
 	}
+	if matched, err := s.isClaudeSubscription(ctx, m.Id); err != nil {
+		return nil, rpc.Error(err, c)
+	} else if matched {
+		return s.finishClaudeSubscription(ctx, req)
+	}
 	if err := workerActor(ctx, req.Msg.MachineId, req.Msg.InstanceId); err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -673,6 +778,9 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return err
 			}
 			_, original, err = s.subscriptionLease(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance)
+			if err == nil && original.Subscription.Lease.Action == domain.SubscriptionExecute {
+				_, err = managedSidechatLease(tx, *original.Subscription.Lease)
+			}
 			return err
 		})
 		if err != nil {
@@ -757,7 +865,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			} else if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
 				return nil, rpc.Error(err, c)
 			}
 		}
@@ -770,6 +878,11 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				return nil, err
 			}
 			state := a.Subscription
+			if lease.Action == domain.SubscriptionExecute {
+				if _, err := managedSidechatLease(tx, *lease); err != nil {
+					return nil, err
+				}
+			}
 			if state.RecoveryRequired || state.Generation != input.Generation {
 				return nil, subscriptionDenied()
 			}
@@ -848,7 +961,26 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 				return nil, err
 			}
-			return accountReceipt{ID: r.ID}, nil
+
+			receipt := accountReceipt{ID: r.ID}
+			if usable && input.Cleanup && lease.Action == domain.SubscriptionExecute && lease.ForkRevision != 0 {
+				jr, err := tx.Get(domain.JobKind, lease.OperationID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](jr)
+				if err != nil {
+					return nil, err
+				}
+				if job.Type == domain.ForkSessionJob {
+					var fork domain.ForkJobInput
+					if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != input.Generation || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+						return nil, subscriptionDenied()
+					}
+					receipt.ManagedSidechat = &domain.SubscriptionForkFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
+				}
+			}
+			return receipt, nil
 		})
 		if err != nil {
 			return nil, rpc.Error(err, c)
@@ -863,7 +995,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 			if lease.Action == domain.SubscriptionLogout {
 				keep = ""
 			}
-			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep); err != nil {
+			if err := cleanupSubscriptionReferences(ctx, vault, input.Account, keep, quotaProtectedGeneration(original.Subscription)); err != nil {
 				// The owned-error defer records recovery after releasing accountGate.
 				return nil, rpc.Error(err, c)
 			}
@@ -900,7 +1032,7 @@ func uniqueSubscriptionIdentity(tx *store.Tx, owner domain.ID, identity string) 
 	return nil
 }
 
-func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, owner, keep domain.ID) error {
+func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, owner, keep domain.ID, protected ...domain.ID) error {
 	refs, err := vault.UnremovedReferences(ctx, owner)
 	if err != nil {
 		return err
@@ -912,7 +1044,7 @@ func cleanupSubscriptionReferences(ctx context.Context, vault accountSecrets, ow
 		if ref.Owner != owner || ref.Purpose != credentials.AccountLogin {
 			return subscriptionDenied()
 		}
-		if ref.ID != keep {
+		if ref.ID != keep && !slices.Contains(protected, ref.ID) {
 			if err := vault.Delete(ctx, ref); err != nil {
 				return err
 			}
@@ -947,7 +1079,7 @@ func (s *Service) markSubscriptionRecovery(id domain.ID) error {
 		return accountReceipt{ID: r.ID}, err
 	})
 	if err == nil {
-		delete(s.subscriptionProgress, pending)
+		s.clearClaudeLoginInput(pending)
 	}
 	return err
 }
@@ -1011,8 +1143,45 @@ func (s *Service) retainLostSubscriptionLeases(machine, instance domain.ID, exec
 	})
 	if err == nil {
 		for _, operation := range presentations {
-			delete(s.subscriptionProgress, operation)
+			s.clearClaudeLoginInput(operation)
 		}
 	}
 	return err
+}
+
+// managedSidechatLease checks original Fork ownership before vault staging and
+// again inside protected Finish. Ordinary execution and compaction keep their
+// existing Finish behavior; a Sidechat cannot borrow those jobs' authority.
+func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain.ForkJobInput, error) {
+	if lease.ForkRevision == 0 {
+		return nil, nil
+	}
+	jr, err := tx.Get(domain.JobKind, lease.OperationID)
+	if err != nil {
+		return nil, err
+	}
+	job, err := store.Decode[domain.Job](jr)
+	if err != nil {
+		return nil, err
+	}
+	if job.Type != domain.ForkSessionJob {
+		return nil, nil
+	}
+	var fork domain.ForkJobInput
+	if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != lease.Generation || lease.ForkRevision == 0 || jr.Revision != lease.ForkRevision || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+		return nil, subscriptionDenied()
+	}
+	if err := validateForkAuthority(tx, fork); err != nil {
+		return nil, err
+	}
+	return &fork, nil
+}
+
+// A quota reader owns its captured reference independently of the writer's
+// current generation. Rotation may retire it only after joined observer cleanup.
+func quotaProtectedGeneration(st *domain.SubscriptionState) domain.ID {
+	if st != nil && st.ServerQuota != nil && st.ServerQuota.Active() {
+		return st.ServerQuota.Generation
+	}
+	return ""
 }

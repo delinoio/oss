@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
-	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
@@ -22,7 +21,7 @@ type ConfigurationMutation struct {
 
 type validatable interface{ Validate() error }
 
-func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
+func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
 	var value validatable
 	switch kind {
 	case domain.ProjectKind:
@@ -47,13 +46,28 @@ func configurationValue(kind domain.Kind, raw []byte) (validatable, error) {
 	if err := domain.Decode(raw, value); err != nil {
 		return nil, err
 	}
+	if repository, ok := value.(*domain.Repository); ok {
+		if repository.RemoteURL == "" {
+			if requireRepositoryURL {
+				return nil, domain.Fail(domain.InvalidArgument, "Enter a credential-free HTTPS or SSH Git URL.", "Use HTTPS, ssh:// or SCP-style SSH. Local paths, passwords, tokens and helper transports are unsupported.")
+			}
+		} else {
+			parsed, err := domain.ParseRepositoryCloneURL(repository.RemoteURL)
+			if err != nil {
+				return nil, err
+			}
+			if repository.Name == "" {
+				repository.Name = parsed.DirectoryName
+			}
+		}
+	}
 	if err := value.Validate(); err != nil {
 		return nil, err
 	}
 	return value, nil
 }
 func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationMutation) (store.Result, error) {
-	value, err := configurationValue(input.Kind, input.Document)
+	value, err := configurationValue(input.Kind, input.Document, true)
 	if err != nil {
 		return store.Result{}, err
 	}
@@ -99,7 +113,7 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			if err != nil {
 				return nil, err
 			}
-			for _, ref := range prior.Accounts {
+			for _, ref := range prior.AllAccounts() {
 				ids[ref.ID] = true
 			}
 		case *domain.Project:
@@ -177,8 +191,8 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			return checkProvider(selected.ProviderID)
 		}
 	case *domain.Agent:
-		modelChanged := input.ExpectedRevision == 0
-		if !modelChanged {
+		previousModels := map[domain.ID]bool{}
+		if input.ExpectedRevision > 0 {
 			record, err := tx.Get(input.Kind, id)
 			if err != nil {
 				return err
@@ -187,10 +201,15 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			if err != nil {
 				return err
 			}
-			modelChanged = prior.ModelID != selected.ModelID
+			for _, modelID := range prior.ModelIDs() {
+				previousModels[modelID] = true
+			}
 		}
-		if modelChanged {
-			record, err := tx.Get(domain.ModelKind, selected.ModelID)
+		for _, modelID := range selected.ModelIDs() {
+			if previousModels[modelID] {
+				continue
+			}
+			record, err := tx.Get(domain.ModelKind, modelID)
 			if err != nil {
 				return err
 			}
@@ -208,7 +227,7 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 		if err != nil {
 			return err
 		}
-		for _, ref := range selected.Accounts {
+		for _, ref := range selected.AllAccounts() {
 			if !old[ref.ID] {
 				if err := checkAccount(ref.ID); err != nil {
 					return err
@@ -232,17 +251,19 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			if err != nil {
 				return err
 			}
-			modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
-			if err != nil {
-				return err
-			}
-			model, err := store.Decode[domain.Model](modelRecord)
-			if err != nil {
-				return err
-			}
-			if model.SourceKind != domain.SubscriptionModel {
-				if err := checkProvider(model.ProviderID); err != nil {
+			for _, modelID := range agent.ModelIDs() {
+				modelRecord, err := tx.Get(domain.ModelKind, modelID)
+				if err != nil {
 					return err
+				}
+				model, err := store.Decode[domain.Model](modelRecord)
+				if err != nil {
+					return err
+				}
+				if model.SourceKind != domain.SubscriptionModel {
+					if err := checkProvider(model.ProviderID); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -318,7 +339,19 @@ func providerPresetDefaults(id domain.ProviderPresetID) (domain.Provider, bool) 
 }
 
 func sameProviderPresetDefaults(provider, canonical domain.Provider) bool {
-	return provider.Name == canonical.Name && provider.Endpoint == canonical.Endpoint && provider.Protocol == canonical.Protocol && provider.Authentication == canonical.Authentication && provider.Discovery == canonical.Discovery
+	return provider.Name == canonical.Name && provider.Endpoint == canonical.Endpoint && provider.Protocol == canonical.Protocol && provider.Authentication == canonical.Authentication && provider.Discovery == canonical.Discovery && (provider.APIFormats == nil || slices.Equal(provider.APIFormats, canonical.APIFormats))
+}
+
+func accountAPIProvider(tx configurationView, account domain.Account) (domain.Provider, error) {
+	record, err := tx.Get(domain.ProviderKind, account.ProviderID)
+	if err != nil {
+		return domain.Provider{}, err
+	}
+	provider, err := store.Decode[domain.Provider](record)
+	if err != nil {
+		return provider, err
+	}
+	return providers.ResolveAccountProfile(provider, account)
 }
 
 func providerDisabled() *domain.Error {
@@ -384,31 +417,68 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return nil
 	case *domain.Agent:
+		if expected > 0 && len(v.Routes) == 0 {
+			previous, err := tx.Get(domain.AgentKind, id)
+			if err != nil {
+				return err
+			}
+			prior, err := store.Decode[domain.Agent](previous)
+			if err != nil {
+				return err
+			}
+			if len(prior.Routes) > 0 {
+				return domain.Fail(domain.Unsupported, "Ordered account sources require a current client.", "Keep schema 3 when editing this Worker, including when one source remains.")
+			}
+		}
+
 		if v.ReconfigurationRequired {
-			return domain.SubscriptionReconfigurationRequired()
+			return domain.AgentReconfigurationRequired()
 		}
-		record, err := tx.Get(domain.ModelKind, v.ModelID)
-		if err != nil {
-			return err
-		}
-		model, err := store.Decode[domain.Model](record)
-		if err != nil {
-			return err
-		}
-		if !slices.Contains(model.Harnesses, v.Harness) {
-			return domain.Fail(domain.Unsupported, "The model does not support the selected harness.", "Select an explicitly compatible model.")
-		}
-		for _, link := range v.Accounts {
-			record, err := tx.Get(domain.AccountKind, link.ID)
+		sources := map[string]bool{}
+		for _, route := range v.SourceRoutes() {
+			record, err := tx.Get(domain.ModelKind, route.ModelID)
 			if err != nil {
 				return err
 			}
-			account, err := store.Decode[domain.Account](record)
+			model, err := store.Decode[domain.Model](record)
 			if err != nil {
 				return err
 			}
-			if !model.MatchesAccount(account, v.Harness) {
-				return domain.Fail(domain.InvalidArgument, "An account is incompatible with the Agent Worker model.", "Choose accounts from the configured model provider.")
+			key := "api:" + string(model.ProviderID)
+			if model.SourceKind == domain.SubscriptionModel {
+				key = "subscription:" + string(model.SubscriptionService)
+			}
+			if sources[key] {
+				return domain.Fail(domain.InvalidArgument, "Duplicate account source.", "Configure each source once.")
+			}
+			sources[key] = true
+			if !slices.Contains(model.Harnesses, v.Harness) {
+				return domain.Fail(domain.Unsupported, "The model does not support the selected harness.", "Select an explicitly compatible model.")
+			}
+			for _, link := range route.Accounts {
+				record, err := tx.Get(domain.AccountKind, link.ID)
+				if err != nil {
+					return err
+				}
+				account, err := store.Decode[domain.Account](record)
+				if err != nil {
+					return err
+				}
+				if !model.MatchesAccount(account, v.Harness) {
+					return domain.Fail(domain.InvalidArgument, "An account is incompatible with the Agent Worker model.", "Choose accounts from the configured model provider.")
+				}
+				if account.Type == domain.APIAccount {
+					provider, err := accountAPIProvider(tx, account)
+					if err != nil {
+						return err
+					}
+					// Legacy documents remain writable/importable with their original
+					// configuration semantics; execution still enforces the resolved
+					// protocol. Explicit selections reject incompatible Worker saves.
+					if account.APIProtocol != "" && !providers.HarnessMatches(v.Harness, provider.Protocol) {
+						return domain.Fail(domain.Unsupported, "The account API format does not match the Agent Worker.", "Choose Responses for Codex, Messages for Claude Code or Chat Completions for OpenCode and Grok.")
+					}
+				}
 			}
 		}
 		return mustExist(tx, domain.TemplateKind, v.Templates...)
@@ -431,6 +501,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if err != nil {
 				return err
 			}
+			if len(providers.WithAPIFormats(previous).APIFormats) != 0 && len(v.APIFormats) == 0 {
+				return domain.Fail(domain.Unsupported, "API format profiles require a current client.", "Keep schema 3 and all declared API format profiles when editing this provider.")
+			}
 			if previous.PresetID != nil && (v.PresetID == nil || *v.PresetID != *previous.PresetID) || previous.PresetID == nil && v.PresetID != nil {
 				return domain.Fail(domain.Conflict, "Provider preset identity is immutable.", "Keep the managed provider identity or create a new custom copy.")
 			}
@@ -438,7 +511,7 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			if previous.SubscriptionHarness != nil && v.SubscriptionHarness != nil {
 				harnessChanged = *previous.SubscriptionHarness != *v.SubscriptionHarness
 			}
-			if previous.Endpoint != v.Endpoint || previous.Protocol != v.Protocol || previous.Authentication != v.Authentication || harnessChanged {
+			if previous.LegacyAPIFormat() != v.LegacyAPIFormat() || !slices.Equal(providers.APIFormats(previous), providers.APIFormats(*v)) || harnessChanged {
 				accounts, err := all(tx, domain.AccountKind)
 				if err != nil {
 					return err
@@ -449,7 +522,14 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 						return err
 					}
 					if account.ProviderID == id {
-						return domain.Fail(domain.Conflict, "A connected provider's authority cannot be replaced through configuration.", "Disconnect and remove its account references before changing authority.")
+						for _, account := range accountProfileReferences(account) {
+							before, beforeErr := providers.ResolveAccountProfile(previous, account)
+							after, afterErr := providers.ResolveAccountProfile(*v, account)
+							removedDeclaredProfile := slices.Contains(providers.APIFormats(previous), before.LegacyAPIFormat()) && !slices.Contains(providers.APIFormats(*v), before.LegacyAPIFormat())
+							if beforeErr != nil || afterErr != nil || before.LegacyAPIFormat() != after.LegacyAPIFormat() || removedDeclaredProfile || harnessChanged {
+								return domain.Fail(domain.Conflict, "An account-referenced API profile cannot be replaced or removed.", "Keep its original URL and authentication; create a new provider or remove all references first.")
+							}
+						}
 					}
 				}
 			}
@@ -504,20 +584,12 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 	case *domain.Account:
 		if v.Type == domain.APIAccount {
-			record, err := tx.Get(domain.ProviderKind, v.ProviderID)
-			if err != nil {
+			if _, err := accountAPIProvider(tx, *v); err != nil {
 				return err
-			}
-			provider, err := store.Decode[domain.Provider](record)
-			if err != nil {
-				return err
-			}
-			if provider.Protocol == domain.NativeSubscription {
-				return domain.Fail(domain.InvalidArgument, "API accounts require an API provider.", "Select an API endpoint or create an independent subscription account.")
 			}
 		}
 		if expected == 0 {
-			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil {
+			if v.Health != domain.AccountDisconnected || len(v.Quota) > 0 || v.ConfirmedExhausted || v.Connection != nil || v.Removal != nil || v.Validation != nil || v.Catalog != nil || v.Subscription != nil || len(v.RetainedConnections) != 0 {
 				return domain.Fail(domain.InvalidArgument, "New account health must be disconnected.", "Use account connect/login to validate credentials and quota.")
 			}
 		} else {
@@ -528,6 +600,28 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			old, err := store.Decode[domain.Account](previous)
 			if err != nil {
 				return err
+			}
+			if old.APIProtocol != v.APIProtocol {
+				if !v.APIProtocol.API() {
+					return domain.Fail(domain.Unsupported, "The account API format cannot be cleared.", "Keep its explicit API format with schema 3.")
+				}
+				if old.Connection != nil || old.Removal != nil || old.Health != domain.AccountDisconnected {
+					return domain.Fail(domain.Conflict, "The account API format is still in use.", "Disconnect and finish credential cleanup before changing its format.")
+				}
+				before, e := accountAPIProvider(tx, old)
+				if e != nil {
+					return e
+				}
+				after, e := accountAPIProvider(tx, *v)
+				if e != nil {
+					return e
+				}
+				if (before.Authentication == domain.KeylessAuth) != (after.Authentication == domain.KeylessAuth) {
+					return domain.Fail(domain.Conflict, "An account cannot change whether it owns credentials.", "Create a new account for a keyless or key-required profile.")
+				}
+			}
+			if !bytes.Equal(connectionGenerationBytes(old), connectionGenerationBytes(*v)) {
+				return domain.Fail(domain.InvalidArgument, "Account connection generations are server-owned.", "Preserve the original connection generations.")
 			}
 			oldObservations, _ := json.Marshal(struct {
 				Health       domain.AccountHealth
@@ -591,14 +685,6 @@ func PreviewRouting(ctx context.Context, s *store.Store, agentID, projectID doma
 		if err != nil {
 			return err
 		}
-		record, err = tx.Get(domain.ModelKind, agent.ModelID)
-		if err != nil {
-			return err
-		}
-		model, err := store.Decode[domain.Model](record)
-		if err != nil {
-			return err
-		}
 		var project *domain.Project
 		if projectID != "" {
 			record, err := tx.Get(domain.ProjectKind, projectID)
@@ -611,40 +697,15 @@ func PreviewRouting(ctx context.Context, s *store.Store, agentID, projectID doma
 			}
 			project = &p
 		}
-		accounts := map[domain.ID]domain.Account{}
-		for _, link := range agent.Accounts {
-			record, err := tx.Get(domain.AccountKind, link.ID)
-			if err != nil {
-				if domain.SafeError(err).Code == domain.NotFound {
-					continue
-				}
-				return err
-			}
-			a, err := store.Decode[domain.Account](record)
-			if err != nil {
-				return err
-			}
-			accounts[link.ID] = a
-		}
-		settings := domain.DefaultSettings()
-		records, err := tx.List(store.Filter{Kind: domain.SettingsKind, Limit: 1})
+		policy, err := tx.DefaultRoutingPolicy()
 		if err != nil {
 			return err
 		}
-		if len(records) > 0 {
-			settings, err = store.Decode[domain.Settings](records[0])
-			if err != nil {
-				return err
-			}
-		}
-		state, err := routingState(tx, agentID)
-		if err != nil {
-			return err
-		}
-		route, _, err = domain.RouteAccount(agentID, agent, model, project, accounts, settings.DefaultRouting, state, time.Now().UTC())
+		preview, err := tx.PreviewSourceRouting(agentID, agent, project, policy)
+		route = preview.Route
 		// Preview is useful precisely when execution is blocked. Candidate reasons
 		// remain readable; actual dispatch still returns the actionable typed error.
-		if err != nil && domain.SafeError(err).Code == domain.MissingInput {
+		if err != nil && (domain.SafeError(err).Code == domain.MissingInput || len(route.Sources) > 0) {
 			return nil
 		}
 		return err
@@ -654,4 +715,9 @@ func PreviewRouting(ctx context.Context, s *store.Store, agentID, projectID doma
 func routingState(tx *store.Tx, agentID domain.ID) (domain.RoutingState, error) {
 	_, state, err := tx.Routing(agentID)
 	return state, err
+}
+
+func connectionGenerationBytes(account domain.Account) []byte {
+	raw, _ := json.Marshal(account.RetainedConnections)
+	return raw
 }

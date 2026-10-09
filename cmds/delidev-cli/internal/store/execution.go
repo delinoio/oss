@@ -73,7 +73,7 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if ir.SessionID != sessionID || ir.Revision != inputRevision || input.Delivery != domain.InputQueued || input.ExecutionID != "" || input.NativeRequestID != "" {
 		return empty, domain.Fail(domain.Conflict, "The input no longer matches the queued selection.", "Read its current ownership, content revision and delivery state.")
 	}
-	if err := (domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode}).Validate(); err != nil {
+	if err := (domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Attachments: input.Attachments}).Validate(); err != nil {
 		return empty, err
 	}
 	var head domain.ID
@@ -142,26 +142,6 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err := agent.Validate(); err != nil {
 		return empty, err
 	}
-	mr, model, err := decodeEntity[domain.Model](t, domain.ModelKind, agent.ModelID)
-	if err != nil {
-		return empty, err
-	}
-	if agent.ReconfigurationRequired {
-		return empty, domain.SubscriptionReconfigurationRequired()
-	}
-	var provider domain.Provider
-	if model.SourceKind != domain.SubscriptionModel {
-		_, provider, err = decodeEntity[domain.Provider](t, domain.ProviderKind, model.ProviderID)
-		if err != nil {
-			return empty, err
-		}
-		if err := provider.Validate(); err != nil {
-			return empty, err
-		}
-		if !provider.EnabledValue() {
-			return empty, domain.Fail(domain.ProviderDisabled, "The selected API provider is off.", "Enable this provider before starting another turn.")
-		}
-	}
 	_, machine, err := decodeEntity[domain.Machine](t, domain.MachineKind, session.MachineID)
 	if err != nil {
 		return empty, err
@@ -177,19 +157,9 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		}
 		project = &value
 	}
-	settings := domain.DefaultSettings()
-	settingsRecords, err := t.List(Filter{Kind: domain.SettingsKind, Limit: 2})
+	policy, err := t.DefaultRoutingPolicy()
 	if err != nil {
 		return empty, err
-	}
-	if len(settingsRecords) > 1 {
-		return empty, domain.Fail(domain.RecoveryRequired, "Global settings ownership is ambiguous.", "Reconcile duplicate settings before dispatch.")
-	}
-	if len(settingsRecords) == 1 {
-		settings, err = Decode[domain.Settings](settingsRecords[0])
-		if err != nil {
-			return empty, err
-		}
 	}
 	templates := make([]domain.AppliedTemplate, 0, len(agent.Templates))
 	instructionBytes := 0
@@ -209,29 +179,23 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		}
 		templates = append(templates, domain.AppliedTemplate{ID: id, Revision: r.Revision, Contents: template.Contents})
 	}
-	configuration, err := domain.ResolveExecutionConfiguration(ar.ID, ar.Revision, agent, mr.Revision, model, settings.DefaultRouting, templates)
+	preview, err := t.PreviewSourceRouting(ar.ID, agent, project, policy)
 	if err != nil {
 		return empty, err
 	}
-	accounts := make(map[domain.ID]domain.Account, len(agent.Accounts))
-	for _, link := range agent.Accounts {
-		_, account, err := decodeEntity[domain.Account](t, domain.AccountKind, link.ID)
+	agent, model := preview.Agent, preview.Model
+	configuration, err := domain.ResolveExecutionConfiguration(ar.ID, ar.Revision, agent, preview.ModelRevision, model, policy, templates)
+	if err != nil {
+		return empty, err
+	}
+	var provider domain.Provider
+	if model.SourceKind != domain.SubscriptionModel {
+		_, provider, err = decodeEntity[domain.Provider](t, domain.ProviderKind, model.ProviderID)
 		if err != nil {
-			if domain.SafeError(err).Code == domain.NotFound {
-				continue
-			}
 			return empty, err
 		}
-		accounts[link.ID] = account
 	}
-	routingRecord, routing, err := t.Routing(ar.ID)
-	if err != nil {
-		return empty, err
-	}
-	route, next, err := domain.RouteAccount(ar.ID, agent, model, project, accounts, configuration.Routing, routing, t.now)
-	if err != nil {
-		return empty, err
-	}
+	route, accounts := preview.Route, preview.Accounts
 	selected := accounts[route.Selected]
 	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || (configuration.Subscription && selected.Connection.Authentication != domain.SubscriptionAuth) || (!configuration.Subscription && selected.Connection.Authentication != provider.Authentication) || !model.MatchesAccount(selected, agent.Harness) {
 		return empty, domain.Fail(domain.Conflict, "The selected account connection is incompatible with the provider.", "Revalidate the current account connection before dispatch.")
@@ -243,5 +207,5 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
-	return InitialExecutionPreview{Configuration: configuration, ConfigurationDigest: digest, AccountID: route.Selected, ConnectionID: selected.Connection.ID, Route: route, routingRecord: routingRecord, nextRouting: next}, nil
+	return InitialExecutionPreview{Configuration: configuration, ConfigurationDigest: digest, AccountID: route.Selected, ConnectionID: selected.Connection.ID, Route: route, routingRecord: preview.routingRecord, nextRouting: preview.nextRouting}, nil
 }

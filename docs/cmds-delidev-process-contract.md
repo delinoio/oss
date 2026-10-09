@@ -12,13 +12,20 @@ Each launch belongs to an immutable UUID-v7 execution/job/session owner and a pr
 ## Interfaces and Contracts
 The [subagent observation profile](cmds-delidev-subagents-contract.md) preserves cleanup ownership for every live/unavailable descendant after parent completion. The Worker keeps the original process open while native children settle, without sending child-control operations. History reads and closed tree state do not independently prove process cleanup; a failed, canceled or uncertain inspection retains the existing owned-process cleanup/report boundary.
 
-A launch creates durable ownership and reaches a start barrier before receiving the actual command. Explicit resume crosses that barrier once. Command arguments, environment, input and output never enter ownership journals. Native stdin, stdout and stderr remain distinct byte streams with bounded framing and backpressure, preserving partial multibyte sequences for the adapter to decode.
+A launch creates durable ownership and reaches a start barrier before receiving the actual command. Explicit resume crosses that barrier once. The shared admission boundary checks the original Start context synchronously; already-observable cancellation or deadline expiry refuses command transmission/suspended-child resume and independently joins the original owner before returning its typed result. Cleanup uncertainty retains RecoveryRequired precedence. Cancellation racing an already-admitted command keeps the original post-admission cleanup/uncertainty semantics. Command arguments, environment, input and output never enter ownership journals. Native stdin, stdout and stderr remain distinct byte streams with bounded framing and backpressure, preserving partial multibyte sequences for the adapter to decode.
 
 Natural exit, cancellation and parent disconnection reconcile owned descendants before confirming resource release. PID absence alone is not proof; use start identity plus the execution owner and an OS ownership scope. Recovery never signals a PID whose recorded start identity differs. A missing or unreadable ownership journal for a launched process is an explicit recovery error. Uncertainty blocks replacement and credential/runtime destruction.
 
 Linux uses a dedicated re-executed subreaper per process scope; its kernel child-reaping result proves descendant completion. If that supervisor is itself killed before durable completion, missing ancestry cannot be reconstructed safely; keep uncertainty until independent proof, such as a changed boot identity. macOS uses an independently launched, uniquely named per-execution supervisor and its inherited XNU resource coalition, verifying membership and process birth before signaling. Unsupported kernel interfaces fail explicitly. Windows uses `PROC_THREAD_ATTRIBUTE_JOB_LIST` to atomically create a suspended child inside a non-breakaway kill-on-close Job Object, then persists its start identity before resume; retained job identity supports recovery and prevents unrelated PID termination.
 
 A Unix stdout/stderr pipe setup failure after the start barrier but before command launch persists completed ownership before supervisor exit. Failure to persist that proof retains recovery uncertainty; native-started failures still require descendant reconciliation.
+
+Unix reconciliation atomically persists completion when the current boot identity
+differs from the valid original journal. Preserve the original owner, process birth,
+boot identity and kernel metadata; a failed publication remains a recovery error.
+The existing owner maintenance and released-controller checks retire that completed
+scope on a later scan. Same-boot supervisor death and missing, invalid or mismatched
+ownership still cannot supply reboot completion proof.
 
 The private supervisor transport is internal local IPC only and adds no remotely reachable Worker listener. A dropped control connection cancels the owned scope. Supervisor startup has a deadline, output is bounded by synchronous consumption, and slow/broken consumers cannot authorize duplicate execution.
 
@@ -28,6 +35,14 @@ Owner-ID directories index process scopes directly, so session recovery does not
 Controller preparation creates the UUID scope directory exclusively under its already-private owner. If controller creation fails before native startup is attempted, rollback compares the original directory identity, removes only that empty directory and synchronizes its parent. Existing, replaced or nonempty scopes (including partial lock files) are retained for recovery; failed synchronization is also explicit recovery uncertainty. This path never substitutes for cleanup proof after native startup begins.
 
 Capture the original directory identity through an open handle before attempting the controller, rather than deferring Windows identity lookup until rollback; see [Go's Windows file identity implementation](https://go.dev/src/os/types_windows.go). Close that handle before native startup or removal.
+
+## Original Worker controller observation
+
+`ControllerIdentity` contains only a PID and exact kernel birth; it grants no native process-scope ownership or termination authority. `ObserveControllerIdentity` returns the closed outcomes same-original-alive, original-exited and unknown. A malformed identity or inspection error remains unknown. A different independently verified birth proves only that the original controller exited; the unrelated current process is never adopted or terminated.
+
+Linux uses boot identity plus kernel start ticks. Missing procfs evidence alone is insufficient; a signal-zero kernel ESRCH independently confirms absence and delivers no signal. Darwin uses the kernel start timestamp and a successful empty exact-PID kernel observation to confirm absence. Windows uses creation FILETIME, narrowly classified nonexistent-PID OpenProcess failure or a signaled process handle. Access denial and every other failed kernel read remain unknown. These observations never call `ProcessAlive`, scan process lists, erase journals or prove descendant cleanup.
+
+The Worker owns the private generation/scope/registration/desktop-client bindings and synchronized evidence publication. Fresh authenticated desktop admission rechecks that evidence under its final original locks; see [the CLI contract](cmds-delidev-contract.md#main-desktop-automatic-worker-management). Legacy missing proof is not reconstructed or migrated. Record actual platform acceptance separately from fixtures and builds.
 
 ## Logging
 Log execution/owner identifiers, stable lifecycle states and typed safe failure causes only. Raw native stderr and command/environment dumps are excluded.
@@ -70,3 +85,7 @@ Focused macOS arm64 process fixtures exercise an actual interactive `/bin/sh`, T
 ## Optional user-service controllers
 
 Optional user-service controllers use process-birth observation for identity checking but do not reuse execution-scope signaling or change harness ownership. Their independent foreground exclusivity, durable Stop and registration cleanup are defined in the [user-service contract](cmds-delidev-user-services-contract.md). Service-controller exit is not per-session cleanup proof.
+
+## Desktop host and independent Workers
+
+The resident desktop CLI has a separate original-child lifetime from Worker-launched execution scopes. The native main process owns its kill-on-close Windows Job, persistent Linux spawning thread/parent-death signal and macOS original-parent/pipe observer. Independent detached Workers remain outside this containment and retain their original execution cleanup authority. App loss terminates only its resident CLI/internal server; forced termination leaves native cleanup uncertainty visible. Explicit fixed Local Workers may follow the same-server execution locator without changing immutable registration or selected outbound policy; Saved/remote Workers cannot. Follow the [desktop lifetime boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown).

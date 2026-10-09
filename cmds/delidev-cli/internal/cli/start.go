@@ -47,6 +47,14 @@ func ensureDetached(ctx context.Context, o options, config server.Config, stream
 }
 
 func detachedStartup(ctx context.Context, o options, config server.Config, streams IO, mode startupMode) (any, error) {
+	return startupWithHost(ctx, o, config, streams, mode, nil)
+}
+
+// A desktop host runs the admitted server in this original process. The ready
+// callback releases controller/service admission without waiting for its exit.
+type desktopRunner func(context.Context, server.Config, server.Lifecycle, func() error) (any, error)
+
+func startupWithHost(ctx context.Context, o options, config server.Config, streams IO, mode startupMode, host desktopRunner) (any, error) {
 	if mode != startupExplicit {
 		child, cancel := context.WithTimeout(ctx, joinedStartupTimeout)
 		defer cancel()
@@ -82,7 +90,11 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		if err != nil {
 			return nil, err
 		}
-		defer admission.Close()
+		defer func() {
+			if admission != nil {
+				admission.Close()
+			}
+		}()
 	}
 	lock, err := security.TryLock(filepath.Join(o.dataDir, "startup.lock"))
 	if (mode == startupDesktopLaunch || mode == startupDesktopRetry || mode == startupObservation) && err != nil && domain.SafeError(err).Code == domain.Conflict {
@@ -94,7 +106,23 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 	if err != nil {
 		return nil, err
 	}
-	defer lock.Close()
+	defer func() {
+		if lock != nil {
+			lock.Close()
+		}
+	}()
+	if config.Desktop == nil && mode != startupObservation {
+		// Probe under the existing startup controller so concurrent ordinary
+		// callers join that controller instead of conflicting with each other.
+		// A resident host holds this distinct lease through server Stop.
+		lease, err := security.TryLock(filepath.Join(o.dataDir, "desktop-session.lock"))
+		if err != nil {
+			return nil, err
+		}
+		if err := lease.Close(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+	}
 	intentLock, err := server.LockLifecycle(o.dataDir)
 	if err != nil {
 		return nil, err
@@ -115,7 +143,7 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 			return nil, err
 		}
 	}
-	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && intent.Version != 0 && !intent.Matches(config) {
+	if (mode == startupDesktopLaunch || mode == startupDesktopRetry) && config.Desktop == nil && intent.Version != 0 && !intent.Matches(config) {
 		return nil, domain.Fail(domain.Unsupported, "The retained server configuration is incompatible with desktop launch.", "Preserve the original server and inspect connection diagnostics.")
 	}
 	if mode == startupDesktopRetry && intent.State == server.DesiredStopped {
@@ -225,6 +253,21 @@ func detachedStartup(ctx context.Context, o options, config server.Config, strea
 		return nil, domain.SafeError(err)
 	}
 	intentLock = nil
+	if host != nil {
+		return host(ctx, config, intent, func() error {
+			if err := lock.Close(); err != nil {
+				return domain.SafeError(err)
+			}
+			lock = nil
+			if admission != nil {
+				if err := admission.Close(); err != nil {
+					return domain.SafeError(err)
+				}
+				admission = nil
+			}
+			return nil
+		})
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, domain.SafeError(err)

@@ -3,8 +3,29 @@ package delidev.v1;
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
+enum ApiProtocol {
+  API_PROTOCOL_UNSPECIFIED = 0;
+  API_PROTOCOL_OPENAI_RESPONSES = 1;
+  API_PROTOCOL_OPENAI_CHAT = 2;
+  API_PROTOCOL_ANTHROPIC_MESSAGES = 3;
+}
+
+enum ApiAuthentication {
+  API_AUTHENTICATION_UNSPECIFIED = 0;
+  API_AUTHENTICATION_BEARER = 1;
+  API_AUTHENTICATION_API_KEY = 2;
+  API_AUTHENTICATION_KEYLESS = 3;
+}
+
+message ProviderApiFormat {
+  ApiProtocol protocol = 1;
+  string endpoint = 2;
+  ApiAuthentication authentication = 3;
+}
+
 enum EntityKind {
   ENTITY_KIND_UNSPECIFIED = 0;
+  ENTITY_KIND_PROJECT_PROMPT_HISTORY = 35;
   ENTITY_KIND_PROJECT = 1;
   ENTITY_KIND_REPOSITORY = 2;
   ENTITY_KIND_AGENT = 3;

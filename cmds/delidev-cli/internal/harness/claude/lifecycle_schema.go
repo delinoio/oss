@@ -58,7 +58,7 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 		FastMode       string            `json:"fast_mode_state"`
 		FastModeReason string            `json:"fast_mode_disabled_reason"`
 	}
-	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != "ANTHROPIC_API_KEY" || init.Version != SupportedVersion || init.OutputStyle != "default" ||
+	if decodeNativeObject(raw, &init) != nil || init.Cwd != b.workspace || init.Model != b.model || init.Permission != b.permission || init.Source != "ANTHROPIC_API_KEY" || !domain.ValidNativeVersionMetadata(init.Version) || init.OutputStyle != "default" ||
 		init.MCPServers == nil || len(init.MCPServers) != 0 || init.Plugins == nil || len(init.Plugins) != 0 || init.AnalyticsOff == nil || !*init.AnalyticsOff || init.FeedbackOff == nil || !*init.FeedbackOff || init.FastMode != "off" || init.FastModeReason != "sdk_opt_in_required" ||
 		!uniqueText(init.Tools, 256, 256) || !uniqueText(init.Commands, 256, 256) || !uniqueText(init.Terminal, 256, 256) || !uniqueText(init.Agents, 256, 256) || !uniqueText(init.Skills, 256, 256) || !uniqueText(init.Capabilities, 256, 256) {
 		return lifecycleUncertain()
@@ -71,6 +71,7 @@ func (b *ExecutionBinding) validateSystemInit(raw []byte) error {
 	if !slices.Contains(init.Commands, "compact") || !slices.Contains(init.Capabilities, "msg_lifecycle_v1") || len(init.Memory) != 1 || filepath.Clean(init.Memory["auto"]) != filepath.Join(b.home, "projects", "delidev", "memory") {
 		return lifecycleUncertain()
 	}
+	b.nativeVersion = init.Version
 	b.advertisedTools = make(map[string]bool, len(init.Tools)+1)
 	for _, name := range init.Tools {
 		b.advertisedTools[name] = true

@@ -1,0 +1,17 @@
+{
+  "quota-countdown.resetDay": "Resets in {{days}} day",
+  "quota-countdown.resetDays": "Resets in {{days}} days",
+  "quota-countdown.resetDayHour": "Resets in {{days}} day {{hours}} hour",
+  "quota-countdown.resetDayHours": "Resets in {{days}} day {{hours}} hours",
+  "quota-countdown.resetDaysHour": "Resets in {{days}} days {{hours}} hour",
+  "quota-countdown.resetDaysHours": "Resets in {{days}} days {{hours}} hours",
+  "quota-countdown.resetHour": "Resets in {{hours}} hour",
+  "quota-countdown.resetHours": "Resets in {{hours}} hours",
+  "quota-countdown.resetHourMinute": "Resets in {{hours}} hour {{minutes}} minute",
+  "quota-countdown.resetHourMinutes": "Resets in {{hours}} hour {{minutes}} minutes",
+  "quota-countdown.resetHoursMinute": "Resets in {{hours}} hours {{minutes}} minute",
+  "quota-countdown.resetHoursMinutes": "Resets in {{hours}} hours {{minutes}} minutes",
+  "quota-countdown.resetMinute": "Resets in {{minutes}} minute",
+  "quota-countdown.resetMinutes": "Resets in {{minutes}} minutes",
+  "quota-countdown.resetSoon": "Resets soon"
+}

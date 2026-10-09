@@ -24,7 +24,7 @@ import (
 )
 
 func executeGrokSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Version != 1 || input.Continuation != nil || input.Installation.Version != grok.SupportedVersion {
+	if input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != grok.SupportedVersion) {
 		return nil, domain.Fail(domain.Unsupported, "Grok execution requires the original pinned first-input profile.", "Retain existing native history; a replacement input or continuation is not authorized.")
 	}
 	contextTokens, err := input.Configuration.GrokFirstInputContext(input.Input.Mode)
@@ -47,13 +47,19 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
-	lease, err := manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	var lease *workspace.ExecutionLease
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
+	} else {
+		lease, err = manager.ClaimFirstExecution(ctx, owner, input.ExecutionID, preparation, manifest)
+	}
 	if err != nil {
 		return nil, err
 	}
+	config.startup.claimedWorkspace()
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
@@ -64,6 +70,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -86,7 +93,7 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	}
 	defer func() {
 		if err := binding.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	rawToken, err := security.RandomToken()
@@ -123,20 +130,22 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	defer cancelNative()
 	cancelTargeted := context.AfterFunc(ctx, cancelNative)
 	defer cancelTargeted()
-	nativeConfig := grok.APIExecutionConfig{Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: input.Configuration.Instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
+	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: input.Configuration.Instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
 	tools, err := OpenGrokEventPublisher(binding)
 	if err != nil {
 		return nil, err
 	}
+	config.startup.setPhase(domain.StartupInitialize)
 	api, err := grok.OpenOwnedAPIWithPlanning(nativeCtx, nativeConfig, grok.PlanningRecorders{Creation: binding.Creation, Input: binding.Input, Mode: binding.Mode, Closure: binding.Closure, Stop: binding.Stop, File: tools.FileReply, Question: tools.QuestionReply, Plan: tools.PlanReply})
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
+	publisher.nativeVersion = api.Version()
 	if _, err := api.Create(nativeCtx, input.ThreadRequestID, input.SessionID); err != nil {
 		return nil, err
 	}
@@ -167,9 +176,14 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	logger.InfoContext(nativeCtx, "native_execution_thread_bound")
 	var stopControl *grokStopControl
 	var joinResponses func() error
+	if err := config.startup.ready(nativeCtx, api.Version()); err != nil {
+		return nil, err
+	}
+	config.startup.claimInput()
 	_, err = api.RunFirstInput(nativeCtx, input.TurnRequestID, input.Input.Prompt, func(callback context.Context, value grok.InputObservation) error {
 		switch value.Kind {
 		case grok.InputAccepted:
+			config.startup.acknowledgeInput()
 			if err := publish(callback, binding.AcceptInput(callback, value)); err != nil {
 				return err
 			}

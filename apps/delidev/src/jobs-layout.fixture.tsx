@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+import { createRoot } from "react-dom/client";
+import { create } from "@bufbuild/protobuf";
+import { createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { EntityKind, ResourceSchema, ResourceService } from "@delinoio/delidev-api-client";
+import { TrackedJob } from "./jobs";
+import { encode } from "./documents";
+import { i18n } from "./localization";
+import "./styles.css";
+import "./themes.css";
+const params = new URLSearchParams(location.search);
+await i18n.changeLanguage(params.get("language") === "ko" ? "ko" : "en");
+document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark" : "light";
+const id = "0195c9c0-7b13-7000-8000-000000000001";
+let reads = 0;
+const row = (state: string) => create(ResourceSchema, { id, kind: EntityKind.JOB, schemaVersion: 1, revision: BigInt(reads + 1), documentJson: encode({ state, output: { executable: "codex", warning: "Executable permissions require your review." } }) });
+const initial = row("queued");
+const transport = createRouterTransport(router => router.service(ResourceService, { getResource: () => { reads += 1; return { resource: row(reads === 1 ? "claimed" : "succeeded") }; } }));
+createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><main><h1>Runner details</h1><TrackedJob initial={initial} active>{(_state, output) => <><label>Network settings<input defaultValue="Retained focus" /></label><p>{String(output.warning ?? "")}</p><button>Worker updates</button><button>Finish inspection</button></>}</TrackedJob></main></QueryClientProvider></TransportProvider>);

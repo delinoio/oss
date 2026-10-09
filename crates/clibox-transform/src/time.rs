@@ -102,12 +102,11 @@ fn parse(args: &TimeArgs, now: DateTime<Utc>) -> Result<Instant> {
         let mut precision = 0;
         for item in &items {
             let before = remainder;
-            let previous_nanos = parsed.nanosecond();
             remainder = parse_and_remainder(&mut parsed, remainder, std::iter::once(item))
                 .map_err(|_| bad())?;
             let consumed = &before[..before.len() - remainder.len()];
             match item {
-                Item::Numeric(Numeric::Nanosecond, _) => precision = 9,
+                Item::Numeric(Numeric::Nanosecond, _) => precision = precision.max(9),
                 Item::Fixed(
                     Fixed::Nanosecond
                     | Fixed::Nanosecond3
@@ -115,10 +114,17 @@ fn parse(args: &TimeArgs, now: DateTime<Utc>) -> Result<Instant> {
                     | Fixed::Nanosecond9
                     | Fixed::RFC3339,
                 ) => {
-                    precision = fraction(consumed)?;
+                    precision = precision.max(fraction(consumed)?);
                 }
-                Item::Fixed(Fixed::Internal(_)) if parsed.nanosecond() != previous_nanos => {
-                    precision = consumed.len();
+                // Chrono keeps undotted fixed-width fractions opaque. Match
+                // their public directives rather than a nanosecond value change:
+                // consistent repeated fields can supply more trailing zeroes.
+                Item::Fixed(Fixed::Internal(_))
+                    if ["%3f", "%6f", "%9f"]
+                        .iter()
+                        .any(|format| StrftimeItems::new(format).next().as_ref() == Some(item)) =>
+                {
+                    precision = precision.max(consumed.len());
                 }
                 _ => {}
             }
@@ -324,5 +330,126 @@ mod tests {
             format(&args, parse(&args, now).unwrap()).unwrap(),
             "1970-01-01T00:00:00.123456789Z"
         );
+    }
+
+    #[test]
+    fn custom_fraction_precision_survives_optional_and_repeated_fields() {
+        for (value, input_format, expected) in [
+            (
+                "2024-02-29 12:34:56.123",
+                "%F %T%.3f%.f",
+                "2024-02-29T12:34:56.123Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56.000",
+                "%F %T%.3f%.f",
+                "2024-02-29T12:34:56.000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56",
+                "%F %T%.3f%.f",
+                "2024-02-29T12:34:56Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56.123/.123000",
+                "%F %T%.3f/%.6f",
+                "2024-02-29T12:34:56.123000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56.123000/.123",
+                "%F %T%.6f/%.3f",
+                "2024-02-29T12:34:56.123000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56.123/.123000",
+                "%F %T%.f/%.f",
+                "2024-02-29T12:34:56.123000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56.123000/.123",
+                "%F %T%.f/%.f",
+                "2024-02-29T12:34:56.123000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 123/123000",
+                "%F %T %3f/%6f",
+                "2024-02-29T12:34:56.123000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 123000/123",
+                "%F %T %6f/%3f",
+                "2024-02-29T12:34:56.123000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 000/000000",
+                "%F %T %3f/%6f",
+                "2024-02-29T12:34:56.000000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 123000000/123",
+                "%F %T %f/%3f%.f",
+                "2024-02-29T12:34:56.123000000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 123/123000000",
+                "%F %T %3f/%f%.f",
+                "2024-02-29T12:34:56.123000000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 123000000/123",
+                "%F %T %9f/%3f",
+                "2024-02-29T12:34:56.123000000Z\n",
+            ),
+            (
+                "2024-02-29 12:34:56 123 +00",
+                "%F %T %3f %#z",
+                "2024-02-29T12:34:56.123Z\n",
+            ),
+        ] {
+            let cli = Cli::parse_from([
+                "clibox",
+                "time",
+                "format",
+                value,
+                "--input-format",
+                input_format,
+            ]);
+            let TransformCommand::Time { command } = cli.command else {
+                panic!()
+            };
+            assert_eq!(
+                prepare(&command).unwrap(),
+                expected,
+                "{input_format}: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_fraction_precision_keeps_chrono_rejections() {
+        for (value, input_format) in [
+            ("2024-02-29 12:34:56.123/.124000", "%F %T%.3f/%.6f"),
+            ("2024-02-29 12:34:56 123/124000", "%F %T %3f/%6f"),
+            ("2024-02-29 12:34:56.1234567890", "%F %T%.f"),
+            ("2024-02-29 12:34:60.123", "%F %T%.3f%.f"),
+            ("2023-02-29 12:34:56.123", "%F %T%.3f%.f"),
+        ] {
+            let cli = Cli::parse_from([
+                "clibox",
+                "time",
+                "format",
+                value,
+                "--input-format",
+                input_format,
+            ]);
+            let TransformCommand::Time { command } = cli.command else {
+                panic!()
+            };
+            assert_eq!(
+                prepare(&command).unwrap_err().code,
+                Code::InvalidTime,
+                "{input_format}: {value}"
+            );
+        }
     }
 }

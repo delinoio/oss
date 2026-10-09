@@ -1,59 +1,106 @@
 // SPDX-License-Identifier: Apache-2.0
 package domain
 
-import "encoding/json"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
 
 // ForkOrigin is a retained boundary, never an executable copy of source input.
 // Snapshot remains immutable even before the child's first explicit input.
 type ForkOrigin struct {
-	SidechatParentSnapshot *InitialExecution `json:"sidechat_parent_snapshot,omitempty"`
-	SourceSessionID        ID                `json:"source_session_id"`
-	SourceRevision         uint64            `json:"source_revision"`
-	SourceExecutionID      ID                `json:"source_execution_id"`
-	SourceTurnID           NativeIdentity    `json:"source_turn_id"`
-	JobID                  ID                `json:"job_id"`
-	RuntimeID              ID                `json:"runtime_id"`
-	NativeThreadID         NativeIdentity    `json:"native_thread_id"`
-	NativeTurnID           NativeIdentity    `json:"native_turn_id,omitempty"`
-	CheckpointDigest       string            `json:"checkpoint_digest"`
-	Snapshot               InitialExecution  `json:"snapshot"`
-	WorkerDeviceID         ID                `json:"worker_device_id"`
-	JobInputDigest         string            `json:"job_input_digest"`
+	OpenCodeCreationProof     *OpenCodeForkCreationProof `json:"opencode_creation_proof,omitempty"`
+	OpenCodeCreationRequestID ID                         `json:"opencode_creation_request_id,omitempty"`
+	Startup                   *ExecutionStartupSelection `json:"startup,omitempty"`
+	SidechatParentSnapshot    *InitialExecution          `json:"sidechat_parent_snapshot,omitempty"`
+	SourceSessionID           ID                         `json:"source_session_id"`
+	SourceRevision            uint64                     `json:"source_revision"`
+	SourceExecutionID         ID                         `json:"source_execution_id"`
+	SourceTurnID              NativeIdentity             `json:"source_turn_id"`
+	JobID                     ID                         `json:"job_id"`
+	RuntimeID                 ID                         `json:"runtime_id"`
+	NativeThreadID            NativeIdentity             `json:"native_thread_id"`
+	NativeTurnID              NativeIdentity             `json:"native_turn_id,omitempty"`
+	CheckpointDigest          string                     `json:"checkpoint_digest"`
+	Snapshot                  InitialExecution           `json:"snapshot"`
+	WorkerDeviceID            ID                         `json:"worker_device_id"`
+	JobInputDigest            string                     `json:"job_input_digest"`
+}
+
+// OpenCodeForkCreationProof binds the verified publication without retaining
+// executable source input, prompts or protected native content.
+type OpenCodeForkCreationProof struct {
+	CreationRequestID ID     `json:"creation_request_id"`
+	ChildSessionID    ID     `json:"child_session_id"`
+	JobOutputDigest   string `json:"job_output_digest"`
+	OriginDigest      string `json:"origin_digest"`
+}
+
+func (f ForkOrigin) OpenCodeCreationDigest(child ID, outputDigest string) string {
+	f.OpenCodeCreationProof = nil
+	raw, err := json.Marshal(struct {
+		ChildSessionID  ID         `json:"child_session_id"`
+		JobOutputDigest string     `json:"job_output_digest"`
+		Origin          ForkOrigin `json:"origin"`
+	}{child, outputDigest, f})
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}
+
+func (f ForkOrigin) VerifyOpenCodeCreation(child ID) bool {
+	p := f.OpenCodeCreationProof
+	return p != nil && p.CreationRequestID == f.OpenCodeCreationRequestID && p.ChildSessionID == child && canonicalDigest(p.JobOutputDigest) && canonicalDigest(p.OriginDigest) && p.OriginDigest == f.OpenCodeCreationDigest(child, p.JobOutputDigest)
 }
 
 type ForkJobInput struct {
-	Purpose          ForkPurpose           `json:"purpose,omitempty"`
-	Version          uint32                `json:"version"`
-	OpenCode         *OpenCodeForkRequests `json:"opencode,omitempty"`
-	SourceSessionID  ID                    `json:"source_session_id"`
-	SourceRevision   uint64                `json:"source_revision"`
-	ChildSessionID   ID                    `json:"child_session_id"`
-	RuntimeID        ID                    `json:"runtime_id"`
-	NativeRequestID  ID                    `json:"native_request_id"`
-	Name             string                `json:"name"`
-	Workspace        WorkspaceType         `json:"workspace"`
-	LocalOrigin      *LocalOrigin          `json:"local_origin,omitempty"`
-	CreatedBy        ID                    `json:"created_by"`
-	Actor            Principal             `json:"actor"`
-	SourceJobID      ID                    `json:"source_job_id"`
-	SourceAssignment ExecutionJobInput     `json:"source_assignment"`
-	Completion       ExecutionCompletion   `json:"completion"`
-	Progress         ExecutionProgress     `json:"progress"`
-	Snapshot         InitialExecution      `json:"snapshot"`
+	SubscriptionGeneration ID                         `json:"subscription_generation,omitempty"`
+	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
+	Purpose                ForkPurpose                `json:"purpose,omitempty"`
+	Version                uint32                     `json:"version"`
+	OpenCode               *OpenCodeForkRequests      `json:"opencode,omitempty"`
+	SourceSessionID        ID                         `json:"source_session_id"`
+	SourceRevision         uint64                     `json:"source_revision"`
+	ChildSessionID         ID                         `json:"child_session_id"`
+	RuntimeID              ID                         `json:"runtime_id"`
+	NativeRequestID        ID                         `json:"native_request_id"`
+	Name                   string                     `json:"name"`
+	Workspace              WorkspaceType              `json:"workspace"`
+	LocalOrigin            *LocalOrigin               `json:"local_origin,omitempty"`
+	CreatedBy              ID                         `json:"created_by"`
+	Actor                  Principal                  `json:"actor"`
+	SourceJobID            ID                         `json:"source_job_id"`
+	SourceAssignment       ExecutionJobInput          `json:"source_assignment"`
+	Completion             ExecutionCompletion        `json:"completion"`
+	Progress               ExecutionProgress          `json:"progress"`
+	Snapshot               InitialExecution           `json:"snapshot"`
 }
 
 func (i ForkJobInput) Validate() error {
+	if i.SourceAssignment.Version == 4 {
+		if i.Startup == nil || i.Startup.Validate(i.SourceAssignment.Configuration.Harness) != nil || i.Startup.ExecutableSHA256 == "" {
+			return Fail(RecoveryRequired, "The Fork executable selection is incomplete.", "Retain the original source assignment and executable identity.")
+		}
+	} else if i.Startup != nil {
+		return Fail(RecoveryRequired, "The Fork executable selection is incomplete.", "Retain the original source assignment and executable identity.")
+	}
+
 	if i.Purpose != IndependentFork && i.Purpose != SidechatFork {
 		return SidechatUnavailable()
 	}
 	if i.Purpose == SidechatFork && (i.Version != 3 || i.SourceAssignment.Configuration.Harness != Codex || i.SourceAssignment.Configuration.SidechatPolicy != "" || i.OpenCode != nil || i.Workspace != i.sourceWorkspace() || len(i.Progress.Subagents) != 0 || i.SourceAssignment.Fork != nil) {
 		return SidechatUnavailable()
 	}
-	// Native Fork currently opens an API-authenticated child outside the
-	// managed execution lease. Reject subscriptions before job acceptance or
-	// Worker journaling until Fork has its own joined protected lease profile.
-	if i.SourceAssignment.Configuration.Subscription {
+	// Independent Fork retains the API-only profile. Managed Sidechat alone
+	// carries the original protected generation for its exact claimed Fork lease.
+	if i.SourceAssignment.Configuration.Subscription && (i.Purpose != SidechatFork || i.SourceAssignment.Configuration.SubscriptionService != SubscriptionChatGPT || i.SubscriptionGeneration.Validate() != nil) {
 		return Fail(Unsupported, "Managed subscription sessions do not support native Fork yet.", "Keep the original session; Fork requires a separately verified managed authentication lease.")
+	}
+	if !i.SourceAssignment.Configuration.Subscription && i.SubscriptionGeneration != "" {
+		return SidechatUnavailable()
 	}
 	harness := i.SourceAssignment.Configuration.Harness
 	primary, primaryErr := i.SourceAssignment.Configuration.OpenCodePrimaryForInput(i.SourceAssignment.Input.Mode)
@@ -75,6 +122,7 @@ func (i ForkJobInput) Validate() error {
 }
 
 type ForkJobResult struct {
+	ManagedFinish    ID                           `json:"managed_finish,omitempty"`
 	Version          uint32                       `json:"version"`
 	OpenCodeMappings []OpenCodeForkMessageMapping `json:"opencode_mappings,omitempty"`
 	ChildSessionID   ID                           `json:"child_session_id"`
@@ -118,6 +166,9 @@ func canonicalDigest(value string) bool {
 func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 	harness := input.SourceAssignment.Configuration.Harness
 	validProfile := harness == Codex && r.Version == input.Version && r.OpenCodeMappings == nil && r.NativeTurnID == input.Completion.NativeTurnID || harness == OpenCode && r.Version == 2 && validateOpenCodeForkMappings(r.OpenCodeMappings, input.Completion.NativeTurnID, r.NativeTurnID) == nil && r.NativeTurnID != input.Completion.NativeTurnID && r.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil
+	if (input.SubscriptionGeneration != "" && r.ManagedFinish.Validate() != nil) || (input.SubscriptionGeneration == "" && r.ManagedFinish != "") {
+		return SidechatUnavailable()
+	}
 	if !validProfile || !r.CleanupVerified || r.ChildSessionID != input.ChildSessionID || r.RuntimeID != input.RuntimeID || r.NativeThreadID == input.Completion.NativeThreadID || r.NativeThreadID.Validate(harness, NativeThreadIdentity) != nil || !canonicalDigest(r.CheckpointDigest) {
 		return Fail(RecoveryRequired, "Fork completion lacks its exact verified child boundary.", "Retain the original Worker operation without repeating native Fork.")
 	}
@@ -126,6 +177,9 @@ func (r ForkJobResult) ValidateIdentity(input ForkJobInput) error {
 
 // Validate checks the child-owned publication seed without reopening its parent.
 func (f ForkOrigin) Validate() error {
+	if f.Startup != nil && (f.Startup.Validate(f.Snapshot.Configuration.Harness) != nil || f.Startup.ExecutableSHA256 == "") {
+		return Fail(RecoveryRequired, "The child lost its original executable selection.", "Preserve the child-owned Fork seed.")
+	}
 	if f.Snapshot.Configuration.SidechatPolicy != "" || f.SidechatParentSnapshot != nil {
 		if f.SidechatParentSnapshot == nil || f.SidechatParentSnapshot.Configuration.SidechatPolicy != "" {
 			return SidechatUnavailable()
@@ -138,6 +192,12 @@ func (f ForkOrigin) Validate() error {
 		}
 	}
 	harness := f.Snapshot.Configuration.Harness
+	if f.OpenCodeCreationRequestID != "" && (harness != OpenCode || f.OpenCodeCreationRequestID.Validate() != nil || UniqueIDs([]ID{f.OpenCodeCreationRequestID, f.JobID, f.RuntimeID, f.SourceSessionID, f.SourceExecutionID}) != nil) {
+		return Fail(RecoveryRequired, "The child lost its original OpenCode creation identity.", "Preserve the child-owned Fork seed and checkpoint.")
+	}
+	if f.OpenCodeCreationProof != nil && (harness != OpenCode || f.OpenCodeCreationRequestID == "" || f.OpenCodeCreationProof.ChildSessionID.Validate() != nil || !f.VerifyOpenCodeCreation(f.OpenCodeCreationProof.ChildSessionID)) {
+		return Fail(RecoveryRequired, "The child lost its original OpenCode creation proof.", "Preserve the immutable verified child publication.")
+	}
 	validProfile := harness == Codex && f.NativeTurnID == "" || harness == OpenCode && f.NativeTurnID.Validate(OpenCode, NativeTurnIdentity) == nil && f.NativeTurnID != f.SourceTurnID
 	digest, err := f.Snapshot.Configuration.Digest()
 	if err != nil || digest != f.Snapshot.ConfigurationDigest || !validProfile || f.SourceRevision == 0 || f.SourceSessionID.Validate() != nil || f.SourceExecutionID.Validate() != nil || f.JobID.Validate() != nil || f.RuntimeID.Validate() != nil || f.WorkerDeviceID.Validate() != nil || f.NativeThreadID.Validate(harness, NativeThreadIdentity) != nil || f.SourceTurnID.Validate(harness, NativeTurnIdentity) != nil || !canonicalDigest(f.CheckpointDigest) || !canonicalDigest(f.JobInputDigest) || f.Snapshot.InitialAccountID.Validate() != nil || f.Snapshot.ConnectionID.Validate() != nil {

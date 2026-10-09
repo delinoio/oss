@@ -117,7 +117,7 @@ it("requires removal confirmation, retains the original uncertain request, and c
   const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
   fireEvent.click(await screen.findByRole("button", { name: "Remove Saved server" }));
   expect(value.remove).not.toHaveBeenCalled();
-  expect(screen.getByText(/discards its unsent drafts/)).toBeTruthy();
+  expect(screen.getByText(/closes all windows for this saved connection and discards their unsent drafts/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Confirm connection removal" }));
   await screen.findByText(/operation has not been confirmed/);
   view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
@@ -177,5 +177,26 @@ it("keeps independent Worker stop targeting its original generation after client
   fireEvent.click(within(panel).getByRole("button", { name: "Retry original Worker stop" }));
   await waitFor(() => expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toHaveLength(2));
   expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toEqual([[value.profile.id, LocalWorkerAction.Stop, generation], [value.profile.id, LocalWorkerAction.Stop, generation]]);
+  expect(value.open).not.toHaveBeenCalled();
+});
+
+it("requires explicit first history read, appends with exact cursor and fences hidden late responses", async () => {
+  const value = fixture();
+  const removed = { ...value.profile, state: SavedConnectionState.Removed, name: "First removed" };
+  let resolve!: (page: { connections: SavedConnection[]; next_after?: string }) => void;
+  value.removed.mockResolvedValueOnce({ connections: [removed], next_after: removed.id } as { connections: SavedConnection[] });
+  value.removed.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  await screen.findByRole("button", { name: "Open Saved server" });
+  expect(value.removed).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Show removed connections" }));
+  await screen.findByRole("heading", { name: "First removed" });
+  fireEvent.click(screen.getByRole("button", { name: "Load more Removed connections" }));
+  await waitFor(() => expect(value.removed.mock.calls.map(([after]) => after)).toEqual(["", removed.id]));
+  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
+  resolve({ connections: [{ ...removed, id: newRequestId(), name: "Late removed" }] });
+  await Promise.resolve();
+  expect(screen.queryByRole("heading", { name: "Late removed", hidden: true })).toBeNull();
+  expect(value.retainedWorker).not.toHaveBeenCalled();
   expect(value.open).not.toHaveBeenCalled();
 });

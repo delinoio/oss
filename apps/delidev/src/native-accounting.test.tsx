@@ -16,14 +16,14 @@ it("keeps exact native counts, zero, unavailable and partial estimates distinct"
   const claude = screen.getByRole("region", { name: "Claude main-loop inputs" });
   expect(within(claude).getByText(BigInt("9007199254740993").toLocaleString())).toBeTruthy();
   const opencode = screen.getByRole("region", { name: "OpenCode steps" });
-  expect(within(opencode).getByText("22 · 1 unavailable units")).toBeTruthy();
+  expect(within(opencode).getByText("22 · 1 unavailable unit")).toBeTruthy();
   expect(within(opencode).getByText(/USD 0.000055.*1 partial/)).toBeTruthy();
   expect(within(opencode).getByText(/Assistant summaries and inherited fork history are excluded/)).toBeTruthy();
 });
 
-it("provides explicit update guidance for a server without native input accounting", () => {
+it("keeps unsupported evidence distinct from a diagnosed server-version failure", () => {
   render(<NativeAccounting data={create(GetUsageSummaryResponseSchema, { accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 })} open={vi.fn()} />);
-  expect(screen.getByRole("status").textContent).toContain("Update the server");
+  expect(screen.getByRole("status").textContent).toContain("unsupported or incomplete");
 });
 
 it("labels each historical category with its original currency without inventing missing amounts", () => {
@@ -51,7 +51,7 @@ it.each([
     { totals: { kind: first as AccountingUnitKind } }, { totals: { kind: second as AccountingUnitKind } },
   ] });
   render(<NativeAccounting data={data} open={vi.fn()} />);
-  expect(screen.getByRole("status").textContent).toContain("Update the server");
+  expect(screen.getByRole("status").textContent).toContain("unsupported or incomplete");
   expect(screen.queryByRole("region", { name: "Claude main-loop inputs" })).toBeNull();
   expect(screen.queryByRole("region", { name: "OpenCode steps" })).toBeNull();
 });

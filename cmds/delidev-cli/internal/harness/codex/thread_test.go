@@ -16,6 +16,7 @@ import (
 )
 
 type threadFixture struct {
+	skillRoots             []string
 	subagents              []map[string]any
 	mode                   string
 	thread                 map[string]any
@@ -29,13 +30,16 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleSkills(id, method, raw, write) {
+		return true
+	}
 	if f.handleSidechatCompaction(id, method, raw, write) {
 		return true
 	}
 	if method == "model/list" {
 		entries := []any{}
 		for _, name := range []string{"child-model", "fixture-model"} {
-			entries = append(entries, map[string]any{"id": name, "model": name, "displayName": name, "description": "Controlled model compatibility", "hidden": false, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium", "description": "Moderate"}, map[string]any{"reasoningEffort": "high", "description": "High"}}, "defaultReasoningEffort": "medium", "inputModalities": []string{"text"}, "serviceTiers": []any{}, "defaultServiceTier": nil, "multiAgentVersion": "v1"})
+			entries = append(entries, map[string]any{"id": name, "model": name, "displayName": name, "description": "Controlled model compatibility", "hidden": false, "supportedReasoningEfforts": []any{map[string]any{"reasoningEffort": "medium", "description": "Moderate"}, map[string]any{"reasoningEffort": "high", "description": "High"}}, "defaultReasoningEffort": "medium", "inputModalities": fixtureModalities(f.mode), "serviceTiers": []any{}, "defaultServiceTier": nil, "multiAgentVersion": "v1"})
 		}
 		write(id, map[string]any{"data": entries, "nextCursor": nil})
 		return true
@@ -124,6 +128,14 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	}
 	result["activePermissionProfile"] = nil
 	result["multiAgentMode"] = "explicitRequestOnly"
+	if fixtureVersion() == "0.159.2" {
+		f.thread["daybreakEnabled"] = nil
+		f.thread["environments"] = []any{}
+		f.thread["model"] = params["model"]
+		f.thread["originator"] = "fixture"
+		f.thread["reasoningEffort"] = effort
+		result["disabledPluginIds"] = []string{}
+	}
 	switch f.mode {
 	case "thread-model":
 		result["model"] = "foreign"
@@ -192,6 +204,10 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	config.Mode = ThreadProtocol
 	if mode == "thread-continuation-sidechat" {
 		config.Sidechat = ReadOnlySidechatV1
+		if os.Getenv("DELIDEV_CODEX_MANAGED_SIDECHAT") == "1" {
+			config.ManagedAuthentication = true
+			config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_MANAGED_SIDECHAT=1")
+		}
 	}
 	capture := filepath.Join(t.TempDir(), "requests.jsonl")
 	config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_CAPTURE="+capture)
@@ -296,7 +312,7 @@ func TestThreadNativeDefaultsAreObservableWithoutInventingThem(t *testing.T) {
 func TestThreadInvalidSettingsDoNotConsumeRequestIdentity(t *testing.T) {
 	changes := []func(*ThreadSettings){
 		func(s *ThreadSettings) { s.Options.ClaudePermission = domain.ClaudePermissionDefault },
-		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "invented" }, func(s *ThreadSettings) { s.Options.MaxConcurrency = 65 }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invented" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
+		func(s *ThreadSettings) { s.Model = "" }, func(s *ThreadSettings) { s.Cwd = "relative" }, func(s *ThreadSettings) { s.Options.SubagentEffort = "invalid\x00effort" }, func(s *ThreadSettings) { s.Options.ApprovalReviewModel = "other" }, func(s *ThreadSettings) { s.Options.ApprovalPolicy = "invalid\x00policy" }, func(s *ThreadSettings) { s.Options.Permission = "invented" }, func(s *ThreadSettings) { s.Instructions = strings.Repeat("x", (256<<10)+1) },
 	}
 	client, capture := openThreadFixture(t, "thread-ready")
 	settings := threadSettings(t)
@@ -414,6 +430,11 @@ func TestThreadErrorsAreRedactedAndOnlyDefiniteRejectionAllowsRetry(t *testing.T
 		t.Run(mode, func(t *testing.T) {
 			client, capture := openThreadFixture(t, "thread-"+mode)
 			settings := threadSettings(t)
+			settings.Effort = "future-root-effort"
+			settings.Options.SubagentEffort = "future-child-effort"
+			settings.Options.MaxConcurrency = 1024
+			settings.Options.ServiceTier = "future-tier"
+			settings.Options.ApprovalPolicy = "on-failure"
 			for range 2 {
 				_, err := client.StartThread(context.Background(), domain.NewID(), settings)
 				if err == nil || strings.Contains(err.Error(), "fixture-protected") {
@@ -431,8 +452,16 @@ func TestThreadErrorsAreRedactedAndOnlyDefiniteRejectionAllowsRetry(t *testing.T
 			if mode == "internal-error" {
 				want = 1
 			}
-			if len(capturedThreads(t, capture)) != want {
+			entries := capturedThreads(t, capture)
+			if len(entries) != want {
 				t.Fatal("incorrect native retry eligibility")
+			}
+			for _, entry := range entries {
+				params := entry["params"].(map[string]any)
+				config := params["config"].(map[string]any)
+				if config["model_reasoning_effort"] != settings.Effort || config["agents.default_subagent_reasoning_effort"] != settings.Options.SubagentEffort || config["agents.max_concurrent_threads_per_session"] != float64(1024) || params["serviceTier"] != settings.Options.ServiceTier || params["approvalPolicy"] != settings.Options.ApprovalPolicy {
+					t.Fatal("native rejection omitted or normalized an explicit option")
+				}
 			}
 		})
 	}
@@ -520,4 +549,11 @@ func TestNewerThreadAndHistoryKeepExactNativeVersion(t *testing.T) {
 	if _, err := decodeThread(raw, cfg.Version); err == nil {
 		t.Fatal("minimum substituted for exact historical native version")
 	}
+}
+
+func fixtureModalities(mode string) []string {
+	if mode == "thread-turn-images" {
+		return []string{"text", "image"}
+	}
+	return []string{"text"}
 }

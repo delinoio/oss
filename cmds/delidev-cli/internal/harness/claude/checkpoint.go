@@ -214,7 +214,7 @@ func restoreCheckpoint(ctx context.Context, config APIStreamConfig, raw []byte, 
 	for _, resume := range cp.Resumes {
 		h.resumes = append(h.resumes, historyResumeProof{resume.Transcript, resume.Messages, resume.Action})
 	}
-	b := &ExecutionBinding{session: cp.Session, input: cp.Input, model: config.Model, workspace: config.Workspace, home: config.Home, permission: config.Permission, command: cp.Command, initialized: true, accepted: true, finished: true, terminal: &NativeResult{Kind: cp.Kind, Reason: cp.Reason, Error: cp.Error}, owner: cp.Owner, logger: config.Process.Logger, seen: map[string]bool{}, runState: RunIdle, turnID: cp.Turn, continuationFailed: cp.ContinuationFailed}
+	b := &ExecutionBinding{session: cp.Session, input: cp.Input, model: config.Model, workspace: config.Workspace, home: historyHome(config), permission: config.Permission, command: cp.Command, initialized: true, accepted: true, finished: true, terminal: &NativeResult{Kind: cp.Kind, Reason: cp.Reason, Error: cp.Error}, owner: cp.Owner, logger: config.Process.Logger, seen: map[string]bool{}, runState: RunIdle, turnID: cp.Turn, continuationFailed: cp.ContinuationFailed}
 	digest, _ := hex.DecodeString(cp.InputDigest)
 	copy(b.digest[:], digest)
 	b.content.seen = map[string]bool{}
@@ -287,6 +287,16 @@ func checkpointConfigurationDigest(config APIStreamConfig, origin, instructionsS
 		WorkspaceRoots                                                                                            []string `json:",omitempty"`
 	}{config.Version, config.Process.Executable, config.Process.Directory, config.Process.Cwd, config.Home, config.Workspace, config.Model, string(config.Effort), string(config.Permission), instructionsSHA256, origin, config.WorkspaceRoots}
 	raw, _ := json.Marshal(value)
+	if config.Subscription != nil {
+		// Preserve existing API checkpoint bytes. Subscription checkpoints add only
+		// a digest-bound local reference, never profile files or credentials.
+		scoped, _ := json.Marshal(struct {
+			Configuration json.RawMessage
+			Profile       domain.ID
+			Home          string
+		}{raw, config.Subscription.ID, config.Subscription.Home})
+		return checkpointDigest(scoped)
+	}
 	return checkpointDigest(raw)
 }
 
@@ -298,7 +308,7 @@ func (cp sessionCheckpoint) validateConfiguration(config APIStreamConfig, origin
 	if validateWorkspaceRoots(config) != nil {
 		return historyUncertain()
 	}
-	if cp.Version != 1 || config.Version != SupportedVersion || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfigurationDigest(config, origin, instructionsSHA256) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
+	if cp.Version != 1 || !validHistoryDigest(ref.SHA256) || cp.Configuration != checkpointConfigurationDigest(config, origin, instructionsSHA256) || cp.Session != ref.SessionID || cp.Session != config.SessionID || cp.Owner != ref.OwnerID || cp.Owner != config.Process.OwnerID || cp.Input != ref.InputID || cp.InputDigest != ref.InputSHA256 || !validHistoryDigest(cp.InputDigest) || cp.Turn != ref.NativeTurnID || !nativeUUID(cp.Turn) || cp.Applied.Model != config.Model || (cp.Applied.Effort != nil && !validNativeEffort(*cp.Applied.Effort, false)) || (config.Effort != "" && (cp.Applied.Effort == nil || *cp.Applied.Effort != config.Effort)) || !validNativePermission(config.Permission) {
 		return historyUncertain()
 	}
 	for _, id := range []domain.ID{cp.Session, cp.Owner, cp.Input} {

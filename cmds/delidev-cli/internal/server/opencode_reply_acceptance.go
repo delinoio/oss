@@ -12,7 +12,7 @@ func validateOpenCodeReplyAcceptance(tx *store.Tx, input domain.ExecutionJobInpu
 		}
 		return nil
 	}
-	if input.Configuration.Harness != domain.OpenCode || input.Installation.Version != domain.OpenCodeProtocolVersion || evidence == nil || evidence.Validate(value.Type) != nil || evidence.ProposalEventID != value.OpenCode.NativeEventID || evidence.NativeRequestID != value.NativeRequestID.Text || value.Closure != domain.InteractionOpen {
+	if input.Configuration.Harness != domain.OpenCode || input.Version != 4 && !domain.ValidNativeVersionMetadata(input.Installation.Version) || evidence == nil || evidence.Validate(value.Type) != nil || evidence.ProposalEventID != value.OpenCode.NativeEventID || evidence.NativeRequestID != value.NativeRequestID.Text || value.Closure != domain.InteractionOpen {
 		return executionEventConflict()
 	}
 	var question *domain.OpenCodeQuestionResponse

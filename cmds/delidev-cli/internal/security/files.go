@@ -9,6 +9,23 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+// CreatePrivateDirExclusive creates only the final component and never adopts
+// an existing directory. Callers retain ownership evidence before using it.
+func CreatePrivateDirExclusive(path string) error { return createPrivateDirectory(path) }
+
+// StableStat captures file identity from an open handle. Windows path-based
+// FileInfo values resolve their identity lazily, so a later path replacement
+// can otherwise make os.SameFile compare the replacement with itself.
+func StableStat(path string) (os.FileInfo, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	closeErr := file.Close()
+	return info, errors.Join(statErr, closeErr)
+}
+
 // PrivateDir owns only its final component. Existing shared directories are
 // rejected rather than silently changing another application's permissions.
 func PrivateDir(path string) error {
@@ -64,14 +81,27 @@ func WriteAtomicOwned(path string, contents []byte) error {
 	return writeAtomic(path, contents, ".pending-"+filepath.Base(path)+"-")
 }
 
+// WriteAtomicOwnedMode retains only owner read/write and an optional owner execute bit.
+func WriteAtomicOwnedMode(path string, contents []byte, executable bool) error {
+	mode := os.FileMode(0600)
+	if executable {
+		mode = 0700
+	}
+	return writeAtomicMode(path, contents, ".pending-"+filepath.Base(path)+"-", mode)
+}
+
 func writeAtomic(path string, contents []byte, prefix string) error {
+	return writeAtomicMode(path, contents, prefix, 0600)
+}
+
+func writeAtomicMode(path string, contents []byte, prefix string, mode os.FileMode) error {
 	f, err := os.CreateTemp(filepath.Dir(path), prefix)
 	if err != nil {
 		return err
 	}
 	name := f.Name()
 	defer os.Remove(name)
-	if err = f.Chmod(0600); err == nil {
+	if err = f.Chmod(mode); err == nil {
 		_, err = f.Write(contents)
 	}
 	if err == nil {

@@ -1,5 +1,7 @@
 # DevHud Maintainer Operations Contract
 
+PR validation executes package-owned Turbo leaves through `ci:check`, preserving the complete frontend assertions, repeated clean-build checks and native boundaries. Cache-only Vercel OIDC access follows `docs/repository-workflow-contract.md`; it grants no deployment, signing or release authority. Turbo run summaries complement `CI Result` and native evidence.
+
 ## Scope and invariants
 
 This is the internal maintainer runbook for the implemented DevHud workflow. The repository contracts and checked-in scripts remain authoritative; this document names the operator actions, evidence, and stopping points. Never print secrets, tokens, signed URLs, private response bodies, local paths, capture bytes, prompts, or issue bodies.
@@ -54,9 +56,23 @@ Validate the exact primary artifacts before retaining a candidate:
 
 Use `scripts/release/validate-devhud-private-build.mjs`, `scripts/release/validate-devhud-public-assets.mjs`, `scripts/release/validate-devhud-ios-signing.mjs`, `apps/devhud/scripts/validate-updater-release.mjs`, and the release test suite. Never replace a missing SBOM, provenance statement, signature, or validation record with a placeholder.
 
+Windows private packaging checks `$LASTEXITCODE` immediately after
+`signtool.exe verify /pa /all /v`. A nonzero status fails the step before installer
+execution, SBOM generation, validation evidence or artifact upload. The diagnostic
+contains only stable Authenticode context and the numeric status. Successful
+verification continues through the existing lifecycle and evidence checks. The
+Windows supply-chain CI row tests this boundary with temporary native stubs for
+MSI and NSIS; actual certificate and signed-package acceptance remain separate.
+
 ## Coordinated publication, delays, withdrawal, and rollback
 
+Google Play full-rollout verification is currently unavailable. Its published lifecycle summary covers complete, partial, and resumable halted rollouts without distinguishing them. For the exact build, status and withdrawal fail with `Google Play published release summary cannot verify a full rollout; release advancement and automatic cleanup are blocked`. Stop release advancement and automatic cleanup or rollback when this error occurs. Even a genuinely complete rollout remains blocked until independent authoritative full-rollout evidence exists. Do not bypass this error with operator approval, a previous `completed` submission request, or edit-based polling. The production-release service-account prerequisite still applies before any Google network access.
+
 Store providers are `apple`, `google-play`, and `chrome-web-store`. `submit_stores` submits or reconciles exact versions; `review_gate` waits in `devhud-store-review-approved` until each provider reports `approved-held` or `public`. Store review delay is expected: leave the gate pending and resume it after independently checking the exact version. Do not upload another package for a processing, processed, pending, approved-held, or public exact version.
+
+Chrome review submission requires the upload response to report `uploadState=SUCCEEDED`, `itemId` equal to the selected extension ID, and `crxVersion` equal to the release metadata version. Failed, processing, unknown, missing, or mismatched upload results stop the channel before any review publication request, even after HTTP success. Errors contain fixed diagnostic text without upload response values. This check adds no automatic polling or retry; recovery remains an explicit operator action. Successful uploads retain `STAGED_PUBLISH`, 100 percent deployment, `skipReview=false`, and `blockOnWarnings=true`.
+
+Chrome public verification requires `PUBLISHED`, the exact version, and 100 percent deployment. `PUBLISHED_TO_TESTERS`, unknown or missing states, and partial deployment cannot satisfy GA. Exact staged submissions remain `approved-held`. A known `takenDown` flag stops status, publication, and withdrawal before store mutation. Reconcile takedown or ambiguous published exposure with the provider before choosing recovery; an exact published revision at 100 percent still blocks automatic withdrawal regardless of its state.
 
 If publication fails before any store is public, `rollback_pre_store` first queries every exact store, withdraws held Apple/Chrome submissions, requires protected Google Play removal, verifies withdrawal, then reconciles controller status. Automatic controller rollback is allowed only when the API and sweeper pair is known to be public and no store is public. A prepared pair is left untouched; a disagreement fails closed.
 
@@ -81,6 +97,8 @@ Diagnostics and crash reports are opt-in, user-previewed, bounded, redacted, and
 Administrator support triage uses `AdminService` metadata-only user, usage, upload, and audit views. Validate a non-blank reason before mutation, preserve expected-state conflicts, use the returned correlation ID, and redact all credentials/locators. High-severity cases: stop publication or updater exposure, preserve the exact candidate and evidence, assess whether any store/API/updater channel is public, quarantine affected images through the contract if needed, notify the accountable maintainer through the approved human channel, and choose rollback-before-store or roll-forward/emergency withdrawal-after-store. Do not invent a remote alert or kill-switch path.
 
 ## High-risk CEF vulnerability response
+
+The comparison summary reports committed/upstream revisions, comparison status and counts, and retained/total security-signal counts, including truncation. A successful comparison must complete this summary before uploading its bounded JSON report with 35-day retention. Summary fixtures syntax-check the actual Node heredoc and execute the workflow step with synthetic zero-signal and truncated-signal reports; hosted comparison and artifact-upload evidence remain separate.
 
 The monthly `.github/workflows/devhud-cef-security-review.yml` report compares the committed Tauri revision with upstream `feat/cef`; it is read-only and produces metadata only. A high-risk signal requires an immediate maintainer-owned change:
 

@@ -1260,7 +1260,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "clibox"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -1270,6 +1270,7 @@ dependencies = [
  "clibox-transform",
  "clibox-wait",
  "libc",
+ "notify",
  "rcgen",
  "rustls",
  "serde_json",
@@ -1317,6 +1318,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "walkdir",
  "winapi",
@@ -2092,6 +2094,7 @@ dependencies = [
  "cef",
  "dirs",
  "futures-lite",
+ "libc",
  "mac-usernotifications",
  "objc2",
  "objc2-app-kit",
@@ -2101,6 +2104,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sys-locale",
  "tauri",
  "tauri-build",
  "tauri-runtime-cef",
@@ -2111,6 +2115,7 @@ dependencies = [
  "url",
  "uuid",
  "windows 0.62.2",
+ "windows-sys 0.61.2",
  "zbus",
  "zeroize",
 ]

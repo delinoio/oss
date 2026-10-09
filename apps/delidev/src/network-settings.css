@@ -1,0 +1,25 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.network-disclosure-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.settings-content.settings-server-preferences[aria-label] .settings-content-column .network-disclosure-header > button { border-color: transparent; padding-inline: 0; background: transparent; text-align: left; font-size: 16px; line-height: 24px; font-weight: 600; min-height: 40px; }
+.network-disclosure-header > button::before { content: "▸"; margin-right: 12px; }
+.network-disclosure-header > button[aria-expanded=true]::before { content: "▾"; }
+.network-inline, .network-workspace { min-width: 0; }
+.network-workspace { display: flex; flex-direction: column; gap: 24px; padding-top: 24px; }
+.network-workspace p, .network-workspace h3, .network-workspace h4 { margin: 0; overflow-wrap: anywhere; }
+.network-workspace h3 { font-size: 16px; line-height: 24px; }
+.network-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.network-selection fieldset { display: flex; align-items: end; gap: 16px; padding: 0; border: 0; min-width: 0; }
+.network-selection label { flex: 0 1 280px; min-width: 0; }
+.network-selection select { width: 100%; text-overflow: ellipsis; }
+.network-profile-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding-block: 16px; border-bottom: 1px solid var(--border); min-width: 0; }
+.network-profile-row h4 { flex: 1 1 100%; font-size: 14px; }
+.network-profile-row p { flex: 1 1 200px; }
+.network-empty { display: grid; gap: 8px; padding-block: 16px; text-align: left; }
+.network-transfer { padding: 24px 0 0; border: 0; background: transparent; border-top: 1px solid var(--border); border-radius: 0; }
+.network-transfer summary { min-height: 40px; cursor: pointer; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.network-transfer > section { padding-top: 16px; min-width: 0; }
+.network-transfer input, .network-transfer textarea { min-width: 0; max-width: 100%; }
+@container (width < 640px) {
+  .network-selection fieldset { flex-direction: column; align-items: stretch; }
+  .network-selection label { flex-basis: auto; }
+}

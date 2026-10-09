@@ -14,13 +14,58 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
-### Codex version admission and attribution
+### Direct startup and native attribution
 
-The minimum applies to discovery, initialization, authentication, model observation, execution, continuation, Fork, Sidechat, compaction and automatic titles. Attempt eligibility is distinct from protocol, account and platform acceptance. Other harness version policies retain their exact pins. Historical schema/evidence references below describe their original baseline rather than an upper version limit.
+[Direct startup](cmds-delidev-execution-startup-contract.md) supersedes numeric
+version admission and required pre-inspection for negotiated execution, continuation,
+Fork, Sidechat, compaction and titles. Resolve only the selected executable and
+initialize its actual original process once. Validate native protocol, effective
+settings, workspace and credential mode before input. No separate execution probe
+or version subprocess runs on attachment or before these operations. Versions are
+optional observed metadata; an unknown version stays unknown. Existing explicit
+model/installation diagnostics retain their separate non-inference authority.
 
-Carry the detected version through immutable assignments, native children, checkpoints, approvals and usage; never substitute the minimum or rewrite historical records. Continuations, approvals and history still match the original executable and exact recorded native version. Private title and managed-auth capability probes use that same current inventory version and reject changed installation identity.
+Keep original executable identity and actual historical protocol/version evidence
+without rewriting old assignments or substituting a baseline. Adapter capabilities
+describe implemented support independently of inventory readiness. Strict native
+schemas, effective settings and original account/Worker/history still determine
+support. Native errors retain bounded actual version, closed phase and safe code;
+legacy minimum fields remain readable but new diagnostics do not invent a minimum.
+Keep the first failure separate from later cleanup/recovery. Raw native/provider
+text, URLs, secrets and user paths never enter presentation or logs.
 
-Native errors preserve bounded version, minimum, a closed failure phase and stable safe code. Locally authored explanations exclude provider error text, URLs, secrets, account identity and user paths. Keep the first failure separate from later cleanup/recovery; recovery never authorizes another send.
+The installed Codex 0.159.2 protocol emits additional observation fields even on
+stable operations. Thread Start/Resume/read accepts nullable `daybreakEnabled`,
+`environments`, `model`, `originator` and `reasoningEffort`; binding responses
+also accept `disabledPluginIds` and Resume's `collaborationMode`. Settings
+notifications accept the saved disabled-plugin list. These observations are
+discarded and cannot replace the independently validated effective settings,
+enable plugins, select environments or grant Daybreak execution authority.
+Agent-message `questions` may be omitted, null or empty for ordinary text;
+populated questions retain the private extension boundary. Quota snapshots accept
+the advisory `normalModelSlug` without selecting a model. Response-usage
+`usageMetadata.metadata` stays opaque and excluded from publication, cost and
+logs; original counters and amount-evidence classification remain unchanged.
+The installed schema also declares scoped `model/verification` notifications.
+Accept only a required empty verification array bound to the original known root
+turn as discarded metadata. Populated verification remains a private extension;
+the empty observation cannot establish model eligibility or account readiness.
+Managed ChatGPT execution also consumes the original root's passive
+`mcpServer/startupStatus/updated` notifications for the built-in `codex_apps`
+connector. Validate the closed starting/ready/failed/cancelled states, nullable
+private error and `reauthenticationRequired` failure reason; discard descriptors
+and diagnostics without changing account health, configuration or input/tool
+authority. [Official native connector registration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core/src/mcp.rs)
+and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/bespoke_event_handling.rs)
+keep this status separate from tool execution and authentication. Other server
+names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
+streams and tool calls retain their existing private adapter boundaries.
+Unsupported native families log only a closed classification, never a raw method
+or payload. The installed scripted thread smoke rejects private extensions so
+parser-level success cannot conceal an unsupported Worker event family.
+Unknown fields, immutable history and managed-account recovery fences remain
+strict. Event validation logs retain only closed stages, original owner and safe
+code, without raw native methods or payloads.
 
 ### Codex model observation profile
 
@@ -37,7 +82,7 @@ login, execution grant, provider endpoint, thread creation or inference is used.
 Managed subscriptions remain unsupported until their protected lifecycle exists.
 
 ### Codex automatic title profile
-Automatic titles use an explicitly verified Codex version at or above `0.151.0` with the native Responses profile. Worker startup probes the exact installed binary/version and app-server protocol in a fresh private home without login or inference. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
+Automatic titles reuse the successful original execution executable path/hash with the native Responses profile. Worker attachment performs no title probe; the actual auxiliary process validates its protocol. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
 
 ### Codex JSON-RPC stdio transport
 The internal `nativewire` connection consumes newline-delimited JSON-RPC on distinct native stdout and stdin streams and discards raw stderr. It validates UTF-8, unique JSON keys, required envelope discrimination, request identity type and protocol version, and preserves byte-fragmented Unicode. Codex's optional bounded `emittedAtMs` notification field is retained as provenance, not an ordering or deduplication identity. Unknown envelope shapes fail instead of being silently interpreted.
@@ -49,9 +94,11 @@ Callers allocate and durably record UUID-v7 operation identities before side-eff
 Server requests carry a per-arrival token in addition to their native numeric/string identity. Exactly one concurrent reply may claim that outstanding request, and replaced/already-claimed interactions fail. The adapter must validate answers against the original typed request and current authorization before replying. Successful pipe delivery proves only transmission; native acknowledgment/state must establish semantic acceptance. The transport now exposes exact-arrival request retirement for native cancellation/resolution: it writes no response, cannot remove a replacement arrival and refuses in-flight response ownership. An already absent request is not semantic acceptance. The adapter must establish native ownership before invoking this primitive. Notifications and late replies use the bounded event path; no automatic answer, approval or prompt is synthesized.
 
 ### Codex app-server profile
-The initial schema and native evidence baseline is Codex `0.151.0`. Codex admission uses common SemVer ordering with minimum `0.151.0` and no upper bound, including prerelease ordering and ignored build metadata for comparison. Older or invalid versions fail explicitly; newer versions attempt their actual native protocol and may fail its existing strict schema, effective configuration or ownership checks. This is not evidence of other operating systems, account combinations, or execution features.
+The initial schema and native evidence baseline is Codex `0.151.0`. Native processes attempt their actual protocol without a numeric version gate. Invalid bounded version metadata, strict schema violations, effective configuration mismatches or changed ownership still fail. This is not evidence of other operating systems, account combinations, or execution features.
 
 The adapter starts owned `codex app-server` over stdio with a private `CODEX_HOME`, ephemeral native authentication, automatic update checks disabled and analytics/feedback disabled. Initialization identifies DeliDev, stays on the stable API, validates the returned native version/platform/private home, sends `initialized`, and confirms readiness with a bounded `thread/loaded/list`. A probe must have no loaded native threads or further cursor. It performs no login, account/model refresh, thread creation or inference. Unknown response fields, foreign homes/platforms, changed versions and nonempty loaded state fail explicitly. Failed validation closes and reconciles the process; uncertain cleanup retains the runtime.
+
+Discovery probes and subscription lifecycle processes additionally pin `features.plugins=false` before launch. Codex 0.159.2 otherwise starts asynchronous curated plugin downloads without creating a thread; those files can exceed the disposable login runtime's cleanup bounds. After initialization, `experimentalFeature/list` must return a complete inventory of at most 256 unique bounded names with an explicitly disabled `plugins` feature. Missing, enabled, null, malformed or incomplete observations reject the profile before it grants a client. Native closure and ownership reconciliation remain mandatory on failure. Actual thread execution retains its separate feature profile. The [pinned startup gate](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/core-plugins/src/manager.rs) controls both startup and account-change curated sync through the effective plugins setting.
 
 ### Claude Code stream-json execution transport
 The private `claude.Stream` transport owns the native process and newline-delimited control/input protocol independently of the no-input discovery probe. It does not choose an account/version, initialize a session, grant a permission or send a prompt automatically. The caller must retain each mutating operation before transmission and supply its own explicit process/runtime configuration; the future typed session adapter owns effective settings, account authority and event publication.
@@ -569,9 +616,9 @@ These are native policy observations, not an OS read-only sandbox or coordinator
 Actual isolated native tests exercise Plan text completion with additive instructions and a separate ordinary Write tool call. The latter retains its original permission-denied tool result, leaves the generated target absent and returns that original result in the next provider request before assistant completion. No DeliDev approval or policy rewrite occurs. This does not establish arbitrary shell isolation, successful native plan-file edits or approval of a completed plan.
 
 ### OpenCode requested and initially observed settings
-The private Worker settings mapper validates the complete immutable execution configuration, retains its exact model and ordered instruction text, and maps the original Execute/Plan input to the native Build/Plan primary agent. It selects the fixed DeliDev native provider namespace, explicit empty permission overrides and the pinned stop-on-rejection default. No account readiness or model limit is inferred. Unsupported effort, subagent model/effort, concurrency, approval-review model, service tier and other harness permission/approval selections fail explicitly; Plan cannot erase those saved options. The mapper never rewrites the configuration digest or treats requested settings as observations.
+The private Worker settings mapper validates the complete immutable execution configuration, retains its exact model and ordered instruction text, and maps the original Execute/Plan input to the native Build/Plan primary agent. It selects the fixed DeliDev native provider namespace, explicit empty permission overrides and the pinned stop-on-rejection default. No account readiness or model limit is inferred. Explicit effort maps unchanged to the selected native model's `options.reasoningEffort`. Subagent model/effort, concurrency, approval-review model, service tier and other harness permission/approval selections lack corresponding adapters and fail with the exact option name; Plan cannot erase those saved options. The mapper never rewrites the configuration digest or treats requested settings as observations.
 
-The owned native initializer separately exposes a private initial settings observation only after effective configuration and primary-agent/path verification, while original process authority and retained instructions remain valid. This first observation profile represents default native primary policies only; explicit session overrides cannot be mislabeled as defaults. Shared `ObservedExecutionSettings` retains optional `opencode_agent` as `build` or `plan`, requires the exact model and input mode, and keeps unavailable effort/tier null. Generic permission remains `default`, with no invented approval policy or Claude permission. Other harnesses reject this field, and omission preserves earlier serialized settings bytes.
+The owned native initializer separately exposes a private initial settings observation only after effective configuration and primary-agent/path verification, while original process authority and retained instructions remain valid. This first observation profile represents default native primary policies only; explicit session overrides cannot be mislabeled as defaults. Shared `ObservedExecutionSettings` retains optional `opencode_agent` as `build` or `plan`, requires the exact model and input mode, and keeps unselected effort and unavailable tier null. An explicit effort requires a fresh read of both loaded native `/config` and `/provider`, exact profile comparison and projection of the applied effort from native provider bytes before input. Checkpoint settings digests also bind explicit effort; omit the empty digest field to preserve historical default-profile digests. Generic permission remains `default`, with no invented approval policy or Claude permission. Other harnesses reject this field, and omission preserves earlier serialized settings bytes.
 
 Actual native owned fixtures validate this shared observation for default Build and Plan, including the Plan Write rejection. Requested Worker mapping tests and these native observations remain separate evidence: durable registration, public Worker execution, event publication and continuation are still gated by their own integrations.
 
@@ -770,7 +817,7 @@ The private adapter now implements `thread/start`, `thread/resume` and metadata-
 
 The caller must durably accept the request UUID and non-secret execution settings before a mutating send. Start explicitly requests persisted `legacy` history and disables provider-model fallback. Resume uses the retained native UUID with `excludeTurns: true`, never a replacement transcript or arbitrary rollout path. One connection binds one root thread. Control calls serialize with cancelable waiters; read-only inspection does not clear recovery or authorize execution. A foreign resume response cannot replace the original identity's inspection authority.
 
-Settings translation fixes the model, provider and canonical existing primary directory; it applies an explicit reasoning effort through native configuration and an explicit service tier when selected. Supported permission modes map to native read-only, workspace-write and full-access policies. Supported approval policies are untrusted, on-request and never; the reviewer stays the user. Unselected native defaults remain unselected and their observed values are returned separately, including unavailable effort/tier values. Subagent overrides, concurrency overrides and approval-review models are currently rejected before sending rather than ignored. Their implementation and account compatibility checks remain required. Applied instruction text is bounded to 256 KiB and sent only as additive developer instructions; base instructions are never replaced. Ordered template resolution and durable first-execution snapshots remain server integration work.
+Settings translation fixes the model, provider and canonical existing primary directory; it applies an explicit reasoning effort through native configuration and an explicit service tier when selected. Supported permission modes map to native read-only, workspace-write and full-access policies. Bounded explicit approval policies are passed unchanged for native support determination; the reviewer stays the user. Unselected native defaults remain unselected and their observed values are returned separately, including unavailable effort/tier values. Subagent model/effort and uint32 concurrency overrides are passed unchanged through their native configuration keys, retaining canonical same-account model references and immutable snapshots. Approval-review model lacks an adapter and fails explicitly rather than being ignored. Applied instruction text is bounded to 256 KiB and sent only as additive developer instructions; base instructions are never replaced. Ordered template resolution and durable first-execution snapshots remain server integration work.
 
 A successful native response must retain the exact requested identity/model/provider/effort/tier/directory/approval/permission selection, legacy history, supported root-thread state and bounded known metadata. Unexpected additional workspace roots or delegation policy fail validation. The installed binary returns several schema-experimental observation fields even to stable clients; these known fields are represented without granting execution capabilities. Native paths, previews, instruction-source lists, implementation extras and diagnostic bodies do not escape as product thread observations. `thread/read` remains metadata-only; the separate continuation verifier below inspects the latest terminal turn without publishing historical transcript content. General transcript paging and normalization remain separate required work.
 
@@ -1766,3 +1813,95 @@ remain unknown. Context transport gaps cannot manufacture completion. The
 private once-only summarize controller preserves original provider/model,
 independent HTTP/lifecycle/history/cleanup and repeated fresh-process lineage;
 manual product capability remains gated on its complete business integration.
+
+## Codex quota response observations (issue #1810)
+
+The private `account/rateLimits/read` response accepts optional nullable
+`ordinaryUsageAllowed` booleans, `accountId` strings and opaque `rateLimitUpsell`
+JSON from the [official Codex response declaration](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/src/protocol/v2/account.rs#L331).
+These observations are discarded before quota projection. They never enter
+resources, receipts, history or logs, select an account or endpoint, replace
+authentication identity, or grant recovery, execution or reset-credit authority.
+
+The existing bounded JSON envelope, recursive duplicate-key rejection and
+strict typed/unknown-field checks remain mandatory. Upsell JSON may contain
+opaque nested keys, but cannot bypass those common bounds or duplicate checks.
+Quota and credit validation, authoritative count versus detail-list semantics,
+protected-value checks, last-success retention, original credential ownership,
+once-only claims and independent cleanup keep their existing meaning. This
+response compatibility change adds no public interface, capability or migration.
+
+## Claude native subscription execution profile
+
+The native subscription adapter reuses the pinned Claude Code `2.1.236`
+stream-json execution, original-input binding, Stop, continuation, transcript,
+usage and applied permission/model/effort checks. It requires an independently
+claimed original subscription account/profile/generation on its owning Runner
+under Worker 20. `claude auth login --claudeai`, `auth status` and `auth logout`
+use one persistent private account-specific configuration/secure-storage
+directory; the installed original CLI owns OAuth and automatic renewal.
+
+Native subscription initialization requires first-party subscription account
+metadata and rejects API-key/token-source overrides. API/discovery initialization
+keeps its existing independent authentication checks. Execution reconstructs
+system lookup and fresh private runtime/instruction paths while selecting the
+owned persistent `CLAUDE_CONFIG_DIR`. It does not inject ANTHROPIC_API_KEY,
+ANTHROPIC_AUTH_TOKEN, imported OAuth tokens, host-managed authentication or the
+API relay base URL. The Go publication token remains publication authority only
+and never becomes CLI authentication. Native identity text is used only for a
+bounded Worker-local keyed commitment and is discarded. The original login
+pins that commitment in the private profile owner record. Reauthentication and
+execution compare fresh native status against the pin before sending input;
+a missing pin or changed account cannot gain execution authority.
+
+History reads select the owned persistent profile; checkpoints retain bounded
+native history and a digest-bound opaque profile reference without auth files,
+profile paths or tokens. A replacement requires the existing complete original
+history, process cleanup and current account/connection/lease proof. Logout
+retires continuation authority after official native logout/status and owned
+profile removal. Subscription authentication does not grant Fork, Sidechat,
+quota/credit support or any separately unverified native capability.
+
+Native process fixtures test original URL/code input, process exit/status,
+isolated profiles and logout without a real account. Installed CLI source
+inspection and empty-profile probes are separate evidence. Real original
+subscription login and first/follow-up/Stop/Resume acceptance must still be
+verified on each supported packaged platform before claiming completion.
+
+## Explicit Codex skills
+
+Follow the sessions contract's Explicit native skills section. After original
+process/settings validation and before turn/start, only selected immutable package
+copies become process-local extra roots. Verify native skills/list exact enabled
+name/path identities and resource digests before sending structured `skill` input.
+Unknown support or incomplete evidence never falls back to text. Private native
+user-history parsing preserves ordered skill identity digests independently of
+original text proofs; continuation compares those original private proofs. No
+ordinary native authentication, configuration overlay, plugin, hook, MCP or
+environment is imported. Claude Code, OpenCode and Grok Build remain unsupported.
+
+Package content proofs include each normalized executable flag. Snapshot, runtime,
+and independent Fork copies publish owner-only files: `0700` for executable
+resources and `0600` for other resources. Mode changes invalidate the proof.
+
+## Ordinary execution GitHub CLI context
+
+Issue #1857 permits ordinary Codex, Claude Code, OpenCode and Grok session tools to use the executing machine's existing gh login. The Worker resolves the configuration selector from its original process environment and cwd before native launch. Precedence is `GH_CONFIG_DIR`, `XDG_CONFIG_HOME/gh`, Windows `AppData/GitHub CLI`, then the original user home `.config/gh`. The final fallback follows gh's `os.UserHomeDir`: `HOME` on Unix and `USERPROFILE` on Windows. Relative configured paths bind to the original Worker cwd, never the session checkout or private runtime. Signed installed-controller delegation and update/rollback helpers retain the explicit `GH_CONFIG_DIR` selector through their existing environment allowlist. They retain the caller cwd and never forward `GH_TOKEN` or `GITHUB_TOKEN`. See the [official gh environment contract](https://cli.github.com/manual/gh_help_environment) and [gh directory resolver](https://github.com/cli/go-gh/blob/trunk/pkg/config/config.go).
+
+The internal `executionenv.Ordinary` context carries this selector and, on Linux only, the original bounded `DBUS_SESSION_BUS_ADDRESS` and `XDG_RUNTIME_DIR` selectors in memory. These non-secret session selectors let gh reach the existing user Secret Service after private HOME reconstruction. They never authorize bus/store creation, adoption or cleanup. Each adapter applies `GH_CONFIG_DIR` after rebuilding its private environment. Initial execution, supported continuation and independent Fork receive it; remote execution resolves only the remote Worker's context. Native provider HOME/configuration, execution/proxy credential exclusions, permissions, original process ownership, history and cleanup remain unchanged. This context grants no unsupported native continuation/Fork capability.
+
+`PrivateRuntimeEnvironment` remains isolated. Discovery, account login, auxiliary title generation, inspection and Sidechat receive no ordinary context. Codex independently excludes probe, subscription, model-observation, title and read-only Sidechat profiles even if a caller supplies a context. Grok applies the selector only to its actual API execution process, retaining separate isolated inspection processes.
+
+DeliDev does not read, copy, export or inject gh tokens, synchronize credentials, create or delete gh configuration, or broaden native permissions. gh accesses its own configuration and OS credential store directly; an explicit tool command may update gh's own files. Missing configuration/login or denied credential-store access retains gh's failure without automatic login, fallback credentials or selection of a DeliDev GitHub integration. Structured logs record only selector availability, never configuration paths or credential contents. No protocol, RPC, database migration, authentication UI or feature flag is added. Offline synthetic file/subprocess fixtures are separate from installed native engine, real-account, remote-machine, OS-store and platform acceptance; the owner performs those external checks.
+
+## Quota-only external ChatGPT authentication — issue #1854
+
+The separate `QuotaProtocol` profile is available only to the server-owned System 50 quota lane. It initializes the actual isolated process with experimental API support, disabled plugins, ephemeral credentials and the verified official OpenAI provider. Verify its configuration before supplying credentials. A typed transient input contains only access token, account and plan, following the [pinned official external-auth schema](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/app-server-protocol/src/protocol/v2/account.rs). One external `account/login/start` setup precedes one omitted-params `account/rateLimits/read`; the native adapter rejects a second invocation. No managed file, ID/refresh token, inference, reset-credit request or authentication writeback is authorized.
+
+A joined private notification reader refuses every `account/chatgptAuthTokens/refresh` request using the exact outstanding native arrival and a fixed safe error. Only the bounded disabled remote-control and external-account notifications are discarded. Other unsupported native events fail the profile. Expired/rejected authentication cannot trigger renewal or a fallback. Strict quota projection and protected-value/reflection checks remain shared with managed quota. External login is an unstable native interface; unsupported actual readiness yields server-specific failure, never inferred support from a version or fixture. Native initialization may perform its ordinary bounded configuration reads. Preserve independent original-process and private-file cleanup.
+
+### Original native credential reflection
+
+Credentialed Grok and Claude launches register their exact scoped execution token together with caller-protected values before receiving native frames. Claude retains these transient values when its controller clears the launch API configuration, so closed main/child history inspection and process continuation protect the original runtime values as well. OpenCode binds its original scoped token, private HTTP password and caller values to owned SSE events and content-bearing HTTP snapshots, including history, recovery and checkpoint reads. Exact owned GET `/config` and `/provider` responses retain private authentication fields for independent configuration verification; their bytes cannot become public content through that exception.
+
+Apply the existing finite literal, decoded-JSON and standard/URL-safe padded/unpadded Base64 guard before native event queues, typed content callbacks, history proofs or durable product publication. Refusal uses safe stable errors and preserves the original process, once-only mutation and independent cleanup/recovery obligations. Never rewrite or redact native content, resend uncertain input or persist guard values in checkpoints. This is a transient reflection boundary, not an operating-system sandbox or protection against arbitrary transformed/covert encodings. Fixture checks do not establish installed-client, account or platform acceptance.

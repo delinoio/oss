@@ -1,0 +1,22 @@
+{
+  "agent-configuration.needsAttention_c1ebc7": "Needs attention",
+  "agent-configuration.coreSettings_3f8268": "Core settings",
+  "agent-configuration.requiredFieldsAreMarked_a99eff": "Required fields are marked *",
+  "agent-configuration.optionalSettings_e88b5c": "Optional settings",
+  "agent-configuration.leaveTheseUnchangedToKeepThe_73a428": "Leave these unchanged to keep the current defaults.",
+  "agent-configuration.extra.43b8a39e8e17": "Customized · unknown options retained",
+  "agent-configuration.extra.5987219128d4": "Customized",
+  "agent-configuration.extra.610b7468ce69": "Defaults",
+  "agent-configuration.extra.b21853cdda69": "Unsupported value retained",
+  "agent-configuration.extra.2bab94029bed": "Native default",
+  "agent-configuration.extra.42b998374988": "Server default",
+  "agent-configuration.extra.8116757327fb": "Can be saved without accounts; execution requires an eligible account.",
+  "agent-configuration.sentence.ad26a61b1351": "{{v0}} accounts · {{v1}}",
+  "agent-configuration.sentence.74d105c1160d": "{{v0}} templates",
+  "agent-configuration.section.reasoning": "Reasoning",
+  "agent-configuration.section.accounts": "Accounts & routing",
+  "agent-configuration.section.instructions": "Instructions",
+  "agent-configuration.section.native": "Native harness options",
+  "agent-configuration.templateCount_one": "{{count}} template",
+  "agent-configuration.templateCount_other": "{{count}} templates"
+}

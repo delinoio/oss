@@ -92,6 +92,7 @@ type LifecycleObservation struct {
 // NativeInitialization is emitted only after exact native initialization
 // validation. It is independent of requested launch flags and applied effort.
 type NativeInitialization struct {
+	Version    string
 	Model      string
 	Permission NativePermission
 }
@@ -101,6 +102,7 @@ type NativeInitialization struct {
 // Worker must retain its durable claim before constructing this binding and
 // must still process every private observation through its dedicated adapter.
 type ExecutionBinding struct {
+	nativeVersion          string
 	mu                     sync.Mutex
 	session                domain.ID
 	input                  domain.ID
@@ -143,16 +145,16 @@ type ExecutionBinding struct {
 }
 
 func BindExecution(config APIStreamConfig, input domain.ID, text string) (*ExecutionBinding, error) {
-	if config.Version != SupportedVersion || config.SessionID.Validate() != nil || input.Validate() != nil || domain.Text(text, "native input", 256<<10, true) != nil || domain.Text(config.Model, "native model", 256, true) != nil ||
+	if config.Version != "" && !domain.ValidNativeVersionMetadata(config.Version) || config.SessionID.Validate() != nil || input.Validate() != nil || domain.Text(text, "native input", 256<<10, true) != nil || domain.Text(config.Model, "native model", 256, true) != nil ||
 		!filepath.IsAbs(config.Workspace) || filepath.Clean(config.Workspace) != config.Workspace || !filepath.IsAbs(config.Home) || filepath.Clean(config.Home) != config.Home || !validNativePermission(config.Permission) {
 		return nil, apiConfigurationError()
 	}
-	return &ExecutionBinding{session: config.SessionID, input: input, digest: sha256.Sum256([]byte(text)), model: config.Model, workspace: config.Workspace, home: config.Home, permission: config.Permission, seen: map[string]bool{}, logger: config.Process.Logger, owner: config.Process.OwnerID}, nil
+	return &ExecutionBinding{session: config.SessionID, input: input, digest: sha256.Sum256([]byte(text)), model: config.Model, workspace: config.Workspace, home: historyHome(config), permission: config.Permission, seen: map[string]bool{}, logger: config.Process.Logger, owner: config.Process.OwnerID}, nil
 }
 
 func validNativePermission(permission NativePermission) bool {
 	switch permission {
-	case DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission:
+	case DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission, AutoPermission:
 		return true
 	default:
 		return false
@@ -277,7 +279,7 @@ func (b *ExecutionBinding) Observe(event StreamEvent) (observation LifecycleObse
 			b.initialized = true
 			b.turnID = header.UUID
 			observation.Kind, observation.TurnID = SessionInitialized, b.turnID
-			observation.Initialized = &NativeInitialization{Model: b.model, Permission: b.permission}
+			observation.Initialized = &NativeInitialization{Version: b.nativeVersion, Model: b.model, Permission: b.permission}
 		} else if header.Subtype == "session_state_changed" {
 			phase = runValidation
 			value, err := b.observeRunState(event.Body)

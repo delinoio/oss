@@ -1,0 +1,13 @@
+{
+  "native-claude-denial-completion.theRetainedClaudeDenialCleanupIs_81b06b": "The retained Claude denial cleanup is unavailable or inconsistent.",
+  "native-claude-denial-completion.claudeOriginalDenialCleanup_b0c03b": "Claude original denial cleanup",
+  "native-claude-denial-completion.claudeStoppedAfterDenial_2ef315": "Claude stopped after denial",
+  "native-claude-denial-completion.theOriginalDenialWasProcessedAnd_2d5a72": "The original denial was processed and its command was cancelled. Claude reported a session result without an input result identity.",
+  "native-claude-denial-completion.nativeLoop_fec242": "Native loop",
+  "native-claude-denial-completion.idleObserved_34b00d": "Idle observed",
+  "native-claude-denial-completion.ownedNativeProcessCleanup_05bea7": "Owned native process cleanup",
+  "native-claude-denial-completion.confirmed_fe00b6": "Confirmed",
+  "native-claude-denial-completion.workerWorkspaceCleanupReport_e52033": "Worker workspace cleanup report",
+  "native-claude-denial-completion.notConfirmed_bc1c29": "Not confirmed",
+  "native-claude-denial-completion.historyReconciliationIsStillRequiredBefore_5f5801": "History reconciliation is still required before further input. This cleanup does not grant Resume."
+}

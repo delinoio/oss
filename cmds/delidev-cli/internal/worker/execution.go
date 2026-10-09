@@ -19,10 +19,12 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/nativeproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -38,13 +40,35 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	if err := input.Validate(); err != nil {
+		if config.Logger != nil {
+			config.Logger.WarnContext(ctx, "native_execution_settings_rejected", "job_id", owner, "stage", "assignment-validation", "options", input.Configuration.SelectedNativeOptionNames(), "code", domain.SafeError(err).Code)
+		}
 		return nil, err
+	}
+	if err := (skills.Manager{Root: config.Root}).CheckContext(input.Input.Skills, input); err != nil {
+		return nil, err
+	}
+	// Direct startup resolves and verifies Installation on this local copy.
+	// Completion must retain the immutable accepted assignment, whose v4
+	// installation is deliberately absent; executable evidence has its own
+	// original startup journal and must not rewrite the assignment digest.
+	acceptedInput := input
+	if input.Version == 4 {
+		config.startup = newExecutionStartupAttempt(config, owner, input)
+		defer func() { returned = config.startup.finish(returned) }()
+		var err error
+		input.Installation, err = resolveExecutionStartup(ctx, config, owner, input)
+		if err != nil {
+			return nil, err
+		}
+		config.startup.observation.ExecutableSHA256 = input.Installation.ExecutableSHA256
+		config.startup.setPhase(domain.StartupLaunch)
 	}
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
-	logger = logger.With("job_id", owner, "execution_id", input.ExecutionID, "session_id", input.SessionID, "harness", input.Configuration.Harness)
+	logger = logger.With("job_id", owner, "execution_id", input.ExecutionID, "session_id", input.SessionID, "harness", input.Configuration.Harness, "options", input.Configuration.SelectedNativeOptionNames())
 	logger.InfoContext(ctx, "native_execution_started")
 	defer func() {
 		if workspace.IsPRStartupRejection(returned) {
@@ -69,7 +93,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if input.Configuration.Harness == domain.GrokBuild {
 		return executeGrokSession(ctx, config, owner, input, logger)
 	}
-	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) {
+	if input.Configuration.Harness != domain.Codex || (input.Version != 4 && !domain.CodexVersionAllowed(input.Installation.Version)) {
 		return nil, domain.Fail(domain.Unsupported, "This native execution profile is not implemented.", "Select a verified installed Codex profile; no fallback harness is used.")
 	}
 	var preparation workspace.PrepareRequest
@@ -80,11 +104,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	executable := input.Installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
-		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
+		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
-	if c := input.Continuation; c != nil {
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
+	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
@@ -96,9 +122,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, err
 	}
+	config.startup.claimedWorkspace()
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, errors.Join(err, returned)
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	var prGit *workspace.PRGitTool
@@ -109,7 +136,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		defer func() {
 			if err := prGit.Close(); err != nil {
-				output, returned = nil, err
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
 			}
 		}()
 	}
@@ -122,6 +149,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	home := filepath.Join(runtimeRoot, string(input.ExecutionID))
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
+	}
+	var ordinaryTools executionenv.Ordinary
+	if input.Configuration.SidechatPolicy == "" {
+		ordinaryTools = ordinaryExecutionTools(config.Logger)
 	}
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
@@ -204,9 +235,6 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 	}
 	if input.Configuration.Subscription {
-		if settings.Options.Permission != domain.PermissionReadOnly && settings.Options.Permission != domain.PermissionWorkspaceWrite {
-			return nil, domain.Fail(domain.Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
-		}
 		if err := validateManagedAuthenticationHome(nativeHome, manifest.WorkspaceRoots()); err != nil {
 			return nil, err
 		}
@@ -327,7 +355,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	nativeConfig := codex.Config{OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -343,7 +371,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
 			defer func() {
 				if err := proxy.Close(); err != nil {
-					output, returned = nil, err
+					output, returned = nil, config.startup.cleanupFailure(returned, err)
 				}
 			}()
 		}
@@ -357,6 +385,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	// may authorize removal. A definite failed Open already proves that closure;
 	// recovery-required startup must retain its authentication and lease.
 	managedPreNativeCleanup = false
+	config.startup.setPhase(domain.StartupInitialize)
 	client, err := codex.Open(nativeCtx, nativeConfig)
 	if err != nil {
 		managedPreNativeCleanup = domain.SafeError(err).Code != domain.RecoveryRequired
@@ -376,7 +405,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer func() {
 		captureManagedBundle()
 		if err := client.Close(); err != nil {
-			output, returned = nil, domain.SafeError(err)
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 			return
 		}
 		if managed != nil {
@@ -390,6 +419,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		unregister := config.observations.register(input.AccountID, client, managed)
 		defer unregister()
 	}
+	input.Installation.Version = client.Version()
+	publisher.nativeVersion = client.Version()
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
@@ -420,6 +451,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
+	if err := config.startup.ready(ctx, client.Version()); err != nil {
+		return nil, err
+	}
+	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
 	if err != nil {
 		return nil, err
@@ -430,19 +465,20 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if !cancelBeforeAcceptance() {
 		return nil, domain.SafeError(context.Canceled)
 	}
+	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
 	defer func() {
 		if err := finishSteers(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 		if err := finishApprovals(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 		if err := finishResponses(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	readContext, publicationContext := ctx, nativeCtx
@@ -487,7 +523,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if event.Kind == codex.SubagentActivityEvent || event.Kind == codex.TurnCompletedEvent {
 			inspection, err := client.InspectDescendants(publicationContext)
 			if err != nil {
-				logger.WarnContext(publicationContext, "native_subagent_inspection_failed", "job_id", job, "code", domain.SafeError(err).Code)
+				logger.WarnContext(publicationContext, "native_subagent_inspection_failed", "code", domain.SafeError(err).Code)
 				return nil, err
 			}
 			if _, err := mapper.PublishCore(publicationContext, inspection); err != nil {
@@ -507,7 +543,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			return nil, err
 		}
 		if !handled {
-			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "correlated", event.Correlated, "late", event.Late)
+			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "extension_stage", event.ExtensionStage, "correlated", event.Correlated, "late", event.Late)
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
 		if event.Kind == codex.TurnCompletedEvent {
@@ -537,6 +573,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					return nil, executionCheckpointUncertain()
 				}
 				copy(nativeInputs[n].PromptDigest[:], bytes)
+			}
+			proofs, proofErr := client.SkillInputProofs(ctx)
+			if proofErr != nil {
+				return nil, proofErr
+			}
+			bound.SkillInputs = proofs
+			for i := range nativeInputs {
+				for _, proof := range proofs {
+					if proof.ID == nativeInputs[i].ID && proof.PromptDigest == nativeInputs[i].PromptDigest {
+						nativeInputs[i].SkillDigest = proof.SkillDigest
+					}
+				}
 			}
 			original := codex.ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
 			contextProof, err = client.RetainContinuationContext(ctx, original)
@@ -596,8 +644,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if err != nil {
 			return nil, err
 		}
-		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, input, bound, completion, acceptedInputs, contextProof)
+		checkpointDigest, err := retainCodexCompletion(manager.Root, owner, job, acceptedInput, bound, completion, acceptedInputs, contextProof)
 		if err != nil {
+			logger.WarnContext(ctx, "native_execution_checkpoint_retention_failed", "code", domain.SafeError(err).Code)
 			return nil, err
 		}
 		completion.Version, completion.NativeCheckpointDigest = 2, checkpointDigest

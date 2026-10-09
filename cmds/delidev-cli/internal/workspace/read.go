@@ -22,6 +22,7 @@ import (
 )
 
 type ReadRequest struct {
+	Skills      *domain.SkillReadRequest  `json:"skills,omitempty"`
 	PRCandidate *domain.PRGitTarget       `json:"pr_candidate,omitempty"`
 	ID          domain.ID                 `json:"id"`
 	Deadline    time.Time                 `json:"deadline"`

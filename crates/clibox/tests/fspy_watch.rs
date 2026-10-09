@@ -2,10 +2,10 @@
 
 use std::{
     fs,
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader, Read, Write},
     os::unix::fs::symlink,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{
         mpsc::{self, Receiver},
         Mutex, OnceLock,
@@ -27,16 +27,102 @@ fn watch_test_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap()
 }
 
+// FSEvents batches newly created symlinks even across stream startup. Account
+// for setup notifications before discovery begins, without discarding any
+// notification from the supervised run or using a timed readiness sleep.
+#[cfg(target_os = "macos")]
+struct SetupNotifications {
+    _watcher: notify::RecommendedWatcher,
+    events: Receiver<notify::Result<notify::Event>>,
+}
+
+#[cfg(target_os = "macos")]
+impl SetupNotifications {
+    fn new(root: &Path) -> Self {
+        use notify::Watcher;
+        let (tx, events) = mpsc::channel();
+        let mut watcher = notify::recommended_watcher(move |event| {
+            let _ = tx.send(event);
+        })
+        .unwrap_or_else(|_| panic!("fixture setup watcher unavailable"));
+        watcher
+            .watch(root, notify::RecursiveMode::Recursive)
+            .unwrap_or_else(|_| panic!("fixture setup watch unavailable"));
+        Self {
+            _watcher: watcher,
+            events,
+        }
+    }
+
+    fn published(self, root: &Path, links: &[&str]) {
+        assert!(
+            links
+                .iter()
+                .all(|link| std::fs::symlink_metadata(root.join(link))
+                    .is_ok_and(|metadata| metadata.file_type().is_symlink())),
+            "fixture setup expected owned symlink entries"
+        );
+        let mut pending = links
+            .iter()
+            .map(|link| root.join(link))
+            .collect::<std::collections::BTreeSet<_>>();
+        let deadline = Instant::now() + RUN_TIMEOUT;
+        while !pending.is_empty() {
+            let event = self
+                .events
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("fixture setup creation notifications were not published")
+                .unwrap_or_else(|_| panic!("fixture setup native notification failed"));
+            assert!(
+                !event.need_rescan(),
+                "fixture setup lost native notifications"
+            );
+            if event.kind == notify::EventKind::Create(notify::event::CreateKind::Other)
+                && event.info() == Some("is: symlink")
+            {
+                for path in event.paths {
+                    pending.remove(&path);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+struct SetupNotifications;
+
+#[cfg(not(target_os = "macos"))]
+impl SetupNotifications {
+    fn new(_root: &Path) -> Self {
+        Self
+    }
+
+    fn published(self, _root: &Path, _links: &[&str]) {}
+}
+
+enum WatchObservation {
+    Output(String),
+    Installed,
+    Diagnostic(String),
+}
+
 struct Watcher {
     child: Child,
-    lines: Receiver<String>,
+    lines: Receiver<WatchObservation>,
     stderr: Option<thread::JoinHandle<String>>,
     runs: usize,
     active: bool,
+    installed: usize,
+    gate: Option<ChildStdin>,
+    diagnostics: Vec<String>,
 }
 
 impl Watcher {
     fn start(root: &Path, input: &Path) -> Self {
+        Self::start_with_teardown(root, input, false)
+    }
+
+    fn start_with_teardown(root: &Path, input: &Path, gate: bool) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_clibox"))
             .args(["fspy", "autowatch", "--root"])
             .arg(root)
@@ -44,24 +130,47 @@ impl Watcher {
             .arg(std::env::current_exe().unwrap())
             .args(["--exact", "watch_worker", "--nocapture"])
             .env("CLIBOX_FSPY_ANCESTOR_INPUT", input)
+            .env(
+                "CLIBOX_FSPY_ANCESTOR_TEARDOWN_GATE",
+                if gate { "1" } else { "0" },
+            )
+            .env("RUST_LOG", "clibox_fspy::watch=debug")
             .current_dir(root)
+            .stdin(if gate {
+                Stdio::piped()
+            } else {
+                Stdio::inherit()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let gate = child.stdin.take();
         let (tx, lines) = mpsc::channel();
         let stdout = child.stdout.take().unwrap();
+        let output_tx = tx.clone();
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
-                if tx.send(line.unwrap()).is_err() {
+                if output_tx
+                    .send(WatchObservation::Output(line.unwrap()))
+                    .is_err()
+                {
                     break;
                 }
             }
         });
-        let mut stderr = child.stderr.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
         let stderr = thread::spawn(move || {
             let mut text = String::new();
-            stderr.read_to_string(&mut text).unwrap();
+            for line in BufReader::new(stderr).lines() {
+                let line = line.unwrap();
+                if line.contains("stage=\"watch_dependencies_installed\"") {
+                    let _ = tx.send(WatchObservation::Installed);
+                }
+                let _ = tx.send(WatchObservation::Diagnostic(line.clone()));
+                text.push_str(&line);
+                text.push('\n');
+            }
             text
         });
         Self {
@@ -70,13 +179,33 @@ impl Watcher {
             stderr: Some(stderr),
             runs: 0,
             active: false,
+            installed: 0,
+            gate,
+            diagnostics: Vec::new(),
         }
     }
 
     fn observe(&mut self, duration: Duration) {
         let deadline = Instant::now() + duration;
         while Instant::now() < deadline {
-            if let Ok(line) = self.lines.recv_timeout(Duration::from_millis(10)) {
+            if let Ok(observation) = self.lines.recv_timeout(Duration::from_millis(10)) {
+                let line = match observation {
+                    WatchObservation::Installed => {
+                        self.installed += 1;
+                        continue;
+                    }
+                    WatchObservation::Diagnostic(line) => {
+                        self.diagnostics.push(format!(
+                            "runs={} installed={}: {line}",
+                            self.runs, self.installed
+                        ));
+                        if self.diagnostics.len() > 64 {
+                            self.diagnostics.remove(0);
+                        }
+                        continue;
+                    }
+                    WatchObservation::Output(line) => line,
+                };
                 if line.contains("FSPY_WATCH_START") {
                     assert!(!self.active, "watch runs overlapped");
                     self.active = true;
@@ -99,14 +228,30 @@ impl Watcher {
         while self.runs <= before && Instant::now() < deadline {
             self.observe(Duration::from_millis(20));
         }
+        if let Some(gate) = &mut self.gate {
+            gate.write_all(b"x").unwrap();
+        }
+        while self.installed < self.runs && Instant::now() < deadline {
+            self.observe(Duration::from_millis(20));
+        }
         assert!(self.runs > before, "watcher missed the input change");
-        self.observe(Duration::from_millis(700));
+        // Child DONE precedes native capture teardown and dependency handoff.
+        // Wait for the controller's redacted debug acknowledgment, rather than
+        // assuming a fixed sleep makes the new watch set authoritative.
+        assert_eq!(
+            self.installed, self.runs,
+            "dependency handoff did not finish"
+        );
         assert!(!self.active);
     }
 
     fn remains_idle(&mut self, before: usize) {
         self.observe(Duration::from_millis(800));
-        assert_eq!(self.runs, before, "unrelated input triggered a rerun");
+        assert_eq!(
+            self.runs, before,
+            "unrelated input triggered a rerun: {:?}",
+            self.diagnostics
+        );
         assert!(!self.active);
     }
 
@@ -120,7 +265,11 @@ impl Watcher {
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
                 assert_eq!(status.code(), Some(130));
-                assert!(self.stderr.take().unwrap().join().unwrap().is_empty());
+                let stderr = self.stderr.take().unwrap().join().unwrap();
+                assert!(
+                    stderr.lines().all(|line| line.starts_with("DEBUG ")),
+                    "unexpected stderr: {stderr}"
+                );
                 break;
             }
             assert!(Instant::now() < deadline, "watch cancellation timed out");
@@ -171,6 +320,11 @@ fn watch_worker() {
     }
     thread::sleep(Duration::from_millis(80));
     println!("FSPY_WATCH_DONE");
+    if std::env::var("CLIBOX_FSPY_ANCESTOR_TEARDOWN_GATE").is_ok_and(|value| value == "1") {
+        // The fixture owns stdin and releases teardown only after observing
+        // DONE. This proves the capture/install boundary without a timed sleep.
+        std::io::stdin().read_exact(&mut [0_u8]).unwrap();
+    }
     if result.is_err() {
         std::process::exit(3);
     }
@@ -181,6 +335,7 @@ fn autowatch_replaces_nested_ancestor_dependencies() {
     let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
+    let setup = SetupNotifications::new(&root);
     for name in ["group-one", "group-two", "one", "two", "three"] {
         fs::create_dir(root.join(name)).unwrap();
     }
@@ -190,6 +345,7 @@ fn autowatch_replaces_nested_ancestor_dependencies() {
     symlink("../one", root.join("group-one/nested")).unwrap();
     symlink("../two", root.join("group-two/nested")).unwrap();
     symlink("group-one", root.join("current")).unwrap();
+    setup.published(&root, &["group-one/nested", "group-two/nested", "current"]);
     let mut watcher = Watcher::start(&root, &root.join("current/nested/input"));
     watcher.wait_for_run(0);
 
@@ -237,14 +393,55 @@ fn autowatch_replaces_nested_ancestor_dependencies() {
 }
 
 #[test]
+fn autowatch_waits_for_dependency_handoff_after_child_done() {
+    let _guard = watch_test_guard();
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    let setup = SetupNotifications::new(&root);
+    for name in ["one", "two"] {
+        fs::create_dir(root.join(name)).unwrap();
+        fs::write(root.join(name).join("input"), b"fixture").unwrap();
+    }
+    symlink("one", root.join("current")).unwrap();
+    setup.published(&root, &["current"]);
+    let mut watcher = Watcher::start_with_teardown(&root, &root.join("current/input"), true);
+    let deadline = Instant::now() + RUN_TIMEOUT;
+    while watcher.runs == 0 && Instant::now() < deadline {
+        watcher.observe(Duration::from_millis(20));
+    }
+    assert_eq!(watcher.runs, 1);
+    assert_eq!(
+        watcher.installed, 0,
+        "child DONE was mistaken for capture completion"
+    );
+    replace_link(&root, "current", "two");
+    watcher.wait_for_run(0);
+    watcher.wait_for_run(1);
+    assert_eq!(watcher.runs, 2, "change during discovery was lost");
+    let before = watcher.runs;
+    fs::write(
+        root.join("one/input"),
+        b"obsolete after acknowledged handoff",
+    )
+    .unwrap();
+    watcher.remains_idle(before);
+    fs::write(root.join("two/input"), b"current").unwrap();
+    watcher.wait_for_run(before);
+    assert_eq!(watcher.runs, before + 1);
+    watcher.cancel();
+}
+
+#[test]
 fn autowatch_missing_leaf_observes_ancestor_replacement() {
     let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
+    let setup = SetupNotifications::new(&root);
     fs::create_dir(root.join("one")).unwrap();
     fs::create_dir(root.join("two")).unwrap();
     fs::write(root.join("two/input"), b"fixture").unwrap();
     symlink("one", root.join("current")).unwrap();
+    setup.published(&root, &["current"]);
     let mut watcher = Watcher::start(&root, &root.join("current/input"));
     watcher.wait_for_run(0);
     let before = watcher.runs;
@@ -263,11 +460,13 @@ fn autowatch_direct_file_alias_control() {
     let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
+    let setup = SetupNotifications::new(&root);
     for name in ["one", "two"] {
         fs::create_dir(root.join(name)).unwrap();
         fs::write(root.join(name).join("input"), b"fixture").unwrap();
     }
     symlink("one/input", root.join("current")).unwrap();
+    setup.published(&root, &["current"]);
     let mut watcher = Watcher::start(&root, &root.join("current"));
     watcher.wait_for_run(0);
     let before = watcher.runs;
@@ -286,11 +485,13 @@ fn autowatch_child_written_alias_with_external_change_fails_ambiguous() {
     let _guard = watch_test_guard();
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path().canonicalize().unwrap();
+    let setup = SetupNotifications::new(&root);
     for name in ["one", "two", "three"] {
         fs::create_dir(root.join(name)).unwrap();
         fs::write(root.join(name).join("input"), b"fixture").unwrap();
     }
     symlink("one", root.join("current")).unwrap();
+    setup.published(&root, &["current"]);
     let mut child = Command::new(env!("CARGO_BIN_EXE_clibox"))
         .args(["fspy", "autowatch", "--root"])
         .arg(&root)

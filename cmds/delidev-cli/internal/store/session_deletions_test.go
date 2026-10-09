@@ -531,3 +531,49 @@ func TestSessionDeletionAcknowledgmentReplayIsReadOnly(t *testing.T) {
 		t.Fatal("reconstructed receipt changed ownership", e)
 	}
 }
+
+func TestSessionDeletionOwnsCurrentAndRetiredSkillSnapshots(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	server := domain.NewID()
+	if err := s.BindIdentity(ctx, server); err != nil {
+		t.Fatal(err)
+	}
+	session, input, _ := deletionSession(t, s, "skills")
+	binding := domain.SkillBinding{WorkerDeviceID: domain.NewID(), InventoryID: domain.NewID(), SkillID: domain.NewID(), ContentRevision: strings.Repeat("a", 64), SnapshotID: domain.NewID()}
+	retired := binding
+	retired.InventoryID = domain.NewID()
+	retired.SkillID = domain.NewID()
+	retired.SnapshotID = domain.NewID()
+	result, err := s.Mutate(ctx, domain.NewID(), "fixture.skills", nil, func(tx *Tx) (any, error) {
+		value, e := Decode[domain.Session](session)
+		if e != nil {
+			return nil, e
+		}
+		value.MachineID = domain.NewID()
+		session, e = tx.Put(domain.SessionKind, session.ID, session.Revision, session.ID, "", value)
+		if e != nil {
+			return nil, e
+		}
+		queued, e := Decode[domain.QueuedInput](input)
+		if e != nil {
+			return nil, e
+		}
+		queued.Skills = []domain.SkillBinding{binding}
+		queued.RetiredSkills = []domain.SkillBinding{retired}
+		queued.Delivery = domain.InputRemoved
+		_, e = tx.Put(domain.QueueKind, input.ID, input.Revision, session.ID, "", queued)
+		return session, e
+	})
+	if err != nil {
+		t.Fatal(result, err)
+	}
+	plan, _, err := s.DeleteSession(ctx, domain.NewID(), session.ID, server, session.Revision)
+	if err != nil || len(plan.Workers) != 1 || len(plan.Workers[0].Work.SkillSnapshots) != 2 {
+		t.Fatalf("snapshot cleanup ownership: %+v %v", plan, err)
+	}
+	snapshots := plan.Workers[0].Work.SkillSnapshots
+	if snapshots[0] != binding || snapshots[1] != retired || plan.Workers[0].Work.DeviceID != binding.WorkerDeviceID {
+		t.Fatal("original snapshot identity lost")
+	}
+}

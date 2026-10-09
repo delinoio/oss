@@ -52,7 +52,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 			{domain.AgentKind, agent, domain.Agent{Name: "Fixture", ModelID: model, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
 			{domain.MachineKind, machine, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},
 			{domain.DeviceKind, device, domain.Device{Name: "Fixture", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}},
-			{domain.RepositoryKind, repository, domain.Repository{Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: machine, Path: checkout}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
+			{domain.RepositoryKind, repository, domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: machine, Path: checkout}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
 			{domain.ProjectKind, project, domain.Project{Name: "Fixture", Repositories: []domain.ID{repository}, PrimaryRepository: repository}},
 		} {
 			if _, err := tx.Put(item.kind, item.id, 0, "", "", item.value); err != nil {
@@ -73,7 +73,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 	ready := make(chan server.Endpoint, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(running, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(e server.Endpoint) { ready <- e })
+		done <- server.Serve(running, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(e server.Endpoint) { ready <- e })
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -93,7 +93,7 @@ func scheduleCLIFixture(t *testing.T) (string, string, domain.ScheduleDefinition
 	// A persisted pre-start beat is no longer current availability. Exercise
 	// the authenticated attach boundary after this server process is ready.
 	workers := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
-	attach := connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version})
+	attach := connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})
 	attach.Header().Set("Authorization", "Bearer "+token)
 	if _, err := workers.AttachWorker(ctx, attach); err != nil {
 		t.Fatal(err)

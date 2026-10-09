@@ -1,5 +1,9 @@
 # DeliDev native session compaction
 
+## Direct startup source identity
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) permits v4 source assignments and retains their exact restore assignment family. Compaction reuses the original private resolved executable identity, rehashes it, and validates the actual source process and original checkpoint. No current installation inspection, PATH replacement or numeric version baseline can authorize a source action. Existing native acknowledgment, complete history, context, account/Worker and independent cleanup proofs remain required.
+
 ## Status and ownership
 
 This is the common boundary for issues #1093 (Claude), #1202 (Codex) and
@@ -29,21 +33,40 @@ under issue #1203 with #1093 and #1202 as shared consumers:
 | SystemCapability | SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 15 |
 | WorkerCapability | WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 5 |
 | SessionChange | compaction_job | 9 |
+| CompactSessionRequest | expected_execution_id | 2 |
+| CompactSessionResponse | session | 4 |
 
 The action is distinct from its Worker job and ordinary input/execution.
 The request uses an exact session mutation and expected predecessor
 execution identity. Its response joins the current session/job and original
 action, including reference-only receipt replay. Profile availability must be
 checked independently of the common capability; a reservation grants neither.
-These allocations must be present on main before dependent implementations use
-them, as required by the structure contract.
+Record these allocations with their implementation in the owning feature PR,
+as permitted by the structure contract.
+
+The existing `CompactSessionRequest.mutation = 1` and response `job = 1`,
+`request_id = 2`, `replayed = 3` assignments are recorded in the immutable
+baseline. They were introduced by merged PR #1221 and retain their current wire
+meanings. The two additional fields above are reserved only; the active RPC and
+generated bindings do not yet contain them. The current native profiles still
+use the original revision-bound mutation and job receipt, so their implementation
+does not satisfy this additional shared request/response boundary.
+
+The complete implementation must bind
+`expected_execution_id` to the exact original successful execution in the
+admission transaction and actor-bound receipt identity. The response must read
+its current `session` and original `job` together under current authorization,
+including receipt replay. Existing `request_id` already identifies the original
+action; it must remain equal to the accepted action ID rather than the Worker
+job ID. These reservations add no capability, native command authority or
+migration and do not establish issue #1203 acceptance.
 
 The existing schema-24 entities, jobs, receipts and cancellation tables provide
 the generic durable storage boundary. Compaction allocates no migration and leaves
 the independently activated accounting, diagnostic and subscription migrations
 26–28 in their original order; their historical reservations remain unchanged.
-If implementation requires additional tables or indexes, reserve that migration
-on main before using it. Never skip pending versions with empty migrations or
+If implementation requires additional tables or indexes, record that migration
+in the owning feature PR. Never skip pending versions with empty migrations or
 reinterpret an unknown historical layout.
 
 ## Admission and ordering
@@ -342,7 +365,17 @@ store reads, authenticated Worker dispatch, server scope/settlement and deletion
 copy derivation. The Connect receive bound covers the finite serialized job.
 Larger ordinary execution or other jobs do not acquire this exception. Trailing
 documents, unknown fields and invalid original assignments remain rejected.
+The primary WatchWork claim receipt adds only a separate 1 KiB Record metadata
+allowance and rechecks its embedded job through the owning typed decoder.
+Same-instance reconnect preserves the original claim identity, revision and
+assignment bytes without another claim mutation or native effect.
 
 Retained Claude/Codex compaction checkpoint readers preserve their strict 10 MiB ceiling. OpenCode uses one strict 12 MiB canonical retention/restoration envelope: the native document keeps its independent 8 MiB bound, the accepted compaction input keeps 3 MiB and closed ownership metadata reserves 1 MiB. Every reader uses the same envelope, including repeated-action restoration, without relaxing typed, canonical, claim, journal or native evidence checks. Session context uses the same typed 3 MiB compaction input decoder as acceptance and settlement, so large original assignments remain visible through queued and completed states.
 
 The closed compaction HTTP usage source retains sparse nullable token observations even when active pricing exists. Publication and historical estimate verification share source-aware validation and the immutable selected basis. Known priced components may form a partial subtotal; unknown cache splits or absent counters remain unavailable. Ordinary native response validation is unchanged, and exact replay/restart cannot charge the compaction twice or reprice history.
+
+### First completed Fork-child turn
+
+An eligible completed first Fork-child execution uses its exact immutable `Fork.RuntimeID` as compaction history, independently of its fresh execution/report ID. Construct a new continuation restore with the one-shot `Fork` import cleared. The shared validator compares that exact derived shape and history authority together: legacy assignment version 3 produces restore version 2, while direct-startup version 4 retains version 4 and its original startup selection. Later child continuations retain their existing history root; ordinary first root executions keep their own execution ID.
+
+Source assignment/completion, account/connection/configuration, manifest/preparation, accepted-input evidence and cleanup remain unchanged. Independent parent deletion cannot remove child history authority. Supported Sidechat retains its original read-only/external-write restrictions, workspace reference and separate dependent-parent gate. Pending input/children, pause, Stop, Archive, recovery and missing/foreign checkpoint/runtime continue to reject before admission. This composition adds no harness support, replay, protocol allocation or migration.

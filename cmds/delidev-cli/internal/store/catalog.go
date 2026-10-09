@@ -67,16 +67,20 @@ func (t *Tx) modelRecords(query string, args ...any) ([]Record, error) {
 }
 
 type ModelSearch struct {
-	Query                string    `json:"query"`
-	ProviderID           domain.ID `json:"provider_id,omitempty"`
-	IncludeHidden        bool      `json:"include_hidden"`
-	EnabledProvidersOnly bool      `json:"enabled_providers_only"`
-	Limit                int       `json:"-"`
-	After                domain.ID `json:"-"`
-	Epoch                uint64    `json:"-"`
+	SubscriptionService  domain.SubscriptionService `json:"subscription_service,omitempty"`
+	Query                string                     `json:"query"`
+	ProviderID           domain.ID                  `json:"provider_id,omitempty"`
+	IncludeHidden        bool                       `json:"include_hidden"`
+	EnabledProvidersOnly bool                       `json:"enabled_providers_only"`
+	Limit                int                        `json:"-"`
+	After                domain.ID                  `json:"-"`
+	Epoch                uint64                     `json:"-"`
 }
 
 func (f ModelSearch) Validate() error {
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "") {
+		return domain.Fail(domain.InvalidArgument, "Invalid subscription model filter.", "Select one subscription service without an API provider.")
+	}
 	if err := domain.Text(f.Query, "model search", 256, false); err != nil {
 		return err
 	}
@@ -120,6 +124,10 @@ func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Re
 		if f.ProviderID != "" {
 			query += " AND json_extract(body,'$.provider_id')=?"
 			args = append(args, f.ProviderID)
+		}
+		if f.SubscriptionService != "" {
+			query += " AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.subscription_service')=?"
+			args = append(args, f.SubscriptionService)
 		}
 		if !f.IncludeHidden {
 			query += " AND COALESCE(json_extract(body,'$.hidden'),0)=0"
@@ -236,4 +244,57 @@ ORDER BY a.id LIMIT ?`
 		return err
 	})
 	return result, err
+}
+
+// AccountInspectionCandidates preserves independent persisted validation and catalog due times.
+func (s *Store) AccountInspectionCandidates(ctx context.Context, after domain.ID, limit int, now time.Time, interval time.Duration) ([]Record, error) {
+	if limit < 1 || limit > MaxPage || interval < time.Second {
+		return nil, domain.Fail(domain.InvalidArgument, "Invalid catalog maintenance bounds.", "Use bounded maintenance pages and a positive refresh interval.")
+	}
+	var result []Record
+	err := s.Read(ctx, func(tx *Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		query := `SELECT a.id,a.kind,a.revision,a.session_id,a.project_id,a.body,a.created_at,a.updated_at
+FROM entities a JOIN entities p ON p.id=json_extract(a.body,'$.provider_id') AND p.kind='provider'
+WHERE a.kind='account' AND a.id>? AND json_extract(a.body,'$.type')='api'
+AND json_extract(a.body,'$.enabled')=1 AND json_type(a.body,'$.connection')='object'
+AND COALESCE(json_type(a.body,'$.removal'),'null')='null'
+AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription'
+AND ((COALESCE(json_extract(a.body,'$.validation.connection_id'),'')<>json_extract(a.body,'$.connection.id')
+OR unixepoch(json_extract(a.body,'$.validation.observed_at'))+MAX(?,COALESCE(json_extract(a.body,'$.validation.retry_after_seconds'),0))<=unixepoch(?))
+OR (json_extract(p.body,'$.discovery')=1 AND (COALESCE(json_extract(a.body,'$.catalog.connection_id'),'')<>json_extract(a.body,'$.connection.id')
+OR unixepoch(json_extract(a.body,'$.catalog.observed_at'))+MAX(?,COALESCE(json_extract(a.body,'$.catalog.retry_after_seconds'),0))<=unixepoch(?))))
+ORDER BY a.id LIMIT ?`
+		var err error
+		result, err = tx.modelRecords(query, after, int64(interval/time.Second), now.UTC().Format(time.RFC3339Nano), int64(interval/time.Second), now.UTC().Format(time.RFC3339Nano), limit)
+		return err
+	})
+	return result, err
+}
+
+// ModelBySourceNative resolves an exact executable identity inside the save
+// transaction. CLI aliases and other sources never participate in this lookup.
+func (t *Tx) ModelBySourceNative(provider domain.ID, service domain.SubscriptionService, native string) (Record, bool, error) {
+	query := "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND json_extract(body,'$.native_id')=?"
+	args := []any{native}
+	if service != "" {
+		query += " AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.subscription_service')=?"
+		args = append(args, service)
+	} else {
+		query += " AND json_extract(body,'$.provider_id')=? AND COALESCE(json_extract(body,'$.source_kind'),'')=''"
+		args = append(args, provider)
+	}
+	records, err := t.modelRecords(query+" LIMIT 2", args...)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if len(records) > 1 {
+		return Record{}, false, domain.Fail(domain.Conflict, "The model identity is ambiguous.", "Repair the source catalog before saving.")
+	}
+	if len(records) == 0 {
+		return Record{}, false, nil
+	}
+	return records[0], true, nil
 }

@@ -1,6 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { ScrollContinuation } from "./scroll-continuation";
+import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
+import { LocalizedText, copy, useLocale } from "./localization";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, IntegrationQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
 import { ItemKind, ItemState, QueryOperation, type GitHubQuery } from "./github-query-model";
 import { StandalonePullRequestResults, type PullRequestNavigation } from "./github-items";
@@ -9,6 +12,7 @@ import { SettingsEntryDestination } from "./settings";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { usePRWorkflow } from "./pr-workflow";
+import { Icon } from "./sidebar";
 
 interface LoadedPullRequests {
   repositoryId: string;
@@ -22,23 +26,58 @@ interface LoadedPullRequests {
 
 const plainSearch = (value: string) => value.length <= 120 && /^[\p{L}\p{N} ._-]*$/u.test(value);
 
+function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetails }: {
+  row: Resource; selected: boolean; expanded: boolean; choose: () => void; toggleDetails: () => void;
+}) {
+  useLocale();
+  const detailsId = useId();
+  const name = resourceName(row);
+  const config = document(row);
+  const owner = text(config.github_owner), repository = text(config.github_name);
+  const detailsLabel = copy("pull-requests.repositoryDetails", { name, id: row.id });
+  return <div className="pr-repository-item">
+    <div className="pr-repository-heading" data-selected={selected}>
+      <button type="button" className="sidebar-repository-row" aria-label={copy("pull-requests.repositoryId_cfd937", { v0: name, v1: row.id })} aria-pressed={selected} onClick={choose}>
+        <svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg>
+        <span className="sidebar-repository-info">{name}</span>
+      </button>
+      <button type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
+        <Icon name="chevron" />
+      </button>
+    </div>
+    <div id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
+      <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
+        <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
+    </div>
+  </div>;
+}
+
 function PendingDismissal({ intent, id }: { intent: RetainedMutationIntent; id: string }) {
+  useLocale();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.dismissPullRequestProblem);
-  return <article className="pending-pr-action"><strong>Problem dismissal · {id}</strong><p>{intent.busy ? "Submitting" : "Acknowledgment uncertain"}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry original dismissal</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemDismissal_9c312b" components={{ s0: <>{id}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalDismissal_bb2de0")}</button> : null}</article>;
 }
 
 function PendingCollection({ intent, repositoryId, number }: { intent: RetainedMutationIntent; repositoryId: string; number: string }) {
+  useLocale();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.refreshPullRequestProblems);
-  return <article className="pending-pr-action"><strong>Problem collection · repository {repositoryId} · PR #{number}</strong><p>{intent.busy ? "Submitting" : "Acknowledgment uncertain"}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry original problem collection</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemCollectionRepositoryPr_233e06" components={{ s0: <>{repositoryId}</>, s1: <>{number}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalProblemCollection_31fab2")}</button> : null}</article>;
 }
 
 function PendingAllowance({ intent, repositoryId, pullRequestId }: { intent: RetainedMutationIntent; repositoryId: string; pullRequestId: string }) {
+  useLocale();
   const workflow = usePRWorkflow();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.resumePullRequestRemediation, () => workflow.cancelAllowance(`pr-remediation-confirm:${repositoryId}:${pullRequestId}`));
-  return <article className="pending-pr-action"><strong>Attempt allowance · repository {repositoryId} · PR {pullRequestId}</strong><p>{intent.busy ? "Submitting" : "Acknowledgment uncertain"}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry original allowance resumption</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.attemptAllowanceRepositoryPr_510835" components={{ s0: <>{repositoryId}</>, s1: <>{pullRequestId}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalAllowanceResumption_991985")}</button> : null}</article>;
+}
+
+function PendingFix({ intent, remoteRepositoryId, pullRequestId }: { intent: RetainedMutationIntent; remoteRepositoryId: string; pullRequestId: string }) {
+  const mutation = useRetainedMutation(intent.key, PullRequestFixQuery.requestPullRequestFix);
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.pendingFix" components={{ s0: <>{remoteRepositoryId}</>, s1: <>{pullRequestId}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p><Problem error={mutation.error} />{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}</article>;
 }
 
 function PendingPRActions() {
+  useLocale();
   const intents = useRetainedMutationIntents("pr-");
   const workflow = usePRWorkflow();
   const rows = intents.flatMap((intent) => {
@@ -53,25 +92,31 @@ function PendingPRActions() {
       const [, repositoryId, pullRequestId] = intent.key.split(":");
       return repositoryId && pullRequestId ? [<PendingAllowance key={intent.key} intent={intent} repositoryId={repositoryId} pullRequestId={pullRequestId} />] : [];
     }
+    if (intent.key.startsWith("pr-fix:")) {
+      const [, remoteRepositoryId, pullRequestId] = intent.key.split(":");
+      return remoteRepositoryId && pullRequestId ? [<PendingFix key={intent.key} intent={intent} remoteRepositoryId={remoteRepositoryId} pullRequestId={pullRequestId} />] : [];
+    }
     return [];
   });
-  const confirmations = [...workflow.confirmations.values()].map((confirmation) => <article className="pending-pr-action" key={confirmation.key}><strong>Allowance confirmation · PR #{confirmation.selection.number}</strong><p>Confirmation retained. Open this PR and review current history before confirming; no action is submitted automatically.</p><button type="button" onClick={() => workflow.cancelAllowance(confirmation.key)}>Cancel allowance confirmation</button></article>);
-  return <section className="pending-pr-actions" aria-label="Pending PR actions"><h3>Pending PR actions</h3>{rows.length || confirmations.length ? <>{rows}{confirmations}</> : <p>No pending PR actions.</p>}</section>;
+  const confirmations = [...workflow.confirmations.values()].map((confirmation) => <article className="pending-pr-action" key={confirmation.key}><strong><LocalizedText id="pull-requests.allowanceConfirmationPr_3184de" components={{ s0: <>{confirmation.selection.number}</> }} /></strong><p>{copy("pull-requests.confirmationRetainedOpenThisPrAnd_15ba22")}</p><button type="button" onClick={() => workflow.cancelAllowance(confirmation.key)}>{copy("pull-requests.cancelAllowanceConfirmation_111886")}</button></article>);
+  return <section className="pending-pr-actions" data-empty={!rows.length && !confirmations.length} aria-label={copy("pull-requests.pendingPrActions_7f3945")}><h3>{copy("pull-requests.pendingPrActions_7f3945")}</h3>{rows.length || confirmations.length ? <>{rows}{confirmations}</> : <p>{copy("pull-requests.noPendingPrActions_d8073e")}</p>}</section>;
 }
 
 export function PullRequests({ active, openSettings }: { active: boolean; openSettings: (destination?: SettingsEntryDestination) => void }) {
-  const [repositoryPage, setRepositoryPage] = useState("");
+  useLocale();
+  const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
+  const [expandedRepositoryId, setExpandedRepositoryId] = useState("");
   const [state, setState] = useState(ItemState.Open);
+  const stateGroupId = useId();
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(20);
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
   const [navigation, setNavigation] = useState<PullRequestNavigation>();
   const closeDrawer = useCloseSidebarDrawer();
-  const repositories = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.REPOSITORY, pageSize: 50, pageToken: repositoryPage } }, { enabled: active });
-  const selectedOnPage = repositories.data?.resources.find((row) => row.id === repositoryId);
-  const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) && !selectedOnPage });
-  const selected = selectedOnPage ?? selectedQuery.data?.resource;
+  const repositories = useGitHubCatalog(EntityKind.REPOSITORY, active);
+  const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) });
+  const selected = selectedQuery.data?.resource;
   const config = document(selected);
   const configured = Boolean(selected && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
   const searchValid = plainSearch(search.trim());
@@ -103,43 +148,46 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   };
 
   const resultsCurrent = Boolean(active && loaded && selected && loaded.repositoryId === selected.id && loaded.revision === selected.revision);
+  const listLayout = !navigation || navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search;
+  const cardsCurrent = resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey && (navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search);
   const filtersChanged = Boolean(loaded && (loaded.state !== state || loaded.search !== search.trim() || loaded.pageSize !== pageSize));
   return <>
-    <SidebarSurface active={active} title="Pull requests">
-      <header className="sidebar-list-heading"><h3>Repositories</h3><button type="button" disabled={!active || repositories.isFetching} onClick={() => { if (repositoryPage) setRepositoryPage(""); else void repositories.refetch(); }}>Refresh</button></header>
-      <Problem error={repositories.error} />
-      {repositories.isPending && active ? <p role="status">Loading repositories…</p> : null}
-      {repositories.error && repositories.data ? <p className="sidebar-help">Refresh failed. Showing the previous repository page.</p> : null}
-      {repositories.data?.resources.map((row) => <button key={row.id} type="button" className="sidebar-repository-row" aria-label={`${resourceName(row)}. Repository ID: ${row.id}`} aria-pressed={repositoryId === row.id} onClick={() => chooseRepository(row)}><svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg><span className="sidebar-repository-info"><span>{resourceName(row)}</span><small>{row.id}</small></span></button>)}
-      {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>No repositories on this page.</p></div> : null}
-      <nav className="sidebar-repository-pages" aria-label="Repository pages"><button disabled={!repositoryPage || repositories.isFetching} onClick={() => setRepositoryPage("")}>First</button><button disabled={!repositories.data?.nextPageToken || repositories.isFetching} onClick={() => setRepositoryPage(repositories.data!.nextPageToken)}>Next</button></nav>
+    <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")}>
+      <div ref={bindRoot}><header className="sidebar-list-heading"><h3>{copy("pull-requests.repositories_1e32af")}</h3><button type="button" disabled={!active || repositories.isFetching} onClick={repositories.refetch}><Icon name="refresh" />{copy("pull-requests.refresh_0e9161")}</button></header>
+      <Problem error={paginationError(repositories.error?.failure)} />
+      {repositories.isPending && active ? <p role="status">{copy("pull-requests.loadingRepositories_460ca9")}</p> : null}
+      {repositories.error && repositories.data ? <p className="sidebar-help">{copy("pull-requests.refreshFailedShowingThePreviousRepository_6c5a34")}</p> : null}
+      {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} />)}
+      {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>{copy("pull-requests.noRepositoriesOnThisPage_249a41")}</p></div> : null}
+      <ScrollContinuation query={repositories} root={root} active={active} label={copy("pull-requests.repositories_1e32af")} showInitial={false} /></div>
       {repositoryId ? <>
-        <section className="sidebar-query-options" aria-label="Query options"><h3>Query options</h3>
+        <section className="sidebar-query-options" aria-label={copy("pull-requests.queryOptions_aeced2")}><h3>{copy("pull-requests.queryOptions_aeced2")}</h3>
         <form className="sidebar-form" onSubmit={load}>
-          <label>State<select value={state} onChange={(event) => setState(event.target.value as ItemState)}><option value={ItemState.Open}>Open</option><option value={ItemState.Closed}>Closed</option><option value={ItemState.All}>All</option></select></label>
-          <label>Search title and body<input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></label>
-          {!searchValid ? <p role="alert">Use plain words, numbers, spaces, hyphens, underscores or periods.</p> : null}
+          <fieldset className="pr-state-field"><legend>{copy("pull-requests.state_a3b50c")}</legend><div className="pr-state-options">
+            {[{ value: ItemState.Open, label: copy("pull-requests.open_ed077f") }, { value: ItemState.Closed, label: copy("pull-requests.closed_c21ead") }, { value: ItemState.All, label: copy("pull-requests.all_a52ace") }].map((option) => <label key={option.value} className="pr-state-choice"><input type="radio" name={stateGroupId} value={option.value} checked={state === option.value} onChange={() => setState(option.value)} /><span>{option.label}</span></label>)}
+          </div></fieldset>
+          <label>{copy("pull-requests.searchTitleAndBody_f2c94c")}<span className="pr-search-input"><Icon name="search" /><input value={search} maxLength={120} onChange={(event) => setSearch(event.target.value)} /></span></label>
+          {!searchValid ? <p role="alert">{copy("pull-requests.usePlainWordsNumbersSpacesHyphens_0bce88")}</p> : null}
           {selectedQuery.error ? <Problem error={selectedQuery.error} /> : null}
-          {selected && !configured ? <p className="sidebar-help">Set a supported GitHub profile, owner and repository name in repository settings before loading.</p> : null}
-          {repositoryId && !selectedOnPage && selectedQuery.isPending ? <p role="status">Loading repository settings…</p> : null}
-          <label>PR page size<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[1, 5, 10, 20].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
-          <p className="sidebar-help">No GitHub request is made until you load pull requests.</p>
-          <button className="primary" disabled={!canLoad}>Load pull requests</button>
-          {loaded && filtersChanged ? <p className="sidebar-help">The displayed results belong to the last loaded state and search. Load again to apply these edits.</p> : null}
+          {selected && !configured ? <p className="sidebar-help">{copy("pull-requests.setASupportedGithubProfileOwner_c9cd89")}</p> : null}
+          {repositoryId && selectedQuery.isPending ? <p role="status">{copy("pull-requests.loadingRepositorySettings_98ac56")}</p> : null}
+          <label>{copy("pull-requests.prPageSize_f04cb9")}<select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[1, 5, 10, 20].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+          <p className="sidebar-help">{copy("pull-requests.noGithubRequestIsMadeUntil_55d1b2")}</p>
+          <button className="primary" disabled={!canLoad}>{copy("pull-requests.loadPullRequests_c952ba")}</button>
+          {loaded && filtersChanged ? <p className="sidebar-help">{copy("pull-requests.theDisplayedResultsBelongToThe_44e130")}</p> : null}
         </form>
         </section>
-      </> : <p className="sidebar-help">Select a repository. No GitHub request is made until you load pull requests.</p>}
-      <button type="button" className="sidebar-action" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.Repositories); }}>Repository settings</button>
+      </> : <p className="sidebar-help pr-repository-guidance">{copy("pull-requests.selectARepositoryNoGithubRequest_b499d2")}</p>}
+      <div className="pr-repository-settings"><button type="button" className="sidebar-action" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.Repositories); }}><Icon name="settings" />{copy("pull-requests.repositorySettings_b00980")}</button></div>
     </SidebarSurface>
-    <section hidden={!active} className="page pull-requests-page">
-      <h2>Pull requests</h2>
-      <PendingPRActions />
+    <section hidden={!active} className="page pull-requests-page" data-list-layout={listLayout}>
+      {!cardsCurrent ? <>{listLayout ? <header className="pr-list-header"><div><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>{selected ? <p>{resourceName(selected)}</p> : null}</div></header> : <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>}<PendingPRActions /></> : null}
       <Problem error={selectedQuery.error} />
-      {!repositoryId ? <p>Select one configured repository in the sidebar to get started.</p> : null}
-      {repositoryId && !selectedQuery.isPending && !selected ? <p role="alert">This repository is no longer available. Refresh the repository catalog and choose another entry.</p> : null}
-      {selected && !configured ? <p>Configure this repository's GitHub profile, owner and name in Repository settings before loading requests.</p> : null}
-      {selected && configured && !loaded ? <p>Choose the state and optional title/body terms, then select Load pull requests. Returning to this screen requires an explicit load again.</p> : null}
-      {resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey ? <StandalonePullRequestResults key={loaded.scopeKey} selected={selected!} navigation={navigation} active={active} changeNavigation={setNavigation} /> : null}
+      {!repositoryId ? <p>{copy("pull-requests.selectOneConfiguredRepositoryInThe_6c065a")}</p> : null}
+      {repositoryId && !selectedQuery.isPending && !selected ? <p role="alert">{copy("pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad")}</p> : null}
+      {selected && !configured ? <><p>{copy("pull-requests.configureThisRepositorySGithubProfile_86db03")}</p><div className="actions"><button type="button" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.GitProfiles); }}>{copy("pull-requests.githubProfiles")}</button></div></> : null}
+      {selected && configured && !loaded ? <p>{copy("pull-requests.chooseTheStateAndOptionalTitle_5fb280")}</p> : null}
+      {resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey ? <StandalonePullRequestResults key={loaded.scopeKey} selected={selected!} navigation={navigation} active={active} changeNavigation={setNavigation} pending={<PendingPRActions />} /> : null}
     </section>
   </>;
 }

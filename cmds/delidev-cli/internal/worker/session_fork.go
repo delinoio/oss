@@ -2,10 +2,13 @@
 package worker
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -108,14 +111,24 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if assignment.Fork != nil {
 		historyID = assignment.Fork.RuntimeID
 	}
-	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: sha256.Sum256([]byte(assignment.Input.Prompt)), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{Subscription: assignment.Configuration.Subscription, JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 	if err != nil {
 		return nil, err
 	}
-	if !domain.CodexVersionAllowed(assignment.Installation.Version) {
+	if assignment.Version != 4 && !domain.CodexVersionAllowed(assignment.Installation.Version) {
 		return nil, executionCheckpointUncertain()
 	}
-	executable := assignment.Installation.ResolvedPath
+	installation, err := resolveOriginalStartup(ctx, config, input.SourceJobID, assignment)
+	if err != nil {
+		return nil, err
+	}
+	if input.Startup != nil && input.Startup.ExecutableSHA256 != installation.ExecutableSHA256 {
+		return nil, executionCheckpointUncertain()
+	}
+	if err := writeStartupExecutable(config.Root, owner, installation); err != nil {
+		return nil, publicationUncertain()
+	}
+	executable := installation.ResolvedPath
 	canonical, err := filepath.EvalSymlinks(executable)
 	if err != nil || canonical != executable || !filepath.IsAbs(executable) {
 		return nil, executionCheckpointUncertain()
@@ -131,11 +144,20 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, executionCheckpointUncertain()
 	}
+	var ordinaryTools executionenv.Ordinary
+	if input.Purpose != domain.SidechatFork {
+		ordinaryTools = ordinaryExecutionTools(config.Logger)
+	}
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
+	if err := writeForkStartupExecutable(config.Root, input.RuntimeID, installation); err != nil {
+		return nil, publicationUncertain()
+	}
 	phase := forkRuntimeUnused
+	var childProcessOwner domain.ID
+	var childProcessIdentity os.FileInfo
 	var unpublishedSidechatInput workspace.PrepareRequest
 	var unpublishedSidechat *workspace.Manifest
 	defer func() {
@@ -149,6 +171,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 					returned = executionCheckpointUncertain()
 				}
 			}
+			returned = finishForkChildProcessFailure(config.Root, childProcessOwner, childProcessIdentity, phase, returned)
 			returned = finishForkPreNativeFailure(home, phase, returned)
 			logger.InfoContext(ctx, "session_fork_failure_ownership", "job_id", owner, "runtime_phase", phase, "code", domain.SafeError(returned).Code)
 		}
@@ -160,9 +183,15 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceConfig := codex.Config{Mode: codex.ThreadProtocol, Version: assignment.Installation.Version, Home: sourceHome, Process: processConfig}
+	sourceConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
+		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
+		if sourceConfig.ManagedAuthentication {
+			if err := validateManagedAuthenticationHome(sourceHome, manifest.WorkspaceRoots()); err != nil {
+				return nil, err
+			}
+		}
 	}
 	sourceClient, err := codex.Open(ctx, sourceConfig)
 	if err != nil {
@@ -177,6 +206,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if inspectErr != nil {
 		return nil, inspectErr
 	}
+	source, err = source.RehomeSkills(ctx, filepath.Join(home, "codex"))
+	if err != nil {
+		return nil, err
+	}
+	checkpoint.Native = source.Checkpoint()
 	var childPreparation workspace.PrepareRequest
 	var childManifest workspace.Manifest
 	var workspaceSnapshot *workspace.ForkSnapshot
@@ -188,6 +222,13 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		}
 	} else {
 		childPreparation, err = manager.ForkPreparation(ctx, manifest, input.ChildSessionID, input.Workspace)
+		if err == nil {
+			childProcessOwner = input.ChildSessionID
+			childProcessIdentity = childPreparation.ForkProcessIdentity()
+			if childProcessIdentity == nil && len(childPreparation.Repositories) != 0 {
+				err = executionCheckpointUncertain()
+			}
+		}
 		if err == nil {
 			workspaceSnapshot, err = manager.InspectForkSnapshot(ctx, manifest, childPreparation)
 		}
@@ -202,7 +243,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codex.APIProvider, Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: assignment.Configuration.Instructions, Options: assignment.Configuration.Options}
+	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codexExecutionProvider(assignment.Configuration.Subscription), Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: assignment.Configuration.Instructions, Options: assignment.Configuration.Options}
 	// Pin native defaults to the original effective observations. Configuration
 	// itself remains byte-identical; observed defaults cannot become new choices.
 	settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
@@ -232,16 +273,96 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{Mode: codex.ThreadProtocol, Version: assignment.Installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	if input.Purpose != domain.SidechatFork {
+		nativeConfig.OrdinaryTools = ordinaryTools
+	}
 	if input.Purpose == domain.SidechatFork {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
+
+	var managed *managedSubscriptionLease
+	var latest []byte
+	var closeRPC func()
+	cleanup, captured, unused, preNative, finished := false, false, false, false, false
+	defer func() {
+		if closeRPC != nil {
+			defer closeRPC()
+		}
+		if managed == nil {
+			return
+		}
+		defer clear(managed.response.Bundle)
+		if finished {
+			return
+		}
+		if preNative {
+			cleanup = cleanupUnusedExecutionAuthentication(nativeConfig.Home, managed.response.Bundle) == nil
+			if cleanup {
+				latest = bytes.Clone(managed.response.Bundle)
+				unused = true
+			}
+		}
+		conclusive := cleanup && (captured || unused)
+		if err := managed.finish(latest, cleanup, false, captured); err != nil {
+			output, returned = nil, &managedExecutionUncertain{err}
+		} else if !conclusive {
+			output, returned = nil, &managedExecutionUncertain{subscription.Invalid()}
+		}
+	}()
+	if assignment.Configuration.Subscription {
+		if err := validateManagedAuthenticationHome(nativeConfig.Home, manifest.WorkspaceRoots()); err != nil {
+			return nil, err
+		}
+		rpcClient, close, err := subscriptionRPC(ctx, config, config.execution.Credential)
+		if err != nil {
+			return nil, err
+		}
+		closeRPC = close
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "take")
+		managed, err = takeManagedSubscription(ctx, config, rpcClient, config.execution.Credential, config.execution.Instance, assignment.AccountID, owner, config.execution.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
+		if err != nil {
+			return nil, err
+		}
+		if managed.response.GenerationId != string(input.SubscriptionGeneration) {
+			return nil, &managedExecutionUncertain{subscription.Invalid()}
+		}
+		if _, _, err := subscription.Parse(managed.response.Bundle); err != nil {
+			return nil, err
+		}
+		if err := security.PrivateDir(nativeConfig.Home); err != nil {
+			return nil, err
+		}
+		preNative = true
+		if err := security.WriteAtomic(filepath.Join(nativeConfig.Home, "auth.json"), managed.response.Bundle); err != nil {
+			return nil, subscription.Invalid()
+		}
+		nativeConfig.API, nativeConfig.ManagedAuthentication = nil, true
+	}
+	preNative = false
 	client, err := codex.Open(ctx, nativeConfig)
 	if err != nil {
+		preNative = domain.SafeError(err).Code != domain.RecoveryRequired
 		return nil, executionCheckpointUncertain()
 	}
 	bound, forkErr := client.ForkThread(ctx, input.NativeRequestID, source, settings)
+
+	if managed != nil {
+		bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		var captureErr error
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "capture")
+		latest, captureErr = client.ManagedBundle(bounded, false)
+		captured = captureErr == nil
+		stop()
+	}
 	closeErr = client.Close()
+	if managed != nil && closeErr == nil {
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "cleanup")
+		cleanup = cleanupExecutionAuthentication(nativeConfig.Home, latest, managed.response.Bundle) == nil
+		if !captured || !cleanup {
+			return nil, &managedExecutionUncertain{subscription.Invalid()}
+		}
+	}
 	if forkErr != nil || closeErr != nil || bound.Thread == nil || bound.Effective == nil {
 		return nil, executionCheckpointUncertain()
 	}
@@ -270,7 +391,32 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err := ctx.Err(); err != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	return json.Marshal(domain.ForkJobResult{Version: input.Version, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
+
+	var managedFinish domain.ID
+	if managed != nil {
+		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "finish")
+		if err := managed.finish(latest, cleanup, false, captured); err != nil {
+			finished = true
+			return nil, &managedExecutionUncertain{err}
+		}
+		finished = true
+		managedFinish = managed.finishID
+	}
+	return json.Marshal(domain.ForkJobResult{ManagedFinish: managedFinish, Version: input.Version, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: executionInputDigest(raw), Preparation: mustForkJSON(childPreparation), Manifest: mustForkJSON(childManifest), CleanupVerified: true})
+}
+
+// Preparation reads use the unpublished child owner. Only a definite rejection
+// before native creation may retire it; cleanup runs independently of its caller.
+func finishForkChildProcessFailure(root string, child domain.ID, original os.FileInfo, phase forkRuntimePhase, returned error) error {
+	if returned == nil || child == "" || phase != forkRuntimeUnused || domain.SafeError(returned).Code == domain.RecoveryRequired {
+		return returned
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := process.RetireCompletedOwnerContext(ctx, filepath.Join(root, "processes"), child, original); err != nil {
+		return executionCheckpointUncertain()
+	}
+	return returned
 }
 
 // Every pre-native validation/preparation return shares this guard. Workspace

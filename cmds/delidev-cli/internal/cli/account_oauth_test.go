@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -22,7 +23,7 @@ func TestCLIHeadlessOAuthStartStatusCancelAndOriginalReplay(t *testing.T) {
 	ready := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
+		done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(server.Endpoint) { close(ready) })
 	}()
 	defer func() {
 		cancel()
@@ -35,6 +36,27 @@ func TestCLIHeadlessOAuthStartStatusCancelAndOriginalReplay(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("OAuth server fixture readiness timeout")
 	}
+	for _, protocol := range []string{"openai-responses", "openai-chat", "anthropic-messages"} {
+		code, inventory := cliRun(t, root, []string{"provider", "inventory", "--query", "OpenRouter"}, "")
+		if code != 0 {
+			t.Fatal(inventory)
+		}
+		entry := inventory["result"].(map[string]any)["entries"].([]any)[0].(map[string]any)
+		args := []string{"account", "oauth", "start", "--provider-id", entry["provider_id"].(string), "--revision", "1", "--api-protocol", protocol}
+		code, selected := cliRun(t, root, args, "")
+		if code != 0 {
+			t.Fatal(selected)
+		}
+		attempt := selected["result"].(map[string]any)["attempt"].(map[string]any)
+		if attempt["api_protocol"] == nil {
+			t.Fatal("CLI omitted selected protocol", selected)
+		}
+		code, canceled := cliRun(t, root, []string{"account", "oauth", "cancel", "--attempt-id", attempt["id"].(string), "--revision", "1"}, "")
+		if code != 0 {
+			t.Fatal(canceled)
+		}
+	}
+
 	code, value := cliRun(t, root, []string{"provider", "inventory", "--query", "OpenRouter"}, "")
 	if code != 0 {
 		t.Fatal(value)
@@ -103,4 +125,22 @@ func oauthCLIJSON(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestOAuthCallbackEnvelopeIsBoundedAndExcludesMutationAuthority(t *testing.T) {
+	for _, raw := range []string{`{"authorizationState":"c3RhdGU="}`, `{"mutation":{},"authorizationCode":"Y29kZQ==","authorizationState":"` + strings.Repeat("c3Nz", 14) + `"}`, `{"authorizationCode":"Y29kZQ==","authorizationState":"` + strings.Repeat("c3Nz", 14) + `","extra":"ignored"}`, strings.Repeat("x", 16385)} {
+		code, state, e := readOAuthCallback(strings.NewReader(raw))
+		clear(code)
+		clear(state)
+		if e == nil {
+			t.Fatal("invalid callback envelope admitted")
+		}
+	}
+	raw := `{"authorizationCode":"Y29kZQ==","authorizationState":"` + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("s", 43))) + `"}`
+	code, state, e := readOAuthCallback(strings.NewReader(raw))
+	defer clear(code)
+	defer clear(state)
+	if e != nil || string(code) != "code" || string(state) != strings.Repeat("s", 43) {
+		t.Fatal("original callback bytes changed")
+	}
 }

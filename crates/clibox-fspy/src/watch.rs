@@ -567,6 +567,11 @@ impl WatchSession {
         self.accepted_discovery_generation = self.discovery_generation.take();
         self.targets = Some(watcher);
         self.discovery = None;
+        tracing::debug!(
+            stage = "watch_dependencies_installed",
+            generation,
+            "watch dependency handoff completed"
+        );
         Ok(())
     }
 
@@ -574,7 +579,7 @@ impl WatchSession {
         &self,
         until: Instant,
         cancelled: &AtomicBool,
-    ) -> Result<Option<notify::Result<Event>>, WatchFailure> {
+    ) -> Result<Option<WatchEvent>, WatchFailure> {
         loop {
             if cancelled.load(Ordering::SeqCst) {
                 return Ok(None);
@@ -591,7 +596,7 @@ impl WatchSession {
                     if Some(event.generation) == self.target_generation
                         || Some(event.generation) == self.accepted_discovery_generation =>
                 {
-                    return Ok(Some(event.result));
+                    return Ok(Some(event));
                 }
                 Ok(_) => {}
                 Err(RecvTimeoutError::Timeout) => {}
@@ -620,8 +625,8 @@ impl WatchSession {
             return Ok(false);
         }
         let mut relevant = false;
-        for event in events {
-            let event = event.map_err(|_| WatchFailure::WatchLoss)?;
+        for observation in events {
+            let event = observation.result.map_err(|_| WatchFailure::WatchLoss)?;
             // notify's inotify backend includes open and close notifications in
             // every watch mask. Reads by the supervised command must not
             // restart autowatch; only create, remove, rename, and
@@ -638,6 +643,16 @@ impl WatchSession {
                     continue;
                 };
                 if dependencies.relevant(relative) {
+                    tracing::debug!(
+                        stage = "watch_dependency_invalidated",
+                        generation = observation.generation,
+                        target_generation = ?self.target_generation,
+                        discovery_generation = ?self.accepted_discovery_generation,
+                        kind = ?event.kind,
+                        path_depth = relative.components().count(),
+                        self_written = dependencies.self_written(relative),
+                        "watch dependency invalidation observed"
+                    );
                     if dependencies.self_written(relative) {
                         return Err(WatchFailure::UnsafeAmbiguity);
                     }
@@ -874,6 +889,70 @@ mod tests {
     fn native(path: &Path) -> NativePath {
         use std::os::windows::ffi::OsStrExt;
         NativePath::WindowsUtf16(path.as_os_str().encode_wide().collect())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nofollow_external_link_entry_replacement_is_selected_exactly() {
+        use std::{fs, os::unix::fs::symlink};
+
+        use crate::unix_paths::{path_identity, resolve_final_component, FinalSymlink};
+        let directory = tempfile::tempdir().unwrap();
+        let base = directory.path().canonicalize().unwrap();
+        let root = base.join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(base.join("outside"), b"outside").unwrap();
+        let logical = root.join("link");
+        symlink(base.join("outside"), &logical).unwrap();
+        let resolved = resolve_final_component(&logical, FinalSymlink::NoFollow, |parent| {
+            fs::canonicalize(parent).map(Some)
+        })
+        .unwrap()
+        .unwrap();
+        let access = AccessPath {
+            class: PathClass::Project,
+            logical: native(&logical),
+            resolved: Some(native(&resolved)),
+            project_relative: Some(native(resolved.strip_prefix(&root).unwrap())),
+            identity: path_identity(&logical, FinalSymlink::NoFollow),
+        };
+        let selector = Selector::new(&["link".to_owned()], &[]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &selector,
+            Observed {
+                operation: Operation::Metadata,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(&root),
+        );
+        assert!(dependencies.relevant(Path::new("link")));
+        assert!(!dependencies.relevant(Path::new("sibling")));
+        assert_eq!(dependencies.files, BTreeSet::from([PathBuf::from("link")]));
+        fs::write(root.join("replacement"), b"replacement").unwrap();
+        fs::rename(root.join("replacement"), &logical).unwrap();
+        assert_ne!(
+            path_identity(&logical, FinalSymlink::NoFollow),
+            access.identity
+        );
+        assert!(dependencies.relevant(Path::new("link")));
+        let excluded = Selector::new(&["**".to_owned()], &["link".to_owned()]).unwrap();
+        let mut dependencies = Dependencies::default();
+        dependencies.include_path(
+            &access,
+            &excluded,
+            Observed {
+                operation: Operation::Metadata,
+                open_mutates: false,
+                native_result: 0,
+                native_error: None,
+            },
+            Some(&root),
+        );
+        assert!(dependencies.is_empty());
     }
 
     #[test]

@@ -12,15 +12,15 @@ func dispatchGithub(ctx context.Context, c client, o options, rest []string, str
 		return emit(value, err), true
 	}
 	if len(rest) >= 3 && rest[0] == "pr" && rest[1] == "remediation" && rest[2] == "fix" {
-		value, err := prFixCommand(ctx, c, o, rest[3:], streams)
+		value, err := prFixCommand(ctx, c, &o, rest[3:], streams)
 		return emit(value, err), true
 	}
 	if len(rest) >= 2 && rest[0] == "pr" && rest[1] == "remediation" {
-		value, err := prRemediationCommand(ctx, c, o, rest[2:])
+		value, err := prRemediationCommand(ctx, c, &o, rest[2:])
 		return emit(value, err), true
 	}
 	if len(rest) >= 2 && rest[0] == "pr" && rest[1] == "problems" {
-		value, err := prProblemsCommand(ctx, c, o, rest[2:])
+		value, err := prProblemsCommand(ctx, c, &o, rest[2:])
 		return emit(value, err), true
 	}
 	value, err := githubCommand(ctx, c, rest)

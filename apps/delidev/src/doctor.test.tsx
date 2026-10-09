@@ -37,14 +37,13 @@ function allClosed(container: HTMLElement) { expect([...container.querySelectorA
 async function refresh() { fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" })); await waitFor(() => expect((screen.getByRole("button", { name: "Refresh diagnostics" }) as HTMLButtonElement).disabled).toBe(false)); }
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
-it("owns the single Settings heading, three independent observations and every report field", async () => {
+it("owns the standalone Diagnostics heading, three independent observations and every report field", async () => {
   const value = fixture();
-  const view = render(value.view(<Settings />));
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
+  const view = render(value.view(<Doctor active />));
   await screen.findByText("Read succeeded");
-  expect(screen.getAllByRole("heading", { level: 1, name: "Connection & diagnostics" })).toHaveLength(1);
+  expect(screen.getAllByRole("heading", { level: 1, name: "Diagnostics" })).toHaveLength(1);
   expect(screen.getAllByText(/Read-only observations from the selected server/)).toHaveLength(1);
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy();
   expect(view.container.querySelectorAll(".diagnostics-observation")).toHaveLength(3);
   const server = screen.getByRole("region", { name: "Server information" });
   for (const label of ["Server version", "Server platform", "Protocol version", "Database schema", "Bound endpoint"]) expect(within(server).getByText(label)).toBeTruthy();
@@ -61,7 +60,7 @@ it("owns the single Settings heading, three independent observations and every r
   expect(screen.queryByText(/healthy|reclaimable bytes|total storage|%/i)).toBeNull();
 });
 
-it("keeps failed storage, handshake, superseded account and partial notices outside closed disclosures", async () => {
+it("keeps storage and handshake failures in their owning records and moves account observations out of Doctor", async () => {
   const data = report(), storage = data.storage as Document, machines = data.machines as Document[], credentials = data.credentials as Document[];
   storage.result = { state: "failed", code: "permission_denied", guidance: "Inspect storage permissions." };
   const installation = (machines[0].installations as Document[])[0];
@@ -70,10 +69,15 @@ it("keeps failed storage, handshake, superseded account and partial notices outs
   data.more_credentials = true;
   const value = fixture(data), view = render(value.view(<Doctor active />));
   await screen.findByText("Inspect storage permissions.");
-  for (const text of ["permission_denied", "Handshake failed", "unavailable", "Inspect the retained handshake.", "Connection changed during inspection", "Refresh for the current connection."]) expect(screen.getByText(text, { exact: false }).closest("details")).toBeNull();
-  expect(screen.getByText(/Only the first 50 accounts/).closest("details")).toBeNull();
+  for (const text of ["Handshake failed"]) expect(screen.getByText(text, { exact: false }).closest("details")).toBeNull();
+  for (const text of ["permission_denied", "Inspect the retained handshake."]) for (const node of screen.getAllByText(text, { exact: false })) {
+    const details = node.closest("details");
+    if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); }
+  }
+  expect(screen.queryByText(/Only the first 50 accounts/)).toBeNull();
   expect(screen.getByText("Handshake failed").closest("article")).toBe(screen.getByText("First Worker").closest("article"));
-  expect(screen.getByText("Refresh for the current connection.").closest("article")?.textContent).toContain("Account:");
+  expect(screen.queryByText("Refresh for the current connection.")).toBeNull();
+  expect(screen.queryByText("View account storage results in the account lists.")).toBeNull();
   allClosed(view.container);
 });
 
@@ -88,64 +92,55 @@ for (const counter of ["0", "9007199254740993", "18446744073709551615", undefine
   expect(screen.getByText(`session: ${valid ? BigInt(counter as string).toLocaleString() : "Unknown"}`)).toBeTruthy();
 });
 
-it("resets disclosures on category departure and preserves their identities through refresh", async () => {
+it("resets standalone disclosures on presentation departure and preserves their identities through refresh", async () => {
   const data = report(), machines = data.machines as Document[], credentials = data.credentials as Document[];
   machines.push({ ...machines[0], machine_id: newRequestId(), name: "Second Worker" });
   credentials.push({ ...credentials[0], account_id: newRequestId(), connection_id: newRequestId() });
-  const value = fixture(data), view = render(value.view(<Settings />));
+  const value = fixture(data), view = render(value.view(<Doctor active={false} />));
   await act(async () => { await value.client.invalidateQueries(); });
   expect(value.doctor).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" })); await screen.findByText("First Worker");
+  view.rerender(value.view(<Doctor active />)); await screen.findByText("First Worker");
   toggle(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details"));
   toggle(disclosure(screen.getByRole("region", { name: "Server information" }), "Server identity"));
   toggle(disclosure(screen.getByRole("region", { name: "Storage diagnostics" }), "Retained resources"));
-  const account = screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!;
-  toggle(disclosure(account, "Connection identity"));
   expect(value.doctor).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+  view.rerender(value.view(<Doctor active={false} visible={false} />));
   await act(async () => { await value.client.invalidateQueries(); });
   expect(value.doctor).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" })); await screen.findByText("First Worker");
+  view.rerender(value.view(<Doctor active />)); await screen.findByText("First Worker");
   allClosed(view.container);
   toggle(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details"));
-  toggle(disclosure(screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!, "Connection identity"));
   value.state.report = { ...data, machines: [...machines].reverse(), credentials: [...credentials].reverse() };
   await refresh();
   expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(true);
   expect(disclosure(screen.getByText("Second Worker").closest("article")!, "Installation details").open).toBe(false);
-  expect(disclosure(screen.getByText(`Account: ${credentials[0].account_id}`).closest("article")!, "Connection identity").open).toBe(true);
   value.state.report = { ...data, machines: [{ ...machines[0], machine_id: newRequestId() }], credentials: [{ ...credentials[0], connection_id: newRequestId() }] };
   await refresh();
   expect(disclosure(screen.getByText("First Worker").closest("article")!, "Installation details").open).toBe(false);
-  expect(screen.getByText("Connection identity").parentElement?.hasAttribute("open")).toBe(false);
   expect(value.save).not.toHaveBeenCalled();
-  view.rerender(value.view(<Settings visible={false} />));
+  view.rerender(value.view(<Doctor active={false} visible={false} />));
   allClosed(view.container);
 });
 
-for (const exit of ["navigation", "Escape then navigation"]) it(`resets all details on actual Settings ${exit} and reopens collapsed without mutations`, async () => {
+for (const exit of ["navigation", "Escape then navigation"]) it(`never mounts Doctor on Settings ${exit} or reopen`, async () => {
   const value = fixture();
   function Harness() {
     const [visible, setVisible] = useState(false);
-    return <><button onClick={() => setVisible(true)}>Open settings</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Navigate away</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>;
+    return <><button onClick={() => setVisible(true)}>Open settings</button><button onClick={(event) => { event.currentTarget.focus(); setVisible(false); }}>Navigate away</button><Settings visible={visible} /></>;
   }
   const view = render(value.view(<Harness />));
-  const opener = screen.getByRole("button", { name: "Open settings" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" })); await screen.findByText("Read succeeded");
-  for (const details of view.container.querySelectorAll<HTMLDetailsElement>(".diagnostics details")) toggle(details);
-  expect([...view.container.querySelectorAll<HTMLDetailsElement>(".diagnostics details")].every((details) => details.open)).toBe(true);
-  const count = value.doctor.mock.calls.length;
-  if (exit === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect([...view.container.querySelectorAll<HTMLDetailsElement>(".diagnostics details")].every((details) => details.open)).toBe(true); }
-  fireEvent.click(screen.getByRole("button", { name: "Navigate away" }));
-  expect(value.doctor).toHaveBeenCalledTimes(count);
-  allClosed(view.container);
+  const opener = screen.getByRole("button", { name:"Open settings" }); opener.focus(); fireEvent.click(opener);
+  fireEvent.click(screen.getByRole("button", { name:"Connections" }));
+  await screen.findByText("Native Connection controls are unavailable in this window.");
+  expect(view.container.querySelector(".diagnostics")).toBeNull();
+  if (exit === "Escape then navigation") fireEvent.keyDown(screen.getByRole("region", {name:"Settings content"}), {key:"Escape"});
+  fireEvent.click(screen.getByRole("button",{name:"Navigate away"}));
   expect(document.activeElement).not.toBe(opener);
   fireEvent.click(opener);
-  expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Connection & diagnostics" }));
-  await screen.findByText("Read succeeded");
-  allClosed(view.container);
-  expect(value.save).not.toHaveBeenCalled();
+  expect(screen.getByRole("heading",{level:1,name:"AI Subscription"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Connections"}));
+  await screen.findByText("Native Connection controls are unavailable in this window.");
+  expect(value.doctor).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
 });
 
 it("never shares disclosure state across missing or changed server/record identities or connection remounts", async () => {
@@ -160,7 +155,6 @@ it("never shares disclosure state across missing or changed server/record identi
   for (const details of view.container.querySelectorAll<HTMLDetailsElement>("details")) toggle(details);
   value.state.report = { ...value.state.report, machines: [{ ...machine, name: "Replacement" }], credentials: [{ ...credential, connection_id: newRequestId() }] }; await refresh();
   expect(disclosure(screen.getByText("Replacement").closest("article")!, "Installation details").open).toBe(false);
-  expect(disclosure(screen.getByRole("region", { name: "Protected credential diagnostics" }), "Connection identity").open).toBe(false);
   const next = fixture(); view.rerender(next.view(<Doctor key="another-connection" active />)); await screen.findByText("First Worker"); allClosed(view.container);
 });
 
@@ -173,11 +167,11 @@ it("announces deferred initial reads and refreshes while retaining the original 
   await act(async () => initial.resolve({ reportJson: encode(data) })); await screen.findByText("Read succeeded");
   const update = deferred<{ reportJson: Uint8Array }>(); value.doctor.mockImplementationOnce(() => update.promise);
   fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" })); await screen.findByRole("status");
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.getByText("Read succeeded")).toBeTruthy();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.getByText("Read succeeded")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Refresh diagnostics" }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => update.reject(new ConnectError("private fixture failure", Code.Unavailable, { "x-delidev-correlation-id": newRequestId() })));
   await screen.findByText(/report below is the last returned observation/);
-  expect(screen.getByText("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.queryByText("private fixture failure")).toBeNull();
+  expect(screen.getByTitle("2026-09-25T12:34:56Z")).toBeTruthy(); expect(screen.queryByText("private fixture failure")).toBeNull();
 });
 
 for (const code of [Code.Unauthenticated, Code.PermissionDenied]) it(`keeps initial authorization failure ${code} separate from summaries and empty inventories`, async () => {
@@ -198,11 +192,12 @@ for (const encoding of ["future", "json", "utf8", "oversized"]) it(`rejects ${en
 for (const inventory of [undefined, [], Array.from({ length: 51 }, (_, i) => ({ machine_id: newRequestId(), name: `Worker ${i}`, installations: [] }))]) for (const more of [undefined, false, true]) it(`keeps missing/empty/bounded inventories distinct with completeness ${String(more)}`, async () => {
   const data = report(); data.machines = inventory; data.credentials = inventory?.map((machine) => ({ account_id: machine.machine_id, connection_id: newRequestId(), result: { state: "unavailable" } })); data.more_machines = more; data.more_credentials = more;
   const value = fixture(data); render(value.view(<Doctor active />)); await screen.findByText("Read succeeded");
-  const workers = screen.getByRole("region", { name: "Worker diagnostics" }), accounts = screen.getByRole("region", { name: "Protected credential diagnostics" });
-  if (inventory === undefined) { expect(within(workers).getByText("Worker observations are unavailable.")).toBeTruthy(); expect(within(accounts).getByText("Protected storage observations are unavailable.")).toBeTruthy(); }
-  else if (!inventory.length) { expect(within(workers).getByText("No Workers are registered.")).toBeTruthy(); expect(within(accounts).getByText(/No accounts are configured/)).toBeTruthy(); }
-  else { expect(workers.querySelectorAll("article")).toHaveLength(50); expect(accounts.querySelectorAll("article")).toHaveLength(50); expect(within(workers).queryByText("Worker 50")).toBeNull(); }
-  for (const region of [workers, accounts]) { expect(within(region).queryByText("Inventory completeness is unknown.") !== null).toBe(more === undefined); expect(within(region).queryByText(/Only the first 50/) !== null).toBe(more === true); }
+  const workers = screen.getByRole("region", { name: "Worker diagnostics" });
+  expect(screen.queryByRole("region", { name: "Protected credential diagnostics" })).toBeNull();
+  if (inventory === undefined) { expect(within(workers).getByText("Worker observations are unavailable.")).toBeTruthy(); }
+  else if (!inventory.length) { expect(within(workers).getByText("No Workers are registered.")).toBeTruthy(); }
+  else { expect(workers.querySelectorAll("article")).toHaveLength(50); expect(within(workers).queryByText("Worker 50")).toBeNull(); }
+  for (const region of [workers]) { expect(within(region).queryByText("Inventory completeness is unknown.") !== null).toBe(more === undefined); expect(within(region).queryByText(/Only the first 50/) !== null).toBe(more === true); }
 });
 
 it("preserves legacy fields and field-level unknown classifications without inventing health or executing HTML", async () => {
@@ -218,5 +213,19 @@ it("preserves legacy fields and field-level unknown classifications without inve
   value.state.report = data; await refresh();
   expect(screen.getByText("Unknown installation state", { exact: false })).toBeTruthy(); expect(screen.getByText("Unknown protocol state")).toBeTruthy();
   expect(view.container.querySelector("img, a, [style]")).toBeNull(); expect(view.container.querySelector(".diagnostics-observation")?.textContent).toContain("Read succeeded");
-  for (const text of screen.getAllByText(markup)) if (!text.textContent?.startsWith("Reported capabilities")) expect(text.closest("details")).toBeNull();
+  for (const text of screen.getAllByText(markup)) if (!text.textContent?.startsWith("Reported capabilities")) { const details = text.closest("details"); if (details) { expect(details.querySelector("summary")?.textContent).toBe("Technical details"); expect(details.open).toBe(false); } }
+});
+
+it("omits account-storage presentation while retaining independent diagnostics refresh", async () => {
+  const value = fixture();
+  render(value.view(<Doctor active />));
+  await screen.findByText("Read succeeded");
+  expect(screen.queryByRole("region", { name: "Account storage" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "AI Subscription" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "AI API Keys" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Storage diagnostics" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Worker diagnostics" })).toBeTruthy();
+  await refresh();
+  expect(value.doctor).toHaveBeenCalledTimes(2);
+  expect(value.save).not.toHaveBeenCalled();
 });

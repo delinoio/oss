@@ -4,13 +4,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPreviewVersion } from "../../packages/pnport/scripts/version.mjs";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge" });
+export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge", DeliDev: "delidev" });
 export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major", Next: "next" });
 export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
+export function releaseTag(project, version) {
+  return project === Project.DeliDev ? `delidev-v${version}` : `${project}@v${version}`;
+}
 const versions = Object.freeze({
+  delidev: { kind: Kind.Rust, file: "apps/delidev/src-tauri/Cargo.toml" },
   clibox: { kind: Kind.Rust, file: "crates/clibox/Cargo.toml" },
   pnport: { kind: Kind.Rust, file: "crates/pnport/Cargo.toml" },
   binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
@@ -39,12 +43,13 @@ function descriptor(project) {
 }
 
 // Rust source versioning is independent from registry distribution: clibox
-// and pnport ship only through npm and native packages.
+// and pnport ship through npm and native packages; DeliDev ships native downloads.
 export function requiresCargoPublish(project) {
-  return descriptor(project).kind === Kind.Rust && ![Project.Clibox, Project.Pnport].includes(project);
+  return descriptor(project).kind === Kind.Rust && ![Project.Clibox, Project.Pnport, Project.DeliDev].includes(project);
 }
 
 function replaceLockVersion(lock, project, previous, next) {
+  if (project === Project.DeliDev) project = "delidev-desktop";
   const sections = [...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu)]
     .filter(([section]) => section.split("\n").includes(`name = "${project}"`));
   requireValue(sections.length === 1, "Missing or ambiguous Cargo.lock package");
@@ -77,6 +82,7 @@ export function bumpVersion(version, bump) {
 // complete TOML sections, never a dependency's version or an external lock entry.
 // Reject ambiguous/new layouts until their release contract is explicitly added.
 function replaceVersion(source, project, kind, next) {
+  if (project === Project.DeliDev) project = "delidev-desktop";
   if (kind === Kind.Node) {
     const manifest = JSON.parse(source);
     requireValue(manifest.name === "@delino/react-forge" && manifest.private === true, "React Forge source package identity mismatch");
@@ -124,6 +130,18 @@ function asyncCommitHookVersionChanges(read, current, next = current) {
   }));
 }
 
+function delidevVersionChanges(read, current, next = current) {
+  return Object.fromEntries(["apps/delidev/package.json", "apps/delidev/src-tauri/tauri.conf.json"].map(file => {
+    const source = read(file);
+    const value = JSON.parse(source);
+    requireValue(file.endsWith("package.json") ? value.name === "delidev-desktop" && value.private === true : value.identifier === "io.delino.delidev", "DeliDev release identity mismatch");
+    requireValue(value.version === current && [...source.matchAll(/"version"\s*:/gu)].length === 1, "DeliDev source versions disagree");
+    const pattern = /^  "version": "([^"\r\n]+)",$/gmu;
+    requireValue([...source.matchAll(pattern)].length === 1, "Missing or ambiguous DeliDev version");
+    return [file, source.replace(pattern, `  "version": "${next}",`)];
+  }));
+}
+
 export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
   const { file, kind } = descriptor(project);
   const current = replaceVersion(read(file), project, kind).current;
@@ -137,6 +155,7 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
     for (const name of ["pnport-core", "pnport-preload"]) requireValue(replaceVersion(read(`crates/${name}/Cargo.toml`), name, Kind.Rust).current === current, "pnport CLI/core/preload versions disagree");
   }
   if (project === Project.AsyncCommitHook) asyncCommitHookVersionChanges(read, current);
+  if (project === Project.DeliDev) delidevVersionChanges(read, current);
   return current;
 }
 
@@ -178,7 +197,11 @@ export function versionChanges(project, bump, read) {
     changes[npm] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
   }
   if (project === Project.AsyncCommitHook) Object.assign(changes, asyncCommitHookVersionChanges(read, previous_version, version));
-  return { project, bump, kind, previous_version, version, tag: `${project}@v${version}`, changes };
+  if (project === Project.DeliDev) {
+    requireValue(version.split(".").every(part => BigInt(part) <= 0xffffffffn), "DeliDev version component overflow");
+    Object.assign(changes, delidevVersionChanges(read, previous_version, version));
+  }
+  return { project, bump, kind, previous_version, version, tag: releaseTag(project, version), changes };
 }
 
 export function sourceMetadata({ project, event, ref, requestedVersion, requestedDryRun }, read) {
@@ -186,11 +209,11 @@ export function sourceMetadata({ project, event, ref, requestedVersion, requeste
   requireValue(["push", "workflow_dispatch"].includes(event), "Unsupported release event");
   const dry_run = event === "push" ? "false" : requestedDryRun;
   requireValue(["true", "false"].includes(dry_run), "Invalid release dry-run mode");
-  const version = event === "push" ? ref?.replace(`refs/tags/${project}@v`, "") : requestedVersion;
+  const version = event === "push" ? ref?.replace(`refs/tags/${releaseTag(project, "")}`, "") : requestedVersion;
   versionParts(version, project === Project.Pnport);
   if (project === Project.Pnport && isPreviewVersion(version)) requireValue(JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion === version, "pnport preview source is not the exact authorized version");
   requireValue(readVersion(project, read) === version, "Requested release version does not match source");
-  const tag = `${project}@v${version}`;
+  const tag = releaseTag(project, version);
   requireValue(event !== "push" || ref === `refs/tags/${tag}`, "Release push must be the exact project tag");
   requireValue(dry_run === "true" || ref === "refs/heads/main" || ref === `refs/tags/${tag}`, "Publication requires main or the exact version tag");
   if (descriptor(project).kind === Kind.Rust) replaceLockVersion(read("Cargo.lock"), project, version, version);
@@ -262,19 +285,22 @@ export async function prepareRelease({ directory, project, bump, runId, name, em
   return { ...identity, resumed: false };
 }
 
-export async function githubRequest(route) {
+export async function githubRequest(route, { method = "GET", body } = {}) {
   requireValue(route.startsWith(`/repos/${repository}/`) || route === `/users/${encodeURIComponent(botName)}`, "Unsupported GitHub API route");
+  requireValue(["GET", "POST"].includes(method), "Unsupported GitHub API method");
+  requireValue(body === undefined || method === "POST", "GitHub request body requires POST");
   requireValue(Boolean(process.env.GH_TOKEN), "A scoped GitHub token is required");
   let response;
   try {
+    const headers = { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
     response = await fetch(`https://api.github.com${route}`, {
-      headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
-      redirect: "error", signal: AbortSignal.timeout(30000),
+      method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(30000),
     });
   } catch { throw new Error("GitHub API transport failed"); }
-  requireValue([200, 404].includes(response.status), `GitHub API failed with HTTP ${response.status}`);
-  if (response.status === 404) return { status: 404, body: null };
-  try { return { status: 200, body: await response.json() }; }
+  requireValue([200, 201, 404, 422].includes(response.status), `GitHub API failed with HTTP ${response.status}`);
+  if ([404, 422].includes(response.status)) return { status: response.status, body: null };
+  try { return { status: response.status, body: await response.json() }; }
   catch { throw new Error("Invalid GitHub API response"); }
 }
 
@@ -291,6 +317,59 @@ export async function tagRevision(tag, request) {
   }
   requireValue(object?.type === "commit" && shaPattern.test(object.sha ?? ""), "Invalid release tag target");
   return object.sha;
+}
+
+export async function releaseExists(tag, request) {
+  const published = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`);
+  if (published.status === 200) return true;
+  requireValue(published.status === 404, "Cannot establish release ownership");
+  for (let page = 1; ; page++) {
+    const result = await request(`/repos/${repository}/releases?per_page=100&page=${page}`);
+    requireValue(result.status === 200 && Array.isArray(result.body) && result.body.length <= 100
+      && result.body.every((release) => Number.isSafeInteger(release?.id) && release.id > 0 && typeof release.tag_name === "string"), "Cannot establish release ownership");
+    if (result.body.some((release) => release.tag_name === tag)) return true;
+    if (result.body.length < 100) return false;
+    // Bound a broken or repeating pagination response without treating it as absence.
+    requireValue(page < 1000, "Release pagination limit reached; cannot establish release ownership");
+  }
+}
+
+// These older publishers also support manual main releases. Version agreement
+// alone cannot authorize attaching a new build to an existing historical tag.
+export async function legacyReleaseMetadata({ revision, ...input }, read, request) {
+  requireValue([Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch, Project.Derun].includes(input.project), "Unsupported legacy release project");
+  requireValue(shaPattern.test(revision ?? ""), "Invalid release source revision");
+  const metadata = sourceMetadata(input, read);
+  if (metadata.dry_run === "false") {
+    const existing = await tagRevision(metadata.tag, request);
+    if (existing === null) {
+      // A deleted tag can leave a published or draft GitHub Release behind.
+      // The release uploader reuses that release, so a missing ref is
+      // publishable only when every release listing is also absent.
+      requireValue(!(await releaseExists(metadata.tag, request)), "Existing GitHub release has no verified tag target");
+    } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
+  }
+  // Always use the immutable build SHA, including when the tag is absent and
+  // main advances between validation and GitHub's release/tag creation.
+  return { ...metadata, revision, target_commitish: revision };
+}
+
+export async function createLegacyReleaseTag({ tag, revision, request }) {
+  const existing = await tagRevision(tag, request);
+  if (existing === null) {
+    // The source check runs before signing. Recheck the release list here so a
+    // release created during signing cannot be paired with a newly created tag.
+    requireValue(!(await releaseExists(tag, request)), "Existing GitHub release has no verified tag target");
+    const created = await request(`/repos/${repository}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: revision } });
+    requireValue(created.status === 201, created.status === 422 ? "Release tag appeared during atomic creation" : "Release tag creation failed");
+  } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
+  requireValue(await tagRevision(tag, request) === revision, "Remote release tag verification failed");
+  if (existing === null) {
+    // Do not hand off to the release action if an orphaned release appeared
+    // while the tag was being created. The action may reuse that release.
+    requireValue(!(await releaseExists(tag, request)), "Existing GitHub release has no verified tag target");
+  }
+  return { tag, revision, target_commitish: revision };
 }
 
 export async function reactForgeVersionPublished(version, request = fetch) {
@@ -313,8 +392,7 @@ export async function preflightVersion(plan, request, reactForgePublished = reac
     requireValue(await reactForgePublished(plan.previous_version), "A failed React Forge release requires the next patch version");
   }
   requireValue(await tagRevision(plan.tag, request) === null, "Next version tag already exists");
-  const release = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(plan.tag)}`);
-  requireValue(release.status === 404, "Next version release already exists or cannot be checked");
+  requireValue(!(await releaseExists(plan.tag, request)), "Next version release already exists or cannot be checked");
 }
 
 export async function pushReleaseTag({ directory, identity, request }) {
@@ -343,13 +421,26 @@ function workflowContext() {
 }
 
 export async function main(command) {
+  if (["legacy-source", "legacy-tag"].includes(command)) {
+    const revision = process.env.GITHUB_SHA;
+    requireValue(process.env.GITHUB_REPOSITORY === repository, "Legacy release requires delinoio/oss");
+    requireValue(shaPattern.test(revision ?? "") && git(root, ["rev-parse", "HEAD"]) === revision, "Checkout is not the workflow source revision");
+    const metadata = await legacyReleaseMetadata({ project: process.env.RELEASE_PROJECT, revision, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8"), githubRequest);
+    if (command === "legacy-tag") {
+      requireValue(metadata.dry_run === "false", "Release tag creation requires a real publication");
+      await createLegacyReleaseTag({ tag: metadata.tag, revision, request: githubRequest });
+    }
+    log({ phase: command, project: process.env.RELEASE_PROJECT, tag: metadata.tag, revision, dry_run: metadata.dry_run, outcome: "verified" });
+    output(metadata);
+    return;
+  }
   if (command === "source") {
     output(sourceMetadata({ project: process.env.RELEASE_PROJECT, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8")));
     return;
   }
   if (command === "plan") {
     const { changes, ...plan } = versionChanges(process.env.RELEASE_PROJECT, process.env.RELEASE_BUMP, (file) => readFileSync(path.join(root, file), "utf8"));
-    output({ ...plan, files: Object.keys(changes).join(",") });
+    output({ ...plan, cargo_publish: requiresCargoPublish(plan.project), files: Object.keys(changes).join(",") });
     return;
   }
   if (command === "bot-identity") {

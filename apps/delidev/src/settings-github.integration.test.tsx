@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { EntityKind } from "@delinoio/delidev-api-client";
+import { EntityKind, SystemCapability } from "@delinoio/delidev-api-client";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { useSettingsFixture } from "./settings-test-fixture";
@@ -24,13 +24,23 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
       if (method.name === "SaveIntegrationProfile" || profileList) {
         await new Promise(resolve => setTimeout(resolve, 600));
       }
-      return transport.unary(method, signal, timeoutMs, header, input, contextValues);
+      const result = await transport.unary(method, signal, timeoutMs, header, input, contextValues);
+      // Keep this real-server metadata/CLI fixture on the older-server path.
+      // Token onboarding is exercised separately with explicit GitHub fixtures.
+      if (method.name === "GetStatus") {
+        const message = result.message as { capabilities?: SystemCapability[] };
+        message.capabilities = message.capabilities?.filter(value => value !== SystemCapability.GITHUB_TOKEN_ONBOARDING_V1);
+      }
+      return result;
     },
   };
   render(<TransportProvider transport={slowTransport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
-  fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+  fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
+  // Resolve the initial delayed list before creating a profile. Otherwise its
+  // empty response can race the post-save refetch and replace the newer row.
+  await screen.findByText("Add your first GitHub profile");
   fireEvent.click(await screen.findByRole("button", { name: "New GitHub profile" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
+  fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Real server profile" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Resource owner" }), { target: { value: "fixture-owner" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   // Each save crosses the real Go mutation and list refetch. Use the ordinary

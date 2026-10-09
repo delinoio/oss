@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Mutation, Resource } from "./common_pb.js";
+import type { Mutation, ProviderApiFormat, Resource, SubscriptionServiceIdentity } from "./common_pb.js";
 import { file_delidev_v1_common } from "./common_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/provider.proto.
  */
 export const file_delidev_v1_provider: GenFile = /*@__PURE__*/
-  fileDesc("ChlkZWxpZGV2L3YxL3Byb3ZpZGVyLnByb3RvEgpkZWxpZGV2LnYxImoKHExpc3RQcm92aWRlckludmVudG9yeVJlcXVlc3QSDQoFcXVlcnkYASABKAkSFAoMZW5hYmxlZF9vbmx5GAIgASgIEhEKCXBhZ2Vfc2l6ZRgDIAEoDRISCgpwYWdlX3Rva2VuGAQgASgJIsQCChZQcm92aWRlckludmVudG9yeUVudHJ5Ei8KCXByZXNldF9pZBgBIAEoDjIcLmRlbGlkZXYudjEuUHJvdmlkZXJQcmVzZXRJZBITCgtwcm92aWRlcl9pZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIWCg50b3RhbF9hY2NvdW50cxgFIAEoBBIaChJjb25uZWN0ZWRfYWNjb3VudHMYBiABKAQSJgoIcHJvdmlkZXIYByABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiAKGGFjY291bnRfY291bnRzX2F2YWlsYWJsZRgIIAEoCBI/ChFjb25uZWN0aW9uX21ldGhvZBgJIAEoDjIkLmRlbGlkZXYudjEuUHJvdmlkZXJDb25uZWN0aW9uTWV0aG9kIqwBCh1MaXN0UHJvdmlkZXJJbnZlbnRvcnlSZXNwb25zZRIzCgdlbnRyaWVzGAEgAygLMiIuZGVsaWRldi52MS5Qcm92aWRlckludmVudG9yeUVudHJ5EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRI9CgxjYXBhYmlsaXRpZXMYAyADKA4yJy5kZWxpZGV2LnYxLlByb3ZpZGVySW52ZW50b3J5Q2FwYWJpbGl0eSIcChpMaXN0UHJvdmlkZXJQcmVzZXRzUmVxdWVzdCIzChtMaXN0UHJvdmlkZXJQcmVzZXRzUmVzcG9uc2USFAoMcHJlc2V0c19qc29uGAEgASgMIj8KFURpc2NvdmVyTW9kZWxzUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ifwoWRGlzY292ZXJNb2RlbHNSZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIEhgKEG9ic2VydmF0aW9uX2pzb24YBCABKAwimAEKE1NlYXJjaE1vZGVsc1JlcXVlc3QSDQoFcXVlcnkYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkSFgoOaW5jbHVkZV9oaWRkZW4YAyABKAgSEQoJcGFnZV9zaXplGAQgASgNEhIKCnBhZ2VfdG9rZW4YBSABKAkSHgoWZW5hYmxlZF9wcm92aWRlcnNfb25seRgGIAEoCCJ+ChRTZWFyY2hNb2RlbHNSZXNwb25zZRIkCgZtb2RlbHMYASADKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEicKCXByb3ZpZGVycxgCIAMoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USFwoPbmV4dF9wYWdlX3Rva2VuGAMgASgJIjwKE1Jlc29sdmVNb2RlbFJlcXVlc3QSEAoIc2VsZWN0b3IYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkiOwoUUmVzb2x2ZU1vZGVsUmVzcG9uc2USIwoFbW9kZWwYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlKpEKChBQcm92aWRlclByZXNldElkEiIKHlBST1ZJREVSX1BSRVNFVF9JRF9VTlNQRUNJRklFRBAAEigKJFBST1ZJREVSX1BSRVNFVF9JRF9WRVJDRUxfQUlfR0FURVdBWRABEiEKHVBST1ZJREVSX1BSRVNFVF9JRF9PUEVOUk9VVEVSEAISHQoZUFJPVklERVJfUFJFU0VUX0lEX09QRU5BSRADEiAKHFBST1ZJREVSX1BSRVNFVF9JRF9BTlRIUk9QSUMQBBIaChZQUk9WSURFUl9QUkVTRVRfSURfWEFJEAUSHwobUFJPVklERVJfUFJFU0VUX0lEX0RFRVBTRUVLEAYSHQoZUFJPVklERVJfUFJFU0VUX0lEX09MTEFNQRAHEiAKHFBST1ZJREVSX1BSRVNFVF9JRF9MTV9TVFVESU8QCBIbChdQUk9WSURFUl9QUkVTRVRfSURfVkxMTRAJEh0KGVBST1ZJREVSX1BSRVNFVF9JRF9HRU1JTkkQChIbChdQUk9WSURFUl9QUkVTRVRfSURfR1JPURALEh4KGlBST1ZJREVSX1BSRVNFVF9JRF9NSVNUUkFMEAwSIgoeUFJPVklERVJfUFJFU0VUX0lEX1RPR0VUSEVSX0FJEA0SIwofUFJPVklERVJfUFJFU0VUX0lEX0ZJUkVXT1JLU19BSRAOEiEKHVBST1ZJREVSX1BSRVNFVF9JRF9QRVJQTEVYSVRZEA8SHQoZUFJPVklERVJfUFJFU0VUX0lEX0NPSEVSRRAQEh8KG1BST1ZJREVSX1BSRVNFVF9JRF9DRVJFQlJBUxAREh0KGVBST1ZJREVSX1BSRVNFVF9JRF9ORUJJVVMQEhIdChlQUk9WSURFUl9QUkVTRVRfSURfTk9WSVRBEBMSIAocUFJPVklERVJfUFJFU0VUX0lEX0RFRVBJTkZSQRAUEiMKH1BST1ZJREVSX1BSRVNFVF9JRF9IVUdHSU5HX0ZBQ0UQFRIdChlQUk9WSURFUl9QUkVTRVRfSURfVkVOSUNFEBYSHwobUFJPVklERVJfUFJFU0VUX0lEX1NDQUxFV0FZEBcSHgoaUFJPVklERVJfUFJFU0VUX0lEX0JBU0VURU4QGBIfChtQUk9WSURFUl9QUkVTRVRfSURfTU9PTlNIT1QQGRIiCh5QUk9WSURFUl9QUkVTRVRfSURfTU9PTlNIT1RfQ04QGhIeChpQUk9WSURFUl9QUkVTRVRfSURfTUlOSU1BWBAbEiEKHVBST1ZJREVSX1BSRVNFVF9JRF9NSU5JTUFYX0NOEBwSIgoeUFJPVklERVJfUFJFU0VUX0lEX1NJTElDT05GTE9XEB0SJQohUFJPVklERVJfUFJFU0VUX0lEX1NJTElDT05GTE9XX0NOEB4SHgoaUFJPVklERVJfUFJFU0VUX0lEX1FJQU5GQU4QHxInCiNQUk9WSURFUl9QUkVTRVRfSURfVEVOQ0VOVF9UT0tFTkhVQhAgEjUKMVBST1ZJREVSX1BSRVNFVF9JRF9URU5DRU5UX1RPS0VOSFVCX0lOVEVSTkFUSU9OQUwQIRI5CjVQUk9WSURFUl9QUkVTRVRfSURfQUxJQkFCQV9NT0RFTF9TVFVESU9fSU5URVJOQVRJT05BTBAiEjUKMVBST1ZJREVSX1BSRVNFVF9JRF9BTElCQUJBX01PREVMX1NUVURJT19IT05HX0tPTkcQIyrsAgobUHJvdmlkZXJJbnZlbnRvcnlDYXBhYmlsaXR5Ei0KKVBST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX1VOU1BFQ0lGSUVEEAASNQoxUFJPVklERVJfSU5WRU5UT1JZX0NBUEFCSUxJVFlfUFJPVklERVJfQUNUSVZBVElPThABEjkKNVBST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX0FDVElWRV9BUElfTU9ERUxfRklMVEVSEAISOQo1UFJPVklERVJfSU5WRU5UT1JZX0NBUEFCSUxJVFlfQUNDT1VOVF9QUk9WSURFUl9GSUxURVIQAxI1CjFQUk9WSURFUl9JTlZFTlRPUllfQ0FQQUJJTElUWV9BQ0NPVU5UX1RZUEVfRklMVEVSEAQSOgo2UFJPVklERVJfSU5WRU5UT1JZX0NBUEFCSUxJVFlfT1BFTlJPVVRFUl9PQVVUSF9QS0NFX1YxEAUqwQEKGFByb3ZpZGVyQ29ubmVjdGlvbk1ldGhvZBIqCiZQUk9WSURFUl9DT05ORUNUSU9OX01FVEhPRF9VTlNQRUNJRklFRBAAEiYKIlBST1ZJREVSX0NPTk5FQ1RJT05fTUVUSE9EX0FQSV9LRVkQARIpCiVQUk9WSURFUl9DT05ORUNUSU9OX01FVEhPRF9PQVVUSF9QS0NFEAISJgoiUFJPVklERVJfQ09OTkVDVElPTl9NRVRIT0RfS0VZTEVTUxADMuYDCg9Qcm92aWRlclNlcnZpY2USZgoTTGlzdFByb3ZpZGVyUHJlc2V0cxImLmRlbGlkZXYudjEuTGlzdFByb3ZpZGVyUHJlc2V0c1JlcXVlc3QaJy5kZWxpZGV2LnYxLkxpc3RQcm92aWRlclByZXNldHNSZXNwb25zZRJsChVMaXN0UHJvdmlkZXJJbnZlbnRvcnkSKC5kZWxpZGV2LnYxLkxpc3RQcm92aWRlckludmVudG9yeVJlcXVlc3QaKS5kZWxpZGV2LnYxLkxpc3RQcm92aWRlckludmVudG9yeVJlc3BvbnNlElcKDkRpc2NvdmVyTW9kZWxzEiEuZGVsaWRldi52MS5EaXNjb3Zlck1vZGVsc1JlcXVlc3QaIi5kZWxpZGV2LnYxLkRpc2NvdmVyTW9kZWxzUmVzcG9uc2USUQoMU2VhcmNoTW9kZWxzEh8uZGVsaWRldi52MS5TZWFyY2hNb2RlbHNSZXF1ZXN0GiAuZGVsaWRldi52MS5TZWFyY2hNb2RlbHNSZXNwb25zZRJRCgxSZXNvbHZlTW9kZWwSHy5kZWxpZGV2LnYxLlJlc29sdmVNb2RlbFJlcXVlc3QaIC5kZWxpZGV2LnYxLlJlc29sdmVNb2RlbFJlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_common]);
+  fileDesc("ChlkZWxpZGV2L3YxL3Byb3ZpZGVyLnByb3RvEgpkZWxpZGV2LnYxImoKHExpc3RQcm92aWRlckludmVudG9yeVJlcXVlc3QSDQoFcXVlcnkYASABKAkSFAoMZW5hYmxlZF9vbmx5GAIgASgIEhEKCXBhZ2Vfc2l6ZRgDIAEoDRISCgpwYWdlX3Rva2VuGAQgASgJIvgCChZQcm92aWRlckludmVudG9yeUVudHJ5Ei8KCXByZXNldF9pZBgBIAEoDjIcLmRlbGlkZXYudjEuUHJvdmlkZXJQcmVzZXRJZBITCgtwcm92aWRlcl9pZBgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSDwoHZW5hYmxlZBgEIAEoCBIWCg50b3RhbF9hY2NvdW50cxgFIAEoBBIaChJjb25uZWN0ZWRfYWNjb3VudHMYBiABKAQSJgoIcHJvdmlkZXIYByABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiAKGGFjY291bnRfY291bnRzX2F2YWlsYWJsZRgIIAEoCBI/ChFjb25uZWN0aW9uX21ldGhvZBgJIAEoDjIkLmRlbGlkZXYudjEuUHJvdmlkZXJDb25uZWN0aW9uTWV0aG9kEjIKC2FwaV9mb3JtYXRzGAogAygLMh0uZGVsaWRldi52MS5Qcm92aWRlckFwaUZvcm1hdCKsAQodTGlzdFByb3ZpZGVySW52ZW50b3J5UmVzcG9uc2USMwoHZW50cmllcxgBIAMoCzIiLmRlbGlkZXYudjEuUHJvdmlkZXJJbnZlbnRvcnlFbnRyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSPQoMY2FwYWJpbGl0aWVzGAMgAygOMicuZGVsaWRldi52MS5Qcm92aWRlckludmVudG9yeUNhcGFiaWxpdHkiHAoaTGlzdFByb3ZpZGVyUHJlc2V0c1JlcXVlc3QiMwobTGlzdFByb3ZpZGVyUHJlc2V0c1Jlc3BvbnNlEhQKDHByZXNldHNfanNvbhgBIAEoDCI/ChVEaXNjb3Zlck1vZGVsc1JlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIn8KFkRpc2NvdmVyTW9kZWxzUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIYChBvYnNlcnZhdGlvbl9qc29uGAQgASgMIt8BChNTZWFyY2hNb2RlbHNSZXF1ZXN0Eg0KBXF1ZXJ5GAEgASgJEhMKC3Byb3ZpZGVyX2lkGAIgASgJEhYKDmluY2x1ZGVfaGlkZGVuGAMgASgIEhEKCXBhZ2Vfc2l6ZRgEIAEoDRISCgpwYWdlX3Rva2VuGAUgASgJEh4KFmVuYWJsZWRfcHJvdmlkZXJzX29ubHkYBiABKAgSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYByABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eSJ+ChRTZWFyY2hNb2RlbHNSZXNwb25zZRIkCgZtb2RlbHMYASADKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEicKCXByb3ZpZGVycxgCIAMoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USFwoPbmV4dF9wYWdlX3Rva2VuGAMgASgJIjwKE1Jlc29sdmVNb2RlbFJlcXVlc3QSEAoIc2VsZWN0b3IYASABKAkSEwoLcHJvdmlkZXJfaWQYAiABKAkiOwoUUmVzb2x2ZU1vZGVsUmVzcG9uc2USIwoFbW9kZWwYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlIooBChZLbm93blN1YnNjcmlwdGlvbk1vZGVsEhEKCW5hdGl2ZV9pZBgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSDQoFb3JkZXIYAyABKA0SHwoXbWluaW11bV9oYXJuZXNzX3ZlcnNpb24YBCABKAkSFwoPcmV0aXJlbWVudF9kYXRlGAUgASgJImsKIkxpc3RLbm93blN1YnNjcmlwdGlvbk1vZGVsc1JlcXVlc3QSRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYASABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eSKOAgojTGlzdEtub3duU3Vic2NyaXB0aW9uTW9kZWxzUmVzcG9uc2USRQoUc3Vic2NyaXB0aW9uX3NlcnZpY2UYASABKA4yJy5kZWxpZGV2LnYxLlN1YnNjcmlwdGlvblNlcnZpY2VJZGVudGl0eRIyCgZtb2RlbHMYAiADKAsyIi5kZWxpZGV2LnYxLktub3duU3Vic2NyaXB0aW9uTW9kZWwSFwoPY2F0YWxvZ192ZXJzaW9uGAMgASgJEhIKCnVwZGF0ZWRfYXQYBCABKAkSPwoGc291cmNlGAUgASgOMi8uZGVsaWRldi52MS5Lbm93blN1YnNjcmlwdGlvbk1vZGVsQ2F0YWxvZ1NvdXJjZSqRCgoQUHJvdmlkZXJQcmVzZXRJZBIiCh5QUk9WSURFUl9QUkVTRVRfSURfVU5TUEVDSUZJRUQQABIoCiRQUk9WSURFUl9QUkVTRVRfSURfVkVSQ0VMX0FJX0dBVEVXQVkQARIhCh1QUk9WSURFUl9QUkVTRVRfSURfT1BFTlJPVVRFUhACEh0KGVBST1ZJREVSX1BSRVNFVF9JRF9PUEVOQUkQAxIgChxQUk9WSURFUl9QUkVTRVRfSURfQU5USFJPUElDEAQSGgoWUFJPVklERVJfUFJFU0VUX0lEX1hBSRAFEh8KG1BST1ZJREVSX1BSRVNFVF9JRF9ERUVQU0VFSxAGEh0KGVBST1ZJREVSX1BSRVNFVF9JRF9PTExBTUEQBxIgChxQUk9WSURFUl9QUkVTRVRfSURfTE1fU1RVRElPEAgSGwoXUFJPVklERVJfUFJFU0VUX0lEX1ZMTE0QCRIdChlQUk9WSURFUl9QUkVTRVRfSURfR0VNSU5JEAoSGwoXUFJPVklERVJfUFJFU0VUX0lEX0dST1EQCxIeChpQUk9WSURFUl9QUkVTRVRfSURfTUlTVFJBTBAMEiIKHlBST1ZJREVSX1BSRVNFVF9JRF9UT0dFVEhFUl9BSRANEiMKH1BST1ZJREVSX1BSRVNFVF9JRF9GSVJFV09SS1NfQUkQDhIhCh1QUk9WSURFUl9QUkVTRVRfSURfUEVSUExFWElUWRAPEh0KGVBST1ZJREVSX1BSRVNFVF9JRF9DT0hFUkUQEBIfChtQUk9WSURFUl9QUkVTRVRfSURfQ0VSRUJSQVMQERIdChlQUk9WSURFUl9QUkVTRVRfSURfTkVCSVVTEBISHQoZUFJPVklERVJfUFJFU0VUX0lEX05PVklUQRATEiAKHFBST1ZJREVSX1BSRVNFVF9JRF9ERUVQSU5GUkEQFBIjCh9QUk9WSURFUl9QUkVTRVRfSURfSFVHR0lOR19GQUNFEBUSHQoZUFJPVklERVJfUFJFU0VUX0lEX1ZFTklDRRAWEh8KG1BST1ZJREVSX1BSRVNFVF9JRF9TQ0FMRVdBWRAXEh4KGlBST1ZJREVSX1BSRVNFVF9JRF9CQVNFVEVOEBgSHwobUFJPVklERVJfUFJFU0VUX0lEX01PT05TSE9UEBkSIgoeUFJPVklERVJfUFJFU0VUX0lEX01PT05TSE9UX0NOEBoSHgoaUFJPVklERVJfUFJFU0VUX0lEX01JTklNQVgQGxIhCh1QUk9WSURFUl9QUkVTRVRfSURfTUlOSU1BWF9DThAcEiIKHlBST1ZJREVSX1BSRVNFVF9JRF9TSUxJQ09ORkxPVxAdEiUKIVBST1ZJREVSX1BSRVNFVF9JRF9TSUxJQ09ORkxPV19DThAeEh4KGlBST1ZJREVSX1BSRVNFVF9JRF9RSUFORkFOEB8SJwojUFJPVklERVJfUFJFU0VUX0lEX1RFTkNFTlRfVE9LRU5IVUIQIBI1CjFQUk9WSURFUl9QUkVTRVRfSURfVEVOQ0VOVF9UT0tFTkhVQl9JTlRFUk5BVElPTkFMECESOQo1UFJPVklERVJfUFJFU0VUX0lEX0FMSUJBQkFfTU9ERUxfU1RVRElPX0lOVEVSTkFUSU9OQUwQIhI1CjFQUk9WSURFUl9QUkVTRVRfSURfQUxJQkFCQV9NT0RFTF9TVFVESU9fSE9OR19LT05HECMq3AQKG1Byb3ZpZGVySW52ZW50b3J5Q2FwYWJpbGl0eRItCilQUk9WSURFUl9JTlZFTlRPUllfQ0FQQUJJTElUWV9VTlNQRUNJRklFRBAAEjUKMVBST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX1BST1ZJREVSX0FDVElWQVRJT04QARI5CjVQUk9WSURFUl9JTlZFTlRPUllfQ0FQQUJJTElUWV9BQ1RJVkVfQVBJX01PREVMX0ZJTFRFUhACEjkKNVBST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX0FDQ09VTlRfUFJPVklERVJfRklMVEVSEAMSNQoxUFJPVklERVJfSU5WRU5UT1JZX0NBUEFCSUxJVFlfQUNDT1VOVF9UWVBFX0ZJTFRFUhAEEjoKNlBST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX09QRU5ST1VURVJfT0FVVEhfUEtDRV9WMRAFEjIKLlBST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX0FDQ09VTlRfT0FVVEhfVjEQBhI5CjVQUk9WSURFUl9JTlZFTlRPUllfQ0FQQUJJTElUWV9BQ0NPVU5UX0FQSV9QUk9UT0NPTF9WMRAHEj8KO1BST1ZJREVSX0lOVkVOVE9SWV9DQVBBQklMSVRZX0FDQ09VTlRfT0FVVEhfQVBJX1BST1RPQ09MX1YxEAgSPgo6UFJPVklERVJfSU5WRU5UT1JZX0NBUEFCSUxJVFlfQUNDT1VOVF9BUElfRk9STUFUX0NIQU5HRV9WMRAJKu4BChhQcm92aWRlckNvbm5lY3Rpb25NZXRob2QSKgomUFJPVklERVJfQ09OTkVDVElPTl9NRVRIT0RfVU5TUEVDSUZJRUQQABImCiJQUk9WSURFUl9DT05ORUNUSU9OX01FVEhPRF9BUElfS0VZEAESKQolUFJPVklERVJfQ09OTkVDVElPTl9NRVRIT0RfT0FVVEhfUEtDRRACEiYKIlBST1ZJREVSX0NPTk5FQ1RJT05fTUVUSE9EX0tFWUxFU1MQAxIrCidQUk9WSURFUl9DT05ORUNUSU9OX01FVEhPRF9PQVVUSF9ERVZJQ0UQBCr6AQojS25vd25TdWJzY3JpcHRpb25Nb2RlbENhdGFsb2dTb3VyY2USNwozS05PV05fU1VCU0NSSVBUSU9OX01PREVMX0NBVEFMT0dfU09VUkNFX1VOU1BFQ0lGSUVEEAASMwovS05PV05fU1VCU0NSSVBUSU9OX01PREVMX0NBVEFMT0dfU09VUkNFX0JVTkRMRUQQARIxCi1LTk9XTl9TVUJTQ1JJUFRJT05fTU9ERUxfQ0FUQUxPR19TT1VSQ0VfQ0FDSEUQAhIyCi5LTk9XTl9TVUJTQ1JJUFRJT05fTU9ERUxfQ0FUQUxPR19TT1VSQ0VfT05MSU5FEAMy5gQKD1Byb3ZpZGVyU2VydmljZRJmChNMaXN0UHJvdmlkZXJQcmVzZXRzEiYuZGVsaWRldi52MS5MaXN0UHJvdmlkZXJQcmVzZXRzUmVxdWVzdBonLmRlbGlkZXYudjEuTGlzdFByb3ZpZGVyUHJlc2V0c1Jlc3BvbnNlEmwKFUxpc3RQcm92aWRlckludmVudG9yeRIoLmRlbGlkZXYudjEuTGlzdFByb3ZpZGVySW52ZW50b3J5UmVxdWVzdBopLmRlbGlkZXYudjEuTGlzdFByb3ZpZGVySW52ZW50b3J5UmVzcG9uc2USVwoORGlzY292ZXJNb2RlbHMSIS5kZWxpZGV2LnYxLkRpc2NvdmVyTW9kZWxzUmVxdWVzdBoiLmRlbGlkZXYudjEuRGlzY292ZXJNb2RlbHNSZXNwb25zZRJ+ChtMaXN0S25vd25TdWJzY3JpcHRpb25Nb2RlbHMSLi5kZWxpZGV2LnYxLkxpc3RLbm93blN1YnNjcmlwdGlvbk1vZGVsc1JlcXVlc3QaLy5kZWxpZGV2LnYxLkxpc3RLbm93blN1YnNjcmlwdGlvbk1vZGVsc1Jlc3BvbnNlElEKDFNlYXJjaE1vZGVscxIfLmRlbGlkZXYudjEuU2VhcmNoTW9kZWxzUmVxdWVzdBogLmRlbGlkZXYudjEuU2VhcmNoTW9kZWxzUmVzcG9uc2USUQoMUmVzb2x2ZU1vZGVsEh8uZGVsaWRldi52MS5SZXNvbHZlTW9kZWxSZXF1ZXN0GiAuZGVsaWRldi52MS5SZXNvbHZlTW9kZWxSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.ListProviderInventoryRequest
@@ -96,6 +96,11 @@ export type ProviderInventoryEntry = Message<"delidev.v1.ProviderInventoryEntry"
    * @generated from field: delidev.v1.ProviderConnectionMethod connection_method = 9;
    */
   connectionMethod: ProviderConnectionMethod;
+
+  /**
+   * @generated from field: repeated delidev.v1.ProviderApiFormat api_formats = 10;
+   */
+  apiFormats: ProviderApiFormat[];
 };
 
 /**
@@ -248,6 +253,11 @@ export type SearchModelsRequest = Message<"delidev.v1.SearchModelsRequest"> & {
    * @generated from field: bool enabled_providers_only = 6;
    */
   enabledProvidersOnly: boolean;
+
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 7;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
 };
 
 /**
@@ -322,6 +332,99 @@ export type ResolveModelResponse = Message<"delidev.v1.ResolveModelResponse"> & 
  */
 export const ResolveModelResponseSchema: GenMessage<ResolveModelResponse> = /*@__PURE__*/
   messageDesc(file_delidev_v1_provider, 10);
+
+/**
+ * @generated from message delidev.v1.KnownSubscriptionModel
+ */
+export type KnownSubscriptionModel = Message<"delidev.v1.KnownSubscriptionModel"> & {
+  /**
+   * @generated from field: string native_id = 1;
+   */
+  nativeId: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: uint32 order = 3;
+   */
+  order: number;
+
+  /**
+   * @generated from field: string minimum_harness_version = 4;
+   */
+  minimumHarnessVersion: string;
+
+  /**
+   * A definite retirement date, YYYY-MM-DD; empty when not established.
+   *
+   * @generated from field: string retirement_date = 5;
+   */
+  retirementDate: string;
+};
+
+/**
+ * Describes the message delidev.v1.KnownSubscriptionModel.
+ * Use `create(KnownSubscriptionModelSchema)` to create a new message.
+ */
+export const KnownSubscriptionModelSchema: GenMessage<KnownSubscriptionModel> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_provider, 11);
+
+/**
+ * @generated from message delidev.v1.ListKnownSubscriptionModelsRequest
+ */
+export type ListKnownSubscriptionModelsRequest = Message<"delidev.v1.ListKnownSubscriptionModelsRequest"> & {
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 1;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
+};
+
+/**
+ * Describes the message delidev.v1.ListKnownSubscriptionModelsRequest.
+ * Use `create(ListKnownSubscriptionModelsRequestSchema)` to create a new message.
+ */
+export const ListKnownSubscriptionModelsRequestSchema: GenMessage<ListKnownSubscriptionModelsRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_provider, 12);
+
+/**
+ * @generated from message delidev.v1.ListKnownSubscriptionModelsResponse
+ */
+export type ListKnownSubscriptionModelsResponse = Message<"delidev.v1.ListKnownSubscriptionModelsResponse"> & {
+  /**
+   * @generated from field: delidev.v1.SubscriptionServiceIdentity subscription_service = 1;
+   */
+  subscriptionService: SubscriptionServiceIdentity;
+
+  /**
+   * @generated from field: repeated delidev.v1.KnownSubscriptionModel models = 2;
+   */
+  models: KnownSubscriptionModel[];
+
+  /**
+   * @generated from field: string catalog_version = 3;
+   */
+  catalogVersion: string;
+
+  /**
+   * @generated from field: string updated_at = 4;
+   */
+  updatedAt: string;
+
+  /**
+   * @generated from field: delidev.v1.KnownSubscriptionModelCatalogSource source = 5;
+   */
+  source: KnownSubscriptionModelCatalogSource;
+};
+
+/**
+ * Describes the message delidev.v1.ListKnownSubscriptionModelsResponse.
+ * Use `create(ListKnownSubscriptionModelsResponseSchema)` to create a new message.
+ */
+export const ListKnownSubscriptionModelsResponseSchema: GenMessage<ListKnownSubscriptionModelsResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_provider, 13);
 
 /**
  * @generated from enum delidev.v1.ProviderPresetId
@@ -547,6 +650,26 @@ export enum ProviderInventoryCapability {
    * @generated from enum value: PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1 = 5;
    */
   OPENROUTER_OAUTH_PKCE_V1 = 5,
+
+  /**
+   * @generated from enum value: PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1 = 6;
+   */
+  ACCOUNT_OAUTH_V1 = 6,
+
+  /**
+   * @generated from enum value: PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1 = 7;
+   */
+  ACCOUNT_API_PROTOCOL_V1 = 7,
+
+  /**
+   * @generated from enum value: PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8;
+   */
+  ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8,
+
+  /**
+   * @generated from enum value: PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1 = 9;
+   */
+  ACCOUNT_API_FORMAT_CHANGE_V1 = 9,
 }
 
 /**
@@ -578,6 +701,11 @@ export enum ProviderConnectionMethod {
    * @generated from enum value: PROVIDER_CONNECTION_METHOD_KEYLESS = 3;
    */
   KEYLESS = 3,
+
+  /**
+   * @generated from enum value: PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE = 4;
+   */
+  OAUTH_DEVICE = 4,
 }
 
 /**
@@ -585,6 +713,39 @@ export enum ProviderConnectionMethod {
  */
 export const ProviderConnectionMethodSchema: GenEnum<ProviderConnectionMethod> = /*@__PURE__*/
   enumDesc(file_delidev_v1_provider, 2);
+
+/**
+ * Advisory metadata only; no saved model, account or execution authority.
+ *
+ * @generated from enum delidev.v1.KnownSubscriptionModelCatalogSource
+ */
+export enum KnownSubscriptionModelCatalogSource {
+  /**
+   * @generated from enum value: KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_BUNDLED = 1;
+   */
+  BUNDLED = 1,
+
+  /**
+   * @generated from enum value: KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_CACHE = 2;
+   */
+  CACHE = 2,
+
+  /**
+   * @generated from enum value: KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_ONLINE = 3;
+   */
+  ONLINE = 3,
+}
+
+/**
+ * Describes the enum delidev.v1.KnownSubscriptionModelCatalogSource.
+ */
+export const KnownSubscriptionModelCatalogSourceSchema: GenEnum<KnownSubscriptionModelCatalogSource> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_provider, 3);
 
 /**
  * @generated from service delidev.v1.ProviderService
@@ -613,6 +774,14 @@ export const ProviderService: GenService<{
     methodKind: "unary";
     input: typeof DiscoverModelsRequestSchema;
     output: typeof DiscoverModelsResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.ProviderService.ListKnownSubscriptionModels
+   */
+  listKnownSubscriptionModels: {
+    methodKind: "unary";
+    input: typeof ListKnownSubscriptionModelsRequestSchema;
+    output: typeof ListKnownSubscriptionModelsResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.ProviderService.SearchModels

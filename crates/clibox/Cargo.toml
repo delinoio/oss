@@ -1,6 +1,6 @@
 [package]
 name = "clibox"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["Delino"]
@@ -28,6 +28,9 @@ serde_json = "1.0.149"
 tempfile = "3.25.0"
 socket2 = "0.6.2"
 rcgen = "0.14"
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+notify = "8.1.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = "0.2.182"

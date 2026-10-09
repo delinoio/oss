@@ -17,6 +17,7 @@ import (
 // detect arbitrary transformations performed by a hostile proxy.
 type credentialBody struct {
 	body          io.ReadCloser
+	jsonGuard     *credentialJSONGuard
 	patterns      [][]byte
 	shortPatterns [][]byte
 	previous      byte
@@ -28,10 +29,15 @@ type credentialBody struct {
 }
 
 func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential) *credentialBody {
-	g := &credentialBody{body: body}
+	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
 	for _, value := range []string{c.Username, c.Password, c.Username + ":" + c.Password} {
 		candidates := []string{value, base64.StdEncoding.EncodeToString([]byte(value)), base64.RawStdEncoding.EncodeToString([]byte(value))}
 		for _, candidate := range candidates {
+			if len(candidate) >= 8 {
+				g.jsonGuard.patterns = append(g.jsonGuard.patterns, []byte(candidate))
+			} else {
+				g.jsonGuard.short = append(g.jsonGuard.short, []byte(candidate))
+			}
 			encoded, _ := json.Marshal(candidate)
 			g.patterns = append(g.patterns, bytes.Clone(encoded))
 			for _, form := range [][]byte{[]byte(candidate), encoded[1 : len(encoded)-1]} {
@@ -110,7 +116,7 @@ func containsCredentialForms(raw []byte, ended bool, previous byte, hasPrevious 
 	return false
 }
 func (g *credentialBody) retainedPrefix() int {
-	retained := 0
+	retained := int(g.jsonGuard.position - g.jsonGuard.retainFrom())
 	for _, pattern := range g.patterns {
 		for n := min(len(pattern)-1, len(g.pending)); n > retained; n-- {
 			if bytes.Equal(g.pending[len(g.pending)-n:], pattern[:n]) {
@@ -143,12 +149,17 @@ func (g *credentialBody) Read(p []byte) (int, error) {
 		buf := make([]byte, 8192)
 		n, err := g.body.Read(buf)
 		g.pending = append(g.pending, buf[:n]...)
+		decodedReflection := g.jsonGuard.scan(buf[:n])
 		clear(buf)
 		g.eof = err == io.EOF
-		if g.containsBounded(g.pending, g.eof, g.previous, g.hasPrevious) {
+		if g.eof && g.jsonGuard.finish() {
+			decodedReflection = true
+		}
+		if decodedReflection || g.containsBounded(g.pending, g.eof, g.previous, g.hasPrevious) {
 			clear(g.pending)
 			g.pending = nil
 			g.failed = true
+			_ = g.body.Close()
 			return 0, unavailable()
 		}
 		if err != nil {
@@ -188,5 +199,6 @@ func (g *credentialBody) Close() error {
 		clear(p)
 	}
 	g.previous, g.hasPrevious = 0, false
+	g.jsonGuard.clear()
 	return err
 }

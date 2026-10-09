@@ -67,15 +67,23 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 5 {
+	if len(initial.Msg.Entries) != 35 || len(initial.Msg.Capabilities) != 8 {
 		t.Fatalf("fresh inventory was not capability-complete: %+v", initial.Msg)
 	}
-	accountTypeFilterAdvertised := false
+	accountTypeFilterAdvertised, oauthFormatAdvertised, formatChangeAdvertised := false, false, false
 	for _, capability := range initial.Msg.Capabilities {
 		accountTypeFilterAdvertised = accountTypeFilterAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER
+		oauthFormatAdvertised = oauthFormatAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1
+		formatChangeAdvertised = formatChangeAdvertised || capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1
 	}
-	if !accountTypeFilterAdvertised {
+	if !accountTypeFilterAdvertised || !formatChangeAdvertised {
 		t.Fatalf("fresh inventory omitted account-type filtering capability: %+v", initial.Msg.Capabilities)
+	}
+	if !oauthFormatAdvertised {
+		t.Fatalf("fresh inventory omitted OAuth API format capability: %+v", initial.Msg.Capabilities)
+	}
+	if !formatChangeAdvertised {
+		t.Fatalf("fresh inventory omitted account API format change capability: %+v", initial.Msg.Capabilities)
 	}
 	for _, entry := range initial.Msg.Entries {
 		hosted := entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_OLLAMA && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_LM_STUDIO && entry.PresetId != pb.ProviderPresetId_PROVIDER_PRESET_ID_VLLM
@@ -112,7 +120,7 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 	ollama.SetEnabled(true)
 	raw, _ := json.Marshal(ollama)
 	save := func(request domain.ID) (*connect.Response[pb.SaveConfigurationResponse], error) {
-		return f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(request)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: 1, DocumentJson: raw}))
+		return f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(request)}, Kind: pb.EntityKind_ENTITY_KIND_PROVIDER, SchemaVersion: rpc.ResourceSchemaVersion(domain.ProviderKind, raw), DocumentJson: raw}))
 	}
 	type activation struct {
 		resource *pb.Resource
@@ -170,9 +178,14 @@ func TestProviderInventoryActivationCompatibilityAndAuthorization(t *testing.T) 
 		t.Fatalf("preset activation created a model: models=%v err=%v", models, err)
 	}
 
-	// Legacy writes that omit enabled or preset_id retain both stored values.
+	// Older clients cannot discard the managed provider format profiles.
 	legacyUpdate := []byte(`{"name":"Ollama","endpoint":"http://127.0.0.1:11434/v1","protocol":"openai-chat","authentication":"keyless","discovery":true,"enabled":false}`)
-	updated, err := f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 1, DocumentJson: legacyUpdate}))
+	_, err = f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 1, DocumentJson: legacyUpdate}))
+	wantAccountCode(t, err, domain.Unsupported)
+	// Current writes retain profiles and immutable activation provenance.
+	canonicalOllama.SetEnabled(false)
+	currentUpdate, _ := json.Marshal(canonicalOllama)
+	updated, err := f.config.SaveConfiguration(ctx, ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(created, domain.NewID()), Kind: created.Kind, SchemaVersion: 3, DocumentJson: currentUpdate}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +239,7 @@ func catalogBody(t *testing.T, r *pb.Resource) domain.Model {
 }
 func replaceCatalogResource(f *accountFixture, r *pb.Resource, body any) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	raw, _ := json.Marshal(body)
-	return f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(r, domain.NewID()), Kind: r.Kind, SchemaVersion: 1, DocumentJson: raw}))
+	return f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(r, domain.NewID()), Kind: r.Kind, SchemaVersion: rpc.ResourceSchemaVersion(domain.ProviderKind, raw), DocumentJson: raw}))
 }
 func currentCatalogResource(t *testing.T, f *accountFixture, r *pb.Resource) *pb.Resource {
 	t.Helper()
@@ -563,8 +576,8 @@ func TestAutomaticCatalogRestartAndShutdown(t *testing.T) {
 		t.Fatal("automatic model missing after restart")
 	}
 	time.Sleep(150 * time.Millisecond)
-	if calls.Load() != 1 {
-		t.Fatal("startup ignored persistent refresh interval")
+	if calls.Load() != 2 {
+		t.Fatal("startup ignored independent persistent validation/catalog intervals")
 	}
 	f.shutdown()
 	started, canceled := make(chan struct{}), make(chan struct{})

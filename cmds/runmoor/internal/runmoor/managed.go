@@ -213,6 +213,11 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 	}
 	if !managed.Paused && !s.Paused && desired.Backend == Docker && (s.Requested.DockerCapacityPending || !validResources(s.Requested.DockerBudget)) && m.ResolveCapacity != nil {
 		probe, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if _, err := guardDockerArtifactEndpoint(probe, s.Requested, s); err != nil {
+			cancel()
+			m.managedFailure(name, err)
+			return
+		}
 		resolved, err := m.ResolveCapacity(probe, s.Requested)
 		cancel()
 		if err != nil {
@@ -387,6 +392,18 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		m.Log.Info("runner_image_repair_required", "pool", name, "version", selected.Version(), "backend", desired.Backend)
 	}
 	m.Log.Info("runner_update_preparing", "pool", name, "version", selected.Version(), "backend", desired.Backend)
+	endpoint := ""
+	if desired.Backend == Docker {
+		var err error
+		endpoint, err = dockerEndpoint(ctx, s.Requested)
+		if err == nil {
+			err = checkDockerArtifactEndpoint(s, endpoint)
+		}
+		if err != nil {
+			m.managedFailure(name, err)
+			return
+		}
+	}
 	artifact := RunnerArtifact{ID: newID(), Pool: name, Backend: desired.Backend, Phase: ArtifactPreparing, Resources: desired.Resources, Reserved: true, CreatedAt: nowUTC()}
 	if err := m.Store.Update(func(v *Snapshot) error {
 		q := v.Managed[name]
@@ -396,6 +413,13 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		q.Phase = UpdateWaiting
 		if !preparationFits(*v, artifact) {
 			return nil
+		}
+		if artifact.Backend == Docker {
+			if err := checkDockerArtifactEndpoint(*v, endpoint); err != nil {
+				return err
+			}
+			// Persist original engine authority atomically with its reservation.
+			v.DockerArtifactEndpoint = endpoint
 		}
 		q.Candidate = artifact.ID
 		q.Phase = UpdatePreparing
@@ -419,7 +443,11 @@ func (m *Manager) updateManaged(ctx context.Context, name string) {
 		preparationTimeout = s.Requested.Preparation(Host)
 	}
 	buildCtx, cancel := context.WithTimeout(ctx, preparationTimeout)
-	resolved, err := m.RunnerBuilder.Prepare(buildCtx, s.Requested, desired, artifact, selected)
+	buildConfig := s.Requested
+	if desired.Backend == Docker {
+		buildConfig.DockerSocket = endpoint
+	}
+	resolved, err := m.RunnerBuilder.Prepare(buildCtx, buildConfig, desired, artifact, selected)
 	if err == nil {
 		err = m.validateManagedImage(buildCtx, s.Requested, resolved, m.Store.View())
 	}
@@ -483,6 +511,13 @@ func (m *Manager) validateManagedImage(ctx context.Context, c Config, p Pool, s 
 	defer cancel()
 	if err := probe.Err(); err != nil {
 		return err
+	}
+	if p.Backend == Docker && hasDockerArtifacts(s) {
+		var err error
+		c, err = dockerArtifactConfig(c, s)
+		if err != nil {
+			return err
+		}
 	}
 	driver, err := m.Drivers(p.Backend)
 	if err != nil {
@@ -605,7 +640,15 @@ func (m *Manager) cleanupManaged(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		if err := m.RunnerBuilder.Cleanup(ctx, s.Config, *a); err != nil {
+		cleanupConfig := s.Config
+		var cleanupErr error
+		if a.Backend == Docker {
+			cleanupConfig, cleanupErr = dockerArtifactConfig(cleanupConfig, s)
+		}
+		if cleanupErr == nil {
+			cleanupErr = m.RunnerBuilder.Cleanup(ctx, cleanupConfig, *a)
+		}
+		if err := cleanupErr; err != nil {
 			_ = m.Store.Update(func(v *Snapshot) error {
 				if a := v.Artifacts[id]; a != nil {
 					a.Problem = classify(err, ErrCleanup, "Managed artifact cleanup is pending.", "Restore backend connectivity; ownership and reservations are retained.")

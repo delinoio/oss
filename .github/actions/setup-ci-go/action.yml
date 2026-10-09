@@ -5,6 +5,10 @@ inputs:
     description: Optional validation scope isolating independently saved Go caches
     required: false
     default: ''
+  cache-fallback-scope:
+    description: Optional prior producer scope to restore after the current scope
+    required: false
+    default: ''
 outputs:
   cache-key:
     description: Exact cache key for a successful main job to save
@@ -32,6 +36,10 @@ runs:
           go env GOMODCACHE GOCACHE
           echo 'CI_GO_CACHE_PATHS'
         } >> "$GITHUB_OUTPUT"
+        # Turbo's strict task environment excludes Windows LocalAppData. Export
+        # the prepared cache locations explicitly instead of passing user state.
+        echo "GOCACHE=$(go env GOCACHE)" >> "$GITHUB_ENV"
+        echo "GOPATH=$(go env GOPATH)" >> "$GITHUB_ENV"
     - uses: actions/cache/restore@v5
       id: restore
       with:
@@ -39,4 +47,5 @@ runs:
         key: ci-go-v1${{ inputs.cache-scope != '' && format('-{0}', inputs.cache-scope) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum') }}
         restore-keys: |
           ci-go-v1${{ inputs.cache-scope != '' && format('-{0}', inputs.cache-scope) || '' }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-
+          ${{ inputs.cache-fallback-scope != '' && format('ci-go-v1-{0}-{1}-{2}-{3}-', inputs.cache-fallback-scope, runner.os, runner.arch, steps.go.outputs.go-version) || '' }}
           ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-

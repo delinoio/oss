@@ -11,6 +11,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -28,6 +29,7 @@ const (
 	AcceptEditsPermission NativePermission = "acceptEdits"
 	DontAskPermission     NativePermission = "dontAsk"
 	BypassPermission      NativePermission = "bypassPermissions"
+	AutoPermission        NativePermission = "auto"
 	LowEffort             NativeEffort     = "low"
 	MediumEffort          NativeEffort     = "medium"
 	HighEffort            NativeEffort     = "high"
@@ -44,17 +46,48 @@ type APIConfig struct {
 // must durably accept the session and register the token before opening it. It
 // does not grant public execution or authorize resume without a history binding.
 type APIStreamConfig struct {
-	Process        process.Config   `json:"-"`
-	Version        string           `json:"-"`
-	Home           string           `json:"-"`
-	Workspace      string           `json:"-"`
-	WorkspaceRoots []string         `json:"-"`
-	SessionID      domain.ID        `json:"-"`
-	Model          string           `json:"-"`
-	Effort         NativeEffort     `json:"-"`
-	Permission     NativePermission `json:"-"`
-	Instructions   string           `json:"-"`
-	API            APIConfig        `json:"-"`
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
+	Process        process.Config             `json:"-"`
+	Version        string                     `json:"-"`
+	Home           string                     `json:"-"`
+	Workspace      string                     `json:"-"`
+	WorkspaceRoots []string                   `json:"-"`
+	SessionID      domain.ID                  `json:"-"`
+	Model          string                     `json:"-"`
+	Effort         NativeEffort               `json:"-"`
+	Permission     NativePermission           `json:"-"`
+	Instructions   string                     `json:"-"`
+	API            APIConfig                  `json:"-"`
+	Subscription   *NativeSubscriptionProfile `json:"-"`
+}
+
+// NativeSubscriptionProfile is a device-local reference under an exclusive
+// account lease. It contains no credential bytes or native identity.
+type NativeSubscriptionProfile struct {
+	ID   domain.ID
+	Home string
+}
+
+// NativeHistoryHome exposes only the authenticated owned history root to the
+// Worker reader; its readers still admit only proved native transcript paths.
+func NativeHistoryHome(config APIStreamConfig) string { return historyHome(config) }
+
+// ProtectedValues binds transient guards to this original runtime only. Native
+// subscription profiles deliver no relay token; caller values remain protected.
+func (config APIStreamConfig) ProtectedValues() []string {
+	values := slices.Clone(config.Process.ProtectedValues)
+	if config.Subscription == nil {
+		values = append(values, config.API.Token)
+	}
+	return values
+}
+
+func historyHome(config APIStreamConfig) string {
+	if config.Subscription != nil {
+		return config.Subscription.Home
+	}
+	return config.Home
 }
 
 func apiConfigurationError() *domain.Error {
@@ -66,11 +99,9 @@ func prepareAPIStream(config APIStreamConfig) (process.Config, error) {
 }
 
 func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config, error) {
-	if config.Version != SupportedVersion {
-		return process.Config{}, incompatible()
-	}
-	if config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) || config.SessionID.Validate() != nil || domain.Text(config.Model, "native model", 256, true) != nil || domain.Text(config.Instructions, "native instructions", 256<<10, false) != nil ||
-		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission}, config.Permission) ||
+
+	if config.Version != "" && !domain.ValidNativeVersionMetadata(config.Version) || config.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Process.Executable) || config.SessionID.Validate() != nil || domain.Text(config.Model, "native model", 256, true) != nil || domain.Text(config.Instructions, "native instructions", 256<<10, false) != nil ||
+		!slices.Contains([]NativePermission{DefaultPermission, PlanPermission, AcceptEditsPermission, DontAskPermission, BypassPermission, AutoPermission}, config.Permission) ||
 		!validNativeEffort(config.Effort, true) || !apiproxy.ValidToken(config.API.Token) {
 		return process.Config{}, apiConfigurationError()
 	}
@@ -102,20 +133,42 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 	if err != nil {
 		return process.Config{}, err
 	}
-	for i, entry := range env {
-		if strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {
-			env[i] = "ANTHROPIC_BASE_URL=" + origin.String()
+	if config.Subscription != nil {
+		if config.Subscription.ID.Validate() != nil || security.CheckPrivateDir(config.Subscription.Home) != nil {
+			return process.Config{}, apiConfigurationError()
 		}
+		canonical, err := filepath.EvalSymlinks(config.Subscription.Home)
+		if err != nil || canonical != config.Subscription.Home || !filepath.IsAbs(canonical) || filepath.Base(canonical) != "claude" {
+			return process.Config{}, apiConfigurationError()
+		}
+		filtered := env[:0]
+		for _, entry := range env {
+			if strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {
+				continue
+			}
+			if strings.HasPrefix(entry, "CLAUDE_CONFIG_DIR=") {
+				entry = "CLAUDE_CONFIG_DIR=" + canonical
+			}
+			filtered = append(filtered, entry)
+		}
+		env = append(filtered, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+canonical)
+	} else {
+		for i, entry := range env {
+			if strings.HasPrefix(entry, "ANTHROPIC_BASE_URL=") {
+				env[i] = "ANTHROPIC_BASE_URL=" + origin.String()
+			}
+		}
+		// In the pinned native version host-managed provider state excludes its
+		// credentials from tool subprocesses and prevents configuration overrides.
+		// Do not use SUBPROCESS_ENV_SCRUB here: it also forces permission=default,
+		// silently discarding native Plan/acceptEdits/dontAsk/bypass selections.
+		// Full native mode needs both explicit auth sources to keep subscription
+		// lookup out of account initialization. Both hold one scoped credential;
+		// the relay accepts their equality only for the native Messages protocol.
+		// The secure-store namespace also remains bound to this private home.
+		env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "ANTHROPIC_AUTH_TOKEN="+config.API.Token, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1")
 	}
-	// In the pinned native version host-managed provider state excludes its
-	// credentials from tool subprocesses and prevents configuration overrides.
-	// Do not use SUBPROCESS_ENV_SCRUB here: it also forces permission=default,
-	// silently discarding native Plan/acceptEdits/dontAsk/bypass selections.
-	// Full native mode needs both explicit auth sources to keep subscription
-	// lookup out of account initialization. Both hold one scoped credential;
-	// the relay accepts their equality only for the native Messages protocol.
-	// The secure-store namespace also remains bound to this private home.
-	env = append(env, "ANTHROPIC_API_KEY="+config.API.Token, "ANTHROPIC_AUTH_TOKEN="+config.API.Token, "CLAUDE_SECURESTORAGE_CONFIG_DIR="+config.Home, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1", "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev", "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1")
+	env = append(env, "CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0", "CLAUDE_CODE_PROJECT_DIR_NAME=delidev", "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1")
 	// The pinned CLI otherwise omits its authoritative post-continuation idle
 	// event. Keep this explicit opt-in until a verified profile emits it by default.
 	args := []string{"--print", "--input-format=stream-json", "--output-format=stream-json", "--verbose", "--setting-sources=", "--strict-mcp-config", `--mcp-config={"mcpServers":{}}`, "--permission-mode=" + string(config.Permission), "--permission-prompt-tool=stdio", "--no-chrome", "--replay-user-messages", "--include-partial-messages", "--model=" + config.Model, "--session-id=" + string(config.SessionID)}
@@ -152,7 +205,9 @@ func prepareAPIStreamMode(config APIStreamConfig, resumed bool) (process.Config,
 		args = append(args, "--append-system-prompt-file="+path)
 	}
 	prepared := config.Process
+	env = config.OrdinaryTools.Apply(env)
 	prepared.Args, prepared.Env, prepared.Cwd = args, env, workspace
+	prepared.ProtectedValues = config.ProtectedValues()
 	return prepared, nil
 }
 
@@ -205,7 +260,7 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 	// The process owner identity may be its OS supervisor, not the native PID.
 	// Ownership is proved by its private stdio scope and joined cleanup, never
 	// by equating a native self-reported PID with the supervisor's identity.
-	if err := validateInitializeProfile(response.Result, string(config.Permission), "ANTHROPIC_API_KEY"); err != nil {
+	if err := validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil); err != nil {
 		return nil, err
 	}
 	phase = settingsPhase

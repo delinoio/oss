@@ -31,7 +31,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		}
 	}()
 
-	if input.Installation.Version != opencode.SupportedVersion {
+	if input.Version != 4 && input.Installation.Version != opencode.SupportedVersion {
 		return nil, domain.Fail(domain.Unsupported, "This OpenCode execution requires a separately verified continuation profile.", "Retain the original native history; do not start a replacement input.")
 	}
 	requested, err := openCodeExecutionSettings(input.Configuration, input.Input.Mode, "DeliDev session")
@@ -46,11 +46,13 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	executable := input.Installation.ResolvedPath
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
-		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Refresh Worker discovery before another execution; no PATH fallback is used.")
+		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
-	if c := input.Continuation; c != nil {
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
+	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
@@ -62,9 +64,10 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if err != nil {
 		return nil, err
 	}
+	config.startup.claimedWorkspace()
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	phase = "workspace-root"
@@ -100,6 +103,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -152,7 +156,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := opencode.APIExecutionConfig{
+	nativeConfig := opencode.APIExecutionConfig{OrdinaryTools: ordinaryTools,
 		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), Root: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
 		References: openCodeWorkspaceReferences(manifest),
@@ -202,11 +206,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	defer func() {
 		if err := binding.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	nativeConfig.Claim = binding.Claim
 	phase = "native-restore"
+	config.startup.setPhase(domain.StartupInitialize)
 	var api *opencode.OwnedAPI
 	if forkSeed != nil {
 		previousHome := filepath.Join(runtimeRoot, string(input.Fork.RuntimeID), "native")
@@ -231,7 +236,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 		cleanup, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := api.Close(cleanup); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	phase = "native-selection"
@@ -264,6 +269,12 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	}
 	// StartText's context owns the original subscription, so it cannot be the
 	// targeted job context that later wakes the event reader to request Stop.
+	if err := config.startup.ready(ctx, api.Version()); err != nil {
+		return nil, err
+	}
+	input.Installation.Version = api.Version()
+	publisher.nativeVersion = api.Version()
+	config.startup.claimInput()
 	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
@@ -275,6 +286,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	if !cancelBeforeAcceptance() {
 		return nil, domain.SafeError(context.Canceled)
 	}
+	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	mapper, err := OpenOpenCodeEventPublisher(binding, api)
 	if err != nil {
@@ -293,7 +305,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	finishControls := startOpenCodeControls(ctx, nativeCtx, cancelNative, config, mapper)
 	defer func() {
 		if err := finishControls(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	readContext, publicationContext := ctx, nativeCtx

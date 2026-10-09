@@ -11,22 +11,22 @@
     "dev:public-docs": "pnpm --filter public-docs dev",
     "dev:oss": "node scripts/dev-environment/cli.mjs start oss",
     "dev:oss:down": "node scripts/dev-environment/cli.mjs down",
-    "test:dev-environment": "node --test scripts/dev-environment/*.test.mjs && node scripts/dev-environment/verify-turbo.mjs",
+    "test:dev-environment": "turbo run ci:environment ci:environment:turbo --filter=@delinoio/ci",
     "ci:affected": "turbo run",
-    "ci:contracts": "node --test scripts/ci/*.test.mjs scripts/prebuilt-dependencies.test.mjs scripts/archive.test.mjs",
-    "ci:workflows": "node scripts/ci/workflows.mjs",
-    "ci:release-fixtures": "node --test scripts/release/*.test.mjs",
-    "ci:tools": "node --test scripts/tools/*.test.cjs",
-    "build": "turbo build",
-    "test": "turbo test",
-    "lint": "turbo lint",
-    "format": "turbo format",
+    "ci:contracts": "turbo run ci:contracts --filter=@delinoio/ci",
+    "ci:workflows": "turbo run ci:workflows --filter=@delinoio/ci",
+    "ci:release-fixtures": "turbo run ci:release-fixtures --filter=@delinoio/ci",
+    "ci:tools": "turbo run ci:tools --filter=@delinoio/ci",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "turbo run format",
     "proto:generate": "buf generate && node scripts/delidev/proto-compat.mjs",
     "proto:generate:cached": "turbo run //#proto:generate",
-    "proto:lint": "buf format --diff --exit-code && buf lint",
-    "proto:breaking": "./scripts/check-proto-breaking.sh",
-    "proto:fresh": "turbo run //#proto:generate --force && git diff --exit-code -- 'protos/gen' 'packages/devhud-api-client/src/gen' 'packages/async-commit-hook-api-client/src/gen' 'packages/delidev-api-client/src/gen' && test -z \"$(git ls-files --others --exclude-standard -- 'protos/gen' 'packages/devhud-api-client/src/gen' 'packages/async-commit-hook-api-client/src/gen' 'packages/delidev-api-client/src/gen')\"",
-    "proto:check": "pnpm proto:lint && pnpm proto:breaking && pnpm proto:fresh",
+    "proto:lint": "turbo run ci:proto:lint ci:proto:format --filter=@delinoio/ci",
+    "proto:breaking": "turbo run ci:proto:breaking --filter=@delinoio/ci",
+    "proto:fresh": "turbo run ci:proto:fresh --filter=@delinoio/ci",
+    "proto:check": "turbo run ci:proto:check --filter=@delinoio/ci",
     "dev:async-commit-hook": "pnpm --filter async-commit-hook dev"
   },
   "pnpm": {
@@ -56,6 +56,9 @@
       "ws@>=6.0.0 <6.2.4": "6.2.6",
       "ws@>=7.0.0 <7.5.11": "7.5.13",
       "ws@>=8.0.0 <8.21.0": "8.21.3"
+    },
+    "patchedDependencies": {
+      "@xterm/xterm@6.0.0": "patches/@xterm__xterm@6.0.0.patch"
     }
   },
   "devDependencies": {

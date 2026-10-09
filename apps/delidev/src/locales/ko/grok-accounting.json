@@ -1,0 +1,22 @@
+{
+  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "검증된 Grok 입력 회계 증거가 지원되지 않거나 불완전합니다.",
+  "grok-accounting.verifiedGrokClosedInputs_f343dd": "검증된 Grok 종료 입력",
+  "grok-accounting.closedInputsKnownTotalTokens_a55f2e": "완결된 입력 {{v0}}개 · 확인된 총 토큰 {{v1}}개",
+  "grok-accounting.noVerifiedGrokClosedInputsAre_244c3c": "이 필터에 검증된 Grok 완결 입력이 기록되지 않았습니다. 사용량이 0임을 입증하지 않습니다.",
+  "grok-accounting.eachInputRequiresMatchingOriginalHistory_2f9fce": "각 입력에는 일치하는 원래 기록, 네이티브 종료와 정리 확인이 필요합니다. 응답 차원은 세션에 별도로 저장합니다. 이 합계는 Codex 응답 합계와 별개이며 가격, 실제 비용과 추정 예산 기여도는 사용할 수 없습니다.",
+  "grok-accounting.grokInputTimesUseTheServer_55cef2": "Grok 입력 시각은 정리 확인 후 검증된 완료를 서버에 처음 저장한 시각입니다. 필터와 일별 구간은 이 시각을 사용합니다.",
+  "grok-accounting.verifiedGrokInputAccountingTables_ee8ebe": "검증된 Grok 입력 사용량 표",
+  "grok-accounting.grokInputsByOriginalSessionAccount_d2226c": "원래 세션, 계정 및 모델별 Grok 입력",
+  "grok-accounting.sessionProject_59a44c": "세션 / 프로젝트",
+  "grok-accounting.account_7e1b0d": "계정",
+  "grok-accounting.modelApi_6a8129": "모델 / API",
+  "grok-accounting.closedInputs_85c5d8": "종료된 입력",
+  "grok-accounting.knownTokens_682912": "확인된 토큰",
+  "grok-accounting.generalChat_f634bc": "일반 대화",
+  "grok-accounting.dailyVerifiedGrokInputs_fc1da8": "일일 검증된 Grok 입력(<s0/>)",
+  "grok-accounting.from_218197": "시작",
+  "grok-accounting.until_7caf85": "종료",
+  "grok-accounting.exclusive_b71bef": "(종료 시각 제외)",
+  "grok-accounting.verifiedGrokInputsByModel_1eac37": "모델별 검증된 Grok 입력",
+  "grok-accounting.extra.ca1844969742": "확인할 수 없음"
+}

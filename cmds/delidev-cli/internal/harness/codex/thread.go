@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -103,9 +102,10 @@ type EffectiveSettings struct {
 // ThreadResult retains a proven native identity even when effective settings
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
-	RequestID domain.ID
-	Thread    *Thread
-	Effective *EffectiveSettings
+	SkillInputs []HistoricalInput `json:"-"`
+	RequestID   domain.ID
+	Thread      *Thread
+	Effective   *EffectiveSettings
 }
 
 type threadMethod string
@@ -224,7 +224,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		}
 		p.WorkspaceRoots = slices.Clone(s.WorkspaceRoots)
 	}
-	if s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" || s.Options.MaxConcurrency > 64 || domain.ValidateCodexSubagentOptions(s.Options) != nil {
+	if s.Options.ApprovalReviewModel != "" || s.Options.ClaudePermission != "" || domain.ValidateCodexSubagentOptions(s.Options) != nil {
 		return p, unsupportedSettings()
 	}
 	switch s.Options.Permission {
@@ -238,10 +238,8 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 	default:
 		return p, unsupportedSettings()
 	}
-	switch p.ApprovalPolicy {
-	case "", ApprovalUntrusted, ApprovalOnRequest, ApprovalNever:
-	default:
-		return p, unsupportedSettings()
+	if err := domain.Text(string(p.ApprovalPolicy), "approval_policy", 256, false); err != nil {
+		return p, err
 	}
 	p.Config = map[string]any{}
 	if s.Effort != "" {
@@ -335,28 +333,6 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if err := c.verifySidechat(ctx, settings.Cwd, ""); err != nil {
 		return result, err
 	}
-	if settings.Options.SubagentModel != "" || settings.Options.SubagentEffort != "" {
-		bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		models, err := c.readModelList(bounded, true)
-		if err != nil {
-			return result, err
-		}
-		selected := settings.Options.SubagentModel
-		if selected == "" {
-			selected = settings.Model
-		}
-		matched := false
-		for _, model := range models {
-			if model.Model == selected && (settings.Options.SubagentEffort == "" || slices.Contains(model.Reasoning, domain.NativeReasoningEffort(settings.Options.SubagentEffort))) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return result, domain.Fail(domain.Unsupported, "Codex does not advertise the selected child model and reasoning effort.", "Choose a compatible native model under the original account before sending an input; no model fallback is used.")
-		}
-	}
 	params.ThreadID = threadID
 	if method == resumeThread {
 		exclude := true
@@ -380,7 +356,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		if returned != nil {
 			code = string(domain.SafeError(returned).Code)
 		}
-		c.logger.InfoContext(ctx, "Codex native thread operation", "owner_id", c.ownerID, "request_id", requestID, "operation", method, "code", code)
+		c.logger.InfoContext(ctx, "Codex native thread operation", "owner_id", c.ownerID, "request_id", requestID, "operation", method, "stage", "native-thread-binding", "options", (domain.ExecutionConfiguration{Effort: settings.Effort, Options: settings.Options}).SelectedNativeOptionNames(), "code", code)
 	}()
 	response, err := c.wire.Call(ctx, requestID, string(method), params)
 	if err != nil {

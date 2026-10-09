@@ -998,3 +998,211 @@ func TestHostManagerRegistrationCompletionTimeoutAndScopedStop(t *testing.T) {
 		t.Fatal("force-stop not cleaned", r.Phase, r.Problem)
 	}
 }
+
+func TestHostRemovalRejectsUnsafeParentBeforeCommittedAbsence(t *testing.T) {
+	for _, scenario := range []string{"parent symlink", "ancestor symlink", "unsafe parent"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, store, _, _ := hostFixture(t)
+			d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostDistribution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := root.Remove(hostOwnerFile); err != nil {
+				t.Fatal(err)
+			}
+			root.Close()
+			d.RemovalCommitted = true
+			if err := store.Update(func(s *Snapshot) error { s.HostDirectories[d.ID] = &d; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			parentPath := hostParent(c, d.Kind)
+			stage := ".remove-" + d.ID
+			if err := os.Rename(filepath.Join(parentPath, d.ID), filepath.Join(parentPath, stage)); err != nil {
+				t.Fatal(err)
+			}
+			preservedStage := filepath.Join(parentPath, stage)
+			original, err := os.Lstat(preservedStage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "parent symlink", "ancestor symlink":
+				boundary := parentPath
+				if scenario == "ancestor symlink" {
+					boundary = c.Storage.Data
+				}
+				preserved := boundary + "-preserved"
+				if err := os.Rename(boundary, preserved); err != nil {
+					t.Fatal(err)
+				}
+				replacement := boundary + "-empty"
+				if err := os.Mkdir(replacement, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "ancestor symlink" {
+					if err := os.Mkdir(filepath.Join(replacement, filepath.Base(parentPath)), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Symlink(replacement, boundary); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "parent symlink" {
+					preservedStage = filepath.Join(preserved, stage)
+				} else {
+					preservedStage = filepath.Join(preserved, filepath.Base(parentPath), stage)
+				}
+			case "unsafe parent":
+				if err := os.Chmod(parentPath, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			builder := &ManagedImageBuilder{Store: store}
+			requireCode(t, builder.cleanupHost(context.Background(), c, RunnerArtifact{ID: d.ID}), ErrOwnership)
+			if got := store.View().HostDirectories[d.ID]; got == nil || *got != d {
+				t.Fatal("unsafe parent discarded or changed durable ownership")
+			}
+			current, err := os.Lstat(preservedStage)
+			if err != nil || !os.SameFile(original, current) {
+				t.Fatal("unsafe parent changed the original staged directory", err)
+			}
+			entries, err := os.ReadDir(preservedStage)
+			if err != nil || len(entries) != 0 {
+				t.Fatal("unsafe parent changed staged contents", err)
+			}
+		})
+	}
+}
+
+func TestHostRemovalUsesVerifiedParentAfterPathReplacement(t *testing.T) {
+	c, store, _, _ := hostFixture(t)
+	d, root, err := createHostDirectory(context.Background(), store, c, newID(), HostDistribution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root.Close()
+	parent, err := openHostRemovalParent(c, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	path := hostParent(c, d.Kind)
+	preserved := path + "-preserved"
+	if err := os.Rename(path, preserved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Cleanup's child verification must keep using the already verified parent,
+	// rather than reopening the now-empty canonical parent pathname.
+	child, err := openHostRemovalDirectory(parent, d, false)
+	if err != nil {
+		t.Fatal("verified parent lost its original child", err)
+	}
+	child.Close()
+	if err := hostRenameNoReplace(parent, d.ID, ".remove-"+d.ID); err != nil {
+		t.Fatal(err)
+	}
+	child, err = openHostRemovalDirectory(parent, d, true)
+	if err != nil {
+		t.Fatal("staged child was reopened through replacement parent", err)
+	}
+	child.Close()
+	if _, err := os.Lstat(filepath.Join(preserved, ".remove-"+d.ID)); err != nil {
+		t.Fatal("original stage not retained", err)
+	}
+	if entries, err := os.ReadDir(path); err != nil || len(entries) != 0 {
+		t.Fatal("replacement parent was changed", err)
+	}
+}
+
+func TestHostStatusOwnershipFailuresFailPreparationAndInspection(t *testing.T) {
+	for _, scenario := range []string{"wrong ID", "wrong token", "invalid phase", "malformed JSON", "unsafe permissions", "symlink"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, store, native, p := hostFixture(t)
+			p = buildHostFixture(t, c, store, native, p)
+			r := seedHostFixture(t, c, store, p)
+			native.writeStatus = func(root *os.Root, status HostExecutionStatus) error {
+				switch scenario {
+				case "wrong ID":
+					status.ID = newID()
+				case "wrong token":
+					status.Token = newID()
+				case "invalid phase":
+					status.Phase = HostExecutionPhase("foreign")
+				case "symlink":
+					return root.Symlink("missing-foreign-status", "status.json")
+				}
+				if err := hostRootWrite(root, "status.json", status); err != nil {
+					return err
+				}
+				if scenario == "malformed JSON" || scenario == "unsafe permissions" {
+					file, err := root.OpenFile("status.json", os.O_WRONLY, 0600)
+					if err != nil {
+						return err
+					}
+					defer file.Close()
+					if scenario == "unsafe permissions" {
+						return file.Chmod(0644)
+					}
+					if err = file.Truncate(0); err != nil {
+						return err
+					}
+					_, err = file.WriteString("private malformed fixture")
+					return err
+				}
+				return nil
+			}
+			driver := HostDriver{Store: store, Native: native}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			err := driver.Prepare(ctx, c, p, r, store.View(), "PRIVATE-JIT-FIXTURE", func(Handle) error { return nil })
+			requireCode(t, err, ErrOwnership)
+			if ctx.Err() != nil || strings.Contains(err.Error(), "private malformed fixture") {
+				t.Fatalf("ownership failure was delayed or exposed file content: %v", err)
+			}
+			before := store.View()
+			d := before.HostDirectories[r.ID]
+			e := before.HostExecutions[r.ID]
+			root := native.roots[e.Supervisor.PID]
+			_, err = hostReadStatus(root, *d)
+			requireCode(t, err, ErrOwnership)
+			_, err = driver.Inspect(context.Background(), c, r, before)
+			requireCode(t, err, ErrOwnership)
+			after := store.View()
+			if native.stopped != 0 || after.HostDirectories[r.ID] == nil || after.HostExecutions[r.ID].Cleaned || after.HostExecutions[r.ID].Terminated || !after.HostExecutions[r.ID].LaunchPending {
+				t.Fatal("ownership rejection changed execution or signaled its processes")
+			}
+			if _, err = root.Lstat("status.json"); err != nil {
+				t.Fatal("ownership rejection removed status")
+			}
+			beforeUsed, beforeCount, beforeVMs := usage(before)
+			afterUsed, afterCount, afterVMs := usage(after)
+			if after.Runners[r.ID].Resources != r.Resources || beforeUsed != afterUsed || beforeCount != afterCount || beforeVMs != afterVMs {
+				t.Fatal("ownership rejection released reservation")
+			}
+		})
+	}
+}
+
+func TestHostMissingPublishedStatusIsOwnershipFailure(t *testing.T) {
+	c, store, native, p := hostFixture(t)
+	p = buildHostFixture(t, c, store, native, p)
+	r := prepareHostFixture(t, c, store, native, p)
+	state := store.View()
+	root := native.roots[state.HostExecutions[r.ID].Supervisor.PID]
+	if err := root.Remove("status.json"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := hostReadStatus(root, *state.HostDirectories[r.ID])
+	if !os.IsNotExist(err) {
+		t.Fatalf("missing status classification: %v", err)
+	}
+	driver := HostDriver{Store: store, Native: native}
+	_, err = driver.Inspect(context.Background(), c, r, state)
+	requireCode(t, err, ErrOwnership)
+	if native.stopped != 0 || store.View().HostExecutions[r.ID].Cleaned {
+		t.Fatal("missing published status authorized cleanup")
+	}
+}

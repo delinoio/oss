@@ -55,6 +55,39 @@ func takeSubscriptionExecutionFixture(t *testing.T, f *subscriptionFixture) *pb.
 	return response.Msg
 }
 
+func TestSubscriptionDirectExecutionDeliversOriginalBundleWithoutInspection(t *testing.T) {
+	f := newSubscriptionFixture(t)
+	original := f.login()
+	defer clear(original)
+	f.input.Version, f.input.Startup = 4, &domain.ExecutionStartupSelection{Harness: domain.Codex}
+	f.input.Installation = domain.Installation{}
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.subscription-direct-worker", nil, func(tx *store.Tx) (any, error) {
+		mr, machine, err := activeMachine(tx, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine.Installations = nil
+		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.ExecutionStartupV1)
+		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := takeSubscriptionExecutionFixture(t, f)
+	defer clear(lease.Bundle)
+	if !bytes.Equal(lease.Bundle, original) {
+		t.Fatal("direct execution replaced the protected account generation")
+	}
+	var installation domain.Installation
+	if domain.Decode(lease.InstallationJson, &installation) != nil || installation.State != "" || installation.Version != "" || installation.ResolvedPath != "" {
+		t.Fatal("direct bundle delivery fabricated installation readiness")
+	}
+	_, account := f.record()
+	if account.Subscription.RecoveryRequired || account.Subscription.Lease == nil || account.Subscription.Lease.OperationID != f.job {
+		t.Fatal("direct bundle delivery lost its original execution lease")
+	}
+}
+
 func TestSubscriptionLostOwnershipRejectsLateFinishWithoutVaultChanges(t *testing.T) {
 	for _, action := range []pb.SubscriptionAction{pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH, pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGOUT, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE} {
 		t.Run(action.String(), func(t *testing.T) {

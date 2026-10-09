@@ -77,7 +77,17 @@ func fixtureInput(root, workspace, mode string, request domain.ID, raw json.RawM
 	if mode == "input-text-method" {
 		textMethod = "_x.ai/session_notification"
 	}
-	notify(textMethod, textChunkFixture)
+	chunk := textChunkFixture
+	if strings.HasPrefix(mode, "input-reflect-") {
+		value := fixtureObject(textChunkFixture)
+		secret := os.Getenv(credentialVariable)
+		if strings.HasSuffix(mode, "caller") {
+			secret = "additional-protected-fixture"
+		}
+		value["update"].(map[string]any)["content"].(map[string]any)["text"] = reflectedFixtureValue(secret, strings.TrimPrefix(mode, "input-reflect-"))
+		chunk, _ = json.Marshal(value)
+	}
+	notify(textMethod, chunk)
 	if strings.HasPrefix(mode, "stop-") && mode != "stop-completion-race" {
 		return
 	}

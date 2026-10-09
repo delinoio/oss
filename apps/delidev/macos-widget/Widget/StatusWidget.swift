@@ -10,9 +10,11 @@ struct StatusProvider: IntentTimelineProvider {
         completion(entry(configuration, at: Date()))
     }
     private func entry(_ configuration: SelectServerIntent, at date: Date) -> StatusEntry {
-        guard let id = configuration.server?.identifier, canonicalServer(id) else { return StatusEntry(date: date, server: nil, storageFailed: false) }
-        do { return StatusEntry(date: date, server: try SnapshotStore.shared().read().servers.first { $0.id == id }, storageFailed: false) }
-        catch { return StatusEntry(date: date, server: nil, storageFailed: true) }
+        var language = resolveWidgetLanguage(.system), languageFailed = false
+        do { language = resolveWidgetLanguage(try SnapshotStore.shared().readLanguage()) } catch { languageFailed = true }
+        guard let id = configuration.server?.identifier, canonicalServer(id) else { return StatusEntry(date: date, server: nil, storageFailed: false, language: language, languageFailed: languageFailed) }
+        do { return StatusEntry(date: date, server: try SnapshotStore.shared().read().servers.first { $0.id == id }, storageFailed: false, language: language, languageFailed: languageFailed) }
+        catch { return StatusEntry(date: date, server: nil, storageFailed: true, language: language, languageFailed: languageFailed) }
     }
     func getTimeline(for configuration: SelectServerIntent, in context: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
         let now = Date()
@@ -20,7 +22,7 @@ struct StatusProvider: IntentTimelineProvider {
         var entries = [current]
         if let success = current.server?.last_successful_at.flatMap(widgetTimestamp) {
             let expires = success.addingTimeInterval(widgetStaleAfter)
-            if expires > now { entries.append(StatusEntry(date: expires, server: current.server, storageFailed: current.storageFailed)) }
+            if expires > now { entries.append(StatusEntry(date: expires, server: current.server, storageFailed: current.storageFailed, language: current.language, languageFailed: current.languageFailed)) }
         }
         // OS scheduling is best effort; this reads the same frozen observation.
         // A timeline entry never advances the successful-refresh timestamp.
@@ -35,8 +37,8 @@ struct DeliDevStatusWidget: Widget {
                 StatusView(entry: entry).containerBackground(for: .widget) { Color.clear }
             } else { StatusView(entry: entry).padding() }
         }
-        .configurationDisplayName("DeliDev status")
-        .description("Read-only status from one explicitly selected saved server. Open DeliDev to refresh.")
+        .configurationDisplayName(LocalizedStringKey("galleryTitle"))
+        .description(LocalizedStringKey("galleryDescription"))
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

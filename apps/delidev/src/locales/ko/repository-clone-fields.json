@@ -1,0 +1,16 @@
+{
+  "repository-clone-fields.inline.e8fa94aba0": "저장소 복제",
+  "repository-clone-fields.inline.cd01c2ef6a": "Git URL 주소",
+  "repository-clone-fields.inline.a2116e2c72": "예: https://github.com/owner/repository.git",
+  "repository-clone-fields.inline.2f00f15706": "자격 증명이 포함되지 않은 HTTPS 또는 SSH Git URL을 입력하세요.",
+  "repository-clone-fields.inline.274474037d": "복제 위치",
+  "repository-clone-fields.inline.5dbae92725": "상위 폴더 선택",
+  "repository-clone-fields.inline.93c6b664dc": "찾아보기…",
+  "repository-clone-fields.inline.50edff7c50": "여기에 새 저장소 폴더가 생성됩니다.",
+  "repository-clone-fields.inline.734294b760": "저장소 폴더 이름",
+  "repository-clone-fields.inline.ebb54b60a0": "구분 문자나 예약된 장치 이름을 제외한 이식 가능한 폴더 이름을 입력하세요.",
+  "repository-clone-fields.inline.a0acf59b0f": "이 컴퓨터의 절대 경로인 상위 폴더를 선택하세요.",
+  "repository-clone-fields.inline.51d016541d": "최종 경로:",
+  "repository-clone-fields.inline.4df6bcbdda": "비공개 저장소는 이 컴퓨터의 Git 또는 SSH 자격 증명을 사용합니다.",
+  "repository-clone-fields.inline.11e37089ac": "저장소를 복제하려면 선택한 서버와 이 컴퓨터의 Worker를 업데이트하세요."
+}

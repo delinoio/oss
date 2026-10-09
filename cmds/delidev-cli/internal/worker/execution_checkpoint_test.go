@@ -122,6 +122,28 @@ func TestExecutionCheckpointRetainsExactNativeContextWithoutContent(t *testing.T
 	}
 }
 
+func TestExecutionCheckpointDirectStartupRetainsAcceptedAssignment(t *testing.T) {
+	f := newCheckpointFixture(t)
+	f.input.Version = 4
+	f.input.Startup = &domain.ExecutionStartupSelection{Harness: domain.Codex}
+	f.input.Installation = domain.Installation{}
+	f.job.Input, _ = json.Marshal(f.input)
+	f.ref.AssignmentInputDigest = executionInputDigest(f.job.Input)
+	// Resolved installation facts belong to the original startup journal.
+	// They cannot substitute for the accepted server assignment at completion.
+	resolved := f.input
+	resolved.Installation = domain.Installation{Harness: domain.Codex, State: domain.InstallationDetected, Version: domain.CodexProtocolVersion, ResolvedPath: filepath.Join(f.root, "codex")}
+	_, err := retainCodexCompletion(f.root, f.jobID, f.job, resolved, f.bound, f.completion, nil)
+	checkpointRecovery(t, err)
+	if err := f.retain(); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := ReadCodexExecutionCheckpoint(f.root, f.ref)
+	if err != nil || retained.AssignmentInputDigest != executionInputDigest(f.job.Input) {
+		t.Fatal("direct startup lost immutable assignment evidence", err)
+	}
+}
+
 func TestExecutionCheckpointContinuationKeepsOriginalHistoryRoot(t *testing.T) {
 	f := newCheckpointFixture(t)
 	if err := f.retain(); err != nil {

@@ -2,7 +2,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io,
     mem::{size_of, zeroed},
-    net::{Ipv4Addr, Ipv6Addr},
     ptr,
 };
 
@@ -13,7 +12,10 @@ use windows_sys::Win32::{
     System::Threading::*,
 };
 
-use super::*;
+use super::{
+    windows_projection::{add_endpoint, diagnose_unavailable_udp_owners, Address},
+    *,
+};
 
 #[derive(Default)]
 pub struct Native {}
@@ -121,29 +123,17 @@ fn table<T: Copy>(family: u16, protocol: Protocol) -> io::Result<Vec<T>> {
 
 fn endpoints(ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
     let mut report = Report::default();
-    let mut add = |pid: u32, kind, address, raw_port| {
-        let port = u16::from_be(raw_port as u16);
-        if ports.contains(&port) {
-            report.results.push(Entry {
-                pid: if pid == 0 { None } else { Some(pid) },
-                name: None,
-                protocol: kind,
-                address,
-                port,
-                status: None,
-                identity: None,
-            });
-        }
-    };
     let mut errors = Vec::new();
     if protocol.accepts(Protocol::Tcp) {
         match table::<MIB_TCPROW_OWNER_PID>(AF_INET, Protocol::Tcp) {
             Ok(rows) => {
                 for r in rows {
-                    add(
+                    add_endpoint(
+                        &mut report,
+                        ports,
                         r.dwOwningPid,
                         Protocol::Tcp,
-                        Ipv4Addr::from(r.dwLocalAddr.to_ne_bytes()).to_string(),
+                        Address::V4(r.dwLocalAddr),
                         r.dwLocalPort,
                     );
                 }
@@ -153,10 +143,12 @@ fn endpoints(ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
         match table::<MIB_TCP6ROW_OWNER_PID>(AF_INET6, Protocol::Tcp) {
             Ok(rows) => {
                 for r in rows {
-                    add(
+                    add_endpoint(
+                        &mut report,
+                        ports,
                         r.dwOwningPid,
                         Protocol::Tcp,
-                        ipv6(r.ucLocalAddr, r.dwLocalScopeId),
+                        Address::V6(r.ucLocalAddr, r.dwLocalScopeId),
                         r.dwLocalPort,
                     );
                 }
@@ -168,10 +160,12 @@ fn endpoints(ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
         match table::<MIB_UDPROW_OWNER_PID>(AF_INET, Protocol::Udp) {
             Ok(rows) => {
                 for r in rows {
-                    add(
+                    add_endpoint(
+                        &mut report,
+                        ports,
                         r.dwOwningPid,
                         Protocol::Udp,
-                        Ipv4Addr::from(r.dwLocalAddr.to_ne_bytes()).to_string(),
+                        Address::V4(r.dwLocalAddr),
                         r.dwLocalPort,
                     );
                 }
@@ -181,10 +175,12 @@ fn endpoints(ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
         match table::<MIB_UDP6ROW_OWNER_PID>(AF_INET6, Protocol::Udp) {
             Ok(rows) => {
                 for r in rows {
-                    add(
+                    add_endpoint(
+                        &mut report,
+                        ports,
                         r.dwOwningPid,
                         Protocol::Udp,
-                        ipv6(r.ucLocalAddr, r.dwLocalScopeId),
+                        Address::V6(r.ucLocalAddr, r.dwLocalScopeId),
                         r.dwLocalPort,
                     );
                 }
@@ -192,16 +188,8 @@ fn endpoints(ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
             Err(e) => errors.push(enumeration_error(None, e)),
         }
     }
-    report.errors = errors;
+    report.errors.extend(errors);
     report
-}
-fn ipv6(bytes: [u8; 16], scope: u32) -> String {
-    let ip = Ipv6Addr::from(bytes);
-    if scope == 0 {
-        ip.to_string()
-    } else {
-        format!("{ip}%{scope}")
-    }
 }
 
 impl Backend for Native {
@@ -213,6 +201,9 @@ impl Backend for Native {
             .map(|d| d.as_nanos() / 100 + 116_444_736_000_000_000)
             .unwrap_or(0);
         let mut report = endpoints(ports, protocol);
+        // Diagnose unavailable owners only for the public snapshot. The raw
+        // revalidation table must still permit independently verified owners.
+        diagnose_unavailable_udp_owners(&mut report);
         let mut processes = BTreeMap::new();
         for pid in report
             .results

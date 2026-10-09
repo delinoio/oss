@@ -1,0 +1,21 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+dialog.repository-github-dialog { box-sizing: border-box; width: min(560px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: 0 16px 48px var(--shadow-soft); font-size: 14px; line-height: 20px; }
+.repository-github-dialog:not([open]) { display: none; }
+.repository-github-dialog[open] { display: flex; flex-direction: column; }
+.repository-github-dialog::backdrop { background: var(--backdrop); }
+.repository-github-header { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px; border-bottom: 1px solid var(--border); }
+.repository-github-header h2 { margin: 0; min-width: 0; font-size: 20px; line-height: 28px; font-weight: 600; overflow-wrap: anywhere; }
+.repository-github-dialog .repository-github-header button { flex: none; width: 40px; padding: 0; border-color: transparent; font-size: 24px; }
+.repository-github-body { display: grid; gap: 12px; min-width: 0; min-height: 0; padding: 24px; overflow: auto; overscroll-behavior: contain; }
+.repository-github-body label { display: grid; gap: 8px; margin: 0; min-width: 0; }
+.repository-github-body :is(input, select) { width: 100%; min-width: 0; }
+.repository-github-body p { margin: 0; }
+.repository-github-dialog :is(button, input, select) { min-height: 40px; max-width: 100%; border-color: var(--control-border); border-radius: 8px; font-size: 14px; line-height: 20px; }
+.repository-github-dialog :is(button, p, small, li, code, summary) { overflow-wrap: anywhere; }
+.repository-github-body .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.repository-github-body .actions button { white-space: normal; }
+.repository-github-list { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; min-width: 0; }
+.repository-github-list button { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; width: 100%; height: auto; text-align: left; white-space: normal; }
+.repository-github-list span { min-width: 0; overflow-wrap: anywhere; }
+.repository-github-list small, .repository-github-hint { color: var(--muted); font-size: 12px; line-height: 18px; }
+@media (max-width: 759px) { .repository-github-header, .repository-github-body { padding: 16px; } }

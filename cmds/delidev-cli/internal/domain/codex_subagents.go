@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package domain
 
-import "slices"
-
 // ExecutionSubagentModel pins a canonical child model independently of later
 // catalog edits. It borrows the parent's selected account, never child routing.
 type ExecutionSubagentModel struct {
@@ -12,8 +10,10 @@ type ExecutionSubagentModel struct {
 }
 
 func ValidateCodexSubagentOptions(options AgentOptions) error {
-	if options.MaxConcurrency > 64 || Text(options.SubagentModel, "subagent model", 256, false) != nil || options.SubagentEffort != "" && !slices.Contains([]NativeReasoningEffort{NativeReasoningNone, NativeReasoningMinimal, NativeReasoningLow, NativeReasoningMedium, NativeReasoningHigh, NativeReasoningXHigh, NativeReasoningMax, NativeReasoningUltra, NativeReasoningPersistent}, NativeReasoningEffort(options.SubagentEffort)) {
-		return Fail(InvalidArgument, "Invalid Codex subagent configuration.", "Use a supported reasoning effort and at most 64 concurrent native children; zero leaves the native default unspecified.")
+	for _, field := range []struct{ value, name string }{{options.SubagentModel, "subagent model"}, {options.SubagentEffort, "subagent effort"}} {
+		if err := Text(field.value, field.name, 256, false); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -1,3 +1,4 @@
+import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -8,9 +9,9 @@ import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemCapa
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionTools } from "./session-tools";
-import { NewSession } from "./new-session";
+import { NewSession, NewSessionKind } from "./new-session";
 
-function fixture() {
+function fixture(automaticTitles = true) {
   const execution = newRequestId();
   const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Session", archive: "active", outcome: "not-started", dispatch: "paused", recovery: "required", preparation: { state: "uncertain" }, execution: { execution_id: execution } }) });
   const workspace = vi.fn(async (_request: unknown) => ({ change: { session } }));
@@ -24,9 +25,9 @@ function fixture() {
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Worker" }) });
   const listResources = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => request.filter?.kind === EntityKind.AGENT && !request.filter.pageToken ? { resources: [], nextPageToken: "later" } : { resources: [project, agent, machine].filter((row) => row.kind === request.filter?.kind), nextPageToken: "" });
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }) });
     router.service(SessionService, { createSession, recoverSessionWorkspace: workspace, recoverSessionExecution: recover, prepareSessionWorkspace: prepare, renameSession: rename, controlSession: control });
-    router.service(ResourceService, { getResource: (request) => ({ resource: request.id === project.id ? project : undefined }), listResources });
+    router.service(ResourceService, { getResource: (request) => ({ resource: [project, agent, machine].find(row => row.id === request.id) }), listResources });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
@@ -48,6 +49,89 @@ it("requires explicit incomplete preparation cleanup and retains its original re
   expect(value.workspace.mock.calls[0][0]).toEqual(value.workspace.mock.calls[1][0]);
   expect(value.workspace.mock.calls[0][0]).toMatchObject({ cleanup: true, mutation: { id: value.session.id, expectedRevision: 8n } });
   expect(value.control).not.toHaveBeenCalled(); expect(value.prepare).not.toHaveBeenCalled();
+});
+
+it("preserves a General Chat UTF-8 draft when automatic titles are unsupported", async () => {
+  const value = fixture(false);
+  render(value.view(<NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const message = screen.getByLabelText("First message") as HTMLTextAreaElement;
+  const valid = "가".repeat(Math.floor((256 << 10) / 3));
+  fireEvent.change(message, { target: { value: valid } });
+  fireEvent.change(message, { target: { value: valid + "가" } });
+  expect(message.value).toBe(valid);
+  expect(screen.getByText(/exceeds 256 KiB/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Start general chat" }).getAttribute("disabled")).not.toBeNull();
+  fireEvent.submit(message.form!);
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it.each([Code.PermissionDenied, Code.Unavailable, undefined])("keeps General Chat selector failure or empty inventory distinct (%s)", async (code) => {
+  const value = fixture();
+  const original = value.listResources.getMockImplementation()!;
+  value.listResources.mockImplementation(async (request) => {
+    if (request.filter?.kind === EntityKind.AGENT) {
+      if (code) throw new ConnectError("Choice read failed", code);
+      return { resources: [], nextPageToken: "" };
+    }
+    return original(request);
+  });
+  render(value.view(<NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const expected = code === Code.PermissionDenied ? /The server denied access to these choices/ : code === Code.Unavailable ? /The server connection failed while loading these choices/ : /No selectable Agent Worker choices are on this page/;
+  expect(await screen.findByText(expected)).toBeTruthy();
+  if (code) expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
+  expect(value.listResources.mock.calls.some(([request]) => request.filter?.kind === EntityKind.PROJECT)).toBe(false);
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("rejects missing General Chat selections, whitespace and invalid budgets without losing the draft", async () => {
+  const value = fixture();
+  render(value.view(<NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
+  const message = screen.getByLabelText("First message") as HTMLTextAreaElement;
+  fireEvent.change(message, { target: { value: "Draft with no execution selection" } });
+  fireEvent.submit(message.form!);
+  expect(value.createSession).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Agent Worker" }));
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent Worker" }), { key: "Escape" });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.change(message, { target: { value: "   " } });
+  fireEvent.submit(message.form!);
+  expect(value.createSession).not.toHaveBeenCalled();
+  fireEvent.change(message, { target: { value: "Review this idea" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(screen.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), { target: { value: "invalid" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
+  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(message.value).toBe("Review this idea");
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
+it("retries only the original General Chat request after uncertainty and reentry", async () => {
+  const value = fixture();
+  const open = vi.fn();
+  value.createSession.mockRejectedValueOnce(new ConnectError("Lost creation response", Code.Unavailable));
+  const page = (active: boolean, activation: number) => value.view(<NewSession kind={NewSessionKind.GeneralChat} active={active} ownsActivation={active} activation={activation} back={() => {}} openSettings={() => {}} open={open} created={() => {}} />);
+  const view = render(page(true, 1));
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Agent Worker" }));
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent Worker" }), { key: "Escape" });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.change(screen.getByLabelText("First message"), { target: { value: "One general conversation" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
+  await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect((screen.getByLabelText("First message").closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+  view.rerender(page(false, 1));
+  view.rerender(page(true, 2));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(2));
+  expect(value.createSession.mock.calls[0][0]).toEqual(value.createSession.mock.calls[1][0]);
+  expect(open).not.toHaveBeenCalled();
+  expect(await screen.findByRole("button", { name: "Open conversation" })).toBeTruthy();
 });
 
 it("binds execution recovery to the original execution without resending input or resuming", async () => {
@@ -99,13 +183,15 @@ it("keeps a stale name draft and blocks a recovery confirmation selected before 
 it("selects an Agent from later pages and preserves an explicit per-repository starting override", async () => {
   const value = fixture();
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
-  await screen.findByRole("option", { name: "Project" });
-  fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Project" }), value.project.id);
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
-  const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
-  fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
-  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: (await screen.findByRole("option", { name: "Later-page agent" }) as HTMLOptionElement).value } });
-  fireEvent.change(screen.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  const choices = within(screen.getByRole("combobox", { name: "Agent Worker" }).closest(".resource-choice")!);
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Agent Worker" }));
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent Worker" }), { key: "Escape" });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Runs on" }), value.machine.id);
   const repository = (document(value.project).repositories as string[])[0];
   fireEvent.change(screen.getByLabelText("Add repository override"), { target: { value: repository } });
   fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
@@ -126,30 +212,60 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   expect(request.localWorkerToken).toBe("");
 });
 
+it("consumes a locked project entry without applying it after Local proof settles", async () => {
+  const value = fixture(), otherProjectId = newRequestId();
+  let release!: (proof: { machineId: string; token: string }) => void;
+  const readLocalWorker = () => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; });
+  const blockedChanged = vi.fn();
+  const page = (activation: number, entryProjectId: string, active = true) => value.view(<NewSession active={active} ownsActivation={active} activation={activation} entryProjectId={entryProjectId} projectSelectionBlockedChanged={blockedChanged} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={readLocalWorker} />);
+  const rendered = render(page(1, value.project.id));
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Retained task" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+  expect(blockedChanged).toHaveBeenLastCalledWith(true);
+  rendered.rerender(page(2, otherProjectId));
+  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
+  expect(blockedChanged).toHaveBeenLastCalledWith(false);
+  expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty(["dataset", "value"], value.project.id);
+  expect(screen.getByRole("radio", { name: "Local" })).toHaveProperty("checked", true);
+  rendered.rerender(page(2, otherProjectId, false));
+  rendered.rerender(page(2, otherProjectId));
+  expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty(["dataset", "value"], value.project.id);
+  rendered.rerender(page(3, otherProjectId));
+  expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty(["dataset", "value"], otherProjectId);
+  expect(screen.getByRole("radio", { name: "Worktree" })).toHaveProperty("checked", true);
+  expect(screen.getByRole("combobox", { name: "Runs on" })).toHaveProperty(["dataset", "value"], "");
+  expect(screen.getByLabelText("First message")).toHaveProperty("value", "Retained task");
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
 it("reads fresh matching Local Worker proof for creation and retains that exact secret-bearing request on uncertainty", async () => {
   const value = fixture();
   const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));
   value.createSession.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={proof} />));
-  await screen.findByRole("option", { name: "Project" });
-  fireEvent.change(screen.getByLabelText("Project"), { target: { value: value.project.id } });
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Project" }), value.project.id);
+  const metadataReads = proof.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
-  await waitFor(() => expect((screen.getByLabelText("Runs on") as HTMLSelectElement).value).toBe(value.machine.id));
-  expect((screen.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true);
-  const choices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
-  fireEvent.click(await choices.findByRole("button", { name: "More choices" }));
-  await screen.findByRole("option", { name: "Later-page agent" });
-  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+  await waitFor(() => expect(screen.getByRole("radio", { name: "Local" })).toHaveProperty("checked", true));
+  expect((screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true);
+  const choices = within(screen.getByRole("combobox", { name: "Agent Worker" }).closest(".resource-choice")!);
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Agent Worker" }));
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent Worker" }), { key: "Escape" });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Local prompt" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await screen.findByRole("button", { name: "Retry the same session creation" });
-  expect(proof).toHaveBeenCalledTimes(2);
+  expect(proof).toHaveBeenCalledTimes(metadataReads + 2);
   proof.mockResolvedValue({ machineId: newRequestId(), token: "B".repeat(42) + "A" });
   fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
   await waitFor(() => expect(value.createSession).toHaveBeenCalledTimes(2));
   expect(value.createSession.mock.calls[0][0]).toEqual(value.createSession.mock.calls[1][0]);
-  expect(proof).toHaveBeenCalledTimes(2);
+  expect(proof).toHaveBeenCalledTimes(metadataReads + 2);
   const request = value.createSession.mock.calls[0][0] as { documentJson: Uint8Array; localWorkerToken: string };
   expect(request.localWorkerToken).toBe("A".repeat(43));
   expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toMatchObject({ workspace: "local", machine_id: value.machine.id });
@@ -166,22 +282,24 @@ it("locks Project selection while Local proof or session creation is pending or 
     .mockImplementationOnce(() => new Promise((resolve) => { finishCreate = resolve; }))
     .mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} readLocalWorker={proof} />));
-  await screen.findByRole("option", { name: "Project" });
-  const project = screen.getByLabelText("Project") as HTMLSelectElement;
-  fireEvent.change(project, { target: { value: value.project.id } });
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  const project = screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement;
+  await chooseScrollOption(project, value.project.id);
+  const metadataReads = proof.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Local" }));
   await waitFor(() => {
-    expect(proof).toHaveBeenCalledTimes(1);
+    expect(proof).toHaveBeenCalledTimes(metadataReads + 1);
     expect(project.disabled).toBe(true);
   });
   finishProof({ machineId: value.machine.id, token: "A".repeat(43) });
   await waitFor(() => expect(project.disabled).toBe(false));
   proof.mockResolvedValue({ machineId: value.machine.id, token: "A".repeat(43) });
-  const agentChoices = within(screen.getByLabelText("Agent Worker").closest(".resource-choice")!);
-  fireEvent.click(await agentChoices.findByRole("button", { name: "More choices" }));
-  await screen.findByRole("option", { name: "Later-page agent" });
-  fireEvent.change(screen.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
+  const agentChoices = within(screen.getByRole("combobox", { name: "Agent Worker" }).closest(".resource-choice")!);
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Agent Worker" }));
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent Worker" }), { key: "Escape" });
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   fireEvent.change(screen.getByLabelText("First message"), { target: { value: "Retained local request" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await waitFor(() => {
@@ -209,10 +327,10 @@ it("names the New session selector Runs on while loading Runner Device choices",
   });
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
   const selector = screen.getByRole("combobox", { name: "Runs on" });
-  expect(within(selector).getByRole("option", { name: "Select runner device" })).toBeTruthy();
+  expect(selector.textContent).toContain("Select runner device");
   expect(await screen.findByText("Loading Runner Device choices…")).toBeTruthy();
   release();
-  expect(await within(selector).findByRole("option", { name: "Worker" })).toBeTruthy();
+  await waitScrollChoices(selector);
   expect(value.createSession).not.toHaveBeenCalled();
 });
 
@@ -223,8 +341,8 @@ it("explains an empty Runner Device inventory without replacing the Runs on sele
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
   expect(await screen.findByText("No selectable Runner Device choices are on this page.")).toBeTruthy();
   const selector = screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement;
-  expect(selector.value).toBe("");
-  expect(within(selector).getByRole("option", { name: "Select runner device" })).toBeTruthy();
+  expect(selector.dataset.value).toBe("");
+  expect(selector.textContent).toContain("Select runner device");
   expect(value.createSession).not.toHaveBeenCalled();
 });
 
@@ -232,20 +350,24 @@ it("retains an unavailable Runner Device's original identity through paginated i
   const value = fixture();
   render(value.view(<NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={() => {}} created={() => {}} />));
   const selector = screen.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement;
-  await within(selector).findByRole("option", { name: "Worker" });
-  fireEvent.change(selector, { target: { value: value.machine.id } });
+  await chooseScrollOption(selector, value.machine.id);
   const original = value.listResources.getMockImplementation()!;
   const other = create(ResourceSchema, { ...value.machine, id: newRequestId(), documentJson: encode({ name: "Other device" }) });
   value.listResources.mockImplementation(async (request) => request.filter?.kind === EntityKind.MACHINE ? { resources: [other], nextPageToken: request.filter.pageToken ? "" : "next-devices" } : original(request));
   await act(() => value.client.invalidateQueries());
-  expect(await screen.findByText("The selected Runner Device is outside this page or unavailable. Its identity is retained; no other choice was selected.")).toBeTruthy();
-  expect(selector.value).toBe(value.machine.id);
-  expect(within(selector).getByRole("option", { name: `Selected Runner Device · ${value.machine.id}` }).getAttribute("disabled")).not.toBeNull();
+  await screen.findByText("Showing cached Runner Device choices. The latest request for these choices failed. Your current selection is retained.");
+  fireEvent.click(selector);
+  fireEvent.click(await screen.findByRole("button", { name: "Reload list" }));
+  fireEvent.keyDown(selector, { key: "Escape" });
+  expect(await screen.findByText("The selected Runner Device is outside this page. Its exact identity remains selected.")).toBeTruthy();
+  expect(selector.dataset.value).toBe(value.machine.id);
+  expect(selector.textContent).toBe("Worker");
   const choices = within(selector.closest(".resource-choice")!);
-  const more = choices.getByRole("button", { name: "More choices" }) as HTMLButtonElement;
+  fireEvent.click(selector);
+  const more = screen.getByRole("button", { name: "Load more Runs on" }) as HTMLButtonElement;
   await waitFor(() => expect(more.disabled).toBe(false));
   fireEvent.click(more);
   await waitFor(() => expect(value.listResources.mock.calls.some(([request]) => request.filter?.kind === EntityKind.MACHINE && request.filter.pageToken === "next-devices")).toBe(true));
-  expect(selector.value).toBe(value.machine.id);
+  expect(selector.dataset.value).toBe(value.machine.id);
   expect(value.createSession).not.toHaveBeenCalled();
 });

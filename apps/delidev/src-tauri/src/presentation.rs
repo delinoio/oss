@@ -54,6 +54,8 @@ pub struct TrayAccounts {
 #[serde(deny_unknown_fields)]
 pub struct TrayAccount {
     pub alias: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub alias_hidden: bool,
     pub windows: Vec<TrayQuota>,
     pub more: bool,
 }
@@ -154,10 +156,24 @@ impl TraySummary {
 }
 
 // Menu accelerators and control characters are presentation syntax, never part
-// of an account alias. Email-shaped aliases also stay private in native UI.
+// of an account alias. Match widget masking for account and saved-server
+// labels.
 pub fn menu_alias(value: &str) -> String {
-    if value.contains('@') {
-        return "Account alias hidden".to_owned();
+    let lower = value.to_ascii_lowercase();
+    if value.contains('@')
+        || [
+            "bearer ",
+            "sk-",
+            "ghp_",
+            "github_pat_",
+            "token=",
+            "password",
+            "api_key",
+        ]
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
+        return crate::localization::text(crate::localization::Message::AliasHidden).to_owned();
     }
     value
         .chars()
@@ -167,18 +183,25 @@ pub fn menu_alias(value: &str) -> String {
 }
 impl TrayQuota {
     pub fn label(&self) -> String {
-        let state = match self.state {
-            QuotaState::Observed => "observed",
-            QuotaState::Unknown => "unknown",
-            QuotaState::Stale => "stale",
-            QuotaState::Failed => "failed",
-            QuotaState::Unsupported => "unsupported",
-        };
+        use crate::localization::{Message, format, text};
+        let state = text(match self.state {
+            QuotaState::Observed => Message::QuotaObserved,
+            QuotaState::Unknown => Message::QuotaUnknown,
+            QuotaState::Stale => Message::QuotaStale,
+            QuotaState::Failed => Message::QuotaFailed,
+            QuotaState::Unsupported => Message::QuotaUnsupported,
+        });
         match self.remaining_basis_points {
             Some(value) if matches!(self.state, QuotaState::Observed | QuotaState::Stale) => {
-                format!("{}.{:02}% remaining · {state}", value / 100, value % 100)
+                format(
+                    Message::Remaining,
+                    &[
+                        ("amount", &format!("{}.{:02}", value / 100, value % 100)),
+                        ("state", state),
+                    ],
+                )
             }
-            _ => format!("Remaining quota {state}"),
+            _ => format(Message::RemainingUnknown, &[("state", state)]),
         }
     }
 }
@@ -202,6 +225,32 @@ mod tests {
         value.overview.as_mut().unwrap().connected_workers = "01".into();
         assert!(value.validate().is_err());
     }
+    #[test]
+    fn account_and_saved_server_labels_mask_widget_credential_syntax() {
+        for prefix in [
+            "bearer ",
+            "BeArEr ",
+            "sk-",
+            "SK-",
+            "ghp_",
+            "GhP_",
+            "github_pat_",
+            "GitHub_Pat_",
+            "token=",
+            "TOKEN=",
+            "password",
+            "Password",
+            "api_key",
+            "API_KEY",
+        ] {
+            let label = format!("Fixture {prefix}SECRET_SENTINEL");
+            assert_eq!(menu_alias(&label), "Account alias hidden");
+            assert!(!menu_alias(&label).contains("SECRET_SENTINEL"));
+        }
+        assert_eq!(menu_alias("Ordinary saved server"), "Ordinary saved server");
+        assert_eq!(menu_alias("A&B\taccount"), "A&&B account");
+    }
+
     #[test]
     fn aliases_and_quota_never_invent_capacity() {
         assert_eq!(menu_alias("A&B\taccount"), "A&&B account");

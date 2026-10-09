@@ -21,6 +21,18 @@ fn directory_reproduction_workload() {
     let Some(directory) = std::env::var_os("CLIBOX_FSPY_DIRECTORY_REPRO") else {
         return;
     };
+    if std::env::var_os("CLIBOX_FSPY_RESTORE_DIRECTORY").is_some() {
+        fs::rename("assets", "original-assets").unwrap();
+        fs::create_dir("assets").unwrap();
+        fs::write("assets/flag", b"replacement").unwrap();
+        for entry in fs::read_dir("assets").unwrap() {
+            entry.unwrap();
+        }
+        fs::remove_dir_all("assets").unwrap();
+        fs::rename("original-assets", "assets").unwrap();
+        eprintln!("EXPECTED");
+        std::process::exit(42);
+    }
     if !directory.is_empty() {
         for entry in fs::read_dir(directory).unwrap() {
             entry.unwrap();
@@ -470,5 +482,168 @@ fn reproduction_preserves_selected_file_and_directory_symlinks() {
         } else {
             assert!(links.is_empty());
         }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires opt-in native injection and directory mutation acceptance"]
+fn restored_selected_directory_identity_is_unstable() {
+    let _fixture = REPRO_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("project");
+    let private = temporary.path().join("private");
+    fs::create_dir_all(root.join("assets")).unwrap();
+    fs::create_dir(&private).unwrap();
+    fs::write(root.join("assets/flag"), b"original").unwrap();
+    let bundle = temporary.path().join("bundle");
+    let output = reproduction_command(
+        &root,
+        &bundle,
+        &["--include", "assets", "--include", "assets/**"],
+        "assets",
+        None,
+    )
+    .env("CLIBOX_FSPY_RESTORE_DIRECTORY", "1")
+    .env("TMPDIR", &private)
+    .output()
+    .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("unstable_input"), "{stderr}");
+    assert!(!bundle.exists());
+    assert_eq!(fs::read_dir(&private).unwrap().count(), 0);
+    assert_eq!(fs::read(root.join("assets/flag")).unwrap(), b"original");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn alias_executable_workload() {
+    let Some(expected) = std::env::var_os("CLIBOX_ALIAS_ARGV0") else {
+        return;
+    };
+    assert_eq!(std::env::args_os().next().unwrap(), expected);
+    assert!(std::env::args_os().any(|arg| arg.is_empty()));
+    eprintln!("EXPECTED");
+    std::process::exit(42);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "opt-in Linux native capture acceptance; deterministic mapping covered in library tests"]
+fn alias_only_executable_reproduction_preserves_argv_zero_and_empty_arguments() {
+    let _lock = REPRO_TEST_LOCK.lock().unwrap();
+    for absolute in [false, true] {
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(root_dir.path()).unwrap();
+        fs::copy(std::env::current_exe().unwrap(), root.join("tool")).unwrap();
+        symlink("tool", root.join("tool-link")).unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let bundle = out.path().join("bundle");
+        let program = if absolute {
+            root.join("tool-link")
+        } else {
+            PathBuf::from("./tool-link")
+        };
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .args(["fspy", "min-repro", "--root"])
+            .arg(&root)
+            .arg("--bundle-dir")
+            .arg(&bundle)
+            .args([
+                "--include",
+                "tool-link",
+                "--expect-exit",
+                "42",
+                "--expect-stderr",
+                "EXPECTED",
+                "--max-snapshot-bytes",
+                "100000000",
+                "--max-result-bytes",
+                "100000000",
+                "--json",
+                "--",
+            ])
+            .arg(&program)
+            .args(["--exact", "alias_executable_workload", "--nocapture", ""])
+            .env("CLIBOX_ALIAS_ARGV0", &program)
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert_verified(&output);
+        assert_eq!(
+            fs::read_link(bundle.join("tool-link")).unwrap(),
+            PathBuf::from("tool")
+        );
+        assert_eq!(
+            fs::read(bundle.join("tool")).unwrap(),
+            fs::read(root.join("tool")).unwrap()
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+#[ignore = "opt-in native fspy publication acceptance; ordinary tests verify snapshot and staged \
+            child"]
+fn reproduction_preserves_directory_link_before_parent_component() {
+    if std::env::var_os("CLIBOX_FSPY_PARENT_COMPONENT_REPRO").is_some() {
+        assert_eq!(fs::read("input.txt").unwrap(), b"fixture");
+        eprintln!("EXPECTED");
+        std::process::exit(42);
+    }
+    let _guard = REPRO_TEST_LOCK.lock().unwrap();
+    for decoy in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        fs::create_dir_all(root.join("deep/nested")).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        fs::write(root.join("deep/target.txt"), b"fixture").unwrap();
+        symlink("deep/nested", root.join("shortcut")).unwrap();
+        symlink("shortcut/../target.txt", root.join("input.txt")).unwrap();
+        if decoy {
+            fs::write(root.join("target.txt"), b"decoy").unwrap();
+        }
+        let bundle = directory.path().join("bundle");
+        let output = Command::new(env!("CARGO_BIN_EXE_clibox"))
+            .current_dir(&root)
+            .args(["fspy", "min-repro", "--root"])
+            .arg(&root)
+            .args(["--include", "input.txt", "--bundle-dir"])
+            .arg(&bundle)
+            .args([
+                "--expect-exit",
+                "42",
+                "--expect-stderr",
+                "EXPECTED",
+                "--timeout",
+                "60s",
+                "--json",
+                "--",
+            ])
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "reproduction_preserves_directory_link_before_parent_component",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("CLIBOX_FSPY_PARENT_COMPONENT_REPRO", "1")
+            .output()
+            .unwrap();
+        assert_verified(&output);
+        assert_eq!(fs::read(bundle.join("input.txt")).unwrap(), b"fixture");
+        assert_eq!(
+            fs::read_link(bundle.join("input.txt")).unwrap(),
+            Path::new("shortcut/../target.txt")
+        );
+        assert_eq!(
+            fs::read_link(bundle.join("shortcut")).unwrap(),
+            Path::new("deep/nested")
+        );
+        assert!(bundle.join("deep/nested").is_dir());
+        assert!(!bundle.join("target.txt").exists());
     }
 }

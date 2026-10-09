@@ -1,3 +1,6 @@
+import { sessionInputReceipt } from "./test-session-input";
+import { chooseScrollOption, scrollChoiceValue, waitScrollChoices } from "./test-scroll-picker";
+import { i18n } from "./localization";
 import { create } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -11,15 +14,145 @@ import { encode } from "./documents";
 // budget. Per-observation waits and product RPC/native deadlines remain unchanged.
 const fullShellTimeoutMs = 60_000;
 
+it("screen shortcuts reuse guarded forms and preserve drafts across keyboard navigation", async () => {
+  const value = fixture([], [], [], false, true);
+  render(<App transport={value.transport} />);
+  fireEvent.keyDown(document.body, { key: "N", ctrlKey: true, shiftKey: true });
+  const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(firstMessage, { target: { value: "Keyboard-created session" } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true }); expect(value.creates).not.toHaveBeenCalled();
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Agent Worker" }));
+  const form = within(firstMessage.closest("form")!);
+  await chooseScrollOption(form.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(form.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true, isComposing: true }); expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true, repeat: true }); expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.keyDown(message, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
+  fireEvent.change(message, { target: { value: "Retained keyboard draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  const search = await screen.findByRole("textbox", { name: "Search conversations" });
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  fireEvent.change(search, { target: { value: "original query" } });
+  fireEvent.submit(search.closest("form")!); await waitFor(() => expect(value.searches).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Retained keyboard draft");
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true }); expect(document.activeElement).toBe(message);
+  fireEvent.keyDown(document.body, { key: "?" });
+  expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeTruthy();
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "Escape" });
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  value.enqueues.mockImplementationOnce(async request => { await gate; return sessionInputReceipt(value.session,request); });
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); await waitFor(() => expect(value.enqueues).toHaveBeenCalledTimes(1));
+  fireEvent.keyDown(message, { key: "Enter", ctrlKey: true }); expect(value.enqueues).toHaveBeenCalledTimes(1);
+  await act(async () => { release(); await gate; });
+}, fullShellTimeoutMs);
+
+it("Search input shortcut opens the compact drawer and refocuses retained drafts", async () => {
+  viewport(true);
+  render(<App transport={fixture().transport} />);
+  fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  const query = await screen.findByRole("textbox", { name: "Search conversations" });
+  await waitFor(() => expect(document.activeElement).toBe(query));
+  fireEvent.change(query, { target: { value: "Retained compact query" } });
+  const drawer = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  expect(drawer.open).toBe(true);
+  fireEvent.keyDown(query, { key: "?" }); expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  await waitFor(() => expect(drawer.open).toBe(false));
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => expect(drawer.open).toBe(true)); expect(document.activeElement).toBe(query);
+  fireEvent(drawer, new Event("cancel", { bubbles: true, cancelable: true }));
+  await waitFor(() => expect(drawer.open).toBe(false));
+  fireEvent.keyDown(document.body, { key: "i", ctrlKey: true });
+  await waitFor(() => expect(document.activeElement).toBe(query)); expect((query as HTMLInputElement).value).toBe("Retained compact query");
+});
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])("leaves primary+K native on %s without Search navigation or mutation", async platform => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  await screen.findByRole("button", { name: "New session" });
+  const chord = { key: "k", metaKey: platform === "MacIntel", ctrlKey: platform !== "MacIntel" };
+  const main = document.querySelector<HTMLElement>("#main")!;
+  const drawer = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  const drawerOpen = drawer.open;
+  main.focus();
+  expect(fireEvent.keyDown(main, chord)).toBe(true);
+  expect(document.activeElement).toBe(main);
+  expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const input = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(input, { target: { value: "Retained draft" } });
+  input.focus();
+  expect(fireEvent.keyDown(input, chord)).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Retained draft");
+  expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull();
+  expect(drawer.open).toBe(drawerOpen);
+  expect(value.searches).not.toHaveBeenCalled();
+  expect(value.creates).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Search" }).hasAttribute("aria-keyshortcuts")).toBe(false);
+});
+
+it.each(["en", "ko"])("omits global Search guidance from %s shortcut help on Sessions, New session and Search", async locale => {
+  await act(() => i18n.changeLanguage(locale));
+  render(<App transport={fixture().transport} />);
+  const newSession = locale === "en" ? "New session" : "새 세션";
+  const search = locale === "en" ? "Search" : "검색";
+  await screen.findByRole("button", { name: newSession });
+  for (const navigate of [undefined, newSession, search]) {
+    if (navigate) fireEvent.click(screen.getByRole("button", { name: navigate }));
+    fireEvent.keyDown(document.body, { key: "?" });
+    const dialog = document.querySelector<HTMLDialogElement>(".shortcut-help")!;
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).not.toContain(locale === "en" ? "Open search" : "검색 열기");
+    expect([...dialog.querySelectorAll("kbd")].map(node => node.textContent)).not.toContain("K");
+    fireEvent.keyDown(dialog, { key: "Escape" });
+  }
+});
+
+it("help shortcuts reuse existing navigation and screen focus without sending background input", async () => {
+  const value = fixture();
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(message, { target: { value: "Retained help draft" } });
+  for (const destination of ["session", "new-session", "search"]) {
+    if (destination === "new-session") fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    if (destination === "search") fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const input = screen.getByRole("textbox", { name: destination === "session" ? "Message" : destination === "new-session" ? "First message" : "Search conversations" });
+    const opener = screen.getByRole("button", { name: "Keyboard shortcuts" }); opener.focus(); fireEvent.click(opener);
+    const close = screen.getByRole("button", { name: "Close keyboard shortcuts" });
+    for (const options of [{}, { ctrlKey: true }, { shiftKey: true }]) fireEvent.keyDown(close, { key: "Enter", ...options });
+    expect(value.creates).not.toHaveBeenCalled(); expect(value.enqueues).not.toHaveBeenCalled(); expect(value.searches).not.toHaveBeenCalled();
+    fireEvent.keyDown(close, { key: "i", ctrlKey: true });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "n", ctrlKey: true, shiftKey: true });
+  expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "First message" }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe("Retained help draft");
+  expect(value.creates).not.toHaveBeenCalled(); expect(value.enqueues).not.toHaveBeenCalled();
+});
+
 function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
   const other = create(ResourceSchema, { ...session, id: newRequestId(), documentJson: encode({ name: "Other session", workspace: "general-chat", outcome: "idle", archive: "active", dispatch: "paused", recovery: "none" }) });
   other.sessionId = other.id;
-  const enqueues = vi.fn(async () => ({ change: { session } }));
+  const enqueues = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session, request));
   const controls = vi.fn(async () => ({ change: { session } }));
-  const creates = vi.fn(async () => ({ change: { session } }));
+  const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Agent One" }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 1, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
@@ -42,6 +175,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
       return request.pageToken ? { sessions: [] } : { sessions: [session, other], nextPageToken: "global-next" };
     }, listQueue: () => ({ inputs: [] }), enqueueInput: enqueues, controlSession: controls, createSession: creates });
     router.service(ResourceService, {
+      getResource: (request) => ({ resource: [...projects, ...repositories, agent, machine].find(row => row.kind === request.kind && row.id === request.id) }),
       getSnapshot: (request) => ({ resources: [request.filter?.sessionId === other.id ? other : session], cursor: "snapshot" }),
       listResources: async (request) => {
         if (request.filter?.kind === EntityKind.AGENT && selectorFailure) throw new ConnectError("Selector request failed", selectorFailure);
@@ -73,8 +207,9 @@ it("creates an automatically named session from the first message and explicit W
   const composer = within(firstMessage.closest("form")!);
   expect(window.document.activeElement).toBe(firstMessage);
   fireEvent.change(firstMessage, { target: { value: "Fix the startup crash" } });
-  fireEvent.change(composer.getByLabelText("Agent Worker"), { target: { value: value.agent.id } });
-  fireEvent.change(composer.getByLabelText("Runs on"), { target: { value: value.machine.id } });
+  await chooseScrollOption(composer.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(composer.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  expect(composer.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
   expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
   expect(screen.getByText("General Chat · isolated projectless directory on the selected Worker")).toBeTruthy();
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter" });
@@ -83,6 +218,175 @@ it("creates an automatically named session from the first message and explicit W
   const document = JSON.parse(new TextDecoder().decode(request.documentJson));
   expect(document).toMatchObject({ name_mode: "automatic", prompt: "Fix the startup crash", agent_id: value.agent.id, machine_id: value.machine.id, workspace: "general-chat", mode: "execute", source: "MANUAL" });
   expect(document).not.toHaveProperty("name");
+});
+
+it("starts General Chat with explicit execution selections and no project or Local authority", async () => {
+  const value = fixture([], [], [], false, true);
+  const proof = vi.fn();
+  render(<App transport={value.transport} readLocalWorker={proof} />);
+  await screen.findByRole("button", { name: "General Chat" });
+  fireEvent.click(within(document.querySelector(".sidebar-general-chat") as HTMLElement).getByRole("button", { name: "New general chat" }));
+  const page = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  const firstMessage = page.getByRole("textbox", { name: "First message" });
+  expect(document.activeElement).toBe(firstMessage);
+  expect(page.queryByLabelText("Project")).toBeNull();
+  expect(page.getByText("Ask questions or share ideas without a project.")).toBeTruthy();
+  expect(scrollChoiceValue(page.getByRole("combobox", { name: "Agent Worker" }))).toBe("");
+  expect(scrollChoiceValue(page.getByRole("combobox", { name: "Runs on" }))).toBe("");
+  expect((page.getByRole("button", { name: "Start general chat" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getAllByRole("button", { name: "New general chat" })[0].getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "New session" }).getAttribute("aria-current")).toBeNull();
+  const ids = [...document.querySelectorAll(".new-session-page [id]")].map((element) => element.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  fireEvent.click(page.getByRole("button", { name: "Options" }));
+  expect(page.getByRole("heading", { name: "Optional estimated-cost budget" })).toBeTruthy();
+  expect(page.getByRole("checkbox", { name: "Enable estimated-cost budget" })).toBeTruthy();
+  expect(page.getByRole("heading", { name: "Optional estimated-cost budget" }).closest("details")).toBeNull();
+  expect(page.queryByText("Use separate Worktrees")).toBeNull();
+  expect(page.queryByText("Use this computer's Local checkouts")).toBeNull();
+  expect(page.queryByText(/private projectless directory/)).toBeNull();
+  await waitScrollChoices(page.getByRole("combobox", { name: "Agent Worker" }));
+  await chooseScrollOption(page.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(page.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.click(page.getByRole("checkbox", { name: "Plan Mode" }));
+  expect(page.queryByRole("button", { name: "Inspect this Runner" })).toBeNull();
+  fireEvent.change(firstMessage, { target: { value: "Help me think through an idea" } });
+  fireEvent.keyDown(firstMessage, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(firstMessage, { key: "Enter", isComposing: true, keyCode: 229 });
+  expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.keyDown(firstMessage, { key: "Enter" });
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const request = (value.creates.mock.calls as unknown as [{ documentJson: Uint8Array; localWorkerToken: string }][])[0][0];
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name_mode: "automatic", prompt: "Help me think through an idea", agent_id: value.agent.id, machine_id: value.machine.id, workspace: "general-chat", mode: "plan", source: "MANUAL" });
+  expect(request.localWorkerToken).toBe("");
+  expect(proof).not.toHaveBeenCalled();
+  expect(await screen.findByRole("heading", { name: "Retained session" })).toBeTruthy();
+}, fullShellTimeoutMs);
+
+it.each([false, true])("submits unchecked Execute, checked Plan and unchecked Execute from creation (General Chat %s)", async generalChat => {
+  const value = fixture([], [], [], false, true); render(<App transport={value.transport} />);
+  for (const [index, expected] of ["execute", "plan", "execute"].entries()) {
+    fireEvent.click((await screen.findAllByRole("button", { name: generalChat ? "New general chat" : "New session" }))[0]);
+    const page = within(screen.getByRole("region", { name: generalChat ? "What would you like to talk about?" : "What would you like to work on?" }));
+    const mode = page.getByRole("checkbox", { name: "Plan Mode" });
+    if (!index) expect(mode).toHaveProperty("checked", false);
+    else { fireEvent.click(mode); expect(value.creates).toHaveBeenCalledTimes(index); }
+    await waitScrollChoices(page.getByRole("combobox", { name: "Agent Worker" }));
+    if (!index) { await chooseScrollOption(page.getByRole("combobox", { name: "Agent Worker" }), value.agent.id); await chooseScrollOption(page.getByRole("combobox", { name: "Runs on" }), value.machine.id); }
+    fireEvent.change(page.getByLabelText("First message"), { target: { value: `Explicit draft ${index}` } });
+    fireEvent.click(page.getByRole("button", { name: generalChat ? "Start general chat" : "Create session" }));
+    await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(index + 1));
+    const request = (value.creates.mock.calls as unknown as [{ documentJson: Uint8Array }][])[index][0];
+    expect(JSON.parse(new TextDecoder().decode(request.documentJson)).mode).toBe(expected);
+    await screen.findByRole("heading", { name: "Retained session" });
+  }
+}, fullShellTimeoutMs);
+
+it("retains separate Local and General Chat drafts through Settings, language and same-identity reconnect", async () => {
+  const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Draft project" }) });
+  const value = fixture([], [], [project], false, true);
+  const authority = { endpoint: "http://127.0.0.1:46399", serverId: newRequestId() };
+  const device = newRequestId();
+  const proof = vi.fn(async () => ({ machineId: value.machine.id, token: "A".repeat(43) }));
+  const props = { pairingAuthority: authority, currentDeviceId: device, readLocalWorker: proof };
+  const view = render(<App transport={value.transport} {...props} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  const original = within(screen.getByRole("region", { name: "What would you like to work on?" }));
+  await waitScrollChoices(original.getByRole("combobox", { name: "Project" }));
+  await chooseScrollOption(original.getByRole("combobox", { name: "Project" }), project.id);
+  fireEvent.change(original.getByLabelText("First message"), { target: { value: "Keep this Local task" } });
+  fireEvent.click(original.getByRole("button", { name: "Options" }));
+  fireEvent.click(original.getByRole("radio", { name: "Local" }));
+  await waitFor(() => expect((original.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true));
+  fireEvent.click(screen.getAllByRole("button", { name: "New general chat" })[0]);
+  const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  const message = general.getByRole("textbox", { name: "First message" });
+  fireEvent.change(message, { target: { value: "Keep my conversation idea" } });
+  await waitScrollChoices(general.getByRole("combobox", { name: "Agent Worker" }));
+  await chooseScrollOption(general.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(general.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.click(general.getByRole("checkbox", { name: "Plan Mode" }));
+  fireEvent.click(general.getByRole("button", { name: "Options" }));
+  fireEvent.click(general.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(general.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(general.getByLabelText("Estimated-cost threshold"), { target: { value: "2" } });
+  fireEvent.click(general.getByRole("button", { name: "Options" }));
+  expect(general.queryByRole("checkbox", { name: "Enable estimated-cost budget" })).toBeNull();
+  fireEvent.click(general.getByRole("button", { name: "Options" }));
+  expect(general.getByRole("checkbox", { name: "Enable estimated-cost budget" })).toHaveProperty("checked", true);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  view.rerender(<App transport={{ ...value.transport }} {...props} connectionEpoch={1} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "New general chat" })[1]);
+  expect(general.getByRole("textbox", { name: "First message" })).toBe(message);
+  expect((message as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
+  expect(scrollChoiceValue(general.getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
+  expect(general.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
+  expect((general.getByLabelText("Estimated-cost threshold") as HTMLInputElement).value).toBe("2");
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect(screen.getByRole("heading", { name: "어떤 이야기를 나누고 싶으신가요?" })).toBeTruthy();
+  expect(general.getByRole("checkbox", { name: "계획 모드" })).toHaveProperty("checked", true);
+  expect((general.getByRole("textbox", { name: "첫 메시지" }) as HTMLTextAreaElement).value).toBe("Keep my conversation idea");
+  await act(async () => { await i18n.changeLanguage("en"); });
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(scrollChoiceValue(original.getByRole("combobox", { name: "Project" }))).toBe(project.id);
+  expect((original.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("Keep this Local task");
+  expect(original.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", false);
+  expect((original.getByRole("combobox", { name: "Runs on" }) as HTMLSelectElement).disabled).toBe(true);
+  expect(value.creates).not.toHaveBeenCalled();
+  view.rerender(<App transport={value.transport} {...props} currentDeviceId={newRequestId()} />);
+  fireEvent.click((await screen.findAllByRole("button", { name: "New general chat" }))[0]);
+  const fresh = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  expect((fresh.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
+  expect(scrollChoiceValue(fresh.getByRole("combobox", { name: "Agent Worker" }))).toBe("");
+  expect(fresh.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("false");
+  expect(fresh.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", false);
+}, fullShellTimeoutMs);
+
+it("isolates pending General Chat from an uncertain project request and never steals its activation", async () => {
+  const value = fixture([], [], [], false, true);
+  let finish!: (result: { change: { session: Resource } }) => void;
+  value.creates.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
+  render(<App transport={value.transport} />);
+  fireEvent.click((await screen.findAllByRole("button", { name: "New general chat" }))[0]);
+  const general = within(screen.getByRole("region", { name: "What would you like to talk about?" }));
+  await waitScrollChoices(general.getByRole("combobox", { name: "Agent Worker" }));
+  await chooseScrollOption(general.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(general.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.click(general.getByRole("button", { name: "Options" }));
+  fireEvent.click(general.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(general.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(general.getByLabelText("Estimated-cost threshold"), { target: { value: "2" } });
+  fireEvent.click(general.getByRole("checkbox", { name: "Plan Mode" }));
+  fireEvent.change(general.getByLabelText("First message"), { target: { value: "Original general conversation" } });
+  fireEvent.click(general.getByRole("button", { name: "Start general chat" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  expect((general.getByLabelText("First message").closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+  expect(general.getByRole("checkbox", { name: "Enable estimated-cost budget" }).matches(":disabled")).toBe(true);
+  expect(general.getByLabelText("Budget currency").matches(":disabled")).toBe(true);
+  expect(general.getByLabelText("Estimated-cost threshold").matches(":disabled")).toBe(true);
+  expect(general.getByRole("button", { name: "Options" }).matches(":disabled")).toBe(true);
+  expect(general.getByRole("checkbox", { name: "Plan Mode" }).matches(":disabled")).toBe(true);
+  expect(general.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const original = within(screen.getByRole("region", { name: "What would you like to work on?" }));
+  await chooseScrollOption(original.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(original.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.change(original.getByLabelText("First message"), { target: { value: "Independent task request" } });
+  fireEvent.click(original.getByRole("button", { name: "Create session" }));
+  await original.findByRole("button", { name: "Retry the same session creation" });
+  await act(async () => finish({ change: { session: value.session } }));
+  expect(screen.getByRole("heading", { name: "What would you like to work on?" })).toBeTruthy();
+  expect((original.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("Independent task request");
+  fireEvent.click(original.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(3));
+  const requests = value.creates.mock.calls as unknown as [unknown][];
+  expect(requests[1][0]).toEqual(requests[2][0]);
+  expect(requests[0][0]).not.toEqual(requests[1][0]);
+  fireEvent.click((await screen.findAllByRole("button", { name: "New general chat" }))[0]);
+  expect((general.getByLabelText("First message") as HTMLTextAreaElement).value).toBe("");
+  expect(scrollChoiceValue(general.getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
+  expect(general.getByRole("button", { name: "Open conversation" })).toBeTruthy();
 });
 
 it("keeps first-message drafts when title support is absent and preserves valid UTF-8 at the limit", async () => {
@@ -99,6 +403,120 @@ it("keeps first-message drafts when title support is absent and preserves valid 
   expect(screen.getByText(/exceeds 256 KiB/)).toBeTruthy();
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter", isComposing: true, keyCode: 229 });
   fireEvent.keyDown(firstMessage, { key: "Enter", code: "Enter", shiftKey: true });
+  expect(value.creates).not.toHaveBeenCalled();
+});
+
+function shortcutProject(name: string) {
+  return create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name, repositories: [], agents: { configured: false, ids: [] } }) });
+}
+
+it.each([false, true])("selects a project once, retains the draft, and focuses the composer (compact %s)", async compact => {
+  viewport(compact);
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  const currentDeviceId = newRequestId(), pairingAuthority = { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() };
+  const rendered = render(<StrictMode><App transport={value.transport} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
+  const showHome = async () => {
+    if (compact) fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
+    await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` });
+  };
+  await showHome();
+  const fold = screen.getByRole("button", { name: `First project. Project ID: ${first.id}` });
+  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  const prompt = screen.getByRole("textbox", { name: "First message" });
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
+  expect(fold.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(prompt);
+  if (compact) expect(screen.queryByRole("dialog", { name: "DeliDev navigation" })).toBeNull();
+  fireEvent.change(prompt, { target: { value: "Retain this task" } });
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Agent Worker" }));
+  await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.click(within(document.querySelector(".new-session-page")!).getByRole("checkbox", { name: "Plan Mode" }));
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold"), { target: { value: "1.25" } });
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }))).toBe(value.machine.id);
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` }));
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(second.id);
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }))).toBe("");
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }))).toBe("");
+  expect(screen.getByRole("radio", { name: "Worktree" })).toHaveProperty("checked", true);
+  expect(within(document.querySelector(".new-session-page")!).getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
+  expect(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "1.25");
+  expect(screen.getByRole("button", { name: "Options" }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("textbox", { name: "First message" })).toBe(prompt);
+  expect(prompt).toHaveProperty("value", "Retain this task");
+  await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }), first.id);
+  await act(() => i18n.changeLanguage("ko"));
+  expect(document.querySelector<HTMLElement>(".new-session-content > .resource-choice [role=combobox]")!.dataset.value).toBe(first.id);
+  await act(() => i18n.changeLanguage("en"));
+  rendered.rerender(<StrictMode><App transport={{ ...value.transport }} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  await showHome();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
+  expect(prompt).toHaveProperty("value", "Retain this task");
+  expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+it("locks shortcuts for pending and uncertain creates and retries the unchanged request", async () => {
+  viewport();
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  let reject!: (reason: unknown) => void;
+  value.creates.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Agent Worker" }));
+  await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("First message"), { target: { value: "Original request" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
+  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(shortcut);
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
+  await act(async () => reject(new ConnectError("ack lost", Code.Unavailable)));
+  await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  fireEvent.click(shortcut);
+  expect(screen.queryByRole("textbox", { name: "First message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same session creation" }));
+  await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(2));
+  expect(value.creates.mock.calls[1][0]).toEqual(value.creates.mock.calls[0][0]);
+  await waitFor(() => expect(shortcut).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
+});
+
+it("locks shortcuts during Local proof and preserves the original project on completion", async () => {
+  viewport();
+  const first = shortcutProject("First project"), second = shortcutProject("Second project");
+  const value = fixture([], [], [first, second], false, true);
+  let release!: (proof: { machineId: string; token: string }) => void;
+  const readLocalWorker = vi.fn(() => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; }));
+  render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  expect(shortcut).toHaveProperty("disabled", true);
+  fireEvent.click(shortcut);
+  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
+  expect(shortcut).toHaveProperty("disabled", false);
+  expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
+  expect(screen.getByRole("radio", { name: "Local" })).toHaveProperty("checked", true);
   expect(value.creates).not.toHaveBeenCalled();
 });
 
@@ -128,33 +546,196 @@ it("shows selector loading while the current page has not returned", async () =>
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
   expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
   finish();
-  expect(await screen.findByRole("option", { name: "Agent One" })).toBeTruthy();
+  await waitScrollChoices(screen.getByRole("combobox", { name: "Agent Worker" }));
 });
 
-it("opens a fresh New Project form from the plus button with visible destination focus", async () => {
+it.each(["New project", "Create a project"])("opens a fresh New Project dialog from %s without visiting Settings", async (entry) => {
   const value = fixture();
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
-  const opener = await screen.findByRole("button", { name: "New project" });
-  expect(opener.textContent).toBe("");
-  expect(opener.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  const opener = await screen.findByRole("button", { name: entry });
+  const welcome = screen.getByRole("heading", { name: "Your sessions, in one place" });
+  if (entry === "New project") {
+    expect(opener.textContent).toBe("");
+    expect(opener.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  }
   fireEvent.click(opener);
-  expect(await screen.findByRole("heading", { name: "New Project" })).toBeTruthy();
+  const dialog = await screen.findByRole("dialog", { name: "New Project" });
+  expect(dialog.getAttribute("data-size")).toBe("form");
+  expect(screen.getByRole("heading", { name: "Your sessions, in one place" })).toBe(welcome);
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Settings categories" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Sessions" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBeNull();
   expect(window.document.querySelector(".sidebar-action-tooltip")).toBeNull();
-  const name = screen.getByRole("textbox", { name: "Name" });
+  const name = screen.getByRole("searchbox", { name: "Search repository names" });
   await waitFor(() => expect(window.document.activeElement).toBe(name));
   fireEvent.change(name, { target: { value: "Retained project" } });
   expect(value.saveConfiguration).not.toHaveBeenCalled();
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
-  expect(window.document.activeElement).toBe(screen.getByRole("main"));
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  await waitFor(() => expect(window.document.activeElement).toBe(opener));
   fireEvent.click(opener);
-  expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("searchbox", { name: "Search repository names" })).not.toBe(name);
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("");
   expect(screen.getAllByRole("heading", { name: "New Project" })).toHaveLength(1);
   expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
+
+function projectRepository() {
+  return create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Creation repository" }) });
+}
+
+async function fillProject(repository: Resource, name = "Direct project") {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Creation repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const projectName = await screen.findByRole("textbox", { name: "Project name" });
+  fireEvent.change(projectName, { target: { value: name } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  return projectName;
+}
+
+async function chooseProjectRepository() {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Creation repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+it.each([false, true])("preserves the mounted conversation or New session draft while creating a project (new session %s)", async newSession => {
+  const repository = projectRepository(), value = fixture([], [repository], [], false, true);
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: newSession ? "New session" : /General Chat Retained session/ }));
+  const composer = await screen.findByRole("textbox", { name: newSession ? "First message" : "Message" });
+  fireEvent.change(composer, { target: { value: "Keep this unsent draft" } });
+  const opener = screen.getByRole("button", { name: "New project" });
+  fireEvent.click(opener);
+  await fillProject(repository);
+  expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+  fireEvent.click(opener);
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(screen.getByRole("textbox", { name: newSession ? "First message" : "Message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+  expect(value.saveConfiguration).toHaveBeenCalledOnce();
+  expect(value.creates).not.toHaveBeenCalled();
+  expect(value.enqueues).not.toHaveBeenCalled();
+}, fullShellTimeoutMs);
+
+it("returns successful wide project creation to the persistent Home fallback", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]);
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: "Create a project" }));
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(document.activeElement).toBe(screen.getByRole("main"));
+}, fullShellTimeoutMs);
+
+it.each([false, true])("closes the compact drawer before creation and returns focus to the persistent Home opener (pending %s)", async pending => {
+  viewport(true);
+  const repository = projectRepository(), value = fixture([], [repository]);
+  if (pending) value.saveConfiguration.mockImplementationOnce(() => new Promise(() => undefined));
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  const opener = screen.getByRole("button", { name: "Open session navigation" });
+  fireEvent.click(opener);
+  const drawer = screen.getByRole("dialog", { name: "DeliDev navigation" });
+  fireEvent.click(await within(drawer).findByRole("button", { name: "New project" }));
+  const dialog = await screen.findByRole("dialog", { name: "New Project" });
+  expect(drawer.hasAttribute("open")).toBe(false);
+  expect(document.querySelectorAll("dialog[open]")).toHaveLength(1);
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("searchbox", { name: "Search repository names" })));
+  if (pending) {
+    await fillProject(repository);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save Project" }));
+    await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledOnce());
+  }
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close New Project" }));
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect(opener.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("navigation", { name: "Settings categories" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+}, fullShellTimeoutMs);
+
+it("disposes the original uncertain project request when either external creation entry reopens it", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]);
+  value.saveConfiguration.mockRejectedValueOnce(new ConnectError("The original response was lost.", Code.Unavailable));
+  render(<StrictMode><App transport={value.transport} /></StrictMode>);
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  const name = await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await screen.findByRole("button", { name: "Retry the same configuration" });
+  const original = value.saveConfiguration.mock.calls[0][0];
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "New project" })));
+  expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Create a project" }));
+  const reopenedSearch = await screen.findByRole("searchbox", { name: "Search repository names" });
+  expect(reopenedSearch).not.toBe(name);
+  expect((reopenedSearch as HTMLInputElement).value).toBe("");
+  expect(value.saveConfiguration).toHaveBeenCalledOnce();
+  expect(value.saveConfiguration.mock.calls[0][0]).toEqual(original);
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
+}, fullShellTimeoutMs);
+
+it.each(["surface", "conversation", "connection"] as const)("disposes a hidden pending creation without letting its late success affect a replacement (%s change)", async departure => {
+  const repository = projectRepository(), value = fixture([], [repository], [], false, true);
+  let resolve!: (result: { resource: Resource }) => void;
+  value.saveConfiguration.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const authority = { endpoint: "http://127.0.0.1:9090", serverId: newRequestId() }, deviceId = newRequestId();
+  const tree = (serverId = authority.serverId) => <StrictMode><App transport={value.transport} pairingAuthority={{ ...authority, serverId }} currentDeviceId={deviceId} /></StrictMode>;
+  const view = render(tree());
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  await fillProject(repository);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(value.saveConfiguration).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  if (departure === "connection") view.rerender(tree(newRequestId()));
+  else if (departure === "conversation") {
+    fireEvent.click(screen.getByRole("button", { name: /General Chat Retained session/ }));
+    await screen.findByRole("textbox", { name: "Message" });
+  }
+  else {
+    fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  }
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  await chooseProjectRepository();
+  const name = await screen.findByRole("textbox", { name: "Project name" });
+  fireEvent.change(name, { target: { value: "Replacement draft" } });
+  await waitFor(() => expect(document.activeElement).toBe(name));
+  await act(async () => resolve({ resource: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Original accepted project" }) }) }));
+  expect(screen.getByRole("textbox", { name: "Project name" })).toBe(name);
+  expect((name as HTMLInputElement).value).toBe("Replacement draft");
+  expect(document.activeElement).toBe(name);
+  expect(value.saveConfiguration).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+}, fullShellTimeoutMs);
+
+it("retains the creation draft through same-identity reconnect and preserves a denied save for correction", async () => {
+  const repository = projectRepository(), value = fixture([], [repository]), replacement = fixture([], [repository]);
+  replacement.saveConfiguration.mockRejectedValueOnce(new ConnectError("Saving this project was denied.", Code.PermissionDenied));
+  const authority = { endpoint: "http://127.0.0.1:9090", serverId: newRequestId() }, deviceId = newRequestId();
+  const view = render(<App transport={value.transport} pairingAuthority={authority} currentDeviceId={deviceId} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New project" }));
+  const name = await fillProject(repository);
+  view.rerender(<App transport={replacement.transport} pairingAuthority={authority} currentDeviceId={deviceId} connectionEpoch={1} />);
+  expect(name.isConnected).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect((name as HTMLInputElement).value).toBe("Direct project");
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+  expect(replacement.saveConfiguration).toHaveBeenCalledOnce();
+  expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull();
+}, fullShellTimeoutMs);
 
 it("preserves a protected draft on active Settings reselection and discards it on departure", async () => {
   const value = fixture();
@@ -182,17 +763,21 @@ it("abandons an uncertain New Project save without replay when reopening", async
   render(<StrictMode><App transport={value.transport} /></StrictMode>);
   const opener = await screen.findByRole("button", { name: "New project" });
   fireEvent.click(opener);
-  const name = await screen.findByRole("textbox", { name: "Name" });
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Fixture repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const name = await screen.findByRole("textbox", { name: "Project name" });
   fireEvent.change(name, { target: { value: "Sidebar project" } });
-  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
+  expect(screen.queryByRole("button", { name: "View original operation" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(opener);
-  expect(screen.getByRole("textbox", { name: "Name" })).not.toBe(name);
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("searchbox", { name: "Search repository names" })).not.toBe(name);
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("");
   expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
   expect(value.saveConfiguration).toHaveBeenCalledTimes(1);
   expect(value.enqueues).not.toHaveBeenCalled();
@@ -228,13 +813,14 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   const currentProjectSessionReads = value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next").length;
   const sessionRequestsBeforeSave = value.sessionRequests.length;
   fireEvent.click(screen.getByRole("button", { name: "New project" }));
-  fireEvent.change(await screen.findByRole("textbox", { name: "Name" }), { target: { value: "New bounded project" } });
-  fireEvent.change(await screen.findByRole("combobox", { name: "Add Repository" }), { target: { value: repository.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Fixture repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), { target: { value: "New bounded project" } });
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: repository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
-  expect(await screen.findByRole("button", { name: "New Project" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Project" })).toBeNull());
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
   await waitFor(() => expect(value.projectRequests.filter((page) => page === "project-next")).toHaveLength(currentProjectReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === "" && request.includeArchived && request.pageToken === "global-next")).toHaveLength(currentGlobalReads + 1));
   await waitFor(() => expect(value.sessionRequests.filter((request) => request.projectId === project.id && request.includeArchived && request.pageToken === "project-session-next")).toHaveLength(currentProjectSessionReads + 1));
@@ -311,6 +897,7 @@ it("opens execution configuration without changing the unsent session draft or d
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep the original unsent draft" } });
+  fireEvent.click(screen.getByText("Execution settings"));
   fireEvent.click(screen.getByText("Execution configuration and instructions"));
   expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();
   fireEvent.click(screen.getByText("Execution configuration and instructions"));
@@ -324,6 +911,7 @@ it("sends explicit Restore with the original revision and never sends Resume on 
   value.session.documentJson = encode({ name: "Retained session", workspace: "general-chat", outcome: "failed", archive: "archived", dispatch: "paused", recovery: "none" });
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Session actions" }));
   const restore = await screen.findByRole("button", { name: "Restore" });
   await act(async () => fireEvent.click(restore));
   expect(value.controls).toHaveBeenCalledTimes(1);
@@ -508,8 +1096,9 @@ it("opens a dedicated PR workspace and reads GitHub only after Load", async () =
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
   fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repository.id}` }));
-  expect(screen.getByRole("button", { name: "Load pull requests" })).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Load pull requests" }) as HTMLButtonElement).disabled).toBe(false));
   expect(value.githubQuery).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
   const request = JSON.parse(new TextDecoder().decode(value.githubQuery.mock.calls[0][0].queryJson));
@@ -539,12 +1128,12 @@ it("discards a nested integration profile draft on close before targeted reposit
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+  fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
   // The initial empty read moves the action from the toolbar into setup guidance.
   // Wait for that read so the test clicks the current button, not a detached node.
   await screen.findByRole("heading", { name: "Add your first GitHub profile" });
   fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
-  const name = screen.getByRole("textbox", { name: "Profile name" });
+  const name = await screen.findByRole("textbox", { name: "Profile name" });
   fireEvent.change(name, { target: { value: "Retained GitHub profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
@@ -552,6 +1141,20 @@ it("discards a nested integration profile draft on close before targeted reposit
   expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull();
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.githubQuery).not.toHaveBeenCalled();
+});
+
+it("opens a fresh targeted Git Profiles visit after abandoning an unsaved profile", async () => {
+  const repository = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Unconfigured repository" }) });
+  const value = fixture([], [repository]); render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" })); fireEvent.click(screen.getByRole("button", { name: "Git Profiles" }));
+  await screen.findByRole("heading", { name: "Add your first GitHub profile" }); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Discarded profile draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(await screen.findByRole("button", { name: `Unconfigured repository. Repository ID: ${repository.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "GitHub profiles" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Git Profiles" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull(); expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("main")); expect(value.githubQuery).not.toHaveBeenCalled(); expect(value.saveConfiguration).not.toHaveBeenCalled();
 });
 
 // Each independent draft family owns its complete close/reopen lifecycle check.
@@ -575,7 +1178,7 @@ it("discards a notification draft on close without saving", async () => {
   await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
   expect(value.saveNotificationPreferences).not.toHaveBeenCalled();
   expect(value.saveConfiguration).not.toHaveBeenCalled();
-});
+}, fullShellTimeoutMs);
 
 it("discards an import draft on close before targeted repository entry without saving", async () => {
   const value = fixture();
@@ -644,7 +1247,6 @@ it("hands wide header focus to main before first Search autofocus and preserves 
   expect(window.document.querySelector(".sidebar-header-actions")).toBeNull();
   await screen.findByText("No retained requests or execution results.");
   fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: InboxSource.INTERACTION } });
-  fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
   await screen.findByText("No items match these filters.");
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   const search = headerAction("Search");
@@ -658,8 +1260,8 @@ it("hands wide header focus to main before first Search autofocus and preserves 
   fireEvent.change(screen.getByRole("combobox", { name: "Archive" }), { target: { value: SearchArchiveState.ARCHIVED } });
   fireEvent.click(within(input.closest("form")!).getByRole("button", { name: "Search" }));
   await screen.findByText("No retained conversation matches.");
-  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Next page" }));
-  await screen.findByText("No further conversations on this page.");
+  fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Load more Search conversations" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Search conversations" })).toBeNull());
   expect(value.searches.mock.calls.at(-1)?.[0]).toMatchObject({ query: "keep this search", archive: SearchArchiveState.ARCHIVED, pageToken: "search-next" });
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   fireEvent.click(headerAction("Search"));
@@ -806,4 +1408,72 @@ it.each([false, true])("uses shared Settings navigation and preserves a visit th
   expect(within(main).getByRole("heading", { name: "AI Subscription", level: 1 })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expectNoNavigationWrites(value);
+});
+
+it("changing language retains the mounted conversation draft, focus and read identities", async () => {
+  const value = fixture([], [], [], true);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Unsent original 한국어 draft <b>inert</b>" } }); input.focus();
+  await screen.findByText('<script>window.invalid = true</script>');
+  const sessionRequests = value.sessionRequests.length, statusRequests = value.status.mock.calls.length;
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("textbox", { name: "메시지" })).toBe(input);
+  expect(document.activeElement).toBe(input);
+  expect(input).toHaveProperty("value", "Unsent original 한국어 draft <b>inert</b>");
+  expect(screen.getByText('<script>window.invalid = true</script>')).toBeTruthy();
+  expect(value.sessionRequests).toHaveLength(sessionRequests); expect(value.status).toHaveBeenCalledTimes(statusRequests);
+  expect(value.enqueues).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled(); expect(value.creates).not.toHaveBeenCalled();
+}, fullShellTimeoutMs);
+
+it("language changes keep an uncertain conversation operation and never replay its RPC", async () => {
+  const value = fixture();
+  value.enqueues.mockRejectedValueOnce(new ConnectError("Original response lost", Code.Unavailable));
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
+  const input = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(input, { target: { value: "Original queued input" } });
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  await screen.findByRole("button", { name: "Retry the same message" });
+  const original = value.enqueues.mock.calls[0];
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("textbox", { name: "메시지" })).toBe(input);
+  expect(input).toHaveProperty("value", "Original queued input");
+  expect(value.enqueues).toHaveBeenCalledTimes(1); expect(value.enqueues.mock.calls[0]).toBe(original);
+  expect(value.controls).not.toHaveBeenCalled(); expect(value.creates).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: /같은 메시지/ })).toBeTruthy();
+}, fullShellTimeoutMs);
+
+it("retains one original Runner inspection draft through same-identity connection readiness changes", async () => {
+  const value = fixture();
+  value.machine.documentJson = encode({ name: "Worker One", disabled: false, installations: [{ harness: "claude-code", state: "missing", explicit_path: "" }] });
+  const device = newRequestId(), authority = { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() };
+  const view = (ready: boolean) => <App transport={value.transport} currentDeviceId={device} pairingAuthority={authority} connectionReady={ready} />;
+  const mounted = render(view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Runner Devices" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  const path = screen.getByLabelText("claude-code executable path");
+  fireEvent.change(path, { target: { value: "/chosen/unchanged-claude" } });
+  mounted.rerender(view(false));
+  expect(screen.getByLabelText("claude-code executable path")).toBe(path);
+  expect(path).toHaveProperty("value", "/chosen/unchanged-claude");
+  mounted.rerender(view(true));
+  expect(screen.getByLabelText("claude-code executable path")).toBe(path);
+  expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+
+it("rechecks the original welcome status failure without creating or controlling a session", async () => {
+  const value = fixture();
+  value.status.mockRejectedValueOnce(new ConnectError("Fixture status failure", Code.PermissionDenied));
+  render(<App transport={value.transport} />);
+  const retry = await screen.findByRole("button", { name: "Retry current read" });
+  expect(value.status).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await waitFor(() => expect(value.status).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull());
+  expect(value.creates).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
 });

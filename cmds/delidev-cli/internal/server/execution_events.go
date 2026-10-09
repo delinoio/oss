@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -65,6 +66,9 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
+		if input.Version == 4 && session.Startup != nil && session.Startup.JobID == jobRecord.ID && session.Startup.Ready != nil {
+			input.Installation.Version = session.Startup.Ready.NativeVersion
+		}
 		if !session.OwnsExecution(input) || session.ActiveExecutionID != input.ExecutionID {
 			return nil, executionEventConflict()
 		}
@@ -79,8 +83,13 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
+		if ir.SessionID != sr.ID || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted && queued.Delivery != domain.InputUncertain) {
 			return nil, executionEventConflict()
+		}
+		if input.Version == 4 && event.Kind != domain.ExecutionThreadBound {
+			if err := requireExecutionStartupReady(tx, jobRecord.ID); err != nil {
+				return nil, err
+			}
 		}
 		if err := validateNativeMessageOrigin(input, event); err != nil {
 			return nil, err
@@ -296,7 +305,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 			}
 			progress.NativeTurnID = event.NativeTurnID
 			progress.Outcome = domain.ExecutionRunning
-			progress.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindExecutionInput(input.InputID, input.Input.Prompt)}
+			progress.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindSessionInput(input.InputID, input.Input)}
 			queued.Delivery = domain.InputAccepted
 			session.PendingInputs--
 			session.PendingInputBytes -= uint64(len(queued.Prompt))
@@ -566,12 +575,12 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 		return executionEventConflict()
 	}
 	if update.Role == domain.UserMessage {
-		primary := domain.BindExecutionInput(input.InputID, input.Input.Prompt)
+		primary := domain.BindSessionInput(input.InputID, input.Input)
 		bindings, err := domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, progress.AcceptedInputs)
 		if err != nil {
 			return err
 		}
-		binding := domain.BindExecutionInput(update.InputID, update.Text)
+		binding := domain.BindSessionInput(update.InputID, domain.SessionInput{Prompt: update.Text, Attachments: update.Attachments})
 		found := false
 		for _, accepted := range bindings {
 			if accepted == binding {
@@ -586,7 +595,7 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionMessageStarted {
-		value = domain.ExecutionMessage{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
+		value = domain.ExecutionMessage{Attachments: append([]domain.ImageAttachment(nil), update.Attachments...), ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -597,7 +606,7 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 			return err
 		}
 		phaseMatches := value.Phase == nil || (update.Phase != nil && *value.Phase == *update.Phase)
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || !slices.Equal(value.Attachments, update.Attachments) || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
 			return executionEventConflict()
 		}
 		revision = r.Revision

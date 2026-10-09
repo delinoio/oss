@@ -143,7 +143,7 @@ func (r ClaudeInteractionRequest) Questions() ([]ClaudeQuestion, error) {
 	return input.Questions, nil
 }
 func (r ClaudeInteractionRequest) Validate(kind InteractionType, request InteractionRequestID, item string) error {
-	if r.Version != ClaudeProtocolVersion || r.ArrivalID.Validate() != nil || r.Tool.Validate() != nil || r.Tool.NativeID != item || r.MessageID.Validate() != nil || r.MessageID == r.Tool.ID || Text(r.NativeMessageID, "native provider message", 1024, true) != nil || r.NativeMessageID == item || r.Index >= 1024 || r.Caller != nil && *r.Caller != ClaudeDirectToolCaller || request.Kind != InteractionTextID || request.Number != nil || !validClaudeToolJSON(r.InputJSON) || len(r.Metadata.Suggestions) > 128 {
+	if (r.Version != "" && !ValidNativeVersionMetadata(r.Version)) || r.ArrivalID.Validate() != nil || r.Tool.Validate() != nil || r.Tool.NativeID != item || r.MessageID.Validate() != nil || r.MessageID == r.Tool.ID || Text(r.NativeMessageID, "native provider message", 1024, true) != nil || r.NativeMessageID == item || r.Index >= 1024 || r.Caller != nil && *r.Caller != ClaudeDirectToolCaller || request.Kind != InteractionTextID || request.Number != nil || !validClaudeToolJSON(r.InputJSON) || len(r.Metadata.Suggestions) > 128 {
 		return invalidInteraction()
 	}
 	if _, err := request.Key(); err != nil {

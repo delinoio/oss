@@ -66,7 +66,19 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		}
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}
 		var problem error
-		if request.PRCandidate != nil {
+		if request.Skills != nil {
+			if request.Skills.WorkerDeviceID != credential.DeviceID || request.Skills.WorkerInstanceID != instance {
+				return workspace.ResultUncertain()
+			}
+			var result domain.SkillReadResult
+			result, problem = manager.ReadSkills(ctx, request)
+			if problem == nil {
+				report.DocumentJson, _ = json.Marshal(result)
+			}
+			if config.Logger != nil {
+				config.Logger.InfoContext(ctx, "skill_observation_finished", "read_id", request.ID, "machine_id", credential.MachineID, "selected_count", len(request.Skills.Selections), "available_count", len(result.Entries), "success", problem == nil)
+			}
+		} else if request.PRCandidate != nil {
 			var result workspace.PRWorkspaceMatch
 			result, problem = manager.MatchPRWorkspace(ctx, request)
 			if problem == nil {

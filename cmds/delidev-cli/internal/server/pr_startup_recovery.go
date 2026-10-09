@@ -59,7 +59,7 @@ func prStartupRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		return result, err
 	}
 	queued, err := store.Decode[domain.QueuedInput](ir)
-	if err != nil || ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || queued.Delivery != domain.InputUncertain || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Prompt != input.Input.Prompt || queued.Mode != input.Input.Mode || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
+	if err != nil || ir.SessionID != sr.ID || ir.ProjectID != sr.ProjectID || queued.Delivery != domain.InputUncertain || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return result, fail()
 	}
 	result = domain.ExecutionRecoveryRequest{

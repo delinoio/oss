@@ -296,7 +296,7 @@ func TestExecutionBindingRejectsInvalidIdentityWithoutRetainingContents(t *testi
 			case "input":
 				input = "invalid"
 			case "version":
-				cfg.Version = "future"
+				cfg.Version = "invalid/version"
 			case "permission":
 				cfg.Permission = "future"
 			case "workspace":

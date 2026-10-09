@@ -1,3 +1,5 @@
+- Direct startup validates the actual original owned API and effective settings without numeric version admission or a separate execution probe under `docs/cmds-delidev-execution-startup-contract.md`. Versions remain optional observed metadata. Preserve strict native shapes, original executable identity, account/Worker/history, once-only mutations and independently joined cleanup; no supported feature or platform is inferred from a version.
+
 # OpenCode native ownership
 
 - Follow `docs/cmds-delidev-harness-contract.md`, `docs/cmds-delidev-subagents-contract.md`, `docs/cmds-delidev-compaction-contract.md` and `docs/cmds-delidev-forks-contract.md`. Go owns the original private process/API/session and durable business admission; no exported constructor may adopt an arbitrary native endpoint.
@@ -18,3 +20,12 @@
 - The foreground child profile excludes native question tools as well as nested task tools in both live events and final independent histories. Completed historical questions cannot establish child settlement or response authority.
 
 - Fork source eligibility reserves the complete serialized child checkpoint before workspace copying or any native claim, including duplicated histories, full identities and metadata bounds under 8 MiB. Conservatively retain all source file descriptors in the estimate and reserve the separate 64 KiB fresh SQLite runtime inventory profile. Capacity exhaustion grants no mutation; unexpected native auxiliary growth cannot enlarge this profile. Follow `docs/cmds-delidev-forks-contract.md`.
+
+- Explicit reasoning effort maps unchanged to the selected model `options.reasoningEffort`. Before input, independently reread and validate complete loaded `/config` and `/provider` profiles and project the applied value from native bytes. Empty selections omit model options and retain native defaults. Bind explicit effort in checkpoint settings digests with omitted empty metadata so historical default digests remain unchanged. Preserve original process, provider relay, instructions and cleanup ownership.
+
+- Ordinary execution tool authentication follows `docs/cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Carry only the executing Worker’s typed `GH_CONFIG_DIR` selector and bounded Linux `DBUS_SESSION_BUS_ADDRESS` / `XDG_RUNTIME_DIR` session selectors after private environment reconstruction, including continuation and independent Fork. Keep discovery, login, title, inspection and Sidechat isolated. Never read, copy, transfer, inject or clean up gh credentials/configuration; preserve native permissions and protected execution/proxy exclusions. No RPC or migration.
+
+- Register the exact original API execution token and caller-protected values in transient native reflection guards. Refuse supported literal, decoded JSON and Base64 reflections before event retention, public content or retained-history proof; keep original cleanup/recovery and once-only input claims. Never redact or replace native content. Guard values remain private runtime state and grant no operating-system sandbox guarantee.
+- Include the original private HTTP password in SSE and content-snapshot guards. Exact owned GET `/config` and `/provider` responses remain private credential-verification inputs; this exception grants no content publication or other route authority.
+
+- Foreground child success/error projections require the same closed native message/part predicate: completion time, ended text/reasoning and terminal tools. Unfinished histories retain running partial telemetry; only the independent original verified Stop/joined-scope cleanup source may interrupt an unfinished abort. Missing/busy status never supplies settlement.

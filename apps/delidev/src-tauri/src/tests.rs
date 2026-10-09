@@ -1,3 +1,5 @@
+use std::{thread, time::Instant};
+
 use super::*;
 
 #[test]
@@ -31,27 +33,88 @@ fn sidecar_lookup_preserves_absolute_paths_without_relative_fallback() {
 fn github_presentation_uses_closed_sidecar_and_checks_acknowledgment() {
     use std::os::unix::fs::PermissionsExt;
     let temporary = tempfile::tempdir().unwrap();
-    for (index, response) in [
-        r#"{"dispatched":true}"#,
-        r#"{"dispatched":false}"#,
-        r#"{"dispatched":true,"token":"unexpected"}"#,
+    for (index, (output, diagnostic, status, expected)) in [
+        (
+            r#"{"version":1,"result":{"dispatched":true}}"#,
+            "",
+            0,
+            Ok(()),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":false}}"#,
+            "",
+            0,
+            Err(NativeFailure::InvalidEvidence),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":true,"token":"unexpected"}}"#,
+            "",
+            0,
+            Err(NativeFailure::InvalidEvidence),
+        ),
+        (
+            r#"{"version":1,"result":unclosed"#,
+            "",
+            0,
+            Err(NativeFailure::InvalidEvidence),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":true}}"#,
+            "",
+            1,
+            Err(NativeFailure::SidecarFailed),
+        ),
+        (
+            r#"{"version":1,"result":{"dispatched":true}}"#,
+            "bounded benign diagnostic",
+            0,
+            Ok(()),
+        ),
     ]
-    .iter()
+    .into_iter()
     .enumerate()
     {
         let executable = temporary.path().join(format!("sidecar-{index}"));
-        fs::write(&executable, format!("#!/bin/sh\n[ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf '%s' '{{\"version\":1,\"result\":{response}}}'\n")).unwrap();
+        let script = format!("#!/bin/sh\nprintf x >> \"$0.invocations\"\nexpected_root=\"${{0%/*}}/state\"\n[ \"$1\" = --data-dir ] && [ \"$2\" = \"$expected_root\" ] && [ \"$3\" = presentation ] && [ \"$4\" = open-github ] && [ \"$5\" = --url-stdin ] && [ \"$#\" = 5 ] || exit 2\naddress=$(/bin/cat)\n[ \"$address\" = https://github.com/owner/repo/pull/1 ] || exit 3\nprintf '%s' '{output}'\nprintf '%s' '{diagnostic}' >&2\nexit {status}\n");
+        // Parallel fixture forks can retain a parent-authored writable script
+        // description and make Linux exec fail with ETXTBSY. A joined writer
+        // child keeps every writable description out of the test parent and
+        // its sibling fixture children; production admission remains intact.
+        let written = Command::new("/bin/sh")
+            .env_clear()
+            .args([
+                "-c",
+                r#"umask 077; printf '%s' "$2" > "$1""#,
+                "presentation-fixture",
+            ])
+            .arg(&executable)
+            .arg(script)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(
+            written.success(),
+            "presentation fixture writer failed: {written}"
+        );
+        let invocations = PathBuf::from(format!("{}.invocations", executable.display()));
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         let connector = Connector::new(executable, temporary.path().join("state")).unwrap();
+        let observed = connector.open_github("https://github.com/owner/repo/pull/1");
         assert_eq!(
-            connector
-                .open_github("https://github.com/owner/repo/pull/1")
-                .is_ok(),
-            index == 0
+            observed, expected,
+            "presentation fixture response case {index}"
         );
+        assert_eq!(fs::read(&invocations).unwrap(), b"x");
         assert_eq!(
             connector.open_github("file:///tmp/unsafe"),
             Err(NativeFailure::InvalidInput)
+        );
+        assert_eq!(
+            fs::read(&invocations).unwrap(),
+            b"x",
+            "invalid input spawned the sidecar"
         );
         assert!(
             !connector.root.exists(),
@@ -129,7 +192,7 @@ fn advanced_start_preserves_native_service_ownership_before_pairing() {
     // ordinary explicit CLI Start has independent, unchanged semantics.
     let script = r#"#!/bin/sh
 case "$3:$4" in
-  server:desktop-launch)
+  server:desktop-host)
     printf '%s' '{"version":1,"result":{"state":"service-managed"}}' ;;
   server:start)
     printf '%s' 'spawned' > "$2/competitor"
@@ -160,7 +223,7 @@ esac
         "sidecar fixture writer failed: {written}"
     );
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-    let connector = Connector::new(executable, root.clone()).unwrap();
+    let connector = fixture_connector(executable, root.clone()).unwrap();
     assert_eq!(
         connector.connect().err(),
         Some(NativeFailure::ServiceManaged)
@@ -308,7 +371,7 @@ fn real_sidecar_connect_reuse_revocation_and_exit() {
 
 #[test]
 #[ignore = "requires an explicitly built Go sidecar; kills only its own temporary foreground server"]
-fn real_supervisor_recovers_crash_respects_stop_and_exits_without_stopping_server() {
+fn real_supervisor_recovers_crash_respects_stop_and_quit_joins_owned_server() {
     let binary =
         PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
     let temporary = tempfile::tempdir().unwrap();
@@ -388,13 +451,16 @@ fn real_supervisor_recovers_crash_respects_stop_and_exits_without_stopping_serve
         thread::sleep(Duration::from_millis(25));
     }
     assert_eq!(connector.ensure().unwrap(), LocalServerState::Stopped);
-    // Explicit restart is a different operation. Exiting supervision must keep
-    // that new server alive and leave its client identity intact.
+    // Stopping observation alone leaves the admitted process alive. Normal
+    // native Quit additionally joins only this connector's original children.
     connector.connect().unwrap();
     let started = Instant::now();
     drop(supervision);
     assert!(started.elapsed() < Duration::from_secs(2));
     assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+    connector.shutdown_owned().unwrap();
+    assert!(cleanup.run(&["server".into(), "status".into()]).is_err());
+    assert!(cleanup.root.join("desktop-client/device.json").exists());
 }
 
 #[test]
@@ -773,24 +839,25 @@ fn host_launch_is_once_joined_and_never_publishes_ready_after_stop() {
     let executable = temporary.path().join("sidecar");
     let script = format!(
         r#"#!/bin/sh
-printf '%s:%s\n' "$3" "$4" >> "$2/operations"
-if [ "$3:$4" = server:desktop-launch ]; then
+printf '%s:%s:%s\n' "$3" "$4" "${{10}}" >> "$2/operations"
+if [ "$3:$4:${{10}}" = server:desktop-host:launch ]; then
   while [ ! -f "$2/release" ]; do /bin/sleep .01; done
 fi
 if [ "$3" = server ]; then
   if [ -f "$2/stopped" ]; then
     printf '%s' '{{"version":1,"result":{{"state":"stopped"}}}}'
   else
-    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"0.1.0","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
+    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"{package_version}","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
   fi
 else
   printf '%s' '{{"version":1,"result":{body}}}'
 fi
-"#
+"#,
+        package_version = env!("CARGO_PKG_VERSION"),
     );
     fs::write(&executable, script).unwrap();
     fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-    let connector = Arc::new(Connector::new(executable, root.clone()).unwrap());
+    let connector = Arc::new(fixture_connector(executable, root.clone()).unwrap());
     let runtime = Arc::new(Supervision::new(connector));
     for _ in 0..20 {
         assert!(runtime.launch_connection().unwrap().is_none());
@@ -834,21 +901,21 @@ fi
     assert_eq!(
         actions
             .lines()
-            .filter(|v| *v == "server:desktop-launch")
+            .filter(|v| *v == "server:desktop-host:launch")
             .count(),
         1
     );
     assert_eq!(
         actions
             .lines()
-            .filter(|v| *v == "device:pair-local")
+            .filter(|v| *v == "device:pair-local:")
             .count(),
         1
     );
     assert!(
-        !actions
-            .lines()
-            .any(|v| v == "server:start" || v == "server:stop" || v == "server:desktop-retry")
+        !actions.lines().any(|v| v == "server:start:"
+            || v == "server:stop:"
+            || v == "server:desktop-host:retry")
     );
 }
 
@@ -883,7 +950,7 @@ fn missing_bundled_sidecar_is_a_retained_launch_failure() {
 
 #[test]
 #[ignore = "requires an explicitly built Go sidecar; auto-launches only temporary private scopes"]
-fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetime() {
+fn real_fresh_hosts_share_identity_and_quit_only_their_owned_server() {
     use std::sync::Arc;
     let binary =
         PathBuf::from(std::env::var_os("DELIDEV_TEST_SIDECAR").expect("explicit sidecar required"));
@@ -907,7 +974,6 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     }
     let _stop = Stop(&cleanup);
     let first_host = Supervision::new(Arc::clone(&first));
-    let second_host = Supervision::new(second);
     fn ready(runtime: &Supervision) -> Connection {
         // Bootstrap owns three bounded commands; readers do not replay them.
         let deadline = Instant::now() + COMMAND_TIMEOUT * 3 + Duration::from_secs(5);
@@ -927,6 +993,9 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     }
     let original = ready(&first_host);
     eprintln!("fixture phase: first host authenticated");
+    // Establish the original owner before testing borrowed-host Quit. With
+    // simultaneous launch either admitted host may legitimately own the child.
+    let second_host = Supervision::new(Arc::clone(&second));
     let concurrent = ready(&second_host);
     eprintln!("fixture phase: concurrent host authenticated");
     assert_eq!(original.server_id, concurrent.server_id);
@@ -936,6 +1005,7 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
         assert_eq!(ready(&first_host).device_id, original.device_id);
     }
     second_host.stop();
+    second.shutdown_owned().unwrap();
     eprintln!("fixture phase: second host joined");
     assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
     cleanup.run(&["server".into(), "stop".into()]).unwrap();
@@ -948,6 +1018,7 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
         Err(NativeFailure::Stopped)
     ));
     first_host.stop();
+    first.shutdown_owned().unwrap();
     eprintln!("fixture phase: stopped host joined");
     let deadline = Instant::now() + Duration::from_secs(10);
     while root.join("server.json").exists() {
@@ -956,11 +1027,16 @@ fn real_fresh_hosts_share_launch_identity_and_preserve_stop_and_detached_lifetim
     }
     let mut fresh = Connector::new(first.executable.clone(), root).unwrap();
     fresh.listen = address;
-    let fresh_host = Supervision::new(Arc::new(fresh));
+    let fresh = Arc::new(fresh);
+    let fresh_host = Supervision::new(Arc::clone(&fresh));
     assert_eq!(ready(&fresh_host).server_id, original.server_id);
     eprintln!("fixture phase: fresh host reopened original server");
     fresh_host.stop();
-    assert!(cleanup.run(&["server".into(), "status".into()]).is_ok());
+    fresh.shutdown_owned().unwrap();
+    assert!(cleanup.run(&["server".into(), "status".into()]).is_err());
+    for name in ["owner.json", "state.sqlite", "desktop-client/device.json"] {
+        assert!(cleanup.root.join(name).exists());
+    }
 }
 
 #[test]
@@ -999,4 +1075,244 @@ fn oauth_polling_uses_original_verified_descriptor_without_sidecar_or_command_ga
         connector.oauth_server_identity(),
         Err(NativeFailure::Stopped)
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn automatic_worker_keeps_stop_and_quits_only_its_original_child() {
+    use std::os::unix::fs::PermissionsExt;
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    fs::create_dir_all(root.join("worker")).unwrap();
+    let client = metadata();
+    let mut worker = client.clone();
+    worker.kind = DeviceType::Worker;
+    worker.device_id = uuid::Uuid::now_v7().to_string();
+    worker.machine_id = uuid::Uuid::now_v7().to_string();
+    let mut client_view: serde_json::Value = serde_json::from_slice(&document(&client)).unwrap();
+    let mut worker_view: serde_json::Value = serde_json::from_slice(&document(&worker)).unwrap();
+    client_view.as_object_mut().unwrap().remove("token");
+    worker_view.as_object_mut().unwrap().remove("token");
+    fs::write(root.join("worker/device.json"), document(&worker)).unwrap();
+    let generation = uuid::Uuid::now_v7().to_string();
+    let runtime = serde_json::json!({"state":"running", "controller_active":true, "lifecycle": {"version":1,"generation":generation,"server_id":worker.server_id,"machine_id":worker.machine_id,"endpoint":worker.endpoint,"desired":"running"}});
+    fs::write(
+        root.join("status.json"),
+        serde_json::to_vec(&serde_json::json!({"version":1,"result":runtime})).unwrap(),
+    )
+    .unwrap();
+    let executable = temporary.path().join("sidecar");
+    let script = format!(
+        r##"#!/bin/sh
+case "$3:$4" in
+device:inspect) printf '%s\n' '{client}' ;;
+worker:inspect) printf '%s\n' '{worker}' ;;
+worker:status) if [ -f '{root}/status-fail' ]; then exit 2; fi; /bin/cat '{root}/status.json' ;;
+worker:stop) exit 2 ;;
+worker:desktop-prepare) if [ -f '{root}/prepare-fail' ]; then exit 2; fi; printf '%s\n' '{{"version":1,"result":{{"executable":"{executable}"}}}}' ;;
+worker:desktop-host)
+  printf '%s\n' '{admission}'
+  IFS= read -r action
+  printf '%s\n' "$action" > '{root}/stop.json'
+  ;;
+*) exit 2 ;;
+esac
+"##,
+        client = serde_json::json!({"version":1,"result":client_view}),
+        worker = serde_json::json!({"version":1,"result":worker_view}),
+        admission = serde_json::json!({"version":1,"result":{"started":true,"generation":generation,"worker":runtime}}),
+        root = root.display(),
+        executable = executable.display(),
+    );
+    fs::write(&executable, script).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let connector = Connector::new(executable, root.clone()).unwrap();
+    connector.worker_auto_enabled.store(true, Ordering::Release);
+    *connector.worker_client_id.lock().unwrap() = Some(client.device_id.clone());
+    connector
+        .worker_launch_pending
+        .store(false, Ordering::Release);
+    let borrowed = connector
+        .local_worker(LocalWorkerAction::Status, None)
+        .unwrap();
+    assert!(!borrowed.management.unwrap().owned_by_app);
+    connector.worker_management_failure(NativeFailure::CredentialUnavailable);
+    assert_eq!(
+        connector
+            .local_worker(LocalWorkerAction::Status, None)
+            .unwrap()
+            .management
+            .unwrap()
+            .state,
+        LocalWorkerManagementState::Blocked
+    );
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Start, Some(&generation))
+            .is_err()
+    );
+    fs::write(root.join("prepare-fail"), []).unwrap();
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Start, None)
+            .is_err()
+    );
+    assert!(connector.worker_launch_pending.load(Ordering::Acquire));
+    fs::remove_file(root.join("prepare-fail")).unwrap();
+    connector.manage_worker();
+    let owned = connector
+        .local_worker(LocalWorkerAction::Status, None)
+        .unwrap();
+    assert!(owned.management.unwrap().owned_by_app);
+    assert!(
+        connector
+            .local_worker(
+                LocalWorkerAction::Stop,
+                Some(&uuid::Uuid::now_v7().to_string())
+            )
+            .is_err()
+    );
+    assert!(connector.worker_pause_generation.lock().unwrap().is_none());
+    fs::write(root.join("status-fail"), []).unwrap();
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Stop, Some(&generation))
+            .is_err()
+    );
+    assert_eq!(
+        *connector.worker_pause_generation.lock().unwrap(),
+        Some(generation.clone())
+    );
+    fs::remove_file(root.join("status-fail")).unwrap();
+    assert!(
+        connector
+            .local_worker(LocalWorkerAction::Stop, Some(&generation))
+            .is_err()
+    );
+    let mut lost_stop = runtime.clone();
+    lost_stop["state"] = "exited".into();
+    lost_stop["controller_active"] = false.into();
+    fs::write(
+        root.join("status.json"),
+        serde_json::to_vec(&serde_json::json!({"version":1,"result":lost_stop})).unwrap(),
+    )
+    .unwrap();
+    connector.manage_worker();
+    assert_eq!(
+        connector.worker_management.lock().unwrap().state,
+        LocalWorkerManagementState::Blocked
+    );
+    assert_eq!(
+        connector.hosted.lock().unwrap().len(),
+        1,
+        "lost stop reply started another child"
+    );
+    let mut stopped = runtime.clone();
+    stopped["state"] = "exited".into();
+    stopped["controller_active"] = false.into();
+    stopped["lifecycle"]["desired"] = "stopped".into();
+    fs::write(
+        root.join("status.json"),
+        serde_json::to_vec(&serde_json::json!({"version":1,"result":stopped})).unwrap(),
+    )
+    .unwrap();
+    connector.manage_worker();
+    assert_eq!(
+        connector.worker_management.lock().unwrap().state,
+        LocalWorkerManagementState::Paused
+    );
+    assert_eq!(
+        connector.hosted.lock().unwrap().len(),
+        1,
+        "paused observation started another child"
+    );
+    connector.shutdown_owned().unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("stop.json")).unwrap(),
+        "{\"version\":1,\"action\":\"stop\"}\n"
+    );
+    assert!(connector.hosted.lock().unwrap().is_empty());
+    assert!(matches!(
+        connector.local_worker(LocalWorkerAction::Start, None),
+        Err(NativeFailure::Stopped)
+    ));
+}
+
+// Unit operation fixtures share a framed resident adapter. Actual process,
+// listener and credential ownership are covered separately by the Go binary.
+#[cfg(unix)]
+pub(crate) fn fixture_connector(executable: PathBuf, root: PathBuf) -> Result<Connector> {
+    use std::os::unix::fs::PermissionsExt;
+    let operation = executable.with_extension("operation");
+    fs::rename(&executable, &operation).unwrap();
+    let adapter = include_str!("resident_fixture.py").replace(
+        "OPERATION_PATH",
+        &serde_json::to_string(&operation.to_string_lossy()).unwrap(),
+    );
+    fs::write(&executable, adapter).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    Connector::new(executable, root)
+}
+
+#[test]
+fn local_server_compatibility_uses_the_compiled_package_version() {
+    let temporary = tempfile::tempdir().unwrap();
+    let connector = Connector::new(
+        temporary.path().join("sidecar"),
+        temporary.path().join("state"),
+    )
+    .unwrap();
+    for (version, protocol, accepted) in [
+        (env!("CARGO_PKG_VERSION"), 1, true),
+        ("0.0.0", 1, false),
+        (env!("CARGO_PKG_VERSION"), 2, false),
+    ] {
+        let value = serde_json::json!({"reused":true,"status":{"version":version,"protocol_version":protocol}});
+        assert_eq!(connector.server_state(&value).is_ok(), accepted);
+    }
+}
+
+#[test]
+#[cfg(unix)]
+fn saved_server_compatibility_uses_the_compiled_package_version() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use crate::connections::{SavedConnection, SavedConnectionState};
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let device = metadata();
+    let expected = SavedConnection {
+        version: 1,
+        revision: 1,
+        id: uuid::Uuid::now_v7().to_string(),
+        name: "Fixture".into(),
+        endpoint: device.endpoint.clone(),
+        server_id: device.server_id.clone(),
+        pairing_id: device.pairing_id.clone(),
+        device_id: device.device_id.clone(),
+        state: SavedConnectionState::Paired,
+        created_at: "2026-10-08T00:00:00Z".into(),
+        removal: None,
+    };
+    let directory = root.join("connections").join(&expected.id).join("client");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("device.json"), document(&device)).unwrap();
+    let executable = temporary.path().join("sidecar");
+    fs::write(&executable, "#!/bin/sh\nexit 1\n").unwrap();
+    let connector = fixture_connector(executable.clone(), root).unwrap();
+    let operation = executable.with_extension("operation");
+    for (version, protocol, accepted) in [
+        (env!("CARGO_PKG_VERSION"), 1, true),
+        ("0.0.0", 1, false),
+        (env!("CARGO_PKG_VERSION"), 2, false),
+    ] {
+        let response = serde_json::json!({"version":1,"result":{"profile":expected,"server_version":version,"protocol_version":protocol,"observed_at":"2026-10-08T00:00:00Z"}});
+        fs::write(
+            &operation,
+            format!("#!/bin/sh\nprintf '%s' '{}'\n", response),
+        )
+        .unwrap();
+        fs::set_permissions(&operation, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(connector.connect_saved(&expected).is_ok(), accepted);
+    }
 }

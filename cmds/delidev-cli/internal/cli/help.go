@@ -61,8 +61,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   account logout --id ID --revision N --machine-id ID
   account validate --id ID --revision N
   account status --id ID
-  account oauth start --provider-id ID --revision N
-  account oauth complete --attempt-id ID --revision N --code-stdin
+  account oauth start --provider-id ID --revision N [--callback-url URL] [--google-project-id ID]
+  account oauth complete --attempt-id ID --revision N (--code-stdin | --callback-stdin)
   --request-id ORIGINAL_ID account oauth complete --attempt-id ID --revision ORIGINAL_N --recover
   account oauth status --attempt-id ID
   account oauth cancel --attempt-id ID --revision N
@@ -70,7 +70,7 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   browser-profile list [--page-size N --page-token TOKEN]
   browser-profile register --id SESSION --revision N --account-id ACCOUNT
   browser-profile confirm-removal --id PROFILE --revision N --deletion-request-id REQUEST
-  account refresh-quota --id ID --revision N --machine-id ID --connection-id ID --generation-id ID
+  account refresh-quota --id ID --revision N [--machine-id ID] --connection-id ID --generation-id ID
   account refresh-all-quotas
   account consume-reset-credit --id ID --revision N --machine-id ID --connection-id ID --generation-id ID --credits-observation-id ID (--credit-id ID | --next-credit) --confirm
   account reconcile-reset-credit --id ID --revision N --operation-id ORIGINAL_ID --connection-id ID --generation-id ID --confirm
@@ -88,7 +88,6 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   network worker-status --machine-id ID
   integration list|get|snapshot [--id ID]
   integration token-form --id ID --revision N --access selected-repositories|public-repositories|private-repositories [--open]
-  integration inspect-repository --repository-id ID
   github pr|issue list --repository-id ID [--state open|closed|all] [--page N --page-size N]
   github pr|issue search --repository-id ID --text TERMS [--state open|closed|all] [--page N]
   github pr|issue get|open --repository-id ID --number N
@@ -197,6 +196,8 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   KIND create --input FILE|- [--request-id UUID-V7]
   KIND edit --id ID --revision N --input FILE|- [--request-id UUID-V7]
   KIND delete --id ID --revision N [--request-id UUID-V7]
+  project prompt-history list --project-id ID [--limit 50] [--page-token TOKEN]
+  project prompt-history clear --project-id ID --confirm [--request-id ID]
   agent routing --id ID [--project-id ID]
   events --cursor TOKEN [--session-id ID]
   version

@@ -117,7 +117,7 @@ func (c *Client) inspectRetainedTurnLocked(ctx context.Context, turnID domain.ID
 	if err != nil || response.ErrorCode != nil {
 		return trackedTurn{}, turnUncertain()
 	}
-	turn, inputs, err := decodeLatestTurnInputs(response.Result)
+	turn, inputs, err := decodeLatestTurnInputs(response.Result, c.nativeImageInput)
 	retained, known := c.execution.turns[turnID]
 	if err != nil || !known || turn.ID != retained.Turn.ID || (retained.Turn.Status.terminal() && turn.Status != retained.Turn.Status) || len(retained.Inputs) != len(inputs) {
 		return trackedTurn{}, turnUncertain()

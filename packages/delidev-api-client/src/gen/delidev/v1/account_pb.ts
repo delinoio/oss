@@ -4,7 +4,7 @@
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Mutation, Resource } from "./common_pb.js";
+import type { ApiProtocol, Mutation, Resource } from "./common_pb.js";
 import { file_delidev_v1_common } from "./common_pb.js";
 import type { ErrorDetail } from "./worker_pb.js";
 import { file_delidev_v1_worker } from "./worker_pb.js";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/account.proto.
  */
 export const file_delidev_v1_account: GenFile = /*@__PURE__*/
-  fileDesc("ChhkZWxpZGV2L3YxL2FjY291bnQucHJvdG8SCmRlbGlkZXYudjEiYQoVQ29ubmVjdEFjY291bnRSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIPCgdhcGlfa2V5GAIgASgMEg8KB2tleWxlc3MYAyABKAgiZQoWQ29ubmVjdEFjY291bnRSZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIkIKGERpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ihgEKGURpc2Nvbm5lY3RBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIcChRjbGVhbnVwX3Byb2JsZW1fanNvbhgEIAEoDCIlChdHZXRBY2NvdW50U3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoCSJBChhHZXRBY2NvdW50U3RhdHVzUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiQAoWVmFsaWRhdGVBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ifwoXVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIXCg92YWxpZGF0aW9uX2pzb24YBCABKAwitAEKE0FjY291bnRPQXV0aEF0dGVtcHQSCgoCaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQSLAoFc3RhdGUYAyABKA4yHS5kZWxpZGV2LnYxLkFjY291bnRPQXV0aFN0YXRlEhIKCmV4cGlyZXNfYXQYBCABKAkSEwoLcHJvdmlkZXJfaWQYBSABKAkSKAoHcHJvYmxlbRgGIAEoCzIXLmRlbGlkZXYudjEuRXJyb3JEZXRhaWwiWAoYU3RhcnRBY2NvdW50T0F1dGhSZXF1ZXN0EiYKCHByb3ZpZGVyGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIUCgxjYWxsYmFja191cmwYAiABKAkijgEKGVN0YXJ0QWNjb3VudE9BdXRoUmVzcG9uc2USMAoHYXR0ZW1wdBgBIAEoCzIfLmRlbGlkZXYudjEuQWNjb3VudE9BdXRoQXR0ZW1wdBIZChFhdXRob3JpemF0aW9uX3VybBgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIImEKG0NvbXBsZXRlQWNjb3VudE9BdXRoUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SGgoSYXV0aG9yaXphdGlvbl9jb2RlGAIgASgMIkMKGUNhbmNlbEFjY291bnRPQXV0aFJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIjIKHEdldEFjY291bnRPQXV0aFN0YXR1c1JlcXVlc3QSEgoKYXR0ZW1wdF9pZBgBIAEoCSKdAQocQ29tcGxldGVBY2NvdW50T0F1dGhSZXNwb25zZRIwCgdhdHRlbXB0GAEgASgLMh8uZGVsaWRldi52MS5BY2NvdW50T0F1dGhBdHRlbXB0EiUKB2FjY291bnQYAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgimwEKGkNhbmNlbEFjY291bnRPQXV0aFJlc3BvbnNlEjAKB2F0dGVtcHQYASABKAsyHy5kZWxpZGV2LnYxLkFjY291bnRPQXV0aEF0dGVtcHQSJQoHYWNjb3VudBgCIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgDIAEoCRIQCghyZXBsYXllZBgEIAEoCCKeAQodR2V0QWNjb3VudE9BdXRoU3RhdHVzUmVzcG9uc2USMAoHYXR0ZW1wdBgBIAEoCzIfLmRlbGlkZXYudjEuQWNjb3VudE9BdXRoQXR0ZW1wdBIlCgdhY2NvdW50GAIgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIKoIDChFBY2NvdW50T0F1dGhTdGF0ZRIjCh9BQ0NPVU5UX09BVVRIX1NUQVRFX1VOU1BFQ0lGSUVEEAASLgoqQUNDT1VOVF9PQVVUSF9TVEFURV9BV0FJVElOR19BVVRIT1JJWkFUSU9OEAESIgoeQUNDT1VOVF9PQVVUSF9TVEFURV9FWENIQU5HSU5HEAISHgoaQUNDT1VOVF9PQVVUSF9TVEFURV9TQVZJTkcQAxIhCh1BQ0NPVU5UX09BVVRIX1NUQVRFX0NPTk5FQ1RFRBAEEiAKHEFDQ09VTlRfT0FVVEhfU1RBVEVfQ0FOQ0VMRUQQBRIfChtBQ0NPVU5UX09BVVRIX1NUQVRFX0VYUElSRUQQBhIeChpBQ0NPVU5UX09BVVRIX1NUQVRFX0ZBSUxFRBAHEiMKH0FDQ09VTlRfT0FVVEhfU1RBVEVfSU5URVJSVVBURUQQCBIpCiVBQ0NPVU5UX09BVVRIX1NUQVRFX1JFQ09WRVJZX1JFUVVJUkVEEAkypgYKDkFjY291bnRTZXJ2aWNlElcKDkNvbm5lY3RBY2NvdW50EiEuZGVsaWRldi52MS5Db25uZWN0QWNjb3VudFJlcXVlc3QaIi5kZWxpZGV2LnYxLkNvbm5lY3RBY2NvdW50UmVzcG9uc2USYAoRRGlzY29ubmVjdEFjY291bnQSJC5kZWxpZGV2LnYxLkRpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBolLmRlbGlkZXYudjEuRGlzY29ubmVjdEFjY291bnRSZXNwb25zZRJdChBHZXRBY2NvdW50U3RhdHVzEiMuZGVsaWRldi52MS5HZXRBY2NvdW50U3RhdHVzUmVxdWVzdBokLmRlbGlkZXYudjEuR2V0QWNjb3VudFN0YXR1c1Jlc3BvbnNlEloKD1ZhbGlkYXRlQWNjb3VudBIiLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVxdWVzdBojLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USYAoRU3RhcnRBY2NvdW50T0F1dGgSJC5kZWxpZGV2LnYxLlN0YXJ0QWNjb3VudE9BdXRoUmVxdWVzdBolLmRlbGlkZXYudjEuU3RhcnRBY2NvdW50T0F1dGhSZXNwb25zZRJpChRDb21wbGV0ZUFjY291bnRPQXV0aBInLmRlbGlkZXYudjEuQ29tcGxldGVBY2NvdW50T0F1dGhSZXF1ZXN0GiguZGVsaWRldi52MS5Db21wbGV0ZUFjY291bnRPQXV0aFJlc3BvbnNlEmMKEkNhbmNlbEFjY291bnRPQXV0aBIlLmRlbGlkZXYudjEuQ2FuY2VsQWNjb3VudE9BdXRoUmVxdWVzdBomLmRlbGlkZXYudjEuQ2FuY2VsQWNjb3VudE9BdXRoUmVzcG9uc2USbAoVR2V0QWNjb3VudE9BdXRoU3RhdHVzEiguZGVsaWRldi52MS5HZXRBY2NvdW50T0F1dGhTdGF0dXNSZXF1ZXN0GikuZGVsaWRldi52MS5HZXRBY2NvdW50T0F1dGhTdGF0dXNSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common, file_delidev_v1_worker]);
+  fileDesc("ChhkZWxpZGV2L3YxL2FjY291bnQucHJvdG8SCmRlbGlkZXYudjEiYQoVQ29ubmVjdEFjY291bnRSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIPCgdhcGlfa2V5GAIgASgMEg8KB2tleWxlc3MYAyABKAgiZQoWQ29ubmVjdEFjY291bnRSZXNwb25zZRIlCgdhY2NvdW50GAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIkIKGERpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ihgEKGURpc2Nvbm5lY3RBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIcChRjbGVhbnVwX3Byb2JsZW1fanNvbhgEIAEoDCIlChdHZXRBY2NvdW50U3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoCSJBChhHZXRBY2NvdW50U3RhdHVzUmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2UiQAoWVmFsaWRhdGVBY2NvdW50UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24ifwoXVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USJQoHYWNjb3VudBgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCBIXCg92YWxpZGF0aW9uX2pzb24YBCABKAwi4wEKE0FjY291bnRPQXV0aEF0dGVtcHQSCgoCaWQYASABKAkSEAoIcmV2aXNpb24YAiABKAQSLAoFc3RhdGUYAyABKA4yHS5kZWxpZGV2LnYxLkFjY291bnRPQXV0aFN0YXRlEhIKCmV4cGlyZXNfYXQYBCABKAkSEwoLcHJvdmlkZXJfaWQYBSABKAkSKAoHcHJvYmxlbRgGIAEoCzIXLmRlbGlkZXYudjEuRXJyb3JEZXRhaWwSLQoMYXBpX3Byb3RvY29sGAcgASgOMhcuZGVsaWRldi52MS5BcGlQcm90b2NvbCK+AQoYU3RhcnRBY2NvdW50T0F1dGhSZXF1ZXN0EiYKCHByb3ZpZGVyGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIUCgxjYWxsYmFja191cmwYAiABKAkSNQoGZ29vZ2xlGAMgASgLMiUuZGVsaWRldi52MS5BY2NvdW50T0F1dGhHb29nbGVPcHRpb25zEi0KDGFwaV9wcm90b2NvbBgEIAEoDjIXLmRlbGlkZXYudjEuQXBpUHJvdG9jb2wizQEKGVN0YXJ0QWNjb3VudE9BdXRoUmVzcG9uc2USMAoHYXR0ZW1wdBgBIAEoCzIfLmRlbGlkZXYudjEuQWNjb3VudE9BdXRoQXR0ZW1wdBIZChFhdXRob3JpemF0aW9uX3VybBgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIEioKBGZsb3cYBSABKA4yHC5kZWxpZGV2LnYxLkFjY291bnRPQXV0aEZsb3cSEQoJdXNlcl9jb2RlGAYgASgJIn4KG0NvbXBsZXRlQWNjb3VudE9BdXRoUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SGgoSYXV0aG9yaXphdGlvbl9jb2RlGAIgASgMEhsKE2F1dGhvcml6YXRpb25fc3RhdGUYAyABKAwiNQoZQWNjb3VudE9BdXRoR29vZ2xlT3B0aW9ucxIYChBxdW90YV9wcm9qZWN0X2lkGAEgASgJIkMKGUNhbmNlbEFjY291bnRPQXV0aFJlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIjIKHEdldEFjY291bnRPQXV0aFN0YXR1c1JlcXVlc3QSEgoKYXR0ZW1wdF9pZBgBIAEoCSKdAQocQ29tcGxldGVBY2NvdW50T0F1dGhSZXNwb25zZRIwCgdhdHRlbXB0GAEgASgLMh8uZGVsaWRldi52MS5BY2NvdW50T0F1dGhBdHRlbXB0EiUKB2FjY291bnQYAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgimwEKGkNhbmNlbEFjY291bnRPQXV0aFJlc3BvbnNlEjAKB2F0dGVtcHQYASABKAsyHy5kZWxpZGV2LnYxLkFjY291bnRPQXV0aEF0dGVtcHQSJQoHYWNjb3VudBgCIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgDIAEoCRIQCghyZXBsYXllZBgEIAEoCCKeAQodR2V0QWNjb3VudE9BdXRoU3RhdHVzUmVzcG9uc2USMAoHYXR0ZW1wdBgBIAEoCzIfLmRlbGlkZXYudjEuQWNjb3VudE9BdXRoQXR0ZW1wdBIlCgdhY2NvdW50GAIgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIItEBCh1DaGFuZ2VBY2NvdW50QXBpRm9ybWF0UmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SLQoMYXBpX3Byb3RvY29sGAIgASgOMhcuZGVsaWRldi52MS5BcGlQcm90b2NvbBINCgVhbGlhcxgDIAEoCRIPCgdlbmFibGVkGAQgASgIEhkKEWV4Y2x1ZGVfYXV0b21hdGljGAUgASgIEh4KFnJlY292ZXJ5X25vdGlmaWNhdGlvbnMYBiABKAgibQoeQ2hhbmdlQWNjb3VudEFwaUZvcm1hdFJlc3BvbnNlEiUKB2FjY291bnQYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgqcgoQQWNjb3VudE9BdXRoRmxvdxIiCh5BQ0NPVU5UX09BVVRIX0ZMT1dfVU5TUEVDSUZJRUQQABIbChdBQ0NPVU5UX09BVVRIX0ZMT1dfUEtDRRABEh0KGUFDQ09VTlRfT0FVVEhfRkxPV19ERVZJQ0UQAiqCAwoRQWNjb3VudE9BdXRoU3RhdGUSIwofQUNDT1VOVF9PQVVUSF9TVEFURV9VTlNQRUNJRklFRBAAEi4KKkFDQ09VTlRfT0FVVEhfU1RBVEVfQVdBSVRJTkdfQVVUSE9SSVpBVElPThABEiIKHkFDQ09VTlRfT0FVVEhfU1RBVEVfRVhDSEFOR0lORxACEh4KGkFDQ09VTlRfT0FVVEhfU1RBVEVfU0FWSU5HEAMSIQodQUNDT1VOVF9PQVVUSF9TVEFURV9DT05ORUNURUQQBBIgChxBQ0NPVU5UX09BVVRIX1NUQVRFX0NBTkNFTEVEEAUSHwobQUNDT1VOVF9PQVVUSF9TVEFURV9FWFBJUkVEEAYSHgoaQUNDT1VOVF9PQVVUSF9TVEFURV9GQUlMRUQQBxIjCh9BQ0NPVU5UX09BVVRIX1NUQVRFX0lOVEVSUlVQVEVEEAgSKQolQUNDT1VOVF9PQVVUSF9TVEFURV9SRUNPVkVSWV9SRVFVSVJFRBAJMpcHCg5BY2NvdW50U2VydmljZRJvChZDaGFuZ2VBY2NvdW50QXBpRm9ybWF0EikuZGVsaWRldi52MS5DaGFuZ2VBY2NvdW50QXBpRm9ybWF0UmVxdWVzdBoqLmRlbGlkZXYudjEuQ2hhbmdlQWNjb3VudEFwaUZvcm1hdFJlc3BvbnNlElcKDkNvbm5lY3RBY2NvdW50EiEuZGVsaWRldi52MS5Db25uZWN0QWNjb3VudFJlcXVlc3QaIi5kZWxpZGV2LnYxLkNvbm5lY3RBY2NvdW50UmVzcG9uc2USYAoRRGlzY29ubmVjdEFjY291bnQSJC5kZWxpZGV2LnYxLkRpc2Nvbm5lY3RBY2NvdW50UmVxdWVzdBolLmRlbGlkZXYudjEuRGlzY29ubmVjdEFjY291bnRSZXNwb25zZRJdChBHZXRBY2NvdW50U3RhdHVzEiMuZGVsaWRldi52MS5HZXRBY2NvdW50U3RhdHVzUmVxdWVzdBokLmRlbGlkZXYudjEuR2V0QWNjb3VudFN0YXR1c1Jlc3BvbnNlEloKD1ZhbGlkYXRlQWNjb3VudBIiLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVxdWVzdBojLmRlbGlkZXYudjEuVmFsaWRhdGVBY2NvdW50UmVzcG9uc2USYAoRU3RhcnRBY2NvdW50T0F1dGgSJC5kZWxpZGV2LnYxLlN0YXJ0QWNjb3VudE9BdXRoUmVxdWVzdBolLmRlbGlkZXYudjEuU3RhcnRBY2NvdW50T0F1dGhSZXNwb25zZRJpChRDb21wbGV0ZUFjY291bnRPQXV0aBInLmRlbGlkZXYudjEuQ29tcGxldGVBY2NvdW50T0F1dGhSZXF1ZXN0GiguZGVsaWRldi52MS5Db21wbGV0ZUFjY291bnRPQXV0aFJlc3BvbnNlEmMKEkNhbmNlbEFjY291bnRPQXV0aBIlLmRlbGlkZXYudjEuQ2FuY2VsQWNjb3VudE9BdXRoUmVxdWVzdBomLmRlbGlkZXYudjEuQ2FuY2VsQWNjb3VudE9BdXRoUmVzcG9uc2USbAoVR2V0QWNjb3VudE9BdXRoU3RhdHVzEiguZGVsaWRldi52MS5HZXRBY2NvdW50T0F1dGhTdGF0dXNSZXF1ZXN0GikuZGVsaWRldi52MS5HZXRBY2NvdW50T0F1dGhTdGF0dXNSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common, file_delidev_v1_worker]);
 
 /**
  * @generated from message delidev.v1.ConnectAccountRequest
@@ -247,6 +247,13 @@ export type AccountOAuthAttempt = Message<"delidev.v1.AccountOAuthAttempt"> & {
    * @generated from field: delidev.v1.ErrorDetail problem = 6;
    */
   problem?: ErrorDetail | undefined;
+
+  /**
+   * Original explicit inference format; omitted legacy attempts retain defaults.
+   *
+   * @generated from field: delidev.v1.ApiProtocol api_protocol = 7;
+   */
+  apiProtocol: ApiProtocol;
 };
 
 /**
@@ -271,6 +278,18 @@ export type StartAccountOAuthRequest = Message<"delidev.v1.StartAccountOAuthRequ
    * @generated from field: string callback_url = 2;
    */
   callbackUrl: string;
+
+  /**
+   * @generated from field: delidev.v1.AccountOAuthGoogleOptions google = 3;
+   */
+  google?: AccountOAuthGoogleOptions | undefined;
+
+  /**
+   * Explicit inference format; UNSPECIFIED preserves the original default.
+   *
+   * @generated from field: delidev.v1.ApiProtocol api_protocol = 4;
+   */
+  apiProtocol: ApiProtocol;
 };
 
 /**
@@ -305,6 +324,18 @@ export type StartAccountOAuthResponse = Message<"delidev.v1.StartAccountOAuthRes
    * @generated from field: bool replayed = 4;
    */
   replayed: boolean;
+
+  /**
+   * @generated from field: delidev.v1.AccountOAuthFlow flow = 5;
+   */
+  flow: AccountOAuthFlow;
+
+  /**
+   * Transient device approval code; absent from every status projection.
+   *
+   * @generated from field: string user_code = 6;
+   */
+  userCode: string;
 };
 
 /**
@@ -329,6 +360,13 @@ export type CompleteAccountOAuthRequest = Message<"delidev.v1.CompleteAccountOAu
    * @generated from field: bytes authorization_code = 2;
    */
   authorizationCode: Uint8Array;
+
+  /**
+   * Write-only original state. Required by the new PKCE profiles.
+   *
+   * @generated from field: bytes authorization_state = 3;
+   */
+  authorizationState: Uint8Array;
 };
 
 /**
@@ -337,6 +375,23 @@ export type CompleteAccountOAuthRequest = Message<"delidev.v1.CompleteAccountOAu
  */
 export const CompleteAccountOAuthRequestSchema: GenMessage<CompleteAccountOAuthRequest> = /*@__PURE__*/
   messageDesc(file_delidev_v1_account, 11);
+
+/**
+ * @generated from message delidev.v1.AccountOAuthGoogleOptions
+ */
+export type AccountOAuthGoogleOptions = Message<"delidev.v1.AccountOAuthGoogleOptions"> & {
+  /**
+   * @generated from field: string quota_project_id = 1;
+   */
+  quotaProjectId: string;
+};
+
+/**
+ * Describes the message delidev.v1.AccountOAuthGoogleOptions.
+ * Use `create(AccountOAuthGoogleOptionsSchema)` to create a new message.
+ */
+export const AccountOAuthGoogleOptionsSchema: GenMessage<AccountOAuthGoogleOptions> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 12);
 
 /**
  * @generated from message delidev.v1.CancelAccountOAuthRequest
@@ -353,7 +408,7 @@ export type CancelAccountOAuthRequest = Message<"delidev.v1.CancelAccountOAuthRe
  * Use `create(CancelAccountOAuthRequestSchema)` to create a new message.
  */
 export const CancelAccountOAuthRequestSchema: GenMessage<CancelAccountOAuthRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_account, 12);
+  messageDesc(file_delidev_v1_account, 13);
 
 /**
  * @generated from message delidev.v1.GetAccountOAuthStatusRequest
@@ -370,7 +425,7 @@ export type GetAccountOAuthStatusRequest = Message<"delidev.v1.GetAccountOAuthSt
  * Use `create(GetAccountOAuthStatusRequestSchema)` to create a new message.
  */
 export const GetAccountOAuthStatusRequestSchema: GenMessage<GetAccountOAuthStatusRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_account, 13);
+  messageDesc(file_delidev_v1_account, 14);
 
 /**
  * @generated from message delidev.v1.CompleteAccountOAuthResponse
@@ -402,7 +457,7 @@ export type CompleteAccountOAuthResponse = Message<"delidev.v1.CompleteAccountOA
  * Use `create(CompleteAccountOAuthResponseSchema)` to create a new message.
  */
 export const CompleteAccountOAuthResponseSchema: GenMessage<CompleteAccountOAuthResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_account, 14);
+  messageDesc(file_delidev_v1_account, 15);
 
 /**
  * @generated from message delidev.v1.CancelAccountOAuthResponse
@@ -434,7 +489,7 @@ export type CancelAccountOAuthResponse = Message<"delidev.v1.CancelAccountOAuthR
  * Use `create(CancelAccountOAuthResponseSchema)` to create a new message.
  */
 export const CancelAccountOAuthResponseSchema: GenMessage<CancelAccountOAuthResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_account, 15);
+  messageDesc(file_delidev_v1_account, 16);
 
 /**
  * @generated from message delidev.v1.GetAccountOAuthStatusResponse
@@ -466,7 +521,110 @@ export type GetAccountOAuthStatusResponse = Message<"delidev.v1.GetAccountOAuthS
  * Use `create(GetAccountOAuthStatusResponseSchema)` to create a new message.
  */
 export const GetAccountOAuthStatusResponseSchema: GenMessage<GetAccountOAuthStatusResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_account, 16);
+  messageDesc(file_delidev_v1_account, 17);
+
+/**
+ * Changes future execution format without replacing the protected credential.
+ *
+ * @generated from message delidev.v1.ChangeAccountApiFormatRequest
+ */
+export type ChangeAccountApiFormatRequest = Message<"delidev.v1.ChangeAccountApiFormatRequest"> & {
+  /**
+   * @generated from field: delidev.v1.Mutation mutation = 1;
+   */
+  mutation?: Mutation | undefined;
+
+  /**
+   * @generated from field: delidev.v1.ApiProtocol api_protocol = 2;
+   */
+  apiProtocol: ApiProtocol;
+
+  /**
+   * @generated from field: string alias = 3;
+   */
+  alias: string;
+
+  /**
+   * @generated from field: bool enabled = 4;
+   */
+  enabled: boolean;
+
+  /**
+   * @generated from field: bool exclude_automatic = 5;
+   */
+  excludeAutomatic: boolean;
+
+  /**
+   * @generated from field: bool recovery_notifications = 6;
+   */
+  recoveryNotifications: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.ChangeAccountApiFormatRequest.
+ * Use `create(ChangeAccountApiFormatRequestSchema)` to create a new message.
+ */
+export const ChangeAccountApiFormatRequestSchema: GenMessage<ChangeAccountApiFormatRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 18);
+
+/**
+ * @generated from message delidev.v1.ChangeAccountApiFormatResponse
+ */
+export type ChangeAccountApiFormatResponse = Message<"delidev.v1.ChangeAccountApiFormatResponse"> & {
+  /**
+   * @generated from field: delidev.v1.Resource account = 1;
+   */
+  account?: Resource | undefined;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool replayed = 3;
+   */
+  replayed: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.ChangeAccountApiFormatResponse.
+ * Use `create(ChangeAccountApiFormatResponseSchema)` to create a new message.
+ */
+export const ChangeAccountApiFormatResponseSchema: GenMessage<ChangeAccountApiFormatResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_account, 19);
+
+/**
+ * @generated from enum delidev.v1.AccountOAuthFlow
+ */
+export enum AccountOAuthFlow {
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_FLOW_UNSPECIFIED = 0;
+   */
+  ACCOUNT_OAUTH_FLOW_UNSPECIFIED = 0,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_FLOW_PKCE = 1;
+   */
+  ACCOUNT_OAUTH_FLOW_PKCE = 1,
+
+  /**
+   * buf:lint:ignore ENUM_VALUE_PREFIX
+   *
+   * @generated from enum value: ACCOUNT_OAUTH_FLOW_DEVICE = 2;
+   */
+  ACCOUNT_OAUTH_FLOW_DEVICE = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.AccountOAuthFlow.
+ */
+export const AccountOAuthFlowSchema: GenEnum<AccountOAuthFlow> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_account, 0);
 
 /**
  * Preserve the reserved OAuth spelling. Remove these value-prefix exceptions
@@ -550,7 +708,7 @@ export enum AccountOAuthState {
  * Describes the enum delidev.v1.AccountOAuthState.
  */
 export const AccountOAuthStateSchema: GenEnum<AccountOAuthState> = /*@__PURE__*/
-  enumDesc(file_delidev_v1_account, 0);
+  enumDesc(file_delidev_v1_account, 1);
 
 /**
  * Write-only account credentials. Workers cannot invoke this owner/client API.
@@ -558,6 +716,14 @@ export const AccountOAuthStateSchema: GenEnum<AccountOAuthState> = /*@__PURE__*/
  * @generated from service delidev.v1.AccountService
  */
 export const AccountService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.AccountService.ChangeAccountApiFormat
+   */
+  changeAccountApiFormat: {
+    methodKind: "unary";
+    input: typeof ChangeAccountApiFormatRequestSchema;
+    output: typeof ChangeAccountApiFormatResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.AccountService.ConnectAccount
    */

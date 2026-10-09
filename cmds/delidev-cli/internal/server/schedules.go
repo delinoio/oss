@@ -399,11 +399,31 @@ func (s *Service) ListSchedules(ctx context.Context, req *connect.Request[pb.Lis
 		if err != nil {
 			return err
 		}
-		for _, r := range rows {
+		for i, r := range rows {
 			response.Msg.Schedules = append(response.Msg.Schedules, rpc.Resource(r))
+			response.Msg.NextPageToken = ""
+			if more || i+1 < len(rows) {
+				response.Msg.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: r.ID, Sequence: epoch})
+				if err != nil {
+					return err
+				}
+			}
+			fits, err := resourcePageFits(response.Msg)
+			if err != nil {
+				return err
+			}
+			if !fits {
+				response.Msg.Schedules = response.Msg.Schedules[:len(response.Msg.Schedules)-1]
+				if len(response.Msg.Schedules) == 0 {
+					return resourcePageTooLarge()
+				}
+				more = true
+				break
+			}
 		}
-		if more && len(rows) > 0 {
-			response.Msg.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: rows[len(rows)-1].ID, Sequence: epoch})
+		response.Msg.NextPageToken = ""
+		if more && len(response.Msg.Schedules) > 0 {
+			response.Msg.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: rows[len(response.Msg.Schedules)-1].ID, Sequence: epoch})
 		}
 		return err
 	})
@@ -449,11 +469,31 @@ func (s *Service) ListScheduleOccurrences(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return err
 		}
-		for _, r := range rows {
+		for i, r := range rows {
 			response.Msg.Occurrences = append(response.Msg.Occurrences, rpc.Resource(r))
+			response.Msg.NextPageToken = ""
+			if more || i+1 < len(rows) {
+				response.Msg.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: r.ID, Sequence: current})
+				if err != nil {
+					return err
+				}
+			}
+			fits, err := resourcePageFits(response.Msg)
+			if err != nil {
+				return err
+			}
+			if !fits {
+				response.Msg.Occurrences = response.Msg.Occurrences[:len(response.Msg.Occurrences)-1]
+				if len(response.Msg.Occurrences) == 0 {
+					return resourcePageTooLarge()
+				}
+				more = true
+				break
+			}
 		}
-		if more && len(rows) > 0 {
-			response.Msg.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: rows[len(rows)-1].ID, Sequence: current})
+		response.Msg.NextPageToken = ""
+		if more && len(response.Msg.Occurrences) > 0 {
+			response.Msg.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: rows[len(response.Msg.Occurrences)-1].ID, Sequence: current})
 		}
 		return err
 	})

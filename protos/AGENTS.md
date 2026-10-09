@@ -1,3 +1,10 @@
+- API account protocol selection follows the catalog/account/protocol contracts. Record ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed API protocol/authentication/profile declarations in the owning feature PR. Reservations grant no credential or inference authority and add no database migration. Preserve original defaults, disconnect/confirmed cleanup before protocol changes, immutable executions and keyless cleanup proofs.
+
+- DeliDev remote-first repositories record System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1` in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; reservations alone grant no support or Git authority.
+
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
+
 ### Instructions for `protos/`
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
@@ -63,3 +70,8 @@ Read the relevant owner before changing its behavior, including cross-domain con
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
 - DeliDev BrowserService follows `docs/cmds-delidev-browser-contract.md`: use its own typed profile/state/capability declarations, exact original mutation identities and metadata-only payloads. Preserve all existing numeric allocations and migration reservations; generated compatibility exports must reproduce.
+
+- Remote repositories activate the main-established System 37 / Worker 19 allocations; retain System 31/32 and Worker 18 immediate Local Clone/metadata meanings. Source-kind enums and pinned URL JSON remain additive and historical omitted fields are never rewritten. Regenerate bindings from reconciled schemas.
+
+- Native Claude subscriptions activate only the main-established PR #1612 allocation closure (System 38 / Worker 20). Keep existing Codex fields and independent capabilities unchanged, generated parity, write-only once-only code and original Worker ownership under the subscription/protocol contracts. No database migration.
+- Inline Worker models and endpoint-only completion follow the allocation amendment in `docs/cmds-delidev-catalog-contract.md`. Record System 42 / Worker 22 and the complete endpoint/identity/pricing declarations in the owning feature PR. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs/backups/sidecars remain untouched and unsupported; reservation-only changes grant no support.

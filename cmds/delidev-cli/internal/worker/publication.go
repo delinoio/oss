@@ -49,15 +49,16 @@ type publicationJournal struct {
 // leaves the exact request/event available for ReplayPending; it never causes
 // another native prompt, side effect or automatic event substitution.
 type ExecutionPublisher struct {
-	mu        sync.Mutex
-	config    PublicationConfig
-	path      string
-	state     publicationJournal
-	execution domain.ID
-	job       domain.ID
-	input     domain.ExecutionJobInput
-	closed    bool
-	release   func() error
+	nativeVersion string
+	mu            sync.Mutex
+	config        PublicationConfig
+	path          string
+	state         publicationJournal
+	execution     domain.ID
+	job           domain.ID
+	input         domain.ExecutionJobInput
+	closed        bool
+	release       func() error
 }
 
 func publicationUncertain() *domain.Error {
@@ -219,4 +220,11 @@ func (p *ExecutionPublisher) sendPending(ctx context.Context) error {
 	}
 	p.state = state
 	return nil
+}
+
+func (p *ExecutionPublisher) NativeVersion() string {
+	if p.nativeVersion != "" {
+		return p.nativeVersion
+	}
+	return p.input.Installation.Version
 }

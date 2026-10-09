@@ -20,6 +20,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -29,20 +30,31 @@ import (
 )
 
 type Config struct {
-	network            *workerNetworkRuntime
-	observations       *managedObservationRegistry
-	inspectionMetadata bool
-	updatesEnabled     bool
-	terminals          *terminalManager
-	Root               string
-	StartupID          domain.ID
-	Logger             *slog.Logger
-	Ready              func(domain.ID)
-	execution          *PublicationConfig
-	executionContext   context.Context
-	questionControls   <-chan *pb.QuestionResponseControl
-	approvalControls   <-chan *pb.ApprovalResponseControl
-	steerControls      <-chan *pb.SteerInputControl
+	imageClient              delidevv1connect.AttachmentServiceClient
+	branchReportClient       delidevv1connect.WorkerServiceClient
+	startup                  *executionStartupAttempt
+	nativeClaudeInstallation *domain.Installation
+	network                  *workerNetworkRuntime
+	observations             *managedObservationRegistry
+	inspectionMetadata       bool
+	remoteWorkspaceClone     bool
+	repositoryClone          bool
+	updatesEnabled           bool
+	terminals                *terminalManager
+	Root                     string
+	StartupID                domain.ID
+	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
+	DesktopClientID domain.ID
+	Logger          *slog.Logger
+	Ready           func(domain.ID)
+	// Admitted runs only after this original process owns its generation/lock.
+	// It publishes desktop ownership independently of network readiness.
+	Admitted         func(Lifecycle)
+	execution        *PublicationConfig
+	executionContext context.Context
+	questionControls <-chan *pb.QuestionResponseControl
+	approvalControls <-chan *pb.ApprovalResponseControl
+	steerControls    <-chan *pb.SteerInputControl
 }
 type journalState string
 
@@ -173,6 +185,23 @@ func Run(ctx context.Context, config Config) (resultErr error) {
 		return err
 	}
 	defer lock.Close()
+	// Publish original identity while both admission locks are retained. A
+	// failed publication leaves the reserved generation pending and admits no
+	// network attachment, native work or desktop ownership callback.
+	if config.DesktopClientID != "" {
+		reserved, proofErr := readLifecycle(config.Root, credential)
+		if proofErr == nil && reserved.Generation != config.StartupID {
+			proofErr = controllerProofFailure(controllerProofInvalid)
+		}
+		if proofErr == nil {
+			proofErr = publishControllerEvidence(config.Root, credential, reserved, config.DesktopClientID)
+		}
+		if proofErr != nil {
+			intentLock.Close()
+			config.Logger.Warn("desktop_worker_controller_proof", "phase", "publication", "code", domain.SafeError(proofErr).Code)
+			return proofErr
+		}
+	}
 	lifecycle, err := enterLifecycleLocked(config.Root, credential, config.StartupID)
 	intentLock.Close()
 	if err != nil {
@@ -200,6 +229,9 @@ func Run(ctx context.Context, config Config) (resultErr error) {
 		}
 	}()
 	onReady := config.Ready
+	if config.Admitted != nil {
+		config.Admitted(lifecycle)
+	}
 	config.Ready = func(id domain.ID) {
 		if err := setPhase(config.Root, credential, lifecycle.Generation, RuntimeReady); err != nil {
 			cancelRun(err)
@@ -225,12 +257,14 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	}
 	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
-	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*workspace.MaxStorageRecoveryJobBytes), connect.WithSendMaxBytes(2<<20))
+	config.imageClient = delidevv1connect.NewAttachmentServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
+	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(8<<20), connect.WithSendMaxBytes(2<<20))
+	config.branchReportClient = delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*domain.MaxRepositoryBranchesJobBytes), connect.WithSendMaxBytes(domain.MaxRepositoryBranchesJobBytes))
 	if err := retireStorageReports(ctx, config); err != nil {
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -245,13 +279,16 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		cancel()
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
+		claudeCapabilityExpected := false
 		metadataExpected := false
+		remoteCloneExpected := false
+		cloneExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
 		}
 		if err == nil {
-			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
-			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1) && workerOpenCodeCompactionInstallation(attached.Msg.Machine)
+			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
+			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
 			subagentExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1)
@@ -260,51 +297,46 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if config.network != nil && (!networkExpected || !proxyExpected) {
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
+			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
+			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
-			installation := codexTitleInstallation(attached.Msg.Machine)
-			executable, version := "", ""
-			if installation != nil {
-				executable, version = installation.ResolvedPath, installation.Version
-			}
-			// Adapter support is independent of the current installation inventory.
-			// Admission still requires the parent's exact verified pinned native
-			// installation; discovery must not require a process reconnect merely
-			// to advertise code that this Worker already implements.
+			// Capabilities describe implemented adapters, never inventory readiness.
+			// The original actual process validates its protocol before input.
+			managedSidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1)
 			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
-			verifiedTitleProfile := false
-			if executable != "" {
-				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				var probeErr error
-				verifiedTitleProfile, probeErr = harness.VerifyCodexTitleProfile(probeCtx, config.Root, domain.NewID(), executable, version, config.Logger)
-				stopProbe()
-				if probeErr != nil {
-					if fatal := fatalTitleProfileProbeError(probeErr); fatal != nil {
-						return fatal
+			verifiedTitleProfile := true
+			managedCapabilityExpected = true
+			titleCapabilityExpected = true
+			profile := "implemented-adapters-v1"
+			config.nativeClaudeInstallation = nil
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
+				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
+				claudeCapabilityExpected, err = verifyNativeClaudeSubscriptionProfile(probeCtx, config, attached.Msg.Machine)
+				stop()
+				if claudeCapabilityExpected {
+					var machine domain.Machine
+					if domain.Decode(attached.Msg.Machine.DocumentJson, &machine) == nil {
+						for index := range machine.Installations {
+							candidate := machine.Installations[index]
+							if candidate.Harness == domain.ClaudeCode && candidate.Version == claude.SupportedVersion && candidate.ProtocolVerified && candidate.State == domain.InstallationDetected && candidate.Problem == nil && candidate.Protocol != nil && candidate.Protocol.State == domain.ProtocolVerified && candidate.Protocol.Problem == nil {
+								config.nativeClaudeInstallation = &candidate
+								break
+							}
+						}
 					}
-					config.Logger.WarnContext(ctx, "automatic title capability probe failed", "machine_id", credential.MachineID, "code", domain.SafeError(probeErr).Code)
 				}
-			}
-			if executable != "" {
-				probeCtx, stopProbe := context.WithTimeout(ctx, 30*time.Second)
-				managedCapabilityExpected, err = verifyManagedSubscriptionProfile(probeCtx, config, executable, version)
-				stopProbe()
 				if err != nil {
 					if domain.SafeError(err).Code == domain.RecoveryRequired {
 						return err
 					}
-					config.Logger.InfoContext(ctx, "managed_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
+					config.Logger.InfoContext(ctx, "native_claude_subscription_profile_unavailable", "code", domain.SafeError(err).Code)
 					err = nil
 				}
-			}
-			titleCapabilityExpected = verifiedTitleProfile
-			profile := executable + "\x00" + version
-			if installation != nil {
-				profile += "\x00" + installation.ExecutableSHA256
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
 			}
-			if compactionExpected && executable != "" {
+			if compactionExpected {
 				profile += "\x00codex-session-compaction-v1"
 			}
 			if subagentExpected {
@@ -316,10 +348,19 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected {
 				profile += "\x00managed"
 			}
+			if claudeCapabilityExpected {
+				profile += "\x00native-claude-subscriptions-v1"
+			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"
 			} else {
 				profile += "\x00unsupported"
+			}
+			if remoteCloneExpected {
+				profile += "\x00remote-workspace-clone-v1"
+			}
+			if cloneExpected {
+				profile += "\x00repository-clone-v1"
 			}
 			if metadataExpected {
 				profile += "\x00inspection-metadata-v1"
@@ -334,6 +375,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				current := config.network.current()
 				profile += "\x00network-generation-" + strconv.FormatUint(current.metadata.Generation, 10) + "-" + string(current.metadata.RouteID)
 			}
+			if managedSidechatExpected {
+				profile += "\x00managed-codex-sidechat-v1"
+			}
 			if sidechatExpected {
 				profile += "\x00codex-read-only-sidechat-v1"
 			}
@@ -346,22 +390,26 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
+
 			if sidechatExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
+				if managedSidechatExpected && managedCapabilityExpected {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1)
+				}
 			}
 			if openCodeForkExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			}
-			if compactionExpected && executable != "" {
+			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			}
 			if openCodeCompactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
-				if !compactionExpected || executable == "" {
+				if !compactionExpected {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1)
 				}
 			}
@@ -380,13 +428,25 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if managedCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
 			}
+			if claudeCapabilityExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)
+			}
 			if verifiedTitleProfile {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1)
 			}
 			if metadataExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
+			if remoteCloneExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
+			}
+			if cloneExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
+			}
 			negotiate, stopNegotiation := context.WithTimeout(ctx, 30*time.Second)
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)
+			}
 			negotiated, negotiateErr := client.AttachWorker(negotiate, authenticated(credential, attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(capabilityAttachID), MachineId: string(credential.MachineID), InstanceId: string(instance), Version: rpc.Version, Capabilities: capabilities}, config)))
 			stopNegotiation()
 			err = negotiateErr
@@ -428,8 +488,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				config.Logger.InfoContext(ctx, "worker auxiliary title capability not negotiated", "machine_id", credential.MachineID)
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
+			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
+			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
-			err = watchAttached(ctx, config, client, credential, instance, auxiliary, managedCapabilityExpected && managedSubscriptionCapability(attached.Msg.Machine))
+			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
 			if time.Since(started) > 30*time.Second {
 				backoff = time.Second
 			}
@@ -754,6 +816,14 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			cancel(err)
 		}
 	}()
+	imagesDone := make(chan struct{})
+	imageClient := config.imageClient
+	go func() {
+		defer close(imagesDone)
+		if imageClient != nil {
+			watchImageTransfers(ctx, config, imageClient, credential, instance)
+		}
+	}()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
 	defer func() {
@@ -761,6 +831,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		_ = stream.Close()
 		<-received
 		<-readsDone
+		<-imagesDone
 		<-forwardsDone
 		<-terminalsDone
 	}()
@@ -844,7 +915,11 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 		report.Problem = &pb.ErrorDetail{Code: string(result.Problem.Code)}
 	}
 	attempt, cancel := context.WithTimeout(ctx, 30*time.Second)
-	acknowledged, err := client.ReportWork(attempt, authenticated(credential, report))
+	reportClient := client
+	if job.Type == domain.DiscoverRepositoryBranchesJob && config.branchReportClient != nil {
+		reportClient = config.branchReportClient
+	}
+	acknowledged, err := reportClient.ReportWork(attempt, authenticated(credential, report))
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -932,9 +1007,15 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	digest := hex.EncodeToString(hash[:])
 	path := filepath.Join(root, "jobs", resource.Id+".json")
 	result := journal{Version: 1, JobID: domain.ID(resource.Id), InstanceID: instance, Revision: resource.Revision, Digest: digest, State: journalStarted, ReportID: domain.NewID()}
-	raw, err := security.ReadPrivate(path, 2<<20)
+	journalLimit := 2 << 20
+	decodeLimit := 1 << 20
+	if job.Type == domain.DiscoverRepositoryBranchesJob {
+		journalLimit = domain.MaxRepositoryBranchesJobBytes
+		decodeLimit = domain.MaxRepositoryBranchesJobBytes
+	}
+	raw, err := security.ReadPrivate(path, int64(journalLimit))
 	if err == nil {
-		if err := domain.Decode(raw, &result); err != nil {
+		if err := domain.DecodeWithLimit(raw, &result, decodeLimit); err != nil {
 			return journal{}, err
 		}
 		if result.Version != 1 || result.JobID != domain.ID(resource.Id) || result.InstanceID != instance || result.Revision != resource.Revision || result.Digest != digest {
@@ -996,6 +1077,17 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		}
 		return json.Marshal(result)
 	case domain.ForkSessionJob:
+		var input domain.ForkJobInput
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		clones, err := workspace.ForkRequiresManagedClone(input)
+		if err != nil {
+			return nil, err
+		}
+		if clones && !config.remoteWorkspaceClone {
+			return nil, domain.Fail(domain.Unsupported, "Independent Fork cloning was not negotiated.", "Update and reconnect the original Worker.")
+		}
 		return forkSession(ctx, config, owner, job)
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
@@ -1084,6 +1176,11 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if input.MachineID != job.MachineID {
 			return nil, domain.Fail(domain.PermissionDenied, "Workspace preparation targets another machine.", "Reconcile the accepted assignment before retrying.")
 		}
+		for _, repo := range input.Repositories {
+			if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !config.remoteWorkspaceClone {
+				return nil, domain.Fail(domain.Unsupported, "Remote workspace cloning was not negotiated.", "Update and reconnect the original Worker.")
+			}
+		}
 		manager := workspace.Manager{Root: root, Logger: config.Logger}
 		manifest, err := manager.Prepare(ctx, input)
 		if err != nil {
@@ -1096,6 +1193,19 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			return nil, err
 		}
 		result, err := harness.Discover(ctx, harness.DiscoveryConfig{Root: root, OwnerID: owner, Logger: config.Logger}, input)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
+	case domain.CloneRepositoryJob:
+		return executeRepositoryClone(ctx, config, owner, job)
+	case domain.DiscoverRepositoryBranchesJob:
+		var input domain.RepositoryBranchesInput
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.MachineID != job.MachineID {
+			return nil, workspace.ResultUncertain()
+		}
+		git := workspace.Git{ProcessRoot: filepath.Join(root, "processes"), OwnerID: owner, Logger: config.Logger}
+		result, err := git.DiscoverRepositoryBranches(ctx, root, input)
 		if err != nil {
 			return nil, err
 		}
@@ -1118,6 +1228,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			if !slices.Contains(inspection.Remotes, remote) {
 				return nil, domain.Fail(domain.InvalidArgument, "The configured remote is missing on this Worker.", "Refresh inspection and select an existing remote.")
 			}
+		}
+		if err := git.ValidateRemoteIdentity(ctx, inspection, input.PreferredRemote, input.ExpectedRemoteIdentity); err != nil {
+			return nil, err
 		}
 		if config.inspectionMetadata {
 			if err := git.EnrichInspection(ctx, &inspection); err != nil {

@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.reset-credit-section { container-type: inline-size; padding: 16px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.reset-credit-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.reset-credit-summary h3 { margin: 0; font-size: 16px; }
+.reset-credit-summary > button { margin-inline-start: auto; }
+.reset-credit-section button { min-height: 40px; border-radius: 8px; }
+.reset-credit-secondary { font-size: 12px; color: var(--muted); }
+.reset-credit-disclosure { margin-top: 8px; }
+.reset-credit-section h4 { margin: 12px 0 8px; font-size: 14px; }
+.reset-credit-row { display: flex; align-items: center; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.reset-credit-row > div { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.reset-credit-row button { flex: none; }
+.reset-credit-confirmation { padding: 12px; margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.reset-credit-confirmation h4 { margin-top: 0; }
+.reset-credit-confirmation .actions { flex-wrap: wrap; }
+@container (width < 480px) {
+  .reset-credit-summary > button { margin-inline-start: 0; flex-basis: 100%; }
+  .reset-credit-row { align-items: flex-start; flex-direction: column; }
+}

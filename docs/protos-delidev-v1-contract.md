@@ -1,16 +1,270 @@
 # DeliDev v1 Connect contract
 
-## Repository addition reservations
+## Key-preserving API format change reservations
 
-Issue #964 reserves System `REPOSITORY_CLONE_V1 = 31` and
+PR #1666 established the complete reservations on main before activation.
+Issue #964 owns ProviderInventory capability
+`ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
+reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
+uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
+exclude_automatic 5 and recovery_notifications 6; its response uses account 1,
+request_id 2 and replayed 3. Reuse the existing `ApiProtocol` enum.
+Capability 9 now activates this dedicated operation. The reservation-only PR
+granted no format change, key access or execution authority.
+
+The approved extension permits changing a connected API account's format while
+keeping its protected key. Go owns atomic preference/profile publication and
+new connection generations sharing the original protected credential reference.
+Running executions and existing-session continuation retain their original
+connection/profile and admission evidence. New sessions use the new format only
+after explicit validation; saving sends no provider request. Preserve original
+OAuth receipts, account/Worker/history attribution, immutable referenced profiles,
+exact actor/revision/request retries, and explicit Disconnect/deletion cleanup
+across all generations. Do not convert formats or change Provider identity or
+keyless credential ownership. No SQLite migration or native change is authorized.
+Capability 7 and its existing cleanup-required configuration operation remain
+unchanged; capability 9 owns the dedicated extension.
+
+
+## OAuth API format selection reservations
+
+Reservation PR #1657 established the issue #964 allocations on main before
+implementation: ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
+`StartAccountOAuthRequest.api_protocol = 4` and
+`AccountOAuthAttempt.api_protocol = 7`.
+The fields reuse the existing closed `ApiProtocol` enum. Capability 8 extends
+account format selection to accepted provider OAuth profiles; it does not replace
+capabilities 5, 6 or 7 or grant OAuth registration, credential, model or native
+execution authority. Reservation-only changes activate no schemas or runtime
+support and require no database migration.
+
+An explicit selected profile is bound to the original Start receipt and private
+attempt JSON, and preserved through account creation,
+connection, status, completion and original-result recovery. Omitted legacy
+requests and attempts retain their original default and exact receipt behavior.
+OAuth authentication ownership remains independent of the selected inference
+format. Only currently eligible provider/authentication profiles may be selected;
+REST availability alone cannot grant OAuth support. Existing provider revisions,
+actor/login/credential ownership, once-only exchange and cleanup stay intact.
+
+The desktop uses one provider-metadata-driven format presentation for manual and
+OAuth connections: explicitly choose among multiple formats, or display the sole
+format. Preserve Google project binding and device approval. Existing accounts
+may use capability 9 for the key-preserving change without a new OAuth exchange;
+capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
+account/execution rewrite, protocol conversion or native change is authorized.
+
+Capability 8 is advertised independently of provider registration/acceptance.
+Start accepts the existing ApiProtocol enum; UNSPECIFIED retains legacy receipt
+bytes by omitting the new comparison member. Explicit selections pin the complete
+Bearer protocol/endpoint/authentication tuple in private attempt JSON and create
+schema-3 API accounts. Replays compare the original selection before admission;
+provider revision and original tuple are checked before exchange or protected
+local recovery. Status and completion project the original explicit protocol.
+No verifier, key or OAuth token enters that projection. Credential refresh keeps
+its original authentication adapter, independently of inference format.
+
+The common CLI accepts `account oauth start --api-protocol` with the existing
+`openai-responses`, `openai-chat` and `anthropic-messages` identifiers and requires
+capability 8 before sending an explicit selection. Omission preserves default
+behavior. The desktop opens a configuration step without native preparation or
+server Start; only explicit Continue begins the original authentication flow.
+Multiple profiles require selection; a single profile is displayed read-only.
+Metadata loading/failures block Continue. Older servers show their default format
+and retain an explicit API-key alternative. Google project binding and Baseten
+server-owned device authorization remain independent and unchanged.
+
+
+## API account format selection
+
+Reservation PR #1646 established the complete issue #964 allocation closure on
+main before implementation: ProviderInventory capability 7, profile field 10,
+account-list protocol field 5 and the closed API protocol/authentication/profile
+declarations. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
+owns their activated scope, schema-3 API families and portable version 4.
+Preserve legacy default tuples, disconnect and confirmed protected cleanup before
+format changes, connection-generation pinning, immutable original executions and
+keyless cleanup proofs. The common server resolver owns every consuming flow;
+regenerate bindings from the reconciled declarations. No SQLite migration or
+Worker assignment extension is introduced.
+
+
+## Direct execution startup allocation and activation
+
+PR #1645 established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
+on main at `03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation.
+Runtime activation uses System 43, Worker 23, ReportExecutionStartup request/response,
+ExecutionStartupObservation and the four closed startup enums with their original
+ledger field/member numbers. Preserve separate System 42 and Worker 22 ownership
+for PR #1642. Negotiation permits private v4 direct assignments without inspection;
+the original process still proves protocol/settings and fresh account authority.
+Reports bind claimed revision, original machine/device/instance/server epoch and
+durable exact receipts. Ready/failure metadata uses existing session/terminal job
+JSON; no assignment rewrite, credential grant or SQLite migration is added.
+
+## Failed subscription cleanup reservations
+
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
+
+One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
+
+The joined server controller applies the original 30-second account attempt and account gate. It rechecks the original requester, exact account revision and login ownership. It shares the existing native/credential cleanup and configuration deletion checks, including protected vault references and complete Agent/Project/retained Session references. Its native and credential checkpoints advance the child's expected revision in the same transaction. Changed settings or ownership remain retained. Failed attempts are terminal retained outcomes with closed reasons, never automatic retries. A later deliberate button click can create a fresh batch. An explicit `DeleteConfiguration` can admit one failed initial ChatGPT LOGIN through the same controller under the original deletion request ID. The child freezes that requester, account, confirmed revision, LOGIN and deletion command; cleanup checkpoints advance only its effective revision. The final deletion receipt retains the original public revision and request bytes. Before that receipt exists, mutation and replay use the immutable child under the existing job parent index to reserve the public request ID for that exact deletion command; admission rejects previously used IDs transactionally. Accepted single-account work survives client departure; terminal failures require fresh observation and explicit confirmation, and receipt/status reads never retry cleanup.
+
+Confirmed deletion, tombstone/browser obligations, the existing configuration receipt, child result and aggregate counts commit together. Restart reads only original jobs and confirmed cleanup checkpoints, never login or callbacks. An interrupted attempt without a native checkpoint remains retained; confirmed native cleanup may resume protected cleanup. Shutdown cancels and joins the controller before store/vault closure. Revocation permits server-owned retained-result bookkeeping only, never substituted account deletion authority. Restore blocks queued/pending cleanup jobs and quarantines historical nonterminal jobs and receipts, so restored work cannot regain deletion authority.
+
+`GetFailedSubscriptionCleanup(job_id, page_token)` returns current revision/state, total/processed/deleted/retained counts and at most 50 original account results. Signed cursors bind the actor and batch. Result metadata contains only the original alias, account ID, closed outcome/reason and safe problem code. Logs contain job/operation IDs, counts, phases and safe codes. Existing generic jobs/receipts need no migration or Rust/native change.
+
+## Grok Build subscription reservations
+
+The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
+reserves System login 39, System execution 40, Worker managed execution 21 and
+progress diagnostic field 10 under issue #964. The ledger also owns the new
+GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Record
+the complete closure in the owning feature PR. Codex field 7 and existing
+System 30/35/36/37 and Worker 19 ownership
+remain unchanged. Reservations activate nothing and add no migration.
+
+
+
+## Native Claude subscription allocations
+
+PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
+`NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`, with the complete closure in
+`allocations.json`, on main before this activation. Preserve every
+existing field, Codex bundle assignment and independent capability.
+
+Progress reserves login method/native diagnostic fields 8/9. Worker progress
+reserves state/login method/native diagnostic/suggested name fields 7–10;
+protected Take reserves native profile ID field 6; Finish reserves native
+identity field 10. `SubscriptionLoginMethod` reserves UNSPECIFIED 0,
+BROWSER_CALLBACK 1 and BROWSER_CODE 2. The native diagnostic phase enum reserves
+UNSPECIFIED 0 and discovery/version/runtime/launch/login/status/execution/history/
+cleanup values 1–9. Native diagnostic fields are detected version/required
+version/phase/code/correlation ID 1–5; native identity is profile ID/identity
+commitment 1–2. Code submission reserves mutation/operation ID/code 1–3 and
+accepted response field 1. Original Worker code Take reserves account/lease/
+machine/instance/operation IDs 1–5 and code/submission ID response fields 1–2.
+Wholly new declarations retain one owner and explicit `newDeclaration: true`.
+
+The existing SubscriptionService now exposes `SubmitSubscriptionLoginCode`
+for the initiating owner/client and `TakeSubscriptionLoginCode` only for the
+original authenticated Worker/device/instance/lease. Code is write-only bytes:
+a durable claim precedes memory-only retention and durable consumption precedes
+one delivery. No replay redistributes bytes. Take/Finish retain existing Codex
+bundle fields; Claude forbids bundle bytes and refresh-confirmed claims and
+uses only native profile/identity metadata. Progress has closed method and
+safe version/phase/code/correlation diagnostics, with no transcript or identity.
+Generate Go and TypeScript from the reconciled schemas. Capability 38 does not
+grant Worker readiness; capability 20 requires verified original native
+installation and empty-profile cleanup. Native credentials remain on the
+selected Runner. No database migration is added. Follow the subscription and
+structure contracts; the main reservation alone granted no support.
+
+## Agent Worker account source routes
+
+PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+`SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
+active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
+Agent schema-3 routes and exclusive with the legacy singular model. The existing
+mutation/revision/receipt response remains unchanged. Capability 36 advertises
+this complete configuration extension; capability 35 retains its separate known
+subscription catalog reservation. Schema 1/2 APIs and accountless CLI writes
+remain compatible; current clients retain schema 3 even with one remaining source.
+Resource reads expose schema 3 for ordered-source Agents, explicit-format API Accounts and profile-declaring API Providers. Older clients must
+treat that family as unsupported and cannot overwrite it through legacy saves.
+No Worker protocol shape or database migration changes. The selected-source native
+configuration remains unchanged; complete source decisions are additive server-owned
+initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contract.md).
+
+
+## Known subscription model allocation and activation
+
+Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
+advisory subscription catalog. The closed catalog-source enum reserves
+UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
+reserves native ID/display name/order/minimum harness version/retirement date
+fields 1–5. The request reserves subscription service field 1; the response
+reserves subscription service/models/catalog version/updated at/source fields 1–5.
+These allocations reached main in PR #1370 before dependent activation. The
+complete feature activates capability 35 and the owner/client read-only RPC in
+provider.proto; generated bindings use the normal compatibility pipeline.
+Reservations alone grant no feature support. The active advisory read grants no
+authentication, account entitlement, native discovery or execution capability.
+The response echoes the exact closed service, includes at most 200 models and
+uses BUNDLED/CACHE/ONLINE provenance; unsupported service values fail. No database
+migration is introduced. Follow the catalog, desktop and network contracts.
+
+## GitHub token-first onboarding reservations
+
+Issue #964 reserves `SystemCapability.GITHUB_TOKEN_ONBOARDING_V1 = 34` for
+profile-independent token identity inspection and official token-form preparation.
+`GitHubTokenKind` reserves UNSPECIFIED 0, FINE_GRAINED 1 and CLASSIC 2.
+`GitHubTokenIdentityState` reserves UNSPECIFIED 0, VERIFIED 1, INVALID_TOKEN 2,
+ACCESS_RESTRICTED 3, SSO_REQUIRED 4, RATE_LIMITED 5 and UNAVAILABLE 6.
+The five new message declarations and their fields are recorded with exclusive
+ownership in `allocations.json`: token inspection request ID/token 1–2, response
+request ID/state/identity/problem JSON 1–4, public identity ID/node ID/login 1–3,
+form request request ID/token kind/resource owner/access 1–4 and form response
+request ID/token kind/resource owner/access/URL 1–5. Record this closure in the
+owning feature PR. Allocation records alone introduce no active schema,
+generated binding, advertised support, credential lifetime, browser authority or
+database migration. Existing profile/revision-bound token forms remain unchanged.
+
+### Activated onboarding boundary
+
+With the recorded allocations, IntegrationService exposes owner/paired-client-only InspectGitHubToken and PrepareGitHubTokenForm and System advertises capability 34. Inspection uses write-only token bytes and returns only request-bound closed state/public identity/sanitized failure; preparation echoes closed kind, owner and access with a canonical official URL. Neither read creates a receipt, profile or credential generation. Saved-profile form revisions remain independently required. Go and TypeScript outputs are regenerated from these reserved declarations. No storage migration is added; desktop retention is limited to the live verified creation draft described in the integration contract.
+
+Fine-grained `PrepareGitHubTokenForm` with selected-repositories access permits
+an empty `resource_owner`, echoes it unchanged and omits `target_name` from the
+canonical URL. Explicit valid owners remain supported. This draft-only allowance
+does not change saved-profile owner requirements or revision-bound form reads.
+The desktop's Classic shortcut uses public-repositories access without scopes;
+existing explicit private-repositories requests retain their separate behavior.
+No protocol field, enum, capability or migration is added.
+
+## Agent Worker wizard
+
+PR #1351 established the issue #964 allocations on main before implementation.
+System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
+and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
+4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
+unknown services, API/provider combinations and account selectors on other kinds.
+Filter in SQL before pagination and bind the source into each cursor. Unspecified
+selectors preserve legacy behavior; shared Filter, snapshots and events do not
+change.
+
+`SaveAgentWorkerRequest` carries mutation, document, typed model selection and
+schema version in fields 1–4. `AgentWorkerModelSelection` uses a oneof canonical
+model ID or exact executable/native ID, plus the canonical model's expected
+revision. A canonical selection requires a nonzero revision; a direct ID requires
+zero. The RPC reuses the existing `SaveConfigurationResponse` acknowledgement,
+with narrow Buf lint exceptions on the two save methods for this deliberate reuse.
+Existing RPCs, CLI operations and resource/storage schemas remain compatible.
+The new path requires at least one account and one common API provider or native
+subscription service. Fixed routing requires exactly one account. Go resolves or
+creates the model and saves the Worker in one receipt transaction. Saved harness
+compatibility is a configuration declaration, never native/account/platform proof.
+No database migration is added. Follow the [catalog contract](cmds-delidev-catalog-contract.md)
+and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
+
+## Repository addition contracts
+
+### Remote repositories
+
+Main reservation PR #1377 established System `REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19` before activation. System 31/32 and Worker 18 retain their separate immediate Local Clone and GitHub metadata contracts. Capability 37 permits credential-free URL registration with no checkout, Worker or local proof. Clients must verify it before repository saves/imports. Worker 19 permits managed session clones; acceptance and assignment independently require it on the selected machine.
+
+Schema-1 Repository JSON adds required `remote_url` for explicit saves/imports and permits an empty `checkouts` list. Historical omitted URLs and original accepted preparations remain readable without conversion, extraction, migration or rewrite. Each new preparation binds `source_kind` (`remote-clone`, `local-checkout` or an internally derived `independent-fork`) and `remote_url` in the immutable request digest. Legacy omitted source kinds keep their existing linked-checkout contract. Ready managed repositories bind SHA-256 native directory commitments; these are ownership metadata, never raw native identities. The ordered complete result must match the original source kind and URL. Unknown kinds grant no execution or deletion authority.
+
+PR #1355 activates main-established System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
 `ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
 `CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
-reservations must reach main before active declarations, generated bindings or
-capability advertisements. Listing will be an explicit revision-bound
-owner/client profile read. Clone will be a durable originating-Worker operation
+allocations reached main before active declarations, generated bindings and
+capability advertisements. Listing is an explicit revision-bound
+owner/client profile read. Clone is a durable originating-Worker operation
 using existing job receipts; its proof token is transient and PAT bytes never
-enter its assignment. Reservations alone grant no support or Git authority.
+enter its assignment. System 31/32 and Worker 18 retain that separate authority.
 
 ## Metadata-only request diagnostics
 
@@ -31,8 +285,8 @@ API_KEY 1, OAUTH_PKCE 2 and KEYLESS 3. `AccountOAuthState` declares UNSPECIFIED 
 AWAITING_AUTHORIZATION 1, EXCHANGING 2, SAVING 3, CONNECTED 4, CANCELED 5, EXPIRED 6,
 FAILED 7, INTERRUPTED 8 and RECOVERY_REQUIRED 9. Each new-enum member uses explicit
 declaration provenance in the allocation ledger without entering the active
-baseline. Establish these reservations and migration 29 on main before dependent
-implementation, except the owner-approved single integrated PR. The reconciled
+baseline. Record these allocations and migration 29 in the owning feature PR,
+including the owner-approved single integrated PR. The reconciled
 AccountService schema defines owner/client Start/Complete/Cancel/Status, each
 with its own standard-named response, and generates both languages from their
 source. Value-local Buf acronym-prefix comments preserve the reserved OAuth
@@ -47,6 +301,18 @@ reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
 ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
+
+The additional shared RPC closure records PR #1221's existing
+`CompactSessionRequest` and `CompactSessionResponse` assignments in the immutable
+baseline, then reserves `CompactSessionRequest.expected_execution_id = 2` and
+`CompactSessionResponse.session = 4` under issue #1203 with #1093/#1202 as shared
+consumers. Record these allocations with active fields and generated bindings
+in the owning feature PR. The expected execution must join the exact original source
+at acceptance and remain part of the actor-bound receipt identity. The response
+must join the current session and original job in one authorized read, including
+reference-only replay; its existing `request_id` remains the original action ID.
+Current native compaction support does not imply these additional fields exist.
+The reservation change adds no capability or migration.
 
 Issue #1206's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
 activates main-established server capability 16 and Worker capability 7.
@@ -66,8 +332,8 @@ message fields detected version 1, minimum version 2, phase 3, stable error code
 4, safe message 5, guidance 6 and correlation ID 7 under issue #964.
 `CodexDiagnosticPhase` reserves UNSPECIFIED 0, DISCOVERY 1, VERSION 2, PROFILE 3,
 RUNTIME 4, LAUNCH 5, INITIALIZE 6, CONFIRM 7, LOGIN 8, MODELS 9, EXECUTION 10,
-HISTORY 11 and CLEANUP 12. Establish these ledger-only reservations on main
-before dependent implementation. They grant no Codex version, native operation,
+HISTORY 11 and CLEANUP 12. Record these allocations in the owning feature PR.
+Records alone grant no Codex version, native operation,
 diagnostic response or capability support and add no migration. Diagnostics
 must exclude paths, credentials, login URLs, identities and raw native content.
 
@@ -78,8 +344,8 @@ enum reserves UNSPECIFIED 0, PREPARING 1, WAITING 2, SUCCEEDED 3, CANCELED 4,
 EXPIRED 5, UNSUPPORTED 6, RECOVERY_REQUIRED 7 and FAILED 8.
 `ForwardSubscriptionCallbackRequest` reserves account ID 1, original operation
 ID 2 and write-only callback query 3; its response reserves accepted 1.
-All new declarations have explicit ledger ownership. Establish these allocations
-on main before dependent schemas or code. This reservation changes no active
+All new declarations have explicit ledger ownership. Record these allocations
+in the owning feature PR. This reservation changes no active
 schema, binding, endpoint, capability advertisement or migration. Omitted
 `RequestSubscription.machine_id` remains unsupported until the complete
 server-owned boundary activates; existing machine-bound requests retain their
@@ -91,8 +357,8 @@ Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
 under its owning issue identity. This independent capability will negotiate
 service-bearing subscription Accounts/native Models and retired-reference
 projections at resource schema version 2; unchanged API resources remain version
-1. It must not depend on API provider inventory capabilities. Establish this
-allocation and migration 28 on main before dependent implementation. This
+1. It must not depend on API provider inventory capabilities. Record this
+allocation and migration 28 in the owning feature PR. This
 prerequisite changes no active schema, generated binding or capability
 advertisement; generate clients from reconciled schemas when implementation
 activates the reserved boundary.
@@ -420,7 +686,7 @@ The Grok `input-accepted` JSON event may carry `grok_user_message_id`, a UUID-v7
 
 Owner/client-only `IntegrationService` has strict-definition Save, write-only bounded-PAT Replace, Validate and Delete operations, separate from AccountService. Follow [the integration contract](cmds-delidev-integrations-contract.md). Mutations bind actor/original revision/request identity; accepted results return current metadata and typed optional problems. Pending-operation expected revisions use decimal strings in JSON. A deleted profile retains its tombstone/receipt without token or historical content; generic configuration cannot write connection/identity/pending state. Worker authentication cannot invoke this service.
 
-`InspectRepositoryIntegration(repository_id)` returns a read-only schema-version-1 observation document bound to the local repository UUID/exact decimal revision and selected profile/generation. Fresh identity and remote repository projection accompany eight independent endpoint-access states. It creates no receipt, persists no access state and returns no saved PAT. The integration contract defines bounded lifetime, joined cancellation, scope revalidation and the separation from CI/rules/reviewer decisions.
+Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks.
 
 `QueryRepositoryIntegration` takes local repository UUID plus versioned strict list/search/detail or PR-only diff/checks/statuses/rules/ci/feedback/reviewers query JSON and returns a versioned scoped observation. It shares the integration read lifetime/authorization boundary, carries no receipt or PAT, and preserves exact decimal IDs with issue-versus-PR API provenance, live pagination, search incompleteness/limits and unknown mergeability. PR observations retain exactly one original detail and one exclusive diff/Checks/status family, exact base/head binding, native unknown states and separate totals; they cannot establish evaluated-commit/ruleset eligibility. Follow the integration contract for complete response validation. These version-1 JSON additions do not change protobuf fields.
 
@@ -638,4 +904,96 @@ Main-established capability 30 and PR #1332's reserved declarations activate the
 
 ### Codex diagnostic activation
 
+The existing schema-v2 account JSON may retain optional server-owned `server_operation.cleanup_phase` with closed `native-confirmed` or `credentials-confirmed` values for failed initial server login cleanup. Omitted legacy metadata remains unchanged. This checkpoint grants no authentication, callback or configuration-deletion authority; the subscription contract defines its original-owner and cleanup requirements. No protobuf field, capability, generated declaration or database migration is added.
+
 PR #1336 established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.
+
+## General API OAuth extension
+
+Main-established issue #964 allocations add inventory capability 6, device
+connection method 4, closed flow PKCE/DEVICE, Google project options and original
+completion state. Preserve capability 5 and historical OpenRouter receipt input.
+Declare the reserved additive fields before generation; reservations alone grant
+no provider support. The common/Hugging Face implementation returns PKCE flow
+only on a live Start, advertises capability 6 only for accepted exact profiles,
+and keeps authorization URL/code/state outside cached query variables. Device
+user codes remain Start-only; later provider implementations retain their gates.
+- For server-owned Baseten Device approval, Start returns flow DEVICE and the
+  temporary user code only with the original live Start reply. Status is a read.
+  After the sole Go completion claim, its existing response request_id identifies
+  that original completion receipt; code-free local recovery retains the original
+  expected attempt revision 1. Cancellation keeps its own mutation receipt.
+  Public Complete cannot supply a Device callback or initiate polling. These
+  semantics reuse the main-reserved fields and grant no unregistered capability.
+## Pre-release protocol reset reservation
+
+The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
+records protocol 2 and `AttachWorkerRequest.protocol_version = 10` in the
+complete feature PR.
+The field is absent from active schemas until complete implementation. The
+reset removes historical forwarding imports/reflection and obsolete API
+surfaces; retained field and enum numbers preserve their original meanings.
+
+## Inline Worker models and endpoint-only completion reservation
+
+Record System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, token-pricing messages and additive usage identity fields in the owning feature PR. Protocol 2 retires independent Model APIs/fields without reusing their numbers. Regenerate reconciled Go/TypeScript/Connect Query outputs. Reservations alone advertise no support.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+
+## Explicit native skill selection (#1748)
+
+System `NATIVE_SKILLS_V1 = 44` and Worker `NATIVE_SKILLS_V1 = 24` own this independent
+profile. `SkillService.ListSkills` returns bounded opaque selections with exact
+content revisions, display metadata and user/project provenance. Creation,
+enqueue and queued-edit requests append the presence-carrying
+`SkillSelectionList skills = 4`. Omission cannot strip bound queued input.
+Explicit empty clears selections; explicit nonempty retains original bindings
+or prepares newly selected immutable snapshots. The existing joined workspace-read envelope gains an exclusive
+skill request/result profile with original actor, Runner device/instance and
+Agent/session context. It grants no file, preparation, account or inference
+authority. Ordinary JSON carries references only. Regenerate the compatibility
+barrel and both generated clients from the reconciled sources. No SQLite
+migration is required. The narrow owner-authorized simultaneous declaration and
+activation exception is defined in the sessions contract's Explicit native skills
+section; remaining allocation policy is unchanged.
+
+The allocation ledger retains the complete #1748 enum/message field closure and the SkillService.ListSkills input/output and nonstreaming profile. The repository descriptor checks enforce numeric ownership and closed RPC method profiles.
+## Image input declarations
+
+Issue #1746 owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
+
+The image input allocation ledger includes every AttachmentService method with its exact request, response and streaming profile. Queued edits preserve original accepted references; explicit typed references must match the complete ordered original selection. Omission retains old-client text edits.
+## Issue #1728 batch allocation exception
+
+The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for issue #1728. This narrow exception waives only the prior main reservation merge. Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728). Capabilities 18, 19 and 30 retain independent ownership.
+
+Managed ChatGPT/Codex Sidechat (issue #1829) composes System 47, Worker 26,
+existing Sidechat 27/16 and managed authentication Worker 3. The session detail
+action menu exposes Open Sidechat only for the original eligible completed
+source and negotiated Runner. Independent subscription Fork remains unsupported.
+See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
+for protected lease/Finish publication, read-only continuation and dependent
+cleanup ownership. No new RPC or SQLite migration is added.
+
+## Project prompt history allocation
+
+Issue #1828 owns System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed ConfigurationService `ListProjectPromptHistory` / `ClearProjectPromptHistory` declarations in `protos/delidev/allocations.json`. The complete owning feature PR records declarations and activation together under the allocation workflow. Existing ownership remains unchanged. No Worker capability, native change or SQLite migration is added. Allocations alone grant no support.
+
+## Server-owned reset-credit allocation closure
+
+Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits--issue-1809).
+
+## Remote branch discovery allocation — issue #1859
+
+Record System 51 / Worker 27 `REPOSITORY_BRANCH_DISCOVERY_V1`, the closed
+`DiscoverRepositoryBranchesRequest`/`Response` fields and WorkerService method in
+the owning complete feature PR. System 50 retains separate server-quota ownership.
+Existing declarations and numbers remain unchanged. Regenerate Go/TypeScript
+bindings and compatibility facades from reconciled sources. The operation reuses
+the server-owned Worker job/claim/report lifecycle under the workspace contract,
+with project/repository/machine revision fences and original Worker authority.
+No migration, checkout authority or Git credential persistence is added.
+
+## Server quota V2 allocation — issue #1854
+
+System `SERVER_SUBSCRIPTION_QUOTA_V2 = 50` is recorded and activated in the complete owning feature PR. Collision-check `allocations.json` and preserve 18/46/49. Reuse RequestSubscriptionObservation and RefreshAllSubscriptionQuotas: omitted-machine QUOTA selects the server even during Execute; explicit-machine legacy semantics remain unchanged. No Worker capability, field, RPC or migration is allocated. Declaration alone grants no native/account/platform acceptance.

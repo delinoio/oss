@@ -1,0 +1,20 @@
+{
+  "backup-job.backup_181f9b": "백업 <s0/>",
+  "backup-job.failed_5d28a9": "실패",
+  "backup-job.pending_62a2fe": "대기 중",
+  "backup-job.statusUnavailable_180119": "상태를 확인할 수 없음",
+  "backup-job.operationNeedsAttention_bfbf09": "작업에 확인 필요: <s0/>",
+  "backup-job.theLastObservationIsStaleCurrent_4263e8": "마지막 관측이 오래되었습니다; 현재 작업 상태를 확인할 수 없습니다.",
+  "backup-job.dismissTracking_12e6bb": "추적 표시 닫기",
+  "backup-job.backupTracking": "백업 {{v0}}",
+  "backup-job.dismissBackup": "백업 {{v0}} 추적 표시 닫기",
+  "backup-job.creationTracking": "백업 {{v0}} 생성",
+  "backup-job.deletionTracking": "백업 {{v0}} 삭제",
+  "backup-job.dismissCreation": "백업 {{v0}} 생성 추적 표시 닫기",
+  "backup-job.dismissDeletion": "백업 {{v0}} 삭제 추적 표시 닫기",
+  "backup-job.readHelp": "원래 백업 작업을 읽을 수 없습니다. 여기서 원래 상태 읽기 재시도를 사용하세요. 동일한 작업을 관찰하며 생성이나 삭제를 반복하지 않습니다.",
+  "backup-job.failedHelp": "이 생성 시도는 실패했으며 관찰로 다시 실행할 수 없습니다. 원래 서버의 저장 공간과 쓰기 권한을 확인하고 준비되면 새 백업을 명시적으로 생성하세요.",
+  "backup-job.cleanupHelp": "원래 정리는 미확정 상태입니다. 원래 서버의 저장소 접근을 확인한 후 여기서 동일한 작업을 다시 읽으세요. 대체 삭제를 제출하거나 리소스 부재로 삭제 완료를 추론하지 마세요.",
+  "backup-job.mismatchHelp": "반환된 상태가 원래 백업 작업과 일치하지 않습니다. 여기서 원래 상태 읽기를 재시도하세요. 생성, 삭제 및 정리는 확인되지 않았습니다.",
+  "backup-job.recheckOriginal": "원래 백업 작업 다시 확인"
+}

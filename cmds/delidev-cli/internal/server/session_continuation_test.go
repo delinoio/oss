@@ -12,6 +12,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -21,6 +22,7 @@ type continuationFixture struct {
 	job          *pb.Resource
 	input        domain.ExecutionJobInput
 	thread, turn domain.ID
+	startupToken string
 }
 
 func newContinuationFixture(t *testing.T, outcome domain.ExecutionOutcome) *continuationFixture {
@@ -59,11 +61,32 @@ func (f *continuationFixture) claim(t *testing.T) {
 			break
 		}
 	}
-	f.job, f.turn = f.workerStream.Msg().Job, domain.NewID()
+	f.job, f.turn, f.startupToken = f.workerStream.Msg().Job, domain.NewID(), ""
 	var job domain.Job
 	f.input = domain.ExecutionJobInput{}
 	if domain.Decode(f.job.DocumentJson, &job) != nil || domain.Decode(job.Input, &f.input) != nil || f.input.Validate() != nil {
 		t.Fatal("invalid claimed assignment")
+	}
+	if f.input.Version == 4 {
+		f.grant(t)
+		version := domain.CodexProtocolVersion
+		if f.input.Configuration.Harness == domain.OpenCode {
+			version = domain.OpenCodeProtocolVersion
+		}
+		if f.input.Configuration.Harness == domain.ClaudeCode {
+			version = domain.ClaudeProtocolVersion
+		}
+		if f.input.Configuration.Harness == domain.GrokBuild {
+			version = domain.GrokProtocolVersion
+		}
+		digest := f.input.Startup.ExecutableSHA256
+		if digest == "" {
+			digest = strings.Repeat("a", 64)
+		}
+		o := domain.ExecutionStartupObservation{State: domain.StartupReady, Phase: domain.StartupSettings, Harness: f.input.Configuration.Harness, NativeVersion: version, ExecutableSHA256: digest, Protocol: domain.ProtocolFor(f.input.Configuration.Harness), CorrelationID: domain.ID(f.job.Id), InputDelivery: domain.StartupNotSent}
+		if _, err := f.workerClient.ReportExecutionStartup(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportExecutionStartupRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Observation: rpc.StartupMessage(o)})); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -150,12 +173,16 @@ func (f *continuationFixture) control(t *testing.T, action pb.SessionAction) *pb
 
 func (f *continuationFixture) grant(t *testing.T) string {
 	t.Helper()
+	if f.startupToken != "" {
+		return f.startupToken
+	}
 	token := apiproxy.TokenPrefix + strings.Repeat("x", 32) + string(domain.NewID())
 	digest := sha256.Sum256([]byte(token))
 	_, err := f.workerClient.RegisterExecution(context.Background(), ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(f.job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]}))
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.startupToken = token
 	return token
 }
 
@@ -198,7 +225,7 @@ func TestContinuationFIFOFreezesSelectionAndRetainsPredecessor(t *testing.T) {
 	if f.input.Input.Prompt != "edited second input" {
 		t.Fatal("continuation ignored the latest queued edit")
 	}
-	if f.input.InputID != domain.ID(second.Id) || f.input.ExecutionID == firstInput.ExecutionID || f.input.ThreadRequestID == firstInput.ThreadRequestID || f.input.TurnRequestID == firstInput.TurnRequestID || f.input.Version != 2 || f.input.ConfigurationDigest != firstInput.ConfigurationDigest || f.input.Continuation == nil || f.input.Continuation.Previous.JobID != domain.ID(firstJob.Id) || f.input.Continuation.Previous.LastSequence != previous.LastSequence || f.input.Continuation.Intent != domain.ContinueAutomatically || f.input.AccountID != firstInput.AccountID || f.input.ConnectionID != firstInput.ConnectionID {
+	if f.input.InputID != domain.ID(second.Id) || f.input.ExecutionID == firstInput.ExecutionID || f.input.ThreadRequestID == firstInput.ThreadRequestID || f.input.TurnRequestID == firstInput.TurnRequestID || f.input.Version != 4 || f.input.ConfigurationDigest != firstInput.ConfigurationDigest || f.input.Continuation == nil || f.input.Continuation.Previous.JobID != domain.ID(firstJob.Id) || f.input.Continuation.Previous.LastSequence != previous.LastSequence || f.input.Continuation.Intent != domain.ContinueAutomatically || f.input.AccountID != firstInput.AccountID || f.input.ConnectionID != firstInput.ConnectionID {
 		t.Fatal("continuation replaced FIFO, snapshot or predecessor ownership")
 	}
 	var original domain.Job

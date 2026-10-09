@@ -20,7 +20,7 @@ func TestApprovalPublicationValidatesExactPinnedGraph(t *testing.T) {
 			case "harness":
 				u.Approval.Harness = ClaudeCode
 			case "version":
-				u.Approval.Version = "next"
+				u.Approval.Version = "invalid/version"
 			case "kind":
 				a.Kind = "future"
 			case "mixed-payload":

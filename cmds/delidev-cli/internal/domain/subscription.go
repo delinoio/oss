@@ -23,6 +23,11 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
+	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
+	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
+	NativeProfileID        ID                                `json:"native_profile_id,omitempty"`
+	NativeOperation        *NativeSubscriptionOperation      `json:"native_operation,omitempty"`
 	OwnerMachineID         ID                                `json:"owner_machine_id,omitempty"`
 	Observation            *SubscriptionObservationOperation `json:"observation,omitempty"`
 	QuotaState             ObservationState                  `json:"quota_state,omitempty"`
@@ -47,16 +52,17 @@ type SubscriptionOperation struct {
 	Phase      SubscriptionPhase  `json:"phase"`
 }
 type SubscriptionLease struct {
-	ID          ID                 `json:"id"`
-	OperationID ID                 `json:"operation_id"`
-	Revision    uint64             `json:"revision"`
-	Action      SubscriptionAction `json:"action"`
-	MachineID   ID                 `json:"machine_id"`
-	InstanceID  ID                 `json:"instance_id"`
-	DeviceID    ID                 `json:"device_id"`
-	Epoch       ID                 `json:"epoch"`
-	Generation  ID                 `json:"generation,omitempty"`
-	StartedAt   time.Time          `json:"started_at"`
+	ForkRevision uint64             `json:"fork_revision,omitempty"`
+	ID           ID                 `json:"id"`
+	OperationID  ID                 `json:"operation_id"`
+	Revision     uint64             `json:"revision"`
+	Action       SubscriptionAction `json:"action"`
+	MachineID    ID                 `json:"machine_id"`
+	InstanceID   ID                 `json:"instance_id"`
+	DeviceID     ID                 `json:"device_id"`
+	Epoch        ID                 `json:"epoch"`
+	Generation   ID                 `json:"generation,omitempty"`
+	StartedAt    time.Time          `json:"started_at"`
 }
 
 func (s SubscriptionState) Validate(account Account) error {
@@ -66,9 +72,30 @@ func (s SubscriptionState) Validate(account Account) error {
 	if account.Type != SubscriptionAccount {
 		return invalid()
 	}
+	if err := s.validateNativeClaude(account); err != nil {
+		return err
+	}
 	// Database restore disconnects accounts without restoring their external
 	// vault. Quarantined references remain valid evidence, never grant authority.
 	if s.Generation != "" && (s.Generation.Validate() != nil || account.Connection == nil && !s.RecoveryRequired || account.Connection != nil && account.Connection.Authentication != SubscriptionAuth || len(s.IdentityCommitment) != 64) {
+		return invalid()
+	}
+	if (s.ServerQuota != nil || s.ServerCredit != nil) && account.SubscriptionService != SubscriptionChatGPT {
+		return invalid()
+	}
+	if s.ServerCredit != nil && s.ServerCredit.Validate() != nil {
+		return invalid()
+	}
+	if s.ServerCreditActive() && (s.ServerQuotaActive() || s.Observation != nil && s.Observation.Active() || s.Pending != nil || s.OwnerMachineID != "") {
+		return invalid()
+	}
+	if s.ServerQuotaGeneration != "" && s.ServerQuotaGeneration.Validate() != nil || s.ServerQuota != nil && s.ServerQuota.Validate() != nil {
+		return invalid()
+	}
+	if (s.ServerCreditActive() || s.ServerQuotaActive() && !s.ServerQuota.AccessOnly) && (s.Lease != nil || s.ServerOperation != nil && s.ServerOperation.NativeStarted) {
+		return invalid()
+	}
+	if s.ServerQuotaActive() && s.AccessOnlyQuota() && s.Lease != nil && s.Lease.Action != SubscriptionExecute {
 		return invalid()
 	}
 	if s.OwnerMachineID != "" && s.OwnerMachineID.Validate() != nil || s.Observation != nil && s.Observation.Validate() != nil || s.ResetCredits != nil && s.ResetCredits.Validate() != nil {
@@ -105,6 +132,9 @@ func (s SubscriptionState) Validate(account Account) error {
 				return invalid()
 			}
 		}
+		if l.ForkRevision != 0 && l.Action != SubscriptionExecute {
+			return invalid()
+		}
 		if l.Revision == 0 || l.StartedAt.IsZero() || l.Generation != s.Generation || (l.Action != SubscriptionLogin && l.Action != SubscriptionRefresh && l.Action != SubscriptionLogout && l.Action != SubscriptionExecute && l.Action != SubscriptionQuota && l.Action != SubscriptionResetCredit) {
 			return invalid()
 		}
@@ -124,6 +154,14 @@ func (s SubscriptionState) Validate(account Account) error {
 		if o.Diagnostic != nil && (o.Diagnostic.Validate() != nil || o.Diagnostic.CorrelationID != string(o.ID) || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting) {
 			return invalid()
 		}
+		if o.CleanupPhase != "" {
+			if o.Action != SubscriptionLogin || o.Generation != "" || account.Connection != nil || s.Generation != "" || s.IdentityCommitment != "" || s.Lease != nil || s.OwnerMachineID != "" || s.Observation != nil || s.ServerCredit != nil || s.ResetCredits != nil || o.State == SubscriptionSucceeded || o.State == SubscriptionPreparing || o.State == SubscriptionWaiting || (o.CleanupPhase != SubscriptionNativeCleanupConfirmed && o.CleanupPhase != SubscriptionCredentialCleanupConfirmed) {
+				return invalid()
+			}
+			if o.CleanupPhase == SubscriptionCredentialCleanupConfirmed && (o.Active() || o.State == SubscriptionSucceeded || o.NativeStarted || s.RecoveryRequired || s.Pending != nil) {
+				return invalid()
+			}
+		}
 		if o.NativeStarted && (s.Lease != nil || s.Pending == nil || s.Pending.ID != o.ID || s.Pending.Phase != SubscriptionClaimed || s.Pending.MachineID != "" || o.Generation != s.Generation) {
 			return invalid()
 		}
@@ -137,19 +175,30 @@ func (s SubscriptionState) Validate(account Account) error {
 // Server operations retain no executable paths, login URLs, codes or identity
 // suggestions. NativeStarted is the independent server credential lease.
 type ServerSubscriptionOperation struct {
-	ID                ID                     `json:"id"`
-	Action            SubscriptionAction     `json:"action"`
-	Epoch             ID                     `json:"epoch"`
-	FinishID          ID                     `json:"finish_id"`
-	Generation        ID                     `json:"generation,omitempty"`
-	Actor             Principal              `json:"actor"`
-	State             SubscriptionLoginState `json:"state"`
-	NativeStarted     bool                   `json:"native_started"`
-	CallbackForwarded bool                   `json:"callback_forwarded"`
-	StartedAt         time.Time              `json:"started_at"`
-	ExpiresAt         time.Time              `json:"expires_at"`
-	Diagnostic        *CodexDiagnostic       `json:"diagnostic,omitempty"`
+	ID                ID                       `json:"id"`
+	Action            SubscriptionAction       `json:"action"`
+	Epoch             ID                       `json:"epoch"`
+	FinishID          ID                       `json:"finish_id"`
+	Generation        ID                       `json:"generation,omitempty"`
+	Actor             Principal                `json:"actor"`
+	State             SubscriptionLoginState   `json:"state"`
+	NativeStarted     bool                     `json:"native_started"`
+	CallbackForwarded bool                     `json:"callback_forwarded"`
+	StartedAt         time.Time                `json:"started_at"`
+	ExpiresAt         time.Time                `json:"expires_at"`
+	Diagnostic        *CodexDiagnostic         `json:"diagnostic,omitempty"`
+	CleanupPhase      SubscriptionCleanupPhase `json:"cleanup_phase,omitempty"`
 }
+
+// Cleanup checkpoints release only a failed initial server login. They cannot
+// authorize authentication, replace a Worker lease or prove provider revocation.
+type SubscriptionCleanupPhase string
+
+const (
+	SubscriptionNativeCleanupConfirmed     SubscriptionCleanupPhase = "native-confirmed"
+	SubscriptionCredentialCleanupConfirmed SubscriptionCleanupPhase = "credentials-confirmed"
+)
+
 type SubscriptionLoginState string
 
 const (

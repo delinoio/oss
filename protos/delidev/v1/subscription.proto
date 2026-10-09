@@ -31,6 +31,8 @@ enum SubscriptionLoginState {
 }
 
 service SubscriptionService {
+  rpc CleanupFailedSubscriptions(CleanupFailedSubscriptionsRequest) returns (CleanupFailedSubscriptionsResponse);
+  rpc GetFailedSubscriptionCleanup(GetFailedSubscriptionCleanupRequest) returns (GetFailedSubscriptionCleanupResponse);
   rpc RequestSubscriptionObservation(RequestSubscriptionObservationRequest) returns (RequestSubscriptionObservationResponse);
   rpc RefreshAllSubscriptionQuotas(RefreshAllSubscriptionQuotasRequest) returns (RefreshAllSubscriptionQuotasResponse);
   rpc ReconcileSubscriptionCredit(ReconcileSubscriptionCreditRequest) returns (ReconcileSubscriptionCreditResponse);
@@ -40,11 +42,72 @@ service SubscriptionService {
   rpc RequestSubscription(RequestSubscriptionRequest) returns (RequestSubscriptionResponse);
   rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
   rpc GetSubscriptionProgress(GetSubscriptionProgressRequest) returns (GetSubscriptionProgressResponse);
+  rpc SubmitSubscriptionLoginCode(SubmitSubscriptionLoginCodeRequest) returns (SubmitSubscriptionLoginCodeResponse);
+  rpc TakeSubscriptionLoginCode(TakeSubscriptionLoginCodeRequest) returns (TakeSubscriptionLoginCodeResponse);
   rpc ForwardSubscriptionCallback(ForwardSubscriptionCallbackRequest) returns (ForwardSubscriptionCallbackResponse);
   rpc WatchSubscription(WatchSubscriptionRequest) returns (stream WatchSubscriptionResponse);
   rpc TakeSubscription(TakeSubscriptionRequest) returns (TakeSubscriptionResponse);
   rpc PublishSubscriptionProgress(PublishSubscriptionProgressRequest) returns (PublishSubscriptionProgressResponse);
   rpc FinishSubscription(FinishSubscriptionRequest) returns (FinishSubscriptionResponse);
+}
+
+// Explicit server-owned cleanup of failed initial logins. No native login or
+// callback authority is granted by these metadata-only operations.
+message CleanupFailedSubscriptionsRequest {
+  string request_id = 1;
+}
+message CleanupFailedSubscriptionsResponse {
+  FailedSubscriptionCleanupJob job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetFailedSubscriptionCleanupRequest {
+  string job_id = 1;
+  string page_token = 2;
+}
+message GetFailedSubscriptionCleanupResponse {
+  FailedSubscriptionCleanupJob job = 1;
+  // Fixed pages of at most 50 original account outcomes.
+  repeated FailedSubscriptionCleanupResult results = 2;
+  string next_page_token = 3;
+}
+message FailedSubscriptionCleanupJob {
+  string id = 1;
+  uint64 revision = 2;
+  FailedSubscriptionCleanupState state = 3;
+  uint32 total = 4;
+  uint32 processed = 5;
+  uint32 deleted = 6;
+  uint32 retained = 7;
+  string problem_code = 8;
+}
+message FailedSubscriptionCleanupResult {
+  string account_id = 1;
+  string alias = 2;
+  FailedSubscriptionCleanupOutcome outcome = 3;
+  FailedSubscriptionCleanupReason reason = 4;
+  string problem_code = 5;
+}
+enum FailedSubscriptionCleanupState {
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_UNSPECIFIED = 0;
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_PENDING = 1;
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_COMPLETED = 2;
+  FAILED_SUBSCRIPTION_CLEANUP_STATE_FAILED = 3;
+}
+enum FailedSubscriptionCleanupOutcome {
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_UNSPECIFIED = 0;
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_PENDING = 1;
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_DELETED = 2;
+  FAILED_SUBSCRIPTION_CLEANUP_OUTCOME_RETAINED = 3;
+}
+enum FailedSubscriptionCleanupReason {
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_UNSPECIFIED = 0;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_CHANGED = 1;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_REFERENCED = 2;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_CLEANUP_UNCONFIRMED = 3;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_INVALID_OWNERSHIP = 4;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_AUTHORIZATION = 5;
+  FAILED_SUBSCRIPTION_CLEANUP_REASON_UNAVAILABLE = 6;
 }
 
 message RequestSubscriptionRequest {
@@ -79,6 +142,8 @@ message GetSubscriptionProgressResponse {
   string generation = 6;
   // Safe metadata for the original native failure; absent on older servers.
   CodexDiagnostic diagnostic = 7;
+  SubscriptionLoginMethod login_method = 8;
+  NativeSubscriptionDiagnostic native_diagnostic = 9;
 }
 message WatchSubscriptionRequest {
   string machine_id = 1;
@@ -101,6 +166,8 @@ message TakeSubscriptionResponse {
   bytes bundle = 3;
   uint64 lease_revision = 4;
   bytes installation_json = 5;
+  // Opaque original-Runner profile reference, never authentication bytes.
+  string native_profile_id = 6;
 }
 message PublishSubscriptionProgressRequest {
   string account_id = 1;
@@ -109,6 +176,10 @@ message PublishSubscriptionProgressRequest {
   string instance_id = 4;
   string url = 5;
   string user_code = 6;
+  SubscriptionLoginState state = 7;
+  SubscriptionLoginMethod login_method = 8;
+  NativeSubscriptionDiagnostic native_diagnostic = 9;
+  string suggested_name = 10;
 }
 message PublishSubscriptionProgressResponse {
   bool canceled = 1;
@@ -123,10 +194,61 @@ message FinishSubscriptionRequest {
   bool cleanup_confirmed = 7;
   bool refresh_confirmed = 8;
   bool succeeded = 9;
+  NativeSubscriptionIdentity native_identity = 10;
 }
 message FinishSubscriptionResponse {
   Resource account = 1;
   bool replayed = 2;
+}
+
+enum SubscriptionLoginMethod {
+  SUBSCRIPTION_LOGIN_METHOD_UNSPECIFIED = 0;
+  SUBSCRIPTION_LOGIN_METHOD_BROWSER_CALLBACK = 1;
+  SUBSCRIPTION_LOGIN_METHOD_BROWSER_CODE = 2;
+}
+enum NativeSubscriptionDiagnosticPhase {
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_UNSPECIFIED = 0;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_DISCOVERY = 1;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_VERSION = 2;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_RUNTIME = 3;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_LAUNCH = 4;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_LOGIN = 5;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_STATUS = 6;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_EXECUTION = 7;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_HISTORY = 8;
+  NATIVE_SUBSCRIPTION_DIAGNOSTIC_PHASE_CLEANUP = 9;
+}
+message NativeSubscriptionDiagnostic {
+  string detected_version = 1;
+  string required_version = 2;
+  NativeSubscriptionDiagnosticPhase phase = 3;
+  string code = 4;
+  string correlation_id = 5;
+}
+message NativeSubscriptionIdentity {
+  string profile_id = 1;
+  // Worker-local keyed identity comparison, never raw native account content.
+  string identity_commitment = 2;
+}
+message SubmitSubscriptionLoginCodeRequest {
+  Mutation mutation = 1;
+  string operation_id = 2;
+  // Transient original CLI input. Excluded from receipts, resources and logs.
+  bytes code = 3;
+}
+message SubmitSubscriptionLoginCodeResponse {
+  bool accepted = 1;
+}
+message TakeSubscriptionLoginCodeRequest {
+  string account_id = 1;
+  string lease_id = 2;
+  string machine_id = 3;
+  string instance_id = 4;
+  string operation_id = 5;
+}
+message TakeSubscriptionLoginCodeResponse {
+  bytes code = 1;
+  string submission_id = 2;
 }
 
 // Quota reads and explicit credit consumption share the original native owner.

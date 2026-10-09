@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed native installation infrastructure. Go independently owns signed
 //! release verification, immutable download and the durable once-only journal.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use std::{thread, time::Instant};
+
 use sha2::{Digest, Sha256};
 
 use super::*;
@@ -102,6 +105,157 @@ pub struct DesktopUpdateRequest<'a> {
     pub generation: &'a str,
     pub action: &'a str,
     pub outcome: Option<Phase>,
+}
+
+// Constructed only by a successful original native-begin. The renderer cannot
+// supply or change this cleanup authority, including its selected saved scope.
+pub struct AcceptedInstallation {
+    prepared: Prepared,
+    revision: u64,
+    saved: Option<SavedConnection>,
+    outcome: Mutex<Option<Phase>>,
+}
+
+impl AcceptedInstallation {
+    pub fn matches(&self, server: &str, id: &str, revision: u64) -> bool {
+        self.prepared.server_id == server
+            && self.prepared.operation_id == id
+            && self.revision == revision
+    }
+
+    pub fn install(&self, connector: &Connector) -> Phase {
+        self.install_with(connector.exiting.load(Ordering::Acquire), || {
+            connector.install_desktop(&self.prepared)
+        })
+    }
+
+    fn install_with(&self, stopping: bool, installer: impl FnOnce() -> Phase) -> Phase {
+        let Ok(mut outcome) = self.outcome.lock() else {
+            return Phase::Uncertain;
+        };
+        if let Some(phase) = *outcome {
+            return phase;
+        }
+        let phase = if stopping {
+            Phase::Failed
+        } else {
+            // Catch at the effect boundary while the original outcome and
+            // host pending guards remain valid. An installer panic proves no
+            // safe terminal effect; retain uncertainty without replay.
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(installer)).unwrap_or_else(|_| {
+                tracing::error!(
+                    operation = "desktop_update",
+                    phase = "installer-panic",
+                    state = "original-uncertain"
+                );
+                Phase::Uncertain
+            })
+        };
+        *outcome = Some(phase);
+        phase
+    }
+
+    pub fn settle(&self, connector: &Connector, phase: Phase) -> Result<Prepared> {
+        let name = match phase {
+            Phase::Installed => "installed",
+            Phase::Failed => "failed",
+            Phase::Uncertain => "uncertain",
+            _ => return Err(NativeFailure::InvalidInput),
+        };
+        let mut original = self.outcome.lock().map_err(|_| NativeFailure::Busy)?;
+        if original.is_some_and(|previous| previous != phase) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        *original = Some(phase);
+        let p = &self.prepared;
+        let mut args: Vec<OsString> = vec![
+            "update".into(),
+            "native-outcome".into(),
+            "--id".into(),
+            p.operation_id.clone().into(),
+            "--revision".into(),
+            self.revision.to_string().into(),
+            "--server-id".into(),
+            p.server_id.clone().into(),
+            "--native-generation".into(),
+            p.generation.clone().into(),
+            "--outcome".into(),
+            name.into(),
+        ];
+        if let Some(saved) = &self.saved {
+            args.extend(["--saved-connection".into(), saved.id.clone().into()]);
+        }
+        // Retry only the exact same-phase offline write. A lost atomic-write
+        // reply grants neither another installer invocation nor a new claim.
+        let started = std::time::Instant::now();
+        let mut last = NativeFailure::TimedOut;
+        for _ in 0..4 {
+            let remaining = Duration::from_secs(40).saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                break;
+            }
+            let result = connector
+                .short_request_with_input_mode(&args, None, remaining, false)
+                .and_then(|value| {
+                    let result: Prepared = serde_json::from_value(value)
+                        .map_err(|_| NativeFailure::InvalidEvidence)?;
+                    result.validate(
+                        &connector.root,
+                        &p.operation_id,
+                        &p.server_id,
+                        &p.generation,
+                    )?;
+                    if result.phase != phase {
+                        return Err(NativeFailure::InvalidEvidence);
+                    }
+                    Ok(result)
+                });
+            match result {
+                Ok(result) => return Ok(result),
+                Err(code) => {
+                    tracing::warn!(
+                        operation = "desktop_update_settlement",
+                        id = p.operation_id,
+                        ?phase,
+                        ?code
+                    );
+                    last = code;
+                    if !matches!(
+                        code,
+                        NativeFailure::Busy
+                            | NativeFailure::SidecarFailed
+                            | NativeFailure::TimedOut
+                    ) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+        }
+        Err(last)
+    }
+}
+
+impl Connector {
+    pub fn begin_desktop_installation(
+        &self,
+        expected: Option<&SavedConnection>,
+        mut request: DesktopUpdateRequest<'_>,
+    ) -> Result<AcceptedInstallation> {
+        request.action = "native-begin";
+        request.outcome = None;
+        let revision = request.revision;
+        let prepared = self.desktop_update(expected, request)?;
+        if prepared.phase != Phase::Installing {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        Ok(AcceptedInstallation {
+            prepared,
+            revision,
+            saved: expected.cloned(),
+            outcome: Mutex::new(None),
+        })
+    }
 }
 impl Connector {
     pub fn desktop_update(
@@ -573,17 +727,7 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
     let Ok(mounts) = fs::read_to_string("/proc/self/mountinfo") else {
         return Phase::Failed;
     };
-    if mounts.len() > 1 << 20
-        || !mounts.lines().any(|line| {
-            let fields: Vec<_> = line.split_whitespace().collect();
-            fields.get(4).is_some_and(|v| Path::new(v) == dir)
-                && line.split(" - ").nth(1).is_some_and(|v| {
-                    v.split_whitespace()
-                        .nth(1)
-                        .is_some_and(|v| Path::new(v) == image)
-                })
-        })
-    {
+    if !appimage_mount_matches(&mounts, &dir, &image, &exe) {
         return Phase::Failed;
     }
     let Some(parent) = image.parent() else {
@@ -624,11 +768,315 @@ fn install(p: &Prepared, exiting: &AtomicBool) -> Phase {
     Phase::Installed
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn decode_mountinfo_path(field: &str) -> Option<PathBuf> {
+    let mut decoded = Vec::with_capacity(field.len());
+    let mut bytes = field.bytes();
+    while let Some(byte) = bytes.next() {
+        // Linux seq_path_root/seq_escape encode these characters as octal;
+        // mount sources also escape '#'. Decode once so a literal "\\040"
+        // remains distinct from a space. Reject every other escape.
+        let byte = if byte == b'\\' {
+            match [bytes.next()?, bytes.next()?, bytes.next()?] {
+                [b'0', b'4', b'0'] => b' ',
+                [b'0', b'1', b'1'] => b'\t',
+                [b'0', b'1', b'2'] => b'\n',
+                [b'1', b'3', b'4'] => b'\\',
+                [b'0', b'4', b'3'] => b'#',
+                _ => return None,
+            }
+        } else if byte == 0 {
+            return None;
+        } else {
+            byte
+        };
+        decoded.push(byte);
+    }
+    Some(PathBuf::from(String::from_utf8(decoded).ok()?))
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn appimage_mount_matches(mounts: &str, dir: &Path, image: &Path, exe: &Path) -> bool {
+    if mounts.len() > 1 << 20 || !image.is_absolute() || !dir.is_absolute() || !exe.starts_with(dir)
+    {
+        return false;
+    }
+    mounts.lines().any(|line| {
+        let Some((mount, source)) = line.split_once(" - ") else {
+            return false;
+        };
+        mount
+            .split_ascii_whitespace()
+            .nth(4)
+            .and_then(decode_mountinfo_path)
+            .is_some_and(|path| path == dir)
+            && source
+                .split_ascii_whitespace()
+                .nth(1)
+                .and_then(decode_mountinfo_path)
+                .is_some_and(|path| path == image)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn original_outcomes_settle_offline_after_quit_and_contention_without_reinstallation() {
+        use std::os::unix::fs::PermissionsExt;
+        for (phase, installer_panic) in [
+            (Phase::Installed, false),
+            (Phase::Failed, false),
+            (Phase::Uncertain, false),
+            (Phase::Uncertain, true),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let sidecar = temp.path().join("sidecar");
+            fs::write(
+                &sidecar,
+                "#!/bin/sh\nprintf x >> \"$2/invocations\"\nif [ ! -e \"$2/written\" ]; then \
+                 touch \"$2/written\"; printf \
+                 '{\"version\":1,\"error\":{\"code\":\"unavailable\"}}'; exit 1; fi\nexec \
+                 /bin/cat \"$2/response.json\"\n",
+            )
+            .unwrap();
+            fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
+            let connector = Connector::new(sidecar, temp.path().to_path_buf()).unwrap();
+            let id = uuid::Uuid::now_v7().to_string();
+            let server = uuid::Uuid::now_v7().to_string();
+            let generation = uuid::Uuid::now_v7().to_string();
+            let target = format!(
+                "{}-{}",
+                std::env::consts::OS,
+                if cfg!(target_arch = "aarch64") {
+                    "arm64"
+                } else {
+                    "amd64"
+                }
+            )
+            .replace("macos-", "darwin-");
+            let extension = if cfg!(target_os = "macos") {
+                ".dmg"
+            } else {
+                ".AppImage"
+            };
+            let descriptor = serde_json::json!({"version":1,"operation_id":id,"server_id":server,"generation":generation,"release_version":"0.2.0","target":target,"phase":phase,"artifact_path":connector.root.join("desktop-updates/downloads").join(format!("{}{}","a".repeat(64),extension)),"artifact_sha256":"a".repeat(64),"artifact_size":8,"manifest_sha256":"b".repeat(64)});
+            fs::write(
+                temp.path().join("response.json"),
+                serde_json::to_vec(&serde_json::json!({"version":1,"result":descriptor})).unwrap(),
+            )
+            .unwrap();
+            let mut installing: Prepared = serde_json::from_value(descriptor).unwrap();
+            installing.phase = Phase::Installing;
+            let accepted = AcceptedInstallation {
+                prepared: installing,
+                revision: 7,
+                saved: None,
+                outcome: Mutex::new(None),
+            };
+            let effects = std::sync::atomic::AtomicUsize::new(0);
+            assert_eq!(
+                accepted.install_with(false, || {
+                    effects.fetch_add(1, Ordering::AcqRel);
+                    if installer_panic {
+                        panic!("original installer effect became uncertain");
+                    }
+                    phase
+                }),
+                phase
+            );
+            assert_eq!(
+                accepted.install_with(false, || panic!("installation must not replay")),
+                phase
+            );
+            assert_eq!(effects.load(Ordering::Acquire), 1);
+            connector.exiting.store(true, Ordering::Release);
+            let contention = connector.gate.lock().unwrap();
+            assert_eq!(accepted.settle(&connector, phase).unwrap().phase, phase);
+            assert_eq!(
+                fs::read(temp.path().join("invocations")).unwrap(),
+                b"xx",
+                "lost reply retries only original offline writer"
+            );
+            assert_eq!(
+                accepted.install(&connector),
+                phase,
+                "retained result forbids another installer effect"
+            );
+            assert!(matches!(
+                accepted.settle(
+                    &connector,
+                    if phase == Phase::Failed {
+                        Phase::Installed
+                    } else {
+                        Phase::Failed
+                    }
+                ),
+                Err(NativeFailure::InvalidEvidence)
+            ));
+            assert_eq!(fs::read(temp.path().join("invocations")).unwrap(), b"xx");
+            drop(contention);
+            assert!(matches!(
+                connector.desktop_update(
+                    None,
+                    DesktopUpdateRequest {
+                        server: &server,
+                        id: &id,
+                        revision: 7,
+                        generation: &generation,
+                        action: "native-prepare",
+                        outcome: None
+                    }
+                ),
+                Err(NativeFailure::Stopped)
+            ));
+        }
+    }
+
+    #[test]
+    fn mountinfo_decodes_kernel_path_escapes_once() {
+        for (encoded, decoded) in [
+            ("/home/user/DeliDev.AppImage", "/home/user/DeliDev.AppImage"),
+            (
+                r"/home/user/My\040Apps/DeliDev.AppImage",
+                "/home/user/My Apps/DeliDev.AppImage",
+            ),
+            (
+                r"/tmp/tab\011line\012slash\134hash\043",
+                "/tmp/tab\tline\nslash\\hash#",
+            ),
+            (r"/tmp/literal\134040", r"/tmp/literal\040"),
+            (
+                "/home/Caf\u{e9}/DeliDev.AppImage",
+                "/home/Caf\u{e9}/DeliDev.AppImage",
+            ),
+        ] {
+            assert_eq!(decode_mountinfo_path(encoded), Some(PathBuf::from(decoded)));
+        }
+    }
+
+    #[test]
+    fn mountinfo_rejects_malformed_or_non_kernel_escapes() {
+        for field in [
+            "/tmp/trailing\\",
+            r"/tmp/\0",
+            r"/tmp/\04",
+            r"/tmp/\08x",
+            r"/tmp/\400",
+            r"/tmp/\777",
+            r"/tmp/\000",
+            r"/tmp/\141",
+            r"/tmp/\x20",
+            "/tmp/nul\0",
+        ] {
+            assert!(decode_mountinfo_path(field).is_none());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn appimage_mount_matches_decoded_mount_and_source_in_the_same_record() {
+        for (mount, source, dir, image) in [
+            (
+                "/tmp/.mount_DeliDev",
+                "/home/user/DeliDev.AppImage",
+                "/tmp/.mount_DeliDev",
+                "/home/user/DeliDev.AppImage",
+            ),
+            (
+                "/tmp/.mount_DeliDev",
+                r"/home/user/My\040Apps/DeliDev.AppImage",
+                "/tmp/.mount_DeliDev",
+                "/home/user/My Apps/DeliDev.AppImage",
+            ),
+            (
+                r"/tmp/mount\040with\011tab\012line\134slash",
+                r"/home/user/tab\011line\012slash\134hash\043.AppImage",
+                "/tmp/mount with\ttab\nline\\slash",
+                "/home/user/tab\tline\nslash\\hash#.AppImage",
+            ),
+            (
+                r"/tmp/literal\134040",
+                r"/home/user/literal\134040.AppImage",
+                r"/tmp/literal\040",
+                r"/home/user/literal\040.AppImage",
+            ),
+        ] {
+            let mounts =
+                format!("36 35 0:42 / {mount} ro shared:7 unknown:1 - fuse.AppImage {source} ro\n");
+            let dir = Path::new(dir);
+            let image = Path::new(image);
+            let exe = dir.join("usr/bin/delidev-desktop");
+            assert!(appimage_mount_matches(&mounts, dir, image, &exe));
+            assert!(!appimage_mount_matches(
+                &mounts,
+                Path::new("/tmp/other"),
+                image,
+                &exe
+            ));
+            assert!(!appimage_mount_matches(
+                &mounts,
+                dir,
+                Path::new("/home/user/other.AppImage"),
+                &exe
+            ));
+            assert!(!appimage_mount_matches(
+                &mounts,
+                dir,
+                image,
+                Path::new("/tmp/other/usr/bin/delidev-desktop")
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn appimage_mount_rejects_invalid_inventory_and_unrelated_authority() {
+        let dir = Path::new("/tmp/.mount_DeliDev");
+        let image = Path::new("/home/user/My Apps/DeliDev.AppImage");
+        let exe = dir.join("usr/bin/delidev-desktop");
+        for mounts in [
+            "",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro fuse.AppImage \
+             /home/user/My\\040Apps/DeliDev.AppImage ro",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage",
+            "36 35 0:42 / /tmp/.mount_DeliDev\\04 ro - fuse.AppImage \
+             /home/user/My\\040Apps/DeliDev.AppImage ro",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage \
+             /home/user/My\\04Apps/DeliDev.AppImage ro",
+            "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage /home/user/other.AppImage ro\n37 \
+             35 0:43 / /tmp/other ro - fuse.AppImage /home/user/My\\040Apps/DeliDev.AppImage ro",
+        ] {
+            assert!(!appimage_mount_matches(mounts, dir, image, &exe));
+        }
+        let mounts = "36 35 0:42 / /tmp/.mount_DeliDev ro - fuse.AppImage \
+                      /home/user/My\\040Apps/DeliDev.AppImage ro\n";
+        assert!(!appimage_mount_matches(
+            mounts,
+            dir,
+            image,
+            Path::new("/tmp/.mount_DeliDev-other/delidev-desktop")
+        ));
+        assert!(!appimage_mount_matches(
+            mounts,
+            Path::new("tmp/.mount_DeliDev"),
+            image,
+            &exe
+        ));
+        assert!(!appimage_mount_matches(
+            mounts,
+            dir,
+            Path::new("DeliDev.AppImage"),
+            &exe
+        ));
+        let oversized = format!("{mounts}{}", " ".repeat(1 << 20));
+        assert!(!appimage_mount_matches(&oversized, dir, image, &exe));
+    }
+
     #[test]
     fn descriptor_cannot_select_paths_or_another_authority() {
         let root = Path::new("/private/product");
@@ -678,7 +1126,12 @@ mod tests {
     #[test]
     fn native_staging_checks_actual_bytes_and_never_replaces_a_generation() {
         let root = tempfile::tempdir().unwrap();
-        let downloads = root.path().join("downloads");
+        // macOS exposes the temporary directory through `/var`, which is a
+        // symlink to `/private/var`. Use the physical path so this fixture
+        // exercises the staging checks instead of rejecting the platform's
+        // stable system alias as an untrusted ancestor.
+        let root_path = root.path().canonicalize().unwrap();
+        let downloads = root_path.join("downloads");
         fs::create_dir(&downloads).unwrap();
         let source = downloads.join("source.dmg");
         fs::write(&source, b"verified").unwrap();

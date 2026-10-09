@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,16 +31,39 @@ type Inspection struct {
 	GitHubRepositories map[string]GitHubRepository `json:"github_repositories,omitempty"`
 }
 type Git struct {
-	Executable    string
-	ProcessRoot   string
-	OwnerID       domain.ID
-	Logger        *slog.Logger
-	HooksDir      string
-	Timeout       time.Duration
-	environment   []string
-	readOnly      bool
-	offline       bool
-	diffIndexFile string
+	Executable          string
+	ProcessRoot         string
+	OwnerID             domain.ID
+	Logger              *slog.Logger
+	HooksDir            string
+	Timeout             time.Duration
+	environment         []string
+	cloneDiagnostics    bool
+	readOnly            bool
+	offline             bool
+	restrictedTransport bool
+	branchInventory     bool
+	diffIndexFile       string
+}
+
+func appendGitConfig(environment []string, key, value string) []string {
+	countIndex, count := -1, 0
+	for index, entry := range environment {
+		name, raw, ok := strings.Cut(entry, "=")
+		if name != "GIT_CONFIG_COUNT" {
+			continue
+		}
+		parsed, err := strconv.Atoi(raw)
+		if !ok || err != nil || parsed < 0 {
+			return environment
+		}
+		countIndex, count = index, parsed
+	}
+	if countIndex < 0 {
+		return append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0="+key, "GIT_CONFIG_VALUE_0="+value)
+	}
+	environment[countIndex] = "GIT_CONFIG_COUNT=" + strconv.Itoa(count+1)
+	return append(environment, "GIT_CONFIG_KEY_"+strconv.Itoa(count)+"="+key, "GIT_CONFIG_VALUE_"+strconv.Itoa(count)+"="+value)
 }
 
 type limitedOutput struct {
@@ -93,6 +117,12 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// Read-only workspace observations never grant that command authority.
 		commandArgs = append(commandArgs, "-c", "core.fsmonitor=false")
 	}
+	if g.restrictedTransport {
+		// Managed clone commands keep the same transport boundary after the
+		// initial clone. In particular, automatic branch fetches must not inherit
+		// a repository, system or user redirect/protocol policy.
+		commandArgs = append(commandArgs, "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always", "-c", "http.followRedirects=false", "-c", "core.fsmonitor=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false")
+	}
 	if g.HooksDir != "" {
 		commandArgs = append(commandArgs, "-c", "core.hooksPath="+g.HooksDir)
 	}
@@ -103,6 +133,9 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 	}
 	var out limitedOutput
 	out.limit = MaxGitOutput
+	if g.branchInventory {
+		out.limit = domain.MaxRepositoryBranchesBytes
+	}
 	environment := gitEnvironment()
 	if g.environment != nil {
 		environment = slices.Clone(g.environment)
@@ -114,7 +147,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		})
 		environment = append(environment, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1", "GIT_NO_REPLACE_OBJECTS=1")
 	}
-	if g.readOnly {
+	if g.readOnly || g.cloneDiagnostics {
 		// Git localizes binary/EOF patch markers. Read observations require a
 		// stable wire grammar independent of the execution machine's locale.
 		environment = slices.DeleteFunc(environment, func(value string) bool { key, _, _ := strings.Cut(value, "="); return strings.EqualFold(key, "LC_ALL") })
@@ -128,14 +161,24 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		// populating the private checkout. Propagate the bounded override through
 		// Git's config environment so those children receive the same long-path
 		// capability without changing the source repository configuration.
-		environment = append(environment, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.longpaths", "GIT_CONFIG_VALUE_0=true")
+		environment = appendGitConfig(environment, "core.longpaths", "true")
 	}
-	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: io.Discard, Logger: g.Logger})
+	var diagnostic limitedOutput
+	diagnostic.limit = 8192
+	var stderr io.Writer = io.Discard
+	if g.cloneDiagnostics {
+		stderr = cloneDiagnosticWriter{&diagnostic}
+	}
+	defer func() { clear(diagnostic.Bytes()) }()
+	err := process.Run(bounded, process.Config{Directory: g.ProcessRoot, OwnerID: g.OwnerID, Executable: binary, Args: commandArgs, Env: environment, Cwd: root, Stdout: &out, Stderr: stderr, Logger: g.Logger})
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
 			return nil, -1, err
 		}
 		if bounded.Err() != nil {
+			if g.cloneDiagnostics && errors.Is(bounded.Err(), context.DeadlineExceeded) {
+				return nil, -1, &domain.Error{Code: domain.Unavailable, Message: "Repository clone timed out.", Guidance: "Inspect the original clone job before retrying.", Cause: "clone_timeout"}
+			}
 			return nil, -1, domain.SafeError(bounded.Err())
 		}
 		if out.overflow {
@@ -143,6 +186,12 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		}
 		var exit interface{ ExitCode() int }
 		if errors.As(err, &exit) {
+			if g.cloneDiagnostics {
+				value := strings.ToLower(diagnostic.String())
+				if strings.Contains(value, "authentication failed") || strings.Contains(value, "permission denied (publickey") || strings.Contains(value, "could not read username") || strings.Contains(value, "could not read password") {
+					return nil, exit.ExitCode(), &domain.Error{Code: domain.PermissionDenied, Message: "Git authentication failed.", Guidance: "Configure this computer's Git credentials or SSH key, then retry.", Cause: "clone_authentication"}
+				}
+			}
 			if g.Logger != nil {
 				g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_exit", "exit_code", exit.ExitCode(), "read_only", g.readOnly, "offline", g.offline)
 			}
@@ -228,6 +277,52 @@ func (g Git) Inspect(ctx context.Context, path string) (Inspection, error) {
 	}
 	return result, nil
 }
+
+func selectedInspectionRemote(inspection Inspection, preferred string) (string, error) {
+	if preferred != "" {
+		if !slices.Contains(inspection.Remotes, preferred) {
+			return "", domain.Fail(domain.InvalidArgument, "The preferred remote does not exist on this Worker.", "Refresh repository inspection and select a current remote.")
+		}
+		return preferred, nil
+	}
+	if slices.Contains(inspection.Remotes, "origin") {
+		return "origin", nil
+	}
+	if len(inspection.Remotes) == 1 {
+		return inspection.Remotes[0], nil
+	}
+	return "", domain.Fail(domain.MissingInput, "The checkout's source remote is ambiguous or absent.", "Choose a preferred remote before saving this checkout.")
+}
+
+// ValidateRemoteIdentity checks the selected checkout's effective Git remote
+// against an opaque server-provided identity. The raw URL stays in the Worker
+// process and is never returned in inspection output or error text.
+func (g Git) ValidateRemoteIdentity(ctx context.Context, inspection Inspection, preferred, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	if !domain.ValidRepositoryCloneSourceIdentity(expected) {
+		return domain.Fail(domain.RecoveryRequired, "The repository source identity is invalid.", "Inspect the original save operation before retrying.")
+	}
+	remote, err := selectedInspectionRemote(inspection, preferred)
+	if err != nil {
+		return err
+	}
+	raw, err := g.run(ctx, inspection.Root, "remote", "get-url", "--all", "--", remote)
+	if err != nil {
+		return err
+	}
+	value := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
+	if value == "" || strings.ContainsAny(value, "\r\n") {
+		return domain.Fail(domain.InvalidArgument, "The selected checkout has no single usable source remote.", "Configure one credential-free remote that matches the repository URL.")
+	}
+	actual, err := domain.RepositoryCloneSourceIdentity(value)
+	if err != nil || actual != expected {
+		return domain.Fail(domain.InvalidArgument, "The selected checkout belongs to a different repository.", "Choose a checkout of the configured repository source.")
+	}
+	return nil
+}
+
 func DefaultStarting(inspection Inspection, preferred string) (domain.Reference, error) {
 	remote := preferred
 	if remote != "" && !slices.Contains(inspection.Remotes, remote) {

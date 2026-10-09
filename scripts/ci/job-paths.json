@@ -43,7 +43,11 @@
       "servers/**",
       "turbo.json",
       "apps/async-commit-hook/**",
-      "packages/async-commit-hook-api-client/**"
+      "packages/async-commit-hook-api-client/**",
+      "scripts/ci/go-affected*",
+      "scripts/ci/go-quality*",
+      "scripts/ci/go-test.mjs",
+      "scripts/ci/go-test.test.mjs"
     ]
   },
   "go-test": {
@@ -64,7 +68,9 @@
       "servers/**",
       "turbo.json",
       "apps/async-commit-hook/**",
-      "packages/async-commit-hook-api-client/**"
+      "packages/async-commit-hook-api-client/**",
+      "scripts/ci/go-affected*",
+      "scripts/ci/go-quality*"
     ]
   },
   "repository-environment": {
@@ -108,6 +114,8 @@
   "rust-fmt": {
     "paths": [
       "**/*.rs",
+      "**/.rustfmt.toml",
+      "**/rustfmt.toml",
       "**/Cargo.lock",
       "**/Cargo.toml",
       "**/rust-toolchain",
@@ -116,8 +124,12 @@
       "Cargo.lock",
       "Cargo.toml",
       "crates/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
       "rust-toolchain",
-      "rust-toolchain.toml"
+      "rust-toolchain.toml",
+      "turbo.json"
     ]
   },
   "rust-clippy": {
@@ -447,30 +459,6 @@
     ],
     "native": true
   },
-  "devhud-protocol": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/delidev/**",
-      "buf.gen.yaml",
-      "buf.yaml",
-      "cmds/delidev-cli/**",
-      "go.mod",
-      "go.sum",
-      "package.json",
-      "packages/delidev-api-client/**",
-      "packages/devhud-api-client/**",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "protos/delidev/**",
-      "protos/devhud/**",
-      "protos/gen/go/delidev/**",
-      "protos/gen/go/devhud/**",
-      "scripts/check-proto-breaking.sh",
-      "turbo.json",
-      "scripts/delidev/**"
-    ]
-  },
   "devhud-admin": {
     "paths": [
       ".npmrc",
@@ -572,6 +560,7 @@
       "package.json",
       "packages/devhud-api-client/**",
       "packaging/devhud/**",
+      "packaging/linux/**",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "protos/devhud/**",
@@ -579,8 +568,12 @@
       "scripts/release/*.test.mjs",
       "scripts/release/*devhud*",
       "scripts/release/fixtures/**",
+      "scripts/release/generate-delidev-updater.mjs",
       "scripts/release/linux/**",
+      "scripts/release/linux-packages.mjs",
+      "scripts/release/linux-packages/**",
       "scripts/release/project.mjs",
+      "scripts/release/legacy-cli-release.mjs",
       "scripts/release/runmoor.mjs",
       "scripts/release/runmoor-homebrew.mjs",
       "packaging/homebrew/templates/runmoor.rb.tmpl",
@@ -605,6 +598,7 @@
       "go.sum",
       "package.json",
       "packages/async-commit-hook-api-client/**",
+      "packages/devhud-api-client/src/gen/**",
       "packaging/async-commit-hook/**",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
@@ -660,6 +654,10 @@
       ".cargo/**",
       "Cargo.toml",
       "Cargo.lock",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
       "rust-toolchain",
       "rust-toolchain.toml",
       "crates/forge-tree-doc/**",
@@ -675,6 +673,10 @@
       ".cargo/**",
       "Cargo.toml",
       "Cargo.lock",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
       "rust-toolchain",
       "rust-toolchain.toml",
       "crates/forge-tree-doc/**",
@@ -725,6 +727,74 @@
       "crates/delino-forge/build.rs",
       ".github/workflows/release-react-forge.yml",
       "scripts/release/project.mjs"
+    ]
+  },
+  "delidev-protocol": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "buf.gen.yaml",
+      "buf.yaml",
+      "protos/delidev/**",
+      "protos/gen/go/delidev/**",
+      "packages/delidev-api-client/src/gen/**",
+      "scripts/check-proto-breaking.sh",
+      "scripts/delidev/**"
+    ]
+  },
+  "delidev-client": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "packages/delidev-api-client/**",
+      "cmds/delidev-cli/**",
+      "protos/delidev/**/*.proto",
+      "protos/gen/go/delidev/**",
+      "scripts/ci/fixture-binary*",
+      "scripts/ci/prepare-delidev-test-binary.mjs"
+    ],
+    "workspace": "@delinoio/delidev-api-client",
+    "workspacePaths": [
+      "packages/delidev-api-client/**"
+    ]
+  },
+  "delidev-frontend": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "apps/delidev/**",
+      "packages/delidev-api-client/**",
+      "cmds/delidev-cli/**",
+      "protos/delidev/**/*.proto",
+      "protos/gen/go/delidev/**",
+      "scripts/ci/fixture-binary*",
+      "scripts/ci/prepare-delidev-test-binary.mjs",
+      "scripts/release/generate-delidev-updater.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "scripts/dev-environment/process.mjs"
+    ],
+    "workspace": "delidev-desktop",
+    "workspacePaths": [
+      "apps/delidev/**",
+      "packages/delidev-api-client/**"
     ]
   }
 }

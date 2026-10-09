@@ -2,10 +2,11 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import { RepositoryRow } from "./repository-list";
 import { AccountConnection } from "./account-connection";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { MutationIntents } from "./mutation";
@@ -13,7 +14,7 @@ import { encode, type Document } from "./documents";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } | Promise<{ entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }>; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -22,16 +23,16 @@ function fixture(resources: Resource[], options: { providerEntries?: ProviderInv
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1] }) });
+    router.service(SystemService, { getDoctor: options.doctor ?? vi.fn(() => { throw new Error("Doctor is not requested by Settings"); }), getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }); } });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
-    router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: list, getResource: (request) => options.readResource?.(request.id) ?? ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
     router.service(ProviderService, {
       listProviderPresets: () => ({ presetsJson: encode(options.presets ?? [{ id: "ollama", provider: { name: "Local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-chat", authentication: "keyless", discovery: true }, key_guidance: "Run your local model server first.", compatibility: "Requires a compatible model." }]) }),
       listProviderInventory: (request) => {
         if (options.providerInventoryError) throw options.providerInventoryError;
-        return options.readProviderInventory?.(request.pageToken, request) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] });
+        return options.readProviderInventory?.(request.pageToken, request) ?? ({ entries: options.providerEntries ?? [{ presetId: ProviderPresetId.OLLAMA, displayName: "Local provider", enabled: false, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true }], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ...(options.providerEntries ? [ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] : [])] });
       },
       searchModels: (request) => options.readModelSearch?.(request.pageToken) ?? ({ models: [], providers: [] }),
     });
@@ -62,7 +63,7 @@ it.each(["job", "unknown", "failed", "uncertain"])("does not show configuration 
   render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
-  if (outcome === "job") await screen.findByText("Worker operation: queued");
+  if (outcome === "job") await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   else await screen.findByRole("alert");
   expect(screen.queryByText("Project saved.")).toBeNull();
   expect(saved).not.toHaveBeenCalled();
@@ -111,19 +112,13 @@ it.each([true, false])("preserves Agent opaque pages when the first page is empt
   if (firstEmpty) await screen.findByText("No agent workers on this page.");
   else await screen.findByRole("heading", { name: "Paged Agent" });
   expect(screen.queryByRole("region", { name: "No agent workers yet" })).toBeNull();
-  const first = screen.getByRole("button", { name: "First page" }) as HTMLButtonElement;
-  expect(first.disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await screen.findByText("No agent workers on this page.");
-  await waitFor(() => expect(first.disabled).toBe(false));
-  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(first);
-  if (!firstEmpty) await screen.findByRole("heading", { name: "Paged Agent" });
-  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT)).toHaveLength(3));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Settings pages" })).toBeNull());
+  if (!firstEmpty) expect(screen.getByRole("heading", { name: "Paged Agent" })).toBeTruthy();
+  else expect(screen.getByRole("region", { name: "No agent workers yet" })).toBeTruthy();
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT).map(([request]) => request.filter)).toEqual([
     expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "" }),
     expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "agent-page-2" }),
-    expect.objectContaining({ kind: EntityKind.AGENT, pageSize: 50, pageToken: "" }),
   ]);
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -162,7 +157,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(panel.querySelectorAll(".settings-agent-row")).toHaveLength(2);
   const row = within(heading.closest("article")!);
   expect(row.getByText(agent.id)).toBeTruthy();
-  expect(row.getByText("Harness: codex")).toBeTruthy(); expect(row.getByText("Status: saved")).toBeTruthy();
+  expect(row.getByText("Codex")).toBeTruthy(); expect(row.getByText("Status: saved")).toBeTruthy();
   expect(heading.querySelector("b")).toBeNull();
   expect(row.getAllByRole("button").map((button) => button.textContent)).toEqual(["Edit", "Preview routing", "Delete"]);
   const futureRow = within(screen.getByRole("heading", { name: "Future Agent" }).closest("article")!);
@@ -172,12 +167,15 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
   fireEvent.click(row.getByRole("button", { name: `Preview routing for ${name}` }));
   await waitFor(() => expect(value.preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id }), expect.anything()));
-  fireEvent.click(screen.getByRole("button", { name: "Back to Agent Workers" }));
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name}` }));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(name);
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
+  expect(screen.getByRole("heading", { name: "Harness" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Edit Agent Worker" }));
   fireEvent.click(screen.getByRole("button", { name: `Delete ${name}` }));
   expect(screen.getByText("Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.")).toBeTruthy();
   expect(value.remove).not.toHaveBeenCalled();
@@ -220,55 +218,6 @@ it("keeps the original Agent deletion revision and retry request within its open
   expect(value.remove.mock.calls[0][0]).toMatchObject({ kind: EntityKind.AGENT, mutation: { id: agent.id, expectedRevision: 7n } });
 });
 
-it("retains an Agent draft at its captured revision when a peer changes the entry", async () => {
-  const model = resource(EntityKind.MODEL, { name: "Fixture Model" });
-  const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
-  const value = fixture([agent, model]);
-  render(value.view(<Settings />));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  await screen.findByRole("button", { name: "Edit Original Agent" });
-  value.resources[0] = create(ResourceSchema, { ...agent, revision: 4n });
-  fireEvent.click(screen.getByRole("button", { name: "Edit Original Agent" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Retained draft" } });
-  expect(await screen.findByText("This entry changed elsewhere. Your draft is retained. Cancel this edit and reopen the latest entry before saving.")).toBeTruthy();
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained draft");
-  expect((screen.getByRole("button", { name: "Save Agent Worker" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  expect(value.save).not.toHaveBeenCalled();
-});
-
-it("retains exact Agent save bytes through reflow and reconnect with navigation available", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "Fixture Provider", enabled: true });
-  const model = resource(EntityKind.MODEL, { name: "Fixture Model", provider_id: provider.id });
-  const agent = resource(EntityKind.AGENT, { name: "Original Agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } }, 3n);
-  const value = fixture([agent, model, provider], { readModelSearch: () => ({ models: [model], providers: [provider] }) });
-  value.save.mockRejectedValueOnce(new ConnectError("Acknowledgment unavailable", Code.Unavailable));
-  const view = render(value.view(<Settings />));
-  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Original Agent" }));
-  const name = screen.getByRole("textbox", { name: "Name" });
-  fireEvent.change(name, { target: { value: "Retained draft" } });
-  await screen.findByRole("option", { name: "Fixture Model" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Model" }), { target: { value: model.id } });
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
-  await screen.findByRole("button", { name: "Retry the same configuration" });
-  expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
-  expect((screen.getByRole("button", { name: "Instructions" }) as HTMLButtonElement).disabled).toBe(false);
-  const replacementSave = vi.fn();
-  const replacement: Transport = { ...value.transport, unary: (...args) => { if (args[0].name === "SaveConfiguration") replacementSave(); return value.transport.unary(...args); } };
-  view.rerender(<TransportProvider transport={replacement}><QueryClientProvider client={value.client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
-  fireEvent(window, new Event("resize"));
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
-  expect((name as HTMLInputElement).value).toBe("Retained draft");
-  expect(value.save).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration" }));
-  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
-  expect(replacementSave).toHaveBeenCalledTimes(1);
-  expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
-  expect(input(value.save.mock.calls[0][0]).mutation).toMatchObject({ id: agent.id, expectedRevision: 3n });
-  expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toEqual({ name: "Retained draft", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
-});
-
 it("uses service identity without Provider reads when editing native account preferences", async () => {
   const account = resource(EntityKind.ACCOUNT, { alias: "Native account", type: "subscription", subscription_service: "chatgpt" });
   const value = fixture([account]); render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={() => {}} cancel={() => {}} />));
@@ -299,8 +248,9 @@ it("keeps model-search cursors out of provider inventory requests", async () => 
     },
   });
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.click(await screen.findByRole("combobox", { name: "Model" }));
   await screen.findByRole("option", { name: "First model" });
-  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Model" }));
   await screen.findByRole("option", { name: "Second model" });
   expect(searchTokens).toEqual(["", "model-page-2"]);
   expect(inventoryTokens.every((pageToken) => pageToken === "")).toBe(true);
@@ -310,9 +260,9 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Models", "Agent Workers", "Instructions", "Projects", "Repositories", "Runner Devices", "Appearance", "Paired devices", "Server preferences", "Integrations", "Connection & diagnostics", "Notifications", "Import / Export", "Backups"];
-  const values = ["subscription-accounts", "api-accounts", "providers", "models", "agent-workers", "instructions", "projects", "repositories", "execution-workers", "appearance", "paired-devices", "server-preferences", "integrations", "diagnostics", "notifications", "transfer", "backups"];
-  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI & agents", "Workspace", "System"]);
+  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
+  const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
+  expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI", "Coding", "Device management", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
   const buttons = within(navigation).getAllByRole("button");
   expect(buttons.map((button) => button.getAttribute("data-settings-category"))).toEqual(values);
@@ -425,7 +375,7 @@ it.each(["close", "category change"])("discards account filters, later pages, wi
   };
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
-  const next = await screen.findByRole("button", { name: "Next page" });
+  const next = await screen.findByRole("button", { name: "Load more Entry pages" });
   await waitFor(() => expect((next as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(next);
   await waitFor(() => expect(tokens).toContain("account-page-2"));
@@ -461,6 +411,8 @@ it("keeps exact retries within an opening and discards its provider draft on clo
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(create);
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("checkbox", { name: "OpenAI Responses" }));
   fireEvent.change(screen.getByRole("textbox", { name: "API base URL" }), { target: { value: "http://127.0.0.1:11434/v1" } });
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("My local provider");
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
@@ -469,7 +421,7 @@ it("keeps exact retries within an opening and discards its provider draft on clo
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(0n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "My local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ name: "My local provider", endpoint: "http://127.0.0.1:11434/v1", protocol: "openai-responses", authentication: "bearer", discovery: true, enabled: true, api_formats: [{ protocol: "openai-responses", endpoint: "http://127.0.0.1:11434/v1", authentication: "bearer" }] });
   view.rerender(value.view(<Settings visible={false} />));
   view.rerender(value.view(<Settings visible />));
   expect(screen.getByRole("button", { name: "AI Subscription" }).getAttribute("aria-current")).toBe("page");
@@ -498,19 +450,19 @@ it("blocks stale settings writes without erasing the staged instructions", async
   render(value.view(<ConfigurationEditor kind={EntityKind.TEMPLATE} initial={initial} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), { target: { value: "My staged instructions" } });
   await screen.findByText(/This entry changed elsewhere/);
-  fireEvent.submit(screen.getByRole("button", { name: "Save Instructions" }).closest("form")!);
+  fireEvent.submit((screen.getByRole("button", { name: "Save Instructions" }) as HTMLButtonElement).form!);
   expect(value.save).not.toHaveBeenCalled();
   expect((screen.getByRole("textbox", { name: "Instructions" }) as HTMLTextAreaElement).value).toBe("My staged instructions");
 });
 
 it("retains a secret only for its exact uncertain connection and excludes it from read cache keys", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "API provider", authentication: "bearer" });
+  const provider = resource(EntityKind.PROVIDER, { name: "API provider", authentication: "bearer", protocol: "openai-responses", endpoint: "https://api.example.test/v1" });
   const account = resource(EntityKind.ACCOUNT, { alias: "API account", provider_id: provider.id, type: "api", health: "disconnected" }, 5n);
   const value = fixture([account, provider]);
   value.connect.mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable));
   render(value.view(<AccountConnection initial={account} active close={() => {}} />));
   const key = screen.getByLabelText("API key");
-  await waitFor(() => expect((key as HTMLInputElement).disabled).toBe(false));
+  await waitFor(() => expect(key.matches(":disabled")).toBe(false));
   fireEvent.change(key, { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Connect API key" }));
   const retry = await screen.findByRole("button", { name: "Retry the same connection" });
@@ -551,26 +503,49 @@ it("preserves explicit empty restrictions and requires a primary repository afte
 });
 
 it("keeps repository save acknowledgment separate from completed Worker validation", async () => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
   value.save.mockResolvedValue({ job });
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
-  await screen.findByText("Worker operation: queued");
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(saved).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh operation" }) as HTMLButtonElement).disabled).toBe(false));
   value.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state: "uncertain", problem: { message: "Owned operation needs recovery" } }) });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh operation" }));
-  await screen.findByText("Worker operation: uncertain");
+  await act(async () => { await value.client.invalidateQueries(); });
+  await screen.findByText("The Worker outcome is uncertain. Inspect the original operation before starting another.");
   expect(value.save).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "Return to retained draft" })).toBeNull();
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh operation" }) as HTMLButtonElement).disabled).toBe(false));
   value.resources[1] = create(ResourceSchema, { ...job, revision: 3n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 2 } }) });
-  fireEvent.click(screen.getByRole("button", { name: "Refresh operation" }));
+  await act(async () => { await value.client.invalidateQueries(); });
   fireEvent.click(await screen.findByRole("button", { name: "Done" }));
   expect(saved).toHaveBeenCalledTimes(1);
+});
+
+it("keeps repository saving blocked and offers a retry when the capability check fails", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const value = fixture([repository], { systemStatusError: new ConnectError("status unavailable", Code.Unavailable) });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  const save = await screen.findByRole("button", { name: "Save Repository" });
+  await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(true));
+  expect(screen.queryByText("Update the selected server before saving a repository.")).toBeNull();
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry repository capability check" })).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("keeps legacy checkout repository editing available without remote capability", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Legacy repository", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  const value = fixture([repository], { systemCapabilities: [] });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed legacy repository" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
+  expect(saved).toEqual({ name: "Renamed legacy repository", checkouts: [{ machine_id: expect.any(String), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
+  expect(saved).not.toHaveProperty("remote_url");
 });
 
 it("retries an original checkout inspection and uses only its owning Worker's canonical root", async () => {
@@ -580,14 +555,17 @@ it("retries an original checkout inspection and uses only its owning Worker's ca
   value.inspect.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Repository" } });
-  await screen.findByRole("option", { name: "Owned Worker" });
-  fireEvent.change(screen.getByLabelText("Runner Device"), { target: { value: machine.id } });
+  fireEvent.change(screen.getByLabelText("Remote Git URL"), { target: { value: "https://github.com/fixture/repo.git" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "Runner Device" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Owned Worker" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Runner Device" }).dataset.value).toBe(machine.id));
   fireEvent.change(screen.getByLabelText("Absolute checkout path on this Worker"), { target: { value: "/alias/checkout" } });
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   const retry = await screen.findByRole("button", { name: "Retry the same inspection" });
   expect((screen.getByRole("button", { name: "Cancel edit" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry);
   fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(value.inspect.mock.calls[0][0]).toEqual(value.inspect.mock.calls[1][0]);
@@ -609,32 +587,33 @@ it("renders unknown quota and server candidate reasons without performing select
   const agent = resource(EntityKind.AGENT, { name: "Agent" }), project = resource(EntityKind.PROJECT, { name: "Restricted project" }), value = fixture([agent, project]);
   value.preview.mockResolvedValue({ routeJson: encode({ policy: "remaining-quota", fallback: true, candidates: [{ id: newRequestId(), weight: 1, eligibility: "project-restricted", quota_state: "unknown" }] }) });
   render(value.view(<RoutingPreview agent={agent} active close={() => {}} />));
-  await screen.findByText(/Quota: unknown/);
-  fireEvent.change(screen.getByLabelText("Project"), { target: { value: project.id } });
+  await screen.findByText("unknown", { exact: true });
+  fireEvent.click(screen.getByRole("combobox", { name: "Project" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Restricted project" }));
   await waitFor(() => expect(value.preview).toHaveBeenLastCalledWith(expect.objectContaining({ agentId: agent.id, projectId: project.id }), expect.anything()));
-  expect(screen.getByText(/None eligible/)).toBeTruthy();
+  expect(screen.getByText("No eligible account")).toBeTruthy();
   expect(value.save).not.toHaveBeenCalled(); expect(value.connect).not.toHaveBeenCalled();
 });
 
-it("edits global routing and fetch preferences without rewriting unrelated policy or creating another singleton", async () => {
+it("edits global routing preferences without rewriting unrelated policy or creating another singleton", async () => {
   const original = { default_routing: "sequential-exhaustion", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } };
   const preferences = resource(EntityKind.SETTINGS, original, 8n);
   const value = fixture([preferences]);
   value.save.mockRejectedValueOnce(new ConnectError("lost response", Code.Unavailable));
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Server preferences" }));
+  await screen.findByRole("form", { name: "Server preferences form" });
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  expect(screen.queryByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]);
   const request = input(value.save.mock.calls[0][0]);
   expect(request.mutation.expectedRevision).toBe(8n);
-  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority", automatic_fetch: false });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, default_routing: "priority" });
 });
 
 it("retains incompatible permission selections across harness changes until explicit clearing", async () => {
@@ -646,7 +625,7 @@ it("retains incompatible permission selections across harness changes until expl
   fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "claude-code" } });
   expect(screen.getByRole("alert").textContent).toContain("workspace-write · on-request");
   expect(screen.queryByRole("combobox", { name: "Permission mode" })).toBeNull();
-  expect(screen.queryByRole("textbox", { name: "Approval policy" })).toBeNull();
+  expect((screen.getByRole("textbox", { name: "Approval policy" }) as HTMLInputElement).disabled).toBe(true);
   fireEvent.change(screen.getByRole("combobox", { name: "Claude permission mode" }), { target: { value: "acceptEdits" } });
   fireEvent.change(screen.getByRole("combobox", { name: "Harness" }), { target: { value: "codex" } });
   expect((screen.getByRole("combobox", { name: "Permission mode" }) as HTMLSelectElement).value).toBe("workspace-write");
@@ -685,9 +664,12 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
     fireEvent.click(screen.getByRole("checkbox", { name }));
   }
   screen.getByText("Remediation details").closest("details")!.open = true;
-  await screen.findByRole("option", { name: "Fix agent" });
-  fireEvent.change(screen.getByLabelText("Remediation Agent Worker"), { target: { value: agent.id } });
-  fireEvent.change(screen.getByLabelText("Remediation Runner Device"), { target: { value: machine.id } });
+  fireEvent.click(screen.getByRole("combobox", { name: "Remediation Agent Worker" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Fix agent" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Remediation Agent Worker" }).dataset.value).toBe(agent.id));
+  fireEvent.click(screen.getByRole("combobox", { name: "Remediation Runner Device" }));
+  fireEvent.click(await screen.findByRole("option", { name: "Fix machine" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Remediation Runner Device" }).dataset.value).toBe(machine.id));
   fireEvent.change(screen.getByLabelText("Remediation session strategy"), { target: { value: "dedicated" } });
   fireEvent.change(screen.getByLabelText("Conflict resolution strategy"), { target: { value: "rebase" } });
   fireEvent.change(screen.getByLabelText("Consecutive automatic attempt limit"), { target: { value: "7" } });
@@ -705,7 +687,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
 });
 
 it("starts a repository override with automation off and removes it only through explicit inheritance", async () => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
   const value = fixture([repository]);
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   expect(screen.getByText(/inherits the complete server remediation policy/)).toBeTruthy();
@@ -716,21 +698,23 @@ it("starts a repository override with automation off and removes it only through
   fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
   fireEvent.click(screen.getByRole("button", { name: "Use server remediation policy" }));
   expect(screen.queryByLabelText("Automatically fix required CI failures")).toBeNull();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
-  expect(saved).toEqual({ name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  expect(saved).toEqual({ name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
 });
 
 it("retains empty repository selectors and clears incompatible identity fields when changing selector type", async () => {
   const policy = { ci_failure: false, review_feedback: true, merge_conflict: false, conflict_strategy: "merge", session_strategy: "reuse", attempt_limit: 3, reviewer_selectors: [{ kind: "app", id: "42", node_id: "A_exact" }] };
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true, remediation: policy }, 4n);
   const value = fixture([repository]);
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Selector 1 type"), { target: { value: "minimum-permission" } });
   expect(screen.queryByLabelText("Selector 1 GitHub numeric ID")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Remove reviewer selector 1" }));
   expect(screen.getByText(/No reviewer selectors/)).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const request = input(value.save.mock.calls[0][0]);
@@ -743,8 +727,12 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
   const openai = resource(EntityKind.PROVIDER, { name: "OpenAI", authentication: "bearer", protocol: "openai-responses", endpoint: "https://api.example.test/v1", enabled: true });
   const anthropic = resource(EntityKind.PROVIDER, { name: "Anthropic", authentication: "bearer", protocol: "anthropic-messages", endpoint: "https://api.example.test/v1", enabled: true });
   const custom = resource(EntityKind.PROVIDER, { name: "Custom API", authentication: "bearer", protocol: "openai-chat", endpoint: "https://custom.example.test/v1", enabled: true });
-  const entry = (provider: Resource, displayName: string) => create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName, enabled: true, provider, accountCountsAvailable: true });
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const entry = (provider: Resource, displayName: string) => {
+    const providerDocument = JSON.parse(new TextDecoder().decode(provider.documentJson)) as Record<string, unknown>;
+    const protocol = providerDocument.protocol === "anthropic-messages" ? ApiProtocol.ANTHROPIC_MESSAGES : providerDocument.protocol === "openai-chat" ? ApiProtocol.OPENAI_CHAT : ApiProtocol.OPENAI_RESPONSES;
+    return create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName, enabled: true, provider, accountCountsAvailable: true, apiFormats: [create(ProviderApiFormatSchema, { protocol, endpoint: String(providerDocument.endpoint ?? ""), authentication: ApiAuthentication.BEARER })] });
+  };
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const requests: { query: string; enabledOnly: boolean; pageSize: number; pageToken: string }[] = [];
   let failLater = true;
   const value = fixture([openai, anthropic, custom], { readProviderInventory: (pageToken, request) => {
@@ -754,30 +742,32 @@ it("keeps the unfiltered picker cursor independent and retains an exact provider
     if (failLater) { failLater = false; throw new ConnectError("Temporary fixture failure", Code.Unavailable); }
     return { entries: [entry(custom, "Custom API")], capabilities };
   } });
-  const savedAccount = resource(EntityKind.ACCOUNT, { alias: "Custom key", provider_id: custom.id, type: "api", enabled: true, health: "disconnected" }, 4n);
+  const savedAccount = resource(EntityKind.ACCOUNT, { alias: "Custom key", provider_id: custom.id, type: "api", api_protocol: "openai-chat", enabled: true, health: "disconnected" }, 4n);
   value.save.mockImplementation(async (request: unknown) => ({ resource: savedAccount, requestId: input(request).mutation.requestId }));
-  value.connect.mockImplementation(async (request: unknown) => ({ account: create(ResourceSchema, { ...savedAccount, revision: 5n, documentJson: encode({ alias: "Custom key", provider_id: custom.id, type: "api", enabled: true, health: "unverified", connection: { id: newRequestId() } }) }), requestId: input(request).mutation.requestId }));
+  value.connect.mockImplementation(async (request: unknown) => ({ account: create(ResourceSchema, { ...savedAccount, revision: 5n, documentJson: encode({ alias: "Custom key", provider_id: custom.id, type: "api", api_protocol: "openai-chat", enabled: true, health: "unverified", connection: { id: newRequestId() } }) }), requestId: input(request).mutation.requestId }));
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   await waitFor(() => expect(requests.some((request) => !request.enabledOnly && request.query === "")).toBe(true));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   expect(await screen.findByRole("button", { name: "OpenAI API key" })).toBeTruthy();
-  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Provider pages" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry providers" }));
   fireEvent.click(await screen.findByRole("button", { name: "Custom API API key" }));
   expect(screen.getByRole("heading", { name: "Connect your entry" })).toBe(window.document.activeElement);
   expect(screen.getByText("Custom API", { selector: "strong" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Change" }));
   expect(screen.getByRole("button", { name: "Custom API API key" })).toBe(window.document.activeElement);
-  expect(screen.getByRole("button", { name: "First page" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Load more Provider pages" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Back to AI API Keys" }));
   expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add AI API key" }));
   fireEvent.click(screen.getByRole("button", { name: "Custom API API key" }));
+  await waitFor(() => expect(screen.getByLabelText("API format").matches(":disabled")).toBe(false));
+  fireEvent.change(screen.getByLabelText("API format"), { target: { value: "openai-chat" } });
   fireEvent.change(screen.getByLabelText("Entry name"), { target: { value: "Custom key" } });
   fireEvent.change(screen.getByLabelText("API key"), { target: { value: "fixture-only-secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Add and connect" }));
@@ -797,7 +787,7 @@ it.each([
 ])("requires every picker inventory capability (%s)", async (missing) => {
   const provider = resource(EntityKind.PROVIDER, { name: "OpenAI", authentication: "bearer", protocol: "openai-chat", endpoint: "https://api.example.test/v1", enabled: true });
   const entry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "OpenAI", enabled: true, provider, accountCountsAvailable: true });
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const value = fixture([provider], { readProviderInventory: (_, request) => ({ entries: [entry], capabilities: request.enabledOnly ? capabilities.filter((capability) => capability !== missing) : capabilities }) });
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
@@ -821,8 +811,8 @@ it("scopes shared preference and deletion terminology to API documents and prese
     expect(screen.getByRole("checkbox", { name: type === "api" ? "Exclude from automatic entry selection" : "Exclude from automatic account selection" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: type === "api" ? "Notify when entry quota recovers" : "Notify when account quota recovers" })).toBeTruthy();
     view.rerender(value.view(<ConfigurationDeletion initial={account} deleted={() => {}} close={() => {}} />));
-    expect(screen.getByRole("heading", { name: type === "api" ? "Delete entry?" : "Delete Original API account alias?" })).toBeTruthy();
-    expect(screen.getByText(type === "api" ? "Disconnect the entry and finish credential cleanup before deleting it." : "Disconnect the account and finish credential cleanup before deleting it.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Delete Original API account alias?" })).toBeTruthy();
+    expect(screen.getByText(type === "api" ? "This disconnects the entry, removes its protected credentials, and deletes its saved configuration." : "This logs out the account and removes its protected credentials before deleting its saved configuration.")).toBeTruthy();
     view.unmount();
     value.client.clear();
   }
@@ -848,7 +838,7 @@ it("keeps API connection actions separate from validation and preserves server-o
   const subscription = resource(EntityKind.ACCOUNT, { alias: "Subscription alias", subscription_service: "claude", type: "subscription", health: "disconnected" });
   render(value.view(<AccountConnection initial={subscription} active close={() => {}} />));
   expect(screen.getByRole("button", { name: "Back to subscriptions" })).toBeTruthy();
-  expect(screen.getByText(/Native login for this service is unavailable/)).toBeTruthy();
+  expect(await screen.findByText(/This server or subscription service does not support the requested lifecycle action/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connect API key" })).toBeNull();
   expect(screen.queryByLabelText("API key")).toBeNull();
 });
@@ -856,24 +846,25 @@ it("keeps API connection actions separate from validation and preserves server-o
 it("keeps Subscription free of Provider requests while API inventory preserves exact search scope", async () => {
   const provider = resource(EntityKind.PROVIDER, { name: "Exact provider", endpoint: "https://api.example.test/v1", protocol: "openai-responses", authentication: "bearer", enabled: true });
   const entry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "Exact provider", enabled: true, provider, totalAccounts: 1n, accountCountsAvailable: true });
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_API_PROTOCOL_V1, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const requests: { query: string; pageToken: string; enabledOnly: boolean; pageSize: number }[] = [];
   const value = fixture([provider], { readResources: (kind, token) => ({ resources: [], nextPageToken: kind === EntityKind.ACCOUNT && !token ? "api-page-2" : "" }), readProviderInventory: (pageToken, request) => { requests.push({ ...request, pageToken }); return { entries: [entry], capabilities, nextPageToken: request.query === "Exact" && !pageToken ? "provider-page-2" : "" }; } });
   render(value.view(<Settings />));
   const advanced = screen.getByText("Advanced settings").closest("details")!;
   advanced.open = true;
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Subscription account pages" }));
   await screen.findByRole("heading", { name: "No subscriptions yet" });
   expect(requests).toHaveLength(0); expect(screen.queryByLabelText("Search providers")).toBeNull();
   const apiStart = requests.length;
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
   await screen.findByText("No entries on this page.");
-  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(screen.queryByRole("searchbox", { name: "Search providers" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear provider filter" })).toBeNull();
   expect(requests.slice(apiStart).every((request) => request.query === "" && request.pageSize === 50)).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   fireEvent.change(screen.getByLabelText("Search API providers"), { target: { value: "Exact" } });
   await waitFor(() => expect(requests.some((request) => request.query === "Exact")).toBe(true));
-  const moreProviders = screen.getByRole("button", { name: "Load more" });
+  const moreProviders = await screen.findByRole("button", { name: "Load more Provider pages" });
   await waitFor(() => expect((moreProviders as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(moreProviders);
   await waitFor(() => expect(requests.some((request) => request.query === "Exact" && request.pageToken === "provider-page-2")).toBe(true));
@@ -881,8 +872,8 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   await screen.findByText("Provider: Exact provider");
   const accountRead = () => value.list.mock.calls.map(([request]) => request).filter((request) => request.filter?.kind === EntityKind.ACCOUNT).at(-1);
   await waitFor(() => expect(accountRead()).toMatchObject({ providerId: provider.id, accountType: 1, filter: { pageToken: "", pageSize: 50 } }));
-  fireEvent.click(await screen.findByRole("button", { name: "Next page" }));
-  await screen.findByRole("button", { name: "First page" });
+  fireEvent.click(await screen.findByRole("button", { name: "Load more Entry pages" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Entry pages" })).toBeNull());
   expect(accountRead()).toMatchObject({ providerId: provider.id, filter: { pageToken: "api-page-2" } });
   fireEvent.click(screen.getByRole("button", { name: "Clear provider filter" }));
   await waitFor(() => expect(accountRead()).toMatchObject({ providerId: "", filter: { pageToken: "" } }));
@@ -925,4 +916,278 @@ it("scopes Transfer presentation and discards it on category departure", async (
   expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry the same configuration import" })).toBeNull();
   for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("keeps repository source metadata inert and preserves schema-bound actions", () => {
+  const row = resource(EntityKind.REPOSITORY, { name: "Remote repository", remote_url: "https://user:private-value@example.invalid/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/saved/checkout" }], github_owner: "example", github_name: "repo", integration_id: newRequestId() });
+  const value = fixture([row]), edit = vi.fn(), remove = vi.fn();
+  const absentBrowser = () => {
+    expect(screen.queryByRole("button", { name: "Browse GitHub items" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close GitHub items" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Browse repository GitHub items" })).toBeNull();
+    expect(document.querySelector(".repository-github-tools")).toBeNull();
+  };
+  const view = render(value.view(<RepositoryRow row={row} edit={edit} remove={remove} />));
+  expect(screen.getByText("Git remote repository")).toBeTruthy();
+  expect(screen.getByText("GitHub configured")).toBeTruthy();
+  expect(screen.queryByText("Saved settings only. Inspect access to check permissions.")).toBeNull();
+  expect(screen.getByText("/saved/checkout")).toBeTruthy();
+  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(view.container.textContent).not.toContain("private-value");
+  expect(view.container.textContent).not.toContain("example.invalid");
+  expect((screen.getByRole("button", { name: "Edit Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Edit Remote repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete Remote repository" }));
+  expect(edit).toHaveBeenCalledTimes(1); expect(remove).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole("button", { name: "Delete Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Inspect GitHub access" })).toBeNull();
+  absentBrowser();
+  expect(value.list).not.toHaveBeenCalled(); expect(value.inspect).not.toHaveBeenCalled(); expect(value.save).not.toHaveBeenCalled();
+  view.rerender(value.view(<RepositoryRow row={create(ResourceSchema, { ...row, schemaVersion: 99 })} edit={edit} remove={remove} />));
+  expect(screen.getByText("Unsupported format")).toBeTruthy(); absentBrowser();
+  expect(screen.getAllByRole("button").every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+  expect(screen.queryByText("/saved/checkout")).toBeNull();
+  expect(screen.getByText(row.id)).toBeTruthy();
+  view.rerender(value.view(<RepositoryRow row={resource(EntityKind.REPOSITORY, { name: "Unconfigured repository" })} edit={edit} remove={remove} />));
+  expect(screen.getByText("GitHub not configured")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Inspect GitHub access" })).toBeNull();
+  absentBrowser();
+});
+
+it("keeps repository continuation empties and failed refreshes distinct from a final empty first page", async () => {
+  let fail = false;
+  const value = fixture([], { readResources: (kind, token) => {
+    if (kind !== EntityKind.REPOSITORY) return { resources: [] };
+    if (fail) throw new ConnectError("Synthetic read failure", Code.PermissionDenied);
+    return { resources: [], nextPageToken: token ? "" : "repository-page-2" };
+  } });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+  await screen.findByText("No repositories on this page.");
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await screen.findByRole("region", { name: "No repositories yet" });
+  fail = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+  expect(screen.queryByText("No repositories on this page.")).toBeNull();
+  expect(screen.queryByText("No saved entries.")).toBeNull();
+});
+
+// Localization changes presentation without disposing the original read-only task.
+it("keeps the routing dialog and its read when the Settings language changes", async () => {
+  const agent = resource(EntityKind.AGENT, { name: "Luna MAX" }), account = resource(EntityKind.ACCOUNT, { alias: "ChatGPT Personal", type: "subscription", subscription_service: "chatgpt" });
+  const value = fixture([agent, account]);
+  value.preview.mockResolvedValue({ routeJson: encode({ policy: "priority", candidates: [{ id: account.id, weight: 1, eligibility: "unauthenticated", quota_state: "unknown" }] }) });
+  render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Preview routing for Luna MAX" }));
+  await screen.findByText("ChatGPT Personal");
+  const dialog = screen.getByRole("dialog");
+  const { i18n, SupportedLanguage } = await import("./localization");
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect(screen.getByText("후보 계정")).toBeTruthy();
+  expect(value.preview).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the containing Settings inventory active while inline Network settings is open", async () => {
+  const preferences = resource(EntityKind.SETTINGS, { default_routing: "priority", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } });
+  const value = fixture([preferences]); render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+  const form = await screen.findByRole("form", { name: "Server preferences form" });
+  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Network settings" }).getAttribute("aria-expanded")).toBe("true"));
+  expect(screen.queryByRole("dialog", { name: "Server network" })).toBeNull();
+  const reads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length;
+  await act(async () => { await value.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length).toBeGreaterThan(reads));
+  expect(form.isConnected).toBe(true); expect(value.save).not.toHaveBeenCalled();
+});
+
+
+it.each(["queued", "succeeded", "failed", "unknown"])("retains selected-server API entry scope through an asynchronous %s save", async state => {
+ const account = resource(EntityKind.ACCOUNT, { type: "api", alias: "Scoped API entry", provider_id: newRequestId(), enabled: true, health: "disconnected" });
+ const job = resource(EntityKind.JOB, { type: "save-account", state });
+ const value = fixture([account, job]);
+ value.save.mockResolvedValueOnce(state === "unknown" ? {} : { job });
+ render(value.view(<ConfigurationEditor kind={EntityKind.ACCOUNT} initial={account} active saved={vi.fn()} cancel={vi.fn()} />));
+ const save = screen.getByRole("button", { name: "Save AI API key entry" });
+ await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(save);
+ await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Save AI API key entry" })).toBeNull());
+ expect(screen.getByText("Saved on the selected server.")).toBeTruthy();
+ expect(screen.getByRole("heading", { name: "Edit preferences" })).toBeTruthy();
+ expect(screen.getByText("Scoped API entry")).toBeTruthy();
+});
+
+it.each([true, false])("blocks configuration submit until an exact picker read accepts the choice while preserving sibling edits (prior selection: %s)", async hasPrior => {
+  const oldProfile = resource(EntityKind.INTEGRATION, { name: "Previous profile" });
+  const newProfile = resource(EntityKind.INTEGRATION, { name: "Chosen profile" });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", integration_id: hasPrior ? oldProfile.id : "", checkouts: [] });
+  let resolve!: (value: { resource: Resource }) => void;
+  const pending = new Promise<{ resource: Resource }>(done => { resolve = done; });
+  const value = fixture([repository, oldProfile, newProfile], { readResource: id => id === newProfile.id ? pending : { resource: [repository, oldProfile].find(row => row.id === id) } });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  const picker = screen.getByRole("combobox", { name: "GitHub profile" });
+  fireEvent.click(picker);
+  fireEvent.click(await screen.findByRole("option", { name: "Chosen profile" }));
+  const save = screen.getByRole("button", { name: "Save Repository" });
+  const form = save.closest("form")!;
+  fireEvent.submit(form);
+  expect(value.save).not.toHaveBeenCalled();
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  expect(picker.dataset.value).toBe(hasPrior ? oldProfile.id : "");
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Edited while reading" } });
+  fireEvent.submit(form);
+  expect(value.save).not.toHaveBeenCalled();
+  await act(async () => { resolve({ resource: newProfile }); await pending; fireEvent.submit(form); expect(value.save).not.toHaveBeenCalled(); });
+  await waitFor(() => expect(picker.dataset.value).toBe(newProfile.id));
+  fireEvent.submit(form);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toMatchObject({ name: "Edited while reading", integration_id: newProfile.id });
+});
+
+
+it("does not treat a pending or failed subscription support read as proved unsupported", async () => {
+  const account = resource(EntityKind.ACCOUNT, { alias: "Original subscription", subscription_service: "claude", type: "subscription", health: "disconnected" });
+  const value = fixture([account], { systemStatusError: new ConnectError("Fixture status failure", Code.PermissionDenied) });
+  render(value.view(<AccountConnection initial={account} active close={() => {}} />));
+  expect(screen.getByText("Reading the selected server’s subscription support. This read does not start a login.")).toBeTruthy();
+  expect(screen.queryByText(/This server or subscription service does not support the requested lifecycle action/)).toBeNull();
+  await screen.findByText("This connection is not authorized for the action. Check its access.");
+  expect(screen.queryByText(/This server or subscription service does not support the requested lifecycle action/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Sign in to Claude" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(value.connect).not.toHaveBeenCalled(); expect(value.disconnect).not.toHaveBeenCalled();
+});
+
+it.each(["cancel", "close", "done"])("retains a failed first model through %s and ordinary inventory refresh until explicit Refresh settings", async exit => {
+  const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const model = resource(EntityKind.MODEL, { name: "Original configured model", native_id: "explicit-refresh-native" });
+  const first = resource(EntityKind.AGENT, { name: "First retained Worker", harness: "codex", model_id: model.id });
+  const second = resource(EntityKind.AGENT, { name: "Second retained Worker", harness: "codex", model_id: model.id });
+  let visible = [first, second], modelAvailable = false, failedInventory = false;
+  const modelReads = vi.fn(async () => { if (!modelAvailable) throw new ConnectError("Synthetic model denied", Code.PermissionDenied); return { resource: model }; });
+  const value = fixture([first, second, model], {
+    readResource: id => id === model.id ? modelReads() : { resource: visible.find(row => row.id === id) },
+    readResources: kind => { if (kind === EntityKind.AGENT && failedInventory) throw new ConnectError("Synthetic inventory refresh failure", Code.Unavailable); return { resources: kind === EntityKind.AGENT ? visible : [] }; },
+  });
+  value.remove.mockImplementation(async () => { visible = [second]; return {}; });
+  render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  await screen.findAllByText("Model unavailable"); expect(modelReads).toHaveBeenCalledTimes(1);
+  modelAvailable = true;
+  fireEvent.click(screen.getByRole("button", { name: "Delete First retained Worker" }));
+  if (exit === "done") fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
+  else {
+    failedInventory = true;
+    if (exit === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+    else fireEvent.click(screen.getByRole("button", { name: "Close Delete configuration" }));
+  }
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await screen.findByRole("heading", { name: "Second retained Worker" });
+  if (exit === "done") expect(value.remove).toHaveBeenCalledTimes(1);
+  else {
+    await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+    await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  }
+  expect(modelReads).toHaveBeenCalledTimes(1); expect(screen.getAllByText("Model unavailable").length).toBeGreaterThan(0);
+  failedInventory = false;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findAllByText("explicit-refresh-native"); expect(modelReads).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("Model unavailable")).toBeNull(); log.mockRestore();
+});
+
+it("retains Connection controls without mounting or reading Settings Doctor", async () => {
+ const doctor = vi.fn(() => ({})); const value = fixture([], {doctor});
+ render(value.view(<Settings connectionSettings={<button>Original native connection</button>} />));
+ fireEvent.click(screen.getByRole("button",{name:"Connections"}));
+ await screen.findByRole("button",{name:"Original native connection"});
+ expect(screen.getByRole("heading",{name:"Connections"})).toBeTruthy();
+ expect(screen.queryByRole("button",{name:"Refresh diagnostics"})).toBeNull();
+ expect(screen.queryByText("Reading server diagnostics")).toBeNull();
+ expect(doctor).not.toHaveBeenCalled();
+
+});
+
+it("Settings search keeps the active draft on typing and same-category selection, and discards query on departure", async()=>{
+ const value=fixture([]);const view=render(value.view(<Settings/>));
+ fireEvent.click(screen.getByRole('button',{name:'Git'}));
+ const attempts=await screen.findByRole('spinbutton',{name:'Consecutive automatic attempt limit'});
+ fireEvent.change(attempts,{target:{value:'8'}});
+ const input=screen.getByRole('searchbox');fireEvent.change(input,{target:{value:'attempt limit'}});
+ expect(screen.getByRole('spinbutton',{name:'Consecutive automatic attempt limit'})).toBe(attempts);expect((attempts as HTMLInputElement).value).toBe('8');
+ fireEvent.click(screen.getByRole('button',{name:'Git › Consecutive automatic attempt limit'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('remediation-attempts'));
+ expect(screen.getByRole('spinbutton',{name:'Consecutive automatic attempt limit'})).toBe(attempts);expect((attempts as HTMLInputElement).value).toBe('8');
+ expect(value.save).not.toHaveBeenCalled();expect(value.remove).not.toHaveBeenCalled();expect(value.inspect).not.toHaveBeenCalled();
+ view.rerender(value.view(<Settings visible={false}/>));view.rerender(value.view(<Settings/>));expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');expect(screen.getByRole('heading',{level:1,name:'AI Subscription'})).toBeTruthy();
+});
+it("Settings search focuses Network and SSH entry sections without opening their workflows",async()=>{
+ const value=fixture([]);render(value.view(<Settings/>));const input=screen.getByRole('searchbox');
+ fireEvent.change(input,{target:{value:'Network settings'}});fireEvent.click(screen.getByRole('button',{name:'Server preferences › Network settings'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('network'));expect(screen.queryByRole('combobox',{name:'Outbound profile'})).toBeNull();
+ fireEvent.change(input,{target:{value:'SSH'}});fireEvent.click(screen.getByRole('button',{name:'Runner Devices › Set up a Worker over SSH'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('ssh'));expect(screen.queryByRole('dialog')).toBeNull();expect(value.save).not.toHaveBeenCalled();expect(value.inspect).not.toHaveBeenCalled();
+});
+it("Settings search respects malformed singleton admission and never starts a write",async()=>{
+ const value=fixture([{...resource(EntityKind.SETTINGS,{default_routing:'remaining-quota',remediation:{}}),schemaVersion:99}]);render(value.view(<Settings/>));
+ fireEvent.change(screen.getByRole('searchbox'),{target:{value:'account routing'}});fireEvent.click(screen.getByRole('button',{name:'Server preferences › Account routing'}));
+ await screen.findByText('This setting is unavailable here.');expect(document.activeElement).toBe(screen.getByRole('heading',{level:1,name:'Server preferences'}));expect(screen.queryByRole('combobox',{name:'Default account routing'})).toBeNull();expect(value.save).not.toHaveBeenCalled();
+});
+it("Settings search preserves the original uncertain server-preference request until explicit retry",async()=>{
+ const value=fixture([]);value.save.mockRejectedValueOnce(new ConnectError('Original unavailable save',Code.Unavailable));render(value.view(<Settings/>));
+ fireEvent.click(screen.getByRole('button',{name:'Git'}));const fetch=await screen.findByRole('checkbox',{name:'Allow automatic fetch before Worktree preparation'});fireEvent.click(fetch);const submittedFetch=(fetch as HTMLInputElement).checked;
+ fireEvent.click(screen.getByRole('button',{name:'Save changes'}));const retry=await screen.findByRole('button',{name:'Retry the same configuration'});
+ const original=input(value.save.mock.calls[0][0]);const search=screen.getByRole('searchbox');fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Clear search'}));
+ fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Git › Allow automatic fetch before Worktree preparation'}));
+ await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('automatic-fetch'));expect(screen.getByRole('button',{name:'Retry the same configuration'})).toBe(retry);expect((fetch as HTMLInputElement).checked).toBe(submittedFetch);expect(value.save).toHaveBeenCalledTimes(1);
+ fireEvent.click(retry);await waitFor(()=>expect(value.save).toHaveBeenCalledTimes(2));const retried=input(value.save.mock.calls[1][0]);expect(retried.mutation.requestId).toBe(original.mutation.requestId);expect(retried.documentJson).toEqual(original.documentJson);
+});
+
+it("keeps confirmed provider switches and layout content through delayed off/on and manual refresh", async () => {
+  let provider = resource(EntityKind.PROVIDER, { name: "OpenAI", endpoint: "https://api.openai.com/v1", protocol: "openai-responses", authentication: "bearer", enabled: true, preset_id: "openai" });
+  const other = resource(EntityKind.PROVIDER, { name: "Anthropic", endpoint: "https://api.anthropic.com", protocol: "anthropic", authentication: "bearer", enabled: true, preset_id: "anthropic" });
+  const entry = () => create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.OPENAI, providerId: provider.id, displayName: "OpenAI", enabled: JSON.parse(new TextDecoder().decode(provider.documentJson)).enabled, provider, accountCountsAvailable: true });
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
+  let hold = false, failRefresh = false;
+  const pending: Array<() => void> = [];
+  const value = fixture([provider, other], { readProviderInventory: (_token, request) => {
+    if (failRefresh && !request.enabledOnly) throw new ConnectError("Synthetic retained refresh failure", Code.Unavailable);
+    const response = { capabilities, entries: [entry(), create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.ANTHROPIC, providerId: other.id, displayName: "Anthropic", enabled: true, provider: other, accountCountsAvailable: true })] };
+    return hold && !request.enabledOnly ? new Promise(resolve => pending.push(() => resolve(response))) : response;
+  } });
+  value.save.mockImplementation(async request => {
+    provider = create(ResourceSchema, { ...provider, revision: provider.revision + 1n, documentJson: input(request).documentJson });
+    hold = true;
+    return { resource: provider };
+  });
+  render(value.view(<Settings visible />));
+  fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
+  const original = await screen.findByRole("switch", { name: "Turn off OpenAI" });
+  for (const enabled of [true, false]) {
+    fireEvent.click(original);
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    expect(original.getAttribute("aria-checked")).toBe(String(enabled));
+    expect(screen.queryByText(/Refreshing provider state/)).toBeNull();
+    hold = false;
+    await act(async () => { pending.splice(0).forEach(resolve => resolve()); });
+    await waitFor(() => expect(original.getAttribute("aria-checked")).toBe(String(!enabled)));
+    expect(await screen.findByRole("switch", { name: `${enabled ? "Turn on" : "Turn off"} OpenAI` })).toBe(original);
+  }
+  hold = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh providers" }));
+  await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+  expect(screen.queryByText(/Refreshing provider state/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Refresh providers" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(original.getAttribute("aria-checked")).toBe("true");
+  hold = false;
+  await act(async () => { pending.splice(0).forEach(resolve => resolve()); });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh providers" }) as HTMLButtonElement).disabled).toBe(false));
+  failRefresh = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh providers" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(original.getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByRole("switch", { name: "Turn off OpenAI" })).toBe(original);
 });

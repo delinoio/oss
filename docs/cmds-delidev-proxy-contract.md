@@ -1,5 +1,33 @@
 # DeliDev native API relay contract
 
+## Original API format authority
+
+Capability 9 account changes do not alter a registered original execution scope.
+Resolve its immutable connection ID against retained server-owned generations,
+then resolve the selected immutable Provider profile and original protected key
+reference. Current-format validation cannot grant or revoke old-format validation;
+shared account disablement, exhaustion and explicit all-generation Disconnect keep
+their original revocation authority. Original streaming and subsequent requests
+remain bound to the original endpoint, authentication and protocol. No key enters
+Worker environments or client account responses. See the
+[account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
+## Account-selected API profile authority
+
+Every API execution admission and proxy scope uses the common server account
+profile resolver from the [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
+The original account and connection generation determine protocol, URL and
+upstream authentication, independently of the provider's legacy default. Codex
+Responses can therefore use an OpenRouter account selected as Responses; a Chat
+Completions account remains incompatible. Operation allowlists, tool enforcement,
+stream parsing and sanitized provider errors retain their existing protocol
+ownership. Unknown operations fail locally without another format or endpoint
+attempt. Title generation uses the original account's Responses profile. Resume,
+Fork and Sidechat never infer another account or connection from newly available
+profiles. Worker assignment and credential wire formats stay unchanged.
+
+
 ## Metadata-only request publication
 
 Issue #1103 adds an original-lease diagnostic projection around each single authorized HTTP invocation. Before transmission, persist one generated correlation/record identity and its send claim; exact publication receipts do not make another HTTP attempt. After response/cancellation, publish only closed status/error, observed elapsed latency, allowlisted settings and protected-value-checked opaque request/response IDs. Completion is bounded and joined before lease/storage release; failed or interrupted settlement retains uncertainty. This table is not a usage source and does not modify native retry, authorization, request/response byte forwarding or credential lifetime. Native input/effective settings remain a separate exact-identity publication. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for limits and reads.
@@ -27,6 +55,17 @@ Responses `previous_response_id` and `conversation` references require an execut
 
 Successful bounded JSON and LF/CRLF SSE preserve native bytes except that native diagnostic error objects are replaced with safe protocol-shaped errors. Native machine codes from a closed allowlist also pass the protected-value check, including non-200 responses; a colliding native code falls back to the local error classification, and a colliding local body is omitted while retaining failure status. Non-colliding codes retain distinctions needed for context limits, authorization, rate limits and overload. Native streaming ends only on its protocol terminal event; truncated/invalid streams abort the downstream response without forged completion or proxy retries. Native harness retry decisions remain the harness's responsibility. HTTP 4xx/5xx status and a bounded `Retry-After` survive; provider cookies, redirect locations, diagnostic messages, challenges and request identifiers do not.
 
+Responses creation SSE `type: error` events decode the closed native code from
+the top-level `code` field. Their sanitized frame retains `event: error` and
+top-level `type`, `code`, `message`, `param` and `sequence_number` fields. The
+message is local and redacted; `param` is always null. A nonnegative integer
+sequence number up to `9007199254740991` is retained; missing, malformed or larger
+values use zero. Unknown codes use the safe `Unavailable` classification and
+local code. Protected native codes fall back to the local code; an unsafe local
+event aborts delivery. The error is terminal and settles the original diagnostic
+and lease once. HTTP error JSON, Chat and Anthropic errors, and nested
+`response.failed` errors retain their existing envelopes.
+
 There are at most 16 concurrent authorized requests, with no wait queue; request/JSON/frame limits are 32 MiB, total SSE is 256 MiB, and the request deadline is 15 minutes. Request-body reads and each downstream write have 30-second deadlines. Dial/TLS handshakes are bounded to 10 seconds; inference response headers have a 10-minute deadline and a 32 KiB limit. Native error JSON inspection is separately bounded to 64 KiB and two seconds. Bounds are operational limits, not permission to replay a possibly accepted request.
 
 ## Storage
@@ -44,6 +83,8 @@ SSE field-name bytes use a separate bounded cross-frame matcher, including unkno
 Decoded JSON object names also enter independent global and parent-path matchers before JSON-pointer escaping. Thus repeated enclosing keys cannot hide fragmented nested names, and escaped raw/Base64 credential fragments are checked before any original frame is released. Numeric JSON values enter their original value-path matcher without rounding or normalizing their native spelling, including large integers and exponents. These states share the existing active-path and pending-byte bounds.
 
 HTTP-200 standalone error envelopes use the same protected-code/local-body fallback as non-200 errors before returning a synthesized HTTP 502 response. A successful transport status cannot bypass protected-value checks.
+
+Every locally generated error body uses the protected-value guard once the execution credential or selected account key is available. This includes keys returned together with an error, diagnostic publication failures, upstream request/transport failures, rejected JSON and failures before SSE output starts. If the fixed local body also collides, retain the failure status and safe correlation/security headers with an empty body. Pre-key denials never read a credential solely to construct an error. A failure after SSE output starts still aborts the original response without appending a local error, forging completion or retrying the provider. Key acquisition, upstream dispatch and lease release remain once-only.
 
 Cancellation may abort the original downstream response, but every started
 body/deadline cancellation callback is joined before the HTTP handler returns.

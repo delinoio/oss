@@ -1,3 +1,4 @@
+#![cfg_attr(windows, feature(windows_process_extensions_raw_attribute))]
 use std::{
     ffi::OsString,
     fs::{self, File},
@@ -5,11 +6,11 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -18,9 +19,15 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub mod appearance;
 mod browser_opener;
+pub mod date_format;
+pub mod language;
 pub mod oauth;
 pub mod provider_guidance;
+pub mod quota_countdown;
+pub mod session_creation_preferences;
 pub mod updater;
+pub mod widget_writer;
+pub mod window_registry;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
@@ -81,6 +88,7 @@ fn sidecar_lookup_path(inherited: Option<&std::ffi::OsStr>) -> OsString {
 }
 
 pub mod browser;
+pub mod browser_storage;
 mod connections;
 pub use connections::{
     RemovalMetadata, RemovedConnections, SavedConnection, SavedConnectionState, canonical_id,
@@ -90,13 +98,20 @@ pub use connections::{
 mod desktop_recovery;
 pub use desktop_recovery::{DesktopRegistration, DesktopRegistrationState};
 
+mod credential_access;
 mod local_worker;
 mod worker_network;
+pub use credential_access::{CredentialAccessAction, CredentialAccessResult};
 pub use local_worker::{LocalWorkerAction, LocalWorkerState, LocalWorkerStatus};
 pub use worker_network::WorkerNetworkAction;
 
+mod desktop_host;
 mod supervision;
 pub use supervision::{LocalServerState, LocalServerStatus, Supervision};
+mod worker_supervision;
+pub use worker_supervision::{
+    LocalWorkerManagement, LocalWorkerManagementState, WorkerSupervision,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -123,11 +138,18 @@ pub struct Connection {
     pub server_id: String,
     pub device_id: String,
     pub token: String,
+    pub keychain_access_required: bool,
+    pub keychain_access_skipped: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_generation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_key: Option<String>,
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
         self.token.zeroize();
+        self.runtime_key.zeroize();
     }
 }
 
@@ -136,12 +158,19 @@ pub struct LocalWorkerProof {
     pub endpoint: String,
     pub server_id: String,
     pub machine_id: String,
+    #[serde(skip)]
+    pub(crate) paired_endpoint: String,
     pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_generation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_key: Option<String>,
 }
 
 impl Drop for LocalWorkerProof {
     fn drop(&mut self) {
         self.token.zeroize();
+        self.runtime_key.zeroize();
     }
 }
 
@@ -180,6 +209,7 @@ struct CliEnvelope {
     result: Option<serde_json::Value>,
     error: Option<CliFailure>,
 }
+
 #[derive(Deserialize)]
 struct CliFailure {
     code: String,
@@ -193,6 +223,15 @@ pub struct Connector {
     command_timeout: Duration,
     listen: String,
     exiting: AtomicBool,
+    session: Arc<desktop_host::Session>,
+    hosted: Mutex<Vec<desktop_host::DesktopChild>>,
+    worker_management: Mutex<LocalWorkerManagement>,
+    worker_auto_enabled: AtomicBool,
+    worker_launch_pending: AtomicBool,
+    worker_exited: Mutex<Option<String>>,
+    worker_pause_generation: Mutex<Option<String>>,
+    worker_client_id: Mutex<Option<String>>,
+    credential_access: Mutex<Option<credential_access::Attempt>>,
 }
 
 impl Connector {
@@ -233,7 +272,6 @@ impl Connector {
         if current.metadata != *original
             || original.kind != DeviceType::Client
             || !original.machine_id.is_empty()
-            || original.endpoint != "http://127.0.0.1:46310"
         {
             return Err(NativeFailure::InvalidEvidence);
         }
@@ -264,7 +302,7 @@ impl Connector {
         {
             return Err(NativeFailure::InvalidInput);
         }
-        let value = self.run_with_input(
+        let value = self.short_request_with_input(
             &[
                 "presentation".into(),
                 "open-github".into(),
@@ -290,8 +328,17 @@ impl Connector {
             gate: Mutex::new(()),
             oauth_identity: Mutex::new(None),
             command_timeout: COMMAND_TIMEOUT,
-            listen: "127.0.0.1:46310".into(),
+            listen: "127.0.0.1:0".into(),
             exiting: AtomicBool::new(false),
+            session: Arc::new(desktop_host::Session::new()),
+            worker_management: Mutex::new(LocalWorkerManagement::default()),
+            worker_auto_enabled: AtomicBool::new(false),
+            worker_launch_pending: AtomicBool::new(true),
+            worker_exited: Mutex::new(None),
+            worker_pause_generation: Mutex::new(None),
+            worker_client_id: Mutex::new(None),
+            credential_access: Mutex::new(None),
+            hosted: Mutex::new(Vec::new()),
         })
     }
 
@@ -323,7 +370,25 @@ impl Connector {
     }
 
     fn local_worker_proof_inner(&self) -> Result<LocalWorkerProof> {
-        let client: DeviceMetadata = serde_json::from_value(self.run(&[
+        self.local_worker_proof_inner_with_runtime(true)
+    }
+
+    pub(crate) fn local_worker_proof_for_worker_admission(&self) -> Result<LocalWorkerProof> {
+        self.local_worker_proof_inner_with_runtime(false)
+    }
+
+    fn local_worker_proof_inner_with_runtime(
+        &self,
+        include_runtime: bool,
+    ) -> Result<LocalWorkerProof> {
+        let request = |arguments: &[OsString]| {
+            if self.worker_auto_enabled.load(Ordering::Acquire) {
+                self.worker_request(arguments)
+            } else {
+                self.run(arguments)
+            }
+        };
+        let client: DeviceMetadata = serde_json::from_value(request(&[
             "device".into(),
             "inspect".into(),
             "--device-dir".into(),
@@ -331,7 +396,7 @@ impl Connector {
         ])?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
         let worker_root = self.root.join("worker");
-        let metadata: DeviceMetadata = serde_json::from_value(self.run(&[
+        let metadata: DeviceMetadata = serde_json::from_value(request(&[
             "worker".into(),
             "inspect".into(),
             "--worker-dir".into(),
@@ -341,7 +406,6 @@ impl Connector {
         if client.kind != DeviceType::Client
             || !client.machine_id.is_empty()
             || metadata.kind != DeviceType::Worker
-            || metadata.endpoint != client.endpoint
             || metadata.server_id != client.server_id
         {
             return Err(NativeFailure::InvalidEvidence);
@@ -357,24 +421,37 @@ impl Connector {
             16 << 10,
         )?);
         let verified = verified_connection(&bytes, &metadata, DeviceType::Worker)?;
+        let (endpoint, runtime_generation, runtime_key) = if include_runtime {
+            let runtime = self.runtime()?;
+            (
+                runtime.endpoint.clone(),
+                Some(runtime.generation.clone()),
+                Some(runtime.key.clone()),
+            )
+        } else {
+            (verified.endpoint.clone(), None, None)
+        };
         Ok(LocalWorkerProof {
-            endpoint: verified.endpoint.clone(),
+            endpoint,
+            paired_endpoint: verified.endpoint.clone(),
             server_id: verified.server_id.clone(),
             machine_id: metadata.machine_id,
             token: verified.token.clone(),
+            runtime_generation,
+            runtime_key,
         })
     }
 
     fn retry_launch(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "desktop_launch", phase = "explicit-retry");
-        self.connect_inner("desktop-retry")
+        self.connect_inner_with_transport("desktop-retry", false)
     }
 
     fn launch(&self) -> Result<Connection> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
         tracing::info!(operation = "desktop_launch", phase = "starting");
-        let result = self.connect_inner("desktop-launch");
+        let result = self.connect_inner_with_transport("desktop-launch", false);
         match &result {
             Ok(_) => tracing::info!(operation = "desktop_launch", phase = "ready"),
             Err(code) => tracing::warn!(operation = "desktop_launch", phase = "failed", ?code),
@@ -399,7 +476,7 @@ impl Connector {
             self.root.join("desktop-client").into_os_string(),
         ])?)
         .map_err(|_| NativeFailure::InvalidEvidence)?;
-        let current = self.read_local_connection(metadata)?;
+        let current = self.read_local_connection_with_transport(metadata, false)?;
         if current.endpoint != original.endpoint
             || current.server_id != original.server_id
             || current.device_id != original.device_id
@@ -422,42 +499,58 @@ impl Connector {
     }
 
     fn connect_inner(&self, action: &str) -> Result<Connection> {
-        // The Go executable owns compatibility, startup locking and detachment.
-        // Dropping this client never invokes stop or assumes server ownership.
-        let started = self.run(&self.server_arguments(action))?;
+        self.connect_inner_with_transport(action, false)
+    }
+
+    fn connect_inner_with_transport(&self, action: &str, short: bool) -> Result<Connection> {
+        let started = self.run_desktop_host(action)?;
         if self.server_state(&started)? != LocalServerState::Ready {
             return Err(NativeFailure::Stopped);
         }
         tracing::info!(operation = "local_connect", phase = "runtime-ready");
         let client_root = self.root.join("desktop-client");
-        let metadata = self.run(&[
-            "device".into(),
-            "pair-local".into(),
-            "--join-existing".into(),
-            "--device-dir".into(),
-            client_root.clone().into_os_string(),
-        ])?;
+        let metadata = self.request_with_transport(
+            short,
+            &[
+                "device".into(),
+                "pair-local".into(),
+                "--join-existing".into(),
+                "--device-dir".into(),
+                client_root.clone().into_os_string(),
+            ],
+        )?;
         let metadata: DeviceMetadata =
             serde_json::from_value(metadata).map_err(|_| NativeFailure::InvalidEvidence)?;
         tracing::info!(
             operation = "local_connect",
             phase = "client-pairing-verified"
         );
-        self.read_local_connection(metadata)
+        self.read_local_connection_with_transport(metadata, short)
     }
 
     fn read_local_connection(&self, metadata: DeviceMetadata) -> Result<Connection> {
+        self.read_local_connection_with_transport(metadata, false)
+    }
+
+    fn read_local_connection_with_transport(
+        &self,
+        metadata: DeviceMetadata,
+        short: bool,
+    ) -> Result<Connection> {
         let client_root = self.root.join("desktop-client");
         // Go enforces platform-specific privacy and strict credential
         // validation before this fixed file is read. No owner material
         // crosses the bridge.
-        let inspected = self.run(&[
-            "device".into(),
-            "inspect".into(),
-            "--join-existing".into(),
-            "--device-dir".into(),
-            client_root.clone().into_os_string(),
-        ])?;
+        let inspected = self.request_with_transport(
+            short,
+            &[
+                "device".into(),
+                "inspect".into(),
+                "--join-existing".into(),
+                "--device-dir".into(),
+                client_root.clone().into_os_string(),
+            ],
+        )?;
         let inspected: DeviceMetadata =
             serde_json::from_value(inspected).map_err(|_| NativeFailure::InvalidEvidence)?;
         if metadata != inspected {
@@ -473,7 +566,13 @@ impl Connector {
             File::open(path).map_err(|_| NativeFailure::CredentialUnavailable)?,
             16 << 10,
         )?);
-        let connection = connection_from_bytes(&bytes, &metadata)?;
+        let mut connection = connection_from_bytes(&bytes, &metadata)?;
+        if !short {
+            let runtime = self.runtime()?;
+            connection.endpoint = runtime.endpoint.clone();
+            connection.runtime_generation = Some(runtime.generation.clone());
+            connection.runtime_key = Some(runtime.key.clone());
+        }
         *self
             .oauth_identity
             .lock()
@@ -481,42 +580,39 @@ impl Connector {
         Ok(connection)
     }
 
-    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
-        self.run_with_input(arguments, None)
-    }
-
-    fn run_with_input(
+    fn request_with_transport(
         &self,
+        short: bool,
         arguments: &[OsString],
-        input: Option<Zeroizing<Vec<u8>>>,
     ) -> Result<serde_json::Value> {
-        self.run_with_input_bound(arguments, input, self.command_timeout)
-    }
-
-    fn run_with_input_bound(
-        &self,
-        arguments: &[OsString],
-        input: Option<Zeroizing<Vec<u8>>>,
-        timeout: Duration,
-    ) -> Result<serde_json::Value> {
-        if self.exiting.load(Ordering::Acquire) {
-            return Err(NativeFailure::Stopped);
+        if short {
+            self.short_request_with_input(arguments, None)
+        } else {
+            self.run(arguments)
         }
+    }
+
+    fn sidecar_command(&self, arguments: &[OsString], input: bool) -> Result<Command> {
+        self.sidecar_command_at(&self.executable, arguments, input)
+    }
+
+    fn sidecar_command_at(
+        &self,
+        executable: &Path,
+        arguments: &[OsString],
+        input: bool,
+    ) -> Result<Command> {
         let metadata =
-            fs::symlink_metadata(&self.executable).map_err(|_| NativeFailure::SidecarMissing)?;
+            fs::symlink_metadata(executable).map_err(|_| NativeFailure::SidecarMissing)?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err(NativeFailure::SidecarMissing);
         }
-        let mut command = Command::new(&self.executable);
+        let mut command = Command::new(executable);
         command
             .arg("--data-dir")
             .arg(&self.root)
             .args(arguments)
-            .stdin(if input.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
+            .stdin(if input { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear();
@@ -545,7 +641,10 @@ impl Connector {
         );
         // Only the closed OS opener needs desktop-session display context.
         // No renderer-controlled environment or provider credentials are used.
-        if arguments.first().is_some_and(|v| v == "presentation") {
+        if arguments.first().is_some_and(|v| v == "presentation")
+            || (arguments.first().is_some_and(|v| v == "server")
+                && arguments.get(1).is_some_and(|v| v == "desktop-host"))
+        {
             for name in [
                 "DISPLAY",
                 "XAUTHORITY",
@@ -562,11 +661,61 @@ impl Connector {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies only to the short CLI controller.
         }
+        Ok(command)
+    }
+
+    fn run(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        self.run_with_input(arguments, None)
+    }
+
+    fn run_with_input(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<serde_json::Value> {
+        self.run_with_input_bound(arguments, input, self.command_timeout)
+    }
+
+    fn run_with_input_bound(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+    ) -> Result<serde_json::Value> {
+        self.resident_request(arguments, input, timeout)
+    }
+
+    pub(crate) fn worker_request(&self, arguments: &[OsString]) -> Result<serde_json::Value> {
+        self.short_request_with_input(arguments, None)
+    }
+
+    fn short_request_with_input(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+    ) -> Result<serde_json::Value> {
+        self.short_request_with_input_mode(arguments, input, self.command_timeout, true)
+    }
+
+    // Only retained native update outcomes use this uncanceled local child.
+    // Its caller constructs the closed original-journal arguments; it grants
+    // no new installation, resident runtime or credential authority.
+    fn short_request_with_input_mode(
+        &self,
+        arguments: &[OsString],
+        input: Option<Zeroizing<Vec<u8>>>,
+        timeout: Duration,
+        cancel_on_exit: bool,
+    ) -> Result<serde_json::Value> {
+        if cancel_on_exit && self.exiting.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        let mut command = self.sidecar_command(arguments, input.is_some())?;
         let mut child = command.spawn().map_err(|_| NativeFailure::SidecarFailed)?;
         let stdout = child.stdout.take().ok_or(NativeFailure::SidecarFailed)?;
         let stderr = child.stderr.take().ok_or(NativeFailure::SidecarFailed)?;
-        let out = thread::spawn(move || read_bounded(stdout, OUTPUT_LIMIT));
-        let err = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
+        let output = thread::spawn(move || read_bounded(stdout, OUTPUT_LIMIT));
+        let diagnostic = thread::spawn(move || read_bounded(stderr, OUTPUT_LIMIT));
         let writer = input.map(|bytes| {
             let mut stdin = child.stdin.take().expect("piped input for closed command");
             thread::spawn(move || {
@@ -575,9 +724,9 @@ impl Connector {
                     .map_err(|_| NativeFailure::SidecarFailed)
             })
         });
-        let started = Instant::now();
+        let started = std::time::Instant::now();
         let result = loop {
-            if self.exiting.load(Ordering::Acquire) {
+            if cancel_on_exit && self.exiting.load(Ordering::Acquire) {
                 break Err(NativeFailure::Stopped);
             }
             match child.try_wait() {
@@ -591,10 +740,10 @@ impl Connector {
             let _ = child.kill();
             let _ = child.wait();
         }
-        // These closed CLI operations cannot leave descendants holding these
-        // pipes: detached servers redirect both streams to their private log.
-        let output = out.join().map_err(|_| NativeFailure::SidecarFailed)?;
-        let diagnostic = err.join().map_err(|_| NativeFailure::SidecarFailed)?;
+        let output = output.join().map_err(|_| NativeFailure::SidecarFailed)?;
+        let diagnostic = diagnostic
+            .join()
+            .map_err(|_| NativeFailure::SidecarFailed)?;
         let written = writer
             .map(|writer| writer.join().map_err(|_| NativeFailure::SidecarFailed))
             .transpose()?;
@@ -602,7 +751,7 @@ impl Connector {
         if let Some(written) = written {
             written?;
         }
-        diagnostic?; // Drain and bound diagnostics, but never reflect their contents.
+        diagnostic?;
         let envelope: CliEnvelope =
             serde_json::from_slice(&output?).map_err(|_| NativeFailure::InvalidEvidence)?;
         if envelope.version != 1 {
@@ -627,7 +776,7 @@ impl Connector {
 
     fn ensure(&self) -> Result<LocalServerState> {
         let _guard = self.gate.lock().map_err(|_| NativeFailure::Busy)?;
-        let value = self.run(&self.server_arguments("ensure"))?;
+        let value = self.run_desktop_host("ensure")?;
         self.server_state(&value)
     }
 
@@ -646,7 +795,7 @@ impl Connector {
             None
         }
         .ok_or(NativeFailure::InvalidEvidence)?;
-        if status.get("version").and_then(|v| v.as_str()) != Some("0.1.0")
+        if status.get("version").and_then(|v| v.as_str()) != Some(env!("CARGO_PKG_VERSION"))
             || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(1)
             || (self.listen != "127.0.0.1:0"
                 && status.get("listener").and_then(|v| v.as_str())
@@ -735,10 +884,14 @@ fn validated_connection(
         return Err(NativeFailure::InvalidEvidence);
     }
     Ok(Connection {
+        keychain_access_required: cfg!(target_os = "macos") && !saved,
+        keychain_access_skipped: cfg!(target_os = "macos") && saved,
         endpoint: expected.endpoint.clone(),
         server_id: expected.server_id.clone(),
         device_id: expected.device_id.clone(),
         token: token.to_string(),
+        runtime_generation: None,
+        runtime_key: None,
     })
 }
 
@@ -777,6 +930,9 @@ pub mod presentation;
 #[cfg(test)]
 mod tests;
 
+#[cfg(all(test, feature = "desktop-host"))]
+mod permission_tests;
+
 #[cfg(test)]
 mod desktop_capability_tests {
     #[test]
@@ -800,7 +956,10 @@ mod desktop_capability_tests {
     #[test]
     fn native_authority_belongs_only_to_trusted_webviews() {
         for (source, labels) in [
-            (include_str!("../capabilities/main.json"), vec!["main"]),
+            (
+                include_str!("../capabilities/main.json"),
+                vec!["main", "local-*"],
+            ),
             (include_str!("../capabilities/saved.json"), vec!["server-*"]),
         ] {
             let capability: serde_json::Value = serde_json::from_str(source).unwrap();
@@ -858,3 +1017,5 @@ mod repository_folder_tests {
         );
     }
 }
+
+pub mod localization;

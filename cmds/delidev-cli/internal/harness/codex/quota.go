@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -22,11 +23,12 @@ type nativeQuotaWindow struct {
 	Reset       *int64 `json:"resetsAt"`
 }
 type nativeQuotaSnapshot struct {
-	LimitID   *string            `json:"limitId"`
-	LimitName *string            `json:"limitName"`
-	Primary   *nativeQuotaWindow `json:"primary"`
-	Secondary *nativeQuotaWindow `json:"secondary"`
-	Credits   *struct {
+	NormalModelSlug *string            `json:"normalModelSlug,omitempty"`
+	LimitID         *string            `json:"limitId"`
+	LimitName       *string            `json:"limitName"`
+	Primary         *nativeQuotaWindow `json:"primary"`
+	Secondary       *nativeQuotaWindow `json:"secondary"`
+	Credits         *struct {
 		HasCredits bool    `json:"hasCredits"`
 		Unlimited  bool    `json:"unlimited"`
 		Balance    *string `json:"balance"`
@@ -51,9 +53,13 @@ type nativeResetCredit struct {
 	Description *string `json:"description"`
 }
 type nativeQuotaRead struct {
-	Legacy       *nativeQuotaSnapshot           `json:"rateLimits"`
-	Buckets      map[string]nativeQuotaSnapshot `json:"rateLimitsByLimitId"`
-	ResetCredits *struct {
+	// Official optional observations are decoded privately and never projected.
+	OrdinaryUsageAllowed *bool                          `json:"ordinaryUsageAllowed"`
+	AccountID            *string                        `json:"accountId"`
+	RateLimitUpsell      json.RawMessage                `json:"rateLimitUpsell"`
+	Legacy               *nativeQuotaSnapshot           `json:"rateLimits"`
+	Buckets              map[string]nativeQuotaSnapshot `json:"rateLimitsByLimitId"`
+	ResetCredits         *struct {
 		Count   *int64               `json:"availableCount"`
 		Credits *[]nativeResetCredit `json:"credits"`
 	} `json:"rateLimitResetCredits"`
@@ -82,15 +88,27 @@ func (c *Client) ConsumeManagedResetCredit(ctx context.Context, operation domain
 	if c.managedHome == "" || operation.Validate() != nil || operation.Action != domain.SubscriptionResetCredit || operation.Phase != domain.SubscriptionObservationSending {
 		return "", incompatible()
 	}
+	return c.consumeManagedResetCredit(ctx, operation.ID, operation.CreditID)
+}
+
+// ConsumeServerResetCredit requires the server's original durable send claim.
+// It cannot turn a quota record or a renderer selector into consumption authority.
+func (c *Client) ConsumeServerResetCredit(ctx context.Context, operation domain.ServerCreditOperation) (domain.SubscriptionResetOutcome, error) {
+	if c.managedHome == "" || operation.Validate() != nil || operation.Phase != domain.SubscriptionObservationSending || !operation.SendClaimed {
+		return "", incompatible()
+	}
+	return c.consumeManagedResetCredit(ctx, operation.ID, operation.CreditID)
+}
+func (c *Client) consumeManagedResetCredit(ctx context.Context, key domain.ID, credit string) (domain.SubscriptionResetOutcome, error) {
 	var result struct {
 		Outcome domain.SubscriptionResetOutcome `json:"outcome"`
 	}
 	input := struct {
 		Key    string  `json:"idempotencyKey"`
 		Credit *string `json:"creditId,omitempty"`
-	}{Key: string(operation.ID)}
-	if operation.CreditID != "" {
-		input.Credit = &operation.CreditID
+	}{Key: string(key)}
+	if credit != "" {
+		input.Credit = &credit
 	}
 	if err := c.managedCall(ctx, "account/rateLimitResetCredit/consume", input, &result); err != nil {
 		return "", err
@@ -199,28 +217,23 @@ func (c *Client) validateQuotaReflection(value domain.SubscriptionQuotaObservati
 	if err != nil {
 		return err
 	}
+	return ValidateQuotaSecrets(value, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User)
+}
+
+// ValidateQuotaSecrets keeps protected credentials and original account identity
+// out of bounded quota identifiers, including common encoded reflections.
+func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...string) error {
 	projected, err := json.Marshal(value)
 	if err != nil {
 		return subscription.Invalid()
 	}
 	defer clear(projected)
-	for _, token := range []string{bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User} {
+	for _, token := range secrets {
 		if token == "" {
 			continue
 		}
-		// Even short identities cannot become public opaque IDs. Long substrings
-		// additionally cover raw and Base64 credential reflections.
-		for _, window := range value.Windows {
-			if window.ID == token {
-				return subscription.Invalid()
-			}
-		}
-		if value.Credits != nil && value.Credits.Credits != nil {
-			for _, credit := range *value.Credits.Credits {
-				if credit.ID == token {
-					return subscription.Invalid()
-				}
-			}
+		if quotaIdentifierReflects(value, token) {
+			return subscription.Invalid()
 		}
 		needle := []byte(token)
 		if len(needle) >= 8 && bytes.Contains(projected, needle) {
@@ -228,7 +241,7 @@ func (c *Client) validateQuotaReflection(value domain.SubscriptionQuotaObservati
 		}
 		for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
 			encoded := []byte(encoding.EncodeToString(needle))
-			found := len(needle) >= 8 && bytes.Contains(projected, encoded)
+			found := quotaIdentifierReflects(value, string(encoded)) || len(needle) >= 8 && bytes.Contains(projected, encoded)
 			clear(encoded)
 			if found {
 				return subscription.Invalid()
@@ -236,4 +249,29 @@ func (c *Client) validateQuotaReflection(value domain.SubscriptionQuotaObservati
 		}
 	}
 	return nil
+}
+
+// Only the adapter-owned final window suffix is removed. Exact matching keeps
+// short protected words from rejecting unrelated public metadata substrings.
+func quotaIdentifierReflects(value domain.SubscriptionQuotaObservation, protected string) bool {
+	for _, window := range value.Windows {
+		id := window.ID
+		for _, suffix := range []string{":primary", ":secondary", ":spend"} {
+			if strings.HasSuffix(id, suffix) {
+				id = strings.TrimSuffix(id, suffix)
+				break
+			}
+		}
+		if window.ID == protected || id == protected {
+			return true
+		}
+	}
+	if value.Credits != nil && value.Credits.Credits != nil {
+		for _, credit := range *value.Credits.Credits {
+			if credit.ID == protected {
+				return true
+			}
+		}
+	}
+	return false
 }

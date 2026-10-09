@@ -1,4 +1,184 @@
-# OpenRouter account OAuth PKCE (issue #1146)
+# API account browser OAuth
+
+## OAuth API format selection reservations
+
+Reservation PR #1657 established the issue #964 allocations on main before
+implementation: ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
+`StartAccountOAuthRequest.api_protocol = 4` and
+`AccountOAuthAttempt.api_protocol = 7`.
+The fields reuse the existing closed `ApiProtocol` enum. Capability 8 extends
+account format selection to accepted provider OAuth profiles; it does not replace
+capabilities 5, 6 or 7 or grant OAuth registration, credential, model or native
+execution authority. Reservation-only changes activate no schemas or runtime
+support and require no database migration.
+
+An explicit selected profile is bound to the original Start receipt and private
+attempt JSON, and preserved through account creation,
+connection, status, completion and original-result recovery. Omitted legacy
+requests and attempts retain their original default and exact receipt behavior.
+OAuth authentication ownership remains independent of the selected inference
+format. Only currently eligible provider/authentication profiles may be selected;
+REST availability alone cannot grant OAuth support. Existing provider revisions,
+actor/login/credential ownership, once-only exchange and cleanup stay intact.
+
+The desktop uses one provider-metadata-driven format presentation for manual and
+OAuth connections: explicitly choose among multiple formats, or display the sole
+format. Preserve Google project binding and device approval. Existing accounts
+may use capability 9 for the key-preserving change without a new OAuth exchange;
+capability 7 alone requires Disconnect and confirmed cleanup before format changes. No historical
+account/execution rewrite, protocol conversion or native change is authorized.
+
+Capability 8 is advertised independently of provider registration/acceptance.
+Start accepts the existing ApiProtocol enum; UNSPECIFIED retains legacy receipt
+bytes by omitting the new comparison member. Explicit selections pin the complete
+Bearer protocol/endpoint/authentication tuple in private attempt JSON and create
+schema-3 API accounts. Replays compare the original selection before admission;
+provider revision and original tuple are checked before exchange or protected
+local recovery. Status and completion project the original explicit protocol.
+No verifier, key or OAuth token enters that projection. Credential refresh keeps
+its original authentication adapter, independently of inference format.
+
+The common CLI accepts `account oauth start --api-protocol` with the existing
+`openai-responses`, `openai-chat` and `anthropic-messages` identifiers and requires
+capability 8 before sending an explicit selection. Omission preserves default
+behavior. The desktop opens a configuration step without native preparation or
+server Start; only explicit Continue begins the original authentication flow.
+Multiple profiles require selection; a single profile is displayed read-only.
+Metadata loading/failures block Continue. Older servers show their default format
+and retain an explicit API-key alternative. Google project binding and Baseten
+server-owned device authorization remain independent and unchanged.
+
+
+## General API OAuth reservations (issue #964)
+
+The approved extension covers direct ordinary API credentials only: OpenRouter
+PKCE to an API key, Hugging Face PKCE to OAuth tokens, Google Gemini PKCE to OAuth
+tokens with an explicit quota/billing project, and Baseten device authorization
+to OAuth tokens. Coding subscriptions and flows that broker or separately create
+API keys are outside this extension. Other providers retain API-key or Keyless
+connections. Existing OpenRouter behavior and its issue #1146 ownership remain.
+
+Record these issue #964 reservations in the owning feature PR:
+
+- `ProviderInventoryCapability.ACCOUNT_OAUTH_V1 = 6`; preserve OpenRouter-only 5.
+- `ProviderConnectionMethod.OAUTH_DEVICE = 4`; preserve values 0–3.
+- New `AccountOAuthFlow`: UNSPECIFIED 0, PKCE 1, DEVICE 2.
+- New `AccountOAuthGoogleOptions.quota_project_id = 1`.
+- `StartAccountOAuthRequest.google = 3`.
+- `StartAccountOAuthResponse.flow = 5` and `user_code = 6`. The temporary device
+  approval code is available only from the live Start response, never Status.
+- `CompleteAccountOAuthRequest.authorization_state = 3`; new PKCE profiles bind
+  completion to the original state. Preserve the historical OpenRouter input.
+- Private migration 31 follows the real migrations 26–30. It owns authentication
+  profiles, protected token-generation references, durable refresh claims and
+  cleanup metadata. Existing OpenRouter records and vault references survive.
+
+These reservations activate no schema, credential exchange, capability or native
+browser authority. Complete feature PRs may include their allocation records and
+merge in this order: common lifecycle plus Hugging Face, Gemini, then Baseten.
+
+Go owns exchange, device polling, protected access/refresh tokens and refresh.
+On macOS, check current executable code before a fresh Start admission or
+exchange. A failed check cannot create an attempt or claim/dispatch an exchange.
+Device approval rechecks code before every admitted pending/slow-down poll;
+invalid code settles the original attempt as recovery without another request.
+Retain original replay, status, cancellation and recovery authority. A rolled-back
+Start uses the existing admission-rejection cause; runtime exchange failures and
+retained problems use closed credential-runtime causes. The desktop shows localized
+explicit server restart guidance without rendering native content or resending
+authorization. Follow the [credential contract](cmds-delidev-credentials-contract.md)
+and [development signing policy](apps-delidev-desktop-contract.md#local-development-signing-and-recovery).
+SQLite, logs and frontend caches contain no tokens, verifier or device code.
+Credential resolution serializes refresh per connection and atomically replaces
+the protected generation without changing account, connection or execution
+ownership. Uncertain exchange or refresh never grants an automatic resend.
+Device polling repeats only after explicit pending/slow_down responses; uncertain
+token issuance stops. Cancellation, restart, restore and deletion retain durable
+claims and independent cleanup. API inspection and execution share this authority.
+
+Only an enabled exact managed official provider profile can grant OAuth.
+DeliDev-owned public/native app registration and real ordinary-API credential
+compatibility are activation prerequisites. Do not copy another application's
+client ID. Profiles without registration or acceptance do not advertise OAuth
+support and remain incomplete. User-owned OAuth app configuration is excluded.
+New connections follow the current API defaults and remain unverified until the
+user explicitly validates or discovers models. Native flow support and server
+capabilities must both be present; old combinations keep manual connections and
+the existing OpenRouter compatibility behavior.
+
+Gemini requires an explicit Google Cloud project ID before browser launch and
+uses that project for quota/billing. Baseten opens its fixed approved browser
+address and displays the transient approval code without a callback listener.
+Every native flow retains original window/server/attempt lifetime ownership;
+PKCE also retains the original state. The common AccountOAuth card preserves the
+approved 760px width, 20px padding, 12px radius, theme, wrapped actions, keyboard
+focus, status announcements, narrow-window and 200% zoom behavior. Switch to an
+API key only after cancellation is confirmed. A confirmed Connected result with a valid saved account immediately closes the addition task, disposes only its original local native callback authority and refreshes the account list once per attempt. This also applies after explicit original recovery. Missing or invalid saved accounts, failures and uncertain results cannot close the task. Existing task focus restoration applies; editing and management remain in the account list. Success never auto-validates.
+
+## Common lifecycle and Hugging Face
+
+The common implementation activates migration 31 after real 26–30. The private
+`account_oauth_credentials` table retains exact account, immutable connection,
+provider/preset, client-profile digest, expiry, token-generation reference,
+refresh claim and cleanup references. No account foreign key can erase an orphan
+claim. Vault entries alone contain bounded access/refresh token envelopes. Restore
+retains the current table; unresolved claims or cleanup block restore. Refresh
+commits a claim before HTTP, serializes concurrent requests by connection, swaps
+the protected reference atomically, then removes prior generations. Lost HTTP or
+Vault acknowledgement leaves recovery/denied authority and cannot resend refresh.
+Inspection and execution resolve the same current credential; doctor reads only.
+
+The Hugging Face adapter uses the exact managed `https://router.huggingface.co/v1`
+profile, public-client PKCE, `inference-api` scope and the registered localhost
+`/oauth/hugging-face/callback` path with a canonical ephemeral port. Native and Go
+both bind the original state. A state-bound empty code records an access-denied
+receipt without HTTP. Duplicate completion replays the original receipt; explicit
+code-free recovery reads only original protected local material. Start alone
+returns authorization URLs. The common card uses the selected provider's title,
+progress and recovery text and retains unverified success.
+
+`cmds/delidev-cli/internal/providers/oauth_clients.json` is compiled public release
+registration metadata shared by Go and native. A profile requires its DeliDev
+client ID, `registered` status and ordinary API `accepted` status. Native profile
+inventory and server capability 6 must agree before a new browser option appears;
+older native hosts retain OpenRouter behavior. Current new registrations remain
+pending/unverified. Implemented fixture paths do not establish activation or real
+account/native acceptance. Gemini and Baseten adapters remain subsequent work.
+
+CLI Start accepts `--callback-url`; Hugging Face requires the registered callback.
+OpenRouter alone retains no-callback headless mode. `--callback-stdin` accepts a
+bounded protobuf JSON envelope containing only base64 `authorizationCode` and
+`authorizationState`. Mutation identity comes from original CLI flags, never the
+callback. `--code-stdin` and explicit original `--recover` remain supported.
+
+## Google Gemini project-bound PKCE
+
+The Gemini adapter binds the exact managed OpenAI-compatible endpoint at
+`https://generativelanguage.googleapis.com/v1beta/openai`, the DeliDev desktop
+public client and registered IPv4 loopback `/oauth/google-gemini/callback` path.
+Use Google PKCE with `https://www.googleapis.com/auth/cloud-platform` scope,
+`access_type=offline` and `prompt=consent`. Code exchange and refresh use only
+`https://oauth2.googleapis.com/token`. The native opener validates every fixed
+field and the original state, and permits only bounded Google authuser/prompt
+callback metadata in addition to code/state/scope or access_denied.
+
+Before any listener, Start or browser opening, the common card requires a Google
+Cloud project ID. Validate 6–30 lowercase letters, digits or hyphens, starting
+with a letter and ending with a letter/digit. Start receipts include immutable
+project options without changing historical OpenRouter inputs. Keep the project
+in private connection metadata. Inspection and native execution use the same
+protected access token with `Authorization: Bearer` and `x-goog-user-project`;
+never send an OAuth token as `x-goog-api-key`. Independently validate the exact
+managed provider and official Google destination before attaching the project.
+Downstream project headers cannot replace this connection binding. API keys and
+foreign/regional providers cannot inherit the project.
+
+The compiled Google registration remains pending/unverified. Google OAuth for
+the general API is documented, but the DeliDev client and actual compatible
+inference path still require service acceptance before capability advertisement.
+Fixture checks, desktop builds and public registration are distinct evidence.
+
+## OpenRouter account OAuth PKCE (issue #1146)
 
 ## Status and ownership
 
@@ -19,7 +199,7 @@ use authenticated Connect for selected local and remote servers.
 
 ## Compatibility reservations
 
-Establish all reservations on main before dependent implementation. The owning
+Record all reservations in the owning feature PR. The owning
 issue remains 1146 after an implementation PR exists. Existing numbers and the
 migration order retain their current meanings.
 
@@ -34,7 +214,7 @@ migration order retain their current meanings.
   diagnostics 27 and subscription identity/retirement 28 implementations.
   Do not implement placeholder predecessors or activate 29 before that complete
   sequence exists. Changing
-  product order requires a separately reconciled reservation sequence on main.
+  product order requires a reconciled allocation sequence in the owning feature PR.
 
 The allocation ledger marks each member of a wholly new enum with
 `newDeclaration: true`, retaining one owner and a zero UNSPECIFIED value without
@@ -57,7 +237,7 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 - Go generates a cryptographic PKCE verifier/challenge with S256 and builds only `https://openrouter.ai/auth`. Desktop uses the owned callback_url; headless omits it. Exchange only through `POST https://openrouter.ai/api/v1/auth/keys` with code/verifier/S256. Resolve one immutable explicit server route under the existing network contract; route or TLS failure never grants direct fallback. No registration/client secret, inference, management key, ambient cookies/proxies, redirects, automatic HTTP retry or alternate provider.
 - Keep verifier and canonical callback/authorization URL in memory in their original server process. Cap application attempts at ten minutes and 32 nonterminal or unresolved-cleanup server attempts; distinguish this application deadline from the provider's code lifetime after issuance. Clear transient buffers and bound HTTP with the existing 20-second deadline/32KiB response-header conventions and a deliberately tighter new OAuth response ceiling of 64KiB (ordinary provider inspection permits 4MiB). Validate the returned key with the existing 1–8192-byte API-key validator.
-- Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change on main before implementation. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
+- Add private `account_oauth_attempts` metadata storage in reserved schema 29 after the implemented schema 25 baseline and real migrations 26–28. Preserve the reservation's meaning; reconcile any required order change in the owning feature PR. Include actor/server/provider UUID+revision, original start/completion IDs, reserved account/create/connect UUIDs, process generation, state/revision/times, comparison HMAC/digests, protected-reference identity and cleanup status. No raw verifier, code, key, callback URL or approval URL in SQLite/receipts. No foreign key requiring an existing account and no cascading deletion of recovery evidence.
 - Fresh stores include the table; use the existing verified backup-first transactional migration, preserving accounts/providers/settings/claims/default deletions. Exclude attempt rows from public resources/snapshots/events/portable export. Database images contain metadata, never credentials. Existing managed restore eligibility refuses unresolved OAuth attempts or cleanup. Historical images cannot replace current once-only attempt metadata; restore copies the current private attempt table and quarantines historical receipts. This adds no restore operation.
 - Before HTTP, commit one durable exchange-dispatch claim, following the existing once-only HTTP-claim pattern. HTTP runs outside SQLite/account locks. No timeout, cancellation, duplicate callback, RPC retry or process restart may send that exchange again.
 - Seal a successfully received key in the existing vault under `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}`. Then create disconnected default metadata once and connect once using shared existing lifecycle helpers, exact creation revision and original identities. Factor locked helpers to avoid recursive account-gate acquisition. Recheck actor, provider and attempt authority before staging and at final commit.
@@ -68,11 +248,11 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 ### Native and desktop
 
-- Add a closed OpenRouter opener/callback infrastructure capability for trusted main and saved-server webviews. Preserve trusted-origin/window/server-generation checks and existing GitHub restrictions; no generic opener, new renderer navigation/CSP origin, embedded account browser profile or credential storage in Rust.
 - Register `account_oauth_native` in the native build-time app command manifest and grant its dedicated `account-oauth` permission only through the existing `main` and `server-*` webview capabilities. Handler registration alone is insufficient: Tauri filters and authorizes commands through the generated ACL. Native host tests must resolve the actual generated manifests/capabilities and verify both trusted-webview admission and raw-child/remote-document denial. Runtime window, server and epoch checks remain independent. Record native preparation/browser outcomes with closed action, phase, outcome and failure metadata only; successful callback polling stays quiet.
+- Add a closed OpenRouter opener/callback infrastructure capability for registered trusted local and saved-server product webviews. Preserve trusted-origin/window/server-generation checks and existing GitHub restrictions; no generic opener, new renderer navigation/CSP origin, embedded account browser profile or credential storage in Rust.
 - Own one native attempt per trusted window. Start a temporary listener on IPv4/IPv6 loopback only before obtaining the authorization URL. Use documented `http://localhost:<ephemeral-port>/...`, an unpredictable per-attempt path, exact Host/method/path, single-use callback with a <=16KiB request-target budget and <=16KiB header budget, the same exact code-byte validation, and no wildcard bind. This infrastructure port is unrelated to the fixed frontend dev port.
 - Bind callback forwarding to the initiating window, selected server identity, attempt and current local generation. Code travels through a dedicated one-shot trusted completion bridge, never broadcast native events, query keys, app-owned history/storage, logs or echoed callback HTML. Return a constant non-secret callback page with no-store/no-referrer policy and remove the code from the final displayed callback URL; do not promise erasure of the external browser's own history. PKCE verifier/returned key never enter the renderer. Remote selected servers receive code through authenticated encrypted Connect; callback localhost means the desktop, while keyless provider localhost still means the server.
-- The bridge captures a native window epoch before awaiting sidecar identity and checks it again after its blocking operation. Window closure invalidates admitted, queued Begin calls as well as existing listeners. A visit supplies one opaque local opening identity before Begin; scoped disposal records a tombstone even if the Begin response was lost. Original Begin replay returns its existing listener metadata without opening a browser. Tombstones/closed-window identities are bounded at 4096 per native process; exhausted capacity fails explicitly rather than evicting a revocation. A replacement opening cannot be disposed by a late predecessor.
+- The bridge captures a native window epoch before awaiting sidecar identity and checks it again after its blocking operation. Window closure invalidates admitted, queued Begin calls as well as existing listeners. A visit supplies one opaque local opening identity before Begin; scoped disposal records a tombstone even if the Begin response was lost. Original Begin replay returns its existing listener metadata without opening a browser. Tombstones/closed-window identities are bounded at 4096 per native process; exhausted capacity fails explicitly rather than evicting a revocation. Disposal, expiry, native window close and ordinary epoch admission share bounded insertion. Known identities remain idempotent at capacity. Overflow stores no new identity, latches admission closed, clears transient callback bytes and joins all original listeners; every existing revocation remains retained. A replacement opening cannot be disposed by a late predecessor.
 - A deliberate OpenRouter provider/Add-account action enters the waiting screen and opens the default browser exactly once, after the destination category mounts. Consume that typed non-secret entry once. Ordinary mount, restoration, polling and Strict Mode replay must not start/reopen OAuth. Card heading `Connect OpenRouter`; subheading `Complete sign-in in your browser`; copy `Approve access on OpenRouter. DeliDev will finish connecting automatically.`; spinner/status `Waiting for authorization…`.
 - Provide `Open browser again` for the same live attempt, `Cancel`, `Back to providers`, and `Use an API key instead`. Explicit cancel/back/fallback uses the dedicated cancellation outcome before abandoning a live flow; fallback opens the preserved manual form. Do not start another account/manual save while an earlier outcome remains uncertain.
 - During exchange/save/connection, show distinct progress and disable flow-local actions that could duplicate or discard the write. Settings category navigation stays available and disposes only local presentation/callback authority. Success offers Edit account through the existing metadata editor, Manage account and Done. Validation/discovery remain explicit. Error/expiry/open-failure offers deliberate restart or manual fallback; expired/restarted flows never reuse prior callbacks.
@@ -130,3 +310,61 @@ Callback polling rechecks captured Go-verified local connection authority agains
 A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejection inside its rolled-back admission transaction. Replay, transport and post-commit errors retain the original receipt. Explicit Cancel/Back may dispose a rejected native opening before manual fallback. Database restore preserves a current connected OAuth account and its current provider only when its connection ID matches the original once-only attempt; preserve their coupled vault ownership, never a historical or disconnected generation.
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
+
+Durable completion and recovery recheck the original adapter as well as provider
+identity and revision. Version-1 attempts belong only to OpenRouter; version-2
+attempts retain their original preset. Before a protected token is read for local
+recovery or used to publish a connection, its private metadata must match the
+original account/connection/provider, client digest, quota project, staging token
+ID and idle refresh state. A changed app registration cannot adopt an earlier
+protected result. Explicit cancellation remains available for its original cleanup.
+## Baseten Device OAuth
+
+Baseten uses the server-owned Device adapter only for its exact enabled managed
+OpenAI Chat/Bearer preset at `https://inference.baseten.co/v1`. The fixed management
+endpoints are `https://api.baseten.co/v1/users/auth/device/authorize` and
+`https://api.baseten.co/v1/users/auth/device/token`. These endpoints follow the
+[official Baseten CLI source](https://github.com/basetenlabs/baseten-cli/blob/326725fdd72e6cf1862722602b29eb18a5aa8769/internal/cmd/command_context.go).
+DeliDev does not use the CLI's client ID. Its compiled public client, registered
+approval URI, and ordinary inference compatibility must all be accepted before
+capability 6 or connection method 4 is advertised. The pending release leaves the
+approval URI empty; fixture paths are synthetic and do not establish its real path.
+
+Start commits its original attempt and private Device dispatch UUID before its
+once-only authorize request. Device codes remain owned byte buffers in the Go job.
+Only a successful Start or exact live Start replay returns the bounded temporary
+user code and the exact registered HTTPS approval URI. Status never returns either
+code or URL and cannot send requests, recover a token, or create an account.
+The optional complete verification URL is ignored; DeliDev opens the registered
+plain approval URI and displays the user code separately.
+
+The Go job belongs to the original actor, account, provider revision, server
+lifetime, and dispatch UUID. It checks that authority before every poll, waits the
+provider's interval, and increases that interval by five seconds on `slow_down`.
+Only explicit HTTP 400 `authorization_pending` and `slow_down` permit another
+poll. Lost, malformed, redirected, unknown, or ambiguous results stop in recovery.
+Denied or expired authorization terminates without a connection. The shorter of
+the provider expiry and the existing ten-minute attempt lifetime bounds the job.
+Cancel, provider mutation, actor revocation, or shutdown closes dispatch authority;
+late tokens cannot publish a connection. Restart interrupts the original pending
+attempt and never reconstructs a Device code or restarts polling.
+
+A successfully received token enters the common protected completion path through
+a private Go context that public Complete cannot construct. The original attempt
+stays at revision 1 until this sole completion claim. After that claim, Device
+Status's existing `request_id` field identifies the original server completion
+receipt. Explicit code-free recovery uses that receipt and expected revision 1;
+it can finish only its already protected local result and never polls again.
+Cancellation responses still identify their own mutation receipts. Account,
+connection, token refresh, deletion and cleanup retain the common immutable rules.
+
+Native BeginBaseten owns the original window/server/opening epoch and a generation
+without binding any socket or creating a callback listener. BindOpen accepts only
+the compiled registered plain approval URI and original attempt; exact binding
+replay does not open another browser. Reopen is deliberate. Take is unavailable.
+The common account card shows a selectable readonly user code only while waiting,
+clears it after settlement/disposal, and observes the Go job with Status. Codes,
+authorization URLs and tokens never enter React Query caches. Success remains
+unverified and validation/model discovery require a separate user action.
+
+CLI completion reserves 35 seconds for the original 20-second exchange, independent bounded five-second settlement and typed response. Both its outer context and response-header limit use this budget; earlier caller cancellation wins. Code-free recovery retains its original request identity and cannot repeat exchange.

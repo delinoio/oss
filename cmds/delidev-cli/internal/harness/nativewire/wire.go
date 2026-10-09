@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
@@ -84,6 +86,9 @@ type Connection struct {
 	problem    *domain.Error
 	cleanup    error
 	closing    bool
+	eofOnce    sync.Once
+	eofDone    chan struct{}
+	logger     *slog.Logger
 }
 
 func protocolFailure() *domain.Error {
@@ -108,6 +113,10 @@ func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, erro
 func start(ctx context.Context, config process.Config, version string) (*Connection, error) {
 	life, cancel := context.WithCancel(ctx)
 	c := &Connection{jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
+	c.logger = config.Logger
+	if c.logger == nil {
+		c.logger = slog.Default()
+	}
 	c.protected = security.NewProtectedJSON(config.ProtectedValues)
 	config.Stdout = &frameWriter{connection: c}
 	config.Stderr = io.Discard
@@ -173,6 +182,44 @@ func (c *Connection) Close() error {
 	<-c.done
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.cleanup
+}
+
+// CloseGracefully fences new writes and gives the original process a bounded
+// stdin EOF window. Codex needs normal exit to drop its temporary helper aliases;
+// forced cancellation skips those destructors. Timeout and independent failure
+// still stop and join the retained original owner, never a replacement process.
+func (c *Connection) CloseGracefully(grace time.Duration) error {
+	c.mu.Lock()
+	c.closing = true
+	c.mu.Unlock()
+	c.eofOnce.Do(func() {
+		c.eofDone = make(chan struct{})
+		go func() {
+			defer close(c.eofDone)
+			select {
+			case c.writeGate <- struct{}{}:
+				defer c.release()
+				if err := c.process.CloseInput(); err != nil {
+					c.cancel()
+				}
+			case <-c.done:
+			}
+		}()
+	})
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case <-c.done:
+	case <-timer.C:
+		c.logger.Info("native_graceful_shutdown_timeout")
+		c.cancel()
+		<-c.done
+	}
+	<-c.eofDone
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logger.Info("native_graceful_shutdown_joined", "cleanup_confirmed", c.cleanup == nil)
 	return c.cleanup
 }
 func (c *Connection) Done() <-chan struct{}     { return c.done }
@@ -286,6 +333,24 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	if err != nil || len(raw) > MaxFrame {
 		return domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
 	}
+	return c.replyEnvelope(ctx, event, key, raw)
+}
+
+// RefuseExternalTokenRefresh answers only the exact pending token callback with a fixed safe error.
+func (c *Connection) RefuseExternalTokenRefresh(ctx context.Context, event Event) error {
+	key, err := idKey(event.ID)
+	if err != nil || event.Kind != ServerRequest || event.Method != "account/chatgptAuthTokens/refresh" {
+		return protocolFailure()
+	}
+	code, message := int64(-32000), "External token refresh is disabled for quota observation."
+	raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Error: &wireError{Code: &code, Message: &message}})
+	if err != nil {
+		return protocolFailure()
+	}
+	return c.replyEnvelope(ctx, event, key, raw)
+}
+
+func (c *Connection) replyEnvelope(ctx context.Context, event Event, key string, raw []byte) error {
 	var checked envelope
 	if err := domain.Decode(raw, &checked); err != nil {
 		return err

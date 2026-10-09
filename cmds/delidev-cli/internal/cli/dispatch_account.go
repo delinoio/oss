@@ -8,7 +8,7 @@ import (
 func dispatchAccount(ctx context.Context, c client, o options, rest []string, streams IO) (int, bool) {
 	emit := func(value any, err error) int { return emitResult(streams, o, value, err) }
 	if len(rest) > 0 && rest[0] == "oauth" {
-		value, err := accountOAuthCommand(ctx, c, o, rest[1:], streams)
+		value, err := accountOAuthCommand(ctx, c, &o, rest[1:], streams)
 		return emit(value, err), true
 	}
 	if len(rest) > 0 && (rest[0] == "refresh-quota" || rest[0] == "refresh-all-quotas" || rest[0] == "consume-reset-credit" || rest[0] == "reconcile-reset-credit") {

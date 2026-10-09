@@ -21,6 +21,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type AccountOAuthFlow int32
+
+const (
+	// buf:lint:ignore ENUM_VALUE_PREFIX
+	AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_UNSPECIFIED AccountOAuthFlow = 0
+	// buf:lint:ignore ENUM_VALUE_PREFIX
+	AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_PKCE AccountOAuthFlow = 1
+	// buf:lint:ignore ENUM_VALUE_PREFIX
+	AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_DEVICE AccountOAuthFlow = 2
+)
+
+// Enum value maps for AccountOAuthFlow.
+var (
+	AccountOAuthFlow_name = map[int32]string{
+		0: "ACCOUNT_OAUTH_FLOW_UNSPECIFIED",
+		1: "ACCOUNT_OAUTH_FLOW_PKCE",
+		2: "ACCOUNT_OAUTH_FLOW_DEVICE",
+	}
+	AccountOAuthFlow_value = map[string]int32{
+		"ACCOUNT_OAUTH_FLOW_UNSPECIFIED": 0,
+		"ACCOUNT_OAUTH_FLOW_PKCE":        1,
+		"ACCOUNT_OAUTH_FLOW_DEVICE":      2,
+	}
+)
+
+func (x AccountOAuthFlow) Enum() *AccountOAuthFlow {
+	p := new(AccountOAuthFlow)
+	*p = x
+	return p
+}
+
+func (x AccountOAuthFlow) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AccountOAuthFlow) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_account_proto_enumTypes[0].Descriptor()
+}
+
+func (AccountOAuthFlow) Type() protoreflect.EnumType {
+	return &file_delidev_v1_account_proto_enumTypes[0]
+}
+
+func (x AccountOAuthFlow) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AccountOAuthFlow.Descriptor instead.
+func (AccountOAuthFlow) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{0}
+}
+
 // Preserve the reserved OAuth spelling. Remove these value-prefix exceptions
 // only when Buf recognizes OAuth as one acronym or compatibility is renegotiated.
 type AccountOAuthState int32
@@ -87,11 +139,11 @@ func (x AccountOAuthState) String() string {
 }
 
 func (AccountOAuthState) Descriptor() protoreflect.EnumDescriptor {
-	return file_delidev_v1_account_proto_enumTypes[0].Descriptor()
+	return file_delidev_v1_account_proto_enumTypes[1].Descriptor()
 }
 
 func (AccountOAuthState) Type() protoreflect.EnumType {
-	return &file_delidev_v1_account_proto_enumTypes[0]
+	return &file_delidev_v1_account_proto_enumTypes[1]
 }
 
 func (x AccountOAuthState) Number() protoreflect.EnumNumber {
@@ -100,7 +152,7 @@ func (x AccountOAuthState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AccountOAuthState.Descriptor instead.
 func (AccountOAuthState) EnumDescriptor() ([]byte, []int) {
-	return file_delidev_v1_account_proto_rawDescGZIP(), []int{0}
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{1}
 }
 
 type ConnectAccountRequest struct {
@@ -543,13 +595,15 @@ func (x *ValidateAccountResponse) GetValidationJson() []byte {
 
 // Dedicated projection only: no verifier, key, code, callback or actor metadata.
 type AccountOAuthAttempt struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Revision      uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	State         AccountOAuthState      `protobuf:"varint,3,opt,name=state,proto3,enum=delidev.v1.AccountOAuthState" json:"state,omitempty"`
-	ExpiresAt     string                 `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	ProviderId    string                 `protobuf:"bytes,5,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
-	Problem       *ErrorDetail           `protobuf:"bytes,6,opt,name=problem,proto3" json:"problem,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Revision   uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	State      AccountOAuthState      `protobuf:"varint,3,opt,name=state,proto3,enum=delidev.v1.AccountOAuthState" json:"state,omitempty"`
+	ExpiresAt  string                 `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ProviderId string                 `protobuf:"bytes,5,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	Problem    *ErrorDetail           `protobuf:"bytes,6,opt,name=problem,proto3" json:"problem,omitempty"`
+	// Original explicit inference format; omitted legacy attempts retain defaults.
+	ApiProtocol   ApiProtocol `protobuf:"varint,7,opt,name=api_protocol,json=apiProtocol,proto3,enum=delidev.v1.ApiProtocol" json:"api_protocol,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -626,11 +680,21 @@ func (x *AccountOAuthAttempt) GetProblem() *ErrorDetail {
 	return nil
 }
 
+func (x *AccountOAuthAttempt) GetApiProtocol() ApiProtocol {
+	if x != nil {
+		return x.ApiProtocol
+	}
+	return ApiProtocol_API_PROTOCOL_UNSPECIFIED
+}
+
 type StartAccountOAuthRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Provider *Mutation              `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
 	// Transient native-owned callback; empty selects documented headless mode.
-	CallbackUrl   string `protobuf:"bytes,2,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
+	CallbackUrl string                     `protobuf:"bytes,2,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
+	Google      *AccountOAuthGoogleOptions `protobuf:"bytes,3,opt,name=google,proto3" json:"google,omitempty"`
+	// Explicit inference format; UNSPECIFIED preserves the original default.
+	ApiProtocol   ApiProtocol `protobuf:"varint,4,opt,name=api_protocol,json=apiProtocol,proto3,enum=delidev.v1.ApiProtocol" json:"api_protocol,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -679,15 +743,32 @@ func (x *StartAccountOAuthRequest) GetCallbackUrl() string {
 	return ""
 }
 
+func (x *StartAccountOAuthRequest) GetGoogle() *AccountOAuthGoogleOptions {
+	if x != nil {
+		return x.Google
+	}
+	return nil
+}
+
+func (x *StartAccountOAuthRequest) GetApiProtocol() ApiProtocol {
+	if x != nil {
+		return x.ApiProtocol
+	}
+	return ApiProtocol_API_PROTOCOL_UNSPECIFIED
+}
+
 type StartAccountOAuthResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Attempt *AccountOAuthAttempt   `protobuf:"bytes,1,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	// Present only while the original process owns this live start.
-	AuthorizationUrl string `protobuf:"bytes,2,opt,name=authorization_url,json=authorizationUrl,proto3" json:"authorization_url,omitempty"`
-	RequestId        string `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Replayed         bool   `protobuf:"varint,4,opt,name=replayed,proto3" json:"replayed,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	AuthorizationUrl string           `protobuf:"bytes,2,opt,name=authorization_url,json=authorizationUrl,proto3" json:"authorization_url,omitempty"`
+	RequestId        string           `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed         bool             `protobuf:"varint,4,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	Flow             AccountOAuthFlow `protobuf:"varint,5,opt,name=flow,proto3,enum=delidev.v1.AccountOAuthFlow" json:"flow,omitempty"`
+	// Transient device approval code; absent from every status projection.
+	UserCode      string `protobuf:"bytes,6,opt,name=user_code,json=userCode,proto3" json:"user_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StartAccountOAuthResponse) Reset() {
@@ -748,13 +829,29 @@ func (x *StartAccountOAuthResponse) GetReplayed() bool {
 	return false
 }
 
+func (x *StartAccountOAuthResponse) GetFlow() AccountOAuthFlow {
+	if x != nil {
+		return x.Flow
+	}
+	return AccountOAuthFlow_ACCOUNT_OAUTH_FLOW_UNSPECIFIED
+}
+
+func (x *StartAccountOAuthResponse) GetUserCode() string {
+	if x != nil {
+		return x.UserCode
+	}
+	return ""
+}
+
 type CompleteAccountOAuthRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Mutation *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
 	// Write-only exact UTF-8 bytes. Empty only for original local-result recovery.
 	AuthorizationCode []byte `protobuf:"bytes,2,opt,name=authorization_code,json=authorizationCode,proto3" json:"authorization_code,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Write-only original state. Required by the new PKCE profiles.
+	AuthorizationState []byte `protobuf:"bytes,3,opt,name=authorization_state,json=authorizationState,proto3" json:"authorization_state,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CompleteAccountOAuthRequest) Reset() {
@@ -801,6 +898,57 @@ func (x *CompleteAccountOAuthRequest) GetAuthorizationCode() []byte {
 	return nil
 }
 
+func (x *CompleteAccountOAuthRequest) GetAuthorizationState() []byte {
+	if x != nil {
+		return x.AuthorizationState
+	}
+	return nil
+}
+
+type AccountOAuthGoogleOptions struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	QuotaProjectId string                 `protobuf:"bytes,1,opt,name=quota_project_id,json=quotaProjectId,proto3" json:"quota_project_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AccountOAuthGoogleOptions) Reset() {
+	*x = AccountOAuthGoogleOptions{}
+	mi := &file_delidev_v1_account_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountOAuthGoogleOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountOAuthGoogleOptions) ProtoMessage() {}
+
+func (x *AccountOAuthGoogleOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_account_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountOAuthGoogleOptions.ProtoReflect.Descriptor instead.
+func (*AccountOAuthGoogleOptions) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AccountOAuthGoogleOptions) GetQuotaProjectId() string {
+	if x != nil {
+		return x.QuotaProjectId
+	}
+	return ""
+}
+
 type CancelAccountOAuthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Mutation      *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
@@ -810,7 +958,7 @@ type CancelAccountOAuthRequest struct {
 
 func (x *CancelAccountOAuthRequest) Reset() {
 	*x = CancelAccountOAuthRequest{}
-	mi := &file_delidev_v1_account_proto_msgTypes[12]
+	mi := &file_delidev_v1_account_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +970,7 @@ func (x *CancelAccountOAuthRequest) String() string {
 func (*CancelAccountOAuthRequest) ProtoMessage() {}
 
 func (x *CancelAccountOAuthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_account_proto_msgTypes[12]
+	mi := &file_delidev_v1_account_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +983,7 @@ func (x *CancelAccountOAuthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAccountOAuthRequest.ProtoReflect.Descriptor instead.
 func (*CancelAccountOAuthRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_account_proto_rawDescGZIP(), []int{12}
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CancelAccountOAuthRequest) GetMutation() *Mutation {
@@ -854,7 +1002,7 @@ type GetAccountOAuthStatusRequest struct {
 
 func (x *GetAccountOAuthStatusRequest) Reset() {
 	*x = GetAccountOAuthStatusRequest{}
-	mi := &file_delidev_v1_account_proto_msgTypes[13]
+	mi := &file_delidev_v1_account_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +1014,7 @@ func (x *GetAccountOAuthStatusRequest) String() string {
 func (*GetAccountOAuthStatusRequest) ProtoMessage() {}
 
 func (x *GetAccountOAuthStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_account_proto_msgTypes[13]
+	mi := &file_delidev_v1_account_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +1027,7 @@ func (x *GetAccountOAuthStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountOAuthStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetAccountOAuthStatusRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_account_proto_rawDescGZIP(), []int{13}
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetAccountOAuthStatusRequest) GetAttemptId() string {
@@ -901,7 +1049,7 @@ type CompleteAccountOAuthResponse struct {
 
 func (x *CompleteAccountOAuthResponse) Reset() {
 	*x = CompleteAccountOAuthResponse{}
-	mi := &file_delidev_v1_account_proto_msgTypes[14]
+	mi := &file_delidev_v1_account_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -913,7 +1061,7 @@ func (x *CompleteAccountOAuthResponse) String() string {
 func (*CompleteAccountOAuthResponse) ProtoMessage() {}
 
 func (x *CompleteAccountOAuthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_account_proto_msgTypes[14]
+	mi := &file_delidev_v1_account_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -926,7 +1074,7 @@ func (x *CompleteAccountOAuthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteAccountOAuthResponse.ProtoReflect.Descriptor instead.
 func (*CompleteAccountOAuthResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_account_proto_rawDescGZIP(), []int{14}
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CompleteAccountOAuthResponse) GetAttempt() *AccountOAuthAttempt {
@@ -969,7 +1117,7 @@ type CancelAccountOAuthResponse struct {
 
 func (x *CancelAccountOAuthResponse) Reset() {
 	*x = CancelAccountOAuthResponse{}
-	mi := &file_delidev_v1_account_proto_msgTypes[15]
+	mi := &file_delidev_v1_account_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -981,7 +1129,7 @@ func (x *CancelAccountOAuthResponse) String() string {
 func (*CancelAccountOAuthResponse) ProtoMessage() {}
 
 func (x *CancelAccountOAuthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_account_proto_msgTypes[15]
+	mi := &file_delidev_v1_account_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -994,7 +1142,7 @@ func (x *CancelAccountOAuthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAccountOAuthResponse.ProtoReflect.Descriptor instead.
 func (*CancelAccountOAuthResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_account_proto_rawDescGZIP(), []int{15}
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CancelAccountOAuthResponse) GetAttempt() *AccountOAuthAttempt {
@@ -1037,7 +1185,7 @@ type GetAccountOAuthStatusResponse struct {
 
 func (x *GetAccountOAuthStatusResponse) Reset() {
 	*x = GetAccountOAuthStatusResponse{}
-	mi := &file_delidev_v1_account_proto_msgTypes[16]
+	mi := &file_delidev_v1_account_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1049,7 +1197,7 @@ func (x *GetAccountOAuthStatusResponse) String() string {
 func (*GetAccountOAuthStatusResponse) ProtoMessage() {}
 
 func (x *GetAccountOAuthStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_account_proto_msgTypes[16]
+	mi := &file_delidev_v1_account_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1062,7 +1210,7 @@ func (x *GetAccountOAuthStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAccountOAuthStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetAccountOAuthStatusResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_account_proto_rawDescGZIP(), []int{16}
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetAccountOAuthStatusResponse) GetAttempt() *AccountOAuthAttempt {
@@ -1087,6 +1235,151 @@ func (x *GetAccountOAuthStatusResponse) GetRequestId() string {
 }
 
 func (x *GetAccountOAuthStatusResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+// Changes future execution format without replacing the protected credential.
+type ChangeAccountApiFormatRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Mutation              *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	ApiProtocol           ApiProtocol            `protobuf:"varint,2,opt,name=api_protocol,json=apiProtocol,proto3,enum=delidev.v1.ApiProtocol" json:"api_protocol,omitempty"`
+	Alias                 string                 `protobuf:"bytes,3,opt,name=alias,proto3" json:"alias,omitempty"`
+	Enabled               bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ExcludeAutomatic      bool                   `protobuf:"varint,5,opt,name=exclude_automatic,json=excludeAutomatic,proto3" json:"exclude_automatic,omitempty"`
+	RecoveryNotifications bool                   `protobuf:"varint,6,opt,name=recovery_notifications,json=recoveryNotifications,proto3" json:"recovery_notifications,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ChangeAccountApiFormatRequest) Reset() {
+	*x = ChangeAccountApiFormatRequest{}
+	mi := &file_delidev_v1_account_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountApiFormatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountApiFormatRequest) ProtoMessage() {}
+
+func (x *ChangeAccountApiFormatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_account_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountApiFormatRequest.ProtoReflect.Descriptor instead.
+func (*ChangeAccountApiFormatRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ChangeAccountApiFormatRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ChangeAccountApiFormatRequest) GetApiProtocol() ApiProtocol {
+	if x != nil {
+		return x.ApiProtocol
+	}
+	return ApiProtocol_API_PROTOCOL_UNSPECIFIED
+}
+
+func (x *ChangeAccountApiFormatRequest) GetAlias() string {
+	if x != nil {
+		return x.Alias
+	}
+	return ""
+}
+
+func (x *ChangeAccountApiFormatRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ChangeAccountApiFormatRequest) GetExcludeAutomatic() bool {
+	if x != nil {
+		return x.ExcludeAutomatic
+	}
+	return false
+}
+
+func (x *ChangeAccountApiFormatRequest) GetRecoveryNotifications() bool {
+	if x != nil {
+		return x.RecoveryNotifications
+	}
+	return false
+}
+
+type ChangeAccountApiFormatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *Resource              `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChangeAccountApiFormatResponse) Reset() {
+	*x = ChangeAccountApiFormatResponse{}
+	mi := &file_delidev_v1_account_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChangeAccountApiFormatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChangeAccountApiFormatResponse) ProtoMessage() {}
+
+func (x *ChangeAccountApiFormatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_account_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChangeAccountApiFormatResponse.ProtoReflect.Descriptor instead.
+func (*ChangeAccountApiFormatResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_account_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ChangeAccountApiFormatResponse) GetAccount() *Resource {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *ChangeAccountApiFormatResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ChangeAccountApiFormatResponse) GetReplayed() bool {
 	if x != nil {
 		return x.Replayed
 	}
@@ -1127,7 +1420,7 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x12'\n" +
-	"\x0fvalidation_json\x18\x04 \x01(\fR\x0evalidationJson\"\xe9\x01\n" +
+	"\x0fvalidation_json\x18\x04 \x01(\fR\x0evalidationJson\"\xa5\x02\n" +
 	"\x13AccountOAuthAttempt\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x123\n" +
@@ -1136,19 +1429,27 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"expires_at\x18\x04 \x01(\tR\texpiresAt\x12\x1f\n" +
 	"\vprovider_id\x18\x05 \x01(\tR\n" +
 	"providerId\x121\n" +
-	"\aproblem\x18\x06 \x01(\v2\x17.delidev.v1.ErrorDetailR\aproblem\"o\n" +
+	"\aproblem\x18\x06 \x01(\v2\x17.delidev.v1.ErrorDetailR\aproblem\x12:\n" +
+	"\fapi_protocol\x18\a \x01(\x0e2\x17.delidev.v1.ApiProtocolR\vapiProtocol\"\xea\x01\n" +
 	"\x18StartAccountOAuthRequest\x120\n" +
 	"\bprovider\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bprovider\x12!\n" +
-	"\fcallback_url\x18\x02 \x01(\tR\vcallbackUrl\"\xbe\x01\n" +
+	"\fcallback_url\x18\x02 \x01(\tR\vcallbackUrl\x12=\n" +
+	"\x06google\x18\x03 \x01(\v2%.delidev.v1.AccountOAuthGoogleOptionsR\x06google\x12:\n" +
+	"\fapi_protocol\x18\x04 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\vapiProtocol\"\x8d\x02\n" +
 	"\x19StartAccountOAuthResponse\x129\n" +
 	"\aattempt\x18\x01 \x01(\v2\x1f.delidev.v1.AccountOAuthAttemptR\aattempt\x12+\n" +
 	"\x11authorization_url\x18\x02 \x01(\tR\x10authorizationUrl\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x04 \x01(\bR\breplayed\"~\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\x120\n" +
+	"\x04flow\x18\x05 \x01(\x0e2\x1c.delidev.v1.AccountOAuthFlowR\x04flow\x12\x1b\n" +
+	"\tuser_code\x18\x06 \x01(\tR\buserCode\"\xaf\x01\n" +
 	"\x1bCompleteAccountOAuthRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12-\n" +
-	"\x12authorization_code\x18\x02 \x01(\fR\x11authorizationCode\"M\n" +
+	"\x12authorization_code\x18\x02 \x01(\fR\x11authorizationCode\x12/\n" +
+	"\x13authorization_state\x18\x03 \x01(\fR\x12authorizationState\"E\n" +
+	"\x19AccountOAuthGoogleOptions\x12(\n" +
+	"\x10quota_project_id\x18\x01 \x01(\tR\x0equotaProjectId\"M\n" +
 	"\x19CancelAccountOAuthRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\"=\n" +
 	"\x1cGetAccountOAuthStatusRequest\x12\x1d\n" +
@@ -1171,7 +1472,23 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"\aaccount\x18\x02 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x04 \x01(\bR\breplayed*\x82\x03\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\"\xa1\x02\n" +
+	"\x1dChangeAccountApiFormatRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12:\n" +
+	"\fapi_protocol\x18\x02 \x01(\x0e2\x17.delidev.v1.ApiProtocolR\vapiProtocol\x12\x14\n" +
+	"\x05alias\x18\x03 \x01(\tR\x05alias\x12\x18\n" +
+	"\aenabled\x18\x04 \x01(\bR\aenabled\x12+\n" +
+	"\x11exclude_automatic\x18\x05 \x01(\bR\x10excludeAutomatic\x125\n" +
+	"\x16recovery_notifications\x18\x06 \x01(\bR\x15recoveryNotifications\"\x8b\x01\n" +
+	"\x1eChangeAccountApiFormatResponse\x12.\n" +
+	"\aaccount\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\aaccount\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*r\n" +
+	"\x10AccountOAuthFlow\x12\"\n" +
+	"\x1eACCOUNT_OAUTH_FLOW_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ACCOUNT_OAUTH_FLOW_PKCE\x10\x01\x12\x1d\n" +
+	"\x19ACCOUNT_OAUTH_FLOW_DEVICE\x10\x02*\x82\x03\n" +
 	"\x11AccountOAuthState\x12#\n" +
 	"\x1fACCOUNT_OAUTH_STATE_UNSPECIFIED\x10\x00\x12.\n" +
 	"*ACCOUNT_OAUTH_STATE_AWAITING_AUTHORIZATION\x10\x01\x12\"\n" +
@@ -1182,8 +1499,9 @@ const file_delidev_v1_account_proto_rawDesc = "" +
 	"\x1bACCOUNT_OAUTH_STATE_EXPIRED\x10\x06\x12\x1e\n" +
 	"\x1aACCOUNT_OAUTH_STATE_FAILED\x10\a\x12#\n" +
 	"\x1fACCOUNT_OAUTH_STATE_INTERRUPTED\x10\b\x12)\n" +
-	"%ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED\x10\t2\xa6\x06\n" +
-	"\x0eAccountService\x12W\n" +
+	"%ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED\x10\t2\x97\a\n" +
+	"\x0eAccountService\x12o\n" +
+	"\x16ChangeAccountApiFormat\x12).delidev.v1.ChangeAccountApiFormatRequest\x1a*.delidev.v1.ChangeAccountApiFormatResponse\x12W\n" +
 	"\x0eConnectAccount\x12!.delidev.v1.ConnectAccountRequest\x1a\".delidev.v1.ConnectAccountResponse\x12`\n" +
 	"\x11DisconnectAccount\x12$.delidev.v1.DisconnectAccountRequest\x1a%.delidev.v1.DisconnectAccountResponse\x12]\n" +
 	"\x10GetAccountStatus\x12#.delidev.v1.GetAccountStatusRequest\x1a$.delidev.v1.GetAccountStatusResponse\x12Z\n" +
@@ -1205,72 +1523,86 @@ func file_delidev_v1_account_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_account_proto_rawDescData
 }
 
-var file_delidev_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_delidev_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_delidev_v1_account_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_delidev_v1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_delidev_v1_account_proto_goTypes = []any{
-	(AccountOAuthState)(0),                // 0: delidev.v1.AccountOAuthState
-	(*ConnectAccountRequest)(nil),         // 1: delidev.v1.ConnectAccountRequest
-	(*ConnectAccountResponse)(nil),        // 2: delidev.v1.ConnectAccountResponse
-	(*DisconnectAccountRequest)(nil),      // 3: delidev.v1.DisconnectAccountRequest
-	(*DisconnectAccountResponse)(nil),     // 4: delidev.v1.DisconnectAccountResponse
-	(*GetAccountStatusRequest)(nil),       // 5: delidev.v1.GetAccountStatusRequest
-	(*GetAccountStatusResponse)(nil),      // 6: delidev.v1.GetAccountStatusResponse
-	(*ValidateAccountRequest)(nil),        // 7: delidev.v1.ValidateAccountRequest
-	(*ValidateAccountResponse)(nil),       // 8: delidev.v1.ValidateAccountResponse
-	(*AccountOAuthAttempt)(nil),           // 9: delidev.v1.AccountOAuthAttempt
-	(*StartAccountOAuthRequest)(nil),      // 10: delidev.v1.StartAccountOAuthRequest
-	(*StartAccountOAuthResponse)(nil),     // 11: delidev.v1.StartAccountOAuthResponse
-	(*CompleteAccountOAuthRequest)(nil),   // 12: delidev.v1.CompleteAccountOAuthRequest
-	(*CancelAccountOAuthRequest)(nil),     // 13: delidev.v1.CancelAccountOAuthRequest
-	(*GetAccountOAuthStatusRequest)(nil),  // 14: delidev.v1.GetAccountOAuthStatusRequest
-	(*CompleteAccountOAuthResponse)(nil),  // 15: delidev.v1.CompleteAccountOAuthResponse
-	(*CancelAccountOAuthResponse)(nil),    // 16: delidev.v1.CancelAccountOAuthResponse
-	(*GetAccountOAuthStatusResponse)(nil), // 17: delidev.v1.GetAccountOAuthStatusResponse
-	(*Mutation)(nil),                      // 18: delidev.v1.Mutation
-	(*Resource)(nil),                      // 19: delidev.v1.Resource
-	(*ErrorDetail)(nil),                   // 20: delidev.v1.ErrorDetail
+	(AccountOAuthFlow)(0),                  // 0: delidev.v1.AccountOAuthFlow
+	(AccountOAuthState)(0),                 // 1: delidev.v1.AccountOAuthState
+	(*ConnectAccountRequest)(nil),          // 2: delidev.v1.ConnectAccountRequest
+	(*ConnectAccountResponse)(nil),         // 3: delidev.v1.ConnectAccountResponse
+	(*DisconnectAccountRequest)(nil),       // 4: delidev.v1.DisconnectAccountRequest
+	(*DisconnectAccountResponse)(nil),      // 5: delidev.v1.DisconnectAccountResponse
+	(*GetAccountStatusRequest)(nil),        // 6: delidev.v1.GetAccountStatusRequest
+	(*GetAccountStatusResponse)(nil),       // 7: delidev.v1.GetAccountStatusResponse
+	(*ValidateAccountRequest)(nil),         // 8: delidev.v1.ValidateAccountRequest
+	(*ValidateAccountResponse)(nil),        // 9: delidev.v1.ValidateAccountResponse
+	(*AccountOAuthAttempt)(nil),            // 10: delidev.v1.AccountOAuthAttempt
+	(*StartAccountOAuthRequest)(nil),       // 11: delidev.v1.StartAccountOAuthRequest
+	(*StartAccountOAuthResponse)(nil),      // 12: delidev.v1.StartAccountOAuthResponse
+	(*CompleteAccountOAuthRequest)(nil),    // 13: delidev.v1.CompleteAccountOAuthRequest
+	(*AccountOAuthGoogleOptions)(nil),      // 14: delidev.v1.AccountOAuthGoogleOptions
+	(*CancelAccountOAuthRequest)(nil),      // 15: delidev.v1.CancelAccountOAuthRequest
+	(*GetAccountOAuthStatusRequest)(nil),   // 16: delidev.v1.GetAccountOAuthStatusRequest
+	(*CompleteAccountOAuthResponse)(nil),   // 17: delidev.v1.CompleteAccountOAuthResponse
+	(*CancelAccountOAuthResponse)(nil),     // 18: delidev.v1.CancelAccountOAuthResponse
+	(*GetAccountOAuthStatusResponse)(nil),  // 19: delidev.v1.GetAccountOAuthStatusResponse
+	(*ChangeAccountApiFormatRequest)(nil),  // 20: delidev.v1.ChangeAccountApiFormatRequest
+	(*ChangeAccountApiFormatResponse)(nil), // 21: delidev.v1.ChangeAccountApiFormatResponse
+	(*Mutation)(nil),                       // 22: delidev.v1.Mutation
+	(*Resource)(nil),                       // 23: delidev.v1.Resource
+	(*ErrorDetail)(nil),                    // 24: delidev.v1.ErrorDetail
+	(ApiProtocol)(0),                       // 25: delidev.v1.ApiProtocol
 }
 var file_delidev_v1_account_proto_depIdxs = []int32{
-	18, // 0: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	19, // 1: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
-	18, // 2: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	19, // 3: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
-	19, // 4: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
-	18, // 5: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
-	19, // 6: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
-	0,  // 7: delidev.v1.AccountOAuthAttempt.state:type_name -> delidev.v1.AccountOAuthState
-	20, // 8: delidev.v1.AccountOAuthAttempt.problem:type_name -> delidev.v1.ErrorDetail
-	18, // 9: delidev.v1.StartAccountOAuthRequest.provider:type_name -> delidev.v1.Mutation
-	9,  // 10: delidev.v1.StartAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	18, // 11: delidev.v1.CompleteAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
-	18, // 12: delidev.v1.CancelAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
-	9,  // 13: delidev.v1.CompleteAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	19, // 14: delidev.v1.CompleteAccountOAuthResponse.account:type_name -> delidev.v1.Resource
-	9,  // 15: delidev.v1.CancelAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	19, // 16: delidev.v1.CancelAccountOAuthResponse.account:type_name -> delidev.v1.Resource
-	9,  // 17: delidev.v1.GetAccountOAuthStatusResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
-	19, // 18: delidev.v1.GetAccountOAuthStatusResponse.account:type_name -> delidev.v1.Resource
-	1,  // 19: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
-	3,  // 20: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
-	5,  // 21: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
-	7,  // 22: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
-	10, // 23: delidev.v1.AccountService.StartAccountOAuth:input_type -> delidev.v1.StartAccountOAuthRequest
-	12, // 24: delidev.v1.AccountService.CompleteAccountOAuth:input_type -> delidev.v1.CompleteAccountOAuthRequest
-	13, // 25: delidev.v1.AccountService.CancelAccountOAuth:input_type -> delidev.v1.CancelAccountOAuthRequest
-	14, // 26: delidev.v1.AccountService.GetAccountOAuthStatus:input_type -> delidev.v1.GetAccountOAuthStatusRequest
-	2,  // 27: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
-	4,  // 28: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
-	6,  // 29: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
-	8,  // 30: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
-	11, // 31: delidev.v1.AccountService.StartAccountOAuth:output_type -> delidev.v1.StartAccountOAuthResponse
-	15, // 32: delidev.v1.AccountService.CompleteAccountOAuth:output_type -> delidev.v1.CompleteAccountOAuthResponse
-	16, // 33: delidev.v1.AccountService.CancelAccountOAuth:output_type -> delidev.v1.CancelAccountOAuthResponse
-	17, // 34: delidev.v1.AccountService.GetAccountOAuthStatus:output_type -> delidev.v1.GetAccountOAuthStatusResponse
-	27, // [27:35] is the sub-list for method output_type
-	19, // [19:27] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	22, // 0: delidev.v1.ConnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 1: delidev.v1.ConnectAccountResponse.account:type_name -> delidev.v1.Resource
+	22, // 2: delidev.v1.DisconnectAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 3: delidev.v1.DisconnectAccountResponse.account:type_name -> delidev.v1.Resource
+	23, // 4: delidev.v1.GetAccountStatusResponse.account:type_name -> delidev.v1.Resource
+	22, // 5: delidev.v1.ValidateAccountRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 6: delidev.v1.ValidateAccountResponse.account:type_name -> delidev.v1.Resource
+	1,  // 7: delidev.v1.AccountOAuthAttempt.state:type_name -> delidev.v1.AccountOAuthState
+	24, // 8: delidev.v1.AccountOAuthAttempt.problem:type_name -> delidev.v1.ErrorDetail
+	25, // 9: delidev.v1.AccountOAuthAttempt.api_protocol:type_name -> delidev.v1.ApiProtocol
+	22, // 10: delidev.v1.StartAccountOAuthRequest.provider:type_name -> delidev.v1.Mutation
+	14, // 11: delidev.v1.StartAccountOAuthRequest.google:type_name -> delidev.v1.AccountOAuthGoogleOptions
+	25, // 12: delidev.v1.StartAccountOAuthRequest.api_protocol:type_name -> delidev.v1.ApiProtocol
+	10, // 13: delidev.v1.StartAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
+	0,  // 14: delidev.v1.StartAccountOAuthResponse.flow:type_name -> delidev.v1.AccountOAuthFlow
+	22, // 15: delidev.v1.CompleteAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 16: delidev.v1.CancelAccountOAuthRequest.mutation:type_name -> delidev.v1.Mutation
+	10, // 17: delidev.v1.CompleteAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
+	23, // 18: delidev.v1.CompleteAccountOAuthResponse.account:type_name -> delidev.v1.Resource
+	10, // 19: delidev.v1.CancelAccountOAuthResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
+	23, // 20: delidev.v1.CancelAccountOAuthResponse.account:type_name -> delidev.v1.Resource
+	10, // 21: delidev.v1.GetAccountOAuthStatusResponse.attempt:type_name -> delidev.v1.AccountOAuthAttempt
+	23, // 22: delidev.v1.GetAccountOAuthStatusResponse.account:type_name -> delidev.v1.Resource
+	22, // 23: delidev.v1.ChangeAccountApiFormatRequest.mutation:type_name -> delidev.v1.Mutation
+	25, // 24: delidev.v1.ChangeAccountApiFormatRequest.api_protocol:type_name -> delidev.v1.ApiProtocol
+	23, // 25: delidev.v1.ChangeAccountApiFormatResponse.account:type_name -> delidev.v1.Resource
+	20, // 26: delidev.v1.AccountService.ChangeAccountApiFormat:input_type -> delidev.v1.ChangeAccountApiFormatRequest
+	2,  // 27: delidev.v1.AccountService.ConnectAccount:input_type -> delidev.v1.ConnectAccountRequest
+	4,  // 28: delidev.v1.AccountService.DisconnectAccount:input_type -> delidev.v1.DisconnectAccountRequest
+	6,  // 29: delidev.v1.AccountService.GetAccountStatus:input_type -> delidev.v1.GetAccountStatusRequest
+	8,  // 30: delidev.v1.AccountService.ValidateAccount:input_type -> delidev.v1.ValidateAccountRequest
+	11, // 31: delidev.v1.AccountService.StartAccountOAuth:input_type -> delidev.v1.StartAccountOAuthRequest
+	13, // 32: delidev.v1.AccountService.CompleteAccountOAuth:input_type -> delidev.v1.CompleteAccountOAuthRequest
+	15, // 33: delidev.v1.AccountService.CancelAccountOAuth:input_type -> delidev.v1.CancelAccountOAuthRequest
+	16, // 34: delidev.v1.AccountService.GetAccountOAuthStatus:input_type -> delidev.v1.GetAccountOAuthStatusRequest
+	21, // 35: delidev.v1.AccountService.ChangeAccountApiFormat:output_type -> delidev.v1.ChangeAccountApiFormatResponse
+	3,  // 36: delidev.v1.AccountService.ConnectAccount:output_type -> delidev.v1.ConnectAccountResponse
+	5,  // 37: delidev.v1.AccountService.DisconnectAccount:output_type -> delidev.v1.DisconnectAccountResponse
+	7,  // 38: delidev.v1.AccountService.GetAccountStatus:output_type -> delidev.v1.GetAccountStatusResponse
+	9,  // 39: delidev.v1.AccountService.ValidateAccount:output_type -> delidev.v1.ValidateAccountResponse
+	12, // 40: delidev.v1.AccountService.StartAccountOAuth:output_type -> delidev.v1.StartAccountOAuthResponse
+	17, // 41: delidev.v1.AccountService.CompleteAccountOAuth:output_type -> delidev.v1.CompleteAccountOAuthResponse
+	18, // 42: delidev.v1.AccountService.CancelAccountOAuth:output_type -> delidev.v1.CancelAccountOAuthResponse
+	19, // 43: delidev.v1.AccountService.GetAccountOAuthStatus:output_type -> delidev.v1.GetAccountOAuthStatusResponse
+	35, // [35:44] is the sub-list for method output_type
+	26, // [26:35] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_account_proto_init() }
@@ -1285,8 +1617,8 @@ func file_delidev_v1_account_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_account_proto_rawDesc), len(file_delidev_v1_account_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   17,
+			NumEnums:      2,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

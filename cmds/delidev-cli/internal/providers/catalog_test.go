@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -31,7 +32,7 @@ func TestOpenRouterCatalogPaginatesOnlyFixedAuthority(t *testing.T) {
 					return w.Result(), nil
 				}
 				query := r.URL.Query()
-				if r.URL.Path != "/api/v1/models" || len(query) != 3 || query.Get("limit") != "500" || query.Get("output_modalities") != "all" || query.Get("offset") != strconv.Itoa((calls-2)*500) {
+				if r.URL.Path != "/api/v1/models" || len(query) != 3 || query.Get("limit") != "500" || query.Get("output_modalities") != "text" || query.Get("offset") != strconv.Itoa((calls-2)*500) {
 					t.Fatal("invalid fixed pagination request")
 				}
 				start, end := (calls-2)*500, (calls-1)*500
@@ -97,7 +98,7 @@ func TestCatalogAdvisoryMetadataRejectsMalformedOrReflectedValues(t *testing.T) 
 		{"architecture": map[string]any{"output_modalities": []string{"Text"}}},
 		{"architecture": map[string]any{"input_modalities": 3}},
 		{"supported_parameters": []any{"tools", 7}},
-		{"context_length": -1}, {"context_length": "1000"},
+		{"context_length": 0}, {"context_length": -1}, {"context_length": "1000"},
 	} {
 		field["id"] = "safe-model"
 		raw, _ := json.Marshal(map[string]any{"data": []any{field}})
@@ -162,5 +163,62 @@ func TestProviderPresetsAreIndependentValidConfiguration(t *testing.T) {
 	items[0].Provider.Endpoint = "modified"
 	if Presets()[0].Provider.Endpoint == "modified" {
 		t.Fatal("editing a preset changed shared defaults")
+	}
+}
+
+func TestCatalogModelIDsPreserveAliasesAndRejectUnsafeResponses(t *testing.T) {
+	for _, protocol := range []domain.APIProtocol{domain.OpenAIChat, domain.OpenAIResponses, domain.AnthropicMessages} {
+		t.Run(string(protocol), func(t *testing.T) {
+			for _, id := range []string{"provider/model", "~anthropic/claude-opus-latest"} {
+				raw, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"id": id}}})
+				models, _, err := parseModels(raw, protocol, []byte("fixture-secret"))
+				if err != nil || len(models) != 1 || models[0].ID != id {
+					t.Fatal("model identity was rejected or rewritten", err)
+				}
+			}
+			for _, id := range []string{"", strings.Repeat("a", 257), "provider/model name", "provider/model\n", "provider/model?key=value", "~fixture-secret", "~" + base64.StdEncoding.EncodeToString([]byte("fixture-secret"))} {
+				raw, _ := json.Marshal(map[string]any{"data": []any{map[string]any{"id": "safe-first"}, map[string]any{"id": id}}})
+				models, next, err := parseModels(raw, protocol, []byte("fixture-secret"))
+				if err == nil || models != nil || next != "" {
+					t.Fatal("unsafe model response returned partial results")
+				}
+			}
+		})
+	}
+}
+
+func TestInspectionFailureDiagnosticsAreContentFree(t *testing.T) {
+	for _, tc := range []struct {
+		name, keyBody, modelsBody string
+		stage                     InspectionStage
+		reason                    InspectionReason
+	}{
+		{"credential", `{"data":{"is_free_tier":null}}`, ``, CredentialCheckStage, CredentialResponseReason},
+		{"identity", `{"data":{"is_free_tier":false}}`, `{"data":[{"id":"safe-first"},{"id":"private model content"}]}`, ModelCatalogStage, ModelIdentityReason},
+		{"metadata", `{"data":{"is_free_tier":false}}`, `{"data":[{"id":"safe-first"},{"id":"safe-second","context_length":0}]}`, ModelCatalogStage, ModelMetadataReason},
+		{"json", `{"data":{"is_free_tier":false}}`, `{"data":private-secret-content}`, ModelCatalogStage, ResponseJSONReason},
+		{"pagination", `{"data":{"is_free_tier":false}}`, `{"data":[{"id":"safe-first"}],"total_count":2}`, ModelCatalogStage, CatalogPaginationReason},
+		{"duplicate", `{"data":{"is_free_tier":false}}`, `{"data":[{"id":"~provider/latest"},{"id":"~provider/latest"}],"total_count":2}`, ModelCatalogStage, DuplicateModelReason},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: testTransport(func(r *http.Request) (*http.Response, error) {
+				w := httptest.NewRecorder()
+				if r.URL.Path == "/api/v1/key" {
+					fmt.Fprint(w, tc.keyBody)
+				} else {
+					fmt.Fprint(w, tc.modelsBody)
+				}
+				return w.Result(), nil
+			})}
+			p := domain.Provider{Name: "Router", Endpoint: "https://openrouter.ai/api/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth}
+			o := inspect(context.Background(), client, p, []byte("fixture-secret"))
+			if o.Failure != InvalidResponse || o.Stage != tc.stage || o.Reason != tc.reason || len(o.Models) != 0 {
+				t.Fatalf("unexpected safe failure classification: %+v", o)
+			}
+			raw, err := json.Marshal(o)
+			if err != nil || strings.Contains(string(raw), string(tc.stage)) || strings.Contains(string(raw), string(tc.reason)) {
+				t.Fatal("log-only diagnostics entered observation JSON")
+			}
+		})
 	}
 }

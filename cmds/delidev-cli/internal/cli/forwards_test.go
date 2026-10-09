@@ -24,7 +24,7 @@ func TestCLISessionForward(t *testing.T) {
 	ready, done := make(chan struct{}), make(chan error, 1)
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	go func() {
-		done <- server.Serve(ctx, server.Config{DataDir: root, Listen: "127.0.0.1:0", Logger: logger}, func(server.Endpoint) { close(ready) })
+		done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: logger}, func(server.Endpoint) { close(ready) })
 	}()
 	defer func() {
 		cancel()
@@ -124,6 +124,7 @@ func verifyCLIForward(t *testing.T, ctx context.Context, root, machine string, s
 	// after session creation and before this foreground command starts. Refresh
 	// only this expected conflict so the fixture still exercises the production
 	// revision guard without making the test timing-sensitive.
+	laneDeadline := time.Now().Add(10 * time.Second)
 	for attempt := 0; attempt < 4; attempt++ {
 		code, current := cliRun(t, root, []string{"session", "get", "--id", sessionID}, "")
 		if code != 0 {
@@ -149,7 +150,12 @@ func verifyCLIForward(t *testing.T, ctx context.Context, root, machine string, s
 			t.Fatal("CLI forward readiness timeout")
 		}
 		problem, isProblem := first["error"].(map[string]any)
-		if !isProblem || problem["code"] != "conflict" || problem["message"] != "The session revision changed." {
+		revisionConflict := isProblem && problem["code"] == "conflict" && problem["message"] == "The session revision changed."
+		// Worker Ready precedes its independent forwarding lane. This exact
+		// pre-admission failure commits no forward or receipt, so wait for the
+		// original lane without replaying an accepted forwarding lifetime.
+		laneNotReady := isProblem && problem["code"] == "unavailable" && problem["message"] == "The forward lifetime is unavailable."
+		if !revisionConflict && (!laneNotReady || !time.Now().Before(laneDeadline)) {
 			break
 		}
 		stop()
@@ -159,6 +165,10 @@ func verifyCLIForward(t *testing.T, ctx context.Context, root, machine string, s
 			t.Fatal("CLI stale forward attempt did not stop")
 		}
 		_ = out.Close()
+		if laneNotReady {
+			time.Sleep(25 * time.Millisecond)
+			attempt-- // Lane admission does not consume a revision-conflict retry.
+		}
 	}
 	if stop == nil {
 		t.Fatal("CLI forward did not start")

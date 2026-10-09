@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -24,6 +25,30 @@ type accountSecrets interface {
 	Get(context.Context, credentials.Ref) ([]byte, error)
 	Delete(context.Context, credentials.Ref) error
 	UnremovedReferences(context.Context, domain.ID) ([]credentials.Ref, error)
+}
+
+type credentialRuntimePhase string
+
+const (
+	credentialRuntimeOAuthStart    credentialRuntimePhase = "oauth-start"
+	credentialRuntimeOAuthExchange credentialRuntimePhase = "oauth-exchange"
+)
+
+func (s *Service) checkCredentialRuntime(ctx context.Context, phase credentialRuntimePhase) error {
+	check := s.credentialRuntimeCheck
+	if check == nil {
+		check = credentials.CheckRuntime
+	}
+	err := check(ctx)
+	if err != nil {
+		safe := domain.SafeError(err)
+		attributes := []any{"phase", phase, "error_code", safe.Code}
+		if safe.Cause == credentials.ExecutableChangedCause {
+			attributes = append(attributes, "reason", "executable_changed")
+		}
+		s.logger.WarnContext(ctx, "credential_runtime_check_failed", attributes...)
+	}
+	return err
 }
 
 func (s *Service) lockAccounts(ctx context.Context) (func(), error) {
@@ -63,10 +88,25 @@ func (s *Service) closeAccountSecrets() error {
 	if err != nil {
 		return err
 	}
-	defer unlock()
+	s.oauthClosing = true
+	for operation := range s.claudeLoginCodes {
+		s.clearClaudeLoginInput(operation)
+	}
+	for id := range s.accountChecks {
+		s.cancelAccountChecks(id)
+	}
 	for id := range s.oauthLive {
 		s.clearOAuthLive(id)
 	}
+	unlock()
+	// Start-owned Device jobs outlive their initiating RPC. Join them outside
+	// accountGate before closing the Vault or releasing the server scope.
+	s.oauthDeviceJobs.Wait()
+	unlock, err = s.lockAccounts(context.Background())
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if s.ownedVault == nil {
 		return nil
 	}
@@ -95,8 +135,9 @@ type disconnectAccountInput struct {
 	Revision uint64    `json:"revision"`
 }
 type accountReceipt struct {
-	ID           domain.ID `json:"id"`
-	CompletionID domain.ID `json:"completion_id,omitempty"`
+	ManagedSidechat *domain.SubscriptionForkFinish `json:"managed_sidechat,omitempty"`
+	ID              domain.ID                      `json:"id"`
+	CompletionID    domain.ID                      `json:"completion_id,omitempty"`
 }
 
 // Request receipts must remain comparable after a credential has been deleted.
@@ -145,15 +186,19 @@ func accountConnectPreflight(tx *store.Tx, input connectAccountInput) (domain.Ac
 	if err = provider.Validate(); err != nil {
 		return account, provider, err
 	}
+	provider, err = providers.ResolveAccountProfile(provider, account)
+	if err != nil {
+		return account, provider, err
+	}
 	if input.Keyless != (provider.Authentication == domain.KeylessAuth) || provider.Protocol == domain.NativeSubscription {
 		return account, provider, domain.Fail(domain.InvalidArgument, "The connection input does not match the provider's authentication.", "Use explicit keyless input for a keyless local provider, or supply its API key.")
 	}
 	return account, provider, nil
 }
 
-// Account provider/type and a referenced provider's authentication are immutable.
-// A validated keyless API provider therefore proves this account could never
-// stage a credential, even after connection metadata was cleared or on retry.
+// Account provider/type and its credential-owning class are immutable. Referenced
+// profiles cannot change authentication, so a keyless account never stages a
+// credential, even after connection metadata was cleared or on exact retry.
 func accountWithoutCredentials(tx *store.Tx, account domain.Account) (bool, error) {
 	if account.Type != domain.APIAccount {
 		return false, nil
@@ -169,10 +214,57 @@ func accountWithoutCredentials(tx *store.Tx, account domain.Account) (bool, erro
 	if err := provider.Validate(); err != nil {
 		return false, err
 	}
-	if account.Connection != nil && account.Connection.Authentication != provider.Authentication {
-		return false, domain.Fail(domain.RecoveryRequired, "Account authentication ownership is inconsistent.", "Preserve the account and reconcile its provider and connection metadata.")
+	provider, err = providers.ResolveAccountProfile(provider, account)
+	if err != nil {
+		return false, err
 	}
 	return provider.Authentication == domain.KeylessAuth, nil
+}
+
+// The account gate is held across this read, native proof and configuration
+// publication. Native enumeration never runs inside a SQLite transaction.
+func (s *Service) verifyAccountFormatCleanup(ctx context.Context, input ConfigurationMutation) error {
+	var proposed domain.Account
+	if err := domain.Decode(input.Document, &proposed); err != nil {
+		return err
+	}
+	changed, keyless := false, false
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		r, old, err := accountFromTx(tx, input.ID, 0)
+		if err != nil {
+			return err
+		}
+		changed = old.APIProtocol != proposed.APIProtocol
+		if !changed {
+			return nil
+		}
+		if r.Revision != input.ExpectedRevision {
+			return domain.Fail(domain.Conflict, "The account revision changed.", "Read the current account before changing its format.")
+		}
+		if err := proposed.Validate(); err != nil {
+			return err
+		}
+		if err := validateRelationships(tx, domain.AccountKind, input.ID, input.ExpectedRevision, &proposed); err != nil {
+			return err
+		}
+		keyless, err = accountWithoutCredentials(tx, old)
+		return err
+	})
+	if err != nil || !changed || keyless {
+		return err
+	}
+	vault, err := s.secrets()
+	if err != nil {
+		return err
+	}
+	refs, err := vault.UnremovedReferences(ctx, input.ID)
+	if err != nil {
+		return err
+	}
+	if len(refs) != 0 {
+		return domain.Fail(domain.Conflict, "The account retains protected credential intents.", "Disconnect and finish credential cleanup before changing its format.")
+	}
+	return nil
 }
 
 func (s *Service) accountRecord(ctx context.Context, id domain.ID) (store.Record, error) {
@@ -189,6 +281,8 @@ func commitAccountConnection(tx *store.Tx, input connectAccountInput, requestID 
 		return nil, err
 	}
 	account.Connection = &domain.AccountConnection{ID: requestID, Authentication: provider.Authentication, ConnectedAt: time.Now().UTC().Truncate(time.Millisecond)}
+	profile := provider.LegacyAPIFormat()
+	account.Connection.APIFormat = &profile
 	account.Health = domain.AccountUnverified
 	account.Validation = nil
 	account.Catalog = nil
@@ -286,6 +380,7 @@ func (s *Service) DisconnectAccount(ctx context.Context, req *connect.Request[pb
 		completionID := domain.NewID()
 		removal := &domain.AccountRemoval{RequestID: domain.ID(meta.RequestId), ExpectedRevision: input.Revision}
 		account.Connection = nil
+		account.RetainedConnections = nil
 		account.Health = domain.AccountDisconnected
 		account.Validation = nil
 		account.Catalog = nil
@@ -372,6 +467,9 @@ func (s *Service) finishAccountRemoval(ctx context.Context, accepted accountRece
 		}
 		if account.Connection != nil || account.Removal == nil || account.Removal.RequestID != requestID {
 			return nil, domain.Fail(domain.Conflict, "The account cleanup generation changed.", "Read current account status.")
+		}
+		if err := tx.RetireAccountOAuthCredentials(accepted.ID); err != nil {
+			return nil, err
 		}
 		account.Removal = nil
 		if _, err = tx.Put(domain.AccountKind, accepted.ID, record.Revision, "", "", account); err != nil {

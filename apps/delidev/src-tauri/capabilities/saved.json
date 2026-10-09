@@ -9,7 +9,12 @@
     "core:event:allow-unlisten",
     "github-presentation",
     "account-oauth",
+    "desktop-update",
+    "provider-guidance",
     "device-appearance",
+    "device-date-format",
+    "session-creation-preferences",
+    "device-language",
     "browser-presentation",
     "repository-folder",
     "worker-network"

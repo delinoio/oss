@@ -108,6 +108,7 @@ struct NestedProcessFixture {
     child: Child,
     marker: PathBuf,
     stderr: PathBuf,
+    additional_owned_groups: Vec<i32>,
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -123,6 +124,7 @@ impl NestedProcessFixture {
                 .expect("could not start nested wrapper fixture"),
             marker: marker.to_owned(),
             stderr,
+            additional_owned_groups: Vec::new(),
         }
     }
 
@@ -166,7 +168,7 @@ impl NestedProcessFixture {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 impl Drop for NestedProcessFixture {
     fn drop(&mut self) {
-        let mut groups = Vec::new();
+        let mut groups = self.additional_owned_groups.clone();
         if let Ok(contents) = fs::read_to_string(&self.marker) {
             if let Some(group) = contents
                 .split_whitespace()
@@ -738,26 +740,137 @@ fn timeout_does_not_block_on_a_stalled_output_consumer() {
 #[test]
 #[cfg(target_os = "linux")]
 fn interactive_workload_keeps_foreground_terminal_access() {
+    struct Fixture {
+        child: Child,
+        terminal: fs::File,
+        output: Vec<u8>,
+    }
+    impl Fixture {
+        fn drain(&mut self) {
+            let mut buffer = [0; 1024];
+            loop {
+                match self.terminal.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(count) => self.output.extend_from_slice(&buffer[..count]),
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+                    Err(error) => panic!("could not read fixture terminal: {error}"),
+                }
+            }
+        }
+
+        fn wait(&mut self, timeout: Duration) -> Option<ExitStatus> {
+            let deadline = Instant::now() + timeout;
+            loop {
+                self.drain();
+                if let Some(status) = self.child.try_wait().unwrap() {
+                    self.drain();
+                    return Some(status);
+                }
+                if Instant::now() >= deadline {
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if self.child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            // The retained wrapper owns cleanup of its workload on SIGTERM.
+            unsafe { libc::kill(self.child.id() as i32, libc::SIGTERM) };
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while self.child.try_wait().ok().flatten().is_none() {
+                if Instant::now() >= deadline {
+                    // Force and reap only the retained wrapper. Dropping
+                    // this fixture's PTY master then hangs up its original
+                    // controlling session and the simple shell workload.
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
     let home = tempfile::tempdir().unwrap();
-    let (wrapper, mut terminal) = terminal_command(
+    let (wrapper, terminal) = terminal_command(
         home.path(),
         &[
             "run",
             "with-timeout",
             "--timeout",
-            "1s",
+            "30s",
             "--kill-after",
             "0",
             "--",
             "sh",
             "-c",
-            "read value; printf 'reply=%s\\n' \"$value\"",
+            "printf 'terminal-ready\\n'; read value; printf 'reply=%s\\n' \"$value\"",
         ],
     );
-    let mut wrapper = spawn_terminal(wrapper);
-    terminal.write_all(b"answer\n").unwrap();
-    assert!(wrapper.wait().unwrap().success());
-    assert!(read_terminal(terminal).contains("reply=answer"));
+    use std::os::fd::AsRawFd;
+    let flags = unsafe { libc::fcntl(terminal.as_raw_fd(), libc::F_GETFL) };
+    assert_ne!(flags, -1);
+    assert_ne!(
+        unsafe {
+            libc::fcntl(
+                terminal.as_raw_fd(),
+                libc::F_SETFL,
+                flags | libc::O_NONBLOCK,
+            )
+        },
+        -1
+    );
+    let mut fixture = Fixture {
+        child: spawn_terminal(wrapper),
+        terminal,
+        output: Vec::new(),
+    };
+    // Input sent before the child starts cannot prove it retained foreground
+    // terminal access. Wait for output and the native ownership handoff first;
+    // the product timeout is only an outer guard for this interactive fixture.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let group = loop {
+        fixture.drain();
+        let group = unsafe { libc::tcgetpgrp(fixture.terminal.as_raw_fd()) };
+        if String::from_utf8_lossy(&fixture.output)
+            .lines()
+            .any(|line| line == "terminal-ready")
+            && group > 0
+            && group != fixture.child.id() as i32
+        {
+            break group;
+        }
+        let status = fixture.child.try_wait().unwrap();
+        assert!(
+            status.is_none() && Instant::now() < deadline,
+            "interactive workload was not ready: status={status:?}, output={:?}",
+            String::from_utf8_lossy(&fixture.output)
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
+    // This fixture has one direct shell, unlike the nested-chain controls.
+    // The admitted foreground leader must still be that live owned child.
+    let processes = process_snapshot();
+    let workload = processes
+        .get(&group)
+        .expect("foreground shell disappeared before terminal input");
+    assert_eq!(workload.parent, fixture.child.id() as i32);
+    assert_eq!(workload.group, group);
+    assert!(!workload.state_is_zombie);
+    fixture.terminal.write_all(b"answer\n").unwrap();
+    let status = fixture.wait(Duration::from_secs(10));
+    assert!(
+        status.is_some_and(|status| status.success()),
+        "interactive workload failed: status={status:?}, output={:?}",
+        String::from_utf8_lossy(&fixture.output)
+    );
+    assert!(String::from_utf8_lossy(&fixture.output)
+        .lines()
+        .any(|line| line == "reply=answer"));
 }
 
 #[test]
@@ -841,9 +954,10 @@ fn foreground_completion_reaps_the_interrupt_relay_without_grace_delay() {
 
 #[test]
 #[cfg(target_os = "linux")]
-fn node_launcher_counts_terminal_service_startup_interrupt_once() {
+fn node_launcher_terminal_service_interrupt_obeys_acknowledgement_window() {
     let home = tempfile::tempdir().unwrap();
     let service_started = home.path().join("node-launcher-service-started");
+    let observations = home.path().join("launcher-interrupt-events");
     let service_marker = format!("SERVICE_STARTED={}", service_started.display());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -857,7 +971,21 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         &launcher,
         concat!(
             "const { launch } = require(process.env.CLIBOX_LAUNCHER);\n",
-            "launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(2)).then(({ code }) => {\n",
+            "const { spawn } = require('node:child_process');\n",
+            "const { appendFileSync } = require('node:fs');\n",
+            "const observe = event => appendFileSync(process.env.CLIBOX_TEST_EVENTS, event + \
+             '\\n');\n",
+            "process.on('SIGINT', () => observe('interrupt'));\n",
+            "const spawnChild = (...args) => {\n",
+            "  const child = spawn(...args);\n",
+            "  child.stdio[3].on('data', bytes => { if (bytes.length) observe('ack'); });\n",
+            "  const kill = child.kill.bind(child);\n",
+            "  child.kill = signal => { if (signal === 'SIGINT') observe('forward'); return \
+             kill(signal); };\n",
+            "  return child;\n",
+            "};\n",
+            "launch(process.env.CLIBOX_TEST_BINARY, process.argv.slice(2), { spawnChild \
+             }).then(({ code }) => {\n",
             "  process.exitCode = code ?? 1;\n",
             "});\n",
         ),
@@ -877,7 +1005,8 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
             &service_marker,
             "sh",
             "-c",
-            "trap '' TERM; : > \"$SERVICE_STARTED\"; while :; do :; done",
+            "trap '' TERM; printf '%s %s\\n' \"$$\" \"$(ps -o pgid= -p $$)\" > \
+             \"$SERVICE_STARTED\"; while :; do :; done",
             "--",
             "sh",
             "-c",
@@ -885,24 +1014,36 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         ])
         .env("HOME", home.path())
         .env("XDG_STATE_HOME", home.path().join("state"))
+        .env("CLIBOX_TEST_EVENTS", &observations)
         .env("CLIBOX_LAUNCHER", clibox_launcher)
         .env("CLIBOX_TEST_BINARY", env!("CARGO_BIN_EXE_clibox"));
     let (launcher, mut terminal) = terminal_process_command(node, false);
     let mut launcher = spawn_terminal(launcher);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let early_status = loop {
-        if service_started.is_file() {
-            break None;
+    let (service_group, early_status) = loop {
+        let service_group = fs::read_to_string(&service_started)
+            .ok()
+            .and_then(|identity| {
+                if !identity.ends_with('\n') {
+                    return None;
+                }
+                let mut fields = identity.split_whitespace();
+                let pid = fields.next()?.parse::<i32>().ok()?;
+                let group = fields.next()?.parse::<i32>().ok()?;
+                (pid > 0 && group > 0 && fields.next().is_none()).then_some(group)
+            });
+        if service_group.is_some() {
+            break (service_group, None);
         }
         if let Some(status) = launcher.try_wait().unwrap() {
-            break Some(status);
+            break (None, Some(status));
         }
         if std::time::Instant::now() >= deadline {
-            break None;
+            break (None, None);
         }
         thread::sleep(Duration::from_millis(10));
     };
-    if !service_started.is_file() {
+    if service_group.is_none() {
         let status = early_status.unwrap_or_else(|| {
             let _ = unsafe { libc::kill(-(launcher.id() as libc::pid_t), libc::SIGKILL) };
             launcher.wait().unwrap()
@@ -913,15 +1054,73 @@ fn node_launcher_counts_terminal_service_startup_interrupt_once() {
         );
     }
 
+    let service_group = service_group.unwrap();
     let interrupted_at = std::time::Instant::now();
     terminal.write_all(&[3]).unwrap();
-    let status = launcher.wait().unwrap();
+    let status = loop {
+        if let Some(status) = launcher.try_wait().unwrap() {
+            break status;
+        }
+        if interrupted_at.elapsed() >= Duration::from_secs(5) {
+            // Both process groups belong solely to this fixture. Bound failure
+            // cleanup as well as the successful acknowledgement branches.
+            unsafe {
+                libc::kill(-(launcher.id() as libc::pid_t), libc::SIGKILL);
+                libc::kill(-service_group, libc::SIGKILL);
+            }
+            launcher.wait().unwrap();
+            assert_process_group_stopped(service_group);
+            panic!("terminal interrupt did not finish within the fixture budget");
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
 
     assert_eq!(status.code(), Some(130), "{status:?}");
-    assert!(
-        interrupted_at.elapsed() >= Duration::from_millis(350),
-        "one terminal Ctrl+C skipped the configured service cleanup grace"
+    // Kernel terminal delivery reaches Node and the native handler
+    // independently. The ACK may arrive before Node opens its 10ms pending
+    // window, or after its timer expires. Both are intentionally uncredited:
+    // a recorded fallback forwards SIGINT and may skip native cleanup grace.
+    // Never require scheduling order or reintroduce stale ACK credits here.
+    let events = fs::read_to_string(&observations).unwrap();
+    let events: Vec<_> = events.lines().collect();
+    assert_eq!(
+        events.iter().filter(|event| **event == "interrupt").count(),
+        1,
+        "{events:?}"
     );
+    let interrupt = events
+        .iter()
+        .position(|event| *event == "interrupt")
+        .unwrap();
+    if let Some(forward) = events.iter().position(|event| *event == "forward") {
+        assert!(
+            forward > interrupt,
+            "fallback preceded the Node interrupt: {events:?}"
+        );
+        assert!(
+            !events[interrupt + 1..forward].contains(&"ack"),
+            "an ACK inside the pending window was not credited: {events:?}"
+        );
+        assert_eq!(
+            events.iter().filter(|event| **event == "forward").count(),
+            1,
+            "{events:?}"
+        );
+    } else {
+        assert!(
+            events[interrupt + 1..].contains(&"ack"),
+            "missing early ACK: {events:?}"
+        );
+        assert!(
+            interrupted_at.elapsed() >= Duration::from_millis(350),
+            "acknowledged interrupt skipped service cleanup grace: {events:?}"
+        );
+    }
+    assert!(
+        interrupted_at.elapsed() < Duration::from_secs(5),
+        "cleanup exceeded fixture budget: {events:?}"
+    );
+    assert_process_group_stopped(service_group);
 }
 
 #[test]
@@ -1116,40 +1315,46 @@ fn caller_marker_cannot_disable_root_descendant_cleanup() {
     let home = tempfile::tempdir().unwrap();
     let marker = home.path().join("caller-marker-descendant-pid");
     let assignment = format!("MARKER={}", marker.display());
-    let output = command(
+    let mut command = command(
         home.path(),
         &[
             "run",
             "with-timeout",
             "--timeout",
-            "50ms",
+            "30s",
             "--kill-after",
             "0",
             &assignment,
             "--",
             "sh",
             "-c",
-            "sleep 30 & echo $! > \"$MARKER\"; wait",
+            "sleep 30 & pid=$!; printf '%s %s\\n' \"$pid\" \"$(ps -o pgid= -p \"$pid\")\" > \
+             \"$MARKER\"; wait",
         ],
-    )
-    .env("CLIBOX_RUN_PARENT_WRAPPER", "1")
-    .output()
-    .unwrap();
-    assert_eq!(output.status.code(), Some(124));
-    let pid = fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse::<i32>()
-        .unwrap();
-    for _ in 0..50 {
-        if unsafe { libc::kill(pid, 0) } == -1
-            && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        {
-            return;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    panic!("caller marker disabled owned descendant cleanup");
+    );
+    command.env("CLIBOX_RUN_PARENT_WRAPPER", "1");
+    let mut fixture = NestedProcessFixture::new(command, &marker);
+    // This tests ownership, not startup speed. Observe the live descendant
+    // before triggering cleanup; a short overall deadline can legitimately
+    // expire before a busy CI host schedules its PID publication.
+    let (workload, group) = fixture.workload(Duration::from_secs(8)).unwrap_or_else(|| {
+        panic!(
+            "caller-marker workload did not start; wrapper status: {:?}; stderr: {}",
+            fixture.child.try_wait(),
+            fixture.stderr()
+        )
+    });
+    assert_process_chain_in_group(fixture.child.id(), workload, group);
+    assert_eq!(
+        unsafe { libc::kill(fixture.child.id() as i32, libc::SIGTERM) },
+        0,
+        "could not cancel caller-marker wrapper"
+    );
+    let status = fixture
+        .wait(Duration::from_secs(5))
+        .expect("caller-marker wrapper did not return after SIGTERM");
+    assert_eq!(status.code(), Some(143));
+    assert_process_group_stopped(group);
 }
 
 #[test]
@@ -1809,25 +2014,123 @@ fn external_service_is_observed_without_becoming_owned() {
     server.join().unwrap();
 }
 
+fn read_request_headers(stream: &mut std::net::TcpStream) -> std::io::Result<bool> {
+    // Darwin inherits the listener's nonblocking mode on accept. A reply
+    // before complete request headers can reset the client connection and
+    // turn an expected 503 into an unintended transport failure.
+    stream.set_nonblocking(false)?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+    let mut request = [0u8; 4096];
+    let mut received = 0;
+    loop {
+        if received == request.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "readiness fixture request headers exceeded their bound",
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(false);
+        }
+        stream.set_read_timeout(Some(remaining))?;
+        match stream.read(&mut request[received..]) {
+            Ok(0) => return Ok(false),
+            Ok(count) => received += count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        }
+        if request[..received]
+            .windows(4)
+            .any(|part| part == b"\r\n\r\n")
+        {
+            return Ok(true);
+        }
+    }
+}
+
+struct ReadinessFixture {
+    worker: Option<thread::JoinHandle<std::io::Result<Vec<Instant>>>>,
+    stopped: Arc<AtomicBool>,
+}
+
+impl ReadinessFixture {
+    fn new(listener: TcpListener) -> Self {
+        let stopped = Arc::new(AtomicBool::new(false));
+        let worker_stop = stopped.clone();
+        Self {
+            worker: Some(thread::spawn(move || {
+                serve_readiness_sequence(listener, worker_stop)
+            })),
+            stopped,
+        }
+    }
+
+    fn finish(mut self) -> Vec<Instant> {
+        self.worker.take().unwrap().join().unwrap().unwrap()
+    }
+}
+
+impl Drop for ReadinessFixture {
+    fn drop(&mut self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        if let Some(worker) = self.worker.take() {
+            // Accept polls cancellation; an accepted stream has bounded I/O.
+            // Join even when a wrapper assertion or spawn fails.
+            let _ = worker.join();
+        }
+    }
+}
+
+fn serve_readiness_sequence(
+    listener: TcpListener,
+    stopped: Arc<AtomicBool>,
+) -> std::io::Result<Vec<Instant>> {
+    listener.set_nonblocking(true)?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut observed = Vec::new();
+    for status in ["503 Service Unavailable", "204 No Content"] {
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if stopped.load(Ordering::SeqCst) || Instant::now() >= deadline {
+                        return Err(std::io::ErrorKind::TimedOut.into());
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        observed.push(Instant::now());
+        if !read_request_headers(&mut stream)? {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        stream.write_all(
+            format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )?;
+    }
+    Ok(observed)
+}
+
 #[test]
 fn external_service_waits_after_an_unready_preflight() {
     let home = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let (observed_tx, observed_rx) = std::sync::mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        let mut observed = Vec::new();
-        for status in ["503 Service Unavailable", "204 No Content"] {
-            let (mut stream, _) = listener.accept().unwrap();
-            observed.push(std::time::Instant::now());
-            let mut request = [0u8; 1024];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
-                .unwrap();
-        }
-        observed_tx.send(observed).unwrap();
-    });
+    let server = ReadinessFixture::new(listener);
     let output = command(
         home.path(),
         &[
@@ -1842,15 +2145,15 @@ fn external_service_waits_after_an_unready_preflight() {
             "exit 0",
         ],
     )
+    .env("RUST_LOG", "debug")
     .output()
     .unwrap();
     assert!(output.status.success(), "{output:?}");
-    let observed = observed_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let observed = server.finish();
     assert!(
         observed[1].saturating_duration_since(observed[0]) >= Duration::from_millis(80),
         "the second probe did not honor the configured interval: {observed:?}"
     );
-    server.join().unwrap();
 }
 
 #[test]
@@ -1947,47 +2250,6 @@ fn managed_service_forwards_shutdown_output_before_success() {
 
 #[test]
 fn managed_service_forwards_shutdown_output_before_readiness_timeout() {
-    fn read_request_headers(stream: &mut std::net::TcpStream) -> std::io::Result<bool> {
-        // Darwin inherits the listener's nonblocking mode on accept. A reply
-        // before complete request headers can reset the client connection and
-        // turn an expected 503 into an unintended transport failure.
-        stream.set_nonblocking(false)?;
-        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(3)))?;
-        let mut request = [0u8; 4096];
-        let mut received = 0;
-        loop {
-            if received == request.len() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "readiness fixture request headers exceeded their bound",
-                ));
-            }
-            match stream.read(&mut request[received..]) {
-                Ok(0) => return Ok(false),
-                Ok(count) => received += count,
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::ConnectionReset
-                            | std::io::ErrorKind::TimedOut
-                            | std::io::ErrorKind::WouldBlock
-                    ) =>
-                {
-                    return Ok(false);
-                }
-                Err(error) => return Err(error),
-            }
-            if request[..received]
-                .windows(4)
-                .any(|part| part == b"\r\n\r\n")
-            {
-                return Ok(true);
-            }
-        }
-    }
-
     fn respond_not_ready(mut stream: std::net::TcpStream) -> std::io::Result<bool> {
         if !read_request_headers(&mut stream)? {
             return Ok(false);
@@ -2343,17 +2605,10 @@ fn second_cancellation_forces_both_managed_service_trees() {
     let workload_marker = format!("WORKLOAD_STARTED={}", workload_started.display());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        for status in ["503 Service Unavailable", "204 No Content"] {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0u8; 1024];
-            let _ = stream.read(&mut request);
-            stream
-                .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
-                .unwrap();
-        }
-    });
-    let mut wrapper = command(
+    let service_stopped = home.path().join("service-term-observed");
+    let workload_stopped = home.path().join("workload-term-observed");
+    let server = ReadinessFixture::new(listener);
+    let mut wrapper_command = command(
         home.path(),
         &[
             "run",
@@ -2362,23 +2617,26 @@ fn second_cancellation_forces_both_managed_service_trees() {
             "--interval",
             "10ms",
             "--kill-after",
-            "2s",
+            "10s",
             "--service",
             &service_marker,
             "sh",
             "-c",
-            ": > \"$SERVICE_STARTED\"; trap '' TERM; while :; do :; done",
+            "trap ': > \"$SERVICE_STOPPED\"' TERM; printf '%s %s\\n' \"$$\" \"$(ps -o pgid= -p \
+             $$)\" > \"$SERVICE_STARTED\"; while :; do sleep 0.05; done",
             "--",
             &workload_marker,
             "sh",
             "-c",
-            ": > \"$WORKLOAD_STARTED\"; trap '' TERM; while :; do :; done",
+            "trap ': > \"$WORKLOAD_STOPPED\"' TERM; printf '%s %s\\n' \"$$\" \"$(ps -o pgid= -p \
+             $$)\" > \"$WORKLOAD_STARTED\"; while :; do sleep 0.05; done",
         ],
-    )
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .spawn()
-    .unwrap();
+    );
+    wrapper_command
+        .env("SERVICE_STOPPED", &service_stopped)
+        .env("WORKLOAD_STOPPED", &workload_stopped)
+        .env("RUST_LOG", "debug");
+    let mut wrapper = NestedProcessFixture::new(wrapper_command, &workload_started);
     let started_deadline = std::time::Instant::now() + Duration::from_secs(5);
     while (!service_started.is_file() || !workload_started.is_file())
         && std::time::Instant::now() < started_deadline
@@ -2390,18 +2648,72 @@ fn second_cancellation_forces_both_managed_service_trees() {
         "managed service and workload did not start before cancellation"
     );
 
-    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
-    thread::sleep(Duration::from_millis(100));
+    let (workload_pid, workload_group) = wrapper.workload(Duration::from_secs(5)).unwrap();
+    let workload_identity = process_snapshot()[&workload_pid];
+    assert_eq!(workload_identity.parent, wrapper.child.id() as i32);
+    assert_eq!(workload_identity.group, workload_group);
+    assert!(!workload_identity.state_is_zombie);
+    let identity_deadline = Instant::now() + Duration::from_secs(5);
+    let (service_pid, service_group) = loop {
+        if let Ok(identity) = fs::read_to_string(&service_started) {
+            let mut fields = identity.split_whitespace();
+            if let Some((pid, group)) = fields.next().zip(fields.next()) {
+                if let (Ok(pid), Ok(group)) = (pid.parse(), group.parse()) {
+                    break (pid, group);
+                }
+            }
+        }
+        assert!(
+            Instant::now() < identity_deadline,
+            "service did not publish complete process identity"
+        );
+        thread::sleep(Duration::from_millis(5));
+    };
+    let service_identity = process_snapshot()[&service_pid];
+    assert_eq!(service_identity.parent, wrapper.child.id() as i32);
+    assert_eq!(service_identity.group, service_group);
+    assert!(!service_identity.state_is_zombie);
+    // Preserve both admitted original groups for panic cleanup after the
+    // wrapper has been reaped, when parent inspection can no longer find them.
+    wrapper.additional_owned_groups.push(service_group);
+
+    assert_eq!(
+        unsafe { libc::kill(wrapper.child.id() as i32, libc::SIGINT) },
+        0
+    );
+    // A delivered first interrupt is not evidence that cleanup has started.
+    // Wait for both original children to acknowledge TERM before escalating.
+    let acknowledged_deadline = Instant::now() + Duration::from_secs(5);
+    while (!service_stopped.is_file() || !workload_stopped.is_file())
+        && Instant::now() < acknowledged_deadline
+    {
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        service_stopped.is_file() && workload_stopped.is_file(),
+        "first cancellation did not reach both trees: {}",
+        wrapper.stderr()
+    );
     let forced_at = std::time::Instant::now();
-    assert_eq!(unsafe { libc::kill(wrapper.id() as i32, libc::SIGINT) }, 0);
-    let status = wrapper.wait().unwrap();
+    assert_eq!(
+        unsafe { libc::kill(wrapper.child.id() as i32, libc::SIGINT) },
+        0
+    );
+    let status = wrapper.wait(Duration::from_secs(5)).unwrap_or_else(|| {
+        panic!(
+            "second cancellation did not skip the remaining ten-second grace: {}",
+            wrapper.stderr()
+        )
+    });
 
     assert_eq!(status.code(), Some(130), "{status:?}");
     assert!(
-        forced_at.elapsed() < Duration::from_secs(1),
+        forced_at.elapsed() < Duration::from_secs(5),
         "second cancellation waited for a new managed-service grace interval"
     );
-    server.join().unwrap();
+    assert_process_group_stopped(workload_group);
+    assert_process_group_stopped(service_group);
+    server.finish();
 }
 
 #[test]

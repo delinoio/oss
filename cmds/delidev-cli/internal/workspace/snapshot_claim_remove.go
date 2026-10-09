@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path"
@@ -38,6 +39,14 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	stage = "claim-journal"
 	claim, pending, removed, err := m.readRemovalClaimState(r, raw)
 	if err != nil {
+		return ResultUncertain()
+	}
+	// A final-root transition has its own namespace and original proof. Never
+	// restart child removal or adopt the old public name once it exists.
+	if _, err := os.Lstat(m.finalRemovalClaimPath(r.OperationID)); err == nil {
+		stage = "final-root-recovery"
+		return m.finishFinalRootRemoval(ctx, r, claim)
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return ResultUncertain()
 	}
 	stage = "root-identity"
@@ -324,12 +333,18 @@ func (m *Manager) removeClaimedSnapshotTree(ctx context.Context, r StorageReques
 	if err != nil || identity != claim.RootIdentity || statErr != nil || rootInfo.Mode() != removalWritableDirectoryMode() {
 		return ResultUncertain()
 	}
-	root.Close()
-	stage = "root-unlink"
-	if err := os.Remove(removal); err != nil {
+	file, err = root.Open(".")
+	if err != nil {
 		return ResultUncertain()
 	}
-	return security.SyncParent(removal)
+	names, readErr := file.Readdirnames(1)
+	file.Close()
+	if len(names) != 0 || readErr != io.EOF {
+		return ResultUncertain()
+	}
+	root.Close()
+	stage = "final-root-claim"
+	return m.claimFinalRemovalRoot(ctx, r, claim)
 }
 
 func verifyRemovalEntry(ctx context.Context, parent *os.Root, name string, before os.FileInfo, entry snapshotEntry, buffer []byte) error {

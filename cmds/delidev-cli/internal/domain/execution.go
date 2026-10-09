@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
+	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
 	SidechatPolicy      SidechatPolicy          `json:"sidechat_policy,omitempty"`
 	AgentID             ID                      `json:"agent_id"`
 	AgentRevision       uint64                  `json:"agent_revision"`
@@ -90,7 +91,7 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 		}
 		parts[i] = template.Contents
 	}
-	result = ExecutionConfiguration{AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
+	result = ExecutionConfiguration{ImageInputDeclared: agent.Harness == Codex && slices.Contains(model.InputModalities, "image"), AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
 	if agent.Harness == GrokBuild && model.ContextLimit != nil {
 		result.GrokContext = &GrokModelContext{Tokens: *model.ContextLimit, Source: model.MetadataSource}
 		if err := result.GrokContext.Validate(); err != nil {
@@ -128,11 +129,8 @@ func (c ExecutionConfiguration) Validate() error {
 	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {
 		return Fail(RecoveryRequired, "Invalid retained subscription identity.", "Preserve the original snapshot; create a new explicitly configured session.")
 	}
-	if c.Subscription && c.Harness != Codex {
-		return Fail(Unsupported, "Only Codex has a managed subscription execution profile.", "Keep other harnesses on their separately supported API profiles.")
-	}
-	if c.Subscription && c.Options.Permission != PermissionReadOnly && c.Options.Permission != PermissionWorkspaceWrite {
-		return Fail(Unsupported, "Managed subscription execution requires an explicit bounded native sandbox.", "Choose read-only or workspace-write permissions; default and full-access execution cannot protect the managed authentication file from native tools.")
+	if c.Subscription && c.Harness != Codex && (c.Harness != ClaudeCode || c.SubscriptionService != SubscriptionClaude) {
+		return Fail(Unsupported, "This harness has no subscription execution profile.", "Select a supported native subscription profile.")
 	}
 	if c.OpenCodeContext != nil && (c.Harness != OpenCode || c.OpenCodeContext.Validate() != nil) {
 		return Fail(RecoveryRequired, "The retained OpenCode context metadata is invalid.", "Preserve the original model selection and metadata provenance.")
@@ -146,6 +144,12 @@ func (c ExecutionConfiguration) Validate() error {
 	}
 	agent := Agent{Name: "Retained configuration", Harness: c.Harness, ModelID: c.ModelID, Effort: c.Effort, Options: c.Options, Accounts: c.Accounts, Routing: &c.Routing, Templates: ids}
 	model := Model{Name: "Retained model", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{c.Harness}, MetadataSource: Unknown}
+	if c.ImageInputDeclared {
+		if c.Harness != Codex {
+			return UnsupportedImageInput()
+		}
+		model.InputModalities = []string{"image"}
+	}
 	if c.SubscriptionService != "" {
 		model.SourceKind, model.SubscriptionService = SubscriptionModel, c.SubscriptionService
 	}
@@ -156,7 +160,7 @@ func (c ExecutionConfiguration) Validate() error {
 	if resolved.Instructions != c.Instructions {
 		return Fail(RecoveryRequired, "Retained instructions do not match their ordered templates.", "Reconcile the immutable first-execution configuration.")
 	}
-	return nil
+	return c.ValidateNativeOptions()
 }
 
 type NativeReferenceKind string

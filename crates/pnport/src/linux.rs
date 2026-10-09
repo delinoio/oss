@@ -35,7 +35,10 @@ use pnport::{
     view::{DirectoryEntry, PathKind, Translation, View},
 };
 
-use crate::input_watch::InputWatch;
+use crate::{
+    input_watch::InputWatch,
+    linux_scratch::{private_fork_space, ScratchSpace, SpawnScratch},
+};
 
 const LAUNCH_ARG: &str = "__pnport_linux_launch";
 const PROBE_ARG: &str = "__pnport_linux_probe";
@@ -105,6 +108,10 @@ const SYS_DUP2: i64 = -1;
 const SYS_FUTIMESAT: i64 = libc::SYS_futimesat;
 #[cfg(target_arch = "aarch64")]
 const SYS_FUTIMESAT: i64 = -1;
+#[cfg(target_arch = "x86_64")]
+const SYS_FORK: i64 = libc::SYS_fork;
+#[cfg(target_arch = "aarch64")]
+const SYS_FORK: i64 = -1;
 
 fn unsupported(message: &'static str) -> Error {
     Error::new(Code::PnportUnsupportedOperation, message)
@@ -311,6 +318,7 @@ fn traced_syscalls() -> Vec<i64> {
     #[cfg(target_arch = "x86_64")]
     calls.extend([
         libc::SYS_vfork,
+        libc::SYS_fork,
         libc::SYS_open,
         libc::SYS_stat,
         libc::SYS_lstat,
@@ -1082,7 +1090,19 @@ fn write_remote(pid: i32, address: u64, bytes: &[u8]) -> Result<()> {
         iov_base: address as usize as *mut c_void,
         iov_len: bytes.len(),
     };
-    if unsafe { libc::process_vm_writev(pid, &local, 1, &remote, 1, 0) } != bytes.len() as isize {
+    let written = unsafe { libc::process_vm_writev(pid, &local, 1, &remote, 1, 0) };
+    let native_errno = (written < 0)
+        .then(|| io::Error::last_os_error().raw_os_error())
+        .flatten();
+    if written != bytes.len() as isize {
+        tracing::error!(
+            action = "linux_remote_write_failure",
+            pid,
+            requested_bytes = bytes.len(),
+            written_bytes = written,
+            native_errno,
+            "Owned tracee memory write was incomplete"
+        );
         return Err(injection_failed());
     }
     Ok(())
@@ -1252,12 +1272,6 @@ struct ScratchSlot {
     borrowed: bool,
 }
 
-#[derive(Default)]
-struct ScratchSpace {
-    all: Vec<u64>,
-    free: Vec<u64>,
-}
-
 struct Trace<'a> {
     view: &'a mut View,
     tasks: HashSet<i32>,
@@ -1281,7 +1295,7 @@ struct Trace<'a> {
     task_spaces: HashMap<i32, u64>,
     spaces: HashMap<u64, ScratchSpace>,
     next_space: u64,
-    spawn_vm: HashMap<i32, bool>,
+    spawn_scratch: HashMap<i32, SpawnScratch>,
     watch: InputWatch,
     active_markers: HashSet<PathBuf>,
     root: i32,
@@ -1745,22 +1759,16 @@ impl Trace<'_> {
             .ok_or_else(injection_failed)
     }
 
-    fn new_space(&mut self, inherited: Vec<u64>) -> Result<u64> {
+    fn new_space(&mut self, state: ScratchSpace) -> Result<u64> {
         let id = self.next_space;
         self.next_space = id.checked_add(1).ok_or_else(injection_failed)?;
-        self.spaces.insert(
-            id,
-            ScratchSpace {
-                free: inherited.clone(),
-                all: inherited,
-            },
-        );
+        self.spaces.insert(id, state);
         Ok(id)
     }
 
     fn release_task_space(&mut self, pid: i32) {
         self.scratch_pending.remove(&pid);
-        self.spawn_vm.remove(&pid);
+        self.spawn_scratch.remove(&pid);
         let space = self.task_spaces.remove(&pid);
         if let (Some(space), Some(slot)) = (space, self.scratch.remove(&pid)) {
             if !slot.borrowed {
@@ -1782,6 +1790,7 @@ impl Trace<'_> {
         child: i32,
         shares_vm: bool,
         vfork: bool,
+        spawn: Option<SpawnScratch>,
     ) -> Result<()> {
         let parent_space = *self.task_spaces.get(&parent).ok_or_else(injection_failed)?;
         if shares_vm {
@@ -1799,14 +1808,17 @@ impl Trace<'_> {
                 );
             }
         } else {
-            // fork copies existing mappings into a private mm. Every copied
-            // slot is available to the child independently of the parent.
-            let inherited = self
-                .spaces
-                .get(&parent_space)
-                .ok_or_else(injection_failed)?
-                .all
-                .clone();
+            // Use only mappings published before the creating syscall ran.
+            // Other threads may complete mmap after the kernel copied this mm
+            // but before waitpid delivers the parent's fork event.
+            let inherited = private_fork_space(parent_space, spawn).ok_or_else(injection_failed)?;
+            tracing::debug!(
+                action = "linux_scratch_fork_inventory",
+                parent,
+                child,
+                inherited_mappings = inherited.all.len(),
+                "Installing the pre-creation scratch inventory"
+            );
             let space = self.new_space(inherited)?;
             self.task_spaces.insert(child, space);
         }
@@ -3149,8 +3161,14 @@ impl Trace<'_> {
             }
             return resume(pid, false, 0);
         }
-        if call == libc::SYS_clone || call == libc::SYS_clone3 || call == libc::SYS_unshare {
-            let flags = if call == libc::SYS_clone3 {
+        if call == libc::SYS_clone
+            || call == libc::SYS_clone3
+            || call == libc::SYS_unshare
+            || call == SYS_FORK
+        {
+            let flags = if call == SYS_FORK {
+                0
+            } else if call == libc::SYS_clone3 {
                 if argument(&regs, 1) < mem::size_of::<u64>() as u64 {
                     return resume(pid, false, 0);
                 }
@@ -3189,8 +3207,20 @@ impl Trace<'_> {
                 ));
             }
             if call != libc::SYS_unshare {
-                self.spawn_vm
-                    .insert(pid, flags & libc::CLONE_VM as u64 != 0);
+                let space = self.task_spaces.get(&pid).ok_or_else(injection_failed)?;
+                let state = self.spaces.get(space).ok_or_else(injection_failed)?;
+                tracing::debug!(
+                    action = "linux_scratch_spawn_admission",
+                    pid,
+                    space = *space,
+                    shares_vm = flags & libc::CLONE_VM as u64 != 0,
+                    completed_mappings = state.all.len(),
+                    "Freezing completed scratch before child creation"
+                );
+                self.spawn_scratch.insert(
+                    pid,
+                    SpawnScratch::capture(*space, flags & libc::CLONE_VM as u64 != 0, state),
+                );
                 // The exit stop clears failed clones as well as successful
                 // calls after their fork/clone event consumed these flags.
                 self.pending.insert(pid, Pending::Ordinary);
@@ -3378,7 +3408,7 @@ impl Trace<'_> {
             return resume(pid, false, 0);
         };
         self.dup_reservations.remove(&pid);
-        self.spawn_vm.remove(&pid);
+        self.spawn_scratch.remove(&pid);
         let mut regs = registers(pid)?;
         let returned = result(&regs);
         let group = Self::group(pid);
@@ -3872,7 +3902,7 @@ impl Trace<'_> {
                 }
                 let child = created as i32;
                 if self.reaped_early.remove(&child) {
-                    self.spawn_vm.remove(&pid);
+                    self.spawn_scratch.remove(&pid);
                     tracing::debug!(
                         action = "linux_reaped_early_child",
                         child,
@@ -3888,13 +3918,16 @@ impl Trace<'_> {
                 }
                 let parent_group = Self::group(pid);
                 let child_group = Self::group(child);
-                let spawn_vm = self.spawn_vm.remove(&pid);
+                let spawn = self.spawn_scratch.remove(&pid);
+                if let Some(spawn) = &spawn {
+                    if self.task_spaces.get(&pid) != Some(&spawn.parent_space) {
+                        return Err(injection_failed());
+                    }
+                }
                 let shares_vm = if event == libc::PTRACE_EVENT_VFORK {
                     true
-                } else if event == libc::PTRACE_EVENT_CLONE {
-                    spawn_vm.ok_or_else(injection_failed)?
                 } else {
-                    spawn_vm.unwrap_or(false)
+                    spawn.as_ref().ok_or_else(injection_failed)?.shares_vm
                 };
                 if child_group == parent_group && !shares_vm {
                     return Err(injection_failed());
@@ -3904,6 +3937,7 @@ impl Trace<'_> {
                     child,
                     shares_vm,
                     event == libc::PTRACE_EVENT_VFORK,
+                    spawn,
                 )?;
                 self.groups.insert(child, child_group);
                 if child_group != parent_group {
@@ -3962,7 +3996,7 @@ impl Trace<'_> {
                 self.pending.remove(&pid);
                 self.dup_reservations.remove(&pid);
                 self.release_task_space(pid);
-                let space = self.new_space(Vec::new())?;
+                let space = self.new_space(ScratchSpace::default())?;
                 self.task_spaces.insert(pid, space);
                 if pid == self.root {
                     self.root_exec = true;
@@ -4090,7 +4124,7 @@ pub fn run_traced(view: &mut View, prepared: &Prepared, node_options: &OsStr) ->
         task_spaces: HashMap::from([(pid, 0)]),
         spaces: HashMap::from([(0, ScratchSpace::default())]),
         next_space: 1,
-        spawn_vm: HashMap::new(),
+        spawn_scratch: HashMap::new(),
         watch: InputWatch::default(),
         active_markers: HashSet::new(),
         root: pid,

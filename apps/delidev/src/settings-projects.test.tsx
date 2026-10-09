@@ -18,7 +18,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 type Page = { resources: Resource[]; nextPageToken?: string };
-function fixture(resources: Resource[] = []) {
+const creationRepository = resource(EntityKind.REPOSITORY, { name: "Fixture repository" });
+function fixture(resources: Resource[] = [creationRepository]) {
   const list = vi.fn(async (kind: EntityKind, _page: string): Promise<Page> => ({ resources: resources.filter(row => row.kind === kind) }));
   const get = vi.fn(async (id: string) => ({ resource: resources.find(row => row.id === id) }));
   const save = vi.fn(async (request: { documentJson: Uint8Array }) => ({ resource: resource(EntityKind.PROJECT, JSON.parse(new TextDecoder().decode(request.documentJson))) }));
@@ -37,6 +38,13 @@ function openProjects(value: ReturnType<typeof fixture>) {
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
 }
 function decoded(request: unknown) { return JSON.parse(new TextDecoder().decode((request as { documentJson: Uint8Array }).documentJson)); }
+async function configureProject(name: string) {
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Fixture repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), { target: { value: name } });
+  fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: creationRepository.id } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+}
 
 it("shows final first-page emptiness with exact help, one create action and no pagination", async () => {
   const value = fixture(); openProjects(value);
@@ -46,16 +54,17 @@ it("shows final first-page emptiness with exact help, one create action and no p
   expect(screen.getAllByRole("button", { name: "New Project" })).toHaveLength(1);
   expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
 });
-it("keeps empty continuation and later pages navigable without claiming final emptiness", async () => {
-  const value = fixture(); value.list.mockImplementation(async (_kind, page) => page ? { resources: [] } : { resources: [], nextPageToken: "projects-2" }); openProjects(value);
+it("reads an empty continuation and renders later projects without claiming final emptiness", async () => {
+  const later = project("Later project");
+  const value = fixture(); value.list.mockImplementation(async (_kind, page) => page ? { resources: [later] } : { resources: [], nextPageToken: "projects-2" }); openProjects(value);
   await screen.findByText("No projects on this page."); expect(screen.queryByText("No projects yet")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect(value.list).toHaveBeenCalledWith(EntityKind.PROJECT, "projects-2"));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await screen.findByRole("heading", { name: "Later project" });
+  expect(value.list).toHaveBeenCalledWith(EntityKind.PROJECT, "projects-2");
   expect(screen.queryByText("No projects yet")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
 });
+
 it("groups rows in server order with complete identities, schema guards and no extra reads", async () => {
   const last = project(`Zulu ${"long project name ".repeat(30)}`), first = project("Alpha"), future = create(ResourceSchema, { ...project("Future project"), schemaVersion: 2 });
   const value = fixture([last, first, future]); openProjects(value);
@@ -73,7 +82,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("separa
   await act(async () => pending.reject(new ConnectError("The server denied this read.", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "unavailable", guidance: "Retry the selected server read.", correlationId }) }])));
   const alert = await screen.findByRole("alert"); expect(alert.textContent).not.toContain("private fixture detail"); expect(alert.textContent).toContain(correlationId);
   expect(screen.queryByText("No projects yet")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect(screen.getByRole("button", { name: "Save Project" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
 });
 it.each([false, true])("retains cached content during refresh and reports failed refresh truthfully (empty=%s)", async empty => {
   const value = fixture(empty ? [] : [project("Retained project")]); openProjects(value);
@@ -89,9 +98,14 @@ it("preserves four field groups, repository order, primary clearing, restriction
   const first = resource(EntityKind.REPOSITORY, { name: "First" }), second = resource(EntityKind.REPOSITORY, { name: "Second" }), row = project("Editable project");
   row.documentJson = encode({ name: "Editable project", repositories: [first.id, second.id], primary_repository: first.id, agents: { configured: true, ids: [newRequestId()] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
   const value = fixture([row, first, second]); openProjects(value); fireEvent.click(await screen.findByRole("button", { name: "Edit Editable project" }));
+  expect(screen.getByText("The harness starts in this repository. Select it explicitly after adding repositories.")).toBeTruthy();
+  expect(screen.queryByText(/The first repository you select becomes the primary repository/)).toBeNull();
   for (const label of ["Name", "Repositories", "Agent Workers", "AI accounts"]) expect(screen.getByRole("group", { name: label })).toBeTruthy();
-  const repositories = screen.getByRole("group", { name: "Repositories" }); fireEvent.click(within(repositories).getByRole("button", { name: "Move entry 2 up" }));
-  expect(Array.from(repositories.querySelectorAll("li code"), node => node.textContent)).toEqual([second.id, first.id]);
+  await within(screen.getByRole("combobox", { name: "Primary repository" })).findByRole("option", { name: "First" });
+  expect(within(screen.getByRole("combobox", { name: "Primary repository" })).getByRole("option", { name: "Second" }).getAttribute("value")).toBe(second.id);
+  const repositories = screen.getByRole("group", { name: "Repositories" }); const grip = within(repositories).getByRole("button", { name: "Move repository 2: Second" }); fireEvent.keyDown(grip, { key: " " }); fireEvent.keyDown(grip, { key: "ArrowUp" }); expect(value.save).not.toHaveBeenCalled(); fireEvent.keyDown(grip, { key: "Enter" });
+  expect(value.save).not.toHaveBeenCalled();
+  expect(Array.from(repositories.querySelectorAll("li[data-repository-id]"), node => node.getAttribute("data-repository-id"))).toEqual([second.id, first.id]);
   fireEvent.click(within(repositories).getByRole("button", { name: "Remove entry 2" }));
   const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement; expect(primary.value).toBe(""); expect(primary.required).toBe(true); expect(primary.checkValidity()).toBe(false);
   fireEvent.change(primary, { target: { value: second.id } });
@@ -100,6 +114,25 @@ it("preserves four field groups, repository order, primary clearing, restriction
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" })); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0])).toEqual({ name: "Editable project", repositories: [second.id], primary_repository: second.id, agents: { configured: true, ids: [] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
+});
+
+it("retries exact edit repository IDs without replacing unreadable names with selector labels", async () => {
+  const first = resource(EntityKind.REPOSITORY, { name: "Exact repository" }), other = resource(EntityKind.REPOSITORY, { name: "Other repository" }), row = project("Name lookup project");
+  row.documentJson = encode({ name: "Name lookup project", repositories: [first.id], primary_repository: first.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const value = fixture([row, first, other]); let readable = false;
+  value.get.mockImplementation(async id => {
+    if (id === first.id && !readable) throw new ConnectError("Name read unavailable", Code.Unavailable);
+    return { resource: [row, first, other].find(candidate => candidate.id === id) };
+  });
+  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: "Edit Name lookup project" }));
+  const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement;
+  const retry = await screen.findByRole("button", { name: "Retry repository loading" });
+  expect(within(primary).getByRole("option", { name: "Repository name unavailable (entry 1)" })).toBeTruthy();
+  const reads = value.get.mock.calls.filter(([id]) => id === first.id).length;
+  readable = true; fireEvent.click(retry);
+  await waitFor(() => expect(within(primary).getByRole("option", { name: "Exact repository" })).toBeTruthy());
+  expect(primary.value).toBe(first.id); expect(value.get.mock.calls.filter(([id]) => id === first.id)).toHaveLength(reads + 1);
+  expect(within(primary).queryByRole("option", { name: "Other repository" })).toBeNull();
 });
 it.each(["revision", "failure"])("retains an edit draft and blocks Save after current-resource %s", async reason => {
   const row = project("Original"), value = fixture([row]);
@@ -113,7 +146,7 @@ it.each(["save", "delete"])("explicitly retries the exact project %s request wit
   if (action === "delete") { expect(screen.getByText(/Retained sessions and history remain/)).toBeTruthy(); expect(screen.getByText(/Schedules using this configuration will be disabled/)).toBeTruthy(); }
   const submit = action === "save" ? "Save Project" : "Confirm configuration deletion";
   // Submit directly to isolate retry identity from HTML required-field validation.
-  if (action === "save") fireEvent.submit(screen.getByRole("button", { name: submit }).closest("form")!); else fireEvent.click(screen.getByRole("button", { name: submit }));
+  if (action === "save") fireEvent.submit((screen.getByRole("button", { name: submit }) as HTMLButtonElement).form!); else fireEvent.click(screen.getByRole("button", { name: submit }));
   const retry = await screen.findByRole("button", { name: action === "save" ? "Retry the same configuration" : "Retry the same deletion" });
   expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).disabled).toBe(false); expect((screen.getByRole("button", { name: submit }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(retry); await waitFor(() => expect(operation).toHaveBeenCalledTimes(2)); expect(operation.mock.calls[1][0]).toEqual(operation.mock.calls[0][0]); expect(operation.mock.calls[0][0]).toMatchObject({ mutation: { id: row.id, expectedRevision: 7n } });
@@ -122,15 +155,15 @@ it.each(["navigation", "Escape then navigation"])("discards a project draft and 
   const value = fixture(); value.save.mockRejectedValue(new ConnectError("ack lost", Code.Unavailable));
   function Harness() { const [visible, show] = useState(false); return <><button onClick={() => show(true)}>Open settings fixture</button><button onClick={(event) => { event.currentTarget.focus(); show(false); }}>Leave Settings fixture</button><Settings visible={visible} /></>; }
   render(value.view(<Harness />)); const opener = screen.getByRole("button", { name: "Open settings fixture" }); opener.focus(); fireEvent.click(opener);
-  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Abandoned project" } }); fireEvent.submit(screen.getByRole("button", { name: "Save Project" }).closest("form")!); await screen.findByRole("button", { name: "Retry the same configuration" });
+  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); await configureProject("Abandoned project"); fireEvent.submit((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).form!); await screen.findByRole("button", { name: "Retry the same configuration" });
   if (route === "Escape then navigation") { fireEvent.keyDown(screen.getByRole("region", { name: "Settings content" }), { key: "Escape" }); expect(screen.getByRole("button", { name: "Retry the same configuration" })).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Leave Settings fixture" }));
   expect(document.activeElement).not.toBe(opener); fireEvent.click(opener); expect(screen.getByRole("heading", { level: 1, name: "AI Subscription" })).toBeTruthy(); expect(screen.queryByRole("button", { name: "Retry the same configuration" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(""); expect(value.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Projects" })); fireEvent.click(screen.getByRole("button", { name: "New Project" })); expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe(""); expect(value.save).toHaveBeenCalledTimes(1);
 });
 it("focuses targeted creation and confines the presentation to Projects", async () => {
-  const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
-  expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  const value = fixture(); render(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} />)); await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search repository names" })));
+  expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(true); fireEvent.click(screen.getByRole("button", { name: "Close New Project" }));
   for (const category of ["Repositories", "Instructions", "API Providers"]) { fireEvent.click(screen.getByRole("button", { name: category })); expect(screen.getByRole("region", { name: "Settings content" }).classList.contains("settings-projects")).toBe(false); expect(screen.getByRole("heading", { level: 1, name: category })).toBeTruthy(); }
 });
 it("consumes explicit New Project and Repositories entry while another category has an unsaved form", async () => {
@@ -138,12 +171,37 @@ it("consumes explicit New Project and Repositories entry while another category 
   fireEvent.click(screen.getByRole("button", { name: "Instructions" })); fireEvent.click(screen.getByRole("button", { name: "New Instructions" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Discard this draft" } });
   view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} destinationConsumed={consumed} />));
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Name" })));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(""); expect(consumed).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Keep current project draft" } });
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Search repository names" })));
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe(""); expect(consumed).toHaveBeenCalledTimes(1);
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search repository names" }), { target: { value: "Keep current project draft" } });
   view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.NewProject} destinationConsumed={consumed} />));
-  expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Keep current project draft"); expect(consumed).toHaveBeenCalledTimes(1);
+  expect((screen.getByRole("searchbox", { name: "Search repository names" }) as HTMLInputElement).value).toBe("Keep current project draft"); expect(consumed).toHaveBeenCalledTimes(1);
   view.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.Repositories} destinationConsumed={consumed} />));
   await screen.findByRole("heading", { level: 1, name: "Repositories" }); expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(); expect(consumed).toHaveBeenCalledTimes(2);
   expect(value.save).not.toHaveBeenCalled();
+});
+
+
+it("refreshes only the active category metadata through the shared Settings header", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Initial repository", remote_url: "https://example.org/repository" });
+  const model = resource(EntityKind.MODEL, { name: "Initial model", native_id: "initial-model" });
+  const worker = resource(EntityKind.AGENT, { name: "Refresh Worker", harness: "codex", model_id: model.id, accounts: [{ id: newRequestId(), weight: 1 }] });
+  const row = project("Refresh project");
+  row.documentJson = encode({ name: "Refresh project", repositories: [repository.id], primary_repository: repository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
+  const value = fixture([row, repository, worker, model]); openProjects(value);
+  await screen.findByText("Initial repository");
+  const repositoryReads = value.get.mock.calls.filter(([id]) => id === repository.id).length;
+  repository.revision += 1n; repository.documentJson = encode({ name: "Updated repository", remote_url: "https://example.org/updated" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Updated repository");
+  expect(value.get.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(repositoryReads + 1);
+  expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
+  await screen.findByText("initial-model");
+  const modelReads = value.get.mock.calls.filter(([id]) => id === model.id).length;
+  model.revision += 1n; model.documentJson = encode({ name: "Updated model", native_id: "updated-model" });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("updated-model");
+  expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(modelReads + 1);
+  expect(value.get.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(repositoryReads + 1);
 });

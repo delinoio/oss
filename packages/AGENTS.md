@@ -60,7 +60,7 @@
 
 - Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.
 
-- Windows console Ctrl+C/Break reaches both launcher and native child. Await native cleanup and numeric completion instead of forwarding these events with Node's forceful kill API; preserve explicit Unix signal forwarding. Cover both policies with unit fixtures and isolated Windows console integration.
+- Windows console Ctrl+C/Break reaches both launcher and native child. Await native cleanup and numeric completion instead of forwarding these events with Node's forceful kill API; preserve explicit Unix signal forwarding. Keep Unix acknowledgement credit scoped to one pending grace attempt; discard unsolicited credit and disable suppression for the launch after an unacknowledged fallback or overlapping SIGINT. After fallback, retain forwarding even when terminal delivery is duplicated; native cleanup may then skip grace. Integration fixtures must prove fallback before accepting short grace and confirm owned cleanup. Cancel owned grace timers on exit/error. Cover both policies with unit fixtures and isolated Windows console integration.
 
 - Keep tests runnable with Node built-ins, and smoke-test npm/pnpm consumer tarball installs with scripts disabled, including missing-subcommand help on stderr with exit code 2, native JSON readiness, environment execution with literal empty argv/exit propagation and dotenv list/merge plus YAML normalization with reference resolution, literal value preservation, idempotence, and silent file publication. Consumer smoke builds must use release mode so TLS-enabled debug binaries do not exceed bounded archive inspection. Run Rust command/process/adapter/readiness tests on Linux, macOS, and Windows through the existing clibox CI matrix. Build/package/release tasks are package-owned; native integration and publication tasks are not Turbo-cacheable.
 
@@ -81,6 +81,8 @@
 - Build both Linux musl targets with the pinned Rust toolchain's `rust-lld` and self-contained runtime objects. Keep native-host and Alpine consumer execution gates; adding C dependencies requires revisiting this toolchain contract.
 
 - clibox GNU npm and GitHub Release archives must contain the same verified AlmaLinux 9/glibc 2.34 binaries. Its separately guarded GitHub publisher validates the complete nine-tarball input, exact tag/commit and source version, preserves immutable assets and reuses verified signatures before stable APT/DNF publication. The npm enable flag gates only npm. Neither publisher may query crates.io or require Cargo registry publication. Include all six clibox crate directories and affected fspy interception sources in package test inputs and native CI selection. Installed package smoke must check the fspy command family on every target before its first release.
+
+- clibox GitHub publication must discover drafts through every release-list page and establish a unique same-tag candidate before writes. Failed, malformed, repeated or incomplete discovery cannot authorize draft creation. Pin the numeric release ID, verify draft source/channel ownership and existing bytes/signatures, upload only missing assets, and recheck uniqueness plus the pinned verified inventory immediately before publication. Complete public releases remain read-only.
 
 ### pnport Rules
 

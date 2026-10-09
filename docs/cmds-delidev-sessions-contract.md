@@ -1,5 +1,23 @@
 # DeliDev session acceptance and input queue contract
 
+## API format generations
+
+Capability 9 changes only the current account generation for new sessions. All
+original execution authorization and continuation resolve the immutable assignment's
+connection ID, including proxy requests, subsequent tools, Resume, Fork, Sidechat,
+compaction, title and auxiliary execution. Retained profile/health/validation supply
+original admission evidence; current account enablement, quota/exhaustion, cleanup,
+Worker existence, session restrictions and budget still apply. Changing or validating
+a new format cannot replace original history or interrupt a valid original stream.
+New routing requires current-format validation and Worker compatibility. Incompatible
+Workers are marked for explicit reconfiguration without changing accepted executions.
+Follow the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
+## Direct execution startup
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) replaces mandatory installation/protocol inspection for negotiated v4 execution jobs. First, continued and scheduled execution retain the same atomic input, configuration, account routing, leases, budget and Worker authority. The actual process must publish readiness before its API relay can infer. A failed attempt with positive no-send and original cleanup proof keeps its rejected input and immutable assignment; explicit revision-checked Resume creates a distinct same-selection attempt. Uncertain input or cleanup retains original recovery. A retried first execution has a separate native root ID without rewriting the initial selection; continuation and title attribution use that successful original lineage.
+
 ## Scope
 `cmds/delidev-cli/internal/domain/session.go`, `internal/store/sessions.go`, `internal/server/sessions.go`, `internal/server/session_workspace.go`, `internal/server/session_workspace_recovery.go`, `internal/server/session_dispatch.go` and `internal/cli/sessions.go` own durable session acceptance, ordered input, revision-checked edits, visibility and workspace preparation controls. `internal/domain/execution.go` and `internal/store/execution.go` provide the private first-execution configuration/selection transaction primitive. `internal/domain/execution_events.go`, `internal/server/execution_events.go` and the Worker publication components implement the private core native-event path. Authenticated `SessionService` acceptance and workspace controls are implemented end to end through the CLI/server and real SQLite.
 
@@ -338,7 +356,7 @@ The same owner/client first Resume and automatic ready-session dispatch produce 
 ### Public OpenCode checkpoint continuation and completed-report recovery
 Eligible Build/Plan General Chat text/reasoning and closed inline Read/Shell executions now retain a version-2 completion bound to the exact private Worker checkpoint. Public FIFO and explicit Resume preserve the initial snapshot/account/route and native session, while each new input owns fresh execution/job/process/runtime/credential and first-or-resumed mutation journals. Current Worker/account/model/preparation checks still apply before queue claim. Original checkpoint, accepted report, mutation claims and fully acknowledged outbox are checked before the replacement runtime starts. Failed/stopped native outcomes require explicit Resume; historical version-1 reports and unsupported tool/project/auxiliary profiles cannot acquire continuation authority.
 
-`RecoverSessionExecution` also accepts eligible original OpenCode executions whose terminal/input facts reached the server but whose completed cleanup report was lost. It freezes an explicit native-harness selector, first/resumed claim version and separate original creation/current binding/input request identities derived from the immutable assignments. The replacement Worker only inspects retained original evidence and closed process/workspace ownership. It returns the same original report identity and version-2 completion without another native launch or input send. The coordinator rechecks settled interactions and exact comparison facts at commit, reconciles the original job/session atomically, and keeps dispatch paused. An accepted recovery receipt does not repeat inspection or restore automatic intent. Missing/altered checkpoint or original ownership evidence leaves recovery required and is never reconstructed. An explicit subsequent Resume uses the normal continuation gate.
+`RecoverSessionExecution` also accepts eligible original OpenCode executions whose terminal/input facts reached the server but whose completed cleanup report was lost. It freezes an explicit native-harness selector, first/resumed claim version and separate original creation/current binding/input request identities derived from the immutable assignments. The replacement Worker only inspects retained original evidence and closed process/workspace ownership. It returns the same original report identity and version-2 completion without another native launch or input send. The coordinator rechecks settled interactions and exact comparison facts at commit, reconciles the original job/session atomically, and keeps dispatch paused. An accepted recovery receipt does not repeat inspection or restore automatic intent. Missing/altered checkpoint or original ownership evidence leaves recovery required and is never reconstructed. An explicit subsequent Resume uses the normal continuation gate. Independent OpenCode Fork children use the child-owned original creation marker and Fork history runtime for both first and later turns; resumed native claim version 2 is independent of assignment versions 3/4. Legacy omitted markers require the exact retained completed Fork input/output and immutable child bindings; new children do not depend on surviving parent jobs. See the Fork contract.
 
 
 Queued OpenCode Plan/Execute mode changes now use the native `plan`/`build` primary agent on the next original-session input. Continuation retains the previous mode/settings separately and validates the new selected mode before queue claim; the native checkpoint verifies every non-mode setting remains fixed before staging. Native observed progress records the current agent without rewriting predecessor progress. Public FIFO, explicit Resume and completed-report recovery preserve the same ownership and pause rules. No synthetic common execution-approval step or DeliDev-generated transition prompt is added.
@@ -671,3 +689,108 @@ cleanup is confirmed and active/recovery/Archive ownership is absent; it never
 resumes the old failed queue. Its current source link and latest attempt session
 still enforce user controls. Historical and manual pauses remain ineligible.
 See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
+
+## Ordered account source first execution
+
+The [catalog contract](cmds-delidev-catalog-contract.md#ordered-agent-worker-account-sources)
+owns schema-3 source selection. The ordinary first-execution claim reads all sources
+from one transaction, freezes the complete Route decision and atomically changes
+only the selected source's routing state with its selected model/account/connection
+snapshot. Native readiness, budgets and protected credential ownership remain
+independent gates; failure rolls back the complete claim/job/state. Preview is
+read-only. Continuation, explicit stopped-account switching, Fork and Sidechat retain
+their original immutable selected-source configuration and existing controls.
+Usage and costs continue to use the actual immutable selected account/model.
+
+## Explicit native skills
+
+Issue #1748 adds `$` skill selection to project-session and General Chat creation
+and existing follow-up composers. A selected token carries an opaque inventory,
+package revision and original paired Worker identity separately from text.
+Manually typed tokens remain plain text. Editing a selected token removes its
+binding; changed connection, Runner, Agent, project or session context requires
+reselection. Selection alone creates no session, accepted input or inference.
+
+Only Codex supports this profile. `SkillService.ListSkills` uses authenticated
+owner/client access and the selected Worker's joined keyless read lane. New
+sessions enumerate eligible user packages only. Existing prepared sessions can
+also enumerate verified workspace project roots. Discovery never prepares a
+workspace, imports authentication or general native configuration, or runs
+inference. Private enable/disable metadata affects eligibility only. Inventories
+bind the original actor, paired Worker device/instance, Agent revision and session
+or creation project. Late, unsupported, malformed and oversized reads fail closed.
+
+Inventory has at most 256 entries and a 256 KiB response. Selection has at most
+16 distinct packages. A package has at most 1,024 regular resources, 1 MiB of
+SKILL.md and 16 MiB total bytes; an input retains at most 64 MiB. Resource reads
+use rooted filesystem access. Escaping links and nonregular or incomplete
+packages are rejected. Internal file links become independently owned bytes.
+Only skill packages and bounded skill-specific flags can cross this import
+boundary. Inventory metadata expires after fifteen minutes; accepted snapshots
+never expire automatically.
+
+Before acceptance, the Worker copies the complete selected original packages to
+owner-only immutable snapshots under the original request ID. A private server journal synchronizes the original actor, complete request
+identity, operation and paired Worker proof before preparation dispatch. Each
+handler owns a unique joined claim through its final mutation; a concurrent
+rejected retry cannot release it. The Worker synchronizes its original intent,
+complete bounded file claims and native copy-root identity before copied bytes,
+and publishes snapshot metadata last. Receipt preflight
+returns an accepted exact retry before contacting the Worker. The accepted input,
+queue, assignment and retry retain original digests and snapshot references.
+Dispatch checks the original execution context and snapshot integrity before
+native input. Source edits do not change accepted snapshots. Missing or corrupt
+snapshots cause no native send and no plain-text fallback. Snapshot references
+remain in removed queue records for independently confirmed session cleanup.
+
+A joined server controller replays the exact original receipt. Accepted receipts
+retain snapshots. Unknown receipts retain original ownership and permit only the
+original exact retry. Only confirmed receipt absence after the original handler
+joins, or exclusive server restart, admits cleanup on the original paired device.
+Offline cleanup remains durable; replacement devices receive no removal authority.
+Worker cleanup shares the original preparation lock, verifies the original native
+root and every present claimed resource before removal, then observes absence.
+A removal-only tombstone fences late dispatch when copying never began. Changed,
+unlisted or replacement bytes remain uncertain and are preserved. Cancellation,
+capacity failure, response loss and partial copies never create unowned bytes.
+These private journals use existing keyless reads and add no public RPC or migration.
+
+Codex copies only selected snapshots into its private runtime, sets process-local
+extra roots, validates enabled exact names/paths through native skills/list, and
+sends structured skill inputs. Private native history retains ordered skill
+identity digests through continuation and uncertain recovery. These digests do
+not expose paths in public resources or logs. Skill-bound Steer remains disabled. Request field 4 is a presence-carrying
+`SkillSelectionList`: omission protects old clients from erasing bound queue
+inputs, an explicit empty list clears selection, and a nonempty typed edit
+retains exact original snapshots for unchanged selections. Only new selections
+prepare new immutable packages under the edit request ID. Replaced snapshots
+remain in the queue's retained cleanup references. Queue edits preserve their
+original revision, actor and complete request identity through exact retries.
+
+The owner explicitly authorized declarations and activation together for the
+2026-10-08 fixed QA batch. This exception applies only to issue #1748's System 44,
+Worker 24 and typed session request field 4. It does not waive original authority,
+immutable input, cleanup or compatibility checks and does not create a general
+exception to main-first allocation policy. The owner retains real-account,
+installed-native, remote-environment and cross-platform acceptance. Scripted
+transport/package tests establish local implementation evidence only.
+
+Fork and Sidechat copy complete original accepted packages into the child private runtime. Only explicit native skill nodes and generated skill-path tags inside those authenticated nodes are remapped; the original user text remains unchanged. The child native history must prove the remapped identities before publication. Parent deletion does not own these child copies.
+
+Skill admission shares the session deletion plan's aggregate 4,096-reference
+bound across current and retired selections in every queue row of the parent
+and its retained dependent Sidechats. Independent Forks keep their own budget.
+A deleting dependent retains the family admission fence until its original native,
+database and backup retirement removes the dependency index; absent queue rows
+are not cleanup proof. Plain inputs add no package ownership and remain usable.
+Read preflight
+checks before new package preparation; the original acceptance transaction checks
+again atomically. Existing references are never evicted to make room.
+
+## Project first-prompt history (issue #1828)
+
+Public `CreateSession` appends the exact nonblank first prompt for accepted MANUAL or EXTERNAL_CLI project sessions. The original receipt transaction appends and prunes immutable project-owned entities to the latest 100 entries. Durable server event sequence determines acceptance order. Replay, rejection and rollback add nothing. Image-only, General Chat, follow-up, schedule, remediation, Fork and Sidechat flows add nothing. Text history includes no attachments, typed skill bindings or execution choices. Source-session deletion and queue edits retain original history. No backfill runs.
+
+`ListProjectPromptHistory` returns newest-first IDs, exact text, acceptance time and sequence. Owner and paired clients share authenticated server/project scope; Workers are rejected. Pages contain at most 100 entries and fit binary and JSON transport budgets. Signed cursors bind server, actor, project and page size; invalid scope returns the typed cursor error. `ClearProjectPromptHistory` requires explicit confirmation and an actor-bound durable request ID. Its atomic acceptance removes only then-present entries. Receipt replay cannot erase later submissions. CLI equivalents are `project prompt-history list --project-id ID` and `project prompt-history clear --project-id ID --confirm`, with the global `--request-id` for exact retries. List accepts `--limit` and `--page-token`.
+
+OpenCode lost-report recovery checks a child-owned immutable closed creation proof before admitting inspection work. Verified Fork publication atomically retains the expected creation request, child ID, original accepted output digest and digest binding of the complete original Fork boundary (including accepted input digest, native checkpoint/runtime, Worker and selection). This retains no source prompt or protected native content and survives independent parent purge. Changed valid creation UUIDs, checkpoint/runtime/selection or proof ownership reject before admission. Older seeds without that proof must compare any recorded marker against the exact retained completed original Fork input/output; absence remains recovery-required. The proof is trusted server-owned publication metadata, never authority derived from a later mutable marker; no RPC, allocation or migration.

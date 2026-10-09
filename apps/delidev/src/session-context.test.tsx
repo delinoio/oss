@@ -10,7 +10,10 @@ import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { contextDocument, SessionContext } from "./session-context";
 
-it.each(["codex", "opencode"])("preserves one exact %s manual request through response loss and navigation", async (harness) => {
+it.each([
+ { harness: "codex", large: false }, { harness: "opencode", large: false },
+ { harness: "codex", large: true }, { harness: "opencode", large: true },
+])("preserves one exact $harness manual request through response loss and navigation (large=$large)", async ({ harness, large }) => {
  const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness } } }) });
  const requests: unknown[] = [];
  let action: unknown = null;
@@ -18,7 +21,9 @@ it.each(["codex", "opencode"])("preserves one exact %s manual request through re
   requests.push(request);
   action = { id: newRequestId(), document: { action_id: request.mutation.requestId, state: "claimed" } };
   if (requests.length === 1) throw new ConnectError("Lost reply", Code.Unavailable);
-  return { requestId: request.mutation.requestId, replayed: true, job: create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), sessionId: session.id, documentJson: encode({ input: { action_id: request.mutation.requestId, assignment: { session_id: session.id } } }) }) };
+  const bytes = encode({ type: "compact-session", input: { action_id: request.mutation.requestId, assignment: { session_id: session.id } } });
+  const documentJson = large ? new TextEncoder().encode(new TextDecoder().decode(bytes) + " ".repeat(2 << 20)) : bytes;
+  return { requestId: request.mutation.requestId, replayed: true, job: create(ResourceSchema, { kind: EntityKind.JOB, id: newRequestId(), schemaVersion: 1, revision: 1n, sessionId: session.id, documentJson }) };
  });
  const transport = createRouterTransport((router) => {
   router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1, SystemCapability.CODEX_SESSION_COMPACTION_V1, SystemCapability.OPENCODE_SESSION_COMPACTION_V1] }) });
@@ -32,7 +37,7 @@ it.each(["codex", "opencode"])("preserves one exact %s manual request through re
  await screen.findByRole("button", { name: "Retry the same compaction request" });
  rendered.rerender(view(false)); rendered.rerender(view(true));
  fireEvent.click(await screen.findByRole("button", { name: "Retry the same compaction request" }));
- await screen.findByText("Compaction operation: claimed");
+ await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  expect(requests[1]).toEqual(requests[0]);
  expect(requests[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 8n } });
  expect(screen.getByText("Current context tokens: Not reported")).toBeTruthy();
@@ -42,4 +47,18 @@ it.each(["codex", "opencode"])("preserves one exact %s manual request through re
 
 it.each([undefined, encode({ session_id: "foreign", session_revision: "1" }), encode({ session_id: "original", session_revision: "0" }), new Uint8Array([255]), new Uint8Array((1 << 20) + 1)])("rejects unavailable or foreign context", (bytes) => {
  expect(contextDocument(bytes, "original")).toBeUndefined();
+});
+
+it("keeps failed capability reads separate from unsupported context and rechecks without compaction", async () => {
+ const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness: "codex" } } }) });
+ const status = vi.fn().mockRejectedValueOnce(new ConnectError("private-native-error", Code.PermissionDenied)).mockResolvedValue({ capabilities: [] });
+ const compact = vi.fn();
+ const transport = createRouterTransport(router => { router.service(SystemService, { getStatus: status }); router.service(SessionService, { compactSession: compact }); });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionContext session={session} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ await screen.findByText(/Context capability could not be read/);
+ expect(screen.queryByText(/Update the server and original Worker/)).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Retry context capability read" }));
+ await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
+ expect(compact).not.toHaveBeenCalled();
 });

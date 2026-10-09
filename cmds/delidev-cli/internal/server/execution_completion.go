@@ -28,6 +28,13 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	if err != nil {
 		return store.Record{}, err
 	}
+	job.Startup = session.Startup
+	if input.Version == 4 && session.Startup != nil && session.Startup.Ready != nil {
+		input.Installation.Version = session.Startup.Ready.NativeVersion
+	}
+	if input.Version == 4 && reported != nil && session.Startup != nil && session.Startup.JobID == record.ID && session.Startup.Failure != nil && session.Startup.Failure.State == domain.StartupFailed {
+		return settleExecutionStartupFailure(tx, record, job, expectedRevision, input, sr, session)
+	}
 	var completion domain.ExecutionCompletion
 	progress := session.Execution
 	verified := reported == nil && domain.Decode(raw, &completion) == nil && completion.ValidateForHarness(input.Configuration.Harness) == nil && completion.ExecutionID == input.ExecutionID && completion.InputID == input.InputID && progress != nil && progress.JobID == record.ID && progress.ExecutionID == input.ExecutionID && progress.InputID == input.InputID && progress.NativeThreadID == string(completion.NativeThreadID) && progress.NativeTurnID == string(completion.NativeTurnID) && progress.LastSequence == completion.LastSequence && progress.Outcome == completion.Outcome && !progress.CleanupVerified && progress.Subagents.Closed()

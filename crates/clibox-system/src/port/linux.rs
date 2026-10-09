@@ -1,12 +1,16 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs, io,
-    net::{Ipv4Addr, Ipv6Addr},
+    collections::BTreeSet,
+    io,
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
-use super::*;
+#[cfg(test)]
+use super::linux_snapshot::endpoint;
+use super::{
+    linux_snapshot::{owned, process, sockets},
+    *,
+};
 
 pub struct Native {
     root: PathBuf,
@@ -18,225 +22,9 @@ impl Default for Native {
         }
     }
 }
-struct Process {
-    birth: u128,
-    name: String,
-    dead: bool,
-}
-
-fn process(root: &Path, pid: u32) -> io::Result<Option<Process>> {
-    let stat = match fs::read(root.join(pid.to_string()).join("stat")) {
-        Ok(s) => s,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-    };
-    let text = String::from_utf8_lossy(&stat);
-    let start = text.find('(').ok_or(io::ErrorKind::InvalidData)?;
-    let end = text.rfind(')').ok_or(io::ErrorKind::InvalidData)?;
-    let tail: Vec<_> = text
-        .get(end + 1..)
-        .ok_or(io::ErrorKind::InvalidData)?
-        .split_whitespace()
-        .collect();
-    let birth = tail
-        .get(19)
-        .ok_or(io::ErrorKind::InvalidData)?
-        .parse()
-        .map_err(|_| io::ErrorKind::InvalidData)?;
-    Ok(Some(Process {
-        birth,
-        name: text[start + 1..end].into(),
-        dead: matches!(tail.first(), Some(&"Z" | &"X")),
-    }))
-}
-
-fn endpoint(raw: &str, ipv6: bool) -> Option<(String, u16)> {
-    let (address, port) = raw.split_once(':')?;
-    let port = u16::from_str_radix(port, 16).ok()?;
-    let address = if ipv6 {
-        if address.len() != 32 {
-            return None;
-        }
-        let mut bytes = [0; 16];
-        for (i, chunk) in address.as_bytes().as_chunks::<8>().0.iter().enumerate() {
-            let n = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
-            bytes[i * 4..i * 4 + 4].copy_from_slice(&n.to_ne_bytes());
-        }
-        Ipv6Addr::from(bytes).to_string()
-    } else {
-        Ipv4Addr::from(u32::from_str_radix(address, 16).ok()?.to_ne_bytes()).to_string()
-    };
-    Some((address, port))
-}
-
-fn sockets(
-    root: &Path,
-    ports: &BTreeSet<u16>,
-    protocol: Protocol,
-    report: &mut Report,
-) -> BTreeMap<u64, Entry> {
-    let mut sockets = BTreeMap::new();
-    for (file, kind, ipv6) in [
-        ("tcp", Protocol::Tcp, false),
-        ("tcp6", Protocol::Tcp, true),
-        ("udp", Protocol::Udp, false),
-        ("udp6", Protocol::Udp, true),
-    ] {
-        if !protocol.accepts(kind) {
-            continue;
-        }
-        let text = match fs::read_to_string(root.join("self/net").join(file)) {
-            Ok(text) => text,
-            Err(e)
-                if ipv6
-                    && e.kind() == io::ErrorKind::NotFound
-                    && !root.join("sys/net/ipv6").exists() =>
-            {
-                continue
-            }
-            Err(e) => {
-                report.errors.push(enumeration_error(None, e));
-                continue;
-            }
-        };
-        for line in text.lines().skip(1) {
-            let fields: Vec<_> = line.split_whitespace().collect();
-            let parsed = (|| {
-                if fields.len() < 10 {
-                    return None;
-                }
-                let (address, port) = endpoint(fields[1], ipv6)?;
-                let inode = fields[9].parse::<u64>().ok()?;
-                Some((address, port, inode))
-            })();
-            let Some((address, port, inode)) = parsed else {
-                report
-                    .errors
-                    .push(enumeration_error(None, io::ErrorKind::InvalidData.into()));
-                continue;
-            };
-            if !ports.contains(&port) || kind == Protocol::Tcp && fields[3] != "0A" {
-                continue;
-            }
-            sockets.insert(
-                inode,
-                Entry {
-                    pid: None,
-                    name: None,
-                    protocol: kind,
-                    address,
-                    port,
-                    status: None,
-                    identity: None,
-                },
-            );
-        }
-    }
-    sockets
-}
-
-fn owned(root: &Path, pid: u32) -> io::Result<BTreeSet<u64>> {
-    let mut inodes = BTreeSet::new();
-    for file in fs::read_dir(root.join(pid.to_string()).join("fd"))? {
-        let path = file?.path();
-        let target = match fs::read_link(path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e),
-        };
-        if let Some(inode) = target
-            .to_str()
-            .and_then(|s| s.strip_prefix("socket:["))
-            .and_then(|s| s.strip_suffix(']'))
-            .and_then(|s| s.parse().ok())
-        {
-            inodes.insert(inode);
-        }
-    }
-    Ok(inodes)
-}
-
 impl Backend for Native {
     fn snapshot(&mut self, ports: &BTreeSet<u16>, protocol: Protocol) -> Report {
-        let mut report = Report::default();
-        let sockets = sockets(&self.root, ports, protocol, &mut report);
-        if sockets.is_empty() {
-            return report;
-        }
-        let entries = match fs::read_dir(&self.root) {
-            Ok(e) => e,
-            Err(e) => {
-                report.errors.push(enumeration_error(None, e));
-                report.results.extend(sockets.into_values());
-                return report;
-            }
-        };
-        let mut found = BTreeSet::new();
-        for entry in entries {
-            if runtime::cancelled() {
-                report.errors.push(Failure::new(
-                    Code::Cancelled,
-                    "Port enumeration interrupted; results are incomplete.",
-                ));
-                break;
-            }
-            let entry = match entry {
-                Ok(e) => e,
-                Err(e) => {
-                    report.errors.push(enumeration_error(None, e));
-                    continue;
-                }
-            };
-            let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse().ok()) else {
-                continue;
-            };
-            let before = match process(&self.root, pid) {
-                Ok(Some(p)) if !p.dead => p,
-                Ok(_) => continue,
-                Err(e) => {
-                    report.errors.push(enumeration_error(Some(pid), e));
-                    continue;
-                }
-            };
-            let inodes = match owned(&self.root, pid) {
-                Ok(i) => i,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-                Err(e) => {
-                    report.errors.push(enumeration_error(Some(pid), e));
-                    continue;
-                }
-            };
-            let stable = matches!(process(&self.root, pid), Ok(Some(p)) if p.birth == before.birth && !p.dead);
-            for inode in inodes {
-                if let Some(socket) = sockets.get(&inode) {
-                    let mut row = socket.clone();
-                    row.pid = Some(pid);
-                    row.name = Some(before.name.clone());
-                    if stable {
-                        row.identity = Some(Identity {
-                            birth: before.birth,
-                            socket: inode,
-                        });
-                    } else {
-                        report.errors.push(
-                            Failure::new(
-                                Code::IdentityUnverifiable,
-                                "Process changed during enumeration; ownership is unverified.",
-                            )
-                            .pid(pid),
-                        );
-                    }
-                    found.insert(inode);
-                    report.results.push(row);
-                }
-            }
-        }
-        for (inode, socket) in sockets {
-            if !found.contains(&inode) {
-                report.results.push(socket);
-            }
-        }
-        report
+        super::linux_snapshot::snapshot(&self.root, ports, protocol)
     }
 
     fn terminate(&mut self, pid: u32, expected: &[Entry]) -> Result<bool> {

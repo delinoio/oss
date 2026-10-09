@@ -1,5 +1,28 @@
 # DeliDev Portable Configuration
 
+## API format generation exclusion
+
+Portable v4 retains selected API protocols and Provider profiles, with unchanged
+v1–3 import semantics. Capability-9 current/retained connection generations,
+`credential_id`, health/validation/catalog and protected credentials are excluded.
+Imported API accounts always start disconnected and cannot import old execution
+authority. See the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
+## API format bundle version 4
+
+Version 4 preserves Provider `api_formats` and Account `api_protocol` under the
+[catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
+Current exports and reviewed import plans use version 4. Versions 1–3 remain
+importable with their original API/native/source-route semantics and reject the
+new fields rather than treating them as legacy defaults. Profile declarations
+and account selections use the existing complete relationship validation and
+atomic publication. Accounts start disconnected; connection pins, credential
+references, keyless cleanup proof state, validation/catalog/quota observations,
+routing state and session/Usage history are never exported. Existing target
+accounts cannot be reused or reconnected by import. No SQLite migration is added.
+
+
 ## Scope
 
 `cmds/delidev-cli` owns portable configuration validation, consistent export, change previews and atomic import. `apps/delidev` presents these owner/client operations through generated Connect Query bindings. Version 2 covers the eight existing editable configuration kinds: providers, models, account preferences, instruction templates, Agent Workers, repositories, projects and server preferences. Schedules, historical pricing versions, device-specific notification preferences, integration authentication and Worker installation settings are separate contracts, not silently included in this format. This increment does not complete the remaining issue #964 requirements.
@@ -14,9 +37,9 @@ An owner or paired desktop client can move supported non-secret configuration be
 
 ## Interfaces and Contracts
 
-`ConfigurationService.ExportConfiguration` returns one consistent version-2 bundle with ordered entries and descriptive machine references. Export excludes authentication material, account connections/health/quota/catalog observations, model discovery provenance, device registrations, native installations, routing state and session/history contents. Provider-observed model metadata becomes user-declared advisory information; imported models are manual registrations. Instruction text, ordering, permissions, provider endpoints, project restrictions and preferred repositories remain exact. Unsupported integration references reject the complete export instead of disappearing. Server remediation defaults and optional complete repository overrides are included. Their Agent Worker references are remapped as configuration identities, and their execution machines require explicit mappings even when absent from all checkout lists. Stable GitHub reviewer actor/App IDs and permission selectors remain exact external identities; no current access or execution grant is imported.
+`ConfigurationService.ExportConfiguration` returns one consistent version-3 bundle with ordered entries and descriptive machine references. Export excludes authentication material, account connections/health/quota/catalog observations, model discovery provenance, device registrations, native installations, routing state and session/history contents. Provider-observed model metadata becomes user-declared advisory information; imported models are manual registrations. Instruction text, ordering, permissions, provider endpoints, project restrictions and preferred repositories remain exact. Unsupported integration references reject the complete export instead of disappearing. Server remediation defaults and optional complete repository overrides are included. Their Agent Worker references are remapped as configuration identities, and their execution machines require explicit mappings even when absent from all checkout lists. Stable GitHub reviewer actor/App IDs and permission selectors remain exact external identities; no current access or execution grant is imported.
 
-`PreviewConfigurationImport` takes the bundle plus explicit configuration bindings, machine bindings and checkout paths. Every referenced machine needs an explicit one-to-one mapping to a registered enabled target machine, even when its UUID matches. Every checkout needs an explicit target path, including when reusing a repository. Unused, duplicate, cross-kind, unknown and missing mappings fail. Source resource UUIDs are document-local references; newly created target UUIDs are fresh. Both current global identities and permanent deletion tombstones are rechecked before acceptance and deferred publication, so a reused/deleted target becomes a terminal preview conflict rather than an endlessly failing Worker report. Existing providers/models/templates/Agents/repositories/projects may be explicitly reused only when their complete portable values match after remapping. Account reuse is forbidden. Only server preferences can replace an existing entry, with its exact expected revision; no implicit singleton overwrite is permitted. Model identity/alias conflicts, broken dependencies and incompatible model/account/harness references reject the complete preview.
+`PreviewConfigurationImport` takes the bundle plus explicit configuration bindings, machine bindings and checkout paths. Desktop device preferences may supply unique unconfirmed suggestions. Every row requires explicit confirmation before preview; preferences persist only the last confirmed accepted target device, never imported documents, source IDs, mappings, paths, confirmations or previews. Every referenced machine needs an explicit one-to-one mapping to a registered enabled target machine, even when its UUID matches. Every checkout needs an explicit target path, including when reusing a repository. Unused, duplicate, cross-kind, unknown and missing mappings fail. Source resource UUIDs are document-local references; newly created target UUIDs are fresh. Both current global identities and permanent deletion tombstones are rechecked before acceptance and deferred publication, so a reused/deleted target becomes a terminal preview conflict rather than an endlessly failing Worker report. Existing providers/models/templates/Agents/repositories/projects may be explicitly reused only when their complete portable values match after remapping. Account reuse is forbidden. Only server preferences can replace an existing entry, with its exact expected revision; no implicit singleton overwrite is permitted. Model identity/alias conflicts, broken dependencies and incompatible model/account/harness references reject the complete preview.
 
 The preview runs in an authorized read transaction without receipt, event, filesystem inspection or configuration writes. Its complete before/after plan includes target UUIDs, intended actions, expected revisions and target machine descriptors. A 24-hour signed token binds the exact plan, server and authenticated actor. Altering the document requires a new preview. All relationships and relevant current revisions are checked again at application and before deferred publication.
 
@@ -41,7 +64,7 @@ Pending coordinators retain the non-secret reviewed plan needed to complete afte
 
 ## Security
 
-A bundle contains at most 256 configuration entries, 64 referenced machines/checkouts and 384 KiB of JSON. Plans are limited to 768 KiB; complete RPC documents retain the existing 1 MiB domain limit. Relationship validation is bounded at 10,000 current configuration entries and 16 MiB, failing without partial results. Unknown schema versions, fields, enum values, credential-bearing extensions and injected server-owned observations are rejected. Portable templates are user-authored contents, not a mechanism for exporting a protected credential store.
+A bundle contains at most 256 configuration entries, 64 distinct referenced machines, 64 checkouts and 384 KiB of JSON. The machine count includes the complete union of checkout references, repository remediation overrides and server remediation defaults; repeated references count once. Export rejects an excessive count with the existing ResourceExhausted transfer error, without returning a partial document or changing source configuration. It never drops a policy or reference to fit the bound. Plans are limited to 768 KiB; complete RPC documents retain the existing 1 MiB domain limit. Relationship validation is bounded at 10,000 current configuration entries and 16 MiB, failing without partial results. Unknown schema versions, fields, enum values, credential-bearing extensions and injected server-owned observations are rejected. Portable templates are user-authored contents, not a mechanism for exporting a protected credential store.
 
 Preview tokens grant only the exact reviewed import to the same currently authenticated actor. They are not credentials, device registration, account readiness, native capability or execution authority. Import must not invoke inference, provider discovery, login, Git fetch, checkout, filesystem repair or native installation.
 
@@ -83,3 +106,21 @@ Portable provider documents preserve optional `enabled` and `preset_id`. Missing
 Version 2 carries independent service-native accounts and models without Provider references. Import remaps their account/model UUIDs while preserving the closed service/harness identity; account reuse remains forbidden and every imported account is disconnected with no protected generation, native lease or quota observation. Export strips all managed subscription ownership extensions. Agents that still require legacy subscription reconfiguration reject export explicitly instead of exporting a dangling retired model or silently omitting the Agent.
 
 API-only version-1 bundles remain importable and produce a version-2 reviewed plan. Any version-1 graph containing subscription accounts, native model source/service fields or native-subscription Providers rejects the entire preview before publication; no service is inferred. Version-2 relationship validation and model uniqueness compare the full source identity, retaining global CLI alias collision checks. Migration 28 owns legacy retirement independently of portable-format validation.
+
+Remote repositories retain the required credential-free `remote_url` during export/import. Empty checkout lists require no machine/path mappings and finish the existing durable import atomically without inspection children. Optional folders retain every existing mapping and Worker check. Clients verify System capability 37 before sending repository import requests. Historical missing URLs are not inferred or converted; users must explicitly configure the source before a new save/import.
+
+## Ordered account source routes
+
+Portable version 3 retains every ordered Agent source route, model reference,
+account reference, policy and weight. Remap all route references before complete
+relationship validation and reuse comparisons. Export/import never transports
+routing state, quota observations, connections or execution history. Version 1
+API-only and version 2 service-native bundles remain accepted with their existing
+limits; either rejects source-route Agents that require version 3. Before API-format version 4, current import
+previews used version 3 and preserve their exact bytes through acceptance/publication.
+
+## Inline Worker models and endpoint-only completion reservation
+
+On complete current-only reset and inline-model activation, the reserved portable profile embeds exact route model IDs and required settings in Workers, with no independent Model entries or model UUID remapping. Keep atomic graph validation, explicit machine/source bindings and credential exclusion. Earlier portable formats are unsupported only after complete current-only reset activation. Until then, the active API-format version 4 retains independent Model entries and imports versions 1–3; this reservation cannot change those runtime semantics.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

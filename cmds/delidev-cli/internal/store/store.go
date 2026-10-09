@@ -23,7 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 30
+const SchemaVersion = 31
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -293,6 +293,12 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 			return corrupt()
 		}
 	}
+	if version >= 31 {
+		var layout string
+		if err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key='account_oauth_credentials_layout'").Scan(&layout); err != nil || layout != "token-generations-v1" {
+			return corrupt()
+		}
+	}
 	var check string
 	if err := db.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {
 		return corrupt()
@@ -305,7 +311,11 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if rows.Next() {
 		return corrupt()
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	return validateProjectPromptHistory(ctx, db)
 }
 func corrupt() error {
 	return domain.Fail(domain.RecoveryRequired, "Database integrity validation failed.", "Keep the original database and WAL files, stop writes, and restore a validated backup.")
@@ -344,7 +354,11 @@ func mutationDigest(id domain.ID, operation string, input any) (string, error) {
 		return "", err
 	}
 	body, err := json.Marshal(input)
-	if err != nil || len(body) > 1<<20 {
+	limit := 1 << 20
+	if operation == "worker.branches.report" {
+		limit = domain.MaxRepositoryBranchesJobBytes
+	}
+	if err != nil || len(body) > limit {
 		return "", domain.Fail(domain.InvalidArgument, "Invalid mutation document.", "Provide at most 1 MiB of JSON.")
 	}
 	hash := sha256.Sum256(append([]byte(operation+"\x00"), body...))
@@ -370,6 +384,9 @@ func (s *Store) Replay(ctx context.Context, id domain.ID, operation string, inpu
 		}
 		var savedHash string
 		var saved []byte
+		if err := tx.checkSubscriptionDeletionRequest(id, digest); err != nil {
+			return err
+		}
 		err := tx.tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -416,6 +433,9 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	if err := permission.Authorize(); err != nil {
 		return Result{}, err
 	}
+	if err := permission.checkSubscriptionDeletionRequest(id, digest); err != nil {
+		return Result{}, err
+	}
 	var savedHash string
 	var saved []byte
 	err = tx.QueryRowContext(ctx, "SELECT digest,result FROM receipts WHERE id=?", id).Scan(&savedHash, &saved)
@@ -440,7 +460,11 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 		return Result{}, err
 	}
 	raw, err := json.Marshal(out)
-	if err != nil || len(raw) > 4<<20 {
+	resultLimit := 4 << 20
+	if operation == "worker.branches.report" {
+		resultLimit = 2 * domain.MaxRepositoryBranchesJobBytes
+	}
+	if err != nil || len(raw) > resultLimit {
 		return Result{}, domain.Fail(domain.ResourceExhausted, "The mutation result exceeds its bound.", "Split the operation into smaller batches.")
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO receipts(id,digest,result,created_at) VALUES(?,?,?,?)", id, digest, raw, t.now.UnixMilli()); err != nil {
@@ -547,6 +571,9 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if !kind.Valid() {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Unknown entity kind.", "Use a supported entity kind.")
 	}
+	if kind == domain.ProjectPromptHistoryKind && (expected != 0 || sessionID != "" || projectID == "") {
+		return Record{}, domain.Fail(domain.InvalidArgument, "Prompt history is immutable project-owned text.", "Use the dedicated history operations.")
+	}
 	if sessionID != "" {
 		if err := sessionID.Validate(); err != nil {
 			return Record{}, err
@@ -622,9 +649,12 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	body, err := json.Marshal(value)
 	maxBodyBytes := 1 << 20
+	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.DiscoverRepositoryBranchesJob {
+		maxBodyBytes = domain.MaxRepositoryBranchesJobBytes
+	}
 	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
 		maxBodyBytes = maxCompactionJobEntityBytes
-	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind {
+	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type != domain.DiscoverRepositoryBranchesJob {
 		maxBodyBytes = workspace.StorageJobDocumentLimit(job)
 	}
 	if err != nil || len(body) > maxBodyBytes {
@@ -701,6 +731,21 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
 	}
+	if kind == domain.ProjectPromptHistoryKind {
+		// Live history removal is independent of receipt/native retirement. Older
+		// managed backups may restore captured text; project tombstones still fence
+		// deleted projects. Do not redact source-session creation receipts here.
+		if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM entities WHERE id=?", id); err != nil {
+			return storageError(err)
+		}
+		delete(t.touched, id)
+		return t.event(r, Deleted)
+	}
+	if kind == domain.ProjectKind {
+		if _, err := t.ClearProjectPromptHistory(id); err != nil {
+			return err
+		}
+	}
 	if kind == domain.AccountKind {
 		if err := t.RequireBrowserProfileRemoval(id); err != nil {
 			return err
@@ -765,13 +810,15 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 }
 
 type Filter struct {
-	Kind        domain.Kind        `json:"kind"`
-	SessionID   domain.ID          `json:"session_id,omitempty"`
-	ProjectID   domain.ID          `json:"project_id,omitempty"`
-	ProviderID  domain.ID          `json:"provider_id,omitempty"`
-	AccountType domain.AccountType `json:"account_type,omitempty"`
-	After       domain.ID          `json:"after,omitempty"`
-	Limit       int                `json:"limit"`
+	APIProtocol         domain.APIProtocol         `json:"api_protocol,omitempty"`
+	SubscriptionService domain.SubscriptionService `json:"subscription_service,omitempty"`
+	Kind                domain.Kind                `json:"kind"`
+	SessionID           domain.ID                  `json:"session_id,omitempty"`
+	ProjectID           domain.ID                  `json:"project_id,omitempty"`
+	ProviderID          domain.ID                  `json:"provider_id,omitempty"`
+	AccountType         domain.AccountType         `json:"account_type,omitempty"`
+	After               domain.ID                  `json:"after,omitempty"`
+	Limit               int                        `json:"limit"`
 }
 
 func (f Filter) validate() error {
@@ -788,13 +835,19 @@ func (f Filter) validate() error {
 			}
 		}
 	}
-	if f.ProviderID != "" || f.AccountType != "" {
+	if f.ProviderID != "" || f.AccountType != "" || f.SubscriptionService != "" || f.APIProtocol != "" {
 		if f.Kind != domain.AccountKind {
 			return domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind.")
 		}
 	}
 	if f.AccountType != "" && f.AccountType != domain.APIAccount && f.AccountType != domain.SubscriptionAccount {
 		return domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription.")
+	}
+	if f.APIProtocol != "" && (!f.APIProtocol.API() || f.AccountType == domain.SubscriptionAccount || f.SubscriptionService != "") {
+		return domain.Fail(domain.InvalidArgument, "Invalid API format filter.", "Select one API format without a subscription source.")
+	}
+	if f.SubscriptionService != "" && (!f.SubscriptionService.Valid() || f.ProviderID != "" || f.AccountType == domain.APIAccount) {
+		return domain.Fail(domain.InvalidArgument, "Invalid subscription account filter.", "Select one subscription service without an API provider.")
 	}
 	return nil
 }
@@ -815,6 +868,14 @@ func listRows(ctx context.Context, q queryer, f Filter, limit int) ([]Record, er
 	if f.AccountType != "" {
 		query += " AND json_extract(CAST(body AS TEXT),'$.type')=?"
 		args = append(args, f.AccountType)
+	}
+	if f.SubscriptionService != "" {
+		query += " AND json_extract(body,'$.type')='subscription' AND json_extract(body,'$.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
+	}
+	if f.APIProtocol != "" {
+		query += " AND json_extract(CAST(body AS TEXT),'$.type')='api' AND COALESCE(json_extract(CAST(body AS TEXT),'$.api_protocol'),(SELECT json_extract(CAST(p.body AS TEXT),'$.protocol') FROM entities p WHERE p.kind='provider' AND p.id=json_extract(CAST(entities.body AS TEXT),'$.provider_id')))=?"
+		args = append(args, f.APIProtocol)
 	}
 	if f.SessionID != "" {
 		query += " AND session_id=?"
@@ -971,7 +1032,10 @@ func Decode[T any](r Record) (T, error) {
 		var envelope struct {
 			Type domain.JobType `json:"type"`
 		}
-		if len(r.Data) <= workspace.MaxStorageRecoveryJobBytes && json.Unmarshal(r.Data, &envelope) == nil {
+		if len(r.Data) <= domain.MaxRepositoryBranchesJobBytes && json.Unmarshal(r.Data, &envelope) == nil {
+			if envelope.Type == domain.DiscoverRepositoryBranchesJob {
+				maxBytes = domain.MaxRepositoryBranchesJobBytes
+			}
 			if envelope.Type == domain.CompactSessionJob {
 				maxBytes = maxCompactionJobEntityBytes
 			} else if envelope.Type == domain.WorkspaceStorageJob {

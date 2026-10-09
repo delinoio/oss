@@ -37,39 +37,60 @@ func (s AccountOAuthState) Valid() bool {
 // resources, snapshots, events or portable configuration. Secrets and callback/
 // authorization URLs belong only to the original process's ephemeral controller.
 type AccountOAuthAttempt struct {
-	Version             uint32            `json:"version"`
-	ID                  ID                `json:"id"`
-	Revision            uint64            `json:"revision"`
-	ServerID            ID                `json:"server_id"`
-	ProviderID          ID                `json:"provider_id"`
-	ProviderRevision    uint64            `json:"provider_revision"`
-	Actor               Principal         `json:"actor"`
-	Generation          ID                `json:"generation"`
-	StartRequestID      ID                `json:"start_request_id"`
-	CompletionRequestID ID                `json:"completion_request_id,omitempty"`
-	CompletionRevision  uint64            `json:"completion_revision,omitempty"`
-	AccountID           ID                `json:"account_id"`
-	CreateRequestID     ID                `json:"create_request_id"`
-	ConnectRequestID    ID                `json:"connect_request_id"`
-	State               AccountOAuthState `json:"state"`
-	StartedAt           time.Time         `json:"started_at"`
-	ExpiresAt           time.Time         `json:"expires_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
-	CallbackCommitment  string            `json:"callback_commitment,omitempty"`
-	CodeCommitment      string            `json:"code_commitment,omitempty"`
-	StagingClaimed      bool              `json:"staging_claimed"`
-	Sealed              bool              `json:"sealed"`
-	CleanupPending      bool              `json:"cleanup_pending"`
-	Problem             *Error            `json:"problem,omitempty"`
+	APIFormat           *ProviderAPIFormat `json:"api_format,omitempty"`
+	DeviceRequestID     ID                 `json:"device_request_id,omitempty"`
+	Preset              ProviderPresetID   `json:"preset,omitempty"`
+	StateCommitment     string             `json:"state_commitment,omitempty"`
+	QuotaProject        string             `json:"quota_project,omitempty"`
+	Version             uint32             `json:"version"`
+	ID                  ID                 `json:"id"`
+	Revision            uint64             `json:"revision"`
+	ServerID            ID                 `json:"server_id"`
+	ProviderID          ID                 `json:"provider_id"`
+	ProviderRevision    uint64             `json:"provider_revision"`
+	Actor               Principal          `json:"actor"`
+	Generation          ID                 `json:"generation"`
+	StartRequestID      ID                 `json:"start_request_id"`
+	CompletionRequestID ID                 `json:"completion_request_id,omitempty"`
+	CompletionRevision  uint64             `json:"completion_revision,omitempty"`
+	AccountID           ID                 `json:"account_id"`
+	CreateRequestID     ID                 `json:"create_request_id"`
+	ConnectRequestID    ID                 `json:"connect_request_id"`
+	State               AccountOAuthState  `json:"state"`
+	StartedAt           time.Time          `json:"started_at"`
+	ExpiresAt           time.Time          `json:"expires_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
+	CallbackCommitment  string             `json:"callback_commitment,omitempty"`
+	CodeCommitment      string             `json:"code_commitment,omitempty"`
+	StagingClaimed      bool               `json:"staging_claimed"`
+	Sealed              bool               `json:"sealed"`
+	CleanupPending      bool               `json:"cleanup_pending"`
+	Problem             *Error             `json:"problem,omitempty"`
 }
 
 func (a AccountOAuthAttempt) Validate() error {
+	if a.APIFormat != nil && (a.APIFormat.Validate() != nil || a.APIFormat.Authentication != BearerAuth) {
+		return Fail(RecoveryRequired, "OAuth inference profile is invalid.", "Preserve the original attempt and selected profile.")
+	}
 	validDigest := func(v string) bool {
 		b, e := hex.DecodeString(v)
 		return e == nil && len(b) == 32 && hex.EncodeToString(b) == v
 	}
-	if a.Version != 1 || a.Revision == 0 || a.ProviderRevision == 0 || UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID}) != nil || a.ServerID.Validate() != nil || a.ProviderID.Validate() != nil || a.Generation.Validate() != nil || !a.State.Valid() || (a.Actor.Type != OwnerDevice && a.Actor.Type != ClientDevice) || a.Actor.MachineID != "" || a.Actor.Type == ClientDevice && a.Actor.DeviceID.Validate() != nil || a.StartedAt.IsZero() || a.UpdatedAt.Before(a.StartedAt) || !a.ExpiresAt.Equal(a.StartedAt.Add(10*time.Minute)) || a.CallbackCommitment != "" && !validDigest(a.CallbackCommitment) || (a.CompletionRequestID != "") != (a.CompletionRevision != 0 && validDigest(a.CodeCommitment)) || a.CompletionRequestID != "" && a.CompletionRequestID.Validate() != nil || a.StagingClaimed && a.CompletionRequestID == "" || a.Sealed && !a.StagingClaimed || a.CleanupPending && !a.StagingClaimed || a.State == OAuthConnected && (!a.Sealed || a.CleanupPending) {
+	if (a.Version != 1 && a.Version != 2) || a.Revision == 0 || a.ProviderRevision == 0 || UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID}) != nil || a.ServerID.Validate() != nil || a.ProviderID.Validate() != nil || a.Generation.Validate() != nil || !a.State.Valid() || (a.Actor.Type != OwnerDevice && a.Actor.Type != ClientDevice) || a.Actor.MachineID != "" || a.Actor.Type == ClientDevice && a.Actor.DeviceID.Validate() != nil || a.StartedAt.IsZero() || a.UpdatedAt.Before(a.StartedAt) || !a.ExpiresAt.Equal(a.StartedAt.Add(10*time.Minute)) || a.CallbackCommitment != "" && !validDigest(a.CallbackCommitment) || (a.CompletionRequestID != "") != (a.CompletionRevision != 0 && validDigest(a.CodeCommitment)) || a.CompletionRequestID != "" && a.CompletionRequestID.Validate() != nil || a.StagingClaimed && a.CompletionRequestID == "" || a.Sealed && !a.StagingClaimed || a.CleanupPending && !a.StagingClaimed || a.State == OAuthConnected && (!a.Sealed || a.CleanupPending) {
 		return Fail(RecoveryRequired, "OAuth attempt ownership is invalid.", "Preserve the original attempt and protected credential evidence.")
+	}
+	if a.Preset == PresetBaseten {
+		if a.Version != 2 || a.DeviceRequestID.Validate() != nil || UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID, a.DeviceRequestID}) != nil || a.DeviceRequestID == a.CompletionRequestID {
+			return Fail(RecoveryRequired, "Device OAuth dispatch ownership is invalid.", "Preserve its original Start receipt.")
+		}
+	} else if a.DeviceRequestID != "" {
+		return Fail(RecoveryRequired, "Unexpected Device OAuth ownership.", "Preserve the original attempt.")
+	}
+	if a.Version == 2 && a.Preset == PresetGemini && !ValidGoogleProjectID(a.QuotaProject) {
+		return Fail(RecoveryRequired, "OAuth project binding is invalid.", "Preserve the original quota project.")
+	}
+	if a.Version == 2 && (a.Preset != PresetHuggingFace && a.Preset != PresetGemini && a.Preset != PresetBaseten || !validDigest(a.StateCommitment)) {
+		return Fail(RecoveryRequired, "OAuth authentication profile is invalid.", "Preserve the original attempt.")
 	}
 	if a.Actor.Type == OwnerDevice && a.Actor.DeviceID != "" || a.CompletionRequestID != "" && UniqueIDs([]ID{a.ID, a.StartRequestID, a.AccountID, a.CreateRequestID, a.ConnectRequestID, a.CompletionRequestID}) != nil || (a.State == OAuthExchanging || a.State == OAuthSaving || a.State == OAuthConnected) && a.CompletionRequestID == "" || a.State == OAuthAwaiting && (a.CompletionRequestID != "" || a.StagingClaimed) || a.State == OAuthSaving && !a.StagingClaimed {
 		return Fail(RecoveryRequired, "OAuth attempt state is invalid.", "Preserve the original attempt and protected credential evidence.")

@@ -1,5 +1,19 @@
 # DeliDev protected credential storage
 
+## Shared credentials across API format generations
+
+Capability 9 uses the account's server-owned connection `credential_id`, falling
+back to the original connection ID for existing accounts. Every retained/current
+generation points to that same account-owned `account-api` reference. Resolve a
+connection only after proving its immutable execution or inspection authority;
+clients never receive protected material or manage references. Format saving does
+not read, write, enumerate or delete protected keys. OAuth metadata and serialized
+refresh use the original reference ID, preserving once-only exchange and receipts.
+Disconnect clears all generations before the existing joined removal/enumeration
+procedure; pending cleanup blocks changes and replacement. Follow the
+[account generation contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
+
+
 OAuth seals only `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}` after a durable staging claim. Keep account-less references and cleanup evidence across uncertain Put/SQLite outcomes. Explicit original local completion may read that reference without another exchange; missing/tombstoned material cannot be replaced. Cancel records denial and cleanup before removal, retains disconnected metadata and never claims upstream revocation. Follow the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Scope and ownership
@@ -28,9 +42,11 @@ deletion; an authority edit alone cannot delete a credential needed by them.
 
 The vault holds an exclusive private directory lock and pins its server UUID-v7 identity. A missing identity pin cannot rebind a populated vault. Under the exclusive lock, first-open recovery may discard only bounded private regular `.pending-<decimal>` atomic-write scratch files at an otherwise empty vault root; it validates every entry before removal and synchronizes cleanup. Owner directories, links, unknown names or oversized files retain recovery-required state. References comprise an owner UUID-v7, mutation request UUID-v7 and closed purpose (`account-api`, `account-login`, `network-proxy`, `worker-ssh`). Aliases, emails, provider URLs and user-selected filesystem paths are not native credential names. A replacement receives a fresh mutation ID. Private directory/file ownership, permissions and non-symlink checks apply to every access. Running independent copies of the same server identity against the same native references is outside the single-authority contract.
 
-GitHub PATs now have the separate direct native storage primitive below. The account envelope primitive does not store PAT payloads. Public PAT configuration/validation, credential import, platform unlock UI, backup restoration and provider login require their separate lifecycle composition.
+GitHub PATs now have the separate direct native storage primitive below. The account envelope primitive does not store PAT payloads. Public PAT configuration/validation, credential import, backup restoration and provider login require their separate lifecycle composition. macOS authentication UI follows the native policy below.
 
 The [doctor inspection boundary](cmds-delidev-diagnostics-contract.md) may open only an existing private vault with its original lock and server pin. It holds a non-creating exclusive lock, performs no scratch reconciliation or scope initialization, rejects writes/deletes and closes after inspection. Reading an exact sealed reference proves decryptability only; it never establishes provider readiness or enumerates unrelated native credentials.
+
+Subscription `AccountLogin` read failures omit the private generation/reference ID from vault logs, retaining only safe operation, owner, purpose and closed error classification. API reads keep their original reference diagnostics. This redaction changes no native access, exact-reference selection, ownership or mutation behavior.
 
 ## Envelope and persistence
 
@@ -51,17 +67,74 @@ Returned secret bytes belong to their caller and must be cleared promptly after 
 
 ## Platform adapters
 
-- **macOS:** native `Security.framework`/`CoreFoundation.framework` bindings through pinned purego, with exact service/account matching and no credential-bearing child command. The server process disables optional file-keychain UI through `SecKeychainSetUserInteractionAllowed(false)` in addition to the per-query authentication-failure option. File-keychain calls can otherwise request UI despite that option. Calls retain/release Core Foundation values synchronously, preserve completed writes through cancellation races, and map native statuses to typed errors. Users unlock/authorize their store outside the server; the adapter neither reads nor changes a login keychain password. See [Apple keychain APIs](https://developer.apple.com/documentation/security/keychains) and [interaction policy](https://developer.apple.com/documentation/security/seckeychainsetuserinteractionallowed%28_%3A%29).
+- **macOS:** native `Security.framework`/`CoreFoundation.framework` bindings through pinned purego, with exact service/account matching and no credential-bearing child command. The server process enables OS authentication UI once during framework initialization through `SecKeychainSetUserInteractionAllowed(true)`. Queries omit the authentication-UI attribute and use the OS default allow policy. File-keychain interaction is process-wide; no request temporarily toggles it. This policy applies to account wrapping keys and GitHub PATs, including background execution, schedules, cleanup and Doctor reads. Calls retain/release Core Foundation values synchronously, preserve completed writes through cancellation races, and map native statuses to typed errors. When authentication is required, macOS presents its own prompt in the server user's session. Approval continues the same original native call; cancellation, denial or an unavailable interactive session retains typed failure and the original retry/reconciliation state. DeliDev does not collect, read or change a login keychain password and adds no automatic authentication retry. Executable verification remains independent and precedes native access. See [Apple keychain APIs](https://developer.apple.com/documentation/security/keychains) and [interaction policy](https://developer.apple.com/documentation/security/seckeychainsetuserinteractionallowed%28_%3A%29).
 - **Windows:** exact generic Credential Manager records, persistent for the current user on the machine. The vault lock and existence check prevent ordinary retry replacement. Only fixed-size wrapping material reaches `CredWrite`; larger OAuth documents remain encrypted in private files. No credential enumeration or interactive credential UI is used. See [CredWrite](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-credwritew).
 - **Linux:** Secret Service over an already running local Unix user bus, with bounded connection/call deadlines, kernel-verified peer UID and EXTERNAL authentication. TCP/autolaunch/multiple/ambiguous bus addresses are rejected. The adapter uses the existing default collection, exact application/reference attributes and a private bus connection per operation. It never creates a collection, launches a bus/keyring, calls an unlock prompt, or falls back to disk keys. The standard `plain` Secret Service session transfers wrapping material over this local bus; the account payload itself never enters D-Bus. A locked collection/item returns confirmation required. Closing the private bus invalidates any pending prompt and closes its session. MIME type is presentation metadata: GNOME Keyring returns `text/plain` for binary values, so retrieval validates the native session, plain-session parameters and exact binary size while retaining the original byte array. See the [Secret Service specification](https://specifications.freedesktop.org/secret-service/latest-single/) and [GNOME Keyring native serialization](https://github.com/GNOME/gnome-keyring/blob/main/daemon/dbus/gkd-secret-secret.c).
 
-Unavailable services return a typed unavailable error. Authentication UI requirements return confirmation required, without hanging on an implicit prompt. A missing sealed key or invalid envelope returns recovery required. Logs contain only operation, opaque owner/reference, purpose and stable error code; no raw native errors, payloads, provider identities or filesystem paths are logged.
+Unavailable services return a typed unavailable error. On macOS, canceled, denied or disallowed authentication returns confirmation required with platform-specific guidance; native calls remain synchronous and retain their original objects until completion. Cancellation cannot forcibly dismiss an OS-owned prompt or prove that a native mutation did not complete. Linux and Windows retain their noninteractive policy and typed errors. No platform falls back to plaintext storage. A missing sealed key or invalid envelope returns recovery required. Logs contain only operation, opaque owner/reference, purpose and stable error code; no raw native errors, payloads, provider identities or filesystem paths are logged.
+
+## Desktop startup access confirmation
+
+Each fresh macOS desktop process presents a startup notice after its local
+connection is authenticated and automatically checks existing connected API
+credentials through its app-owned resident server. The closed private
+`runtime.credentials` operation shares that server's vault; it introduces no
+public RPC, capability, credential format or database migration. Borrowed
+CLI/service servers and saved remote connections grant no local vault access.
+Other platforms retain their existing noninteractive policy.
+
+The native connector owns one original attempt across renderer remounts and
+local product windows. Its server/runtime generation and original paired client
+are checked before admission; server reads recheck client revocation. Paginated
+account inventory selects only current connected credential-bearing API
+accounts without pending removal, resolves each immutable selected provider
+profile and reads its exact current protected reference. Disconnected,
+subscription and keyless accounts do not open the vault. Resolve the shared
+`CredentialReferenceID` for both the protected key and OAuth metadata so a
+key-preserving API-format change retains the same reference. Validate OAuth
+metadata against its immutable managed OAuth profile, then read the current
+private token directly even when its refresh checkpoint is claimed,
+recovery-required or denied. This check does not resume or mutate that
+checkpoint, refresh, exchange or clean up another generation. Every returned
+secret buffer is cleared, including on failure. No provider request,
+account-health write, revision or receipt change is permitted. Access success
+proves decryptability only, not provider readiness.
+
+The attempt remains bound to its original paired client. The resident server
+may accept the same retained attempt from a replacement client only after that
+client authenticates and the original paired client is confirmed revoked.
+Observation preserves the in-flight result; a new Keychain check still requires
+an explicit Retry after a confirmed failure.
+
+Repeated observation reuses the original attempt, including unknown replies.
+Terminal failures require an explicit Retry that names the exact failed attempt
+shown in the invoking window; native code rejects a stale failure if another
+window has advanced the attempt. The new attempt remains bound to its original
+predecessor; status and restart do not retry authentication.
+Continue without checking cancels later reads and retains a skipped observation.
+A synchronous OS-owned prompt may remain open until its original native call
+completes. Server shutdown cancels and joins this work before closing its vault;
+the existing desktop 35-second original-child shutdown boundary remains intact.
+Logs contain only original operation IDs, closed phases and sanitized error codes.
 
 ## Verification and remaining evidence
 
+macOS checks current code with `SecCodeCopySelf` and `SecCodeCheckValidity` before each native credential read/write and fresh OAuth admission/exchange. `errSecCSStaticCodeChanged` (-67034) returns recovery required with closed cause `credential_executable_changed`, independently of keychain authentication. Other code-verification failures also require recovery with `credential_executable_invalid`. A rejected fresh OAuth Start retains the existing `oauth_start_not_admitted` cause only after its admission transaction rolls back; its runtime diagnosis remains in structured logs. This check reads/unlocks no keychain. Original OAuth replay, status, cancellation and native deletion retain their independent authority; original references and once-only exchange receipts are preserved. Logs contain only the fixed executable-change reason or OAuth phase/error code. Repair follows [local development signing](apps-delidev-desktop-contract.md#local-development-signing-and-recovery), using original-item authorization and explicit server replacement, never key regeneration or another exchange.
+
+The macOS process fixture replaces a running ad-hoc executable and checks its separate code-change error. It also compiles two distinct executables, signs both with a synthetic certificate imported only into its named temporary keychain, and checks original wrapping-material access across builds. The fixture passes that identity directly to the native signing API, with the development identifier/runtime flag, then uses strict codesign verification; CLI identity discovery requires the user's search list and remains separate registration evidence. It removes the complete owned keychain and changes no default keychain, search list or global trust. Real existing-item authorization, provider approval/inference and installed-platform lifetime remain separate acceptance evidence.
+
 Ordinary deterministic tests inject a test-only in-memory native backend, never a production fallback. Real private filesystem tests cover restart/retry, concurrent conflicting writes, uncertain native commits, cancellation after a native write, bounds, altered envelopes, missing keys, scope mismatch, symlink/shared-permission rejection, deletion while locked and delayed writes after deletion. Raw secret values and untrusted error text must not appear in files/logs.
 
-Native macOS tests create a new password-protected temporary keychain and direct every query to it. They never query the default/login keychain. They cover native create/read/duplicate/delete, locked-store refusal, explicit temporary-keychain unlock and larger envelope payloads. Windows tests target only fresh UUID credential names and delete those temporary entries; native Windows execution remains a required evidence item until run on Windows.
+Automatic native macOS tests run in separate test processes that disable interaction once after framework initialization, create a new password-protected temporary keychain and direct every query to it. The suppression is test-only and cannot be selected by a production environment variable. Unit tests verify production authentication admission, exact query matching and native error classifications without accessing any keychain. They never query the default/login keychain. They cover native create/read/duplicate/delete, locked-store refusal, explicit temporary-keychain unlock and larger envelope payloads. Manual interactive acceptance additionally requires an isolated temporary Keychain to verify prompt display, approval completing the original request, cancellation followed by retry of the same reference, and Doctor reading the original sealed reference. Automated fixtures do not establish interactive or installed-app acceptance. Windows tests target only fresh UUID credential names and delete those temporary entries; native Windows execution remains a required evidence item until run on Windows.
+
+The opt-in `TestMacInteractiveTemporaryKeychain` fixture creates and
+deletes only its new isolated keychain. Run it in an interactive macOS session
+with `DELIDEV_MAC_INTERACTIVE_FIXTURE=1 go test ./cmds/delidev-cli/internal/credentials -run '^TestMacInteractiveTemporaryKeychain$' -count=1 -v`.
+Cancel the first prompt, then approve the explicit retry with the fixture's
+public test password `delidev-isolated-test-password`. This selector exists only
+in test source and changes no production policy. An unavailable prompt or a
+confirmation-required result is a failed interactive acceptance, not an approval
+proof. The retained parent removes the owned keychain after the child exits.
 
 Linux native tests require an explicitly disposable Secret Service session. The fixture under `cmds/delidev-cli/internal/credentials/testdata/secret-service` creates a non-root container user, private home/runtime, private D-Bus session and temporary GNOME Keyring. The fixed test password protects only that discarded fixture. The final locked-state test intentionally leaves test wrapping material in the locked collection; container removal discards the entire fixture. Never opt into this test against an ordinary user's shared collection.
 
@@ -87,7 +160,25 @@ The private metadata directory reuses the server-scope pin, exclusive lock, priv
 
 Before the first native write, persist the original staged intent. Native acknowledgment loss reconciles only the exact generation and original bytes. A sealed generation whose native entry disappears returns recovery required and is never recreated by retry. Deletion persists a denial tombstone before touching the OS store, so locked/unavailable native cleanup leaves a retryable marker that already refuses Get/Put. Completed tombstones cannot be reused, and replayed deletion cannot remove a newer generation. Metadata-only cleanup enumeration scans this profile's owned records in bounded batches with cancellation and rejects more than 256 unresolved generations without returning a partial list. No native credential enumeration is used.
 
-The native adapters keep their existing no-prompt, exact-match, redacted-error and platform session constraints for both profiles. Public profile metadata, current GitHub identity/access validation, immediate cancellation of active integration requests, replacement/delete coordination, RPC/CLI and desktop settings still require the server integration layer; primitive success alone proves none of those capabilities.
+Both profiles share exact-match, redacted-error and platform session constraints. macOS allows OS-owned authentication prompts as specified above; Linux and Windows retain their existing noninteractive behavior. Public profile metadata, current GitHub identity/access validation, immediate cancellation of active integration requests, replacement/delete coordination, RPC/CLI and desktop settings still require the server integration layer; primitive success alone proves none of those capabilities.
 
 
 The direct PAT primitive is now composed by [IntegrationService and its CLI/desktop clients](cmds-delidev-integrations-contract.md). That layer supplies actor-bound reference receipts, durable denial before native replacement/deletion, exact pending-generation recovery and joined identity-inspection cancellation. Native storage success remains separate from GitHub identity and repository feature authorization.
+
+### Ordinary session gh authority
+
+Issue #1857's bounded tool exception follows the [harness contract](cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context). Only the executing Worker's in-memory gh directory selector reaches ordinary native session tool environments. gh owns all file/OS-store credential access and explicit configuration writes. DeliDev never reads, copies, logs, transfers or deletes those credentials/configuration, inherits `GH_TOKEN`/`GITHUB_TOKEN`, or substitutes server integration credentials. Native provider isolation and every protected execution/proxy exclusion remain unchanged; excluded auxiliary, inspection and Sidechat flows retain their isolation.
+
+## Access-only server quota references — issue #1854
+
+System 50 quota reads retain the exact current sealed AccountLogin reference independently of an Execute writer. Go validates its original account/user commitment and narrows native input to access token, account and plan; ID and refresh tokens remain in Go and never reach the quota native process or managed files. Admission/reference capture use short account serialization, never a lock across native/network work. Worker completion may rotate the current generation but must protect the quota operation's captured generation until independent cleanup. An uncertain quota owner fences protected-reference deletion and restore without marking an original execution lease failed. Authentication renewal and writeback remain exclusively owned by the original lifecycle/execution controller. Follow the [V2 quota contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854).
+
+### Subscription vault initialization
+
+Server subscription maintenance acquires the shared account gate before lazy
+vault initialization and before reading the exact original `AccountLogin`
+generation. API account operations use the same gate and retained vault owner.
+Cancellation before acquisition admits no vault or native work; failed opening
+publishes no owner and permits a later original-authority retry. Release the gate
+before native login/logout or waiting on its process. Original operation claims,
+independent cleanup and joined shutdown keep their existing ownership.

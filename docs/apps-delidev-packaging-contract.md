@@ -66,6 +66,11 @@ identity and complete packaged notice bytes are checked; the report also records
 the Chromium credits SHA-256. Ordinary `bundle:native` is development packaging;
 only the verified dry-run path currently assembles the complete native notice set.
 
+
+### Localization resources
+
+English/Korean presentation follows [the localization contract](apps-delidev-localization-contract.md). The independent device Language controller and protected preference stay above connection and Settings visit ownership. Preserve stable category/enum/RPC values, drafts, focus, exact operation identities and original technical evidence. Native/widget catalogs generate typed resources during preparation, tests and packaging; widget language publication never advances server observation timestamps. App body language follows the saved device choice; OS-owned standard UI and widget gallery/selection guidance follow native localization. Fixture/build/package results remain distinct from actual platform and provisioned WidgetKit acceptance.
+
 ## Storage
 
 Verified artifacts live under `target/delidev-dry-run/<target>/<source-commit>/`
@@ -136,3 +141,101 @@ Desktop runtime selection uses `tauri_runtime_cef::CefRuntime` and `Cef` attribu
 Linux Debian packages require the XDG portal service, an installed portal implementation, and `zenity` so the new dialog backend is available after installation. AppImage hosts must provide these services and `zenity`; the archive does not supply a system D-Bus portal service.
 
 AppImage updater dry runs use the verified helper staging defined in `repository-prebuilt-dependencies-contract.md`. The pinned CEF bundler copies native binaries directly into `bin`; the earlier Debian share-directory copy workaround must not be used because its duplicate ELF lacks adjacent CEF libraries. Packaging inspection does not establish native AppImage runtime acceptance.
+
+## Resident sidecar protocol compatibility
+
+The desktop and resident CLI ship from the same package/source revision with private control protocol version 2. Runtime handshake rejects mismatches without spawning short compatibility controllers. Packaging/architecture checks do not prove actual macOS parent monitoring, Windows kill-on-close Job behavior, Linux parent-death behavior or CEF Quit acceptance; record those results separately with source revision and commands.
+
+## Automated download-only releases
+
+`Release Project` accepts `delidev` with a stable patch/minor/major increment.
+It updates the desktop package, Cargo manifest/lock and Tauri versions together,
+records the original run/source revision, and creates `delidev-v<semver>`.
+The tag push starts the independent `release-delidev.yml` workflow. The coordinator
+ends after tagging and reports preparation only. Recover downstream failure by
+rerunning the original tag workflow without moving its tag. The existing Go
+sidecar/Worker version and source revision injection remains shared. DeliDev does not publish a Cargo or npm package. Desktop local-server and saved-connection compatibility checks use the compiled `CARGO_PKG_VERSION`, so they advance with the packaged Go server version; protocol checks remain independent.
+
+The tag-triggered workflow builds macOS/Linux x64 and arm64 using the existing native
+matrix and keyless package checks. Windows x64/arm64 is explicitly skipped:
+there is no Windows production signing backend in this workflow. Setting
+`DELIDEV_WINDOWS_SIGNING_ENABLED` to a value other than empty or `false` fails
+planning; a variable alone never activates Windows signing. Linux publishes the
+verified DEB and AppImage. macOS publishes a Developer ID signed, notarized and
+stapled DMG. Each target also publishes its dedicated Worker executable, which
+provides the ordinary `delidev` CLI/server commands. A downloaded standalone Unix
+executable requires executable permission before use.
+
+Production macOS signing runs in a fresh job separate from keyless preparation.
+External actions in the coordinator and independent release workflow use full commit SHAs.
+The signer installs no package manager, Go/Rust toolchain, build dependencies or
+CEF cache. It invokes the repository signer directly with Node, consumes only
+the original same-run keyless DMG/Worker and digest-bound CEF notice inventory,
+and rechecks their version, source revision, architecture and exact filenames
+before using credentials. The build job has no release Environment or signing
+secret references. The signing step
+imports the selected Developer ID Application certificate into a private temporary
+keychain without changing the default/search-list keychains. Main app and both
+widget profiles must match their original bundle IDs, the selected team,
+certificate, unexpired Developer ID authority and `group.io.delino.delidev`.
+Original CEF helper entitlements are retained before inside-out signing. Native
+payloads use hardened runtime and timestamps; app and Worker archives and the
+final DMG require accepted notarization. The app and DMG have stapled tickets;
+standalone command-line binaries are notarized through their archive submission.
+Original notices remain checked after signing. Keychain/private files are removed
+on success, failure or handled cancellation. Signing children are awaited through
+original process exit before cleanup; cancellation stops that retained child and
+forces it only after a two-second cancellation grace. Ordinary build children
+receive only the existing bounded
+keyless environment.
+
+The `delidev-release` GitHub Environment supplies these secrets:
+
+- `DELIDEV_MACOS_CERTIFICATE_BASE64`, `DELIDEV_MACOS_CERTIFICATE_PASSWORD`.
+- `DELIDEV_MACOS_APP_PROFILE_BASE64`, `DELIDEV_MACOS_WIDGET_PROFILE_BASE64`,
+  `DELIDEV_MACOS_SELECTION_PROFILE_BASE64`.
+- `DELIDEV_APPLE_NOTARY_KEY_BASE64`, `DELIDEV_APPLE_NOTARY_KEY_ID`,
+  `DELIDEV_APPLE_NOTARY_ISSUER_ID`.
+
+The independent workflow reads these secrets directly from the Environment in
+its preflight and signing jobs. The coordinator neither forwards signing secrets
+nor invokes the release workflow. Runtime preflight rejects missing or empty
+signing material before native builds. Build jobs remain credential-free.
+The tag workflow accepts only first-party `delidev-v<semver>` pushes and validates
+the exact stable version against synchronized source files, checkout revision and
+tag target before passing version/revision outputs to dependent jobs.
+
+Its non-secret variables are `DELIDEV_APPLE_TEAM_ID` and
+`DELIDEV_MACOS_CERTIFICATE_SHA1`. Base64 material must be canonical single-line
+encoding. The workflow validates required configuration before native builds.
+No production credentials, real Environment or first release are created by
+repository configuration. Environment protection rules, if configured by the
+owner, remain enforced by GitHub.
+
+Successful target candidates are retained for seven days under the original
+source revision, target and release run ID. Reruns restore and verify original
+candidates instead of resigning them. Original macOS keyless signing inputs and
+notices are retained under a separate same-run identity; reruns verify and reuse
+them before rebuilding when no signed candidate exists. Expired, duplicate or corrupt retained
+candidates fail rather than silently replacing original bytes. An existing public
+release is verified before signing/building. Assembly requires all four target
+reports and ten exact download assets, includes unchanged root `LICENSE`/`NOTICE`, adds `delidev-release-index.json` and
+`SHA256SUMS`, and rejects any updater manifest. The index retains
+`nativeAcceptance: unverified`; signatures/package inspection do not establish
+installed-platform, provisioned WidgetKit or real-account acceptance.
+
+Publication lists all release pages, including drafts, rejects duplicate/conflicting
+release identities, pins the numeric draft ID and uploads only missing assets.
+Existing asset bytes must match the original inventory. Every asset is downloaded
+and hashed before publication and again afterward. Unknown creation/upload/publication
+responses require inspection of the original operation; they never grant blind
+replacement or recreation. Complete public releases are reused read-only;
+incomplete public releases fail. Draft publication is stable and non-latest to
+avoid changing another project's repository-wide latest release.
+
+A download-only public release never gains Windows files or an updater manifest
+later. Full signed updater support requires a new version, an implemented Windows
+signing backend, complete six-target acceptance and the existing production-root
+readiness/matching-key gate. See the updates contract. Root readiness remains
+false until an owner supplies the actual operational public key; test keys never
+activate it.

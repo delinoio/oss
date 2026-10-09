@@ -52,12 +52,8 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	installation, err := checkedExecutionSelection(tx, session, machine, input.SourceAssignment)
-	if err != nil {
+	if err := checkedExecutionSource(tx, r, session, machine, input.SourceAssignment); err != nil {
 		return r, session, input, err
-	}
-	if installation.Version != input.SourceAssignment.Installation.Version || installation.ResolvedPath != input.SourceAssignment.Installation.ResolvedPath {
-		return r, session, input, forkConflict()
 	}
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
 	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
@@ -65,13 +61,21 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	}
 	input.Version, input.SourceSessionID, input.SourceRevision = 1, id, r.Revision
 	if input.SourceAssignment.Configuration.Harness == domain.OpenCode {
-		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Installation.Version != domain.OpenCodeProtocolVersion {
+		if session.Workspace != domain.GeneralChat || machine.OS == "windows" || (machine.OS != "darwin" && machine.OS != "linux") || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) || input.SourceAssignment.Version != 4 && !domain.ValidNativeVersionMetadata(input.SourceAssignment.Installation.Version) {
 			return r, session, input, domain.Fail(domain.Unsupported, "This Runner Device does not support OpenCode General Chat Fork.", "Update the original Unix Runner Device and keep the completed source session.")
 		}
 		if err := validateOpenCodeForkTranscript(tx, id, input.Completion.NativeThreadID); err != nil {
 			return r, session, input, err
 		}
 		input.Version = 2
+	}
+	if input.SourceAssignment.Version == 4 {
+		if job.Startup == nil || job.Startup.Ready == nil || job.Startup.Failure != nil || job.Startup.Ready.Validate() != nil {
+			return r, session, input, forkConflict()
+		}
+		selected := *input.SourceAssignment.Startup
+		selected.ExecutableSHA256 = job.Startup.Ready.ExecutableSHA256
+		input.Startup = &selected
 	}
 	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, *session.Execution, *session.InitialExecution
 	return r, session, input, nil
@@ -169,6 +173,17 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 				s.logger.InfoContext(ctx, "sidechat_admission_rejected", "source_session_id", input.SourceSessionID, "worker_capability", slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1), "harness", input.SourceAssignment.Configuration.Harness, "code", domain.Unsupported)
 				return nil, domain.SidechatUnavailable()
 			}
+
+			if input.SourceAssignment.Configuration.Subscription {
+				if !domain.ManagedSidechatSupported(machine.WorkerCapabilities) {
+					return nil, domain.SidechatUnavailable()
+				}
+				_, account, err := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)
+				if err != nil || account.Subscription == nil || account.Subscription.Generation == "" || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.ServerObservationActive() || account.Subscription.Observation != nil && account.Subscription.Observation.Active() {
+					return nil, subscriptionDenied()
+				}
+				input.SubscriptionGeneration = account.Subscription.Generation
+			}
 			input.Version, input.Purpose, input.Workspace = 3, purpose, session.Workspace
 			origin = session.LocalOrigin
 		}
@@ -177,6 +192,19 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		}
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
+		}
+		clones, err := workspace.ForkRequiresManagedClone(input)
+		if err != nil {
+			return nil, err
+		}
+		if clones {
+			_, machine, err := activeMachine(tx, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
+				return nil, domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone an independent Fork.", "Update and reconnect the original Worker before creating the Fork.")
+			}
 		}
 		if origin != nil && purpose != domain.SidechatFork {
 			current, err := tx.Authenticate(originDigest[:])
@@ -274,6 +302,19 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 }
 
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
+	clones, err := workspace.ForkRequiresManagedClone(input)
+	if err != nil {
+		return err
+	}
+	if clones {
+		_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
+			return domain.Fail(domain.Unsupported, "The original Runner Device cannot clone an independent Fork.", "Update and reconnect that Worker before creating a Fork.")
+		}
+	}
 	if err := input.Validate(); err != nil {
 		return err
 	}
@@ -296,6 +337,17 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 			return domain.SidechatUnavailable()
 		}
 	}
+
+	if input.SubscriptionGeneration != "" {
+		_, machine, err := activeMachine(tx, source.MachineID)
+		if err != nil || !domain.ManagedSidechatSupported(machine.WorkerCapabilities) {
+			return domain.SidechatUnavailable()
+		}
+		_, account, err := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)
+		if err != nil || account.Subscription == nil || account.Subscription.RecoveryRequired || account.Connection == nil || account.Connection.ID != input.SourceAssignment.ConnectionID || account.Subscription.Generation != input.SubscriptionGeneration {
+			return subscriptionDenied()
+		}
+	}
 	if err := validateForkSharing(input); err != nil {
 		return err
 	}
@@ -314,7 +366,22 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 	var preparation workspace.PrepareRequest
 	var manifest workspace.Manifest
 	if problem == nil {
-		if err := validateForkAuthority(tx, input); err != nil {
+
+		authorityInput := input
+		if input.SubscriptionGeneration != "" {
+			proof, err := tx.ManagedSidechatFinish(outputFinish(raw))
+			if err != nil || proof.Job != r.ID || proof.JobRevision != r.Revision || proof.Account != input.SourceAssignment.AccountID || proof.Machine != job.MachineID || proof.Instance != job.InstanceID || proof.Device != job.AssignedDeviceID || proof.Generation != input.SubscriptionGeneration {
+				problem = domain.Fail(domain.RecoveryRequired, "Sidechat authentication finish is unconfirmed.", "Retain the original child, lease and cleanup evidence; do not repeat Fork.")
+			} else {
+				_, account, err := subscriptionAccount(tx, proof.Account, 0)
+				if err != nil || account.Subscription == nil || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Generation != proof.Finish {
+					problem = domain.Fail(domain.RecoveryRequired, "Sidechat authentication ownership changed before publication.", "Retain the original child and protected Finish receipt.")
+				} else {
+					authorityInput.SubscriptionGeneration = proof.Finish
+				}
+			}
+		}
+		if err := validateForkAuthority(tx, authorityInput); err != nil {
 			problem = domain.Fail(domain.RecoveryRequired, "Fork publication lost its original authority.", "Preserve the accepted native child and reconcile its original job before another fork.")
 		}
 		_, machine, err := activeMachine(tx, job.MachineID)
@@ -347,13 +414,16 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		}
 		return tx.PutJob(r.ID, revision, r.SessionID, r.ProjectID, job)
 	}
+	if err := tx.InheritForkImages(input); err != nil {
+		return nil, err
+	}
 	// Publish the preparation, child and successful original job together. No
 	// source queue, transcript, interaction, routing or session record is written.
 	preparationID := domain.NewID()
 	if _, err := tx.PutJob(preparationID, 0, input.ChildSessionID, r.ProjectID, domain.Job{Type: domain.PrepareWorkspaceJob, State: domain.JobSucceeded, MachineID: job.MachineID, Input: output.Preparation, Output: output.Manifest, AcceptedAt: job.AcceptedAt, FinishedAt: &now}); err != nil {
 		return nil, err
 	}
-	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
+	child := domain.Session{Name: input.Name, NameOwner: domain.ManualNameOwner, AgentID: input.SourceAssignment.Configuration.AgentID, MachineID: job.MachineID, ProjectID: r.ProjectID, Workspace: input.Workspace, LocalOrigin: input.LocalOrigin, Source: domain.ManualSession, CreatedBy: input.CreatedBy, Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchPaused, Preparation: &domain.SessionPreparation{JobID: preparationID, State: domain.PreparationReady}, Fork: &domain.ForkOrigin{Startup: input.Startup, SourceSessionID: input.SourceSessionID, SourceRevision: input.SourceRevision, SourceExecutionID: input.Completion.ExecutionID, SourceTurnID: input.Completion.NativeTurnID, JobID: r.ID, RuntimeID: input.RuntimeID, NativeThreadID: output.NativeThreadID, CheckpointDigest: output.CheckpointDigest, Snapshot: input.Snapshot, WorkerDeviceID: job.AssignedDeviceID, JobInputDigest: forkInputDigest(job.Input)}}
 	if input.Purpose == domain.SidechatFork {
 		snapshot, err := input.ChildSnapshot()
 		if err != nil {
@@ -365,7 +435,10 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		}
 	}
 	if input.Version == 2 {
+		child.Fork.OpenCodeCreationRequestID = input.OpenCode.Fork
 		child.Fork.NativeTurnID = output.NativeTurnID
+		outputDigest := forkInputDigest(raw)
+		child.Fork.OpenCodeCreationProof = &domain.OpenCodeForkCreationProof{CreationRequestID: input.OpenCode.Fork, ChildSessionID: input.ChildSessionID, JobOutputDigest: outputDigest, OriginDigest: child.Fork.OpenCodeCreationDigest(input.ChildSessionID, outputDigest)}
 	}
 	if _, err := tx.Put(domain.SessionKind, input.ChildSessionID, 0, input.ChildSessionID, r.ProjectID, child); err != nil {
 		return nil, err
@@ -384,6 +457,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 }
 
 func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.PrepareRequest, manifest workspace.Manifest) error {
+
 	if err := validateForkSharing(input); err != nil {
 		return err
 	}
@@ -417,10 +491,20 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 		if spec.ID != repo.ID || spec.Checkout != repo.Path || spec.AutoFetch || spec.PRTarget != nil || spec.PreferredRemote != "" || spec.Base.Type != domain.CommitReference || spec.Base.Name != manifest.Repositories[i].BaseCommit {
 			return forkConflict()
 		}
-		if input.Workspace == domain.Worktree && (spec.ForkRegistrationSource != repo.Source || spec.Starting != spec.Base || manifest.Repositories[i].StartingCommit != spec.Base.Name) {
-			return forkConflict()
+		if input.Workspace == domain.Worktree {
+			independent := repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource || repo.SourceKind == workspace.LocalCheckoutSource
+			if independent {
+				if spec.SourceKind != workspace.IndependentForkSource || spec.RemoteURL != repo.RemoteURL || spec.ForkRegistrationSource != "" {
+					return forkConflict()
+				}
+			} else if spec.SourceKind != workspace.CheckoutSource || spec.RemoteURL != "" || spec.ForkRegistrationSource != repo.Source {
+				return forkConflict()
+			}
+			if spec.Starting != spec.Base || manifest.Repositories[i].StartingCommit != spec.Base.Name {
+				return forkConflict()
+			}
 		}
-		if input.Workspace == domain.Local && (spec.ForkRegistrationSource != "" || spec.Starting != (domain.Reference{}) || preparation.OriginMachineID != input.SourceAssignment.MachineID) {
+		if input.Workspace == domain.Local && (spec.SourceKind != repo.SourceKind || spec.RemoteURL != repo.RemoteURL || spec.ForkRegistrationSource != "" || spec.Starting != (domain.Reference{}) || preparation.OriginMachineID != input.SourceAssignment.MachineID) {
 			return forkConflict()
 		}
 		if repo.Path == source.PrimaryPath && preparation.PrimaryRepository != repo.ID {
@@ -447,3 +531,11 @@ func forkInputDigest(raw []byte) string {
 }
 
 func mustForkValueJSON(v any) []byte { raw, _ := json.Marshal(v); return raw }
+
+func outputFinish(raw json.RawMessage) domain.ID {
+	var result domain.ForkJobResult
+	if domain.Decode(raw, &result) != nil {
+		return ""
+	}
+	return result.ManagedFinish
+}

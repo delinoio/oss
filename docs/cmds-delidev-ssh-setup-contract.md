@@ -16,7 +16,7 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 `delidev machine ssh` and desktop Runner Device setup inspect a target, display its original host-key fingerprint, require explicit exact-key confirmation, then install/register/start/check only DeliDev Worker. Closed authentication methods use bounded write-only credential input. A changed host key blocks all authenticated commands. Target inspection selects one of six signed Worker artifacts. Repeated setup inspects and preserves the original registration and workspace scope.
 
-Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 before dependent source changes. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. The approved integrated-PR exception applies; independent branches retain the main-first prerequisite.
+Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 in the owning feature PR. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Feature PRs may include the allocation records and implementation together.
 
 Initial SSH pairing installs the exact server-compatible signed Worker release, independently of a newer update candidate; it cannot weaken the ordinary pairing version gate. Non-loopback SSH targets require an explicit reachable TLS server endpoint before protected staging. Windows staging checks ancestor reparse points before creation and creates only new owner-only product directories; existing permissions are validated without rewriting them.
 
@@ -27,6 +27,8 @@ Credentials use the existing WorkerSSH protected vault purpose. Durable operatio
 ## Security
 
 No ambient SSH config, agent, known-host fallback, password prompt or arbitrary remote command is permitted. Observe host identity without authentication, and authenticate only the explicitly confirmed original identity. Cancellation closes and joins owned transport/session children; connection loss after a send remains uncertain until original remote status is inspected. Setup cannot remove existing private roots, install harnesses or grant inbound Worker execution ports. Remote Worker uses the existing authenticated outbound pairing/network contracts.
+
+Each command installs child-context cancellation before opening its session. The callback closes the owned transport and joins SSH transport shutdown, so channel creation, exec replies, command exit and session cleanup cannot wait for the longer connection parent deadline. Keep the callback active through session cleanup and join it before returning. A canceled transport cannot authorize another command; Stage and Setup still require original-operation recovery after a potentially sent remote effect, without automatic replay.
 
 ## Logging
 

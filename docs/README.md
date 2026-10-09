@@ -42,6 +42,8 @@ Each project must have one project index document and one or more domain contrac
 ## Project Catalog
 
 ### delidev
+- [Desktop English/Korean localization](apps-delidev-localization-contract.md)
+- [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
 - [Protected account browser](cmds-delidev-browser-contract.md)
@@ -64,6 +66,7 @@ Each project must have one project index document and one or more domain contrac
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
+- [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
@@ -72,6 +75,7 @@ Each project must have one project index document and one or more domain contrac
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
 - [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
+- [Grok Build subscriptions (planned)](cmds-delidev-grok-subscription-contract.md)
 - [Provider inspection](cmds-delidev-providers-contract.md)
 - [Provider and model catalog](cmds-delidev-catalog-contract.md)
 - [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)

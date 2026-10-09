@@ -397,6 +397,28 @@ fn invalid_argument(classification: &'static str, action: &'static str) -> i32 {
     2
 }
 
+fn human_coverage_report(report: &coverage::CoverageReport, total: usize) -> Vec<u8> {
+    let mut text = format!(
+        "Covered: {}/{} ({:.2}%)\n",
+        report.covered.len(),
+        total,
+        report.percentage
+    );
+    for (heading, files) in [
+        ("Covered files", &report.covered),
+        ("Uncovered files", &report.uncovered),
+    ] {
+        text.push_str(heading);
+        text.push_str(":\n");
+        for file in files {
+            text.push_str("  ");
+            text.push_str(&display_path(&file.logical));
+            text.push('\n');
+        }
+    }
+    text.into_bytes()
+}
+
 fn display_path(path: &NativePath) -> String {
     match path {
         NativePath::UnixBytes(bytes) => bytes
@@ -494,6 +516,50 @@ fn existing_report_destination(path: &Path) -> Result<Option<fs::Metadata>, &'st
         }
     }
     Ok(Some(metadata))
+}
+
+// Bundle ownership is already committed; cancellation only fences the final
+// report.
+fn finish_repro_report(
+    quiet: bool,
+    output: &OutputArgs,
+    encode: impl FnOnce() -> Result<Vec<u8>, &'static str>,
+    cancelled: impl Fn() -> bool,
+    cancel_status: impl Fn() -> i32,
+) -> i32 {
+    if cancelled() {
+        return cancel_status();
+    }
+    if wants_report(quiet, output) {
+        let mut report = match encode() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return if cancelled() {
+                    cancel_status()
+                } else {
+                    diagnostic(error, "min-repro")
+                }
+            }
+        };
+        if cancelled() {
+            return cancel_status();
+        }
+        if !report.ends_with(b"\n") {
+            report.push(b'\n');
+        }
+        if let Err(error) = publish_with_cancel(output, &report, &cancelled) {
+            return if error == "cancellation" || cancelled() {
+                cancel_status()
+            } else {
+                diagnostic(error, "min-repro")
+            };
+        }
+    }
+    if cancelled() {
+        cancel_status()
+    } else {
+        0
+    }
 }
 
 fn publish(output: &OutputArgs, bytes: &[u8]) -> Result<(), &'static str> {
@@ -1507,25 +1573,7 @@ fn assetcov(args: AssetcovArgs) -> i32 {
                 Err(_) => return diagnostic("report_encode", "assetcov"),
             }
         } else {
-            let mut text = format!(
-                "Covered: {}/{} ({:.2}%)\n",
-                report.covered.len(),
-                denominator.files.len(),
-                report.percentage
-            );
-            text.push_str("Covered files:\n");
-            for file in &report.covered {
-                text.push_str("  ");
-                text.push_str(&display_path(&file.logical));
-                text.push('\n');
-            }
-            text.push_str("Uncovered files:\n");
-            for file in &report.uncovered {
-                text.push_str("  ");
-                text.push_str(&display_path(&file.logical));
-                text.push('\n');
-            }
-            text.into_bytes()
+            human_coverage_report(&report, denominator.files.len())
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -1807,6 +1855,47 @@ fn selection_native(path: &Path) -> NativePath {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn verified_observed_alias(
+    operation: record::Operation,
+    path: &record::AccessPath,
+    root: &Path,
+    snapshot: &crate::repro::Snapshot,
+) -> Result<Option<PathBuf>, crate::repro::ReproFailure> {
+    use crate::repro::ReproFailure;
+    let logical = logical_relative(root, path);
+    let alias = if logical.as_ref().is_some_and(|relative| {
+        snapshot.contains_selected(relative) || snapshot.contains_selected_directory(relative)
+    }) {
+        let relative = logical.expect("selected logical path exists");
+        if path.identity.is_some_and(|identity| {
+            !snapshot.selected_path_has_identity(&relative, identity)
+                && !snapshot.selected_directory_has_identity(&relative, identity)
+                && !(operation == record::Operation::Metadata
+                    && path
+                        .resolved
+                        .as_ref()
+                        .and_then(repro_relative_native)
+                        .and_then(|resolved| {
+                            resolved.strip_prefix(root).ok().map(|resolved| {
+                                snapshot
+                                    .selected_link_entry_has_identity(&relative, resolved, identity)
+                            })
+                        })
+                        == Some(true))
+        }) {
+            return Err(ReproFailure::UnstableInput);
+        }
+        Some(relative)
+    } else {
+        path.identity
+            .and_then(|identity| snapshot.selected_alias_for_identity(identity))
+            .map(Path::to_path_buf)
+            .or(logical)
+    };
+    Ok(alias)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn collect_required(
     record: &CompleteRecord,
     root: &Path,
@@ -1845,6 +1934,16 @@ fn collect_required(
                         if crate::repro::Snapshot::is_blocked(&directory) {
                             return Err(ReproFailure::BlockedInput);
                         }
+                        // Check captured identity before expanding descendants.
+                        // Live checks cannot detect an observed replacement
+                        // after the original directory has been restored.
+                        if snapshot.contains_selected_directory(&directory)
+                            && path.identity.is_some_and(|identity| {
+                                !snapshot.selected_directory_has_identity(&directory, identity)
+                            })
+                        {
+                            return Err(ReproFailure::UnstableInput);
+                        }
                         for entry in snapshot.selected_entries_within(&directory) {
                             snapshot.check_cancelled()?;
                             required.insert(entry.clone());
@@ -1858,25 +1957,7 @@ fn collect_required(
             if path.class != record::PathClass::Project {
                 continue;
             }
-            let logical = logical_relative(root, path);
-            let alias = if logical.as_ref().is_some_and(|relative| {
-                snapshot.contains_selected(relative)
-                    || snapshot.contains_selected_directory(relative)
-            }) {
-                let relative = logical.expect("selected logical path exists");
-                if path.identity.is_some_and(|identity| {
-                    !snapshot.selected_path_has_identity(&relative, identity)
-                        && !snapshot.selected_directory_has_identity(&relative, identity)
-                }) {
-                    return Err(ReproFailure::UnstableInput);
-                }
-                Some(relative)
-            } else {
-                path.identity
-                    .and_then(|identity| snapshot.selected_alias_for_identity(identity))
-                    .map(Path::to_path_buf)
-                    .or(logical)
-            };
+            let alias = verified_observed_alias(pair.start.operation, path, root, snapshot)?;
             let Some(alias) = alias else {
                 if pair.start.operation.is_content_read() && pair.completion.native_error.is_none()
                 {
@@ -1915,23 +1996,24 @@ fn collect_required(
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn staged_root_executable(
     record: &CompleteRecord,
+    root: &Path,
     required: &std::collections::BTreeSet<PathBuf>,
-) -> Option<PathBuf> {
-    record
+    snapshot: &crate::repro::Snapshot,
+) -> Result<Option<PathBuf>, crate::repro::ReproFailure> {
+    let Some(path) = record
         .operations
         .iter()
         .find(|pair| {
             pair.start.operation == record::Operation::Exec
                 && pair.completion.native_error.is_none()
-        })?
-        .start
-        .paths
-        .first()
-        .filter(|path| path.class == record::PathClass::Project)?
-        .project_relative
-        .as_ref()
-        .and_then(repro_relative_native)
-        .filter(|relative| required.contains(relative))
+        })
+        .and_then(|pair| pair.start.paths.first())
+        .filter(|path| path.class == record::PathClass::Project)
+    else {
+        return Ok(None);
+    };
+    let alias = verified_observed_alias(record::Operation::Exec, path, root, snapshot)?;
+    Ok(alias.filter(|relative| required.contains(relative)))
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -2290,7 +2372,10 @@ fn min_repro(args: MinReproArgs) -> i32 {
         return diagnostic("candidate_prepare", "min-repro");
     }
     let mut rerun_command = args.command.clone();
-    let staged_program = staged_root_executable(&original, &required);
+    let staged_program = match staged_root_executable(&original, &root, &required, &snapshot) {
+        Ok(program) => program,
+        Err(error) => return repro_error(error, &signals),
+    };
     if let Some(relative) = &staged_program {
         rerun_command[0] = candidate.path().join(relative).into_os_string();
     }
@@ -2486,34 +2571,34 @@ fn min_repro(args: MinReproArgs) -> i32 {
     if let Err(error) = publish_new_directory(bundle.path(), &bundle_path) {
         return diagnostic(error, "min-repro");
     }
-    if wants_report(args.quiet, &args.output) {
-        let mut report = if args.json {
-            match serde_json::to_vec_pretty(&serde_json::json!({
-                "verified": true,
-                "bundle_dir": bundle_path,
-                "collected_files": staged.len(),
-                "external_accesses": external.len(),
-            })) {
-                Ok(bytes) => bytes,
-                Err(_) => return diagnostic("report_encode", "min-repro"),
-            }
-        } else {
-            format!(
-                "Verified reproduction: {}\nCollected files: {}\nExternal accesses: {}\n",
-                bundle_path.display(),
-                staged.len(),
-                external.len()
-            )
-            .into_bytes()
-        };
-        if !report.ends_with(b"\n") {
-            report.push(b'\n');
-        }
-        if let Err(error) = publish(&args.output, &report) {
-            return diagnostic(error, "min-repro");
-        }
-    }
-    0
+    finish_repro_report(
+        args.quiet,
+        &args.output,
+        || {
+            let report = if args.json {
+                match serde_json::to_vec_pretty(&serde_json::json!({
+                    "verified": true,
+                    "bundle_dir": bundle_path,
+                    "collected_files": staged.len(),
+                    "external_accesses": external.len(),
+                })) {
+                    Ok(bytes) => bytes,
+                    Err(_) => return Err("report_encode"),
+                }
+            } else {
+                format!(
+                    "Verified reproduction: {}\nCollected files: {}\nExternal accesses: {}\n",
+                    bundle_path.display(),
+                    staged.len(),
+                    external.len()
+                )
+                .into_bytes()
+            };
+            Ok(report)
+        },
+        || repro_cancelled(&signals).load(std::sync::atomic::Ordering::SeqCst),
+        || repro_cancel_status(&signals),
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -3634,13 +3719,7 @@ fn macos_assetcov(args: AssetcovArgs) -> i32 {
                 Err(_) => return diagnostic("report_encode", "assetcov"),
             }
         } else {
-            format!(
-                "Covered: {}/{} ({:.2}%)\n",
-                report.covered.len(),
-                denominator.files.len(),
-                report.percentage
-            )
-            .into_bytes()
+            human_coverage_report(&report, denominator.files.len())
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -3919,13 +3998,7 @@ fn windows_assetcov(args: AssetcovArgs) -> i32 {
                 Err(_) => return diagnostic("report_encode", "assetcov"),
             }
         } else {
-            format!(
-                "Covered: {}/{} ({:.2}%)\n",
-                report.covered.len(),
-                denominator.files.len(),
-                report.percentage
-            )
-            .into_bytes()
+            human_coverage_report(&report, denominator.files.len())
         };
         if !encoded.ends_with(b"\n") {
             encoded.push(b'\n');
@@ -4188,6 +4261,159 @@ pub fn execute(command: Command) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn human_assetcov_lists_and_publication_modes_are_complete() {
+        use super::*;
+        let file = |logical| coverage::SelectedFile {
+            identity: record::FileIdentity::Inode {
+                device: 1,
+                inode: 2,
+            },
+            logical,
+            initially_empty: false,
+        };
+        let report = coverage::CoverageReport {
+            covered: vec![file(NativePath::UnixBytes(b"read\n.txt".to_vec()))],
+            uncovered: vec![file(NativePath::WindowsUtf16(vec![
+                b'u' as u16,
+                0xd800,
+                10,
+            ]))],
+            percentage: 50.0,
+        };
+        let bytes = human_coverage_report(&report, 2);
+        assert_eq!(bytes, b"Covered: 1/2 (50.00%)\nCovered files:\n  read\\n.txt\nUncovered files:\n  u\\ud800\\n\n");
+        let dir = tempfile::tempdir().unwrap();
+        for quiet in [false, true] {
+            let stdout = OutputArgs {
+                output: None,
+                force: false,
+            };
+            assert_eq!(wants_report(quiet, &stdout), !quiet);
+            let dash = OutputArgs {
+                output: Some(PathBuf::from("-")),
+                force: false,
+            };
+            assert_eq!(wants_report(quiet, &dash), !quiet);
+            let path = dir.path().join(format!("report-{quiet}"));
+            let output = OutputArgs {
+                output: Some(path.clone()),
+                force: false,
+            };
+            assert!(wants_report(quiet, &output));
+            publish_with_cancel(&output, &bytes, || false).unwrap();
+            assert_eq!(std::fs::read(path).unwrap(), bytes);
+        }
+        for (covered, uncovered, percentage) in [
+            (vec![], report.uncovered.clone(), 0.0),
+            (report.covered.clone(), vec![], 100.0),
+        ] {
+            let r = coverage::CoverageReport {
+                covered,
+                uncovered,
+                percentage,
+            };
+            let text = String::from_utf8(human_coverage_report(&r, 1)).unwrap();
+            assert!(text.contains("Covered files:\n"));
+            assert!(text.contains("Uncovered files:\n"));
+            assert_eq!(r.fails_threshold(50.0), percentage < 50.0);
+        }
+    }
+
+    #[test]
+    fn min_repro_final_report_cancellation_preserves_committed_bundle() {
+        use super::*;
+        // Native handlers select these statuses: Unix INT/TERM and Windows
+        // control.
+        for status in [130, 143, 130] {
+            for existed in [false, true] {
+                for quiet in [false, true] {
+                    for cancel_at in 1..=6 {
+                        let dir = tempfile::tempdir().unwrap();
+                        let bundle = dir.path().join("bundle");
+                        std::fs::create_dir(&bundle).unwrap();
+                        std::fs::write(bundle.join("verified"), b"retained").unwrap();
+                        let path = dir.path().join("report");
+                        if existed {
+                            std::fs::write(&path, b"previous").unwrap();
+                        }
+                        let output = OutputArgs {
+                            output: Some(path.clone()),
+                            force: existed,
+                        };
+                        let checks = std::cell::Cell::new(0);
+                        let result = finish_repro_report(
+                            quiet,
+                            &output,
+                            || Ok(b"verified report".to_vec()),
+                            || {
+                                checks.set(checks.get() + 1);
+                                checks.get() >= cancel_at
+                            },
+                            || status,
+                        );
+                        assert_eq!(result, status);
+                        assert_eq!(std::fs::read(bundle.join("verified")).unwrap(), b"retained");
+                        if cancel_at <= 5 {
+                            if existed {
+                                assert_eq!(std::fs::read(&path).unwrap(), b"previous");
+                            } else {
+                                assert!(!path.exists());
+                            }
+                        } else {
+                            // Cancellation after report commit retains both
+                            // outputs.
+                            assert_eq!(std::fs::read(&path).unwrap(), b"verified report\n");
+                        }
+                        assert_eq!(
+                            std::fs::read_dir(dir.path()).unwrap().count(),
+                            1 + usize::from(path.exists())
+                        );
+                    }
+                }
+            }
+            let output = OutputArgs {
+                output: None,
+                force: false,
+            };
+            assert_eq!(
+                finish_repro_report(
+                    true,
+                    &output,
+                    || panic!("quiet encoded output"),
+                    || true,
+                    || status
+                ),
+                status
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("report");
+        let output = OutputArgs {
+            output: Some(path.clone()),
+            force: false,
+        };
+        assert_eq!(
+            finish_repro_report(false, &output, || Ok(b"normal".to_vec()), || false, || 130),
+            0
+        );
+        assert_eq!(std::fs::read(path).unwrap(), b"normal\n");
+        let quiet = OutputArgs {
+            output: None,
+            force: false,
+        };
+        assert_eq!(
+            finish_repro_report(
+                true,
+                &quiet,
+                || panic!("quiet encoded output"),
+                || false,
+                || 130
+            ),
+            0
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_break_status_preserves_supervisor_failure_when_signal_is_late() {
@@ -4574,6 +4800,315 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
+    fn nofollow_metadata_reproduction_preserves_original_link_entry_identity() {
+        use std::os::unix::{
+            ffi::OsStrExt,
+            fs::{symlink, MetadataExt},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        fs::write(root.join("tool"), b"original").unwrap();
+        symlink("tool", root.join("tool-link")).unwrap();
+        let selector = coverage::Selector::new(&["tool-link".into()], &[]).unwrap();
+        let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
+        let metadata = fs::symlink_metadata(root.join("tool-link")).unwrap();
+        let identity = record::FileIdentity::Inode {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        };
+        let mut observed = CompleteRecord {
+            header: record::Header {
+                schema_version: record::SCHEMA_VERSION,
+                execution_id: uuid::Uuid::now_v7(),
+                platform: if cfg!(target_os = "macos") {
+                    record::Platform::Macos
+                } else {
+                    record::Platform::Linux
+                },
+                backend: record::Backend::Injection,
+                root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+                coverage: record::CoverageBoundary::SynchronousFileOperationsV1,
+            },
+            summary: record::Summary {
+                complete: true,
+                child_exit_code: Some(0),
+                child_signal: None,
+                operation_count: 1,
+                failure_count: 0,
+                failure: None,
+            },
+            operations: vec![record::OperationPair {
+                start: record::Start {
+                    sequence: 1,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    parent_pid: None,
+                    operation: record::Operation::Metadata,
+                    open_mutates: false,
+                    paths: vec![record::AccessPath {
+                        class: record::PathClass::Project,
+                        logical: NativePath::UnixBytes(
+                            root.join("tool-link").as_os_str().as_bytes().to_vec(),
+                        ),
+                        resolved: Some(NativePath::UnixBytes(
+                            root.join("tool-link").as_os_str().as_bytes().to_vec(),
+                        )),
+                        project_relative: Some(NativePath::UnixBytes(b"tool-link".to_vec())),
+                        identity: Some(identity),
+                    }],
+                    path_unavailable: false,
+                    descriptor: None,
+                    requested_bytes: Some(1),
+                    monotonic_ns: 1,
+                    requested_delay_ns: 0,
+                },
+                completion: record::Completion {
+                    sequence: 2,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    monotonic_ns: 2,
+                    native_result: 5,
+                    native_error: None,
+                    byte_count: Some(5),
+                    observed_delay_ns: 0,
+                },
+            }],
+        };
+        let expected = std::collections::BTreeSet::from([PathBuf::from("tool-link")]);
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot).unwrap(),
+            expected
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&expected, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("tool-link")).unwrap(),
+            PathBuf::from("tool")
+        );
+        assert_eq!(
+            fs::read(candidate.path().join("tool")).unwrap(),
+            b"original"
+        );
+        let target_identity =
+            record::FileIdentity::from(file_id::get_file_id(root.join("tool")).unwrap());
+        assert_ne!(identity, target_identity);
+
+        // Following metadata must carry the target inode, while content/exec
+        // operations can never gain admission from the link-entry inode.
+        observed.operations[0].start.paths[0].resolved = Some(selection_native(&root.join("tool")));
+        observed.operations[0].start.paths[0].project_relative =
+            Some(selection_native(Path::new("tool")));
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        );
+        observed.operations[0].start.paths[0].identity = Some(target_identity);
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot).unwrap(),
+            expected
+        );
+        for operation in [
+            record::Operation::Open,
+            record::Operation::Read,
+            record::Operation::Exec,
+        ] {
+            observed.operations[0].start.operation = operation;
+            observed.operations[0].start.paths[0].identity = Some(target_identity);
+            assert_eq!(
+                collect_required(&observed, &root, &selector, &snapshot).unwrap(),
+                expected
+            );
+            observed.operations[0].start.paths[0].identity = Some(identity);
+            observed.operations[0].start.paths[0].resolved =
+                Some(selection_native(&root.join("tool-link")));
+            assert_eq!(
+                collect_required(&observed, &root, &selector, &snapshot),
+                Err(crate::repro::ReproFailure::UnstableInput)
+            );
+        }
+        observed.operations[0].start.operation = record::Operation::Metadata;
+        observed.operations[0].start.paths[0].identity = None;
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot).unwrap(),
+            expected
+        );
+        observed.operations[0].start.paths[0].identity = Some(identity);
+        observed.operations[0].start.paths[0].project_relative =
+            Some(selection_native(Path::new("tool-link")));
+
+        // Keep the original inode alive so same-target replacement cannot reuse
+        // it. A captured replacement is rejected even after original restore.
+        fs::rename(root.join("tool-link"), root.join("retained-link")).unwrap();
+        symlink("tool", root.join("tool-link")).unwrap();
+        let replacement = fs::symlink_metadata(root.join("tool-link")).unwrap();
+        let replacement_identity = record::FileIdentity::Inode {
+            device: replacement.dev(),
+            inode: replacement.ino(),
+        };
+        assert_ne!(replacement_identity, identity);
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        );
+        fs::remove_file(root.join("tool-link")).unwrap();
+        fs::rename(root.join("retained-link"), root.join("tool-link")).unwrap();
+        observed.operations[0].start.paths[0].identity = Some(replacement_identity);
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        );
+        observed.operations[0].start.paths[0].identity = Some(identity);
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot).unwrap(),
+            expected
+        );
+        fs::rename(root.join("tool"), root.join("retained-target")).unwrap();
+        fs::write(root.join("tool"), b"original").unwrap();
+        assert_eq!(
+            collect_required(&observed, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_executable_reuses_verified_selected_alias_mapping() {
+        use std::os::unix::{
+            ffi::OsStrExt,
+            fs::{symlink, MetadataExt},
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        fs::write(root.join("tool"), b"original").unwrap();
+        symlink("tool", root.join("tool-link")).unwrap();
+        let selector = coverage::Selector::new(&["tool-link".into()], &[]).unwrap();
+        let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
+        let metadata = fs::metadata(root.join("tool")).unwrap();
+        let identity = record::FileIdentity::Inode {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        };
+        let mut observed = CompleteRecord {
+            header: record::Header {
+                schema_version: record::SCHEMA_VERSION,
+                execution_id: uuid::Uuid::now_v7(),
+                platform: if cfg!(target_os = "macos") {
+                    record::Platform::Macos
+                } else {
+                    record::Platform::Linux
+                },
+                backend: record::Backend::Injection,
+                root: NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec()),
+                coverage: record::CoverageBoundary::SynchronousFileOperationsV1,
+            },
+            summary: record::Summary {
+                complete: true,
+                child_exit_code: Some(0),
+                child_signal: None,
+                operation_count: 1,
+                failure_count: 0,
+                failure: None,
+            },
+            operations: vec![record::OperationPair {
+                start: record::Start {
+                    sequence: 1,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    parent_pid: None,
+                    operation: record::Operation::Exec,
+                    open_mutates: false,
+                    paths: vec![record::AccessPath {
+                        class: record::PathClass::Project,
+                        logical: NativePath::UnixBytes(
+                            root.join("tool-link").as_os_str().as_bytes().to_vec(),
+                        ),
+                        resolved: Some(NativePath::UnixBytes(
+                            root.join("tool-link").as_os_str().as_bytes().to_vec(),
+                        )),
+                        project_relative: Some(NativePath::UnixBytes(b"tool".to_vec())),
+                        identity: Some(identity),
+                    }],
+                    path_unavailable: false,
+                    descriptor: None,
+                    requested_bytes: Some(1),
+                    monotonic_ns: 1,
+                    requested_delay_ns: 0,
+                },
+                completion: record::Completion {
+                    sequence: 2,
+                    correlation_id: 1,
+                    pid: 1,
+                    tid: 1,
+                    monotonic_ns: 2,
+                    native_result: 5,
+                    native_error: None,
+                    byte_count: Some(5),
+                    observed_delay_ns: 0,
+                },
+            }],
+        };
+        let required = collect_required(&observed, &root, &selector, &snapshot).unwrap();
+        assert_eq!(
+            required,
+            std::collections::BTreeSet::from([PathBuf::from("tool-link")])
+        );
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &snapshot).unwrap(),
+            Some(PathBuf::from("tool-link"))
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read_link(candidate.path().join("tool-link")).unwrap(),
+            PathBuf::from("tool")
+        );
+        assert_eq!(
+            fs::read(candidate.path().join("tool")).unwrap(),
+            b"original"
+        );
+        observed.operations[0].start.paths[0].logical = selection_native(Path::new("./tool-link"));
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &snapshot).unwrap(),
+            Some(PathBuf::from("tool-link"))
+        );
+        observed.operations[0].start.paths[0].logical = selection_native(&root.join("tool-link"));
+        observed.operations[0].start.paths[0].identity = Some(record::FileIdentity::Inode {
+            device: metadata.dev(),
+            inode: metadata.ino() + 1,
+        });
+        assert!(matches!(
+            staged_root_executable(&observed, &root, &required, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
+        observed.operations[0].start.paths[0].identity = Some(identity);
+        observed.operations[0].start.paths[0].class = record::PathClass::External;
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &snapshot).unwrap(),
+            None
+        );
+        observed.operations[0].start.paths[0].class = record::PathClass::Project;
+        fs::remove_file(root.join("tool-link")).unwrap();
+        symlink("../outside", root.join("tool-link")).unwrap();
+        assert!(snapshot.verify_required(&required).is_err());
+        let plain_selector = coverage::Selector::new(&["tool".into()], &[]).unwrap();
+        let plain = crate::repro::Snapshot::take(&root, &plain_selector, 1024, 10).unwrap();
+        observed.operations[0].start.paths[0].logical = selection_native(&root.join("tool"));
+        let required = collect_required(&observed, &root, &plain_selector, &plain).unwrap();
+        assert_eq!(
+            staged_root_executable(&observed, &root, &required, &plain).unwrap(),
+            Some(PathBuf::from("tool"))
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
     fn reproduction_keeps_the_observed_selected_hardlink() {
         use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
 
@@ -4583,9 +5118,20 @@ mod tests {
         fs::hard_link(root.join("a.txt"), root.join("b.txt")).unwrap();
         fs::create_dir(root.join("assets")).unwrap();
         fs::write(root.join("assets/flag"), b"present").unwrap();
-        let selector =
-            coverage::Selector::new(&["*.txt".into(), "assets".into(), "assets/**".into()], &[])
-                .unwrap();
+        fs::create_dir(root.join("empty")).unwrap();
+        std::os::unix::fs::symlink("assets", root.join("alias")).unwrap();
+        let selector = coverage::Selector::new(
+            &[
+                "*.txt".into(),
+                "assets".into(),
+                "assets/**".into(),
+                "empty".into(),
+                "alias".into(),
+                "alias/**".into(),
+            ],
+            &[],
+        )
+        .unwrap();
         let snapshot = crate::repro::Snapshot::take(&root, &selector, 1024, 10).unwrap();
         let metadata = fs::metadata(root.join("b.txt")).unwrap();
         let identity = record::FileIdentity::Inode {
@@ -4684,7 +5230,126 @@ mod tests {
             device: directory_metadata.dev(),
             inode: directory_metadata.ino(),
         };
+        record.operations[0].start.paths[0].identity = Some(identity);
+        assert!(matches!(
+            collect_required(&record, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
         record.operations[0].start.paths[0].identity = Some(directory_identity);
+        assert_eq!(
+            collect_required(&record, &root, &selector, &snapshot).unwrap(),
+            std::collections::BTreeSet::from([
+                PathBuf::from("assets"),
+                PathBuf::from("assets/flag"),
+            ])
+        );
+        let mut query = record.clone();
+        for (relative, expected) in [
+            (
+                "empty",
+                std::collections::BTreeSet::from([PathBuf::from("empty")]),
+            ),
+            (
+                "alias",
+                std::collections::BTreeSet::from([
+                    PathBuf::from("alias"),
+                    PathBuf::from("alias/flag"),
+                ]),
+            ),
+        ] {
+            let path = &mut query.operations[0].start.paths[0];
+            path.logical =
+                NativePath::UnixBytes(root.join(relative).as_os_str().as_bytes().to_vec());
+            path.project_relative = Some(NativePath::UnixBytes(relative.as_bytes().to_vec()));
+            let metadata = fs::metadata(root.join(relative)).unwrap();
+            path.identity = Some(record::FileIdentity::Inode {
+                device: metadata.dev(),
+                inode: metadata.ino(),
+            });
+            let required = collect_required(&query, &root, &selector, &snapshot).unwrap();
+            assert_eq!(required, expected);
+            let candidate = tempfile::tempdir().unwrap();
+            snapshot
+                .stage_required(&required, candidate.path())
+                .unwrap();
+            assert!(candidate.path().join(relative).is_dir());
+            query.operations[0].start.paths[0].identity = Some(identity);
+            assert!(matches!(
+                collect_required(&query, &root, &selector, &snapshot),
+                Err(crate::repro::ReproFailure::UnstableInput)
+            ));
+            query.operations[0].start.paths[0].identity = None;
+            assert_eq!(
+                collect_required(&query, &root, &selector, &snapshot).unwrap(),
+                expected
+            );
+        }
+        // Root and unselected ancestors retain the old expansion contract;
+        // captured identity admission applies only to selected directories.
+        query.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.as_os_str().as_bytes().to_vec());
+        query.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(Vec::new()));
+        for captured in [None, Some(identity)] {
+            query.operations[0].start.paths[0].identity = captured;
+            assert_eq!(
+                collect_required(&query, &root, &selector, &snapshot).unwrap(),
+                snapshot
+                    .selected_entries_within(Path::new(""))
+                    .cloned()
+                    .collect()
+            );
+        }
+        let child_selector = coverage::Selector::new(&["assets/flag".into()], &[]).unwrap();
+        let child_snapshot =
+            crate::repro::Snapshot::take(&root, &child_selector, 1024, 10).unwrap();
+        query.operations[0].start.paths[0].logical =
+            NativePath::UnixBytes(root.join("assets").as_os_str().as_bytes().to_vec());
+        query.operations[0].start.paths[0].project_relative =
+            Some(NativePath::UnixBytes(b"assets".to_vec()));
+        assert_eq!(
+            collect_required(&query, &root, &child_selector, &child_snapshot).unwrap(),
+            std::collections::BTreeSet::from([PathBuf::from("assets/flag")])
+        );
+        // Capture a real replacement directory's identity, restore the source,
+        // then reject the query even though live snapshot verification
+        // succeeds.
+        fs::rename(root.join("assets"), root.join("original-assets")).unwrap();
+        fs::create_dir(root.join("assets")).unwrap();
+        fs::write(root.join("assets/replacement"), b"different").unwrap();
+        let replacement = fs::metadata(root.join("assets")).unwrap();
+        let replacement_identity = record::FileIdentity::Inode {
+            device: replacement.dev(),
+            inode: replacement.ino(),
+        };
+        fs::read_dir(root.join("assets"))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        fs::remove_file(root.join("assets/replacement")).unwrap();
+        fs::remove_dir(root.join("assets")).unwrap();
+        fs::rename(root.join("original-assets"), root.join("assets")).unwrap();
+        snapshot
+            .verify_required(&std::collections::BTreeSet::from([
+                PathBuf::from("assets"),
+                PathBuf::from("assets/flag"),
+            ]))
+            .unwrap();
+        query = record.clone();
+        query.operations[0].start.paths[0].identity = Some(replacement_identity);
+        assert!(matches!(
+            collect_required(&query, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
+        // Captured admission does not replace the existing live recheck: a
+        // matching captured identity cannot authorize a missing source
+        // directory.
+        fs::rename(root.join("assets"), root.join("original-assets")).unwrap();
+        assert!(matches!(
+            collect_required(&record, &root, &selector, &snapshot),
+            Err(crate::repro::ReproFailure::UnstableInput)
+        ));
+        fs::rename(root.join("original-assets"), root.join("assets")).unwrap();
         for operation in [record::Operation::Metadata, record::Operation::Open] {
             record.operations[0].start.operation = operation;
             assert_eq!(
@@ -5965,40 +6630,144 @@ int main(int argc, char **argv) {
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_autowatch_reruns_on_observed_input_change() {
-        use std::{process::Stdio, thread, time::Instant};
+        use std::{
+            io::{BufRead, BufReader},
+            process::Stdio,
+            sync::mpsc,
+            thread,
+        };
+        struct FixtureChild(std::process::Child);
+        impl FixtureChild {
+            fn stop(&mut self) -> Option<std::process::ExitStatus> {
+                if let Ok(Some(status)) = self.0.try_wait() {
+                    return Some(status);
+                }
+                // SAFETY: this is the retained, unreaped fixture child.
+                unsafe { libc::kill(self.0.id() as i32, libc::SIGINT) };
+                let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                while std::time::Instant::now() < deadline {
+                    match self.0.try_wait() {
+                        Ok(Some(status)) => return Some(status),
+                        Ok(None) => thread::sleep(Duration::from_millis(10)),
+                        Err(_) => break,
+                    }
+                }
+                let _ = self.0.kill();
+                self.0.wait().ok()
+            }
+        }
+        impl Drop for FixtureChild {
+            fn drop(&mut self) {
+                let _ = self.stop();
+            }
+        }
         let directory = tempfile::tempdir().unwrap();
-        fs::write(directory.path().join("input.txt"), b"first").unwrap();
-        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-            .arg("--exact")
-            .arg("cli::tests::macos_autowatch_child")
-            .env("CLIBOX_FSPY_MAC_WATCH_ROOT", directory.path())
+        let root = directory.path().canonicalize().unwrap();
+        // Publish this fixture's creation before starting a discovery stream;
+        // retain every notification from the actual supervised execution.
+        use notify::Watcher;
+        let (setup_tx, setup_rx) = mpsc::channel();
+        let mut setup = notify::recommended_watcher(move |event| {
+            let _ = setup_tx.send(event);
+        })
+        .unwrap_or_else(|_| panic!("fixture setup watcher unavailable"));
+        setup
+            .watch(&root, notify::RecursiveMode::Recursive)
+            .unwrap_or_else(|_| panic!("fixture setup watch unavailable"));
+        let input = root.join("input.txt");
+        fs::write(&input, b"first").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let event = setup_rx
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("fixture setup input creation was not published")
+                .unwrap_or_else(|_| panic!("fixture setup native notification failed"));
+            assert!(
+                !event.need_rescan(),
+                "fixture setup lost native notifications"
+            );
+            if event.kind == notify::EventKind::Create(notify::event::CreateKind::File)
+                && event.paths.contains(&input)
+            {
+                break;
+            }
+        }
+        drop(setup);
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "cli::tests::macos_autowatch_child",
+                "--nocapture",
+            ])
+            .env("CLIBOX_FSPY_MAC_WATCH_ROOT", &root)
             .current_dir(directory.path())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        let runs = directory.path().join("runs.txt");
-        for expected in [1, 2] {
-            let deadline = Instant::now() + Duration::from_secs(10);
-            while fs::read(&runs).unwrap_or_default().len() < expected {
-                if Instant::now() >= deadline {
-                    child.kill().unwrap();
-                    let output = child.wait_with_output().unwrap();
-                    panic!(
-                        "macOS autowatch missed run {expected}: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
+        let mut child = FixtureChild(child);
+        let stdout = child.0.stdout.take().unwrap();
+        let (read_tx, reads) = mpsc::channel();
+        let output = thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let line = line.unwrap();
+                for token in ["FSPY_MAC_WATCH_READ_FIRST", "FSPY_MAC_WATCH_READ_SECOND"] {
+                    if line.contains(token) {
+                        let _ = read_tx.send(token);
+                    }
                 }
-                thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let stderr = child.0.stderr.take().unwrap();
+        let (tx, installed) = mpsc::channel();
+        let diagnostics = thread::spawn(move || {
+            let mut text = String::new();
+            for line in BufReader::new(stderr).lines() {
+                let line = line.unwrap();
+                if line.contains("stage=\"watch_dependencies_installed\"") {
+                    let _ = tx.send(());
+                }
+                text.push_str(&line);
+                text.push('\n');
+            }
+            text
+        });
+        for (expected, token) in [
+            (1, "FSPY_MAC_WATCH_READ_FIRST"),
+            (2, "FSPY_MAC_WATCH_READ_SECOND"),
+        ] {
+            // Worker output precedes native capture teardown.
+            // A debug-only install acknowledgment proves the watch set is
+            // authoritative before the parent changes an observed input.
+            if installed.recv_timeout(Duration::from_secs(10)).is_err() {
+                let _ = child.stop();
+                let stderr = diagnostics.join().unwrap();
+                panic!("macOS autowatch missed installed run {expected}: {stderr}");
+            }
+            let read = reads.recv_timeout(Duration::from_secs(10));
+            if read != Ok(token) {
+                let _ = child.stop();
+                let stderr = diagnostics.join().unwrap();
+                panic!(
+                    "macOS autowatch read the wrong fixture input for run {expected}: {read:?}; \
+                     {stderr}"
+                );
             }
             if expected == 1 {
-                thread::sleep(Duration::from_millis(300));
-                fs::write(directory.path().join("input.txt"), b"second").unwrap();
+                fs::write(&input, b"second").unwrap();
             }
         }
-        // SAFETY: this PID is the owned test child, not an arbitrary process.
-        unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
-        assert!(child.wait().unwrap().success());
+        assert!(child.stop().is_some_and(|status| status.success()));
+        output.join().unwrap();
+        assert!(
+            reads.try_recv().is_err(),
+            "unexpected additional watched input read"
+        );
+        assert!(diagnostics
+            .join()
+            .unwrap()
+            .lines()
+            .all(|line| line.starts_with("DEBUG ")));
     }
 
     #[cfg(target_os = "macos")]
@@ -6007,6 +6776,15 @@ int main(int argc, char **argv) {
         let Some(root) = std::env::var_os("CLIBOX_FSPY_MAC_WATCH_ROOT") else {
             return;
         };
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new(
+                "clibox_fspy::watch=debug",
+            ))
+            .with_ansi(false)
+            .without_time()
+            .with_target(false)
+            .with_writer(std::io::stderr)
+            .init();
         let executable = std::env::current_exe().unwrap();
         let cli = TestCli::try_parse_from([
             OsString::from("fspy"),
@@ -6021,6 +6799,7 @@ int main(int argc, char **argv) {
             executable.into_os_string(),
             OsString::from("--exact"),
             OsString::from("cli::tests::macos_watch_worker"),
+            OsString::from("--nocapture"),
         ])
         .unwrap();
         assert_eq!(execute(cli.command), 130);
@@ -6032,15 +6811,13 @@ int main(int argc, char **argv) {
         if std::env::var_os("CLIBOX_FSPY_MAC_WATCH_ROOT").is_none() {
             return;
         }
-        assert!(!fs::read("input.txt").unwrap().is_empty());
-        use std::io::Write;
-        fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("runs.txt")
-            .unwrap()
-            .write_all(b"x")
-            .unwrap();
+        // Static tokens prove which test-owned input content was read without
+        // adding coordination writes to the watched project.
+        match fs::read("input.txt").unwrap().as_slice() {
+            b"first" => println!("FSPY_MAC_WATCH_READ_FIRST"),
+            b"second" => println!("FSPY_MAC_WATCH_READ_SECOND"),
+            _ => panic!("unexpected fixture input content"),
+        }
     }
 
     #[cfg(target_os = "windows")]

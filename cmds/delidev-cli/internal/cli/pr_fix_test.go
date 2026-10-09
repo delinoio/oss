@@ -18,8 +18,10 @@ import (
 )
 
 func TestCLIPRFixKeepsOriginalSelectionAndRejectsForeignAcknowledgment(t *testing.T) {
-	for _, scenario := range []string{"valid", "foreign-audit", "foreign-chain", "foreign-repository", "shared-stdin", "capabilities", "additive-capabilities"} {
+	for _, scenario := range []string{"valid", "foreign-audit", "foreign-chain", "foreign-repository", "shared-stdin", "capabilities", "additive-capabilities", "generated-valid"} {
 		t.Run(scenario, func(t *testing.T) {
+			generated := strings.HasPrefix(scenario, "generated-")
+			scenario = strings.TrimPrefix(scenario, "generated-")
 			at := time.Now().UTC()
 			setID, repo, project, problem, requestID, attemptID, chainID, sessionID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
 			input := domain.PRFixRequest{SetID: setID, SetRevision: 9007199254740993, RepositoryID: repo, ProjectID: project, Problems: []domain.PRFixProblem{{ID: problem, Revision: 9007199254740995, ContentVersion: strings.Repeat("c", 64)}}}
@@ -49,6 +51,10 @@ func TestCLIPRFixKeepsOriginalSelectionAndRejectsForeignAcknowledgment(t *testin
 			mux := http.NewServeMux()
 			mux.Handle(delidevv1connect.PullRequestFixServiceRequestPullRequestFixProcedure, connect.NewUnaryHandler(delidevv1connect.PullRequestFixServiceRequestPullRequestFixProcedure, func(_ context.Context, req *connect.Request[pb.RequestPullRequestFixRequest]) (*connect.Response[pb.RequestPullRequestFixResponse], error) {
 				calls++
+				if generated {
+					requestID = domain.ID(req.Msg.RequestId)
+					attempt.Reserved.RequestID = requestID
+				}
 				var got domain.PRFixRequest
 				if req.Msg.RequestId != string(requestID) || req.Msg.SchemaVersion != 1 || domain.Decode(req.Msg.DocumentJson, &got) != nil || got.SetRevision != input.SetRevision || got.Problems[0] != input.Problems[0] {
 					t.Error("CLI changed original selection")
@@ -74,10 +80,19 @@ func TestCLIPRFixKeepsOriginalSelectionAndRejectsForeignAcknowledgment(t *testin
 					args[len(args)-1] = "-"
 				}
 			}
+			if generated {
+				args = append(args[:5], args[7:]...)
+			}
 			var output, diagnostic strings.Builder
 			code := Run(context.Background(), args, IO{In: strings.NewReader("private-server-fixture-token"), Out: &output, Err: &diagnostic})
 			if (code == 0) != (scenario == "valid" || scenario == "capabilities" || scenario == "additive-capabilities") || calls != map[bool]int{true: 0, false: 1}[scenario == "shared-stdin"] {
 				t.Fatalf("invalid CLI acknowledgment result %s code=%d calls=%d diagnostic=%s", scenario, code, calls, diagnostic.String())
+			}
+			if generated {
+				var envelope map[string]any
+				if json.Unmarshal([]byte(output.String()), &envelope) != nil || domain.ID(requestID).Validate() != nil || envelope["request_id"] != string(requestID) {
+					t.Fatal("generated mutation identity was not retained", output.String())
+				}
 			}
 			if strings.Contains(output.String(), "private-server-fixture-token") {
 				t.Fatal("credential entered CLI output")

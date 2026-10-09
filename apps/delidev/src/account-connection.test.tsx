@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: Apache-2.0
+import { StrictMode } from "react";
+import { create } from "@bufbuild/protobuf";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { AccountService, EntityKind, ResourceSchema, ResourceService, newRequestId, type DisconnectAccountRequest, type Resource } from "@delinoio/delidev-api-client";
+import { AccountConnection } from "./account-connection";
+import { encode } from "./documents";
+import { MutationIntents } from "./mutation";
+import { DateFormatPreference, DateFormatProvider, DateFormatSettings, type DateFormatBridge } from "./date-format";
+import { i18n } from "./localization";
+
+const cleanupLabel = "Retry original credential cleanup";
+function fixture(revision: bigint, removal?: string) {
+  const id = newRequestId(), providerId = newRequestId(), connectionId = newRequestId();
+  const account = (marker?: string) => create(ResourceSchema, {
+    id, kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: marker === undefined ? revision : revision + 1n,
+    documentJson: new TextEncoder().encode(`{"alias":"Fixture API entry","type":"api","provider_id":"${providerId}","health":"${marker === undefined ? "unverified" : "disconnected"}",${marker === undefined ? `"connection":{"id":"${connectionId}"}` : `"removal":${marker}`}}`),
+  });
+  let current = account(removal), receipt: DisconnectAccountRequest["mutation"], secureDeletionConfirmed = false;
+  const initial = current;
+  const provider = create(ResourceSchema, { id: providerId, kind: EntityKind.PROVIDER, schemaVersion: 1, documentJson: encode({ name: "Fixture provider", enabled: true, authentication: "api-key" }) });
+  const disconnect = vi.fn(async (request: DisconnectAccountRequest) => {
+    receipt ??= request.mutation;
+    expect(request.mutation).toEqual(receipt);
+    current = account(`{"request_id":"${request.mutation!.requestId}","expected_revision":${request.mutation!.expectedRevision}}`);
+    if (secureDeletionConfirmed) current = create(ResourceSchema, { ...current, revision: current.revision + 1n, documentJson: encode({ alias: "Fixture API entry", type: "api", provider_id: providerId, health: "disconnected" }) });
+    return { account: current, requestId: request.mutation!.requestId, cleanupProblemJson: secureDeletionConfirmed ? new Uint8Array() : encode({ message: "Fixture vault cleanup is pending." }) };
+  });
+  const status = vi.fn(async () => ({ account: current }));
+  const transport = createRouterTransport((router) => {
+    router.service(AccountService, { getAccountStatus: status, disconnectAccount: disconnect });
+    router.service(ResourceService, { getResource: () => ({ resource: provider }) });
+  });
+  const mount = (row: Resource = initial, bridge?: DateFormatBridge) => {
+    // A new query client and mutation registry model loss of all renderer memory.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const accountView = <AccountConnection initial={row} active close={vi.fn()} />;
+    const content = bridge ? <DateFormatProvider bridge={bridge}><DateFormatSettings /><textarea aria-label="Session draft" defaultValue="retained draft" />{accountView}</DateFormatProvider> : accountView;
+    const view = render(<StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{content}</MutationIntents></QueryClientProvider></TransportProvider></StrictMode>);
+    return { unmount: () => { view.unmount(); client.clear(); } };
+  };
+  return { id, initial, disconnect, status, mount, confirmSecureDeletion: () => { secureDeletionConfirmed = true; }, get current() { return current; } };
+}
+
+it("reconstructs a high-revision cleanup request after vault failure and a fresh mount", async () => {
+  const revision = 9007199254740993n, value = fixture(revision);
+  const first = value.mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm disconnection" }));
+  await screen.findByText("Fixture vault cleanup is pending.");
+  expect(value.disconnect).toHaveBeenCalledTimes(1);
+  const original = value.disconnect.mock.calls[0][0].mutation!;
+  expect(original).toMatchObject({ id: value.id, expectedRevision: revision });
+  expect(value.current.revision).not.toBe(original.expectedRevision);
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  first.unmount();
+
+  const fresh = value.mount();
+  const retry = await screen.findByRole("button", { name: cleanupLabel });
+  await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+  expect(value.disconnect).toHaveBeenCalledTimes(1);
+  fireEvent.click(retry);
+  await screen.findByText("Fixture vault cleanup is pending.");
+  expect(value.disconnect).toHaveBeenCalledTimes(2);
+  expect(value.disconnect.mock.calls[1][0].mutation).toEqual(original);
+  expect(screen.queryByLabelText("API key")).toBeNull();
+
+  value.confirmSecureDeletion();
+  fireEvent.click(screen.getByRole("button", { name: cleanupLabel }));
+  await screen.findByLabelText("API key");
+  expect(screen.queryByRole("button", { name: cleanupLabel })).toBeNull();
+  expect(value.disconnect).toHaveBeenCalledTimes(3);
+  expect(value.disconnect.mock.calls[2][0].mutation).toEqual(original);
+  fresh.unmount();
+});
+
+it.each(["42", "9007199254740993", "18446744073709551615"])("sends the exact durable revision %s through Connect after a fresh mount", async (revision) => {
+  const requestId = newRequestId();
+  const value = fixture(8n, `{"request_id":"${requestId}","expected_revision":${revision}}`);
+  const view = value.mount();
+  const retry = await screen.findByRole("button", { name: cleanupLabel });
+  expect((retry as HTMLButtonElement).disabled).toBe(false);
+  expect(value.disconnect).not.toHaveBeenCalled();
+  fireEvent.click(retry);
+  await waitFor(() => expect(value.disconnect).toHaveBeenCalledTimes(1));
+  expect(value.disconnect.mock.calls[0][0].mutation).toMatchObject({ id: value.id, requestId, expectedRevision: BigInt(revision) });
+  view.unmount();
+});
+
+it("retains the original high revision and UUID when cleanup transport delivery is uncertain", async () => {
+  const requestId = newRequestId(), value = fixture(8n, `{"request_id":"${requestId}","expected_revision":9007199254740993}`);
+  value.disconnect.mockRejectedValueOnce(new ConnectError("Fixture response lost", Code.Unavailable));
+  const view = value.mount();
+  fireEvent.click(await screen.findByRole("button", { name: cleanupLabel }));
+  const retry = await screen.findByRole("button", { name: "Retry the same disconnection" });
+  expect((screen.getByRole("button", { name: cleanupLabel }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(retry);
+  await screen.findByText("Fixture vault cleanup is pending.");
+  expect(value.disconnect).toHaveBeenCalledTimes(2);
+  expect(value.disconnect.mock.calls[1][0].mutation).toEqual(value.disconnect.mock.calls[0][0].mutation);
+  expect(value.disconnect.mock.calls[1][0].mutation).toMatchObject({ requestId, expectedRevision: 9007199254740993n });
+  view.unmount();
+});
+
+it.each([
+  '{"expected_revision":42}',
+  '{"request_id":"invalid","expected_revision":42}',
+  `{"request_id":"${newRequestId()}","expected_revision":18446744073709551616}`,
+  `{"request_id":"${newRequestId()}","expected_revision":"42"}`,
+  `{"request_id":"${newRequestId()}","expected_revision":42,"expected_revision":43}`,
+])("keeps an invalid durable marker non-actionable: %s", async (removal) => {
+  const value = fixture(8n, removal), view = value.mount();
+  const retry = await screen.findByRole("button", { name: cleanupLabel });
+  expect((retry as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(retry);
+  expect(value.disconnect).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  view.unmount();
+});
+
+it("rechecks failed account reads inline without replacing the account or retrying a mutation", async () => {
+ const f=fixture(9n);f.status.mockRejectedValue(new ConnectError("private-transport-path",Code.PermissionDenied));f.mount();
+ const recheck=(await screen.findAllByRole("button",{name:"Recheck account and provider"}))[0];
+ expect(screen.getByText(/Saved account details are retained/).closest("details")).toBeNull();
+ expect(screen.queryByText(/private-transport-path/)).toBeNull();await waitFor(()=>expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(true));expect(f.disconnect).not.toHaveBeenCalled();
+ const reads=f.status.mock.calls.length;f.status.mockResolvedValue({account:f.current});fireEvent.click(recheck);await waitFor(()=>expect(f.status).toHaveBeenCalledTimes(reads+1));await waitFor(()=>expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(false));expect(f.disconnect).not.toHaveBeenCalled();
+});
+it("keeps original cleanup available while a failed status read blocks fresh actions", async () => {
+ const original=newRequestId();const f=fixture(9n,`{"request_id":"${original}","expected_revision":9007199254740993}`);f.status.mockRejectedValue(new ConnectError("read unavailable",Code.Unavailable));f.mount();
+ const retry=await screen.findByRole("button",{name:cleanupLabel});await screen.findByText(/Saved account details are retained/);expect((retry as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(retry);await waitFor(()=>expect(f.disconnect).toHaveBeenCalledOnce());expect(f.disconnect.mock.calls[0][0].mutation).toMatchObject({id:f.id,requestId:original,expectedRevision:9007199254740993n});
+});
+
+it("treats a successful status older than the original account as unavailable for fresh actions", async () => {
+ const f=fixture(9007199254740993n);f.status.mockResolvedValue({account:create(ResourceSchema,{...f.initial,revision:f.initial.revision-1n})});const view=f.mount();
+ await screen.findByText(/Saved account details are retained/);
+ expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Disconnect"}) as HTMLButtonElement).disabled).toBe(true);expect(f.disconnect).not.toHaveBeenCalled();
+ f.status.mockResolvedValue({account:f.initial});fireEvent.click(screen.getByRole("button",{name:"Recheck account and provider"}));
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Validate connection"}) as HTMLButtonElement).disabled).toBe(false));view.unmount();
+});
+
+it("rejects an older successful status after acknowledgment while retaining the exact original cleanup retry", async () => {
+ const f=fixture(9007199254740993n);const view=f.mount();await waitFor(()=>expect(f.status).toHaveBeenCalled());
+ f.status.mockResolvedValue({account:f.initial});
+ fireEvent.click(screen.getByRole("button",{name:"Disconnect"}));fireEvent.click(screen.getByRole("button",{name:"Confirm disconnection"}));
+ await screen.findByText(/Saved account details are retained/);const original=f.disconnect.mock.calls[0][0].mutation!;
+ expect(f.current.revision).toBeGreaterThan(f.initial.revision);const retry=screen.getByRole("button",{name:cleanupLabel}) as HTMLButtonElement;
+ expect(retry.disabled).toBe(false);fireEvent.click(retry);await waitFor(()=>expect(f.disconnect).toHaveBeenCalledTimes(2));
+ expect(f.disconnect.mock.calls[1][0].mutation).toEqual(original);expect(original.expectedRevision).toBe(9007199254740993n);
+ expect(screen.queryByLabelText("API key")).toBeNull();view.unmount();
+});
+
+it("date and language changes preserve an uncertain account receipt, draft, focus and query identity", async () => {
+  const requestId = newRequestId(), value = fixture(8n, `{"request_id":"${requestId}","expected_revision":9007199254740993}`);
+  value.disconnect.mockRejectedValueOnce(new ConnectError("Fixture response lost", Code.Unavailable));
+  const bridge: DateFormatBridge = {
+    read: async () => ({ revision: 1, date_format: DateFormatPreference.System, problem: null }),
+    update: async date_format => ({ revision: 2, date_format, problem: null }),
+    subscribe: async () => () => {},
+  };
+  const view = value.mount(value.initial, bridge);
+  fireEvent.click(await screen.findByRole("button", { name: cleanupLabel }));
+  const retry = await screen.findByRole("button", { name: "Retry the same disconnection" });
+  const reads = value.status.mock.calls.length;
+  const draft = screen.getByRole("textbox", { name: "Session draft" });
+  act(() => draft.focus());
+  fireEvent.change(screen.getByRole("combobox", { name: "Date format" }), { target: { value: "ymd" } });
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Date format" })).toHaveProperty("value", "ymd"));
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  expect(document.activeElement).toBe(draft);
+  expect(draft).toHaveProperty("value", "retained draft");
+  expect(value.status).toHaveBeenCalledTimes(reads);
+  expect(value.disconnect).toHaveBeenCalledTimes(1);
+  await act(async () => { await i18n.changeLanguage("en"); });
+  expect(screen.getByRole("button", { name: "Retry the same disconnection" })).toBe(retry);
+  fireEvent.click(retry);
+  await screen.findByText("Fixture vault cleanup is pending.");
+  expect(value.disconnect.mock.calls[1][0].mutation).toEqual(value.disconnect.mock.calls[0][0].mutation);
+  view.unmount();
+});

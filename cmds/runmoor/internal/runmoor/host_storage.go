@@ -98,6 +98,10 @@ func openHostDirectoryIdentity(c Config, d HostDirectory, installation string, r
 	if err != nil {
 		return nil, hostOwnership()
 	}
+	return verifyHostDirectoryRoot(root, d, installation, copied)
+}
+
+func verifyHostDirectoryRoot(root *os.Root, d HostDirectory, installation string, copied bool) (*os.Root, error) {
 	fail := func() (*os.Root, error) { root.Close(); return nil, hostOwnership() }
 	info, err := root.Stat(".")
 	if err != nil || !hostPrivateInfo(info, true) || !copied && d.Identity != "" && hostFileIdentity(info) != d.Identity {
@@ -123,7 +127,12 @@ func openHostDirectoryIdentity(c Config, d HostDirectory, installation string, r
 	return root, nil
 }
 
-func hostRestoreBoundary(s Snapshot) bool {
+func hostRestoreBoundary(s Snapshot, destinations ...Config) bool {
+	// Closed setup images may share a drained backup only after all private
+	// process and run-alias authority has settled. Never infer exit from phase.
+	if len(s.ImageTartPIDs) != 0 || len(s.ImageTartStarts) != 0 {
+		return false
+	}
 	for _, r := range s.Runners {
 		if r.Phase != Completed {
 			return false
@@ -135,8 +144,16 @@ func hostRestoreBoundary(s Snapshot) bool {
 		}
 	}
 	for _, im := range s.Images {
-		if im.Phase == ImageOpen || im.Phase == ImagePreparing || im.Phase == ImageRemoving {
+		if im.Phase == ImageOpen || im.Phase == ImageRemoving || im.Phase == ImagePreparing && !im.CreationComplete {
 			return false
+		}
+	}
+	for _, configuration := range append([]Config{s.Config}, destinations...) {
+		for _, im := range s.Images {
+			present, err := tartRunAliasPresent(configuration, tartRunAlias(im.ID))
+			if err != nil || present {
+				return false
+			}
 		}
 	}
 	for _, e := range s.HostExecutions {
@@ -154,7 +171,7 @@ func hostRestoreBoundary(s Snapshot) bool {
 
 func rebindHostDistributions(ctx context.Context, store *Store, c Config) error {
 	s := store.View()
-	if !hostRestoreBoundary(s) {
+	if !hostRestoreBoundary(s, c) {
 		return hostOwnership()
 	}
 	for id, d := range s.HostDirectories {
@@ -188,7 +205,7 @@ func rebindHostDistributions(ctx context.Context, store *Store, c Config) error 
 				return err
 			}
 			err = store.Update(func(v *Snapshot) error {
-				if !hostRestoreBoundary(*v) || v.HostDirectories[id] == nil || *v.HostDirectories[id] != *d {
+				if !hostRestoreBoundary(*v, c) || v.HostDirectories[id] == nil || *v.HostDirectories[id] != *d {
 					return hostOwnership()
 				}
 				v.HostDirectories[id].Identity = identity
@@ -299,13 +316,76 @@ func hostRootWrite(root *os.Root, name string, value any) error {
 	defer f.Close()
 	return f.Sync()
 }
+
+// Walk from an opened filesystem root so validation and subsequent cleanup
+// remain bound to the inspected ancestors, even if their pathnames move.
+// This must not create directories or repair permissions during recovery.
+func openHostRemovalParent(c Config, d HostDirectory) (*os.Root, error) {
+	if !validHostDirectory(d, d.Installation) {
+		return nil, hostOwnership()
+	}
+	path := filepath.Clean(hostParent(c, d.Kind))
+	if !filepath.IsAbs(path) {
+		return nil, hostOwnership()
+	}
+	anchor := filepath.VolumeName(path) + string(filepath.Separator)
+	root, err := os.OpenRoot(anchor)
+	if err != nil {
+		return nil, hostOwnership()
+	}
+	for _, name := range strings.Split(strings.TrimPrefix(path, anchor), string(filepath.Separator)) {
+		next, err := openHostRemovalChild(root, name)
+		root.Close()
+		if err != nil {
+			return nil, err
+		}
+		root = next
+	}
+	info, err := root.Stat(".")
+	if err != nil || !hostPrivateInfo(info, true) {
+		root.Close()
+		return nil, hostOwnership()
+	}
+	return root, nil
+}
+
+func openHostRemovalChild(parent *os.Root, name string) (*os.Root, error) {
+	before, err := parent.Lstat(name)
+	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
+		return nil, hostOwnership()
+	}
+	root, err := parent.OpenRoot(name)
+	if err != nil {
+		return nil, hostOwnership()
+	}
+	opened, openedErr := root.Stat(".")
+	after, afterErr := parent.Lstat(name)
+	if openedErr != nil || afterErr != nil || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, opened) || !os.SameFile(opened, after) {
+		root.Close()
+		return nil, hostOwnership()
+	}
+	return root, nil
+}
+
+func openHostRemovalDirectory(parent *os.Root, d HostDirectory, removing bool) (*os.Root, error) {
+	name := d.ID
+	if removing {
+		name = ".remove-" + d.ID
+	}
+	root, err := openHostRemovalChild(parent, name)
+	if err != nil {
+		return nil, err
+	}
+	return verifyHostDirectoryRoot(root, d, d.Installation, false)
+}
+
 func removeHostDirectory(ctx context.Context, store *Store, c Config, d HostDirectory) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	parent, err := os.OpenRoot(hostParent(c, d.Kind))
+	parent, err := openHostRemovalParent(c, d)
 	if err != nil {
-		return hostOwnership()
+		return err
 	}
 	defer parent.Close()
 	staged := ".remove-" + d.ID
@@ -322,7 +402,7 @@ func removeHostDirectory(ctx context.Context, store *Store, c Config, d HostDire
 	} else if !os.IsNotExist(err) {
 		return hostOwnership()
 	}
-	root, err := openHostDirectory(c, d, d.Installation, removing)
+	root, err := openHostRemovalDirectory(parent, d, removing)
 	if err != nil {
 		return err
 	}
@@ -331,7 +411,7 @@ func removeHostDirectory(ctx context.Context, store *Store, c Config, d HostDire
 		if err = hostRenameNoReplace(parent, d.ID, staged); err != nil {
 			return hostOwnership()
 		}
-		root, err = openHostDirectory(c, d, d.Installation, true)
+		root, err = openHostRemovalDirectory(parent, d, true)
 		if err != nil {
 			return err
 		}

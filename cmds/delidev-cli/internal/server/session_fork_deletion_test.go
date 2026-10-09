@@ -100,6 +100,11 @@ func TestSessionForkContinuesAfterParentPermanentDeletion(t *testing.T) {
 	if _, err := sessionClient(f.accountFixture).ControlSession(context.Background(), ownerRequest(f.identity, &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: child.Id, ExpectedRevision: current.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME})); err != nil {
 		t.Fatal("child depended on purged parent", err)
 	}
+	f.change.Session = child
+	f.claim(t)
+	if f.input.Startup == nil || input.Startup == nil || *f.input.Startup != *input.Startup {
+		t.Fatal("parent deletion replaced the child-owned executable selection")
+	}
 }
 
 func TestSessionForkResponsesRetainCorrelation(t *testing.T) {

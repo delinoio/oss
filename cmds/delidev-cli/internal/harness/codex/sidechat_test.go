@@ -56,7 +56,7 @@ func TestSidechatRejectsMergedExternalAuthority(t *testing.T) {
 			if json.Unmarshal(raw, &merged) != nil {
 				t.Fatal("invalid fixture")
 			}
-			if err := validateSidechatConfig(merged); (err == nil) != (change == "valid") {
+			if err := validateSidechatConfig(merged); (err == nil) != (change == "valid" || change == "subscription") {
 				t.Fatal("merged authority classification", err)
 			}
 		})
@@ -64,7 +64,7 @@ func TestSidechatRejectsMergedExternalAuthority(t *testing.T) {
 }
 
 func TestSidechatProfileBeforeLaunchAndPermissionOverlay(t *testing.T) {
-	for _, change := range []string{"valid", "unknown", "probe", "subscription", "model-observation", "title"} {
+	for _, change := range []string{"valid", "unknown", "probe", "subscription", "mixed-auth", "model-observation", "title"} {
 		t.Run(change, func(t *testing.T) {
 			cfg := Config{Sidechat: ReadOnlySidechatV1, Mode: ThreadProtocol}
 			switch change {
@@ -74,12 +74,15 @@ func TestSidechatProfileBeforeLaunchAndPermissionOverlay(t *testing.T) {
 				cfg.Mode = ProbeProtocol
 			case "subscription":
 				cfg.ManagedAuthentication = true
+			case "mixed-auth":
+				cfg.ManagedAuthentication = true
+				cfg.API = &APIConfig{}
 			case "model-observation":
 				cfg.ModelObservation = true
 			case "title":
 				cfg.API = &APIConfig{TitleProfile: true}
 			}
-			if err := configureSidechat(&cfg); (err == nil) != (change == "valid") {
+			if err := configureSidechat(&cfg); (err == nil) != (change == "valid" || change == "subscription") {
 				t.Fatal("unverified profile admitted", err)
 			}
 			if change == "valid" {

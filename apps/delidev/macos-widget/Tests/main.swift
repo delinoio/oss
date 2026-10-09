@@ -13,6 +13,7 @@ func publication(_ id: String, _ name: String, _ raw: String) throws -> Publicat
     let summary = try JSONDecoder().decode(Summary.self, from: Data(raw.utf8))
     return Publication(action: .publish, id: id, name: name, summary: summary)
 }
+func checkEqual<T: Equatable>(_ actual: T, _ expected: T) { assert(actual == expected) }
 func expectFailure(_ body: () throws -> Void) {
     do { try body(); fatalError("Expected fixture rejection") } catch {}
 }
@@ -32,6 +33,31 @@ assert(quota.label(at: now, snapshotStale: false) == "0.00% remaining · observe
 assert(quota.label(at: now.addingTimeInterval(301), snapshotStale: false) == "0.00% remaining · stale")
 assert(!states[0].isStale(at: now) && states[0].isStale(at: now.addingTimeInterval(45)))
 assert(states[0].isStale(at: now.addingTimeInterval(-1)))
+let correctedTime = WidgetPresentationTime(timelineDate: now, wallDate: now.addingTimeInterval(-30))
+assert(correctedTime.isStale(states[0]))
+assert(states[0].last_successful_at == "2026-09-30T10:00:00Z")
+let futureQuota = Quota(state: .observed, remaining_basis_points: 0, observed_at: "2026-09-30T10:00:00Z", reset_at: nil)
+assert(correctedTime.quotaLabel(futureQuota, server: states[0]) == "0.00% remaining · stale")
+let priorTimestamp = ISO8601DateFormatter().string(from: now.addingTimeInterval(-40))
+var priorServer = ServerSnapshot(id: first, name: "Earlier observation", state: .observed,
+    last_successful_at: priorTimestamp, last_attempted_at: priorTimestamp,
+    summary: Summary(overview: Overview(observed_at: priorTimestamp, stale: false,
+        active_sessions: "0", pending_interactions: "0", registered_workers: "0", connected_workers: "0"), usage: nil, accounts: nil))
+try priorServer.validate()
+assert(!correctedTime.isStale(priorServer))
+assert(correctedTime.quotaLabel(futureQuota, server: priorServer) == "0.00% remaining · stale")
+for offset in [44.0, 45.0] {
+    let ordinaryTime = WidgetPresentationTime(timelineDate: now.addingTimeInterval(offset), wallDate: now.addingTimeInterval(offset))
+    assert(ordinaryTime.isStale(states[0]) == (offset == 45))
+}
+let expiryTime = WidgetPresentationTime(timelineDate: now.addingTimeInterval(45), wallDate: now.addingTimeInterval(44))
+assert(expiryTime.isStale(states[0]))
+let currentTime = WidgetPresentationTime(timelineDate: now, wallDate: now)
+assert(currentTime.quotaLabel(futureQuota, server: states[0]) == "0.00% remaining · observed")
+for state in [QuotaState.unknown, .failed, .unsupported] {
+    let unavailable = Quota(state: state, remaining_basis_points: nil, observed_at: nil, reset_at: nil)
+    assert(correctedTime.quotaLabel(unavailable, server: states[0]) == unavailable.label(at: now, snapshotStale: true))
+}
 let unavailableQuota = states[0].summary!.accounts!.entries[0].windows[1]
 assert(unavailableQuota.label(at: now, snapshotStale: false) == "Quota unknown")
 let resetQuota = Quota(state: .observed, remaining_basis_points: 10000, observed_at: "2026-09-30T09:59:00Z", reset_at: "2026-09-30T10:00:00Z")
@@ -85,4 +111,66 @@ chmod(file.path, 0o600)
 let oversized = Data(repeating: 65, count: 2 * 1024 * 1024 + 1)
 try oversized.write(to: file)
 expectFailure { _ = try store.read() }
+// Device language is independent of server observation and successful-read time.
+checkEqual(try store.readLanguage(), .system)
+let observationBytes = try Data(contentsOf: file)
+try store.setLanguage(WidgetLanguageDocument(version: 1, language: .korean))
+checkEqual(try store.readLanguage(), .korean)
+checkEqual(try Data(contentsOf: file), observationBytes)
+assert(resolveWidgetLanguage(.system, languages: ["fr-FR", "ko-KR", "en-US"]) == .korean)
+assert(resolveWidgetLanguage(.system, languages: ["en-GB", "ko-KR"]) == .english)
+assert(resolveWidgetLanguage(.system, languages: ["zh-Hant"]) == .english)
+assert(resolveWidgetLanguage(.korean, languages: ["en-US"]) == .korean)
+assert(widgetCopy(.sessions, .korean) == "세션")
+let languageFile = store.directory.appendingPathComponent("language-v1.json")
+let languageBytes = try Data(contentsOf: languageFile)
+assert(!String(decoding: languageBytes, as: UTF8.self).contains("observed"))
+assert(stat(languageFile.path, &info) == 0 && info.st_mode & 0o777 == 0o600)
+for invalid in ["{broken", "{\"version\":2,\"language\":\"ko\"}", "{\"version\":1,\"language\":\"fr\"}", "{\"version\":1,\"language\":\"en\",\"extra\":true}"] {
+    let original = Data(invalid.utf8)
+    try original.write(to: languageFile)
+    chmod(languageFile.path, 0o600)
+    expectFailure { _ = try store.readLanguage() }
+    expectFailure { try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english)) }
+    checkEqual(try Data(contentsOf: languageFile), original)
+}
+try FileManager.default.removeItem(at: languageFile)
+try FileManager.default.createSymbolicLink(at: languageFile, withDestinationURL: root.appendingPathComponent("sentinel-language"))
+expectFailure { _ = try store.readLanguage() }
+expectFailure { try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english)) }
+try FileManager.default.removeItem(at: languageFile)
+try store.setLanguage(WidgetLanguageDocument(version: 1, language: .english))
+checkEqual(try store.readLanguage(), .english)
+checkEqual(try Data(contentsOf: file), observationBytes)
 print("Widget fixture checks passed: exact values, currencies, isolation, stale/closure, masking, corruption and private storage")
+
+
+// Countdown fixtures leave observations, protected snapshots and OS timelines unchanged.
+let countdownNow = widgetResetInstant("2026-10-08T00:00:00Z")!
+for (seconds, english, korean) in [
+    (529200, "Resets in 6 days 3 hours", "6일 3시간 뒤 리셋"),
+    (86400, "Resets in 1 day", "1일 뒤 리셋"),
+    (86340, "Resets in 23 hours 59 minutes", "23시간 59분 뒤 리셋"),
+    (12000, "Resets in 3 hours 20 minutes", "3시간 20분 뒤 리셋"),
+    (3540, "Resets in 59 minutes", "59분 뒤 리셋"), (60, "Resets in 1 minute", "1분 뒤 리셋"),
+    (59, "Resets soon", "곧 리셋"), (3600, "Resets in 1 hour", "1시간 뒤 리셋"),
+    (3660, "Resets in 1 hour 1 minute", "1시간 1분 뒤 리셋"),
+    (90000, "Resets in 1 day 1 hour", "1일 1시간 뒤 리셋"),
+    (176400, "Resets in 2 days 1 hour", "2일 1시간 뒤 리셋"),
+    (7320, "Resets in 2 hours 2 minutes", "2시간 2분 뒤 리셋")
+] {
+    let reset = "2026-10-14T03:00:00.999Z"
+    let now = widgetResetInstant(reset)!.addingTimeInterval(-Double(seconds) - 0.999)
+    checkEqual(widgetQuotaReset(reset, at: now, language: .english), english)
+    checkEqual(widgetQuotaReset(reset, at: now, language: .korean), korean)
+}
+checkEqual(widgetQuotaReset("2026-10-14T03:00:00Z", at: countdownNow, language: .english), "Resets in 6 days 3 hours")
+checkEqual(widgetResetInstant("2026-10-14T03:00:00Z"), widgetResetInstant("2026-10-14T12:00:00+09:00"))
+checkEqual(widgetResetInstant("2026-11-01T02:00:00-05:00")!.timeIntervalSince(widgetResetInstant("2026-11-01T01:00:00-04:00")!), 7200)
+for invalid in ["bad", "2026-02-30T00:00:00Z", "2026-01-01T25:00:00Z", "2026-01-01T00:00:00+24:00", "2026-01-01T00:00:00.1234567890Z"] {
+    assert(widgetResetInstant(invalid) == nil)
+    assert(!widgetQuotaReset(invalid, at: countdownNow, language: .english).contains("Resets in"))
+}
+assert(!widgetQuotaReset("2026-10-08T00:00:00Z", at: countdownNow, language: .english).contains("Resets in"))
+assert(resetQuota.label(at: now, snapshotStale: false) == "100.00% remaining · stale")
+print("widget_countdown_fixture thresholds=12 languages=2 evidence=unchanged timeline=unchanged native_acceptance=not-performed")

@@ -1,0 +1,9 @@
+{
+  "pr-cards.pageLabel": "Pull request 결과 · {{page}}페이지",
+  "pr-cards.applied": "{{state}} · {{page}}페이지 · 페이지당 {{pageSize}}개",
+  "pr-cards.search": "검색: {{terms}}",
+  "pr-cards.updated": "업데이트 (UTC)",
+  "pr-cards.emptyPage": "{{page}}페이지에서 반환된 pull request가 없습니다.",
+  "pr-cards.draft": "초안",
+  "pr-cards.unverifiedAuthor": "작성자 유형 미확인"
+}

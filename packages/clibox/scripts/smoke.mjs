@@ -80,6 +80,8 @@ try {
     equal(readFileSync(path.join(consumer, "path with spaces.txt")), "hello world", "npm-script capture/path quoting failed");
     equal(invoke(["text", "replace", "(hello)", "$1 world", "--regex", "--text", "hello"]), "hello world", "Installed text replacement failed");
     equal(invoke(["time", "format", "-1", "--from", "unix-ms", "--to", "unix-s"]), "-1\n", "Installed time formatting failed");
+    equal(invoke(["time", "format", "2024-02-29 12:34:56.123", "--input-format", "%F %T%.3f%.f"]), "2024-02-29T12:34:56.123Z\n", "Installed optional fractional precision failed");
+    equal(invoke(["time", "format", "2024-02-29 12:34:56 123/123000", "--input-format", "%F %T %3f/%6f"]), "2024-02-29T12:34:56.123000Z\n", "Installed repeated fractional precision failed");
     equal(invoke(["time", "add", "2024-03-09T12:00:00-05:00", "--timezone", "America/New_York", "--days", "1"]), "2024-03-10T12:00:00-04:00\n", "Installed calendar arithmetic failed");
     const bytes = Buffer.from([0, 255, 13, 10, 127, 128]);
     const encoded = invoke(["base64", "encode"], { input: bytes });

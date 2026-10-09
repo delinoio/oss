@@ -61,8 +61,16 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	if err := m.requireNoSidechatReferences(ctx, w.SessionID); err != nil {
 		return err
 	}
+	stage = "storage-removal-ownership"
+	if err := m.cleanupDeletionRemovals(ctx, w); err != nil {
+		return err
+	}
 	stage = "storage-staging-ownership"
 	if err := m.cleanupDeletionStaging(ctx, w); err != nil {
+		return err
+	}
+	stage = "final-root-ownership"
+	if err := m.cleanupDeletionFinalRoots(ctx, w); err != nil {
 		return err
 	}
 	storedManifest, e := m.deletionSnapshotManifest(ctx, w)
@@ -135,6 +143,16 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				return e
 			}
 		}
+		if !independent && manifest.ManagedRootDigest != "" {
+			if _, err := os.Lstat(root); err == nil {
+				current, err := directoryIdentityDigest(root)
+				if err != nil || current != manifest.ManagedRootDigest {
+					return domain.SessionDeletionPending()
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return domain.SessionDeletionPending()
+			}
+		}
 		stage = "repository-ownership"
 		for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 			repo := manifest.Repositories[i]
@@ -150,12 +168,22 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				}
 				continue
 			}
-			if manifest.Type != domain.Worktree || !repo.Owned || repo.ID.Validate() != nil || repo.Path != filepath.Join(root, string(repo.ID)) || repo.Source == repo.Path {
+			if manifest.Type != domain.Worktree || !repo.Owned || repo.ID.Validate() != nil || repo.Path != filepath.Join(root, string(repo.ID)) || repo.SourceKind == CheckoutSource && repo.Source == repo.Path {
 				return domain.SessionDeletionPending()
 			}
 			if independent {
 				// Independent restored Git belongs to the managed root. Do not run
 				// worktree removal against the user's separate source Git store.
+				continue
+			}
+			if repo.SourceKind.managed() {
+				if _, e := os.Lstat(root); e == nil {
+					if verifyIndependentDirectory(repo, true) != nil {
+						return domain.SessionDeletionPending()
+					}
+				} else if !errors.Is(e, os.ErrNotExist) {
+					return domain.SessionDeletionPending()
+				}
 				continue
 			}
 			info, e := os.Lstat(repo.Path)

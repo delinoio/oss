@@ -237,3 +237,355 @@ fn native_termination_rechecks_birth_and_endpoint_before_killing_owned_child() {
     child.0.wait().unwrap();
     assert!(!backend.terminate(pid, &rows).unwrap());
 }
+
+fn windows_udp_projection(addresses: Vec<(windows_projection::Address, u32)>) -> Report {
+    let mut report = Report::default();
+    for (address, pid) in addresses {
+        windows_projection::add_endpoint(
+            &mut report,
+            &[5353].into(),
+            pid,
+            Protocol::Udp,
+            address,
+            u32::from(5353u16.to_be()),
+        );
+    }
+    windows_projection::diagnose_unavailable_udp_owners(&mut report);
+    report.normalize();
+    report
+}
+
+#[test]
+fn windows_udp_unavailable_owners_remain_partial_in_every_list_mode() {
+    use windows_projection::Address;
+    for (address, expected) in [
+        (Address::V4(u32::from_ne_bytes([127, 0, 0, 1])), "127.0.0.1"),
+        (
+            Address::V6(std::net::Ipv6Addr::LOCALHOST.octets(), 0),
+            "::1",
+        ),
+    ] {
+        let report = windows_udp_projection(vec![(address, 0)]);
+        assert_eq!(report.results.len(), 1);
+        let entry = &report.results[0];
+        assert_eq!(entry.address, expected);
+        assert_eq!(entry.port, 5353);
+        assert!(entry.pid.is_none() && entry.name.is_none() && entry.identity.is_none());
+        assert_eq!(report.errors.len(), 1);
+        let error = &report.errors[0];
+        assert_eq!(error.code, Code::IdentityUnverifiable);
+        assert_eq!(error.port, Some(5353));
+        assert_eq!(error.pid, None);
+        assert_eq!(
+            error.message,
+            "Socket owner is unavailable; port enumeration is incomplete."
+        );
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(finish_report(&report, mode, false, &mut out).unwrap(), 1);
+            match mode {
+                OutputMode::Quiet | OutputMode::Pids => assert!(out.is_empty()),
+                OutputMode::Human => assert!(String::from_utf8(out).unwrap().contains(expected)),
+                OutputMode::Json => {
+                    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+                    assert!(json["results"][0]["pid"].is_null());
+                    assert!(json["results"][0]["name"].is_null());
+                    assert_eq!(json["errors"][0]["code"], "identity-unverifiable");
+                    assert_eq!(json["errors"][0]["port"], 5353);
+                }
+            }
+        }
+        let mut report = report;
+        let mut backend = Fake::default();
+        kill(&mut report, &mut backend, &mut Time::default());
+        assert!(backend.calls.is_empty());
+        assert_eq!(report.results[0].status, Some(Status::Skipped));
+    }
+}
+
+#[test]
+fn windows_udp_mixed_empty_and_known_owner_controls() {
+    use windows_projection::Address;
+    for unknown in [false, true] {
+        let mut rows = vec![(Address::V4(u32::from_ne_bytes([127, 0, 0, 1])), 42)];
+        if unknown {
+            rows.push((Address::V6(std::net::Ipv6Addr::LOCALHOST.octets(), 0), 0));
+        }
+        let mut report = windows_udp_projection(rows);
+        // Supply the successful metadata result that the native adapter obtains
+        // for a known PID; unknown PIDs never enter that process lookup.
+        let known = report
+            .results
+            .iter_mut()
+            .find(|r| r.pid == Some(42))
+            .unwrap();
+        known.name = Some("fixture".into());
+        known.identity = Some(Identity {
+            birth: 123,
+            socket: 0,
+        });
+        assert_eq!(report.results.len(), if unknown { 2 } else { 1 });
+        assert_eq!(report.errors.len(), usize::from(unknown));
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(
+                finish_report(&report, mode, false, &mut out).unwrap(),
+                i32::from(unknown)
+            );
+            if matches!(mode, OutputMode::Pids) {
+                assert_eq!(out, b"42\n");
+            }
+            if matches!(mode, OutputMode::Quiet) {
+                assert!(out.is_empty());
+            }
+        }
+        let mut backend = Fake::default();
+        kill(&mut report, &mut backend, &mut Time::default());
+        assert_eq!(backend.calls, vec![42]);
+        assert_eq!(
+            report
+                .results
+                .iter()
+                .find(|r| r.pid == Some(42))
+                .unwrap()
+                .status,
+            Some(Status::Killed)
+        );
+    }
+    let report = windows_udp_projection(vec![]);
+    assert!(report.results.is_empty() && report.errors.is_empty());
+    for mode in [
+        OutputMode::Human,
+        OutputMode::Json,
+        OutputMode::Quiet,
+        OutputMode::Pids,
+    ] {
+        assert_eq!(
+            finish_report(&report, mode, false, &mut Vec::new()).unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+fn windows_projection_filters_ports_and_preserves_raw_revalidation_rows() {
+    use windows_projection::{add_endpoint, diagnose_unavailable_udp_owners, Address};
+    let mut report = Report::default();
+    add_endpoint(
+        &mut report,
+        &[5353].into(),
+        0,
+        Protocol::Udp,
+        Address::V4(u32::from_ne_bytes([127, 0, 0, 1])),
+        u32::from(9999u16.to_be()),
+    );
+    assert!(report.results.is_empty() && report.errors.is_empty());
+    add_endpoint(
+        &mut report,
+        &[5353].into(),
+        0,
+        Protocol::Udp,
+        Address::V6(std::net::Ipv6Addr::LOCALHOST.octets(), 7),
+        u32::from(5353u16.to_be()),
+    );
+    assert_eq!(report.results[0].address, "::1%7");
+    assert!(
+        report.errors.is_empty(),
+        "raw revalidation rows must not block unrelated verified owners"
+    );
+    diagnose_unavailable_udp_owners(&mut report);
+    assert_eq!(report.errors.len(), 1);
+    let mut tcp = Report::default();
+    add_endpoint(
+        &mut tcp,
+        &[5353].into(),
+        0,
+        Protocol::Tcp,
+        Address::V4(u32::from_ne_bytes([127, 0, 0, 1])),
+        u32::from(5353u16.to_be()),
+    );
+    diagnose_unavailable_udp_owners(&mut tcp);
+    assert!(
+        tcp.errors.is_empty(),
+        "UDP owner policy must not expand TCP behavior"
+    );
+}
+
+#[test]
+fn duplicate_endpoints_keep_all_original_sockets_until_termination() {
+    struct Originals {
+        survivor: Option<u64>,
+        birth: u128,
+        expected: Vec<u64>,
+        signals: usize,
+    }
+    impl Backend for Originals {
+        fn snapshot(&mut self, _: &BTreeSet<u16>, _: Protocol) -> Report {
+            unreachable!()
+        }
+
+        fn terminate(&mut self, _: u32, rows: &[Entry]) -> Result<bool> {
+            self.expected = rows.iter().map(|r| r.identity.unwrap().socket).collect();
+            if rows.iter().any(|r| r.identity.unwrap().birth != self.birth) {
+                return Err(Failure::new(Code::IdentityChanged, "Changed."));
+            }
+            if !self.survivor.is_some_and(|id| self.expected.contains(&id)) {
+                return Err(Failure::new(Code::OwnershipChanged, "Changed."));
+            }
+            self.signals += 1;
+            Ok(true)
+        }
+
+        fn alive(&mut self, _: u32, _: u128) -> Result<bool> {
+            Ok(false)
+        }
+    }
+    for order in [[100, 200], [200, 100]] {
+        for (survivor, birth, authorized) in [
+            (Some(100), 123, true),
+            (Some(200), 123, true),
+            (None, 123, false),
+            (Some(300), 123, false),
+            (Some(200), 124, false),
+        ] {
+            let mut report = Report {
+                results: order
+                    .into_iter()
+                    .map(|id| {
+                        let mut r = row(7, 8000);
+                        r.identity.as_mut().unwrap().socket = id;
+                        r
+                    })
+                    .collect(),
+                errors: vec![],
+            };
+            let mut backend = Originals {
+                survivor,
+                birth,
+                expected: vec![],
+                signals: 0,
+            };
+            settle_snapshot(&mut report, true, &mut backend, &mut Time::default());
+            assert_eq!(backend.expected, order);
+            assert_eq!(backend.signals, usize::from(authorized));
+            assert_eq!(report.results.len(), 1);
+            assert_eq!(
+                report.results[0].status,
+                Some(if authorized {
+                    Status::Killed
+                } else {
+                    Status::Skipped
+                })
+            );
+            assert_eq!(report.errors.is_empty(), authorized);
+            let mut out = vec![];
+            write_report(&report, OutputMode::Json, true, &mut out).unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+            assert_eq!(json["results"].as_array().unwrap().len(), 1);
+            assert!(json["results"][0].get("identity").is_none());
+        }
+    }
+}
+
+#[test]
+fn listing_deduplicates_without_termination() {
+    let mut report = Report {
+        results: vec![row(7, 8000), row(7, 8000)],
+        errors: vec![],
+    };
+    let mut backend = Fake::default();
+    settle_snapshot(&mut report, false, &mut backend, &mut Time::default());
+    assert_eq!(report.results.len(), 1);
+    assert!(backend.calls.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn linux_proc_unknown_owners_fail_every_list_mode_and_never_signal() {
+    use super::linux_snapshot::{
+        snapshot,
+        tests::{fixture, listener, owner},
+    };
+    for mixed in [false, true] {
+        let temp = fixture();
+        listener(temp.path(), "tcp", "0100007F:1F90", 4242);
+        if mixed {
+            listener(temp.path(), "tcp", "0100007F:1F91", 4243);
+            owner(temp.path(), 42, Some(4243));
+        }
+        let mut report = snapshot(temp.path(), &[8080, 8081].into(), Protocol::Tcp);
+        report.normalize();
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(finish_report(&report, mode, false, &mut out).unwrap(), 1);
+            let out = String::from_utf8(out).unwrap();
+            match mode {
+                OutputMode::Quiet => assert!(out.is_empty()),
+                OutputMode::Pids => assert_eq!(out, if mixed { "42\n" } else { "" }),
+                OutputMode::Human => assert!(out.contains("127.0.0.1\t8080")),
+                OutputMode::Json => {
+                    let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+                    assert!(value["results"][0]["pid"].is_null());
+                    assert!(value["results"][0]["name"].is_null());
+                    assert_eq!(value["errors"][0]["code"], "identity-unverifiable");
+                    assert_eq!(value["errors"][0]["port"], 8080);
+                }
+            }
+        }
+        let mut backend = Fake::default();
+        kill(&mut report, &mut backend, &mut Time::default());
+        assert_eq!(backend.calls, if mixed { vec![42] } else { vec![] });
+        assert_eq!(report.results[0].status, Some(Status::Skipped));
+        if mixed {
+            assert_eq!(report.results[1].status, Some(Status::Killed));
+        }
+        assert_eq!(
+            finish_report(&report, OutputMode::Quiet, true, &mut Vec::new()).unwrap(),
+            1
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn linux_proc_verified_and_empty_results_succeed_every_list_mode() {
+    use super::linux_snapshot::{
+        snapshot,
+        tests::{fixture, listener, owner},
+    };
+    for known in [false, true] {
+        let temp = fixture();
+        if known {
+            listener(temp.path(), "tcp", "0100007F:1F90", 4242);
+            owner(temp.path(), 42, Some(4242));
+        }
+        let report = snapshot(temp.path(), &[8080].into(), Protocol::Tcp);
+        assert!(report.errors.is_empty());
+        for mode in [
+            OutputMode::Human,
+            OutputMode::Json,
+            OutputMode::Quiet,
+            OutputMode::Pids,
+        ] {
+            assert_eq!(
+                finish_report(&report, mode, false, &mut Vec::new()).unwrap(),
+                0
+            );
+        }
+    }
+}

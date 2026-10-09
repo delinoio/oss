@@ -60,13 +60,21 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	// Only a current, still-connected original OAuth result retains vault
 	// authority across restore. Neither an older account image nor a disconnected
 	// current descriptor can recover an old credential generation.
-	const connectedOAuthAccounts = `SELECT e.id FROM current_state.entities e JOIN current_state.account_oauth_attempts a ON e.id=json_extract(a.body,'$.account_id') WHERE e.kind='account' AND a.state='connected' AND json_extract(e.body,'$.connection.id')=json_extract(a.body,'$.connect_request_id')`
+	const connectedOAuthAccounts = `SELECT e.id FROM current_state.entities e JOIN current_state.account_oauth_attempts a ON e.id=json_extract(a.body,'$.account_id') WHERE e.kind='account' AND a.state='connected' AND json_type(e.body,'$.connection')='object' AND COALESCE(json_extract(e.body,'$.connection.credential_id'),json_extract(e.body,'$.connection.id'))=json_extract(a.body,'$.connect_request_id')`
 	queries := []string{
+		// Current image ownership and completed removals cannot roll back.
+		// Historical image bytes are never part of a database backup.
+		"DELETE FROM entities WHERE kind='job' AND json_extract(body,'$.type')='image-attachment'",
+		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind='job' AND json_extract(body,'$.type')='image-attachment'",
+		"DELETE FROM jobs WHERE id NOT IN (SELECT id FROM entities WHERE kind='job')",
+		"INSERT OR REPLACE INTO jobs SELECT j.* FROM current_state.jobs j JOIN current_state.entities e ON e.id=j.id WHERE json_extract(e.body,'$.type')='image-attachment'",
 		// A historical image cannot replace current once-only OAuth dispatch or
 		// cleanup evidence. Eligibility already excludes every unresolved attempt.
 		// Installation state is current once-only authority, never historical configuration.
 		"DELETE FROM entities WHERE kind IN ('ssh_setup','update')",
 		"INSERT INTO entities SELECT * FROM current_state.entities WHERE kind IN ('ssh_setup','update')",
+		"DELETE FROM account_oauth_credentials",
+		"INSERT INTO account_oauth_credentials SELECT * FROM current_state.account_oauth_credentials",
 		"DELETE FROM account_oauth_attempts",
 		"INSERT INTO account_oauth_attempts SELECT * FROM current_state.account_oauth_attempts",
 		// Preserve the coupled account/provider from the current safety image;
@@ -102,6 +110,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		// explicitly paired again after startup, never implicitly reattached.
 		"UPDATE entities SET body=json_set(body,'$.revoked',json('true')) WHERE kind='device' AND json_extract(body,'$.type')='worker'",
 		"DELETE FROM entities WHERE id IN (SELECT id FROM tombstones) OR session_id IN (SELECT id FROM tombstones WHERE kind='session')",
+		"DELETE FROM entities WHERE kind='project_prompt_history' AND project_id NOT IN (SELECT id FROM entities WHERE kind='project')",
 		// Preserve original backup-removal jobs exactly for the independent
 		// external obligation controller. These are the sole resumable jobs.
 		"DELETE FROM backup_deletions",
@@ -189,10 +198,25 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			v.Problem = restoreQuarantined().(*domain.Error)
 			value = v
 		case domain.JobKind:
-			var v domain.Job
-			if err := domain.Decode(raw, &v); err != nil {
+			// Restore supported history with the same closed type-aware limits
+			// as ordinary storage reads, without enlarging generic documents.
+			v, err := Decode[domain.Job](Record{ID: id, Kind: kind, Data: raw})
+			if err != nil {
 				rows.Close()
 				return err
+			}
+			if v.Type == domain.ImageAttachmentJob {
+				var upload domain.ImageUpload
+				if domain.Decode(v.Input, &upload) != nil || validateImageUpload(upload) != nil {
+					rows.Close()
+					return domain.InvalidImageInput()
+				}
+				upload.Quarantined = true
+				v.Input, err = json.Marshal(upload)
+				if err != nil {
+					rows.Close()
+					return storageError(err)
+				}
 			}
 			if v.Type == domain.DeleteBackupJob {
 				continue
@@ -226,10 +250,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			}
 			v.Health = domain.AccountDisconnected
 			v.Connection, v.Removal, v.Validation, v.Catalog = nil, nil, nil, nil
+			v.RetainedConnections = nil
 			v.Quota, v.ConfirmedExhausted = nil, false
 			if v.Subscription != nil {
 				state := v.Subscription
-				if state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
+				if state.ServerObservationActive() || state.NativeProfileID != "" || state.OwnerMachineID != "" || state.Generation != "" || state.IdentityCommitment != "" || state.Pending != nil || state.Lease != nil || state.RecoveryRequired {
 					// The vault is outside this image. Retain historical references
 					// without authorizing an older bundle or native claim.
 					state.RecoveryRequired = true

@@ -35,6 +35,8 @@ message ListResourcesRequest {
   // Snapshots and event streams intentionally retain their existing scope.
   string provider_id = 2;
   AccountTypeFilter account_type = 3;
+  SubscriptionServiceIdentity subscription_service = 4;
+  ApiProtocol api_protocol = 5;
 }
 
 enum AccountTypeFilter {

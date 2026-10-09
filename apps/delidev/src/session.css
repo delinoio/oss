@@ -1,0 +1,246 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.session-container { container: session-view / size; }
+.app main:has(> .session-container:not([hidden]) .session-workspace) { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.session-container:has(.session-workspace) { flex: 1; height: auto; min-height: 0; }
+.app:has(.session-container:not([hidden]) .session-workspace) { min-height: 0; }
+.session-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.session-workspace button { min-height: 36px; padding: 6px 10px; border-radius: 8px; font-size: 13px; }
+.session-workspace .session-header {
+  grid-area: 1 / 1 / 2 / -1;
+  align-items: flex-start;
+  flex-direction: row;
+  gap: 8px;
+  padding: 16px 20px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--background);
+}
+.session-heading { min-width: 0; flex: 1; }
+.session-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.session-identity-text { min-width: 0; }
+.session-harness-name { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.session-harness-mark { display: block; width: 32px; height: 32px; flex: 0 0 32px; background-position: center; background-repeat: no-repeat; background-size: contain; }
+.session-harness-mark-codex { background-image: url("../public/harness-marks/codex.webp"); }
+.session-harness-mark-claude-code { background-image: url("../public/harness-marks/claude-code.png"); }
+.session-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-light.svg"); }
+.session-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-light.svg"); }
+:root[data-theme="dark"] .session-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+:root[data-theme="dark"] .session-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .session-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+  :root:not([data-theme]) .session-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
+}
+.session-heading-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.session-workspace .session-header h2 { margin: 0; font-size: 20px; font-weight: 600; line-height: 26px; overflow-wrap: anywhere; }
+.session-workspace .session-header p { margin: 2px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.session-workspace .session-heading-line .connection { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.session-heading-line .connection::before { content: ""; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--muted); }
+.session-heading-line .connection.is-live::before { background: var(--success-text); }
+.session-workspace .session-controls button { min-height: 40px; }
+.session-controls { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.session-actions-popup { position: relative; }
+.session-actions-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; display: grid; min-width: 180px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 16px var(--shadow-soft); }
+.session-actions-list button { text-align: left; border-color: transparent; }
+.session-workspace .session-toolbar { grid-area: 2 / 1 / 3 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); }
+.session-toolbar > strong { align-self: stretch; display: flex; align-items: center; padding: 4px 4px 2px; border-bottom: 2px solid var(--accent); }
+.session-toolbar-actions { display: flex; flex-wrap: wrap; gap: 2px; }
+.session-toolbar-actions button { display: flex; align-items: center; gap: 6px; border-color: transparent; background: transparent; }
+.session-toolbar-actions button:hover { background: var(--surface-hover); }
+.session-toolbar-actions button[aria-expanded="true"] { background: var(--selected-background); color: var(--selected-text); }
+.session-icon { width: 18px; height: 18px; flex-shrink: 0; }
+/* The compact drawer spans notices and transcript. The separate request and
+   composer rows remain accessible even with a resized input or zoomed view. */
+.session-content { grid-area: 3 / 1; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
+.session-conversation-region { grid-area: 2 / 1; min-width: 0; min-height: 0; container: conversation / size; }
+.session-body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, auto) minmax(32px, 1fr) minmax(0, auto) minmax(0, auto); height: 100%; min-width: 0; min-height: 0; }
+.session-notices { grid-area: 1 / 1; display: grid; gap: 6px; max-height: 20vh; overflow: auto; padding: 0 20px; }
+.session-notices:has(> *) { padding-top: 12px; padding-bottom: 4px; }
+.session-notice { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--warning-border); border-radius: 8px; color: var(--warning-text); background: var(--warning-background); }
+.session-notice > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.session-notice strong, .session-notice span { display: block; }
+.session-notice span { font-size: 12px; }
+.session-notice > button { flex-shrink: 0; }
+.session-workspace .transcript { grid-area: 2 / 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 20px; container: transcript / inline-size; }
+.session-workspace .transcript > * { flex-shrink: 0; }
+.session-workspace .transcript > .session-empty { flex: 1; }
+.session-workspace .transcript pre { line-height: 1.65; }
+.session-workspace .message { margin: 0; max-width: none; }
+/* Historical payload wrappers and direct live rows share the same item spacing.
+   Keep the wrappers measurable for bounded page restoration. */
+.session-workspace .transcript > [data-payload-page] { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.session-workspace .transcript .message-user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: min(75%, 720px);
+  min-width: 0;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.session-workspace .transcript .message-user > header { flex-wrap: wrap; gap: 4px 12px; }
+.session-workspace .transcript .message-user > header strong,
+.session-workspace .transcript .message-user > header small { color: inherit; }
+.session-workspace .transcript .message-user details { border-color: currentColor; }
+.session-workspace .transcript .message-user :focus-visible { outline-color: var(--on-accent); outline-offset: 2px; }
+/* Claude's validated child supplies the presentation proof. Invalid payloads
+   keep their original card without repeating native content validation. */
+.session-workspace .transcript .message-assistant,
+.session-workspace .transcript .message-claude-assistant:has(> .native-claude-message-content) {
+  align-self: stretch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+@container transcript (width < 600px) {
+  .session-workspace .transcript .message-user { max-width: 90%; }
+}
+
+.session-workspace nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.session-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); gap: 12px; padding: 16px 0; }
+.session-empty .session-icon { width: 40px; height: 40px; margin-bottom: 8px; }
+.session-empty h3 { color: var(--text); font-size: 18px; margin: 0; }
+.session-empty p { margin: 0; font-size: 12px; }
+.session-input-tray { grid-area: 3 / 1; min-height: 0; max-height: 30vh; overflow: auto; overscroll-behavior: contain; padding: 0 20px 8px; }
+.session-workspace .session-input-tray > details { border: 0; padding: 0; margin: 0; background: transparent; }
+.session-input-tray summary { padding: 5px 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+.session-tray-content { padding: 8px 0 12px; }
+.session-workspace .composer { grid-area: 4 / 1; min-width: 0; min-height: 0; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 24px; padding: 16px; margin: 0 20px 16px; background: var(--surface); box-shadow: 0 2px 8px var(--shadow-soft); }
+.session-workspace .composer textarea { display: block; height: 48px; min-height: 48px; max-height: 180px; resize: none; overflow-y: auto; border: 0; border-radius: 0; padding: 4px 0; font-size: 14px; line-height: 20px; }
+.composer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.composer-actions > label { display: flex; align-items: center; gap: 8px; margin: 0 auto 0 0; font-size: 12px; }
+.composer-actions select { width: auto; min-height: 36px; padding: 4px 24px 4px 8px; }
+.session-workspace .session-app-panel { grid-area: 1 / 1 / 3 / 2; z-index: 2; justify-self: end; width: min(400px, calc(100% - 16px)); min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; border-left: 1px solid var(--border); background: var(--surface); box-shadow: -4px 0 12px var(--shadow-soft); }
+.session-workspace .session-app-panel > * { min-width: 0; }
+.session-workspace .session-app-panel header { flex-wrap: wrap; gap: 8px; }
+.session-workspace .session-app-panel h2 { font-size: 14px; }
+/* One persistent card reflows without replacing its controllers or drafts. */
+.session-workspace .session-information { grid-area: 1 / 1; align-self: start; justify-self: stretch; min-width: 0; min-height: 0; max-height: min(240px, 25cqh); overflow: auto; overscroll-behavior: contain; margin: 12px 20px; padding: 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 2px 8px var(--shadow-soft); }
+.session-information > header { min-height: 0; padding: 0 0 12px; border-bottom: 1px solid var(--border-subtle); }
+.session-information > header h2 { margin: 0; font-size: 14px; }
+.session-information-body { overflow-wrap: anywhere; }
+.session-information-evidence:has(> *) { padding-top: 12px; }
+.session-workspace .session-information .session-tools, .session-information-section { max-height: none; overflow: visible; margin: 0; padding: 12px 0; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: 0; background: transparent; }
+.session-information summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.session-information .session-tools > p { margin: 8px 0; color: var(--muted); font-size: 12px; }
+.session-information h3, .session-information h4 { font-size: 13px; margin: 12px 0 8px; }
+.session-information table { display: block; max-width: 100%; overflow: auto; }
+.session-information .notice[data-job-state="succeeded"] { background: var(--surface-subtle); border-color: var(--border-subtle); }
+.session-information .notice[data-job-state="succeeded"] > p:first-child { color: var(--success-text); }
+.session-information-body > button { width: 100%; margin-top: 12px; }
+@container session-view (min-width: 900px) {
+  .session-content { grid-template-columns: minmax(0, 1fr) 360px; grid-template-rows: minmax(0, 1fr); column-gap: 24px; }
+  .session-conversation-region { grid-area: 1 / 1; }
+  .session-workspace .session-information { grid-area: 1 / 2; width: 320px; margin: 16px 20px; max-height: calc(100% - 32px); }
+}
+@container conversation (min-width: 900px) {
+  .panel-open .session-body { grid-template-columns: minmax(0, 1fr) 400px; }
+  .session-workspace .session-app-panel { grid-area: 1 / 2 / 5 / 3; width: 100%; box-shadow: none; }
+}
+@container session-view (max-width: 520px) {
+  .session-workspace .session-header { flex-wrap: wrap; padding: 12px; min-height: 0; max-height: 25cqh; overflow: auto; }
+  .session-heading { flex-basis: 100%; }
+  .session-controls { width: 100%; justify-content: flex-end; }
+  .session-workspace .session-toolbar { padding: 4px 8px; min-height: 0; max-height: 20cqh; overflow: auto; }
+  .session-notices { padding-left: 12px; padding-right: 12px; }
+  .session-workspace .transcript { padding: 12px; }
+  .session-input-tray { padding-left: 12px; padding-right: 12px; }
+  .session-workspace .composer { margin: 0 12px 12px; }
+}
+@media (max-height: 480px) {
+  .session-workspace .session-header { padding-top: 8px; padding-bottom: 8px; }
+  .session-workspace .composer textarea { height: 48px; }
+}
+/* Short available areas include compact navigation and browser QA chrome.
+   Bound the upper rows instead of letting intrinsic content displace input. */
+@container session-view (max-height: 480px) {
+  .session-workspace { grid-template-rows: minmax(0, auto) minmax(0, auto) minmax(0, 1fr); }
+  .session-workspace .session-header { padding-top: 8px; padding-bottom: 8px; overflow: auto; }
+  .session-workspace .session-toolbar { overflow: auto; }
+  .session-toolbar > strong { display: none; }
+  .session-notices { max-height: 48px; }
+  .session-input-tray { display: flex; flex-wrap: wrap; gap: 0 16px; max-height: 80px; }
+  .session-input-tray > details[open] { flex-basis: 100%; }
+  .session-workspace .composer textarea { height: 48px; }
+  .session-information > header { position: static; }
+}
+
+.execution-startup-details dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px 16px; }
+.execution-startup-details dd { margin: 0; overflow-wrap: anywhere; }
+
+/* Conversation tray lists own bounded scroll roots for shared continuation. */
+.session-tray-content { max-height: 240px; overflow: auto; }
+
+.conversation-page-scroll { max-height: 400px; overflow: auto; }
+
+/* Shared creation, follow-up and queue-edit completion stays in document flow. */
+.skill-completion { min-width: 0; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 4px; }
+.skill-completion ul { list-style: none; padding: 0; margin: 0; }
+.skill-completion li { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 40px; padding: 0 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.skill-completion li:hover { background: var(--surface-hover); }
+.skill-completion li[aria-selected="true"] { background: var(--selected-background); color: var(--selected-text); box-shadow: inset 0 0 0 1px var(--selected-border); }
+.skill-completion-name { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font-size: 14px; line-height: 20px; font-weight: 600; }
+.skill-completion-description { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 12px; line-height: 18px; }
+.skill-completion-provenance { flex: none; padding: 2px 6px; border-radius: 4px; background: var(--surface-subtle); color: var(--muted); font-size: 12px; line-height: 18px; }
+
+/* Only retained session composers use this compact layout; creation keeps its owner.
+   Bound the card to its actual workspace so inline errors and image strips cannot
+   displace the toolbar in short layouts. Original input/status stay scrollable. */
+.session-workspace .composer { max-height: var(--session-composer-cap, 50vh); overflow-y: auto; scroll-padding-bottom: 48px; }
+.session-workspace .composer .image-preview-list { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding: 2px; }
+.session-workspace .composer .image-preview-list li { flex: 0 0 auto; grid-template-columns: 64px 40px; max-width: none; padding: 4px; gap: 2px; }
+.session-workspace .composer .image-preview-list img { grid-column: 1; width: 64px; height: 64px; }
+.session-workspace .composer .image-preview-list button { grid-column: 2; grid-row: 1; align-self: start; }
+.session-workspace .composer .image-preview-list span { grid-column: 1 / -1; max-width: 108px; }
+.composer-toolbar { position: sticky; bottom: 0; z-index: 2; background: var(--surface); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.composer-toolbar .composer-attach, .composer-toolbar .composer-submit { width: 40px; min-width: 40px; height: 40px; padding: 0; display: grid; place-items: center; }
+.composer-toolbar .composer-attach { font-size: 24px; }
+.composer-toolbar .composer-submit { border-radius: 50%; margin-left: auto; }
+.composer-toolbar .plan-mode { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface-subtle); font-size: 12px; margin: 0; }
+.composer-toolbar .composer-attachment-help { display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 8px; }
+.composer-attachment-guidance { margin: 0; padding: 8px 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.composer-original-retry { margin-top: 8px; }
+@media (max-height: 480px) {
+  .session-workspace .composer textarea { max-height: 64px; }
+  .session-workspace .composer { margin-bottom: 8px; }
+}
+
+@container session-view (max-height: 480px) {
+  .session-workspace .composer textarea { max-height: 64px; }
+}
+
+/* Browser alone owns the wider conversation-region split. Info is excluded. */
+.browser-splitter { display: none; }
+.browser-open .session-conversation-region { overflow: hidden; }
+.browser-open .session-body { grid-template-columns: minmax(0, 1fr); }
+.session-workspace.browser-open .session-app-panel { grid-area: 1 / 1 / 3 / 2; width: min(400px, calc(100% - 16px)); box-shadow: -4px 0 12px var(--shadow-soft); }
+@container conversation (min-width: 960px) {
+  .browser-open .session-body { grid-template-columns: minmax(360px, 1fr) 8px clamp(480px, var(--browser-width, 480px), calc(100cqw - 368px)); }
+  .browser-open .browser-splitter { display: block; grid-area: 1 / 2 / 5 / 3; cursor: col-resize; touch-action: none; background: var(--surface-subtle); border-inline: 1px solid var(--border-subtle); z-index: 3; }
+  .browser-open .browser-splitter:hover, .browser-open .browser-splitter:focus-visible { background: var(--selected-background); }
+  .session-workspace.browser-open .session-app-panel { grid-area: 1 / 3 / 5 / 4; width: 100%; box-shadow: none; }
+}
+
+/* A compact Info band can leave less room than one input control. Scroll the
+   retained conversation inside its bounds rather than clipping the composer or
+   growing the page. Its original transcript and tray keep their own scrollports. */
+@container session-view (max-height: 480px) {
+  .session-workspace .session-conversation-region { overflow-y: auto; }
+  .session-workspace .session-conversation-region > .session-body { min-height: calc(var(--session-composer-cap, 50vh) + 96px); }
+}

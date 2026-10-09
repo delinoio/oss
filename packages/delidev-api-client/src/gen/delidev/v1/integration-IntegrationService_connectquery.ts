@@ -5,6 +5,16 @@
 import { IntegrationService } from "./integration_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.IntegrationService.InspectGitHubToken
+ */
+export const inspectGitHubToken = IntegrationService.method.inspectGitHubToken;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.PrepareGitHubTokenForm
+ */
+export const prepareGitHubTokenForm = IntegrationService.method.prepareGitHubTokenForm;
+
+/**
  * @generated from rpc delidev.v1.IntegrationService.SaveIntegrationProfile
  */
 export const saveIntegrationProfile = IntegrationService.method.saveIntegrationProfile;
@@ -33,6 +43,11 @@ export const inspectRepositoryIntegration = IntegrationService.method.inspectRep
  * @generated from rpc delidev.v1.IntegrationService.QueryRepositoryIntegration
  */
 export const queryRepositoryIntegration = IntegrationService.method.queryRepositoryIntegration;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.ListGitHubRepositories
+ */
+export const listGitHubRepositories = IntegrationService.method.listGitHubRepositories;
 
 /**
  * @generated from rpc delidev.v1.IntegrationService.GetGitHubTokenForm

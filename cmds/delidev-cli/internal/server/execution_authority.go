@@ -10,8 +10,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
@@ -97,7 +97,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || session.InitialExecution == nil || session.ActiveExecutionID != grant.ExecutionID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchClaimed || (session.Outcome != domain.ExecutionNotStarted && session.Outcome != domain.ExecutionRunning) {
 		return empty, executionDenied()
 	}
-	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) {
+	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.Configuration.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities)) {
 		return empty, executionDenied()
 	}
 	if !session.OwnsExecution(input) {
@@ -111,7 +111,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 		return empty, executionDenied()
 	}
 	queued, err := store.Decode[domain.QueuedInput](ir)
-	if err != nil || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || queued.Mode != input.Input.Mode || queued.Prompt != input.Input.Prompt {
+	if err != nil || (queued.Delivery != domain.InputClaimed && queued.Delivery != domain.InputAccepted) || queued.ExecutionID != input.ExecutionID || queued.NativeRequestID != input.TurnRequestID || !queuedSessionInput(queued).Equal(input.Input) {
 		return empty, executionDenied()
 	}
 	if session.ProjectID != "" {
@@ -120,11 +120,11 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 			return empty, executionDenied()
 		}
 	}
-	_, account, err := accountFromTx(tx, input.AccountID, 0)
+	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil || !account.Enabled || account.Health != domain.AccountReady || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.ProviderID != input.Configuration.ProviderID {
 		return empty, executionDenied()
 	}
-	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService == domain.SubscriptionChatGPT && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && input.Configuration.Harness == domain.Codex
+	managed := input.Configuration.Subscription && input.Configuration.SubscriptionService.Harness() == input.Configuration.Harness && account.Type == domain.SubscriptionAccount && account.SubscriptionService == input.Configuration.SubscriptionService && account.ProviderID == "" && (input.Configuration.Harness == domain.Codex || input.Configuration.Harness == domain.ClaudeCode)
 	var provider domain.Provider
 	var operations []apiproxy.Operation
 	if !managed {
@@ -133,6 +133,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 			return empty, executionDenied()
 		}
 		provider, err = store.Decode[domain.Provider](r)
+		if err == nil {
+			provider, err = providers.ResolveAccountProfile(provider, account)
+		}
 		if err != nil || provider.Authentication != account.Connection.Authentication {
 			return empty, executionDenied()
 		}
@@ -141,6 +144,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if managed {
 		state := account.Subscription
 		if state == nil || state.RecoveryRequired || state.Lease == nil {
+			return empty, executionDenied()
+		}
+		if input.Configuration.Harness == domain.ClaudeCode && (state.OwnerMachineID != grant.MachineID || state.NativeProfileID == "" || !slices.Contains(machine.WorkerCapabilities, domain.NativeClaudeSubscriptionsV1)) {
 			return empty, executionDenied()
 		}
 		lease := state.Lease
@@ -177,11 +183,11 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIProtocol) []apiproxy.Operation {
 	switch input.Configuration.Harness {
 	case domain.Codex:
-		if domain.CodexVersionAllowed(input.Installation.Version) && protocol == domain.OpenAIResponses {
+		if (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version)) && protocol == domain.OpenAIResponses {
 			return []apiproxy.Operation{apiproxy.ResponseCreate, apiproxy.ResponseCompact}
 		}
 	case domain.ClaudeCode:
-		if input.Validate() != nil || input.Installation.Version != domain.ClaudeProtocolVersion || protocol != domain.AnthropicMessages {
+		if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != domain.ClaudeProtocolVersion) || protocol != domain.AnthropicMessages {
 			return nil
 		}
 		if _, err := input.Configuration.ClaudeAPIInputPermission(input.Input.Mode); err == nil {
@@ -190,7 +196,7 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 			return []apiproxy.Operation{apiproxy.MessageCreate}
 		}
 	case domain.GrokBuild:
-		if input.Validate() != nil || input.Version != 1 || input.Continuation != nil || input.Installation.Version != domain.GrokProtocolVersion || protocol != domain.OpenAIChat {
+		if input.Validate() != nil || input.Continuation != nil || input.Fork != nil || (input.Version != 4 && input.Installation.Version != domain.GrokProtocolVersion) || protocol != domain.OpenAIChat {
 			return nil
 		}
 		if _, err := input.Configuration.GrokModeForInput(input.Input.Mode); err == nil {
@@ -198,8 +204,8 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 		}
 	case domain.OpenCode:
 		o := input.Configuration.Options
-		validGeneration := input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
-		if !validGeneration || input.Installation.Version != domain.OpenCodeProtocolVersion || protocol != domain.OpenAIChat || input.Configuration.Effort != "" || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
+		validGeneration := input.Version == 4 && input.Validate() == nil || input.Version == 1 && input.Continuation == nil && input.Fork == nil || input.Version == 2 && input.Continuation != nil && input.Validate() == nil || input.Version == 3 && input.Fork != nil && input.Continuation == nil && input.Validate() == nil
+		if !validGeneration || (input.Version != 4 && input.Installation.Version != domain.OpenCodeProtocolVersion) || protocol != domain.OpenAIChat || o.SubagentModel != "" || o.SubagentEffort != "" || o.MaxConcurrency != 0 || o.ApprovalReviewModel != "" || o.ServiceTier != "" {
 			return nil
 		}
 		if _, err := o.OpenCodePrimaryForInput(input.Input.Mode); err == nil {
@@ -209,11 +215,24 @@ func executionAPIOperations(input domain.ExecutionJobInput, protocol domain.APIP
 	return nil
 }
 
+// inferenceScope adds readiness to live account and assignment authority. Registration
+// and original-process initialization use scope alone and cannot infer through it.
+func (a *executionAuthority) inferenceScope(tx *store.Tx, grant store.ExecutionGrant) (apiproxy.Scope, error) {
+	scope, err := a.scope(tx, grant)
+	if err == nil {
+		err = requireExecutionStartupReady(tx, grant.JobID)
+	}
+	return scope, err
+}
+
 func (a *executionAuthority) resolve(ctx context.Context, grant store.ExecutionGrant) (apiproxy.Scope, error) {
 	var scope apiproxy.Scope
 	err := a.service.Store.Read(ctx, func(tx *store.Tx) error {
 		var err error
 		scope, err = a.scope(tx, grant)
+		if err == nil {
+			err = requireExecutionStartupReady(tx, grant.JobID)
+		}
 		return err
 	})
 	return scope, err
@@ -227,7 +246,10 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		var err error
 		grant, err = tx.ExecutionGrant(digest[:])
 		if err == nil {
-			scope, err = a.scope(tx, grant)
+			scope, err = a.inferenceScope(tx, grant)
+		}
+		if err == nil {
+			err = requireExecutionStartupReady(tx, grant.JobID)
 		}
 		return err
 	})
@@ -286,7 +308,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if leaseContext.Err() != nil {
 					return nil, executionDenied()
 				}
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return nil, err
 				}
 				if scope.Purpose == domain.SessionTitleUsage && value.HTTPAttempted != nil && *value.HTTPAttempted {
@@ -340,7 +362,21 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				if err != nil || job.Type != domain.CompactSessionJob || job.InstanceID != grant.InstanceID || job.AssignedDeviceID != grant.DeviceID || domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.ActionID != scope.ExecutionID || input.Completion.NativeTurnID != scope.CompactionSourceTurn {
 					return nil, executionDenied()
 				}
-				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: input.Assignment.Installation.Version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
+				version := input.Assignment.Installation.Version
+				if input.Assignment.Version == 4 {
+					// Read the completed source's retained readiness, not current
+					// discovery or the compaction process's independent identity.
+					source, err := tx.Get(domain.JobKind, input.SourceJobID)
+					if err != nil {
+						return nil, err
+					}
+					sourceJob, err := store.Decode[domain.Job](source)
+					if err != nil || source.SessionID != scope.SessionID || sourceJob.Startup == nil || sourceJob.Startup.JobID != input.SourceJobID || sourceJob.Startup.ExecutionID != input.Assignment.ExecutionID || sourceJob.Startup.Ready == nil || sourceJob.Startup.Ready.Validate() != nil {
+						return nil, executionDenied()
+					}
+					version = sourceJob.Startup.Ready.NativeVersion
+				}
+				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
 				id, replayed, err := tx.PutResponseUsage(request, record)
 				return struct {
 					ID       domain.ID
@@ -361,27 +397,50 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 			a.wait.Done()
 		})
 	}
-	lease.Key = func(ctx context.Context) ([]byte, error) {
+	lease.Credential = func(ctx context.Context) (apiproxy.Credential, error) {
 		if leaseContext.Err() != nil {
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		unlock, err := a.service.lockAccounts(ctx)
 		if err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		defer unlock()
+		locked := true
+		defer func() {
+			if locked {
+				unlock()
+			}
+		}()
 		if leaseContext.Err() != nil {
-			return nil, executionDenied()
+			return apiproxy.Credential{}, executionDenied()
 		}
 		if _, err := a.resolve(ctx, grant); err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		vault, err := a.service.secrets()
+
+		unlock()
+		locked = false
+		// Refresh owns its own gate and performs HTTP outside it. Recheck the
+		// original execution immediately before and after that operation.
+		credential, err := a.service.resolveAPICredential(ctx, scope.AccountID, scope.ConnectionID, scope.ProviderID)
 		if err != nil {
-			return nil, err
+			return apiproxy.Credential{}, err
 		}
-		return vault.Get(ctx, credentials.Ref{Owner: scope.AccountID, ID: scope.ConnectionID, Purpose: credentials.AccountAPI})
+		if leaseContext.Err() != nil {
+			clear(credential.key)
+			return apiproxy.Credential{}, executionDenied()
+		}
+		if _, err = a.resolve(ctx, grant); err != nil {
+			clear(credential.key)
+			return apiproxy.Credential{}, err
+		}
+		return apiproxy.Credential{Key: credential.key, QuotaProject: credential.quotaProject}, nil
 	}
+	lease.Key = func(ctx context.Context) ([]byte, error) {
+		credential, err := lease.Credential(ctx)
+		return credential.Key, err
+	}
+
 	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
 		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
 			if leaseContext.Err() != nil {
@@ -433,7 +492,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				return executionDenied()
 			}
 			return a.service.Store.Read(ctx, func(tx *store.Tx) error {
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return err
 				}
 				_, session, err := sessionRecord(tx, scope.SessionID)
@@ -458,7 +517,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 				return executionDenied()
 			}
 			_, err := a.service.Store.Mutate(ctx, domain.NewID(), "execution.observe-reference", reference(kind, nativeID), func(tx *store.Tx) (any, error) {
-				if _, err := a.scope(tx, grant); err != nil {
+				if _, err := a.inferenceScope(tx, grant); err != nil {
 					return nil, err
 				}
 				return struct{}{}, tx.ObserveExecutionReference(reference(kind, nativeID))
@@ -501,7 +560,7 @@ func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.Execut
 	if err := tx.Authorize(); err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}
-	scope, err := a.scope(tx, grant)
+	scope, err := a.inferenceScope(tx, grant)
 	if err != nil {
 		return store.Record{}, domain.Session{}, "", err
 	}
@@ -653,7 +712,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				var supported bool
 				if job.Type == domain.ExecuteSessionJob {
 					var input domain.ExecutionJobInput
-					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && domain.CodexVersionAllowed(input.Installation.Version)
+					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version))
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex

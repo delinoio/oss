@@ -93,6 +93,14 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 			return ResultUncertain()
 		}
 		registration := expected.Checkout
+		if expected.SourceKind.managed() {
+			registration = repo.Path
+			if repo.SourceKind != expected.SourceKind || repo.RemoteURL != expected.RemoteURL || !digestValid(repo.CloneRootDigest) || !digestValid(repo.CloneIdentityDigest) || !digestValid(result.ManagedRootDigest) {
+				return ResultUncertain()
+			}
+		} else if repo.SourceKind != expected.SourceKind || repo.RemoteURL != expected.RemoteURL || repo.CloneRootDigest != "" || repo.CloneIdentityDigest != "" {
+			return ResultUncertain()
+		}
 		if expected.ForkRegistrationSource != "" {
 			if input.ForkSourceID == "" || input.Type != domain.Worktree || !absolute(expected.Checkout) || !absolute(expected.ForkRegistrationSource) {
 				return ResultUncertain()
@@ -116,7 +124,7 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 				}
 			}
 			location := normalize(repo.Path)
-			if repo.Path == repo.Source || !strings.HasSuffix(location, "/workspaces/"+string(input.SessionID)+"/"+string(repo.ID)) {
+			if repo.SourceKind == CheckoutSource && repo.Path == repo.Source || !strings.HasSuffix(location, "/workspaces/"+string(input.SessionID)+"/"+string(repo.ID)) {
 				return ResultUncertain()
 			}
 			if ownedRoot != "" && path.Dir(location) != ownedRoot {

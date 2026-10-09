@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/testgit"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -130,7 +132,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -195,6 +197,21 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		t.Fatal("invalid preparation")
 	}
 	manager := workspace.Manager{Root: filepath.Join(t.TempDir(), "worker")}
+	if workspaceType == domain.Worktree {
+		sources := map[string]string{}
+		for _, spec := range request.Repositories {
+			row, err := service.Store.Get(ctx, domain.RepositoryKind, spec.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo, err := store.Decode[domain.Repository](row)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sources[repo.RemoteURL] = repo.Checkouts[0].Path
+		}
+		manager.Git.Executable = testgit.Executable(t, sources)
+	}
 	manifest, err := manager.Prepare(ctx, request)
 	f.workerRoot = manager.Root
 	if err != nil {
@@ -235,7 +252,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	ctx := context.Background()
 	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = "unsupported" })
 	before := f.refresh(t)
-	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported {
+	if err := f.service.dispatchExecution(ctx, before); domain.SafeError(err).Code != domain.Unsupported || !strings.Contains(domain.SafeError(err).Message, "approval_review_model") {
 		t.Fatal("unsupported option dispatched", err)
 	}
 	blocked := f.refresh(t)
@@ -432,7 +449,7 @@ func TestInitialDispatchStopAndResumeAreSerialized(t *testing.T) {
 }
 
 func TestInitialDispatchRequiresCurrentEvidence(t *testing.T) {
-	for _, failure := range []string{"worker-stale", "installation-unverified", "connection-changed", "validation-failed"} {
+	for _, failure := range []string{"worker-stale", "old-worker", "connection-changed", "validation-failed"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newFirstDispatchFixture(t)
 			ctx := context.Background()
@@ -444,14 +461,12 @@ func TestInitialDispatchRequiresCurrentEvidence(t *testing.T) {
 						return nil, err
 					}
 					return nil, tx.SetWorkerInstance(f.selection.MachineID, instance, time.Now().Add(-time.Hour))
-				case "installation-unverified":
+				case "old-worker":
 					r, m, err := activeMachine(tx, f.selection.MachineID)
 					if err != nil {
 						return nil, err
 					}
-					for i := range m.Installations {
-						m.Installations[i].ProtocolVerified = false
-					}
+					m.WorkerCapabilities = nil
 					return tx.Put(r.Kind, r.ID, r.Revision, "", "", m)
 				default:
 					r, a, err := accountFromTx(tx, domain.ID(f.account.Id), 0)

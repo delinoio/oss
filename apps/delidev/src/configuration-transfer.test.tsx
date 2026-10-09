@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, ResourceSchema, ResourceService, EntityKind, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationService, ResourceSchema, ResourceService, EntityKind, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { ConfigurationTransfer, formatConfigurationReview } from "./configuration-transfer";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
@@ -17,14 +17,17 @@ function fixture() {
   const exported = vi.fn(async () => ({ documentJson: encode(bundle) }));
   const preview = vi.fn(async (_input: unknown) => ({ previewJson: previewBytes }));
   const apply = vi.fn(async (_input: unknown) => ({ resultJson: encode({ job_id: jobId, state: "queued", resources: [] }) }));
+  const status = vi.fn(async () => ({ capabilities: [SystemCapability.REMOTE_REPOSITORIES_V1] }));
   let state = "queued";
+  const getResource = vi.fn((_input: { id: string; kind: EntityKind }) => ({ resource: create(ResourceSchema, { id: jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "import-configuration", state }) }) }));
   const transport = createRouterTransport((router) => {
     router.service(ConfigurationService, { exportConfiguration: exported, previewConfigurationImport: preview, applyConfigurationImport: apply });
-    router.service(ResourceService, { getResource: () => ({ resource: create(ResourceSchema, { id: jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "import-configuration", state }) }) }), listResources: () => ({ resources: [] }) });
+    router.service(SystemService, { getStatus: status });
+    router.service(ResourceService, { getResource, listResources: () => ({ resources: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { bundle, previewBytes, exported, preview, apply, client, view, state: (next: string) => { state = next; } };
+  return { bundle, previewBytes, exported, preview, apply, client, view, status, getResource, jobId, state: (next: string) => { state = next; } };
 }
 function load(bundle: unknown) {
   fireEvent.change(screen.getByRole("textbox", { name: "Configuration JSON" }), { target: { value: typeof bundle === "string" ? bundle : JSON.stringify(bundle) } });
@@ -42,7 +45,7 @@ it("requires a preview, preserves exact review bytes and retries only the same u
   expect(Array.from((value.apply.mock.calls[0]![0] as { previewJson: Uint8Array }).previewJson)).toEqual(Array.from(value.previewBytes));
   await screen.findByText(/Import accepted. Waiting for confirmation of every repository validation/);
   expect((screen.getByRole("button", { name: "Apply reviewed configuration" }) as HTMLButtonElement).disabled).toBe(true);
-  value.state("succeeded"); fireEvent.click(screen.getByRole("button", { name: "Refresh configuration import" }));
+  value.state("succeeded"); await value.client.invalidateQueries();
   await screen.findByText(/Configuration import completed/);
   expect(value.apply).toHaveBeenCalledTimes(2);
   expect(JSON.stringify(value.client.getQueryCache().getAll().map((query) => query.queryKey))).not.toContain("Exact text");
@@ -194,4 +197,70 @@ it("refuses a service-native v1 graph before requesting an import preview", () =
   const value = fixture(); render(value.view());
   load({ ...value.bundle, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt" } }] });
   expect(screen.getByText(/Service-native subscription configuration requires a version 2 export/)).toBeTruthy(); expect(value.preview).not.toHaveBeenCalled();
+});
+
+it("separates capability-read failure from unsupported repository imports and offers retry", async () => {
+  const value = fixture();
+  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Remote", remote_url: "https://example.com/remote.git", checkouts: [], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  value.status.mockRejectedValueOnce(new ConnectError("status unavailable", Code.Unavailable));
+  render(value.view()); load(repositoryBundle);
+  await screen.findByRole("button", { name: "Retry server capability check" });
+  expect(screen.queryByText("Update the selected server before importing repositories.")).toBeNull();
+  value.status.mockResolvedValueOnce({ capabilities: [SystemCapability.REMOTE_REPOSITORIES_V1] });
+  fireEvent.click(screen.getByRole("button", { name: "Retry server capability check" }));
+  await waitFor(() => expect(value.status).toHaveBeenCalledTimes(2));
+  fireEvent.click(await screen.findByRole("button", { name: "Preview configuration changes" }));
+  await screen.findByRole("button", { name: "Apply reviewed configuration" });
+  expect(value.preview).toHaveBeenCalledTimes(1);
+});
+
+it("keeps legacy checkout-backed repository imports available without capability 37", async () => {
+  const value = fixture();
+  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Legacy", remote_url: "", checkouts: [{ machine_id: newRequestId(), path: "/owned/legacy" }], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  render(value.view()); load(repositoryBundle);
+  fireEvent.click(await screen.findByRole("button", { name: "Preview configuration changes" }));
+  await screen.findByRole("button", { name: "Apply reviewed configuration" });
+  expect(value.status).not.toHaveBeenCalled();
+  expect(value.preview).toHaveBeenCalledTimes(1);
+});
+
+
+it.each(["foreign ID", "wrong kind"])("keeps polling and retries the original import after a %s terminal response", async (invalid) => {
+  const value = fixture();
+  value.getResource.mockImplementation(() => ({ resource: create(ResourceSchema, { id: invalid === "foreign ID" ? newRequestId() : value.jobId, kind: invalid === "wrong kind" ? EntityKind.TEMPLATE : EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "succeeded" }) }) }));
+  render(value.view()); load(value.bundle);
+  fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Apply reviewed configuration" }));
+  await screen.findByRole("button", { name: "Retry original status read" });
+  expect(screen.queryByRole("button", { name: "Return to retained import document" })).toBeNull();
+  const reads = value.getResource.mock.calls.length;
+  await waitFor(() => expect(value.getResource.mock.calls.length).toBeGreaterThan(reads), { timeout: 3500 });
+  value.getResource.mockImplementation(() => ({ resource: create(ResourceSchema, { id: value.jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "succeeded" }) }) }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry original status read" }));
+  await screen.findByText(/Configuration import completed/);
+  expect(value.getResource.mock.calls.every(([request]) => request.id === value.jobId && request.kind === EntityKind.JOB)).toBe(true);
+  expect(value.apply).toHaveBeenCalledTimes(1);
+});
+
+it("requires explicit confirmation of every unique suggested import target", async () => {
+  const value = fixture(), sourceA = newRequestId(), sourceB = newRequestId(), targetA = newRequestId(), targetB = newRequestId();
+  const bundle = { ...value.bundle, machines: [{ id: sourceA, name: "Source A", os: "darwin", architecture: "arm64" }, { id: sourceB, name: "Source B", os: "darwin", architecture: "arm64" }] };
+  const targets = [targetA, targetB].map(id => create(ResourceSchema, { id, kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({name:id,enabled:true}) }));
+  const get = vi.fn((input: {id:string}) => ({ resource: targets.find(row=>row.id===input.id) }));
+  const transport = createRouterTransport(router => {
+    router.service(ConfigurationService, { previewConfigurationImport:value.preview });
+    router.service(ResourceService, { getResource:get, listResources:()=>({resources:targets}) });
+  });
+  const bridge = {read:vi.fn(async()=>({revision:1,scope:{server_id:newRequestId(),device_id:newRequestId()},machine_id:targetA,problem:null})),update:vi.fn()};
+  const { RunnerPreferenceProvider } = await import("./runner-device-preferences");
+  render(<TransportProvider transport={transport}><QueryClientProvider client={value.client}><MutationIntents><RunnerPreferenceProvider bridge={bridge} readLocalWorker={async()=>({machineId:targetB,token:"discard-me"})}><ConfigurationTransfer active/></RunnerPreferenceProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+  load(bundle);
+  await waitFor(()=>expect(get).toHaveBeenCalledWith(expect.objectContaining({id:targetB}),expect.anything()));
+  const preview=screen.getByRole("button",{name:"Preview configuration changes"}) as HTMLButtonElement;
+  expect(preview.disabled).toBe(true);
+  const confirmations=screen.getAllByRole("checkbox",{name:"Confirm this target device"});
+  fireEvent.click(confirmations[0]);expect(preview.disabled).toBe(true);fireEvent.click(confirmations[1]);expect(preview.disabled).toBe(false);
+  fireEvent.click(preview);await waitFor(()=>expect(value.preview).toHaveBeenCalledTimes(1));
+  const selection=JSON.parse(new TextDecoder().decode((value.preview.mock.calls[0][0] as {selectionJson:Uint8Array}).selectionJson));
+  expect(selection.machines).toEqual([{source_id:sourceA,target_id:targetA},{source_id:sourceB,target_id:targetB}]);expect(bridge.update).not.toHaveBeenCalled();
 });

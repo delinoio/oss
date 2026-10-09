@@ -90,6 +90,8 @@ impl Tabs {
 pub struct Policy {
     pub product_origin: String,
     pub loopback_origins: Vec<String>,
+    protected_product_port: Option<u16>,
+    blocked_runtime_port: Option<u16>,
 }
 impl Policy {
     pub fn new(endpoint: &str, url: &str) -> Result<Self> {
@@ -103,6 +105,11 @@ impl Policy {
         let policy = Self {
             product_origin,
             loopback_origins: loopback_origin.into_iter().collect(),
+            protected_product_port: url::Url::parse(endpoint)
+                .ok()
+                .filter(loopback)
+                .and_then(|u| u.port_or_known_default()),
+            blocked_runtime_port: None,
         };
         if !policy.navigation(url) {
             return Err(NativeFailure::InvalidInput);
@@ -128,6 +135,19 @@ impl Policy {
             return Err(NativeFailure::InvalidInput);
         }
         Ok(policy)
+    }
+
+    pub fn protect_local_runtime(&mut self, endpoint: &str) -> Result<()> {
+        let url = url::Url::parse(endpoint).map_err(|_| NativeFailure::InvalidEvidence)?;
+        if url.scheme() != "http"
+            || url.host_str() != Some("127.0.0.1")
+            || url.port().is_none_or(|p| p == 0)
+            || url.origin().ascii_serialization() != endpoint
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        self.blocked_runtime_port = url.port();
+        Ok(())
     }
 
     pub fn navigation(&self, raw: &str) -> bool {
@@ -167,7 +187,14 @@ impl Policy {
             || url.password().is_some()
             || origin == self.product_origin
             || matches!(url.host_str(), Some("tauri.localhost" | "ipc.localhost"))
-            || (loopback(url) && matches!(url.port_or_known_default(), Some(46310 | 46311)))
+            || (loopback(url)
+                && (matches!(url.port_or_known_default(), Some(46310 | 46311))
+                    || self
+                        .protected_product_port
+                        .is_some_and(|port| url.port_or_known_default() == Some(port))
+                    || self
+                        .blocked_runtime_port
+                        .is_some_and(|port| url.port_or_known_default() == Some(port))))
         {
             return false;
         }
@@ -190,11 +217,26 @@ fn loopback(url: &url::Url) -> bool {
 impl Connector {
     // Cleanup discovery is read-only and cannot own the interactive mutation
     // gate while a saved endpoint is offline. Give its independent controller
-    // a short joined-child deadline; it uses the same validated private scope.
+    // a short read deadline in the same resident session and private scope.
     pub fn browser_observer(&self) -> Result<Self> {
-        let mut observer = Self::new(self.executable.clone(), self.root.clone())?;
-        observer.command_timeout = std::time::Duration::from_secs(2);
-        Ok(observer)
+        Ok(Self {
+            executable: self.executable.clone(),
+            root: self.root.clone(),
+            gate: std::sync::Mutex::new(()),
+            oauth_identity: std::sync::Mutex::new(None),
+            command_timeout: std::time::Duration::from_secs(2),
+            listen: self.listen.clone(),
+            exiting: std::sync::atomic::AtomicBool::new(false),
+            session: std::sync::Arc::clone(&self.session),
+            hosted: std::sync::Mutex::new(Vec::new()),
+            worker_management: std::sync::Mutex::new(crate::LocalWorkerManagement::default()),
+            worker_auto_enabled: std::sync::atomic::AtomicBool::new(false),
+            worker_launch_pending: std::sync::atomic::AtomicBool::new(true),
+            worker_exited: std::sync::Mutex::new(None),
+            worker_pause_generation: std::sync::Mutex::new(None),
+            worker_client_id: std::sync::Mutex::new(None),
+            credential_access: std::sync::Mutex::new(None),
+        })
     }
 
     pub fn prepare_browser_storage(&self) -> Result<PathBuf> {
@@ -326,7 +368,7 @@ pub fn private_dir(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if metadata.mode() & 0o077 != 0 {
+        if metadata.mode() & 0o077 != 0 || metadata.uid() != unsafe { libc::geteuid() } {
             return Err(NativeFailure::PermissionDenied);
         }
     }
@@ -423,6 +465,24 @@ fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saved_loopback_and_local_runtime_aliases_remain_protected_together() {
+        let mut policy =
+            super::Policy::new("http://127.0.0.1:51235", "https://fixture.test").unwrap();
+        policy
+            .protect_local_runtime("http://127.0.0.1:51234")
+            .unwrap();
+        for address in [
+            "http://localhost:51235",
+            "http://localhost:51234",
+            "http://[::1]:51235",
+            "http://127.1:51234",
+        ] {
+            assert!(policy.with_explicit(address).is_err());
+        }
+        assert!(policy.with_explicit("http://127.0.0.1:51236").is_ok());
+    }
+
     use super::*;
     #[cfg(unix)]
     #[test]
@@ -432,7 +492,8 @@ mod tests {
         let sidecar = temp.path().join("sidecar");
         fs::write(&sidecar, "#!/bin/sh\nexec /bin/sleep 10\n").unwrap();
         fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o700)).unwrap();
-        let interactive = Connector::new(sidecar, temp.path().to_path_buf()).unwrap();
+        let interactive =
+            crate::tests::fixture_connector(sidecar, temp.path().to_path_buf()).unwrap();
         let mut observer = interactive.browser_observer().unwrap();
         assert_eq!(observer.command_timeout, std::time::Duration::from_secs(2));
         observer.command_timeout = std::time::Duration::from_millis(150);

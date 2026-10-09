@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+import { Timestamp } from "./timestamp-display";
+import { LocalizedText, copy, useLocale } from "./localization";
 import { items, object, text, type Document } from "./documents";
 import { bounded, positive, sha } from "./github-query-model";
 import { validPRRules, validWorkflowReference } from "./github-rules";
@@ -240,12 +243,13 @@ export function validPRCI(raw: unknown, item: Document): boolean {
 }
 
 export function CIOriginalEvidence({ row }: { row: Document }) {
+  useLocale();
   const value = object(row.evidence), workflow = object(value.workflow);
-  return <details><summary>Original lifecycle and output</summary>
-    <p>Result ID: {text(row.node_id)}{value.suite_node_id ? ` · Suite: ${text(value.suite_node_id)}` : ""}</p>
-    <dl>{[["started_at", "Started"], ["completed_at", "Completed"], ["created_at", "Created"], ["updated_at", "Updated"]].map(([key, label]) => value[key] ? <div key={key}><dt>{label}</dt><dd><time dateTime={text(value[key])}>{text(value[key])}</time></dd></div> : null)}</dl>
-    {value.workflow ? <p>Workflow {text(workflow.node_id)} · run {text(workflow.run_number)} · observed workflow attempt {text(workflow.observed_attempt)}. This aggregate attempt does not prove that each retained check ran again.</p> : null}
-    {[["title", "Original title"], ["summary", "Original summary"], ["text", "Original text"], ["description", "Original description"]].map(([key, label]) => value[key] != null ? <div key={key}><h5>{label}</h5><pre>{text(value[key])}</pre></div> : null)}
+  return <details><summary>{copy("github-ci.originalLifecycleAndOutput_25753b")}</summary>
+    <p><LocalizedText id="github-ci.resultId_d45e9f" components={{ s0: <>{text(row.node_id)}</>, s1: <>{value.suite_node_id ? copy("github-ci.suite_e79a3a", { v0: text(value.suite_node_id) }) : ""}</> }} /></p>
+    <dl>{[["started_at", copy("github-ci.extra.ecbc89cd37a0")], ["completed_at", copy("github-ci.extra.22a970d2e5b1")], ["created_at", copy("github-ci.extra.d70b9e24bca2")], ["updated_at", copy("github-ci.extra.3a5ecca188c0")]].map(([key, label]) => value[key] ? <div key={key}><dt>{label}</dt><dd><Timestamp value={text(value[key])} /></dd></div> : null)}</dl>
+    {value.workflow ? <p><LocalizedText id="github-ci.workflowRunObservedWorkflowAttemptThis_dbe9db" components={{ s0: <>{text(workflow.node_id)}</>, s1: <>{text(workflow.run_number)}</>, s2: <>{text(workflow.observed_attempt)}</> }} /></p> : null}
+    {[["title", copy("github-ci.extra.4c198f5da765")], ["summary", copy("github-ci.extra.8696494cf17f")], ["text", copy("github-ci.extra.89420fdb493e")], ["description", copy("github-ci.extra.00ffd18a5ad0")]].map(([key, label]) => value[key] != null ? <div key={key}><h5>{label}</h5><pre>{text(value[key])}</pre></div> : null)}
   </details>;
 }
 
@@ -260,16 +264,17 @@ const reasonLabels = new Map([
   ["no-matching-result", "No matching required result was observed."],
 ]);
 export function PRCI({ value, historical = false }: { value: Document; historical?: boolean }) {
+  useLocale();
   const result = object(value.result), selected = selectedCIRollup(value), queue = object(value.merge_queue), entry = object(queue.entry);
-  return <section aria-label="Required CI evaluation">
+  return <section aria-label={copy("github-ci.requiredCiEvaluation_73f44c")}>
     <p role="status">{stateLabels.get(text(result.state))}</p>
-    {result.evaluated_sha ? <p>Evaluated {result.source === "merge-queue" ? "merge queue entry" : result.source === "test-merge" ? "test merge" : "head"} commit: <code>{text(result.evaluated_sha)}</code></p> : null}
-    {value.merge_queue ? <p>Queue {text(queue.node_id)} · entry {text(entry.node_id)} · position {text(entry.position)} · strategy {text(queue.strategy)} · base <code>{text(entry.base_sha) || "Unavailable"}</code>. Entry state {text(entry.state)} does not establish a failed check.</p> : null}
+    {result.evaluated_sha ? <p><LocalizedText id="github-ci.evaluatedCommit_47f166" components={{ s0: <>{result.source === "merge-queue" ? copy("github-ci.mergeQueueEntry_9183ca") : result.source === "test-merge" ? copy("github-ci.testMerge_7e7b58") : copy("github-ci.head_9f2e6d")}</>, s1: <code>{text(result.evaluated_sha)}</code> }} /></p> : null}
+    {value.merge_queue ? <p><LocalizedText id="github-ci.queueEntryPositionStrategyBaseEntry_69a534" components={{ s0: <>{text(queue.node_id)}</>, s1: <>{text(entry.node_id)}</>, s2: <>{text(entry.position)}</>, s3: <>{text(queue.strategy)}</>, s4: <code>{text(entry.base_sha) || copy("github-ci.extra.ca1844969742")}</code>, s5: <>{text(entry.state)}</> }} /></p> : null}
     {reasonLabels.has(text(result.reason)) ? <p>{reasonLabels.get(text(result.reason))}</p> : null}
-    <p>{historical ? "This is the original retained evaluation of active rulesets." : "This is a current observation of active rulesets."} Missing, pending and unknown results do not establish passing CI. A later action requires fresh evidence.</p>
-    {items(value.workflow_runs).length ? <details><summary>Original required-workflow evidence</summary><ul>{items(value.workflow_runs).map((raw) => { const run = object(raw), source = object(run.source); return <li key={text(run.node_id)}>Run {text(run.run_id)} · attempt {text(run.attempt)} · {text(run.event)} · {text(run.native_status)}{source.repository_id ? <> · source repository {text(source.repository_id)} · <code>{text(source.path)}</code> · <code>{text(source.sha)}</code></> : " · source unavailable"}</li>; })}</ul></details> : null}
-    {items(result.requirements).length ? <table><caption>Active ruleset CI requirements</caption><thead><tr><th scope="col">Requirement</th><th scope="col">Source or App</th><th scope="col">Result</th></tr></thead><tbody>{items(result.requirements).map((raw, index) => { const row = object(raw); return <tr key={index}><th scope="row">{text(row.context)}<small> · ruleset {text(row.ruleset_id)}</small></th><td>{row.workflow ? `Repository ${text(object(row.workflow).repository_id)}` : text(row.integration_id) || "No restriction reported"}</td><td>{stateLabels.get(text(row.state))}{reasonLabels.has(text(row.reason)) ? <small> · {reasonLabels.get(text(row.reason))}</small> : null}</td></tr>; })}</tbody></table> : null}
-    {result.source !== "unknown" ? <details><summary>Inspected check and status results ({text(selected.total_count)})</summary><ul>{items(selected.contexts).map((raw) => { const row = object(raw); return <li key={text(row.node_id)}>{text(row.name)} · {text(row.kind)} · {text(row.native_status)}{row.native_conclusion ? ` / ${text(row.native_conclusion)}` : ""} · {row.required ? "GitHub required" : "GitHub optional"}{row.application ? ` · App ${text(object(row.application).id)}` : ""}{row.workflow_event ? ` · ${text(row.workflow_event)}` : ""}<CIOriginalEvidence row={row} /></li>; })}</ul></details> : null}
+    <p><LocalizedText id="github-ci.missingPendingAndUnknownResultsDo_e03994" components={{ s0: <>{historical ? copy("github-ci.thisIsTheOriginalRetainedEvaluation_39bd1d") : copy("github-ci.thisIsACurrentObservationOf_00d15a")}</> }} /></p>
+    {items(value.workflow_runs).length ? <details><summary>{copy("github-ci.originalRequiredWorkflowEvidence_e011ee")}</summary><ul>{items(value.workflow_runs).map((raw) => { const run = object(raw), source = object(run.source); return <li key={text(run.node_id)}><LocalizedText id="github-ci.runAttempt_e1cfdf" components={{ s0: <>{text(run.run_id)}</>, s1: <>{text(run.attempt)}</>, s2: <>{text(run.event)}</>, s3: <>{text(run.native_status)}</>, s4: <>{source.repository_id ? <><LocalizedText id="github-ci.sourceRepository_e6b05f" components={{ s0: <>{text(source.repository_id)}</>, s1: <code>{text(source.path)}</code>, s2: <code>{text(source.sha)}</code> }} /></> : copy("github-ci.sourceUnavailable_5a3a76")}</> }} /></li>; })}</ul></details> : null}
+    {items(result.requirements).length ? <table><caption>{copy("github-ci.activeRulesetCiRequirements_6af302")}</caption><thead><tr><th scope={"col"}>{copy("github-ci.requirement_f5f569")}</th><th scope={"col"}>{copy("github-ci.sourceOrApp_5d45b9")}</th><th scope={"col"}>{copy("github-ci.result_6e7d50")}</th></tr></thead><tbody>{items(result.requirements).map((raw, index) => { const row = object(raw); return <tr key={index}><th scope={"row"}>{text(row.context)}<small><LocalizedText id="github-ci.ruleset_ec6fd7" components={{ s0: <>{text(row.ruleset_id)}</> }} /></small></th><td>{row.workflow ? copy("github-ci.repository_371a60", { v0: text(object(row.workflow).repository_id) }) : text(row.integration_id) || copy("github-ci.extra.46167b516d99")}</td><td>{stateLabels.get(text(row.state))}{reasonLabels.has(text(row.reason)) ? <small> · {reasonLabels.get(text(row.reason))}</small> : null}</td></tr>; })}</tbody></table> : null}
+    {result.source !== "unknown" ? <details><summary><LocalizedText id="github-ci.inspectedCheckAndStatusResults_719a67" components={{ s0: <>{text(selected.total_count)}</> }} /></summary><ul>{items(selected.contexts).map((raw) => { const row = object(raw); return <li key={text(row.node_id)}>{text(row.name)} · {text(row.kind)} · {text(row.native_status)}{row.native_conclusion ? copy("github-ci.message_af9903", { v0: text(row.native_conclusion) }) : ""} · {row.required ? copy("github-ci.githubRequired_303be0") : copy("github-ci.githubOptional_5148ec")}{row.application ? copy("github-ci.app_979677", { v0: text(object(row.application).id) }) : ""}{row.workflow_event ? copy("github-ci.message_2fa20b", { v0: text(row.workflow_event) }) : ""}<CIOriginalEvidence row={row} /></li>; })}</ul></details> : null}
   </section>;
 }
 

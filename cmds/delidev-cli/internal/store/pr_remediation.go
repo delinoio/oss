@@ -420,7 +420,7 @@ func (t *Tx) FinishPRRemediation(id domain.ID, expected uint64) (Record, error) 
 			if err != nil {
 				return r, err
 			}
-			verified = ir.SessionID == v.SessionID && queued.ExecutionID == v.ExecutionID && domain.PRRemediationInputDigest(queued) == v.InputDigest && input.Input == (domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode})
+			verified = ir.SessionID == v.SessionID && queued.ExecutionID == v.ExecutionID && domain.PRRemediationInputDigest(queued) == v.InputDigest && input.Input.Prompt == queued.Prompt && input.Input.Mode == queued.Mode && len(input.Input.Skills) == 0 && len(queued.Skills) == 0 && len(input.Input.Attachments) == 0 && len(queued.Attachments) == 0
 		}
 	}
 	if !verified {

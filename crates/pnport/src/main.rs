@@ -17,6 +17,8 @@ use serde::Serialize;
 mod input_watch;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(any(target_os = "linux", test))]
+mod linux_scratch;
 #[cfg(target_os = "macos")]
 mod macos_job;
 #[cfg(target_os = "macos")]

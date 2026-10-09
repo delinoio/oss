@@ -29,8 +29,35 @@ func observationMachine(tx *store.Tx, machine domain.ID) error {
 	_, err = subscriptionInstallation(tx, machine)
 	return err
 }
-func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Account, op domain.SubscriptionObservationOperation) error {
-	if !quotaAccountReady(a) || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
+
+// Active quota uses the already initialized original execution. Saved discovery
+// is needed only when admitting a fresh idle native owner; it cannot replace the
+// lease's current process, credential generation or authenticated Worker proof.
+func quotaObservationMachine(tx *store.Tx, a domain.Account, machine, epoch domain.ID) error {
+	lease := a.Subscription.Lease
+	if lease == nil || lease.Action != domain.SubscriptionExecute {
+		return observationMachine(tx, machine)
+	}
+	if lease.MachineID != machine || lease.Generation != a.Subscription.Generation || lease.Epoch != epoch || lease.Revision == 0 {
+		return subscriptionDenied()
+	}
+	if err := currentInstance(tx, machine, lease.InstanceID); err != nil {
+		return err
+	}
+	if err := subscriptionActorValid(tx, domain.Principal{Type: domain.WorkerDevice, DeviceID: lease.DeviceID, MachineID: machine}); err != nil {
+		return err
+	}
+	_, m, err := activeMachine(tx, machine)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(m.WorkerCapabilities, domain.SubscriptionObservationsV1) || !slices.Contains(m.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
+		return domain.Fail(domain.Unsupported, "This Runner Device cannot observe its original managed Codex execution.", "Reconnect a Runner Device with the required managed subscription and quota capabilities.")
+	}
+	return nil
+}
+func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Account, op domain.SubscriptionObservationOperation, epoch domain.ID) error {
+	if !quotaAccountReady(a) || a.Subscription.ServerObservationActive() || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
 		return subscriptionDenied()
 	}
 	if op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation || op.Validate() != nil {
@@ -39,7 +66,11 @@ func acceptSubscriptionObservation(tx *store.Tx, r store.Record, a domain.Accoun
 	if a.Subscription.Lease != nil && (a.Subscription.Lease.Action != domain.SubscriptionExecute || a.Subscription.Lease.MachineID != op.MachineID) {
 		return subscriptionDenied()
 	}
-	if err := observationMachine(tx, op.MachineID); err != nil {
+	if op.Action == domain.SubscriptionQuota {
+		if err := quotaObservationMachine(tx, a, op.MachineID, epoch); err != nil {
+			return err
+		}
+	} else if err := observationMachine(tx, op.MachineID); err != nil {
 		return err
 	}
 	a.Subscription.Observation = &op
@@ -68,6 +99,11 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		Operation domain.SubscriptionObservationOperation
 		Confirmed bool
 	}{domain.ID(m.Id), m.ExpectedRevision, domain.SubscriptionObservationOperation{ID: domain.ID(m.RequestId), Action: action, MachineID: domain.ID(req.Msg.MachineId), Actor: actor, ConnectionID: domain.ID(req.Msg.ConnectionId), Generation: domain.ID(req.Msg.GenerationId), Phase: domain.SubscriptionObservationQueued, CreditID: req.Msg.CreditId, NextCredit: req.Msg.NextCredit, CreditsObservationID: domain.ID(req.Msg.CreditsObservationId)}, req.Msg.Confirmed}
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, c)
+	}
+	defer unlock()
 	// RequestedAt belongs to initial transaction acceptance, not retry identity.
 	result, err := s.Store.Mutate(ctx, domain.ID(m.RequestId), "subscription.observe.request", input, func(tx *store.Tx) (any, error) {
 		r, a, err := subscriptionAccount(tx, input.Account, input.Revision)
@@ -76,12 +112,17 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		}
 		op := input.Operation
 		op.RequestedAt = time.Now().UTC()
+		// An omitted server selector cannot create a second owner while an
+		// execution holds the credential. Observe that exact original Worker.
+		if action == domain.SubscriptionResetCredit && op.MachineID == "" && a.Subscription != nil && a.Subscription.Lease != nil && a.Subscription.Lease.Action == domain.SubscriptionExecute {
+			op.MachineID = a.Subscription.Lease.MachineID
+		}
 		if action == domain.SubscriptionResetCredit {
 			if !input.Confirmed || !quotaAccountReady(a) || a.Subscription.ResetCredits == nil {
 				return nil, domain.InvalidSubscriptionObservation()
 			}
 			credits := a.Subscription.ResetCredits
-			if credits.ObservationID != op.CreditsObservationID || time.Since(credits.ObservedAt) > 5*time.Minute || credits.AvailableCount <= 0 {
+			if credits.ObservationID != op.CreditsObservationID || credits.ObservedAt.After(op.RequestedAt) || op.RequestedAt.Sub(credits.ObservedAt) > 5*time.Minute || credits.AvailableCount <= 0 {
 				return nil, domain.Fail(domain.Conflict, "The reset-credit inventory changed or is stale.", "Refresh native quota and explicitly confirm the current inventory.")
 			}
 			if op.NextCredit {
@@ -105,7 +146,21 @@ func (s *Service) RequestSubscriptionObservation(ctx context.Context, req *conne
 		} else if input.Confirmed {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
-		if err := acceptSubscriptionObservation(tx, r, a, op); err != nil {
+		if op.MachineID == "" && action == domain.SubscriptionResetCredit {
+			if err := acceptServerCredit(tx, r, a, newServerCredit(a, op, s.subscriptionServerEpoch())); err != nil {
+				return nil, err
+			}
+		} else if op.MachineID == "" && action == domain.SubscriptionQuota {
+			if a.Connection == nil || a.Subscription == nil || op.ConnectionID.Validate() != nil || op.Generation.Validate() != nil || op.ConnectionID != a.Connection.ID || op.Generation != a.Subscription.Generation {
+				return nil, domain.Fail(domain.Conflict, "The confirmed account generation changed.", "Read the current account and confirm the original operation again before sending.")
+			}
+			if op.CreditID != "" || op.NextCredit || op.CreditsObservationID != "" {
+				return nil, domain.InvalidSubscriptionObservation()
+			}
+			if err := acceptServerQuota(tx, r, a, newServerQuota(a, op.ID, s.subscriptionServerEpoch(), actor, op.RequestedAt)); err != nil {
+				return nil, err
+			}
+		} else if err := acceptSubscriptionObservation(tx, r, a, op, s.subscriptionServerEpoch()); err != nil {
 			return nil, err
 		}
 		return accountReceipt{ID: r.ID}, nil
@@ -125,7 +180,7 @@ type subscriptionQuotaBatchReceipt struct {
 	Accounts []domain.ID `json:"accounts"`
 }
 
-func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool) ([]store.Record, error) {
+func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool, epoch domain.ID) ([]store.Record, error) {
 	records, err := all(tx, domain.AccountKind)
 	if err != nil {
 		return nil, err
@@ -139,29 +194,24 @@ func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool) ([]s
 		if err != nil {
 			return result, err
 		}
-		if !quotaAccountReady(a) || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
+		if !quotaAccountReady(a) || a.Subscription.ServerObservationActive() || a.Subscription.Pending != nil || a.Subscription.Observation != nil && a.Subscription.Observation.Active() {
 			continue
 		}
 		state := a.Subscription
-		if dueOnly && state.Observation != nil && now.Sub(state.Observation.RequestedAt) < 5*time.Minute {
+		if dueOnly && state.ServerQuota != nil && state.ServerQuota.Generation == state.Generation && now.Sub(state.ServerQuota.RequestedAt) < 5*time.Minute {
 			continue
 		}
-		machine := state.OwnerMachineID
-		if state.Lease != nil {
-			if state.Lease.Action != domain.SubscriptionExecute {
-				continue
-			}
-			machine = state.Lease.MachineID
-		}
-		if machine == "" || observationMachine(tx, machine) != nil {
+		if dueOnly && state.Observation != nil && state.Observation.Generation == state.Generation && now.Sub(state.Observation.RequestedAt) < 5*time.Minute {
 			continue
 		}
-		result = append(result, r)
+		if serverQuotaReady(a) {
+			result = append(result, r)
+		}
 	}
 	return result, nil
 }
-func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time, dueOnly bool) (subscriptionQuotaBatchReceipt, error) {
-	records, err := subscriptionQuotaCandidates(tx, now, dueOnly)
+func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time, dueOnly bool, epoch domain.ID) (subscriptionQuotaBatchReceipt, error) {
+	records, err := subscriptionQuotaCandidates(tx, now, dueOnly, epoch)
 	result := subscriptionQuotaBatchReceipt{Accounts: []domain.ID{}}
 	if err != nil {
 		return result, err
@@ -174,12 +224,7 @@ func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time
 		if err != nil {
 			return result, err
 		}
-		machine := a.Subscription.OwnerMachineID
-		if a.Subscription.Lease != nil {
-			machine = a.Subscription.Lease.MachineID
-		}
-		op := domain.SubscriptionObservationOperation{ID: domain.NewID(), Action: domain.SubscriptionQuota, MachineID: machine, Actor: actor, ConnectionID: a.Connection.ID, Generation: a.Subscription.Generation, Phase: domain.SubscriptionObservationQueued, RequestedAt: now}
-		if err := acceptSubscriptionObservation(tx, r, a, op); err != nil {
+		if err := acceptServerQuota(tx, r, a, newServerQuota(a, domain.NewID(), epoch, actor, now)); err != nil {
 			return result, err
 		}
 		result.Accounts = append(result.Accounts, r.ID)
@@ -192,9 +237,14 @@ func queueSubscriptionQuotas(tx *store.Tx, actor domain.Principal, now time.Time
 var errNoDueSubscriptionQuota = domain.Fail(domain.Conflict, "No native quota observation is due.", "")
 
 func (s *Service) queueDueSubscriptionQuotas(ctx context.Context, now time.Time) error {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	var due bool
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
-		records, err := subscriptionQuotaCandidates(tx, now, true)
+		records, err := subscriptionQuotaCandidates(tx, now, true, s.subscriptionServerEpoch())
 		due = len(records) > 0
 		return err
 	}); err != nil {
@@ -205,8 +255,8 @@ func (s *Service) queueDueSubscriptionQuotas(ctx context.Context, now time.Time)
 	}
 	// Recheck inside the write transaction. A concurrent owner may have queued
 	// every candidate; roll back that no-op instead of publishing an empty receipt.
-	_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.quota.maintenance", struct{}{}, func(tx *store.Tx) (any, error) {
-		return queueSubscriptionQuotas(tx, domain.Principal{Type: domain.OwnerDevice}, now, true)
+	_, err = s.Store.Mutate(ctx, domain.NewID(), "subscription.quota.maintenance", struct{}{}, func(tx *store.Tx) (any, error) {
+		return queueSubscriptionQuotas(tx, domain.Principal{Type: domain.OwnerDevice}, now, true, s.subscriptionServerEpoch())
 	})
 	if errors.Is(err, errNoDueSubscriptionQuota) {
 		return nil
@@ -219,7 +269,14 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", actor, func(tx *store.Tx) (any, error) { return queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false) })
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, c)
+	}
+	defer unlock()
+	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", actor, func(tx *store.Tx) (any, error) {
+		return queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
+	})
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
@@ -269,7 +326,13 @@ func (s *Service) ReconcileSubscriptionCredit(ctx context.Context, req *connect.
 		if err != nil {
 			return nil, err
 		}
-		if !quotaAccountReady(a) || a.Subscription.Pending != nil || a.Connection.ID != input.Connection || a.Subscription.Generation != input.Generation {
+		if a.Subscription != nil && a.Subscription.ServerCredit != nil && a.Subscription.ServerCredit.ID == input.Operation {
+			if err := reconcileServerCredit(tx, r, a, input.Connection, input.Generation, actor, s.subscriptionServerEpoch()); err != nil {
+				return nil, err
+			}
+			return accountReceipt{ID: r.ID}, nil
+		}
+		if !quotaAccountReady(a) || a.Subscription.ServerObservationActive() || a.Subscription.Pending != nil || a.Connection.ID != input.Connection || a.Subscription.Generation != input.Generation {
 			return nil, subscriptionDenied()
 		}
 		op := a.Subscription.Observation
@@ -328,6 +391,9 @@ func (s *Service) ClaimSubscriptionObservation(ctx context.Context, req *connect
 		if op == nil || op.ID != input.Operation || op.Generation != input.Generation || op.ConnectionID != a.Connection.ID || op.Phase != domain.SubscriptionObservationQueued || op.MachineID != input.Machine || subscriptionActorValid(tx, op.Actor) != nil {
 			return nil, subscriptionDenied()
 		}
+		if op.Action == domain.SubscriptionQuota && a.Subscription.Lease.Action == domain.SubscriptionExecute && quotaObservationMachine(tx, a, input.Machine, s.subscriptionServerEpoch()) != nil {
+			return nil, subscriptionDenied()
+		}
 		op.Phase = domain.SubscriptionObservationSending
 		operation = *op
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
@@ -375,6 +441,9 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		if input.Operation != "" {
 			op := state.Observation
 			if op == nil || op.ID != input.Operation || op.Phase != domain.SubscriptionObservationSending || op.Generation != input.Generation || op.MachineID != input.Machine {
+				return nil, subscriptionDenied()
+			}
+			if op.Action == domain.SubscriptionQuota && state.Lease.Action == domain.SubscriptionExecute && (op.ConnectionID != a.Connection.ID || subscriptionActorValid(tx, op.Actor) != nil || quotaObservationMachine(tx, a, input.Machine, s.subscriptionServerEpoch()) != nil) {
 				return nil, subscriptionDenied()
 			}
 			if op.Action == domain.SubscriptionQuota && (observed.Outcome != "" || observed.ConsumeUncertain) || op.Action == domain.SubscriptionResetCredit && (observed.ConsumeUncertain == (observed.Outcome != "")) {

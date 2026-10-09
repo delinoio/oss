@@ -16,13 +16,37 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 Authenticated owner/client checks and exact candidate/revision acceptance use InstallationService and `delidev update`. Only stable `delidev-v<semver>` GitHub Releases in `delinoio/oss` supply manifests. A signed manifest covers the complete six-target desktop and six-target Worker inventory, source revision, protocol, byte lengths and SHA-256. Native installation requires a trusted-window confirmation. Worker installation waits for joined active execution, auxiliary, terminal and forwarding ownership. Neither path replaces a live server or a harness.
 
-Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 before dependent source changes. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Shared reservations reached main first; complete independent feature PRs merge after their implemented dependencies.
+Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 in the owning feature PR. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Shared reservations reached main first; complete independent feature PRs merge after their implemented dependencies.
 
 Checks retain an original signed candidate under its request ID. Worker acceptance fences new job, terminal, forward, subscription and workspace-read ownership while original cleanup continues. Idle admission covers claimed/uncertain jobs, both forwarding peers, terminal process cleanup, subscription leases and external deletion obligations. Automatic checks run after 30 seconds and then daily; a retained canceled/failed/uncertain attempt prevents automatic resubmission of that release. Pending projections filter matching scope before bounding, so completed history cannot hide live obligations.
 
 A Worker claims once under its current device/instance and journals before the RPC. It verifies and downloads independently, joins all execution and control lanes, retains the exact old binary, then journals the replacement generation before spawn. Failed starts restore only after positive exit of the exact generation and no superseding Stop. A report that might already have committed success never grants rollback. Successful signed history can verify an installed version but cannot replace a live controller; later explicit starts verify/select the installed private generation. After claim response loss, read the exact original accepted claim and resume reversible preparation only; never resend the claim or installation. After a possibly accepted success report, exact original update inspection may settle the retained local journal without another report or rollback. Later explicit detached starts dispatch to the independently verified installed controller before that controller reserves its own native version. Missing or conflicting original proof preserves the admission fence and both binaries.
 
 Desktop controls remain in Connection & diagnostics. Native chooses the main or exact saved-window scope, epoch and generation; renderer input contains only original opaque ID/revision and a closed action. The original trusted window confirms the concrete prepared version. Go independently verifies and claims installation, then Rust hashes the exact stream copied into exclusive native staging. Mac installation checks the fixed bundle ID/version and code signature before a same-volume atomic swap that retains the old bundle. Windows installer failure/timeout retains possible committed-install uncertainty. Linux correlates AppImage environment, mounted executable and kernel mount source before retaining a backup and replacing the image. Installation records its result offline and never restarts a server/harness. Read-only original inspection accepts the retained exact ID/revision independently of live server negotiation and survives native process restart; installing/uncertain journals cannot be resent.
+
+Linux mount correlation retains the 1 MiB mountinfo inventory limit. Split records before decoding their mount-point and source fields. Decode the kernel's space, tab, newline, backslash and source `#` octal escapes exactly once; reject incomplete, non-octal and unsupported escapes. Both decoded paths must match the original APPDIR/APPIMAGE in the same record. Absolute-path, executable-under-APPDIR, regular-file and non-symlink-ancestor checks remain required. Parser fixtures do not establish installed Linux package acceptance.
+
+Each accepted desktop installation has a native-owned joined task independent
+of its renderer. It retains the original operation, server, revision, saved scope,
+generation and actual native result. Losing the original window or epoch after
+the durable begin and before an installer effect records Failed without invoking
+the installer. After an effect begins, retain Installed, Failed or Uncertain as
+observed; do not infer rollback. Quit fences fresh work and cancels installation,
+then joins the installer and its offline outcome settlement outside the UI loop
+before sidecar shutdown. Only the retained accepted token may bypass ordinary
+connector contention and Quit admission for a bounded original-journal write.
+A lost reply retries the same phase; it never invokes installation or creates a
+generation. Failed persistence retains original retry/inspection ownership and
+logs uncertainty without claiming terminal publication.
+
+The native application manifest declares `desktop_update_context` and
+`desktop_update_native` under the dedicated closed `desktop-update` permission.
+Only the existing main/local-* and server-* product document capabilities grant
+it. External/child/remote webviews receive no grant. Label matching cannot replace
+native product-window registry admission, original saved binding, lifetime epoch,
+server checks or confirmation. Validate actual generated manifests and resolved
+permissions against the existing OAuth control; those fixtures establish ACL
+behavior, separately from real native installation acceptance.
 
 ## Storage
 
@@ -61,3 +85,28 @@ Update the project index, allocation ledger and affected domain AGENTS when auth
 - [Credentials](cmds-delidev-credentials-contract.md)
 - [Packaging](apps-delidev-packaging-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+### Download-only automated release exception
+
+The owner-authorized automatic release workflow may publish a stable
+`delidev-v<semver>` release containing macOS/Linux x64/arm64 desktop and CLI/Worker
+files while Windows production signing is unavailable. Such releases are strictly
+download-only: they contain no `delidev-update-manifest.json` and provide no updater
+candidate. The existing verifier still requires all twelve desktop/Worker entries;
+no partial manifest, protocol change or migration is introduced. Release notes and
+the index declare skipped Windows targets and unverified installed-platform/account
+acceptance. Missing manifests do not authorize a verifier fallback. The existing
+checker selects the newest stable DeliDev version before fetching its manifest;
+a newer download-only release therefore returns a missing-manifest error rather
+than offering an older complete update. This path preserves that behavior until
+a future complete release supplies a newer valid manifest.
+
+Public release bytes and target inventory are immutable. Later Windows support or
+updater activation requires a new version. A full updater release still requires
+the compiled production Ed25519 root, matching private key, platform signing and
+original target acceptance. The existing `--check-root` gate and signer are retained;
+the automated download-only path neither accesses an updater private key nor changes
+the currently unset root. The packaging contract owns the new release workflow and
+GitHub Environment configuration.
+
+Public CLI `update check` uses a 35-second outer context and response-header limit so the original bounded 30-second release lookup can return its typed result. A shorter caller deadline wins. Checks never retry automatically after timeout; exact original request identities, update reads, Worker acceptance/cancellation and native installation deadlines retain their existing semantics.

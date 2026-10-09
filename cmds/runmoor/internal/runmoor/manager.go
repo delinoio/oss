@@ -13,6 +13,8 @@ import (
 )
 
 type Manager struct {
+	// Service reload starts from committed configuration without revoking Stop.
+	PreserveStop    bool
 	ResolveCapacity func(context.Context, Config) (Config, error)
 	Store           *Store
 	ConfigPath      string
@@ -100,7 +102,17 @@ func (m *Manager) accept(c Config, restart bool) error {
 	return m.acceptWithValidatedReload(c, restart, false)
 }
 func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload bool) error {
+	endpoint, err := guardDockerArtifactEndpoint(m.ctx, c, m.Store.View())
+	if err != nil {
+		m.Log.Warn("docker_artifact_endpoint_rejected", "error_code", classify(err, ErrOwnership, "Managed Docker origin remains protected.", "Restore the original engine.").Code)
+		return err
+	}
 	return m.Store.Update(func(s *Snapshot) error {
+		if err := checkDockerArtifactEndpoint(*s, endpoint); err != nil {
+			return err
+		}
+		initializeRunnerQuarantines(s)
+		stopping := s.Stopping
 		if validatedReload {
 			recordValidatedManagedRecovery(s, c)
 		}
@@ -111,7 +123,11 @@ func (m *Manager) acceptWithValidatedReload(c Config, restart, validatedReload b
 				q.NextCheck = time.Time{}
 			}
 		}
-		return acceptSnapshotWithValidatedReload(s, managedConfig(*s), restart, validatedReload)
+		err := acceptSnapshotWithValidatedReload(s, managedConfig(*s), restart, validatedReload)
+		if m.PreserveStop && stopping {
+			s.Stopping = true
+		}
+		return err
 	})
 }
 func acceptSnapshot(s *Snapshot, c Config, restart bool) error {
@@ -165,15 +181,11 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 			switch old.Phase {
 			case Paused:
 				next.Phase = Paused
+				copyPoolFailureState(next, old)
 			case Suspended:
 				if s.Paused || s.Stopping || !(validatedReload && suspensionCorrected(old, p, conn, s.Config, c) || managedRecoveryMatches(s, &old)) {
 					next.Phase = Suspended
-					next.PreparationFailures = old.PreparationFailures
-					next.SuspensionSource = old.SuspensionSource
-					if old.Problem != nil {
-						copy := *old.Problem
-						next.Problem = &copy
-					}
+					copyPoolFailureState(next, old)
 				}
 			}
 			if recovery := s.ManagedRecovery[p.Name]; recovery != nil && recovery.PoolID == old.ID {
@@ -192,6 +204,15 @@ func acceptSnapshotWithValidatedReload(s *Snapshot, c Config, restart, validated
 		s.Stopping = false
 	}
 	return nil
+}
+
+func copyPoolFailureState(next *PoolState, old PoolState) {
+	next.PreparationFailures = old.PreparationFailures
+	next.SuspensionSource = old.SuspensionSource
+	if old.Problem != nil {
+		copy := *old.Problem
+		next.Problem = &copy
+	}
 }
 
 func refreshRetirementAuthority(s *Snapshot, c Config) {
@@ -276,6 +297,30 @@ func executionChanged(a, b Pool) bool {
 	return imageChanged(a, b) || a.Mode != b.Mode || a.Resources != b.Resources || a.DaemonResources != b.DaemonResources
 }
 func (m *Manager) Run(ctx context.Context, c Config) error {
+	if err := m.initializeRun(c); err != nil {
+		return err
+	}
+	return m.runActivated(ctx)
+}
+
+// Complete startup before exposing control: a reload received immediately
+// after readiness must not be overwritten by another startup acceptance.
+func (m *Manager) initializeRun(c Config) error {
+	if err := m.activate(c); err != nil {
+		return err
+	}
+	// Session secrets are deliberately not persisted. A fresh session uses the
+	// stable installation/pool owner and begins from its authoritative statistics.
+	return m.Store.Update(func(s *Snapshot) error {
+		for _, p := range s.Pools {
+			p.Session = ""
+			p.LastMessage = 0
+		}
+		return nil
+	})
+}
+
+func (m *Manager) runActivated(ctx context.Context) error {
 	defer func() {
 		m.cancel()
 		m.mu.Lock()
@@ -289,20 +334,6 @@ func (m *Manager) Run(ctx context.Context, c Config) error {
 		m.wg.Wait()
 		m.Power.Release()
 	}()
-	if e := m.activate(c); e != nil {
-		return e
-	}
-	// Session secrets are deliberately not persisted. A fresh session uses the
-	// stable installation/pool owner and begins from its authoritative statistics.
-	if e := m.Store.Update(func(s *Snapshot) error {
-		for _, p := range s.Pools {
-			p.Session = ""
-			p.LastMessage = 0
-		}
-		return nil
-	}); e != nil {
-		return e
-	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	signal := ctx.Done()
@@ -408,7 +439,7 @@ func (m *Manager) step() error {
 		if p.Phase == Retired {
 			continue
 		}
-		if p.Phase != Suspended {
+		if !poolLoopStopped(p) {
 			m.ensurePoolLoop(id)
 		}
 		if p.Phase == Draining {
@@ -556,6 +587,24 @@ func (m *Manager) ensurePoolLoop(id string) {
 		m.poolLoop(ctx, id)
 	}()
 }
+
+func poolLoopStopped(p *PoolState) bool {
+	if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		return true
+	}
+	if p.Phase != Paused || p.Problem == nil {
+		return false
+	}
+	switch p.Problem.Code {
+	case ErrAuth, ErrOwnership, ErrImage, ErrPlatform, ErrRunnerVersion:
+		return true
+	case ErrPreparation:
+		return p.PreparationFailures >= 3
+	default:
+		return false
+	}
+}
+
 func (m *Manager) poolProblem(id string, err error, suspend bool) {
 	m.poolProblemWithSource(id, err, suspend, SuspensionUnknown)
 }
@@ -563,14 +612,20 @@ func (m *Manager) poolProblemWithSource(id string, err error, suspend bool, sour
 	p := classify(err, ErrRetry, "Pool dependency is unavailable.", "Inspect status and retry after restoring the dependency.")
 	_ = m.Store.Update(func(s *Snapshot) error {
 		v := s.Pools[id]
-		if v == nil || v.Phase == Retired {
+		// Session and initialization results may arrive after preparation suspended
+		// the pool. Its original diagnosis remains the recovery authority.
+		if v == nil || v.Phase == Retired || v.Phase == Suspended {
 			return nil
 		}
 		p.Pool = v.Spec.Name
 		v.Problem = p
 		v.SuspensionSource = SuspensionUnknown
 		if suspend && v.Phase != Draining {
-			v.Phase = Suspended
+			// Paused is the durable scoped operator decision for manual pools.
+			// A late dependency failure may diagnose it, but cannot replace it.
+			if v.Phase != Paused {
+				v.Phase = Suspended
+			}
 			if p.Code == ErrOwnership {
 				v.SuspensionSource = source
 			}
@@ -584,7 +639,7 @@ func (m *Manager) poolLoop(ctx context.Context, id string) {
 	for ctx.Err() == nil {
 		s := m.Store.View()
 		p := s.Pools[id]
-		if p == nil || p.Phase == Retired || p.Phase == Suspended {
+		if poolLoopStopped(p) {
 			return
 		}
 		if p.Phase == Ready && p.Spec.Backend == Docker && s.Config.DockerCapacityPending && !s.Stopping {
@@ -728,7 +783,11 @@ func (m *Manager) ensureScaleSetLocked(ctx context.Context, id string, remote Re
 		p := s.Pools[id]
 		p.ScaleSetID = scaleID
 		p.CreatePending = false
-		p.Problem = nil
+		// The owned result still settles creation, but cannot clear a failure
+		// committed by another worker while Ensure was in flight.
+		if p.Phase != Suspended {
+			p.Problem = nil
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -810,8 +869,10 @@ func applyMessage(s *Snapshot, poolID, session string, msg *scaleset.RunnerScale
 	}
 	for _, job := range msg.JobCompletedMessages {
 		if r := match(job.RunnerName, job.RunnerID); r != nil && r.Phase != Completed {
-			r.Phase = Cleaning
 			r.CompletedJob = true
+			if r.Phase != Quarantined || runnerQuarantineCause(*s, r.ID) == QuarantineRegistrationAbsent {
+				r.Phase = Cleaning
+			}
 		}
 	}
 	return nil
@@ -891,7 +952,10 @@ func (m *Manager) prepare(ctx context.Context, id string) {
 			r.Phase = Idle
 			r.Deadline = r.CreatedAt.Add(c.JobTimeout())
 		}
-		s.Pools[r.PoolID].PreparationFailures = 0
+		// A late success does not recover another worker's circuit breaker.
+		if pool := s.Pools[r.PoolID]; pool.Phase != Suspended {
+			pool.PreparationFailures = 0
+		}
 		return nil
 	}); e != nil {
 		m.runnerProblem(id, e, false)
@@ -924,7 +988,11 @@ func (m *Manager) failPreparation(id string, err error) {
 		pool := s.Pools[r.PoolID]
 		pool.PreparationFailures++
 		if pool.Phase != Draining && (pool.PreparationFailures >= 3 || p.Code == ErrAuth || p.Code == ErrRunnerVersion || p.Code == ErrOwnership) {
-			pool.Phase = Suspended
+			// Keep scoped pause/stop authority while retaining failure diagnostics
+			// and the runner's ordinary busy-aware cleanup path.
+			if pool.Phase != Paused {
+				pool.Phase = Suspended
+			}
 			pool.Problem = p
 			pool.SuspensionSource = SuspensionUnknown
 		}
@@ -949,6 +1017,11 @@ func (m *Manager) runnerProblem(id string, err error, quarantine bool) {
 		}
 		r.Problem = p
 		if quarantine || p.Code == ErrOwnership {
+			cause := QuarantineUnknown
+			if p.Code == ErrOwnership {
+				cause = QuarantineIdentityConflict
+			}
+			recordRunnerQuarantine(s, id, cause)
 			r.Phase = Quarantined
 		}
 		return nil
@@ -1050,6 +1123,7 @@ func (m *Manager) inspect(ctx context.Context, id string) {
 			if !runnerInspectionPending(r) || r.Forced {
 				return nil
 			}
+			recordRunnerQuarantine(s, id, QuarantineRegistrationAbsent)
 			r.Problem, r.Phase = q, Quarantined
 			applied = true
 			return nil
@@ -1207,6 +1281,7 @@ func (m *Manager) cleanup(ctx context.Context, id string) {
 		r.Phase = Completed
 		r.CompletedAt = nowUTC()
 		r.Problem = nil
+		delete(s.RunnerQuarantines, id)
 		return nil
 	}); e != nil {
 		m.runnerProblem(id, e, false)
@@ -1450,30 +1525,10 @@ func (m *Manager) Reload(ctx context.Context) error {
 	if e != nil {
 		return e
 	}
-	if m.ResolveCapacity != nil {
-		c, e = m.ResolveCapacity(ctx, c)
-		if e != nil {
-			return e
-		}
-	}
 	s := m.Store.View()
-	if c.Storage != s.Config.Storage {
-		return problem(ErrConfig, "Storage locations cannot change during reload.", "Drain and stop before restoring a complete installation into new locations.")
-	}
-	for _, p := range c.Pools {
-		if managesRunner(p) {
-			remote, err := m.RemoteFactory(c.Connection(p.Connection))
-			if err != nil {
-				return err
-			}
-			if err = remote.Check(ctx, p); err != nil {
-				return err
-			}
-			continue
-		}
-		if e = m.validatePool(ctx, c, p, s); e != nil {
-			return e
-		}
+	c, e = validateReloadCandidate(ctx, c, s, m.ResolveCapacity, m.Drivers, m.RemoteFactory)
+	if e != nil {
+		return e
 	}
 	if e = m.acceptWithValidatedReload(c, false, true); e != nil {
 		return e
@@ -1491,6 +1546,46 @@ func (m *Manager) Reload(ctx context.Context) error {
 	}
 	m.Log.Info("configuration_accepted", "generation", committed.Generation)
 	return nil
+}
+
+// Preflight is also used by the newer CLI before replacing a legacy manager.
+// It reads a snapshot and probes dependencies without publishing a generation.
+func validateReloadCandidate(ctx context.Context, c Config, s Snapshot, capacity func(context.Context, Config) (Config, error), drivers DriverFactory, remotes func(Connection) (Remote, error)) (Config, error) {
+	if _, err := guardDockerArtifactEndpoint(ctx, c, s); err != nil {
+		return c, err
+	}
+	if capacity != nil {
+		var err error
+		c, err = capacity(ctx, c)
+		if err != nil {
+			return c, err
+		}
+	}
+	if _, err := guardDockerArtifactEndpoint(ctx, c, s); err != nil {
+		return c, err
+	}
+	if c.Storage != s.Config.Storage {
+		return c, problem(ErrConfig, "Storage locations cannot change during reload.", "Drain and stop before restoring a complete installation into new locations.")
+	}
+	for _, p := range c.Pools {
+		if !managesRunner(p) {
+			driver, err := drivers(p.Backend)
+			if err != nil {
+				return c, err
+			}
+			if err = driver.Validate(ctx, c, p, s); err != nil {
+				return c, err
+			}
+		}
+		remote, err := remotes(c.Connection(p.Connection))
+		if err != nil {
+			return c, err
+		}
+		if err = remote.Check(ctx, p); err != nil {
+			return c, err
+		}
+	}
+	return c, nil
 }
 func sortedPools(s Snapshot) []*PoolState {
 	v := make([]*PoolState, 0, len(s.Pools))

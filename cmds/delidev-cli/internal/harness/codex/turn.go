@@ -2,7 +2,6 @@ package codex
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"slices"
 
@@ -53,6 +52,7 @@ type turnOperation struct {
 	TurnID      domain.ID
 	Mode        domain.SessionMode
 	InputDigest [32]byte
+	SkillDigest [32]byte
 }
 
 type trackedTurn struct {
@@ -61,8 +61,9 @@ type trackedTurn struct {
 	Inputs []domain.ID
 }
 type inputAttempt struct {
-	Digest [32]byte
-	TurnID domain.ID
+	SkillDigest [32]byte
+	Digest      [32]byte
+	TurnID      domain.ID
 }
 
 type executionState struct {
@@ -176,7 +177,9 @@ func (c *Client) reserveInputLocked(inputID domain.ID) error {
 
 type nativeTextInput struct {
 	Type nativeInputType `json:"type"`
-	Text string          `json:"text"`
+	Text string          `json:"text,omitempty"`
+	Name string          `json:"name,omitempty"`
+	Path string          `json:"path,omitempty"`
 }
 type nativeInputType string
 
@@ -255,8 +258,16 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if input.Mode == domain.PlanMode {
 		mode = nativePlan
 	}
-	params := startTurnParams{ThreadID: c.thread, Input: []nativeTextInput{{Type: nativeText, Text: input.Prompt}}, ClientInputID: inputID, Model: s.Model, Effort: s.Effort, Cwd: s.Cwd, ApprovalPolicy: s.ApprovalPolicy, ApprovalsReviewer: s.ApprovalsReviewer, Sandbox: s.Sandbox, ServiceTier: s.ServiceTier, Collaboration: collaborationMode{Mode: mode, Settings: collaborationSettings{Model: s.Model, Effort: s.Effort}}}
-	op := turnOperation{Action: StartTurnAction, RequestID: requestID, InputID: inputID, Mode: input.Mode, InputDigest: sha256.Sum256([]byte(input.Prompt))}
+	selected, err := c.selectedSkillInputs(ctx, input)
+	if err != nil {
+		return result, err
+	}
+	nativeParts, err := c.nativeImageParts(ctx, input)
+	if err != nil {
+		return result, err
+	}
+	params := startTurnParams{ThreadID: c.thread, Input: append(nativeParts, selected...), ClientInputID: inputID, Model: s.Model, Effort: s.Effort, Cwd: s.Cwd, ApprovalPolicy: s.ApprovalPolicy, ApprovalsReviewer: s.ApprovalsReviewer, Sandbox: s.Sandbox, ServiceTier: s.ServiceTier, Collaboration: collaborationMode{Mode: mode, Settings: collaborationSettings{Model: s.Model, Effort: s.Effort}}}
+	op := turnOperation{Action: StartTurnAction, RequestID: requestID, InputID: inputID, Mode: input.Mode, InputDigest: input.InputDigest(), SkillDigest: nativeSkillDigest(selected)}
 	response, err := c.callTurnLocked(ctx, op, params)
 	if err != nil {
 		return result, err
@@ -266,7 +277,7 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 		return result, c.rejectTurnReply(ctx, StartTurnAction, requestID)
 	}
 	state.turns[turn.ID] = trackedTurn{Turn: turn, Mode: input.Mode, Inputs: []domain.ID{inputID}}
-	state.inputs[inputID] = inputAttempt{Digest: op.InputDigest, TurnID: turn.ID}
+	state.inputs[inputID] = inputAttempt{Digest: op.InputDigest, SkillDigest: op.SkillDigest, TurnID: turn.ID}
 	state.active = turn.ID
 	result.TurnID = turn.ID
 	return result, nil
@@ -282,6 +293,9 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 		if err := id.Validate(); err != nil {
 			return result, err
 		}
+	}
+	if len(input.Attachments) > 0 {
+		return result, domain.UnsupportedImageInput()
 	}
 	if err := input.Validate(); err != nil {
 		return result, err
@@ -322,7 +336,7 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 		InputID        domain.ID         `json:"clientUserMessageId"`
 		Input          []nativeTextInput `json:"input"`
 	}{c.thread, expectedTurnID, inputID, []nativeTextInput{{Type: nativeText, Text: input.Prompt}}}
-	op := turnOperation{Action: SteerTurnAction, RequestID: requestID, InputID: inputID, TurnID: expectedTurnID, Mode: input.Mode, InputDigest: sha256.Sum256([]byte(input.Prompt))}
+	op := turnOperation{Action: SteerTurnAction, RequestID: requestID, InputID: inputID, TurnID: expectedTurnID, Mode: input.Mode, InputDigest: input.InputDigest()}
 	response, err := c.callTurnLocked(ctx, op, params)
 	attempt := &steerAttempt{operation: op, delivery: SteerNotSent}
 	state.steers[requestID] = attempt
@@ -408,7 +422,7 @@ func (c *Client) callTurnLocked(ctx context.Context, op turnOperation, params an
 	}
 	state.pending[op.RequestID] = op
 	if op.InputID != "" {
-		state.inputs[op.InputID] = inputAttempt{Digest: op.InputDigest, TurnID: op.TurnID}
+		state.inputs[op.InputID] = inputAttempt{Digest: op.InputDigest, SkillDigest: op.SkillDigest, TurnID: op.TurnID}
 	}
 	defer func() {
 		if c.logger != nil {

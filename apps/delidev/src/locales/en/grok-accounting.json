@@ -1,0 +1,22 @@
+{
+  "grok-accounting.verifiedGrokInputAccountingIsUnavailable_bad890": "Verified Grok input accounting evidence is unsupported or incomplete.",
+  "grok-accounting.verifiedGrokClosedInputs_f343dd": "Verified Grok closed inputs",
+  "grok-accounting.closedInputsKnownTotalTokens_a55f2e": "{{v0}} closed inputs · {{v1}} known total tokens",
+  "grok-accounting.noVerifiedGrokClosedInputsAre_244c3c": "No verified Grok closed inputs are recorded for these filters. This does not establish zero usage.",
+  "grok-accounting.eachInputRequiresMatchingOriginalHistory_2f9fce": "Each input requires matching original history, native closure and confirmed cleanup. Response dimensions are retained separately in the session. These totals are separate from Codex response totals; pricing, actual cost and estimated-budget contribution are unavailable.",
+  "grok-accounting.grokInputTimesUseTheServer_55cef2": "Grok input times use the server's first retention of verified completion after confirmed cleanup. Filters and daily buckets use that time.",
+  "grok-accounting.verifiedGrokInputAccountingTables_ee8ebe": "Verified Grok input accounting tables",
+  "grok-accounting.grokInputsByOriginalSessionAccount_d2226c": "Grok inputs by original session, account and model",
+  "grok-accounting.sessionProject_59a44c": "Session / project",
+  "grok-accounting.account_7e1b0d": "Account",
+  "grok-accounting.modelApi_6a8129": "Model / API",
+  "grok-accounting.closedInputs_85c5d8": "Closed inputs",
+  "grok-accounting.knownTokens_682912": "Known tokens",
+  "grok-accounting.generalChat_f634bc": "General Chat",
+  "grok-accounting.dailyVerifiedGrokInputs_fc1da8": "Daily verified Grok inputs (<s0/>)",
+  "grok-accounting.from_218197": "From",
+  "grok-accounting.until_7caf85": "Until",
+  "grok-accounting.exclusive_b71bef": "(exclusive)",
+  "grok-accounting.verifiedGrokInputsByModel_1eac37": "Verified Grok inputs by model",
+  "grok-accounting.extra.ca1844969742": "Unavailable"
+}

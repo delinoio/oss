@@ -104,3 +104,11 @@ func TestEnabledProviderModelSearchRequiresInventoryCapability(t *testing.T) {
 		t.Fatalf("supported model filter was not sent: %+v", provider.searchRequest)
 	}
 }
+
+func TestOAuthSelectedProtocolRequiresIndependentCapability(t *testing.T) {
+	provider := &providerCapabilityStub{capabilities: []pb.ProviderInventoryCapability{pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1}}
+	_, err := accountOAuthCommand(context.Background(), client{providers: provider}, &options{}, []string{"start", "--provider-id", string(domain.NewID()), "--revision", "1", "--api-protocol", "openai-responses"}, IO{})
+	if domain.SafeError(err).Code != domain.Unsupported || provider.inventoryCalls != 1 {
+		t.Fatal("OAuth selection bypassed capability 8", err)
+	}
+}

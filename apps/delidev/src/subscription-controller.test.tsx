@@ -93,8 +93,10 @@ it("starts an existing account login without a Runner Device and retries the exa
   const value = fixture(); value.login.mockRejectedValueOnce(new ConnectError("response lost", Code.Unavailable)); render(<value.Harness />);
   await screen.findByRole("article", { name: "Existing subscription" });
   fireEvent.click(screen.getByRole("button", { name: "Manage login for Existing subscription" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(await screen.findByRole("button", { name: "Sign in to ChatGPT" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Retry original request" }));
+  await screen.findByRole("button", { name: "Retry original request" });
+  fireEvent.click(screen.getByRole("button", { name: "Retry original request" }));
   await screen.findByRole("button", { name: "Open browser again" }, { timeout: 3000 });
   expect(value.login).toHaveBeenCalledTimes(2); expect(value.login.mock.calls[0][0]).toEqual(value.login.mock.calls[1][0]);
   expect(value.login.mock.calls[0][0]).toMatchObject({ machineId: "", action: 1, deviceCode: false, mutation: { expectedRevision: 1n } });
@@ -106,13 +108,13 @@ it("starts an existing account login without a Runner Device and retries the exa
   expect(value.cancel).toHaveBeenCalledTimes(1);
 });
 
-it("routes row quota refresh to the original active execution lease machine", async () => {
+it("routes row quota refresh to the server during active execution", async () => {
  const value=fixture(), owner=newRequestId(), runner=newRequestId(), connection=newRequestId(), generation=newRequestId();
  const row=value.accounts[0]!;
  value.accounts[0]=create(ResourceSchema,{...row,documentJson:encode({alias:"Existing subscription",type:"subscription",subscription_service:"chatgpt",enabled:true,health:"ready",quota:[],connection:{id:connection},subscription:{generation,owner_machine_id:owner,lease:{action:"execute",machine_id:runner}}})});
  const refresh=vi.fn(async request=>({account:value.accounts[0],operationId:request.mutation.requestId}));
  const transport=createRouterTransport(router=>{
-  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SUBSCRIPTION_QUOTA_V1]})});
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]})});
   router.service(ResourceService,{listResources:value.list});
   router.service(SubscriptionService,{requestSubscriptionObservation:refresh});
  });
@@ -120,7 +122,7 @@ it("routes row quota refresh to the original active execution lease machine", as
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SubscriptionAccounts active editAccount={()=>{}} deleteAccount={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>);
  fireEvent.click(await screen.findByRole("button",{name:"Refresh Existing subscription"}));
  await waitFor(()=>expect(refresh).toHaveBeenCalledTimes(1));
- expect(refresh.mock.calls[0]?.[0]).toMatchObject({machineId:runner,connectionId:connection,generationId:generation});
+ expect(refresh.mock.calls[0]?.[0]).toMatchObject({machineId:"",connectionId:connection,generationId:generation});
  expect(refresh.mock.calls[0]?.[0].machineId).not.toBe(owner);
 });
 
@@ -131,7 +133,7 @@ it("preserves managed quota authority without the independent login capability",
   const refresh = vi.fn(async request => ({ account, operationId: request.mutation.requestId }));
   const login = vi.fn(() => ({}));
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SUBSCRIPTION_QUOTA_V1] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2] }) });
     router.service(ResourceService, { getResource: () => ({ resource: account }) });
     router.service(SubscriptionService, { requestSubscriptionObservation: refresh, requestSubscription: login });
   });
@@ -142,7 +144,7 @@ it("preserves managed quota authority without the independent login capability",
   expect((screen.getByRole("button", { name: "Refresh login" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(button);
   await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
-  expect(refresh.mock.calls[0]?.[0]).toMatchObject({ machineId: owner, connectionId: connection, generationId: generation });
+  expect(refresh.mock.calls[0]?.[0]).toMatchObject({ machineId: "", connectionId: connection, generationId: generation });
   expect(login).not.toHaveBeenCalled();
 });
 
@@ -154,7 +156,7 @@ it.each([
  value.accounts[0]=create(ResourceSchema,{...row,documentJson:encode({alias:"Existing subscription",type:"subscription",subscription_service:"chatgpt",enabled:true,health:"ready",quota:[],connection:{id:newRequestId()},removal,subscription:{generation:newRequestId(),owner_machine_id:newRequestId(),...state}})});
  const refresh=vi.fn(()=>({}));
  const transport=createRouterTransport(router=>{
-  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SUBSCRIPTION_QUOTA_V1]})});
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]})});
   router.service(ResourceService,{listResources:value.list});
   router.service(SubscriptionService,{requestSubscriptionObservation:refresh});
  });
@@ -172,6 +174,8 @@ it("projects terminal Codex diagnostics without another login or cached native p
  value.progress.mockImplementation(() => ({state:SubscriptionLoginState.FAILED,url:"",diagnostic:create(CodexDiagnosticSchema,{detectedVersion:"0.159.2",minimumVersion:"0.151.0",phase:CodexDiagnosticPhase.INITIALIZE,code:"unsupported",message:"private-native-sentinel"})}));
  render(<value.Harness />);
  fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));
  await screen.findByText("ChatGPT sign-in failed",{}, {timeout:4000});
  expect(screen.getByRole("alert").textContent).toContain("0.159.2");
@@ -191,6 +195,8 @@ it("keeps an uncertain original browser opening visible across later waiting pol
  const value=fixture(); value.native.mockRejectedValue(new Error("private-native-url"));
  render(<value.Harness />);
  fireEvent.click(await screen.findByRole("button",{name:"Manage login for Existing subscription"}));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Sign in to ChatGPT" }) as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(await screen.findByRole("button",{name:"Sign in to ChatGPT"}));
  await screen.findByText(/The browser could not be opened/,{}, {timeout:4000});
  const nativeCalls=value.native.mock.calls.length;
@@ -199,4 +205,59 @@ it("keeps an uncertain original browser opening visible across later waiting pol
  expect(screen.queryByText(/private-native-url/)).toBeNull();
  expect(value.native).toHaveBeenCalledTimes(nativeCalls);
  expect(value.login).toHaveBeenCalledTimes(1);
+});
+
+it("a successful missing account observation is unavailable and offers read recovery without login", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:1n,schemaVersion:2,documentJson:encode({alias:"Original missing account",type:"subscription",subscription_service:"chatgpt",health:"disconnected"})});
+ const read=vi.fn(()=>({}));const login=vi.fn();const native=vi.fn(async()=>({generation:newRequestId()}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:login});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><OAuthNativeProvider control={native}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></OAuthNativeProvider></QueryClientProvider></TransportProvider>);
+ await screen.findByText(/The current account could not be verified/);expect((screen.getByRole("button",{name:"Sign in to ChatGPT"}) as HTMLButtonElement).disabled).toBe(true);expect(login).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(read).toHaveBeenCalledTimes(2));expect(login).not.toHaveBeenCalled();
+});
+
+it("blocks fresh subscription actions for successful reads older than the original or accepted revision", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:9007199254740993n,schemaVersion:2,documentJson:encode({alias:"Original subscription",type:"subscription",subscription_service:"chatgpt",health:"ready",connection:{id:newRequestId()},subscription:{owner_machine_id:newRequestId(),generation:newRequestId()}})});
+ let observed=create(ResourceSchema,{...account,revision:account.revision-1n});const accepted=create(ResourceSchema,{...account,revision:account.revision+1n});
+ const read=vi.fn(()=>({resource:observed}));const login=vi.fn();const quota=vi.fn(async request=>({account:accepted,operationId:request.mutation.requestId}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:login,requestSubscriptionObservation:quota});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ const unavailable=()=>screen.findByText(/The current account could not be verified/);
+ const freshButtons=()=>["Refresh login","Log out","Refresh quota"].map(name=>screen.getByRole("button",{name}) as HTMLButtonElement);
+ await unavailable();expect(freshButtons().every(button=>button.disabled)).toBe(true);expect(quota).not.toHaveBeenCalled();
+ observed=account;fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(freshButtons().every(button=>!button.disabled)).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Refresh quota"}));await waitFor(()=>expect(quota).toHaveBeenCalledOnce());await unavailable();
+ expect(quota.mock.calls[0][0].mutation.expectedRevision).toBe(account.revision);expect(freshButtons().every(button=>button.disabled)).toBe(true);expect(login).not.toHaveBeenCalled();
+ observed=accepted;fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(freshButtons().every(button=>!button.disabled)).toBe(true));
+ expect(quota).toHaveBeenCalledOnce();expect(login).not.toHaveBeenCalled();view.unmount();client.clear();
+});
+
+it("retains the exact uncertain subscription operation while a successful older read blocks fresh actions", async () => {
+ const account=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.ACCOUNT,revision:9007199254740993n,schemaVersion:2,documentJson:encode({alias:"Original subscription",type:"subscription",subscription_service:"chatgpt",health:"ready",connection:{id:newRequestId()}})});
+ let observed=account;const read=vi.fn(()=>({resource:observed}));const operation=vi.fn(async request=>({account:create(ResourceSchema,{...account,revision:account.revision+1n}),operationId:request.mutation.requestId}));operation.mockRejectedValueOnce(new ConnectError("original reply lost",Code.Unavailable));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1]})});router.service(ResourceService,{getResource:read});router.service(SubscriptionService,{requestSubscription:operation});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Refresh login"}) as HTMLButtonElement).disabled).toBe(false));fireEvent.click(screen.getByRole("button",{name:"Refresh login"}));
+ const retry=await screen.findByRole("button",{name:"Retry original subscription operation"});const original=operation.mock.calls[0][0];
+ observed=create(ResourceSchema,{...account,revision:account.revision-1n});await act(async()=>{await client.invalidateQueries({refetchType:"active"});});await screen.findByText(/The current account could not be verified/);
+ expect((screen.getByRole("button",{name:"Refresh login"}) as HTMLButtonElement).disabled).toBe(true);expect((retry as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(retry);await waitFor(()=>expect(operation).toHaveBeenCalledTimes(2));expect(operation.mock.calls[1][0]).toEqual(original);expect(original.mutation.expectedRevision).toBe(9007199254740993n);
+ view.unmount();client.clear();
+});
+
+
+it.each([true,false])("negotiates row quota refresh for a server-owned account (supported: %s)",async supported=>{
+ const value=fixture(),row=value.accounts[0]!,connection=newRequestId(),generation=newRequestId();
+ value.accounts[0]=create(ResourceSchema,{...row,documentJson:encode({alias:"Existing subscription",type:"subscription",subscription_service:"chatgpt",enabled:true,health:"ready",quota:[],connection:{id:connection},subscription:{generation,server_quota_generation:generation}})});
+ const refresh=vi.fn(async request=>({account:value.accounts[0],operationId:request.mutation.requestId}));
+ const transport=createRouterTransport(router=>{
+ router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,...(supported?[SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2]:[SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V1])]})});
+ router.service(ResourceService,{listResources:value.list});router.service(SubscriptionService,{requestSubscriptionObservation:refresh});
+ });
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SubscriptionAccounts active editAccount={()=>{}} deleteAccount={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ const button=await screen.findByRole("button",{name:"Refresh Existing subscription"});expect((button as HTMLButtonElement).disabled).toBe(!supported);fireEvent.click(button);
+ if(supported){await waitFor(()=>expect(refresh).toHaveBeenCalledOnce());expect(refresh.mock.calls[0][0]).toMatchObject({machineId:"",connectionId:connection,generationId:generation,mutation:{id:row.id,expectedRevision:row.revision}})}else{expect(refresh).not.toHaveBeenCalled()}
 });

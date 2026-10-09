@@ -44,3 +44,8 @@ func CheckedExecutionInputs(primary ID, digest string, inputs []ExecutionInputBi
 	}
 	return slices.Clone(inputs), nil
 }
+
+func BindSessionInput(id ID, input SessionInput) ExecutionInputBinding {
+	digest := input.InputDigest()
+	return ExecutionInputBinding{InputID: id, PromptDigest: hex.EncodeToString(digest[:])}
+}

@@ -22,13 +22,13 @@ func TestRepositoryValidationIsAtomicAcrossWorkersAndRevisions(t *testing.T) {
 	machines := []domain.ID{domain.NewID(), domain.NewID()}
 	for _, id := range machines {
 		_, err := db.Mutate(ctx, domain.NewID(), "fixture.machine", nil, func(tx *store.Tx) (any, error) {
-			return tx.Put(domain.MachineKind, id, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0"})
+			return tx.Put(domain.MachineKind, id, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	configuration := domain.Repository{Name: "repo", PreferredRemote: "origin", AutoFetch: true, Checkouts: []domain.Checkout{{MachineID: machines[0], Path: "/tmp/one/sub"}, {MachineID: machines[1], Path: "/tmp/two/sub"}}}
+	configuration := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "repo", PreferredRemote: "origin", AutoFetch: true, Checkouts: []domain.Checkout{{MachineID: machines[0], Path: "/tmp/one/sub"}, {MachineID: machines[1], Path: "/tmp/two/sub"}}}
 	raw, _ := json.Marshal(configuration)
 	accepted := func(id domain.ID, revision uint64) (store.Record, []store.Record) {
 		t.Helper()
@@ -141,5 +141,180 @@ func TestRepositoryValidationIsAtomicAcrossWorkersAndRevisions(t *testing.T) {
 	job, _ = store.Decode[domain.Job](record)
 	if job.Problem == nil || job.Problem.Code != domain.Conflict {
 		t.Fatal("stale asynchronous revision was not surfaced")
+	}
+}
+
+func TestRepositoryValidationOmitsSourceIdentityForLegacyWorkers(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	machine := domain.NewID()
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.machine", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "legacy", OS: "linux", Architecture: "amd64", Version: "0.1.0"})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(domain.Repository{RemoteURL: "https://github.com/source/repo.git", Name: "repo", Checkouts: []domain.Checkout{{MachineID: machine, Path: "/tmp/repo"}}})
+	result, err := SaveConfiguration(ctx, db, ConfigurationMutation{RequestID: domain.NewID(), Kind: domain.RepositoryKind, Document: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parent store.Record
+	if err := domain.Decode(result.Data, &parent); err != nil {
+		t.Fatal(err)
+	}
+	var children []store.Record
+	if err := db.Read(ctx, func(tx *store.Tx) error {
+		var err error
+		children, err = tx.Jobs("", parent.ID, "", "", store.MaxPage)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("legacy inspection jobs: %d", len(children))
+	}
+	job, err := store.Decode[domain.Job](children[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input domain.RepositoryInspectionInput
+	if err := domain.Decode(job.Input, &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.ExpectedRemoteIdentity != "" {
+		t.Fatal("legacy Worker received the post-capability source identity")
+	}
+}
+
+func TestRepositoryTombstonesFenceAdmissionAndSettleOriginalChild(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		t.Run(map[bool]string{true: "before-admission", false: "after-admission"}[before], func(t *testing.T) {
+			ctx := context.Background()
+			db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			machine, id := domain.NewID(), domain.NewID()
+			_, err = db.Mutate(ctx, domain.NewID(), "fixture.machine", nil, func(tx *store.Tx) (any, error) {
+				return tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "repo", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: machine, Path: "/tmp/repo"}}}
+			remove := func() {
+				t.Helper()
+				_, err := db.Mutate(ctx, domain.NewID(), "fixture.deleted.repository", nil, func(tx *store.Tx) (any, error) {
+					row, err := tx.Put(domain.RepositoryKind, id, 0, "", "", repository)
+					if err != nil {
+						return nil, err
+					}
+					return nil, tx.Delete(domain.RepositoryKind, id, row.Revision)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if before {
+				remove()
+			}
+			jobsBefore, err := db.List(ctx, store.Filter{Kind: domain.JobKind, Limit: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			eventsBefore, err := db.Events(ctx, 0, "", 99)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := json.Marshal(repository)
+			mutation := ConfigurationMutation{RequestID: domain.NewID(), ID: id, Kind: domain.RepositoryKind, Document: raw}
+			otherKind := mutation
+			otherKind.ID, otherKind.RequestID = machine, domain.NewID()
+			if _, err := SaveConfiguration(ctx, db, otherKind); domain.SafeError(err).Code != domain.InvalidArgument {
+				t.Fatal("live other-kind identity classification changed", err)
+			}
+			accepted, err := SaveConfiguration(ctx, db, mutation)
+			if before {
+				if domain.SafeError(err).Code != domain.Conflict {
+					t.Fatal("tombstone admitted", err)
+				}
+				jobs, err := db.List(ctx, store.Filter{Kind: domain.JobKind, Limit: 10})
+				if err != nil || len(jobs) != len(jobsBefore) {
+					t.Fatal("rejected admission created jobs", jobs, err)
+				}
+				events, err := db.Events(ctx, 0, "", 99)
+				if err != nil || len(events) != len(eventsBefore) {
+					t.Fatal("rejected admission published events", events, err)
+				}
+				// Reusing the rejected request for a genuinely unused identity proves no
+				// acceptance receipt was written for the permanently deleted target.
+				mutation.ID = domain.NewID()
+				if _, err = SaveConfiguration(ctx, db, mutation); err != nil {
+					t.Fatal("rejected admission retained a receipt", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var parent store.Record
+			if err = domain.Decode(accepted.Data, &parent); err != nil {
+				t.Fatal(err)
+			}
+			var children []store.Record
+			if err = db.Read(ctx, func(tx *store.Tx) error {
+				var err error
+				children, err = tx.Jobs("", parent.ID, "", "", 10)
+				return err
+			}); err != nil || len(children) != 1 {
+				t.Fatal(children, err)
+			}
+			remove()
+			_, err = db.Mutate(ctx, domain.NewID(), "fixture.original.inspection", nil, func(tx *store.Tx) (any, error) {
+				child, err := store.Decode[domain.Job](children[0])
+				if err != nil {
+					return nil, err
+				}
+				child.State = domain.JobSucceeded
+				now := time.Now().UTC()
+				child.FinishedAt = &now
+				child.Output, _ = json.Marshal(workspace.Inspection{Root: "/tmp/canonical", Name: "repo", Remotes: []string{"origin"}, DefaultRefs: map[string]string{}})
+				if _, err = tx.PutJob(children[0].ID, children[0].Revision, "", "", child); err != nil {
+					return nil, err
+				}
+				return nil, finishRepositorySave(tx, parent.ID)
+			})
+			if err != nil {
+				t.Fatal("valid original report rolled back", err)
+			}
+			parentRow, err := db.Get(ctx, domain.JobKind, parent.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := store.Decode[domain.Job](parentRow)
+			if err != nil || job.State != domain.JobFailed || job.Problem == nil || job.Problem.Code != domain.Conflict {
+				t.Fatal("parent not settled", job, err)
+			}
+			childRow, err := db.Get(ctx, domain.JobKind, children[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			child, err := store.Decode[domain.Job](childRow)
+			if err != nil || child.State != domain.JobSucceeded || childRow.Revision != children[0].Revision+1 {
+				t.Fatal("child success not committed", child, err)
+			}
+			if _, err = db.Get(ctx, domain.RepositoryKind, id); domain.SafeError(err).Code != domain.NotFound {
+				t.Fatal("repository resurrected", err)
+			}
+			if err = db.Read(ctx, func(tx *store.Tx) error { return tx.RequireUnusedID(id) }); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("original tombstone lost", err)
+			}
+		})
 	}
 }

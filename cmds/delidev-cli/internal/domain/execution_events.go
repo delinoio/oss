@@ -100,7 +100,7 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 	}
 	switch configuration.Harness {
 	case Codex:
-		if o.OpenCodeAgent != "" || o.ClaudePermission != "" || configuration.Options.ClaudePermission != "" || !slices.Contains([]PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, o.Permission) || !slices.Contains([]string{"untrusted", "on-request", "never"}, o.ApprovalPolicy) {
+		if o.OpenCodeAgent != "" || o.ClaudePermission != "" || configuration.Options.ClaudePermission != "" || !slices.Contains([]PermissionMode{PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, o.Permission) || Text(o.ApprovalPolicy, "observed approval policy", 256, true) != nil {
 			return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
 		}
 	case ClaudeCode:
@@ -119,8 +119,8 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 		if err != nil {
 			return err
 		}
-		if !o.OpenCodeAgent.Valid() || o.ClaudePermission != "" || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || o.Effort != nil || o.ServiceTier != nil || configuration.Effort != "" || configuration.Options.ServiceTier != "" {
-			return Fail(Unsupported, "The observed OpenCode settings contain an unsupported native policy.", "Preserve native primary-agent observations without invented sandbox, effort, approval or service-tier settings.")
+		if !o.OpenCodeAgent.Valid() || o.ClaudePermission != "" || o.Permission != PermissionDefault || o.ApprovalPolicy != "" || (configuration.Effort == "" && o.Effort != nil) || o.ServiceTier != nil || configuration.Options.ServiceTier != "" {
+			return Fail(Unsupported, "The observed OpenCode settings contain an unsupported native policy.", "Preserve native primary-agent permissions and independently verified effort without invented sandbox, approval or service-tier settings.")
 		}
 		if o.OpenCodeAgent != agent {
 			return Fail(RecoveryRequired, "The native OpenCode primary agent changed.", "Reconcile the original selection and input mode before sending input.")
@@ -164,13 +164,14 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 }
 
 type ExecutionMessageUpdate struct {
-	ID             ID            `json:"id"`
-	NativeID       string        `json:"native_id"`
-	NativeParentID string        `json:"native_parent_id,omitempty"`
-	Role           MessageRole   `json:"role"`
-	Phase          *MessagePhase `json:"phase,omitempty"`
-	InputID        ID            `json:"input_id,omitempty"`
-	Text           string        `json:"text"`
+	Attachments    []ImageAttachment `json:"attachments,omitempty"`
+	ID             ID                `json:"id"`
+	NativeID       string            `json:"native_id"`
+	NativeParentID string            `json:"native_parent_id,omitempty"`
+	Role           MessageRole       `json:"role"`
+	Phase          *MessagePhase     `json:"phase,omitempty"`
+	InputID        ID                `json:"input_id,omitempty"`
+	Text           string            `json:"text"`
 }
 
 // ExecutionEvent is a closed normalized Worker publication, not a native wire
@@ -387,6 +388,9 @@ func (e ExecutionEvent) Validate() error {
 		if err := Text(m.Text, "native message text", MaxMessageText, false); err != nil {
 			return err
 		}
+		if ValidateImageAttachments(m.Attachments) != nil || len(m.Attachments) > 0 && m.Role != UserMessage {
+			return InvalidImageInput()
+		}
 		if m.Role != UserMessage && m.Role != AssistantMessage {
 			return Fail(Unsupported, "Unknown message role.", "Use a supported native message adapter.")
 		}
@@ -519,6 +523,7 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
+	Attachments        []ImageAttachment          `json:"attachments,omitempty"`
 	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
 	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`
 	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`

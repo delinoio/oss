@@ -15,6 +15,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 )
 
@@ -25,6 +26,8 @@ import (
 // selected-account readiness. Root comes from independent Worker Git /
 // General Chat workspace inspection, never from a native message's own path.
 type apiSessionConfig struct {
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
 	Probe        ProbeConfig                               `json:"-"`
 	Workspace    string                                    `json:"-"`
 	Root         WorkspaceRoot                             `json:"-"`
@@ -59,14 +62,12 @@ func directoryContains(parent, child string) bool {
 }
 
 func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, error) {
-	if config.Probe.Version != SupportedVersion {
-		return nil, nil, incompatible()
-	}
+
 	scope, err := config.workspaceRoot()
 	if err != nil {
 		return nil, nil, err
 	}
-	if config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) {
+	if config.Probe.Version != "" && !domain.ValidNativeVersionMetadata(config.Probe.Version) || config.Probe.Process.OwnerID.Validate() != nil || !filepath.IsAbs(config.Probe.Process.Executable) || config.Claim == nil || !apiproxy.ValidToken(config.Token) {
 		return nil, nil, sessionInvalid()
 	}
 	// Only the two native primary profiles have effective-policy evidence.
@@ -149,6 +150,7 @@ func prepareAPISession(config apiSessionConfig) ([]string, *nativeAPIProfile, er
 	if err := profile.writeReferences(root, config.Workspace); err != nil {
 		return nil, nil, err
 	}
+	env = config.OrdinaryTools.Apply(env)
 	return env, profile, nil
 }
 

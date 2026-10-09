@@ -5,13 +5,17 @@ import (
 	"container/list"
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/knownmodels"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/updates"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/userservice"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -21,18 +25,30 @@ import (
 const DefaultListen = "127.0.0.1:46310"
 
 type Config struct {
-	releaseVerifier           func([]byte, string, time.Time) (updates.Verified, error)
-	releaseFactory            func() (releaseClient, error)
-	userServiceBackend        userservice.Backend
-	StartupID                 domain.ID
-	DataDir                   string
-	Listen                    string
-	TLSCertificate            string
-	TLSKey                    string
-	AllowedOrigins            []string
-	Logger                    *slog.Logger
-	accountSecrets            accountSecrets
-	disableCatalogMaintenance bool
+	// Desktop hosts supply their already-bound listener and keep discovery
+	// separate from ordinary CLI/service endpoints.
+	Desktop *desktopruntime.Target
+	// In-process access only; never mounted as an HTTP or Connect endpoint.
+	DesktopCredentials *DesktopCredentialAccess
+	Listener           net.Listener
+	releaseVerifier    func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory     func() (releaseClient, error)
+	userServiceBackend userservice.Backend
+	StartupID          domain.ID
+	DataDir            string
+	Listen             string
+	TLSCertificate     string
+	TLSKey             string
+	AllowedOrigins     []string
+	Logger             *slog.Logger
+	// DisableBackgroundMaintenanceForTesting prevents isolated external test
+	// fixtures from contacting the official catalog endpoints. Production
+	// startup leaves this false so maintenance remains enabled.
+	DisableBackgroundMaintenanceForTesting bool
+
+	accountSecrets               accountSecrets
+	disableCatalogMaintenance    bool
+	disableKnownModelMaintenance bool
 }
 
 type Endpoint struct {
@@ -46,8 +62,15 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
-	releaseVerifier func([]byte, string, time.Time) (updates.Verified, error)
-	releaseFactory  func() (releaseClient, error)
+	delidevv1connect.UnimplementedAttachmentServiceHandler
+	imageTransfersMu      sync.Mutex
+	imageTransferReaders  map[domain.ID]*imageTransferReader
+	skillPreparationsOnce sync.Once
+	skillPreparationsWake chan struct{}
+	knownModelsOnce       sync.Once
+	knownModels           *knownmodels.Manager
+	releaseVerifier       func([]byte, string, time.Time) (updates.Verified, error)
+	releaseFactory        func() (releaseClient, error)
 	delidevv1connect.UnimplementedInstallationServiceHandler
 	delidevv1connect.UnimplementedWorkspaceStorageServiceHandler
 	userServiceOptions userservice.ServerOptions
@@ -68,25 +91,36 @@ type Service struct {
 	integrationOnce               sync.Once
 	integrationGate               chan struct{}
 	integrationChecks             map[domain.ID]*integrationCheck
+	integrationPreviews           map[domain.ID]*integrationCheck
 	integrationSecrets            integrationSecrets
 	ownedPAT                      *credentials.PATStore
 	github                        githubIdentity
-	githubAccess                  githubRepositoryAccess
 	githubQueries                 githubRepositoryQueries
+	githubRepositories            githubRepositoryInventory
 	terminalOutputMu              sync.Mutex
 	terminalOutputs               map[domain.ID]*terminalOutputRing
 	terminalOutputOrder           list.List
 	prFixRequests                 prFixRequestTracker
 	subscriptionOpen              serverSubscriptionOpener
+	quotaOpen                     serverQuotaOpener
 	subscriptionCallbackTransport http.RoundTripper
 	subscriptionOnce              sync.Once
 	subscriptionEpoch             domain.ID
 	subscriptionProgress          map[domain.ID]subscriptionProgress
+	claudeLoginCodes              map[domain.ID][]byte
 	accountOnce                   sync.Once
 	accountGate                   chan struct{}
 	oauthGeneration               domain.ID
 	oauthLive                     map[domain.ID]*oauthLive
+	oauthRegistrations            map[domain.ProviderPresetID]providers.OAuthRegistration
+	oauthDeviceJobs               sync.WaitGroup
+	oauthClosing                  bool
+	oauthDeviceClient             oauthDeviceClient
+	oauthTokenClient              oauthTokenClient
+	oauthRefreshMu                sync.Mutex
+	oauthRefreshes                map[domain.ID]chan struct{}
 	oauthExchange                 oauthExchange
+	credentialRuntimeCheck        func(context.Context) error
 	accountChecks                 map[domain.ID]map[domain.ID]accountCheck
 	accountSecrets                accountSecrets
 	ownedVault                    *credentials.Vault

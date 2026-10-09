@@ -185,7 +185,7 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 		return nil, err
 	}
 	fields, err := shape(raw, []string{"id", "parentID", "slug", "projectID", "directory", "cost", "tokens", "title", "version", "time", "permission"}, []string{"path", "agent", "model", "metadata", "summary"})
-	if err != nil || !scalar(fields["id"], id) || !scalar(fields["parentID"], s.creation.identity.id) || !scalar(fields["directory"], s.cwd) || !scalar(fields["projectID"], s.creation.identity.project) || !scalar(fields["version"], SupportedVersion) || !validateCounters(fields["tokens"]) || !nonnegativeDecimal(fields["cost"]) {
+	if err != nil || !scalar(fields["id"], id) || !scalar(fields["parentID"], s.creation.identity.id) || !scalar(fields["directory"], s.cwd) || !scalar(fields["projectID"], s.creation.identity.project) || !nativeVersion(fields["version"]) || !validateCounters(fields["tokens"]) || !nonnegativeDecimal(fields["cost"]) {
 		return nil, observerProblem()
 	}
 	phase = "creation-time"
@@ -311,16 +311,8 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 					return nil, observerProblem()
 				}
 				observedModel = a.Model
-				completed = a.Completed != nil && a.Finish != nil && (*a.Finish == FinishStop || *a.Finish == FinishLength)
 				value.Status = domain.SubagentRunning
-				if a.Error != nil {
-					value.Status = domain.SubagentFailed
-					if a.Error.Kind == AbortedErrorKind && s.observer.stop != nil {
-						value.Status = domain.SubagentInterrupted
-					}
-				} else if completed {
-					value.Status = domain.SubagentCompleted
-				}
+				var decodedParts []NativePart
 				for _, rawPart := range parts {
 					phase = "child-part"
 					part, err := decodeNativePart(rawPart)
@@ -328,6 +320,7 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 						return nil, observerProblem()
 					}
 					seenParts[part.ID] = true
+					decodedParts = append(decodedParts, part)
 					switch part.Kind {
 					case TextPartKind, ReasoningPartKind:
 						if part.Text == nil || part.Text.Timing == nil || part.Text.Synthetic != nil || part.Text.Ignored != nil {
@@ -337,13 +330,23 @@ func (s *sessionAPI) observeForegroundChild(ctx context.Context, child *foregrou
 							value.Output = &domain.SubagentOutput{NativeMessageID: message.ID, Text: part.Text.Text, Partial: true}
 						}
 					case ToolPartKind:
-						if part.Tool == nil || !supportedChildTool(part.Tool.Name) || len(part.Tool.Attachments) > 0 || completed && part.Tool.State != ToolCompleted && part.Tool.State != ToolError {
+						if part.Tool == nil || !supportedChildTool(part.Tool.Name) || len(part.Tool.Attachments) > 0 {
 							return nil, observerProblem()
 						}
 					case StepStartPartKind, StepFinishPartKind, SnapshotPartKind, PatchPartKind:
 					default:
 						return nil, observerProblem()
 					}
+				}
+				settled := childMessageSettled(a, decodedParts)
+				completed = settled && a.Finish != nil && (*a.Finish == FinishStop || *a.Finish == FinishLength)
+				if settled && a.Error != nil {
+					value.Status = domain.SubagentFailed
+					if a.Error.Kind == AbortedErrorKind && s.observer.stop != nil {
+						value.Status = domain.SubagentInterrupted
+					}
+				} else if completed {
+					value.Status = domain.SubagentCompleted
 				}
 				count := func(n uint64) *string { value := strconv.FormatUint(n, 10); return &value }
 				var total *string
@@ -589,4 +592,21 @@ func (a *OwnedAPI) InspectForegroundChildren(ctx context.Context) ([]domain.Suba
 
 func validChildPermissionRule(rule PermissionRule) bool {
 	return domain.Text(rule.Permission, "native permission", 256, true) == nil && domain.Text(rule.Pattern, "native permission pattern", 32768, true) == nil && (rule.Action == PermissionAsk || rule.Action == PermissionAllow || rule.Action == PermissionDeny)
+}
+
+// Native terminal metadata cannot settle a child whose message parts remain
+// open. Unfinished aborts use the separate original verified Stop/scope proof.
+func childMessageSettled(a *NativeAssistantMessage, parts []NativePart) bool {
+	if a.Completed == nil {
+		return false
+	}
+	for _, part := range parts {
+		if part.Text != nil && (part.Text.Timing == nil || part.Text.Timing.End == nil) {
+			return false
+		}
+		if part.Tool != nil && part.Tool.State != ToolCompleted && part.Tool.State != ToolError {
+			return false
+		}
+	}
+	return true
 }

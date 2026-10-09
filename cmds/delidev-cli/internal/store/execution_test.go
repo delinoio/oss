@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -369,4 +370,193 @@ func TestContradictoryRoutingOwnersRequireRecovery(t *testing.T) {
 	session, input := f.session(t, domain.DispatchReady)
 	_, err = f.claim(domain.NewID(), session, input)
 	assertCode(t, err, domain.RecoveryRequired)
+}
+
+func TestSourceRoutingFirstClaimRecoveryAndHistory(t *testing.T) {
+	s, _ := openTest(t)
+	f := newExecutionFixture(t, s)
+	ctx := context.Background()
+	subID, subModel := domain.NewID(), domain.NewID()
+	_, err := s.Mutate(ctx, domain.NewID(), "fixture.source-worker", f.agent, func(tx *Tx) (any, error) {
+		if _, err := tx.Put(domain.AccountKind, subID, 0, "", "", domain.Account{Alias: "Subscription", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountReady, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("0", 64)}, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}}); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.ModelKind, subModel, 0, "", "", domain.Model{Name: "Subscription", NativeID: "subscription-native", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.Unknown}); err != nil {
+			return nil, err
+		}
+		record, agent, err := decodeEntity[domain.Agent](tx, domain.AgentKind, f.agent)
+		if err != nil {
+			return nil, err
+		}
+		priority := domain.Priority
+		agent.Routes = []domain.AgentSourceRoute{{ModelID: subModel, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, {ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: agent.Routing}}
+		agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
+		agent.Options.Permission = domain.PermissionWorkspaceWrite
+		for _, id := range f.accounts {
+			record, account, err := decodeEntity[domain.Account](tx, domain.AccountKind, id)
+			if err != nil {
+				return nil, err
+			}
+			account.Validation = &domain.AccountValidation{RequestID: domain.NewID(), ConnectionID: account.Connection.ID, ObservedAt: time.Now().UTC(), State: domain.Observed, Authentication: domain.KeylessEndpoint}
+			if _, err := tx.Put(record.Kind, record.ID, record.Revision, "", "", account); err != nil {
+				return nil, err
+			}
+		}
+		return tx.Put(record.Kind, record.ID, record.Revision, "", "", agent)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstSession domain.ID
+	claim := func() domain.Session {
+		t.Helper()
+		session, input := f.session(t, domain.DispatchReady)
+		if firstSession == "" {
+			firstSession = session
+		}
+		if _, err := f.claim(domain.NewID(), session, input); err != nil {
+			t.Fatal(err)
+		}
+		return readExecutionSession(t, s, session)
+	}
+	first := claim()
+	if first.InitialExecution.InitialAccountID != subID || first.InitialExecution.Configuration.ModelID != subModel || len(first.InitialExecution.Route.Sources) != 2 {
+		t.Fatalf("subscription: %+v", first.InitialExecution)
+	}
+	firstBytes, _ := json.Marshal(first.InitialExecution)
+	setExhausted := func(exhausted bool) {
+		t.Helper()
+		_, err := s.Mutate(ctx, domain.NewID(), "fixture.source-quota", exhausted, func(tx *Tx) (any, error) {
+			record, account, err := decodeEntity[domain.Account](tx, domain.AccountKind, subID)
+			if err != nil {
+				return nil, err
+			}
+			account.ConfirmedExhausted = exhausted
+			return tx.Put(record.Kind, record.ID, record.Revision, "", "", account)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	setExhausted(true)
+	paid := claim()
+	if paid.InitialExecution.Configuration.ModelID != f.model || paid.InitialExecution.Configuration.Subscription || *paid.InitialExecution.Route.SourceIndex != 1 {
+		t.Fatalf("paid route: %+v", paid.InitialExecution)
+	}
+	// Separate sessions share the selected source's durable rotation atomically.
+	pairs := [][2]domain.ID{}
+	for range 2 {
+		session, input := f.session(t, domain.DispatchReady)
+		pairs = append(pairs, [2]domain.ID{session, input})
+	}
+	selections := make(chan domain.ID, 2)
+	var group sync.WaitGroup
+	for _, pair := range pairs {
+		group.Go(func() {
+			if _, err := f.claim(domain.NewID(), pair[0], pair[1]); err != nil {
+				t.Error(err)
+				return
+			}
+			selections <- readExecutionSession(t, s, pair[0]).InitialExecution.InitialAccountID
+		})
+	}
+	group.Wait()
+	close(selections)
+	distinct := map[domain.ID]bool{}
+	for id := range selections {
+		distinct[id] = true
+	}
+	if len(distinct) != 2 {
+		t.Fatal("concurrent source claims lost a rotation update")
+	}
+	// A failed final native admission must roll back snapshot and source state.
+	session, input := f.session(t, domain.DispatchReady)
+	var before domain.RoutingState
+	if err := s.Read(ctx, func(tx *Tx) error { _, state, err := tx.Routing(f.agent); before = state; return err }); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Mutate(ctx, domain.NewID(), "fixture.source-claim-rollback", session, func(tx *Tx) (any, error) {
+		if _, err := tx.ClaimInitialExecution(session, 1, input, 1); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("fixture native admission rejected")
+	})
+	if err == nil || readExecutionSession(t, s, session).InitialExecution != nil {
+		t.Fatal("failed claim retained a snapshot")
+	}
+	if err := s.Read(ctx, func(tx *Tx) error {
+		_, after, err := tx.Routing(f.agent)
+		left, _ := json.Marshal(before)
+		right, _ := json.Marshal(after)
+		if string(left) != string(right) {
+			t.Error("failed claim advanced routing")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	setExhausted(false)
+	recovered := claim()
+	if recovered.InitialExecution.InitialAccountID != subID {
+		t.Fatal("recovery did not prefer subscription")
+	}
+	retained := readExecutionSession(t, s, firstSession)
+	retainedBytes, _ := json.Marshal(retained.InitialExecution)
+	if string(firstBytes) != string(retainedBytes) {
+		t.Fatal("new selection rewrote the existing snapshot")
+	}
+	// The projection sent to the Worker contains only the selected source.
+	if len(paid.InitialExecution.Configuration.Accounts) != len(f.accounts) || len(first.InitialExecution.Configuration.Accounts) != 1 {
+		t.Fatal("source chain leaked into execution configuration")
+	}
+}
+
+func TestSourceRoutingAdmitsEveryCodexSubscriptionPermission(t *testing.T) {
+	for _, permission := range []domain.PermissionMode{domain.PermissionDefault, domain.PermissionReadOnly, domain.PermissionWorkspaceWrite, domain.PermissionFullAccess} {
+		t.Run(string(permission), func(t *testing.T) {
+			s, _ := openTest(t)
+			f := newExecutionFixture(t, s)
+			subID, subModel := domain.NewID(), domain.NewID()
+			_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.source-worker-permission", f.agent, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.AccountKind, subID, 0, "", "", domain.Account{Alias: "Subscription", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountReady, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("0", 64)}, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}}); err != nil {
+					return nil, err
+				}
+				if _, err := tx.Put(domain.ModelKind, subModel, 0, "", "", domain.Model{Name: "Subscription", NativeID: "subscription-native", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.Unknown}); err != nil {
+					return nil, err
+				}
+				record, agent, err := decodeEntity[domain.Agent](tx, domain.AgentKind, f.agent)
+				if err != nil {
+					return nil, err
+				}
+				priority := domain.Priority
+				agent.Routes = []domain.AgentSourceRoute{{ModelID: subModel, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, {ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: agent.Routing}}
+				agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
+				agent.Options.Permission = permission
+				for _, id := range f.accounts {
+					accountRecord, account, err := decodeEntity[domain.Account](tx, domain.AccountKind, id)
+					if err != nil {
+						return nil, err
+					}
+					account.Validation = &domain.AccountValidation{RequestID: domain.NewID(), ConnectionID: account.Connection.ID, ObservedAt: time.Now().UTC(), State: domain.Observed, Authentication: domain.KeylessEndpoint}
+					if _, err := tx.Put(accountRecord.Kind, accountRecord.ID, accountRecord.Revision, "", "", account); err != nil {
+						return nil, err
+					}
+				}
+				return tx.Put(record.Kind, record.ID, record.Revision, "", "", agent)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			session, input := f.session(t, domain.DispatchReady)
+			if _, err := f.claim(domain.NewID(), session, input); err != nil {
+				t.Fatalf("ordered subscription source rejected %s: %v", permission, err)
+			}
+			accepted := readExecutionSession(t, s, session).InitialExecution
+			if accepted == nil || accepted.Configuration.ModelID != subModel || !accepted.Configuration.Subscription || accepted.Configuration.Options.Permission != permission {
+				t.Fatalf("ordered subscription route changed the selected profile: %+v", accepted)
+			}
+		})
+	}
 }

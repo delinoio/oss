@@ -158,7 +158,7 @@ func TestFeedbackRejectsChangedEditedPartialAndForeignInventory(t *testing.T) {
 						row["state"] = "DISMISSED"
 					}
 				case "foreign-head":
-					node["headRefOid"] = accessSHA
+					node["headRefOid"] = repositorySHA
 				case "foreign-item":
 					row["pullRequest"] = map[string]any{"id": "OTHER"}
 				case "null-node":

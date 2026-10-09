@@ -213,6 +213,11 @@ func (h *HostDriver) Prepare(ctx context.Context, c Config, p Pool, r Runner, s 
 }
 func hostReadStatus(root *os.Root, d HostDirectory) (HostExecutionStatus, error) {
 	var status HostExecutionStatus
+	// Only confirmed absence before the first publication permits a startup
+	// retry. The private reader deliberately rejects every unsafe existing file.
+	if _, err := root.Lstat("status.json"); os.IsNotExist(err) {
+		return status, os.ErrNotExist
+	}
 	b, err := hostRootRead(root, "status.json", 8192)
 	if err != nil || json.Unmarshal(b, &status) != nil || status.ID != d.ID || status.Token != d.Token {
 		return status, hostOwnership()
@@ -260,10 +265,22 @@ func (h *HostDriver) observe(ctx context.Context, c Config, r Runner, s Snapshot
 		return obs, status, nil
 	}
 	status, err = hostReadStatus(root, *d)
+	if os.IsNotExist(err) {
+		if execution.LaunchPending && execution.Worker.PID == 0 {
+			return obs, status, hostPending()
+		}
+		return obs, status, hostOwnership()
+	}
 	if err != nil {
-		return obs, status, hostPending()
+		return obs, status, err
 	}
 	if execution.Supervisor.PID > 0 && !sameHostProcess(execution.Supervisor, status.Supervisor) {
+		return obs, status, hostOwnership()
+	}
+	// Terminal status cannot erase a worker already recorded in durable state.
+	// Check before the status PID gate so missing identity retains ownership,
+	// reservations and the workspace without signaling uncertain processes.
+	if execution.Worker.PID > 0 && !sameHostProcess(execution.Worker, status.Worker) {
 		return obs, status, hostOwnership()
 	}
 	alive, err := h.native().Alive(status.Supervisor)
@@ -271,9 +288,6 @@ func (h *HostDriver) observe(ctx context.Context, c Config, r Runner, s Snapshot
 		return obs, status, hostPending()
 	}
 	if status.Worker.PID > 0 {
-		if execution.Worker.PID > 0 && !sameHostProcess(execution.Worker, status.Worker) {
-			return obs, status, hostOwnership()
-		}
 		members, e := h.native().Group(status.Worker)
 		if e != nil {
 			return obs, status, hostPending()

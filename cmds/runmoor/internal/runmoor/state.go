@@ -248,7 +248,7 @@ func OpenStore(c Config) (*Store, error) {
 	}
 	// Rebind copied distribution identities only under the exclusive manager lock
 	// at a completed stop or explicit storage relocation. Live restart never does.
-	if len(s.state.HostDirectories) > 0 && (relocated || s.state.Stopping) && hostRestoreBoundary(s.state) {
+	if len(s.state.HostDirectories) > 0 && (relocated || s.state.Stopping) && hostRestoreBoundary(s.state, c) {
 		if err := rebindHostDistributions(context.Background(), s, c); err != nil {
 			db.Close()
 			return fail(err)
@@ -309,6 +309,7 @@ func (s *Store) Prune(now time.Time) error {
 		for id, r := range v.Runners {
 			if r.Phase == Completed && !r.CompletedAt.IsZero() && now.Sub(r.CompletedAt) > 7*24*time.Hour {
 				delete(v.Runners, id)
+				delete(v.RunnerQuarantines, id)
 				delete(v.RunnerTartStarts, id)
 				delete(v.HostExecutions, id)
 			}

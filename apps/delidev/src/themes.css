@@ -2,6 +2,14 @@
 /* Shared semantic colors. OS fallback also covers the first paint before IPC. */
 :root {
   color-scheme: light;
+  --terminal-background: #14191f;
+  --terminal-foreground: #e5e9f0;
+  --terminal-border: #8b99ad;
+  --terminal-muted: #b1bac5;
+  --terminal-selection: #344459;
+  --terminal-scrollbar: #596575;
+  --terminal-scrollbar-hover: #758296;
+  --terminal-scrollbar-active: #8b99ad;
   --background: #f8f9fb;
   --surface: #ffffff;
   --surface-subtle: #fafbfc;
@@ -36,16 +44,25 @@
   --danger-text: #b42332;
   --danger-border: #d9a5ab;
   --success-text: #246547;
+  --execution-running: #087b78;
   --conversation-background: #f7f6f2;
   --conversation-text: #483519;
   --conversation-border: #d7d9d5;
   --shadow-subtle: #2026320a;
   --shadow-soft: #2026321a;
   --shadow: #20263233;
-  --backdrop: #16243b66;
+  --backdrop: #00000000;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --terminal-background: #14191f;
+  --terminal-foreground: #e5e9f0;
+  --terminal-border: #8b99ad;
+  --terminal-muted: #b1bac5;
+  --terminal-selection: #344459;
+  --terminal-scrollbar: #596575;
+  --terminal-scrollbar-hover: #758296;
+  --terminal-scrollbar-active: #8b99ad;
   --background: #14181f;
   --surface: #1b212b;
   --surface-subtle: #181e27;
@@ -80,17 +97,26 @@
   --danger-text: #ffb6bf;
   --danger-border: #a7777e;
   --success-text: #9ed9b7;
+  --execution-running: #72d9ce;
   --conversation-background: #24251f;
   --conversation-text: #ded2ba;
   --conversation-border: #515447;
   --shadow-subtle: #0000001a;
   --shadow-soft: #00000033;
   --shadow: #00000066;
-  --backdrop: #00000099;
+  --backdrop: #00000000;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
+    --terminal-background: #14191f;
+    --terminal-foreground: #e5e9f0;
+    --terminal-border: #8b99ad;
+    --terminal-muted: #b1bac5;
+    --terminal-selection: #344459;
+    --terminal-scrollbar: #596575;
+    --terminal-scrollbar-hover: #758296;
+    --terminal-scrollbar-active: #8b99ad;
     --background: #14181f;
     --surface: #1b212b;
     --surface-subtle: #181e27;
@@ -125,13 +151,14 @@
     --danger-text: #ffb6bf;
     --danger-border: #a7777e;
     --success-text: #9ed9b7;
+  --execution-running: #72d9ce;
     --conversation-background: #24251f;
     --conversation-text: #ded2ba;
     --conversation-border: #515447;
     --shadow-subtle: #0000001a;
     --shadow-soft: #00000033;
     --shadow: #00000066;
-    --backdrop: #00000099;
+    --backdrop: #00000000;
   }
 }
 

@@ -1,0 +1,20 @@
+{
+  "backup-job.backup_181f9b": "Backup <s0/>",
+  "backup-job.failed_5d28a9": "failed",
+  "backup-job.pending_62a2fe": "pending",
+  "backup-job.statusUnavailable_180119": "status unavailable",
+  "backup-job.operationNeedsAttention_bfbf09": "Operation needs attention: <s0/>",
+  "backup-job.theLastObservationIsStaleCurrent_4263e8": "The last observation is stale; current job status is unavailable.",
+  "backup-job.dismissTracking_12e6bb": "Dismiss tracking",
+  "backup-job.backupTracking": "Backup {{v0}}",
+  "backup-job.dismissBackup": "Dismiss backup {{v0}} tracking",
+  "backup-job.creationTracking": "Backup {{v0}} creation",
+  "backup-job.deletionTracking": "Backup {{v0}} deletion",
+  "backup-job.dismissCreation": "Dismiss backup {{v0}} creation tracking",
+  "backup-job.dismissDeletion": "Dismiss backup {{v0}} deletion tracking",
+  "backup-job.readHelp": "The original backup job could not be read. Use Retry original status read here; this observes the same job and does not repeat creation or deletion.",
+  "backup-job.failedHelp": "This creation attempt failed and cannot be replayed by observation. Check storage space and write permissions on the original server; create a new backup explicitly when ready.",
+  "backup-job.cleanupHelp": "The original cleanup is unsettled. Check storage access on the original server, then reread this same job here. Do not submit a replacement deletion or infer removal from resource absence.",
+  "backup-job.mismatchHelp": "The returned status does not match the original backup job. Retry its original status read here. Creation, removal and cleanup remain unconfirmed.",
+  "backup-job.recheckOriginal": "Recheck original backup job"
+}

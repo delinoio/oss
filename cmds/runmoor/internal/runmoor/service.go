@@ -179,7 +179,56 @@ func requireSystemdActiveIdentity(ctx context.Context, exec CommandExecutor, def
 }
 
 func Service(ctx context.Context, action, path string, c Config, exec CommandExecutor) error {
+	return serviceWithManagerAdapter(ctx, action, path, c, exec, newServiceReloader(os.Stderr))
+}
+
+func serviceWithManagerAdapter(ctx context.Context, action, path string, c Config, exec CommandExecutor, admission *serviceReloader) error {
 	unit := servicePath()
+	pending, pendingErr := readUninstallJournal(unit)
+	if pendingErr != nil {
+		return pendingErr
+	}
+	if pending != nil {
+		if action != "uninstall" || requireUninstallConfig(pending, runtime.GOOS, path) != nil {
+			return uninstallFailure()
+		}
+	} else if action == "install" {
+		if err := os.MkdirAll(filepath.Dir(unit), 0700); err != nil {
+			return err
+		}
+	} else if action == "start" || action == "stop" || action == "uninstall" {
+		// Validate before creating the serialization lock or contacting the OS.
+		if err := requireServiceConfigMatch(runtime.GOOS, unit, path); err != nil {
+			return err
+		}
+	} else {
+		return problem(ErrConfig, "Unknown service action.", "Use service install, start, stop or uninstall.")
+	}
+	lock, err := lockServiceOperation(unit)
+	if err != nil {
+		return err
+	}
+	defer unlockState(lock)
+	// Re-read under admission ownership: an interrupted claim may leave the
+	// canonical definition vacant, so recovery must precede normal parsing.
+	pending, pendingErr = readUninstallJournal(unit)
+	if pendingErr != nil {
+		return pendingErr
+	}
+	if pending != nil {
+		if action != "uninstall" || requireUninstallConfig(pending, runtime.GOOS, path) != nil {
+			return uninstallFailure()
+		}
+		if err := (&serviceUninstaller{unit: unit}).resume(pending); err != nil {
+			return err
+		}
+		if runtime.GOOS == "linux" {
+			if _, err := exec.Run(ctx, "systemctl", []string{"--user", "daemon-reload"}, serviceCommandEnv(runtime.GOOS, "systemctl"), nil); err != nil {
+				return uninstallFailure()
+			}
+		}
+		return nil
+	}
 	uid := strconv.Itoa(os.Getuid())
 	domain := "gui/" + uid
 	var definitionSnapshot *serviceDefinitionSnapshot
@@ -226,49 +275,9 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 		}
 		return nil
 	case "start":
-		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-			snapshot, e := validateServiceConfigMatch(runtime.GOOS, unit, path)
-			if e != nil {
-				return e
-			}
-			definitionSnapshot = &snapshot
-		} else if _, e := readPrivate(unit, 64<<10); e != nil {
-			return e
-		}
-		if runtime.GOOS == "darwin" {
-			if _, e := exec.Run(ctx, "launchctl", []string{"print", domain + "/" + serviceLabel}, minimalEnv(), nil); e == nil {
-				// launchctl caches a job's arguments when it is bootstrapped, and
-				// `print` output is not a stable interface for verifying them. Remove
-				// the loaded job, then bootstrap the securely validated on-disk plist.
-				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-					return e
-				}
-				if e := run("launchctl", "bootout", domain, unit); e != nil {
-					return e
-				}
-			}
-			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-				return e
-			}
-			return run("launchctl", "bootstrap", domain, unit)
-		}
-		if runtime.GOOS == "linux" {
-			// Check the running process before daemon-reload: a changed on-disk
-			// unit must not replace ExecStop for a still-running old invocation.
-			if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-				return e
-			}
-			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-				return e
-			}
-			if e := run("systemctl", "--user", "daemon-reload"); e != nil {
-				return e
-			}
-			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-				return e
-			}
-		}
-		return run("systemctl", "--user", "enable", "--now", systemdServiceName)
+		reloader := newServiceReloader(os.Stderr)
+		reloader.Exec = exec
+		return reloader.start(ctx, path, c)
 	case "stop", "uninstall":
 		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 			snapshot, e := validateServiceConfigMatch(runtime.GOOS, unit, path)
@@ -277,39 +286,27 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			}
 			definitionSnapshot = &snapshot
 		}
-		if runtime.GOOS == "linux" {
-			// Reject a stale active manager before sending drain control to the
-			// requested configuration or opening its offline state.
-			if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-				return e
-			}
-		} else if runtime.GOOS == "darwin" {
-			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-				return e
-			}
+		admission.Exec = exec
+		manager, e := admission.admitServiceManager(ctx, definitionSnapshot.data)
+		if e != nil {
+			return e
 		}
-		if _, e := SendControl(ctx, c, ControlRequest{Action: "stop"}); e == nil {
-			if e = waitStopped(ctx, c, ""); e != nil {
-				return e
-			}
-		} else {
-			store, se := OpenStore(c)
-			if se != nil {
-				return e
-			}
-			s := store.View()
-			store.Close()
-			if !allTerminated(s) {
-				return problem(ErrControl, "Service is unreachable while owned executions may still be active.", "Restart the manager to reconcile and drain before removing the service.")
-			}
+		admission.Control = func(ctx context.Context, c Config, req ControlRequest, pid int) (ControlResponse, int, error) {
+			return sendControlIdentity(ctx, c, req, pid, manager.start, true)
+		}
+		if e = admission.drainServiceManager(ctx, c, manager); e != nil {
+			return e
 		}
 		if definitionSnapshot != nil {
 			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 				return e
 			}
 		}
+		if e := admission.checkServiceManager(ctx, manager); e != nil {
+			return e
+		}
 		if runtime.GOOS == "darwin" {
-			if e := requireLaunchdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
+			if e := admission.checkServiceManager(ctx, manager); e != nil {
 				return e
 			}
 			if e := unloadLaunchd(ctx, domain, unit, exec); e != nil {
@@ -321,9 +318,6 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 			// cached ExecStop from the validated on-disk snapshot before --now
 			// can stop the unit, then verify that snapshot remained unchanged.
 			if runtime.GOOS == "linux" {
-				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-					return e
-				}
 				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 					return e
 				}
@@ -333,23 +327,25 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
 					return e
 				}
-				if e := requireSystemdActiveIdentity(ctx, exec, definitionSnapshot.data); e != nil {
-					return e
-				}
+			}
+			if e := admission.checkServiceManager(ctx, manager); e != nil {
+				return e
 			}
 			if e := run("systemctl", "--user", "disable", "--now", systemdServiceName); e != nil {
 				return e
 			}
 		}
 		if action == "uninstall" {
-			if definitionSnapshot != nil {
-				if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
-					return e
-				}
-			} else if _, e := readPrivate(unit, 64<<10); e != nil {
+			if e := admission.checkServiceManager(ctx, manager); e != nil {
 				return e
 			}
-			if e := os.Remove(unit); e != nil {
+			if definitionSnapshot == nil {
+				return uninstallFailure()
+			}
+			if e := requireServiceDefinitionUnchanged(runtime.GOOS, unit, path, *definitionSnapshot); e != nil {
+				return e
+			}
+			if e := (&serviceUninstaller{unit: unit}).begin(runtime.GOOS, path, *definitionSnapshot); e != nil {
 				return e
 			}
 			if runtime.GOOS == "linux" {
@@ -360,4 +356,67 @@ func Service(ctx context.Context, action, path string, c Config, exec CommandExe
 	default:
 		return problem(ErrConfig, "Unknown service action.", "Use service install, start, stop or uninstall.")
 	}
+}
+
+// The caller holds the service-operation lock through recovery and native Start.
+func (r *serviceReloader) start(ctx context.Context, path string, c Config) error {
+	if j, err := readUninstallJournal(r.Unit); err != nil || j != nil {
+		return uninstallFailure()
+	}
+	var definitionSnapshot *serviceDefinitionSnapshot
+	domain := "gui/" + strconv.Itoa(os.Getuid())
+	run := func(name string, args ...string) error {
+		_, err := r.Exec.Run(ctx, name, args, serviceCommandEnv(r.Platform, name), nil)
+		if err != nil {
+			return problem(ErrDependency, "User service command failed.", "Check the logged-in launchd or systemd user session and run doctor.")
+		}
+		return nil
+	}
+	if r.Platform == "darwin" || r.Platform == "linux" {
+		snapshot, e := validateServiceConfigMatch(r.Platform, r.Unit, path)
+		if e != nil {
+			return e
+		}
+		definitionSnapshot = &snapshot
+	} else if _, e := readPrivate(r.Unit, 64<<10); e != nil {
+		return e
+	}
+	if err := r.retireCompletedStopReload(ctx, path, c); err != nil {
+		r.Log.Warn("service_start_recovery_blocked", "code", ErrControl)
+		return problem(ErrControl, "Cannot safely resume the interrupted service reload.", "Inspect status and the user service. Confirm reload has finished and Stop cleanup is complete, then retry service start with the same installed CLI and configuration. Preserve recovery files and managed data.")
+	}
+	if r.Platform == "darwin" {
+		if _, e := r.Exec.Run(ctx, "launchctl", []string{"print", domain + "/" + serviceLabel}, minimalEnv(), nil); e == nil {
+			// launchctl caches a job's arguments when it is bootstrapped, and
+			// `print` output is not a stable interface for verifying them. Remove
+			// the loaded job, then bootstrap the securely validated on-disk plist.
+			if e := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, *definitionSnapshot); e != nil {
+				return e
+			}
+			if e := run("launchctl", "bootout", domain, r.Unit); e != nil {
+				return e
+			}
+		}
+		if e := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, *definitionSnapshot); e != nil {
+			return e
+		}
+		return run("launchctl", "bootstrap", domain, r.Unit)
+	}
+	if r.Platform == "linux" {
+		// Check the running process before daemon-reload: a changed on-disk
+		// unit must not replace ExecStop for a still-running old invocation.
+		if e := requireSystemdActiveIdentity(ctx, r.Exec, definitionSnapshot.data); e != nil {
+			return e
+		}
+		if e := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, *definitionSnapshot); e != nil {
+			return e
+		}
+		if e := run("systemctl", "--user", "daemon-reload"); e != nil {
+			return e
+		}
+		if e := requireServiceDefinitionUnchanged(r.Platform, r.Unit, path, *definitionSnapshot); e != nil {
+			return e
+		}
+	}
+	return run("systemctl", "--user", "enable", "--now", systemdServiceName)
 }

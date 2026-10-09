@@ -55,14 +55,29 @@ export const attachWorker = WorkerService.method.attachWorker;
 export const reportWork = WorkerService.method.reportWork;
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.DiscoverRepositoryBranches
+ */
+export const discoverRepositoryBranches = WorkerService.method.discoverRepositoryBranches;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.InspectRepository
  */
 export const inspectRepository = WorkerService.method.inspectRepository;
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.CloneRepository
+ */
+export const cloneRepository = WorkerService.method.cloneRepository;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.DiscoverHarnesses
  */
 export const discoverHarnesses = WorkerService.method.discoverHarnesses;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.ReportExecutionStartup
+ */
+export const reportExecutionStartup = WorkerService.method.reportExecutionStartup;
 
 /**
  * @generated from rpc delidev.v1.WorkerService.RegisterExecution

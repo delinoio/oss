@@ -14,6 +14,7 @@ import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { useSettingsFixture } from "./settings-test-fixture";
 const fixture = useSettingsFixture();
+
 it("selects one real exact route after response loss and exports a pending recipient without account/key-store access", async () => {
   const { transport, directory } = fixture;
   const status = await createClient(SystemService, transport).getStatus({});
@@ -42,7 +43,7 @@ it("selects one real exact route after response loss and exports a pending recip
   fireEvent.click(await screen.findByRole("button", { name: "New network profile" }));
   fireEvent.change(screen.getByLabelText("Profile name"), { target: { value: "Integration Direct" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  const option = await screen.findByRole("option", { name: "Integration Direct · Revision 1" });
+  await screen.findByText("Integration Direct", { selector: "h4" });
   const selectButton = screen.getByRole("button", { name: "Select this revision" }) as HTMLButtonElement;
   // New profile rows can arrive before the independent route refetch. Wait for
   // its authoritative read instead of clicking an ancestor-disabled control.
@@ -50,7 +51,9 @@ it("selects one real exact route after response loss and exports a pending recip
   expect(selectButton.closest("fieldset")?.disabled).toBe(true);
   releaseRouteRead();
   await waitFor(() => expect(selectButton.closest("fieldset")?.disabled).toBe(false));
-  fireEvent.change(screen.getByLabelText("Profile to select"), { target: { value: (option as HTMLOptionElement).value } });
+  const profileOption = await screen.findByRole("option", { name: /Integration Direct/ });
+  fireEvent.change(screen.getByRole("combobox", { name: "Profile to select" }), { target: { value: (profileOption as HTMLOptionElement).value } });
+  await waitFor(() => expect(selectButton.closest("fieldset")?.disabled).toBe(false));
   fireEvent.click(selectButton);
   fireEvent.click(await screen.findByRole("button", { name: "Retry original route selection" }));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original route selection" })).toBeNull());
@@ -60,6 +63,7 @@ it("selects one real exact route after response loss and exports a pending recip
   const recipient = { version: 1, authority: { server_id: authority.serverId, endpoint: authority.endpoint, machine_id: newRequestId(), device_id: newRequestId(), pairing_id: grant.pairing!.id }, key_id: newRequestId(), recipient: stdout.trim() };
   const file = Object.assign(new File([JSON.stringify(recipient)], "recipient.json", { type: "application/json" }), { text: async () => JSON.stringify(recipient) });
   fireEvent.change(screen.getByLabelText("Worker public recipient document"), { target: { files: [file] } });
+  fireEvent.click(screen.getByText("Worker configuration transfer", { exact: true }));
   const exportButton = await screen.findByRole("button", { name: "Export current encrypted configuration" });
   await waitFor(() => expect((exportButton as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(exportButton);

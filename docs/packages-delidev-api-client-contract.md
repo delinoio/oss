@@ -1,5 +1,9 @@
 # DeliDev TypeScript client
 
+## Execution startup bindings
+
+The [direct startup contract](cmds-delidev-execution-startup-contract.md) activates the main-reserved System 43, Worker 23 and closed ReportExecutionStartup declarations. Generate Go, TypeScript and Connect Query outputs from the reconciled service schemas. The original Worker reports exact claimed revision/instance metadata; desktop presentation reads existing authenticated session resources. Additive observations do not grant client Worker authority, inference or credential access.
+
 Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAccountOAuth, CancelAccountOAuth and GetAccountOAuthStatus, with exact bigint revisions and closed OAuth state/connection-method enums. Authorization URL exists only in original live Start; status carries metadata only. Completion code is a write-only bounded byte array: use a direct authenticated RPC without query/mutation-cache retention, clear transient buffers, and recover only the original completion identity without code. No client-side retry may repeat an exchange. Preserve all four existing account-flow gates independently of capability 5 under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Request diagnostic client
@@ -65,7 +69,7 @@ The library does not log resource documents, credentials, cursors, exception obj
 ## Build and Test
 - `pnpm --filter @delinoio/delidev-api-client lint`, `test`, and `build` validate types, synchronization/transport fixtures and generated exports.
 - The test command compiles and starts the real Go server in a private temporary scope, exercises binary RPC, coherent snapshots, revision events, idempotent mutation replay, indexed deletion and typed authentication failure, then stops its owned process. It never reads user credentials, invokes inference, or starts a Worker. Go is required; the integration task is uncached.
-- Run root protocol formatting/lint/compatibility and repeat generation without drift. The existing shared protocol CI job runs client validation and is selected by DeliDev command/client inputs. Generated `dist` is an explicit compilation output and is removed from the final worktree.
+- Run root protocol formatting/lint/compatibility and repeat generation without drift. The dedicated `delidev-protocol` CI job runs client validation, DeliDev Go binding tests and desktop tests. DeliDev desktop/command/protocol/client and shared configuration inputs select it; DevHud-only source inputs do not. Shared `pnpm proto:check` retains repository-wide schema checks. Generated `dist` is an explicit compilation output and is removed from the final worktree.
 
 ## Dependencies and Integrations
 Pinned Buf protobuf 2.14.0, Connect/Connect Web 2.1.2 and Connect Query 2.3.1 follow repository versions. React Query integration uses generated service namespaces; no second product transport or client-side routing/eligibility engine is introduced. The Go server and its canonical resource schemas remain authoritative.
@@ -111,7 +115,7 @@ Generated `SessionQuery` includes comment creation/edit/deletion and grouped sub
 
 `IntegrationQuery` exports generated SaveIntegrationProfile, ReplaceIntegrationToken, ValidateIntegrationProfile and DeleteIntegrationProfile descriptors. PATs are bounded write-only fields; no token belongs in query keys, resource documents or read responses. Preserve pending-operation decimal revisions and actor-bound exact request identities under the [integration contract](cmds-delidev-integrations-contract.md).
 
-`IntegrationQuery.inspectRepositoryIntegration` exposes the repository-specific read. Consumers must validate the complete schema-version-1 document, exact repository/revision/profile and canonical feature states before display. Preserve unknown access and previous observations distinctly; no endpoint success constitutes CI/rules/reviewer evidence. Desktop cancels/discards observations on close/inactivation and uses no automatic focus/reconnect retries.
+Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks.
 
 `IntegrationQuery.queryRepositoryIntegration` supplies PR/issue list/search/detail and PR-only immutable diff, latest head Checks and combined commit-status reads. Consumers validate repository/revision/profile, exact requested query, original API identity namespace and complete bounded response. Keep nullable mergeability, independent search incompleteness/count/cap and original pagination semantics. PR observations require exactly one original detail and its exclusive selected family, matching heads, exact IDs/counts and original known/unknown states. Checks/statuses remain separate and cannot imply required CI or evaluated-commit evidence. Inactive content queries are canceled/discarded; no browser-side GitHub fetch or stored PAT is added.
 
@@ -237,3 +241,60 @@ Independent server subscription login exports capability 30, the closed Subscrip
 ## Codex login diagnostic client
 
 Generated subscription progress exposes an optional `CodexDiagnostic` and closed `CodexDiagnosticPhase` enum using main-established allocations. Preserve absent metadata independently from a reported empty detected version. Keep the original operation's progress in its owning Settings lifetime rather than shared query caches. Metadata never permits native replay, callback forwarding or login retries; renderer presentation reconstructs safe text from validated version/phase/code fields.
+
+## Repository addition
+
+System capability 37 permits repository saves/imports with a required credential-free `remote_url` and empty `checkouts`. Clients must verify this gate before sending URL registration or importing the new URL-only repository shape. Legacy checkout-backed repository saves/imports omit `remote_url` and retain the pre-capability contract. The existing save RPC and durable job also cover registration without Worker proof or inspection children. Repository and Project export/import need no machine or path binding when checkouts are empty. Worker capability 19 separately permits managed workspace and independent Fork clones; 31/32 and Worker 18 keep their existing immediate Local Clone and metadata contracts.
+
+Generated `IntegrationQuery.listGitHubRepositories` and
+`WorkerQuery.cloneRepository` retain the main-established declarations and
+independent System 31/32 / Worker 18 capabilities. Listing is an explicit
+revision-bound profile/page read; preserve exact remote IDs, current generation,
+constructed URLs and page-local filtering. The client never receives a saved PAT.
+Clone sends fresh transient local Worker proof and optional selected GitHub
+metadata; its original durable job completes registration server-side. Keep proof
+outside read keys, drafts and persistence. Retain identical uncertain mutation
+bytes only in the disposable dialog registry; close/departure drops that registry
+and guards all late callbacks without canceling accepted business work.
+
+## Agent Worker wizard bindings
+
+Generate ConfigurationQuery.saveAgentWorker, typed model-selection oneof and
+System capability 33 from their canonical schemas. Source-scoped account/model
+queries use the closed service enum and server pagination; keys retain each exact
+source/cursor. Keep original uint64 model/Worker revisions and exact uncertain
+wire requests. The canonical model resource remains an internal identity used by
+existing APIs, Usage and historical snapshots. Configured compatibility and
+catalog results grant no execution readiness. Follow the desktop/catalog contracts.
+
+## Failed subscription cleanup client
+
+The existing cleanup RPC also includes fully disconnected subscription configurations across services. Individual failed initial ChatGPT deletion uses the existing configuration deletion RPC; generated request/response declarations and capability numbers remain unchanged.
+
+Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubscriptionCleanup plus the closed batch state, outcome and reason enums. Capability 41 was reserved on main in PR #1614; preserve Claude 38/Grok 39/40 and their independent support. Exact request UUIDs bind uncertain admission retries; accepted work is read by original job ID, with bigint revisions and fixed 50-result pages. Validate identity, monotonic counts/revision, closed state/outcome/reasons and complete page bounds before accepting status. Metadata-only status may use category-scoped Connect Query; neither generated bindings nor a read grant native/login/callback/deletion authority. See the subscription/Settings contracts.
+
+## Project prompt history client
+
+Generated `ConfigurationQuery` exposes `listProjectPromptHistory` and `clearProjectPromptHistory`, the closed entry type, System capability 48 and entity kind 35. Preserve exact text, bigint acceptance order, actor/project-bound cursors and original confirmed-clear request identity. Reads never restore skill, image or execution authority. Capability absence preserves ordinary composer behavior.
+
+## Repository branch discovery — issue #1859
+
+Generated System 51 and Worker 27 plus `DiscoverRepositoryBranches` independently
+negotiate remote starting-branch metadata. Reuse existing Job resources and
+original revision/request identities. The desktop validates up to 10,000 sorted
+unique branch names in an 8 MiB result using a dedicated bounded 9 MiB Job reader;
+the general 1 MiB document parser remains unchanged. Result identity must match
+original project/repository/selected Worker revisions. Discovery remains advisory;
+session creation uses existing remote starting overrides and ordinary preparation
+validation. Older peers retain saved/manual reference flows.
+
+## Typed large Job document reads
+
+`decodeResourceDocument` owns the shared UTF-8 JSON/schema read boundary. Ordinary
+resources remain bounded to 1 MiB. Only schema-1 Job documents with type
+`compact-session`, or `workspace-storage` with input action `recover`, may use
+their existing 4 MiB Job bound. Unsupported families, invalid UTF-8/JSON and
+oversized documents remain unavailable. This read exception grants no operation
+or native authority. Desktop document/receipt readers and synchronization use
+the same decoder; synchronization retains its existing aggregate memory,
+resource-count, identity/revision and snapshot/event publication bounds.

@@ -1,0 +1,10 @@
+{
+  "agent-worker-row.configuredModel": "Configured model",
+  "agent-worker-row.configuredModels": "Configured models in saved order",
+  "agent-worker-row.moreModels": "+{{count}} more",
+  "agent-worker-row.loadingModel": "Loading model…",
+  "agent-worker-row.unavailableModel": "Model unavailable",
+  "agent-worker-row.accountCount_one": "{{count}} account",
+  "agent-worker-row.accountCount_other": "{{count}} accounts",
+  "agent-worker-row.accountCountUnavailable": "Account count unavailable"
+}

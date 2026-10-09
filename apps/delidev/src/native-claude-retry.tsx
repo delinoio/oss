@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object } from "./documents";
 
 const errors = new Set(["authentication_failed", "oauth_org_not_allowed", "account_on_hold", "billing_error", "rate_limit", "overloaded", "invalid_request", "model_not_found", "server_error", "unknown", "max_output_tokens"]);
@@ -10,13 +11,14 @@ export function validClaudeAPIRetry(value: unknown) {
 }
 
 export function NativeClaudeAPIRetry({ value }: { value: unknown }) {
-  if (!validClaudeAPIRetry(value)) return <p>The retained Claude retry is unavailable or inconsistent.</p>;
+  useLocale();
+  if (!validClaudeAPIRetry(value)) return <p>{copy("native-claude-retry.theRetainedClaudeRetryIsUnavailable_6f0bde")}</p>;
   const r = object(value);
   return <><dl>
-    <dt>Native retry attempt</dt><dd>{r.attempt as string}</dd>
-    <dt>Native maximum retries</dt><dd>{r.max_retries as string}</dd>
-    <dt>Reported retry delay (ms)</dt><dd>{r.retry_delay_ms as string}</dd>
-    <dt>Reported error</dt><dd>{r.error as string}</dd>
-    <dt>HTTP status</dt><dd>{r.error_status === null ? "Not reported" : String(r.error_status)}</dd>
-  </dl><p>This records Claude’s retry observation. It does not confirm another request, input acceptance, completion or billed usage.</p></>;
+    <dt>{copy("native-claude-retry.nativeRetryAttempt_a0b7b9")}</dt><dd>{r.attempt as string}</dd>
+    <dt>{copy("native-claude-retry.nativeMaximumRetries_617637")}</dt><dd>{r.max_retries as string}</dd>
+    <dt>{copy("native-claude-retry.reportedRetryDelayMs_951c2b")}</dt><dd>{r.retry_delay_ms as string}</dd>
+    <dt>{copy("native-claude-retry.reportedError_1f1a98")}</dt><dd>{r.error as string}</dd>
+    <dt>{copy("native-claude-retry.httpStatus_0f7cf9")}</dt><dd>{r.error_status === null ? copy("native-claude-retry.notReported_adadfa") : String(r.error_status)}</dd>
+  </dl><p>{copy("native-claude-retry.thisRecordsClaudeSRetryObservation_e4c795")}</p></>;
 }

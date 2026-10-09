@@ -13,6 +13,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
 const forkThread threadMethod = "thread/fork"
@@ -22,10 +23,15 @@ const maxForkRollout = 64 << 20
 // ForkSource is in-memory evidence from the exact original Worker runtime.
 // Its private path is never supplied by a product client or serialized publicly.
 type ForkSource struct {
-	home, path string
-	checkpoint ContinuationCheckpoint
-	fileDigest [sha256.Size]byte
-	turns      []json.RawMessage
+	imageRoot    string
+	imageMachine domain.ID
+	packageHome  string
+	packages     map[string]string
+	original     *ForkSource
+	home, path   string
+	checkpoint   ContinuationCheckpoint
+	fileDigest   [sha256.Size]byte
+	turns        []json.RawMessage
 }
 
 func unsupportedFork() error {
@@ -58,7 +64,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil {
 		return nil, err
 	}
-	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]))
+	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
 	if err != nil || last.ID != checkpoint.TurnID || last.Status != TurnCompleted || !slices.Equal(inputs, checkpoint.Inputs) {
 		return nil, continuationUncertain()
 	}
@@ -74,7 +80,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil || !forkableMetadata(again, checkpoint) || string(again.Path) != string(wire.Path) || *again.UpdatedAt != *wire.UpdatedAt {
 		return nil, continuationUncertain()
 	}
-	return &ForkSource{home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
+	return &ForkSource{imageRoot: c.imageRoot, imageMachine: c.imageMachine, home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
 }
 
 func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {
@@ -152,7 +158,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			return nil, unsupportedFork()
 		}
 		for _, raw := range page.Data {
-			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}))
+			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}), c.nativeImageInput)
 			if err != nil || turn.Status != TurnCompleted || seen[string(turn.ID)] {
 				return nil, unsupportedFork()
 			}
@@ -298,7 +304,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		return result, c.problem
 	}
 	turns, err := c.forkTurnsLocked(ctx, thread.ID)
-	if err != nil || !slices.EqualFunc(turns, source.turns, func(a, b json.RawMessage) bool { return string(a) == string(b) }) {
+	if err != nil || !slices.EqualFunc(turns, source.turns, equivalentForkJSON) {
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
@@ -318,6 +324,16 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 func (s *ForkSource) Verify(ctx context.Context) error {
 	if s == nil {
 		return continuationUncertain()
+	}
+	if s.original != nil {
+		if err := s.original.Verify(ctx); err != nil {
+			return err
+		}
+	}
+	for source, target := range s.packages {
+		if s.original == nil || skills.VerifyRuntimePackage(ctx, s.original.home, source) != nil || skills.VerifyRuntimePackage(ctx, s.packageHome, target) != nil {
+			return continuationUncertain()
+		}
 	}
 	actual, err := forkRolloutDigest(ctx, s.home, s.path)
 	if err != nil || actual != s.fileDigest {

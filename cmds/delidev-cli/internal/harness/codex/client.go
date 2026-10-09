@@ -9,8 +9,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/executionenv"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -21,6 +24,11 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	OrdinaryTools executionenv.Ordinary `json:"-"`
+
+	SkillsRoot       string
+	ImageRoot        string
+	ImageMachineID   domain.ID
 	Sidechat         SidechatProfile
 	QuotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
 	ModelObservation bool
@@ -33,6 +41,10 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	quotaUsed        atomic.Bool
+	skillsRoot       string
+	imageRoot        string
+	imageMachine     domain.ID
 	sidechat         SidechatProfile
 	quotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
 	subagents        map[string]domain.SubagentObservation
@@ -60,6 +72,7 @@ const (
 	ProbeProtocol        ProtocolMode = "probe"
 	ThreadProtocol       ProtocolMode = "thread"
 	SubscriptionProtocol ProtocolMode = "subscription"
+	QuotaProtocol        ProtocolMode = "quota-access-only"
 )
 
 type handshakePhase string
@@ -90,19 +103,17 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 			returned = domain.WithCodexDiagnostic(config.Version, domain.CodexPhase(phase), returned)
 		}
 		if returned != nil && config.Process.Logger != nil {
-			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", domain.CodexErrorDiagnostic(returned).Phase, "version", domain.CodexErrorDiagnostic(returned).DetectedVersion, "minimum_version", domain.CodexMinimumVersion, "code", domain.CodexErrorDiagnostic(returned).Code, "recovery_code", domain.SafeError(returned).Code, "correlation_id", config.Process.OwnerID)
+			config.Process.Logger.WarnContext(ctx, "Codex native handshake failed", "owner_id", config.Process.OwnerID, "phase", domain.CodexErrorDiagnostic(returned).Phase, "version", domain.CodexErrorDiagnostic(returned).DetectedVersion, "code", domain.CodexErrorDiagnostic(returned).Code, "recovery_code", domain.SafeError(returned).Code, "correlation_id", config.Process.OwnerID)
 		}
 	}()
-	if !domain.CodexVersionAllowed(config.Version) {
-		return nil, domain.CodexVersionFailure(config.Version)
-	}
+
 	if config.Mode == "" {
 		config.Mode = ProbeProtocol
 	}
-	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol {
+	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol {
 		return nil, incompatible()
 	}
-	if (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
+	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
 		return nil, incompatible()
 	}
 	phase = runtimePhase
@@ -128,6 +139,18 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// ephemeral store is also the future execution boundary for short-lived
 	// DeliDev proxy credentials, never server-owned upstream API keys.
 	config.Process.Args = []string{"-c", `cli_auth_credentials_store="ephemeral"`, "-c", "check_for_update_on_startup=false", "-c", "analytics.enabled=false", "-c", "feedback.enabled=false"}
+	if config.Mode != ThreadProtocol {
+		// Codex 0.159.2 warms plugin catalogs even without a thread. Those
+		// downloads exceed the bounded disposable login runtime inventory.
+		// Keep them disabled for discovery and subscription lifecycle only;
+		// execution retains its independently verified native feature profile.
+		// Revisit this override only when a validated native lifecycle profile
+		// keeps startup and account changes within the unchanged cleanup bounds.
+		config.Process.Args = append(config.Process.Args, "-c", "features.plugins=false")
+	}
+	if config.Mode == QuotaProtocol {
+		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+	}
 	if config.ManagedAuthentication {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
@@ -143,6 +166,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err := configureSidechat(&config); err != nil {
 		return nil, err
 	}
+	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
 	wire, err := nativewire.Start(ctx, config.Process)
@@ -151,7 +175,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	}
 	defer func() {
 		if returned != nil {
-			if err := wire.Close(); err != nil {
+			if err := wire.CloseGracefully(3 * time.Second); err != nil {
 				returned = domain.CodexRecoveryFailure(config.Version, domain.CodexPhase(phase), returned, domain.Fail(domain.RecoveryRequired, "Codex protocol validation could not confirm native cleanup.", "Retain the runtime and reconcile owned processes before retrying."))
 			}
 		}
@@ -160,7 +184,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	// Thread control pins legacy native history explicitly. In this exact
 	// installed version that selector requires the experimental capability;
 	// discovery probes retain the stable, non-mutating handshake.
-	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol}})
+	response, err := wire.Call(ctx, domain.NewID(), "initialize", map[string]any{"clientInfo": map[string]string{"name": "delidev", "title": "DeliDev", "version": rpc.Version}, "capabilities": map[string]bool{"experimentalApi": config.Mode == ThreadProtocol || config.Mode == QuotaProtocol}})
 	if err != nil {
 		return nil, handshakeError(wire, err)
 	}
@@ -172,8 +196,13 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		return nil, incompatible()
 	}
 	actualHome, err := filepath.EvalSymlinks(initialized.CodexHome)
-	if err != nil || actualHome != home || !strings.HasPrefix(initialized.UserAgent, "delidev/"+config.Version+" ") {
+	if err != nil || actualHome != home || !strings.HasPrefix(initialized.UserAgent, "delidev/") {
 		return nil, incompatible()
+	}
+	observedVersion, _, _ := strings.Cut(strings.TrimPrefix(initialized.UserAgent, "delidev/"), " ")
+	config.Version = ""
+	if domain.ValidNativeVersionMetadata(observedVersion) {
+		config.Version = observedVersion
 	}
 	platform, family := runtime.GOOS, "unix"
 	if platform == "darwin" {
@@ -210,8 +239,16 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{home: home, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
+	if err := client.verifyLifecyclePlugins(ctx); err != nil {
+		return nil, err
+	}
+	if config.Mode == QuotaProtocol {
+		if err := client.verifyManagedConfig(ctx, config.Process.Cwd); err != nil {
+			return nil, err
+		}
+	}
 	if config.ManagedAuthentication {
 		client.managedHome = home
 		client.quotaObserver = config.QuotaObserver
@@ -246,13 +283,28 @@ func handshakeError(wire *nativewire.Connection, err error) error {
 	return failure
 }
 func (c *Client) Close() error {
-	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.Close())
+	return domain.WithCodexDiagnostic(c.version, domain.CodexCleanup, c.wire.CloseGracefully(3*time.Second))
 }
 func (c *Client) Version() string { return c.version }
 
 func (c *Client) recordFailure(ctx context.Context, phase domain.CodexPhase, returned *error) {
+	c.recordFailureAtStage(ctx, phase, "", returned)
+}
+
+func (c *Client) recordFailureAtStage(ctx context.Context, phase domain.CodexPhase, stage managedFailureStage, returned *error) {
 	*returned = domain.WithCodexDiagnostic(c.version, phase, *returned)
 	if d := domain.CodexErrorDiagnostic(*returned); d != nil && c.logger != nil {
-		c.logger.WarnContext(ctx, "codex_native_operation_failed", "version", d.DetectedVersion, "minimum_version", d.MinimumVersion, "phase", d.Phase, "code", d.Code, "correlation_id", c.ownerID, "recovery_code", domain.SafeError(*returned).Code)
+		attributes := []any{"version", d.DetectedVersion, "minimum_version", d.MinimumVersion, "phase", d.Phase, "code", d.Code, "correlation_id", c.ownerID, "recovery_code", domain.SafeError(*returned).Code}
+		if stage != "" {
+			attributes = append(attributes, "stage", stage)
+		}
+		c.logger.WarnContext(ctx, "codex_native_operation_failed", attributes...)
 	}
+}
+
+func configureOrdinaryTools(config *Config) {
+	if config.Mode != ThreadProtocol || config.Sidechat != "" || config.ModelObservation || config.API != nil && config.API.TitleProfile {
+		config.OrdinaryTools = executionenv.Ordinary{}
+	}
+	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)
 }

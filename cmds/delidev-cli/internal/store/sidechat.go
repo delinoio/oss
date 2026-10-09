@@ -22,6 +22,9 @@ func sidechatDependencyKey(parent, child domain.ID) string {
 // RequireNoSessionFork serializes the single accepted native preparation against
 // this inventory. Check capacity before admission and again at native claim.
 func (t *Tx) RequireSidechatCapacity(parent domain.ID) error {
+	if err := t.checkSkillFamilyCapacity(parent, "", 0, ""); err != nil {
+		return err
+	}
 	ids, err := t.SidechatDependents(parent)
 	if err != nil {
 		return err
@@ -54,6 +57,9 @@ func (t *Tx) RegisterSidechat(parent, child domain.ID) error {
 		if id == child {
 			return domain.SidechatUnavailable()
 		}
+	}
+	if err := t.checkSkillFamilyCapacity(parent, "", 0, child); err != nil {
+		return err
 	}
 	_, err = t.tx.ExecContext(t.ctx, "INSERT INTO metadata(key,value) VALUES(?,?)", sidechatDependencyKey(parent, child), child)
 	return storageError(err)

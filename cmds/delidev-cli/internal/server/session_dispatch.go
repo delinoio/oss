@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
@@ -35,15 +37,41 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 		if err != nil {
 			return "", err
 		}
-		modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
-		if err != nil {
-			return "", err
+		if len(agent.Routes) > 0 {
+			var project *domain.Project
+			if session.ProjectID != "" {
+				record, err := tx.Get(domain.ProjectKind, session.ProjectID)
+				if err != nil {
+					return "", err
+				}
+				value, err := store.Decode[domain.Project](record)
+				if err != nil {
+					return "", err
+				}
+				project = &value
+			}
+			// The first-execution transaction resolves again with the real server policy.
+			// This read guards provider authority without consuming routing state.
+			policy, err := tx.DefaultRoutingPolicy()
+			if err != nil {
+				return "", err
+			}
+			preview, err := tx.PreviewSourceRouting(session.AgentID, agent, project, policy)
+			if err != nil {
+				return "", err
+			}
+			providerID, subscriptionService = preview.Model.ProviderID, preview.Model.SubscriptionService
+		} else {
+			modelRecord, err := tx.Get(domain.ModelKind, agent.ModelID)
+			if err != nil {
+				return "", err
+			}
+			model, err := store.Decode[domain.Model](modelRecord)
+			if err != nil {
+				return "", err
+			}
+			providerID, subscriptionService = model.ProviderID, model.SubscriptionService
 		}
-		model, err := store.Decode[domain.Model](modelRecord)
-		if err != nil {
-			return "", err
-		}
-		providerID, subscriptionService = model.ProviderID, model.SubscriptionService
 	}
 	if subscriptionService.Valid() && providerID == "" {
 		return "", nil
@@ -119,33 +147,46 @@ func initialExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil {
 		return domain.ExecutionJobInput{}, err
 	}
-	return checkedExecutionAssignment(tx, sr, session, machine, domain.ExecutionJobInput{Version: 1, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: claim.ID, InputID: claim.InputID, ThreadRequestID: domain.NewID(), TurnRequestID: queued.NativeRequestID, Input: domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode}, Configuration: claim.Configuration, ConfigurationDigest: claim.ConfigurationDigest, AccountID: claim.InitialAccountID, ConnectionID: claim.ConnectionID})
+	return checkedExecutionAssignment(tx, sr, session, machine, domain.ExecutionJobInput{Version: 1, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: claim.ID, InputID: claim.InputID, ThreadRequestID: domain.NewID(), TurnRequestID: queued.NativeRequestID, Input: domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode, Skills: queued.Skills, Attachments: queued.Attachments}, Configuration: claim.Configuration, ConfigurationDigest: claim.ConfigurationDigest, AccountID: claim.InitialAccountID, ConnectionID: claim.ConnectionID})
 }
 
 func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
+	if !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+		return domain.Installation{}, domain.Fail(domain.Unsupported, "This Runner Device needs an update before execution.", "Update and reconnect the selected Runner Device to start the actual process directly.")
+	}
+	return checkedExecutionConfiguration(tx, session, machine, input)
+}
+
+func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.Installation, error) {
+	if len(input.Input.Skills) > 0 && (input.Configuration.Harness != domain.Codex || !slices.Contains(machine.WorkerCapabilities, domain.NativeSkillsV1)) {
+		return domain.Installation{}, skillUnavailable()
+	}
 	var empty domain.Installation
 	c := input.Configuration
+	if err := c.ValidateNativeOptions(); err != nil {
+		return empty, err
+	}
 	if err := requireSidechatParent(tx, session); err != nil {
 		return empty, err
 	}
-	if c.SidechatPolicy != "" && (!session.IsSidechat() || !slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1)) {
+	if c.SidechatPolicy != "" && (!session.IsSidechat() || (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || c.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities))) {
 		return empty, domain.SidechatUnavailable()
 	}
-	version, protocol := "", domain.OpenAIResponses
+	protocol := domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:
 		if (c.Options.SubagentModel != "" || c.Options.SubagentEffort != "" || c.Options.MaxConcurrency != 0) && !slices.Contains(machine.WorkerCapabilities, domain.CodexSubagentConfigurationV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks Codex child configuration support.", "Update and reconnect that Runner Device; the saved input and native defaults remain unchanged.")
 		}
 	case domain.ClaudeCode:
-		validGeneration := input.Version == 1 && input.Continuation == nil || input.Version == 2 && input.Continuation != nil && input.Continuation.Validate(input) == nil
+		validGeneration := input.Fork == nil && (input.Continuation == nil || input.Continuation.Validate(input) == nil)
 		if !validGeneration {
 			return empty, domain.Fail(domain.Unsupported, "Claude continuation requires separately verified native history.", "Preserve the original input; no replacement execution is authorized.")
 		}
 		if _, err := c.ClaudeAPIInputPermission(input.Input.Mode); err != nil {
 			return empty, err
 		}
-		version, protocol = domain.ClaudeProtocolVersion, domain.AnthropicMessages
+		protocol = domain.AnthropicMessages
 	case domain.OpenCode:
 		if input.Fork != nil && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks OpenCode Fork support.", "Update and reconnect the original Unix Runner Device; the child stays paused.")
@@ -156,37 +197,50 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 		if _, err := c.OpenCodePrimaryForInput(input.Input.Mode); err != nil {
 			return empty, err
 		}
-		version, protocol = domain.OpenCodeProtocolVersion, domain.OpenAIChat
+		protocol = domain.OpenAIChat
 	case domain.GrokBuild:
-		if input.Version != 1 || input.Continuation != nil {
+		if input.Continuation != nil || input.Fork != nil {
 			return empty, domain.Fail(domain.Unsupported, "Grok continuation requires separately verified native history.", "Preserve the original completed input without creating a replacement session.")
 		}
 		if _, err := c.GrokFirstInputContext(input.Input.Mode); err != nil {
 			return empty, err
 		}
-		version, protocol = domain.GrokProtocolVersion, domain.OpenAIChat
+		protocol = domain.OpenAIChat
 	default:
 		return empty, domain.Fail(domain.Unsupported, "This harness has no integrated execution profile yet.", "Select a supported installed profile; no harness fallback is performed.")
 	}
-	var installation *domain.Installation
-	for i := range machine.Installations {
-		if machine.Installations[i].Harness == c.Harness {
-			if installation != nil {
-				return empty, domain.Fail(domain.RecoveryRequired, "The native installation selection is ambiguous.", "Refresh the selected Worker's discovery before execution.")
+	installation := domain.Installation{Harness: c.Harness}
+	if input.Startup != nil {
+		installation.ExplicitPath = input.Startup.ExplicitPath
+	} else if input.Continuation != nil || input.Fork != nil {
+		// Historical native ownership cannot adopt a later PATH selection.
+		installation.ExplicitPath = input.Installation.ResolvedPath
+	} else {
+		for _, selected := range machine.Installations {
+			if selected.Harness == c.Harness {
+				if installation.ExplicitPath != "" {
+					return empty, domain.Fail(domain.RecoveryRequired, "The executable selection is ambiguous.", "Correct the selected Runner Device's executable path.")
+				}
+				installation.ExplicitPath = selected.ExplicitPath
 			}
-			installation = &machine.Installations[i]
 		}
 	}
-	if installation == nil || installation.State != domain.InstallationDetected || (c.Harness == domain.Codex && !domain.CodexVersionAllowed(installation.Version) || c.Harness != domain.Codex && installation.Version != version) || !installation.ProtocolVerified || installation.Protocol == nil || installation.Protocol.Protocol != domain.ProtocolFor(c.Harness) || installation.Protocol.State != domain.ProtocolVerified || installation.Protocol.Problem != nil || installation.Problem != nil || installation.ResolvedPath == "" || installation.ObservedAt == nil || installation.ObservedAt.IsZero() || installation.ObservedAt.After(time.Now().UTC().Add(time.Second)) {
-		return empty, domain.Fail(domain.Unsupported, "The selected Worker has no verified installation for this execution profile.", "Run machine discovery with native protocol verification for the selected installation.")
-	}
-	_, account, err := accountFromTx(tx, input.AccountID, 0)
+	_, account, err := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
 	if err != nil {
 		return empty, err
 	}
-	managed := c.Subscription && c.SubscriptionService == domain.SubscriptionChatGPT && account.SubscriptionService == c.SubscriptionService && account.ProviderID == "" && c.ProviderID == "" && account.Type == domain.SubscriptionAccount && c.Harness == domain.Codex && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
-	if managed && !slices.Contains(machine.WorkerCapabilities, domain.ManagedCodexSubscriptionsV1) {
-		return empty, domain.Fail(domain.Unsupported, "The selected Runner Device has no managed Codex capability.", "Connect a Runner Device with a verified managed authentication profile before dispatching this account.")
+	managed := c.Subscription && account.Type == domain.SubscriptionAccount && account.SubscriptionService == c.SubscriptionService && c.SubscriptionService.Harness() == c.Harness && account.ProviderID == "" && c.ProviderID == "" && account.Subscription != nil && account.Subscription.Generation != "" && !account.Subscription.RecoveryRequired && (account.Subscription.Pending == nil || c.Harness == domain.Codex && account.Subscription.Pending.Action == domain.SubscriptionRefresh) && account.Connection != nil && account.Connection.Authentication == domain.SubscriptionAuth
+	if managed {
+		capability := domain.ManagedCodexSubscriptionsV1
+		if c.Harness == domain.ClaudeCode {
+			capability = domain.NativeClaudeSubscriptionsV1
+			if account.Subscription.OwnerMachineID != input.MachineID || account.Subscription.NativeProfileID == "" {
+				return empty, domain.Fail(domain.PermissionDenied, "This Claude account belongs to another Runner Device.", "Select the Runner Device that owns its native login before sending input.")
+			}
+		}
+		if !slices.Contains(machine.WorkerCapabilities, capability) {
+			return empty, domain.Fail(domain.Unsupported, "The selected Runner Device cannot execute this native subscription.", "Update and verify its native subscription profile before sending input.")
+		}
 	}
 	apiReady := account.Type == domain.APIAccount && account.Validation != nil && account.Validation.ConnectionID == input.ConnectionID && account.Validation.State == domain.Observed && account.Validation.Problem == nil && !account.Validation.ObservedAt.IsZero() && account.Connection != nil && !account.Validation.ObservedAt.Before(account.Connection.ConnectedAt) && !account.Validation.ObservedAt.After(time.Now().UTC().Add(time.Second)) && (account.Validation.Authentication == domain.CredentialAccepted || account.Validation.Authentication == domain.KeylessEndpoint)
 	if !account.Enabled || account.Removal != nil || account.ConfirmedExhausted || account.Connection == nil || account.Connection.ID != input.ConnectionID || account.Health != domain.AccountReady || (!managed && !apiReady) {
@@ -198,6 +252,9 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 			return empty, err
 		}
 		provider, err := store.Decode[domain.Provider](pr)
+		if err == nil {
+			provider, err = providers.ResolveAccountProfile(provider, account)
+		}
 		if err != nil {
 			return empty, err
 		}
@@ -236,7 +293,7 @@ func checkedExecutionSelection(tx *store.Tx, session domain.Session, machine dom
 			return empty, domain.Fail(domain.PermissionDenied, "Current project restrictions exclude the selected execution.", "Restore the original Agent and account permissions before resuming.")
 		}
 	}
-	return *installation, nil
+	return installation, nil
 }
 
 func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) (domain.ExecutionJobInput, error) {
@@ -245,7 +302,57 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil {
 		return empty, err
 	}
-	c := input.Configuration
+	job, err := checkedExecutionWorkspace(tx, sr, session, machine, input.Configuration)
+	if err != nil {
+		return empty, err
+	}
+	selection := &domain.ExecutionStartupSelection{Harness: input.Configuration.Harness, ExplicitPath: installation.ExplicitPath}
+	if input.Continuation != nil || input.Fork != nil {
+		selection.ExecutableSHA256 = input.Installation.ExecutableSHA256
+		if input.Startup != nil {
+			selection.ExecutableSHA256 = input.Startup.ExecutableSHA256
+		}
+		if session.Startup != nil && session.Startup.Ready != nil {
+			selection.ExecutableSHA256 = session.Startup.Ready.ExecutableSHA256
+		}
+	}
+	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
+	input.Preparation, input.Manifest = job.Input, job.Output
+	return input, input.Validate()
+}
+
+// Source operations recheck current policy and workspace ownership without
+// converting or replacing the original native assignment. Legacy operations
+// retain their existing capability contract; only new executions require v4.
+func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) error {
+	if input.Validate() != nil || !session.OwnsExecution(input) {
+		return continuationConflict()
+	}
+	candidate := input
+	if input.Version != 4 {
+		candidate.Startup = &domain.ExecutionStartupSelection{Harness: input.Configuration.Harness, ExplicitPath: input.Installation.ResolvedPath, ExecutableSHA256: input.Installation.ExecutableSHA256}
+	}
+	var err error
+	if input.Version == 4 {
+		_, err = checkedExecutionSelection(tx, session, machine, candidate)
+	} else {
+		_, err = checkedExecutionConfiguration(tx, session, machine, candidate)
+	}
+	if err != nil {
+		return err
+	}
+	job, err := checkedExecutionWorkspace(tx, sr, session, machine, input.Configuration)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(job.Input, input.Preparation) || !bytes.Equal(job.Output, input.Manifest) {
+		return workspace.ResultUncertain()
+	}
+	return nil
+}
+
+func checkedExecutionWorkspace(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, c domain.ExecutionConfiguration) (domain.Job, error) {
+	var empty domain.Job
 	prepared, err := tx.Get(domain.JobKind, session.Preparation.JobID)
 	if err != nil {
 		return empty, err
@@ -281,8 +388,7 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 			return empty, err
 		}
 	}
-	input.Installation, input.Preparation, input.Manifest = installation, job.Input, job.Output
-	return input, input.Validate()
+	return job, nil
 }
 
 func (s *Service) dispatchExecution(ctx context.Context, record store.Record) error {

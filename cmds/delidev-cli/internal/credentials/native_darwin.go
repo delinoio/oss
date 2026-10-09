@@ -14,7 +14,8 @@ import (
 // Security.framework supplies the macOS file-keychain API without a C compiler
 // requirement. All CF values are retained until the synchronous SecItem call
 // finishes; native objects never retain Go buffers. Do not substitute `security`
-// CLI parsing or enable UI: the server must also work non-interactively.
+// CLI parsing. Authentication UI belongs to the OS in the server user's session;
+// a session that cannot display it still returns a typed native failure.
 type macAPI struct {
 	dictionary     func(uintptr, int64, uintptr, uintptr) uintptr
 	set            func(uintptr, uintptr, uintptr)
@@ -33,6 +34,8 @@ type macAPI struct {
 	arrayCallbacks uintptr
 	security       uintptr
 	setInteraction func(uint8) int32
+	copySelf       func(uint32, *uintptr) int32
+	checkValidity  func(uintptr, uint32, uintptr) int32
 }
 
 var loadMac = sync.OnceValues(func() (*macAPI, error) {
@@ -55,6 +58,7 @@ var loadMac = sync.OnceValues(func() (*macAPI, error) {
 		{&a.dataLength, cf, "CFDataGetLength"}, {&a.dataBytes, cf, "CFDataGetBytePtr"},
 		{&a.release, cf, "CFRelease"}, {&a.array, cf, "CFArrayCreate"},
 		{&a.setInteraction, sec, "SecKeychainSetUserInteractionAllowed"}, {&a.add, sec, "SecItemAdd"}, {&a.copy, sec, "SecItemCopyMatching"}, {&a.delete, sec, "SecItemDelete"},
+		{&a.copySelf, sec, "SecCodeCopySelf"}, {&a.checkValidity, sec, "SecCodeCheckValidity"},
 	} {
 		address, err := purego.Dlsym(item.lib, item.name)
 		if err != nil {
@@ -62,7 +66,7 @@ var loadMac = sync.OnceValues(func() (*macAPI, error) {
 		}
 		purego.RegisterFunc(item.p, address)
 	}
-	for _, name := range []string{"kSecClass", "kSecClassGenericPassword", "kSecAttrService", "kSecAttrAccount", "kSecValueData", "kSecReturnData", "kSecMatchLimit", "kSecMatchLimitOne", "kSecUseAuthenticationUI", "kSecUseAuthenticationUIFail", "kSecUseKeychain", "kSecMatchSearchList"} {
+	for _, name := range []string{"kSecClass", "kSecClassGenericPassword", "kSecAttrService", "kSecAttrAccount", "kSecValueData", "kSecReturnData", "kSecMatchLimit", "kSecMatchLimitOne", "kSecUseKeychain", "kSecMatchSearchList"} {
 		address, err := purego.Dlsym(sec, name)
 		if err != nil {
 			return nil, unavailable()
@@ -84,15 +88,22 @@ var loadMac = sync.OnceValues(func() (*macAPI, error) {
 		}
 	}
 	// File-based keychains can ignore the per-query authentication UI attribute.
-	// This server process never requests optional keychain UI; explicit provider
-	// login flows run in their own owned harness process. Keep this process-wide
-	// setting disabled so concurrent native calls cannot briefly re-enable prompts.
-	if a.setInteraction(0) != 0 {
-		return nil, unavailable()
+	// Enable OS authentication once for the server lifetime, including Doctor and
+	// background credential access. Never toggle this global policy per request:
+	// another concurrent operation could otherwise inherit the wrong policy.
+	if err := allowMacInteraction(a); err != nil {
+		return nil, err
 	}
 	// Framework handles remain open for the lifetime of these registered functions.
 	return a, nil
 })
+
+func allowMacInteraction(a *macAPI) error {
+	if status := a.setInteraction(1); status != 0 {
+		return macError(status)
+	}
+	return nil
+}
 
 // The address is a native global from dlsym, never an integer offset into a
 // Go allocation. Reinterpret its pointer bits without uintptr arithmetic; this
@@ -115,6 +126,46 @@ func newNativeProfile(profile nativeProfile) (nativeStore, error) {
 	}
 	return &macStore{api: a, profile: profile}, nil
 }
+
+// CheckRuntime checks code identity without reading or unlocking any keychain.
+// Rebuilt files can invalidate a surviving server even when its version matches.
+// Check on each admission/access; a successful startup check is not a lifetime lease.
+func CheckRuntime(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	a, err := loadMac()
+	if err != nil {
+		return err
+	}
+	var code uintptr
+	if status := a.copySelf(0, &code); status != 0 {
+		return macCodeError(status)
+	}
+	if code == 0 {
+		return invalidExecutable()
+	}
+	defer a.release(code)
+	return macCodeError(a.checkValidity(code, 0, 0))
+}
+
+func invalidExecutable() error {
+	err := domain.Fail(domain.RecoveryRequired, "The running server code signature could not be verified.", "Use a valid signed server executable. Preserve existing credentials and review active work before explicitly stopping and restarting the server.")
+	err.Cause = ExecutableInvalidCause
+	return err
+}
+
+func macCodeError(status int32) error {
+	if status == 0 {
+		return nil
+	}
+	if status == -67034 { // errSecCSStaticCodeChanged
+		err := domain.Fail(domain.RecoveryRequired, "The running server executable changed on disk.", "Review active work, explicitly stop this local server, then start it from the preserved development bundle. Keep existing credentials; unlocking the keychain does not repair changed executable code.")
+		err.Cause = ExecutableChangedCause
+		return err
+	}
+	return invalidExecutable()
+}
 func (s *macStore) query(name string, adding bool) uintptr {
 	a := s.api
 	q := a.dictionary(0, 0, a.keyCallbacks, a.valueCallbacks)
@@ -122,7 +173,8 @@ func (s *macStore) query(name string, adding bool) uintptr {
 		return 0
 	}
 	a.set(q, a.values["kSecClass"], a.values["kSecClassGenericPassword"])
-	a.set(q, a.values["kSecUseAuthenticationUI"], a.values["kSecUseAuthenticationUIFail"])
+	// Omit the authentication UI attribute: Security.framework defaults to allow.
+	// This preserves exact item matching while letting the OS authorize this call.
 	for _, p := range []struct{ k, v string }{{"kSecAttrService", s.profile.service()}, {"kSecAttrAccount", name}} {
 		value := a.stringValue(0, p.v, 0x08000100) // kCFStringEncodingUTF8
 		if value == 0 {
@@ -167,7 +219,7 @@ func macError(status int32) error {
 	}
 }
 func (s *macStore) get(ctx context.Context, name string) ([]byte, error) {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return nil, err
 	}
 	a := s.api
@@ -202,7 +254,7 @@ func (s *macStore) get(ctx context.Context, name string) ([]byte, error) {
 	return out, nil
 }
 func (s *macStore) create(ctx context.Context, name string, value []byte) error {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return err
 	}
 	if !s.profile.accepts(len(value)) {
@@ -225,7 +277,7 @@ func (s *macStore) create(ctx context.Context, name string, value []byte) error 
 	return macError(a.add(q, nil))
 }
 func (s *macStore) remove(ctx context.Context, name string) error {
-	if err := ctx.Err(); err != nil {
+	if err := CheckRuntime(ctx); err != nil {
 		return err
 	}
 	q := s.query(name, false)

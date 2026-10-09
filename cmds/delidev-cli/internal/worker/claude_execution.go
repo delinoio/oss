@@ -24,7 +24,7 @@ import (
 )
 
 func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, input domain.ExecutionJobInput, logger *slog.Logger) (output json.RawMessage, returned error) {
-	if input.Validate() != nil || input.Installation.Version != claude.SupportedVersion {
+	if input.Validate() != nil || (input.Version != 4 && input.Installation.Version != claude.SupportedVersion) {
 		return nil, domain.Fail(domain.Unsupported, "Claude execution requires its original verified input and history profile.", "Preserve original history; do not start a replacement input.")
 	}
 	permission, effort, err := claudeExecutionSettings(input.Configuration, input.Input.Mode)
@@ -43,7 +43,9 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	manager := &workspace.Manager{Root: config.Root, Logger: logger}
 	var lease *workspace.ExecutionLease
-	if c := input.Continuation; c != nil {
+	if retry := input.Retry; retry != nil {
+		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
+	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
 			previous = workspace.ExecutionPredecessor{JobID: c.Compaction.JobID, ExecutionID: c.Compaction.ActionID}
@@ -55,9 +57,10 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if err != nil {
 		return nil, err
 	}
+	config.startup.claimedWorkspace()
 	defer func() {
 		if err := lease.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
 	runtimeRoot := filepath.Join(manager.Root, "runtimes")
@@ -68,6 +71,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
 		return nil, publicationUncertain()
 	}
+	ordinaryTools := ordinaryExecutionTools(config.Logger)
 	env, err := harness.PrivateRuntimeEnvironment(home)
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -90,9 +94,25 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	}
 	defer func() {
 		if err := binding.Close(); err != nil {
-			output, returned = nil, err
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
 	}()
+	var nativeProfile *nativeClaudeProfile
+	nativeJoined := true
+	expectedProxyPath := "/api-proxy/v1"
+	if input.Configuration.Subscription {
+		expectedProxyPath = ""
+		var finish func(bool) error
+		nativeProfile, finish, err = beginClaudeSubscriptionExecution(ctx, config, owner, input)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			if err := finish(nativeJoined); err != nil {
+				output, returned = nil, err
+			}
+		}()
+	}
 	rawToken, err := security.RandomToken()
 	if err != nil {
 		return nil, domain.SafeError(err)
@@ -116,7 +136,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	if err != nil {
 		return nil, rpc.ClientError(err)
 	}
-	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != "/api-proxy/v1" {
+	if registered == nil || registered.Msg == nil || registered.Msg.ProxyPath != expectedProxyPath {
 		return nil, publicationUncertain()
 	}
 	nativeCtx, cancelNative := context.WithCancel(config.executionContext)
@@ -125,11 +145,22 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	// accepted original controller then owns a bounded native interrupt grace.
 	stopOnCancellation := context.AfterFunc(ctx, cancelNative)
 	defer stopOnCancellation()
-	nativeConfig := claude.APIStreamConfig{
+	nativeConfig := claude.APIStreamConfig{OrdinaryTools: ordinaryTools,
 		Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger},
 		Version: input.Installation.Version, Home: filepath.Join(home, "claude"), Workspace: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), SessionID: input.SessionID, Model: input.Configuration.NativeModel,
 		Permission: permission, Effort: effort, Instructions: input.Configuration.Instructions, API: claude.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token},
 	}
+	if nativeProfile != nil {
+		nativeConfig.Subscription = &claude.NativeSubscriptionProfile{ID: nativeProfile.owner.Profile, Home: nativeProfile.home}
+		if err := security.PrivateDir(filepath.Join(manager.Root, "processes", string(owner))); err != nil {
+			return nil, err
+		}
+		nativeProfile.managedLease.journal.ExecutionStarted = true
+		if err := writeJSON(nativeProfile.managedLease.journalPath, nativeProfile.managedLease.journal); err != nil {
+			return nil, publicationUncertain()
+		}
+	}
+	config.startup.setPhase(domain.StartupInitialize)
 	var api *claude.APISession
 	intent := claude.ContinueSuccessfulRun
 	if input.Continuation != nil {
@@ -150,13 +181,23 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		api, err = claude.OpenAPISession(nativeCtx, nativeConfig)
 	}
 	if err != nil {
+		if domain.SafeError(err).Code == domain.RecoveryRequired {
+			nativeJoined = false
+		}
 		return nil, err
 	}
 	defer func() {
 		if err := api.Close(); err != nil {
-			output, returned = nil, err
+			if err := api.Close(); err != nil {
+				nativeJoined = false
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
+			}
 		}
 	}()
+	if err := config.startup.ready(ctx, ""); err != nil {
+		return nil, err
+	}
+	config.startup.claimInput()
 	if err := binding.ClaimInput(ctx, input.TurnRequestID, input.InputID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
@@ -169,7 +210,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 	defer func() {
 		if finishControls != nil {
 			if err := finishControls(); err != nil {
-				output, returned = nil, err
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
 			}
 		}
 	}()
@@ -222,6 +263,10 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 		handled := false
 		switch o.Kind {
 		case claude.SessionInitialized:
+			if o.Initialized != nil && config.startup != nil {
+				config.startup.observation.NativeVersion = o.Initialized.Version
+				publisher.nativeVersion = o.Initialized.Version
+			}
 			err, handled = binding.BindSession(publicationContext, o, applied), true
 			if err == nil {
 				logger.InfoContext(publicationContext, "native_execution_thread_bound")
@@ -238,6 +283,7 @@ func executeClaudeSession(ctx context.Context, config Config, owner domain.ID, i
 				if !stopOnCancellation() {
 					return nil, publicationUncertain()
 				}
+				config.startup.acknowledgeInput()
 				logger.InfoContext(publicationContext, "native_execution_input_accepted", "input_id", input.InputID)
 				finishControls = startClaudeControls(ctx, nativeCtx, cancelNative, config, display, api)
 			}

@@ -47,6 +47,13 @@ unselected transcript transfer is permitted. Account switching, terminals,
 forwarding, Git writes, PR automation and workspace mutations cannot expand a
 Sidechat's read-only authority.
 
+Cleanup and recovery jobs remain queued while any durable Sidechat dependent
+exists. The primary work stream retains one earliest skipped predecessor cursor
+and revisits it after an in-flight assignment completes, a store change or its
+bounded heartbeat. Later independent work may progress, but there is still only
+one outstanding primary assignment. Every retry rechecks the original dependency
+gate before atomic claim; a scan wake never grants native cleanup authority.
+
 ## Storage
 
 Use additive strict JSON on existing session/fork/job/checkpoint records and
@@ -148,3 +155,66 @@ allocation ledger and generated bindings in the same change.
 - Sidechat creation uses the full native-fork wait deadline while findings submission retains its immediate bound. UI fork admission includes current workspace availability. Revalidate the closed native Sidechat configuration/features immediately before manual compaction claim/send. Failed unpublished reference preparation/fork rolls back only the original inode-bound metadata under independent bounded cleanup; foreign/replaced metadata remains pending. Parent deletion capacity counts only newly created dependent journals.
 
 Check the 256-child Sidechat ownership allowance inside the original fork admission transaction before queuing native preparation, and recheck at native claim/publication. The existing queued/claimed/uncertain fork reservation serializes the single outstanding preparation against that parent inventory; a rejected capacity request creates no job or child authority.
+
+Selected skill snapshots share one 4,096-reference admission budget across the
+parent and its registered dependent Sidechats, including current and retired
+queued bindings. Resolve the child through its original Fork metadata and the
+retained parent dependency index; independent Forks remain separate. Input and
+queued-edit acceptance check this closure in the original transaction, including
+concurrent parent/child writes. Sidechat admission, claim and publication recheck
+the same closure before adding child ownership. A deleting indexed child fences
+new skill or Sidechat admission until confirmed native, database and backup
+retirement releases its index. SQL purge alone cannot free its frozen outer-plan
+obligation. Text-only input remains usable, and rejected preparation retains its
+original durable cleanup owner. Do not enlarge the 4 MiB synchronized deletion
+envelope, evict accepted references, add RPCs or add a migration.
+
+## Inherited image references
+
+Sidechat adds no image deletion owner. Readback requires the current nondeleting parent owner and exact original succeeded Fork job prefix. Validate its input digest, session, machine, Worker device and runtime. Later parent images, changed jobs and restored quarantined metadata grant no access. Parent deletion joins dependent cleanup before last-owner image removal.
+
+## Managed ChatGPT Sidechat — issue #1829
+
+System `MANAGED_CODEX_SIDECHAT_V1 = 47` and Worker
+`MANAGED_CODEX_SIDECHAT_V1 = 26` extend the closed Codex Sidechat profile.
+System 27 and Worker 16 retain API Sidechat ownership; protected subscriptions
+retain Worker 3. Negotiate all original adapters before managed admission,
+claim, publication and continuation. Capabilities describe implemented adapters;
+the original actual native process must verify the combined managed file-backed
+ChatGPT/OpenAI authentication and read-only enforcement before native Fork,
+every child input/Steer and manual compaction. Ordinary independent subscription
+Fork remains unsupported. No migration, new login or credential conversion is
+introduced.
+
+Admission freezes the original protected account generation in the Fork input.
+Only its exact claimed Sidechat job, actor, source boundary, account connection,
+Runner, paired device and current instance may Take an EXECUTE lease. Receipt
+replay cannot distribute credentials again. Source inspection uses its original
+credential-free retained home and validates the same managed/read-only profile;
+credentials are materialized only in the new owned private child home outside
+workspace roots. The built-in OpenAI provider preserves the original model route.
+API Sidechat keeps its existing unregistered relay profile.
+
+Capture the final original-account bundle, join the original native process and
+descendants, and independently compare/remove/scan private plaintext before
+protected Finish. Finish rechecks the original actor/job/source before vault
+staging and in its final transaction. Its server-owned receipt records only
+opaque Fork/account/device/instance/generation/Finish references. Publication
+requires that exact successful Finish receipt, the settled current generation,
+confirmed native history, immutable read-only overlay and workspace reference.
+A Worker result contains only the receipt reference. Missing or changed proof
+retains the original unpublished child and recovery; it grants no fresh Fork.
+
+The child starts paused with its original account/model/instructions and exact
+native prefix. Later execution uses the existing protected Take/Finish lifecycle.
+Parent-dependent cleanup, independent child queue/deletion and explicit
+revision-bound findings transfer keep their existing ownership. Logs contain
+operation IDs, closed phases and stable codes, never credentials, prompt text,
+findings, paths or raw native content.
+
+Local synthetic RPC/process fixtures cover capability and generation changes,
+protected delivery/Finish replay, publication fences and combined profile drift
+before input/Steer/compaction. Actual installed-native, real-account and platform
+acceptance is owner-skipped for this batch and remains unperformed; local
+fixtures do not establish it. Record commands/revisions/results in PRs and CI,
+not repository evidence documents.

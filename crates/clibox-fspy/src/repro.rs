@@ -8,7 +8,7 @@ use std::os::{
     unix::fs::{symlink, MetadataExt},
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs::{self, File},
     io::{self, Read, Write},
     path::{Component, Path, PathBuf},
@@ -63,6 +63,8 @@ pub struct SnapshotFile {
 
 #[derive(Debug, Clone)]
 pub struct SnapshotLink {
+    /// Original nofollow entry identity; unavailable platforms retain None.
+    pub entry_identity: Option<FileIdentity>,
     /// Canonical project-relative target used for containment and identity
     /// checks.
     pub target: PathBuf,
@@ -137,37 +139,141 @@ fn staged_link_target(
         .ok_or(ReproFailure::Unavailable)
 }
 
-fn normalize_relative(path: &Path) -> Result<PathBuf, ReproFailure> {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Normal(name) => normalized.push(name),
-            Component::ParentDir => {
-                if !normalized.pop() {
-                    return Err(ReproFailure::ExternalLink);
-                }
-            }
-            Component::Prefix(_) | Component::RootDir => {
+// Windows reduces parent components in a relative reparse target before
+// looking up the substituted path. Do not apply this to absolute namespaces
+// or to the remaining suffix: their normalization is a separate native rule.
+#[cfg(any(windows, test))]
+fn windows_relative_components(
+    base: &Path,
+    target: VecDeque<PathBuf>,
+    cancelled: &AtomicBool,
+) -> Result<VecDeque<PathBuf>, ReproFailure> {
+    let mut reduced = VecDeque::new();
+    for component in base
+        .components()
+        .map(|component| PathBuf::from(component.as_os_str()))
+        .chain(target)
+    {
+        check_cancelled(cancelled)?;
+        if component == Path::new("..") {
+            if reduced.pop_back().is_none() {
                 return Err(ReproFailure::ExternalLink);
             }
+        } else {
+            // Preserve credential denial even when a later parent cancels it.
+            if denied(&component) {
+                return Err(ReproFailure::BlockedInput);
+            }
+            reduced.push_back(component);
         }
     }
-    Ok(normalized)
+    Ok(reduced)
 }
 
-fn raw_target_relative(
+// Keep platform-native traversal order. Unix follows a directory link before
+// a later parent component; Windows reduces a relative reparse target first.
+// Retain the backing actually traversed, including Unix directories visited
+// before `..`, for identity checks and staging.
+fn raw_link_chain(
     root: &Path,
     link: &Path,
     raw_target: &Path,
-) -> Result<Option<PathBuf>, ReproFailure> {
-    if raw_target.is_absolute() {
-        return match raw_target.strip_prefix(root) {
-            Ok(relative) => normalize_relative(relative).map(Some),
-            Err(_) => Ok(None),
-        };
+    cancelled: &AtomicBool,
+) -> Result<Option<Vec<PathBuf>>, ReproFailure> {
+    fn components(path: &Path) -> Result<VecDeque<PathBuf>, ReproFailure> {
+        path.components()
+            .filter_map(|component| match component {
+                Component::CurDir => None,
+                Component::Normal(_) | Component::ParentDir => {
+                    Some(Ok(PathBuf::from(component.as_os_str())))
+                }
+                _ => Some(Err(ReproFailure::ExternalLink)),
+            })
+            .collect()
     }
-    normalize_relative(&link.parent().unwrap_or(Path::new(".")).join(raw_target)).map(Some)
+    let (mut current, mut pending) = if raw_target.is_absolute() {
+        let Ok(relative) = raw_target.strip_prefix(root) else {
+            return Ok(None);
+        };
+        (PathBuf::new(), components(relative)?)
+    } else {
+        (
+            link.parent().unwrap_or(Path::new("")).to_path_buf(),
+            components(raw_target)?,
+        )
+    };
+    #[cfg(windows)]
+    if !raw_target.is_absolute() {
+        pending = windows_relative_components(&current, pending, cancelled)?;
+        current = PathBuf::new();
+    } else if pending.iter().any(|component| component == Path::new("..")) {
+        // Do not guess parent semantics in an absolute or verbatim namespace.
+        return Err(ReproFailure::Unavailable);
+    }
+    let mut chain = Vec::new();
+    if !current.as_os_str().is_empty() {
+        chain.push(current.clone());
+    }
+    let mut followed = 0;
+    while let Some(component) = pending.pop_front() {
+        check_cancelled(cancelled)?;
+        if component == Path::new("..") {
+            if !current.pop() {
+                return Err(ReproFailure::ExternalLink);
+            }
+            continue;
+        }
+        let next = current.join(component);
+        if denied(&next) {
+            return Err(ReproFailure::BlockedInput);
+        }
+        let source = root.join(&next);
+        let metadata = fs::symlink_metadata(&source).map_err(|_| ReproFailure::Unavailable)?;
+        chain.push(next.clone());
+        if metadata.file_type().is_symlink() {
+            followed += 1;
+            // Bound cycles and repeated traversal independently of
+            // selected-entry accounting, which still charges each
+            // retained link once.
+            if followed > 128 {
+                return Err(ReproFailure::Unavailable);
+            }
+            let target = fs::read_link(source).map_err(|_| ReproFailure::Unavailable)?;
+            let expansion = if target.is_absolute() {
+                current = PathBuf::new();
+                components(
+                    target
+                        .strip_prefix(root)
+                        .map_err(|_| ReproFailure::ExternalLink)?,
+                )?
+            } else {
+                components(&target)?
+            };
+            #[cfg(windows)]
+            let expansion = if !target.is_absolute() {
+                let expansion = windows_relative_components(&current, expansion, cancelled)?;
+                current = PathBuf::new();
+                expansion
+            } else {
+                if expansion
+                    .iter()
+                    .any(|component| component == Path::new(".."))
+                {
+                    return Err(ReproFailure::Unavailable);
+                }
+                expansion
+            };
+            for component in expansion.into_iter().rev() {
+                pending.push_front(component);
+            }
+        } else {
+            if !pending.is_empty() && !metadata.is_dir() {
+                return Err(ReproFailure::Unavailable);
+            }
+            current = next;
+        }
+    }
+    Ok(Some(chain))
 }
 
 #[cfg(target_os = "linux")]
@@ -235,6 +341,33 @@ fn source_identity(path: &Path, _metadata: &fs::Metadata) -> Result<FileIdentity
     file_id::get_file_id(path)
         .map(FileIdentity::from)
         .map_err(|_| ReproFailure::Unavailable)
+}
+
+fn link_entry_identity(
+    path: &Path,
+    metadata: &fs::Metadata,
+) -> Result<Option<FileIdentity>, ReproFailure> {
+    #[cfg(unix)]
+    {
+        source_identity(path, metadata).map(Some)
+    }
+    #[cfg(windows)]
+    {
+        let _ = (path, metadata);
+        Ok(None)
+    }
+}
+
+fn verify_link_entry(path: &Path, link: &SnapshotLink) -> Result<(), ReproFailure> {
+    let Some(expected) = link.entry_identity else {
+        return Ok(());
+    };
+    let metadata = fs::symlink_metadata(path).map_err(|_| ReproFailure::UnstableInput)?;
+    if !metadata.file_type().is_symlink() || link_entry_identity(path, &metadata)? != Some(expected)
+    {
+        return Err(ReproFailure::UnstableInput);
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -334,6 +467,40 @@ impl Snapshot {
         valid_relative(relative)
             && self.eligible.contains(relative)
             && self.snapshot_file(relative).map(|file| file.identity) == Some(identity)
+    }
+
+    /// Admit a metadata entry only when the recorded resolution identifies
+    /// that final link, rather than the target used by following/content calls.
+    pub fn selected_link_entry_has_identity(
+        &self,
+        relative: &Path,
+        resolved: &Path,
+        identity: FileIdentity,
+    ) -> bool {
+        if !valid_relative(relative)
+            || !(self.eligible.contains(relative)
+                || self.eligible_directories.contains_key(relative))
+        {
+            return false;
+        }
+        self.snapshot_link(relative).is_some_and(|(backing, link)| {
+            backing == resolved && link.entry_identity == Some(identity)
+        })
+    }
+
+    fn snapshot_link<'a>(&'a self, relative: &Path) -> Option<(PathBuf, &'a SnapshotLink)> {
+        let mut prefix = PathBuf::new();
+        for component in relative.components() {
+            prefix.push(component.as_os_str());
+            if let Some(link) = self.links.get(&prefix) {
+                let suffix = relative.strip_prefix(&prefix).ok()?;
+                if suffix.as_os_str().is_empty() {
+                    return Some((prefix, link));
+                }
+                return self.snapshot_link(&append_link_suffix(&link.target, suffix));
+            }
+        }
+        None
     }
 
     fn snapshot_file(&self, relative: &Path) -> Option<&SnapshotFile> {
@@ -547,6 +714,7 @@ impl Snapshot {
                     self.links.insert(
                         prefix.clone(),
                         SnapshotLink {
+                            entry_identity: link_entry_identity(&source, &metadata)?,
                             target: target.clone(),
                             raw_target: raw_target.clone(),
                         },
@@ -645,14 +813,17 @@ impl Snapshot {
         link: &Path,
         raw_target: &Path,
     ) -> Result<(), ReproFailure> {
-        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+        let Some(chain) = raw_link_chain(&self.root, link, raw_target, &self.cancelled)? else {
             return Ok(());
         };
-        let mut prefix = PathBuf::new();
-        for component in relative_target.components() {
-            prefix.push(component.as_os_str());
+        for prefix in chain {
             let source = self.root.join(&prefix);
             let metadata = fs::symlink_metadata(&source).map_err(|_| ReproFailure::Unavailable)?;
+            if metadata.is_dir() {
+                self.directories
+                    .entry(prefix.clone())
+                    .or_insert(source_identity(&source, &metadata)?);
+            }
             if !metadata.file_type().is_symlink() {
                 continue;
             }
@@ -670,6 +841,7 @@ impl Snapshot {
                 self.links.insert(
                     prefix.clone(),
                     SnapshotLink {
+                        entry_identity: link_entry_identity(&source, &metadata)?,
                         target,
                         raw_target: raw_target.clone(),
                     },
@@ -708,6 +880,7 @@ impl Snapshot {
             if let Some(link) = self.links.get(&prefix) {
                 self.verify_raw_link_chain(&prefix, &link.raw_target)?;
                 let source = self.root.join(&prefix);
+                verify_link_entry(&source, link)?;
                 let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
                 if actual_raw != link.raw_target {
                     return Err(ReproFailure::UnstableInput);
@@ -767,16 +940,26 @@ impl Snapshot {
     }
 
     fn verify_raw_link_chain(&self, link: &Path, raw_target: &Path) -> Result<(), ReproFailure> {
-        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+        let Some(chain) =
+            raw_link_chain(&self.root, link, raw_target, &self.cancelled).map_err(|error| {
+                if error == ReproFailure::Cancellation {
+                    error
+                } else {
+                    ReproFailure::UnstableInput
+                }
+            })?
+        else {
             return Ok(());
         };
-        let mut prefix = PathBuf::new();
-        for component in relative_target.components() {
-            prefix.push(component.as_os_str());
+        for prefix in chain {
+            if let Some(expected) = self.directories.get(&prefix) {
+                self.verify_directory(&prefix, expected)?;
+            }
             let Some(expected) = self.links.get(&prefix) else {
                 continue;
             };
             let source = self.root.join(&prefix);
+            verify_link_entry(&source, expected)?;
             let actual_raw = fs::read_link(&source).map_err(|_| ReproFailure::UnstableInput)?;
             if actual_raw != expected.raw_target {
                 return Err(ReproFailure::UnstableInput);
@@ -800,13 +983,11 @@ impl Snapshot {
         staged: &mut BTreeMap<PathBuf, SnapshotFile>,
         staged_identities: &mut BTreeMap<FileIdentity, PathBuf>,
     ) -> Result<(), ReproFailure> {
-        let Some(relative_target) = raw_target_relative(&self.root, link, raw_target)? else {
+        let Some(chain) = raw_link_chain(&self.root, link, raw_target, &self.cancelled)? else {
             return Ok(());
         };
-        let mut prefix = PathBuf::new();
-        for component in relative_target.components() {
-            prefix.push(component.as_os_str());
-            if self.links.contains_key(&prefix) {
+        for prefix in chain {
+            if self.links.contains_key(&prefix) || self.directories.contains_key(&prefix) {
                 self.stage_path(&prefix, candidate, staged, staged_identities)?;
             }
         }
@@ -1440,7 +1621,12 @@ mod tests {
         let selector = Selector::new(&["alias.txt".into()], &[]).unwrap();
         let snapshot = Snapshot::take(directory.path(), &selector, 1024, 100).unwrap();
         let required = BTreeSet::from([PathBuf::from("alias.txt")]);
-        fs::remove_file(directory.path().join("bridge")).unwrap();
+        // Retain the original entry so restoring it also restores its inode.
+        fs::rename(
+            directory.path().join("bridge"),
+            directory.path().join("retained-bridge"),
+        )
+        .unwrap();
         symlink("./real", directory.path().join("bridge")).unwrap();
         let changed_candidate = tempfile::tempdir().unwrap();
         assert!(matches!(
@@ -1448,7 +1634,11 @@ mod tests {
             Err(ReproFailure::UnstableInput)
         ));
         fs::remove_file(directory.path().join("bridge")).unwrap();
-        symlink("real", directory.path().join("bridge")).unwrap();
+        fs::rename(
+            directory.path().join("retained-bridge"),
+            directory.path().join("bridge"),
+        )
+        .unwrap();
         let candidate = tempfile::tempdir().unwrap();
         snapshot
             .stage_required(&required, candidate.path())
@@ -1465,6 +1655,389 @@ mod tests {
             fs::read(candidate.path().join("alias.txt")).unwrap(),
             b"input"
         );
+    }
+
+    #[test]
+    fn windows_relative_projection_preserves_native_lookup_and_guards() {
+        let target = |names: &[&str]| names.iter().map(PathBuf::from).collect();
+        let idle = AtomicBool::new(false);
+        assert_eq!(
+            windows_relative_components(
+                Path::new(""),
+                target(&["shortcut", "..", "target.txt"]),
+                &idle
+            )
+            .unwrap(),
+            target(&["target.txt"])
+        );
+        assert_eq!(
+            windows_relative_components(
+                Path::new("deep"),
+                target(&["bridge", "unused", "..", "target.txt"]),
+                &idle
+            )
+            .unwrap(),
+            target(&["deep", "bridge", "target.txt"])
+        );
+        assert!(matches!(
+            windows_relative_components(Path::new(""), target(&["..", "target.txt"]), &idle),
+            Err(ReproFailure::ExternalLink)
+        ));
+        assert!(matches!(
+            windows_relative_components(
+                Path::new(""),
+                target(&[".env", "..", "target.txt"]),
+                &idle
+            ),
+            Err(ReproFailure::BlockedInput)
+        ));
+        assert!(matches!(
+            windows_relative_components(
+                Path::new(""),
+                target(&["target.txt"]),
+                &AtomicBool::new(true)
+            ),
+            Err(ReproFailure::Cancellation)
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_canceled_directory_link_does_not_select_its_decoy() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        if !parent_link_fixture(&root) {
+            return;
+        }
+        fs::write(root.join("target.txt"), b"fixture").unwrap();
+        fs::write(root.join("deep/target.txt"), b"decoy").unwrap();
+        // Native Windows lookup cancels shortcut in the relative substitute.
+        assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+        let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(&root, &selector, 32, 2).unwrap();
+        assert!(!snapshot.links.contains_key(Path::new("shortcut")));
+        assert!(matches!(
+            Snapshot::take(&root, &selector, 32, 1),
+            Err(ReproFailure::FileLimit)
+        ));
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(
+                &BTreeSet::from([PathBuf::from("input.txt")]),
+                candidate.path(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("input.txt")).unwrap(),
+            b"fixture"
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("input.txt"))
+                .unwrap()
+                .as_os_str(),
+            parent_link_target().as_os_str()
+        );
+        assert!(!candidate.path().join("shortcut").exists());
+        assert!(!candidate.path().join("deep").exists());
+    }
+
+    #[cfg(windows)]
+    fn windows_retained_parent_fixture(root: &Path) -> bool {
+        fs::create_dir_all(root.join("deep/nested")).unwrap();
+        fs::write(root.join("deep/nested/target.txt"), b"fixture").unwrap();
+        fs::write(root.join("target.txt"), b"decoy").unwrap();
+        for (source, target, link) in [
+            (
+                root.join("deep/nested"),
+                PathBuf::from("deep").join("nested"),
+                root.join("bridge"),
+            ),
+            (
+                root.join("deep/nested/target.txt"),
+                PathBuf::from("bridge")
+                    .join("unused")
+                    .join("..")
+                    .join("target.txt"),
+                root.join("input.txt"),
+            ),
+        ] {
+            if let Err(error) = stage_symlink(&source, &target, &link) {
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::Unsupported
+                ) {
+                    return false;
+                }
+                panic!("fixture link failed: {error}");
+            }
+        }
+        true
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stages_directory_link_before_parent_component() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(directory.path()).unwrap();
+        if !windows_retained_parent_fixture(&root) {
+            return;
+        }
+        assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+        let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+        let snapshot = Snapshot::take(&root, &selector, 32, 3).unwrap();
+        assert!(matches!(
+            Snapshot::take(&root, &selector, 32, 2),
+            Err(ReproFailure::FileLimit)
+        ));
+        let required = BTreeSet::from([PathBuf::from("input.txt")]);
+        assert_eq!(
+            snapshot
+                .selected_entries_within(Path::new(""))
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            required
+        );
+        let candidate = tempfile::tempdir().unwrap();
+        snapshot
+            .stage_required(&required, candidate.path())
+            .unwrap();
+        assert_eq!(
+            fs::read(candidate.path().join("input.txt")).unwrap(),
+            b"fixture"
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("input.txt"))
+                .unwrap()
+                .as_os_str(),
+            PathBuf::from("bridge")
+                .join("unused")
+                .join("..")
+                .join("target.txt")
+                .as_os_str()
+        );
+        assert_eq!(
+            fs::read_link(candidate.path().join("bridge"))
+                .unwrap()
+                .as_os_str(),
+            PathBuf::from("deep").join("nested").as_os_str()
+        );
+        assert!(candidate.path().join("deep/nested").is_dir());
+        assert!(!candidate.path().join("bridge/unused").exists());
+        assert!(!candidate.path().join("target.txt").exists());
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "repro::tests::parent_component_child_reads_candidate",
+                "--nocapture",
+            ])
+            .env("CLIBOX_PARENT_COMPONENT_CHILD", "1")
+            .current_dir(candidate.path())
+            .output()
+            .unwrap();
+        assert_eq!(child.status.code(), Some(42));
+        assert!(String::from_utf8_lossy(&child.stderr).contains("PARENT_COMPONENT_FIXTURE"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_replaced_directory_visited_before_parent_component() {
+        for replace_link in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = fs::canonicalize(directory.path()).unwrap();
+            if !windows_retained_parent_fixture(&root) {
+                return;
+            }
+            let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+            let snapshot = Snapshot::take(&root, &selector, 32, 3).unwrap();
+            if replace_link {
+                fs::create_dir(root.join("deep/other")).unwrap();
+                fs::write(root.join("deep/other/target.txt"), b"fixture").unwrap();
+                fs::remove_dir(root.join("bridge")).unwrap();
+                stage_symlink(
+                    &root.join("deep/other"),
+                    &PathBuf::from("deep").join("other"),
+                    &root.join("bridge"),
+                )
+                .unwrap();
+            } else {
+                fs::rename(root.join("deep/nested"), root.join("deep/previous")).unwrap();
+                fs::create_dir(root.join("deep/nested")).unwrap();
+                // Keep the leaf inode, isolating the original directory guard.
+                fs::rename(
+                    root.join("deep/previous/target.txt"),
+                    root.join("deep/nested/target.txt"),
+                )
+                .unwrap();
+            }
+            assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+            let candidate = tempfile::tempdir().unwrap();
+            assert!(matches!(
+                snapshot.stage_required(
+                    &BTreeSet::from([PathBuf::from("input.txt")]),
+                    candidate.path()
+                ),
+                Err(ReproFailure::UnstableInput)
+            ));
+            assert_eq!(fs::read_dir(candidate.path()).unwrap().count(), 0);
+        }
+    }
+
+    #[cfg(any(unix, windows))]
+    fn parent_link_target() -> PathBuf {
+        // Relative Windows reparse targets need native backslash separators:
+        // CreateSymbolicLinkW retains forward slashes instead of converting
+        // them as ordinary Win32 pathname lookup does. Joining components
+        // keeps the parent traversal intact and the Unix fixture unchanged.
+        PathBuf::from("shortcut").join("..").join("target.txt")
+    }
+
+    #[cfg(any(unix, windows))]
+    fn parent_link_fixture(root: &Path) -> bool {
+        fs::create_dir_all(root.join("deep/nested")).unwrap();
+        fs::write(root.join("deep/target.txt"), b"fixture").unwrap();
+        for (source, target, link) in [
+            (
+                root.join("deep/nested"),
+                PathBuf::from("deep").join("nested"),
+                root.join("shortcut"),
+            ),
+            (
+                root.join("deep/target.txt"),
+                parent_link_target(),
+                root.join("input.txt"),
+            ),
+        ] {
+            if let Err(error) = stage_symlink(&source, &target, &link) {
+                #[cfg(windows)]
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::Unsupported
+                ) {
+                    return false;
+                }
+                panic!("fixture link failed: {error}");
+            }
+        }
+        true
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_directory_link_before_parent_component() {
+        for decoy in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = fs::canonicalize(directory.path()).unwrap();
+            if !parent_link_fixture(&root) {
+                return;
+            }
+            if decoy {
+                fs::write(root.join("target.txt"), b"decoy").unwrap();
+            }
+            fs::write(root.join("deep/unrelated.txt"), b"unrelated").unwrap();
+            assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+            let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+            let snapshot = Snapshot::take(&root, &selector, 32, 3).unwrap();
+            assert!(matches!(
+                Snapshot::take(&root, &selector, 32, 2),
+                Err(ReproFailure::FileLimit)
+            ));
+            let required = BTreeSet::from([PathBuf::from("input.txt")]);
+            assert_eq!(
+                snapshot
+                    .selected_entries_within(Path::new(""))
+                    .cloned()
+                    .collect::<BTreeSet<_>>(),
+                required
+            );
+            let candidate = tempfile::tempdir().unwrap();
+            snapshot
+                .stage_required(&required, candidate.path())
+                .unwrap();
+            assert_eq!(
+                fs::read(candidate.path().join("input.txt")).unwrap(),
+                b"fixture"
+            );
+            assert_eq!(
+                fs::read_link(candidate.path().join("input.txt"))
+                    .unwrap()
+                    .as_os_str(),
+                parent_link_target().as_os_str()
+            );
+            assert_eq!(
+                fs::read_link(candidate.path().join("shortcut"))
+                    .unwrap()
+                    .as_os_str(),
+                PathBuf::from("deep").join("nested").as_os_str()
+            );
+            assert!(candidate.path().join("deep/nested").is_dir());
+            assert!(!candidate.path().join("target.txt").exists());
+            assert!(!candidate.path().join("deep/unrelated.txt").exists());
+            // A test-owned child checks the staged link rather than
+            // substituting the canonical file path, and produces
+            // the reproduction signature.
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "repro::tests::parent_component_child_reads_candidate",
+                    "--nocapture",
+                ])
+                .env("CLIBOX_PARENT_COMPONENT_CHILD", "1")
+                .current_dir(candidate.path())
+                .output()
+                .unwrap();
+            assert_eq!(child.status.code(), Some(42));
+            assert!(String::from_utf8_lossy(&child.stderr).contains("PARENT_COMPONENT_FIXTURE"));
+        }
+    }
+
+    #[test]
+    fn parent_component_child_reads_candidate() {
+        if std::env::var_os("CLIBOX_PARENT_COMPONENT_CHILD").is_none() {
+            return;
+        }
+        assert_eq!(fs::read("input.txt").unwrap(), b"fixture");
+        eprintln!("PARENT_COMPONENT_FIXTURE");
+        std::process::exit(42);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_replaced_directory_visited_before_parent_component() {
+        for replace_link in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = fs::canonicalize(directory.path()).unwrap();
+            if !parent_link_fixture(&root) {
+                return;
+            }
+            let selector = Selector::new(&["input.txt".into()], &[]).unwrap();
+            let snapshot = Snapshot::take(&root, &selector, 32, 3).unwrap();
+            if replace_link {
+                fs::create_dir(root.join("deep/other")).unwrap();
+                #[cfg(unix)]
+                fs::remove_file(root.join("shortcut")).unwrap();
+                #[cfg(windows)]
+                fs::remove_dir(root.join("shortcut")).unwrap();
+                stage_symlink(
+                    &root.join("deep/other"),
+                    &PathBuf::from("deep").join("other"),
+                    &root.join("shortcut"),
+                )
+                .unwrap();
+            } else {
+                fs::rename(root.join("deep/nested"), root.join("deep/previous")).unwrap();
+                fs::create_dir(root.join("deep/nested")).unwrap();
+            }
+            assert_eq!(fs::read(root.join("input.txt")).unwrap(), b"fixture");
+            let candidate = tempfile::tempdir().unwrap();
+            assert!(matches!(
+                snapshot.stage_required(
+                    &BTreeSet::from([PathBuf::from("input.txt")]),
+                    candidate.path()
+                ),
+                Err(ReproFailure::UnstableInput)
+            ));
+            assert_eq!(fs::read_dir(candidate.path()).unwrap().count(), 0);
+        }
     }
 
     #[test]

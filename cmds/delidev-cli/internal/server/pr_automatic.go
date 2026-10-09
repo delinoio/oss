@@ -40,7 +40,7 @@ func (s *Service) cancelAutomaticPRPreflight(ctx context.Context, attempt store.
 	if err != nil {
 		return err
 	}
-	_, err = s.changeQueuedInput(ctx, &pb.Mutation{Id: string(input.ID), ExpectedRevision: input.Revision, RequestId: string(domain.NewID())}, value.SessionID, "", true)
+	_, err = s.changeQueuedInput(ctx, &pb.Mutation{Id: string(input.ID), ExpectedRevision: input.Revision, RequestId: string(domain.NewID())}, value.SessionID, "", true, nil, nil)
 	if err == nil {
 		s.logger.InfoContext(ctx, "automatic_pr_preflight_canceled", "attempt_id", attempt.ID, "input_id", input.ID)
 	}
@@ -224,9 +224,48 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 			return nil
 		}
 		input = domain.PRFixRequest{SetID: row.ID, SetRevision: row.Revision, ProjectID: original.ProjectID, RepositoryID: link.RepositoryID}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if input.SetID == "" {
+		return nil
+	}
+	// Refresh each enabled source once before the ordered scan. Denied rows do
+	// not consume request capacity, so later independently eligible kinds remain
+	// reachable without changing reviewer policy or handling skipped versions.
+	var sources []domain.PRProblemKind
+	for _, kind := range []domain.PRProblemKind{domain.PRFeedbackProblem, domain.PRCIProblem, domain.PRMergeConflictProblem} {
+		if kinds[kind] && policy.AutomaticKind(kind) && (kind != domain.PRFeedbackProblem || len(policy.ReviewerSelectors) != 0) {
+			sources = append(sources, kind)
+		}
+	}
+	if len(sources) == 0 {
+		return nil
+	}
+	target, observations, err := s.automaticPRObservations(ctx, link, sources)
+	if err != nil {
+		return err
+	}
+	// This transient preview has no durable attempt or execution authority. The
+	// same formatter runs again with current originals inside atomic acceptance.
+	preview := domain.PRFixExecution{AttemptID: domain.NewID(), Target: target, Strategy: policy.ConflictStrategy}
+	var overflow error
+	err = s.Store.Read(ctx, func(tx *store.Tx) error {
+		row, _, err := tx.GetPRProblemSet(input.SetID)
+		if err != nil {
+			return err
+		}
+		if row.Revision != input.SetRevision {
+			return prObservationConflict()
+		}
 		var after domain.ID
 		for len(input.Problems) < 100 {
-			page, more, err := tx.ListPRProblems(row.ID, after, 50)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			page, more, err := tx.ListPRProblems(input.SetID, after, 50)
 			if err != nil {
 				return err
 			}
@@ -236,9 +275,27 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 					return err
 				}
 				after = r.ID
-				if kinds[p.Kind] && policy.AutomaticKind(p.Kind) && (p.Kind != domain.PRFeedbackProblem || len(policy.ReviewerSelectors) != 0) && p.Current && p.State == domain.PRProblemUnhandled {
+				observed, ok := observations[p.Kind]
+				if !ok || !p.Current || p.State != domain.PRProblemUnhandled {
+					continue
+				}
+				reason, err := domain.EvaluatePRRemediation(p, observed, policy, domain.PRRemediationAutomatic, time.Now().UTC())
+				if err != nil {
+					return err
+				}
+				if reason == domain.PRRemediationEligible {
+					trial := append(problems, p)
+					if _, err := domain.PRFixPrompt(preview, trial); err != nil {
+						if domain.SafeError(err).Code != domain.ResourceExhausted {
+							return err
+						}
+						// Keep complete originals unhandled. A large early item must
+						// not starve a later item that fits the remaining byte budget.
+						overflow = err
+						continue
+					}
 					input.Problems = append(input.Problems, domain.PRFixProblem{ID: r.ID, Revision: r.Revision, ContentVersion: p.ContentVersion})
-					problems = append(problems, p)
+					problems = trial
 					if len(input.Problems) == 100 {
 						break
 					}
@@ -253,37 +310,11 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	if err != nil {
 		return err
 	}
-	if len(problems) == 0 {
-		return nil
-	}
-	// Fresh observations filter individual nonmatching feedback rather than
-	// allowing one unknown author to veto independently authorized entries.
-	target, observations, err := s.automaticPRObservations(ctx, link, problems)
-	if err != nil {
-		return err
-	}
-	eligible := input.Problems[:0]
-	selectedProblems := problems[:0]
-	for i, p := range problems {
-		observed, ok := observations[p.Kind]
-		if !ok {
-			continue
-		}
-		reason, err := domain.EvaluatePRRemediation(p, observed, policy, domain.PRRemediationAutomatic, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-		if reason == domain.PRRemediationEligible {
-			eligible = append(eligible, input.Problems[i])
-			selectedProblems = append(selectedProblems, p)
-		}
-	}
-	input.Problems = eligible
-	if len(eligible) == 0 {
-		return nil
+	if len(input.Problems) == 0 {
+		return overflow
 	}
 	used := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
-	for _, p := range selectedProblems {
+	for _, p := range problems {
 		used[p.Kind] = observations[p.Kind]
 	}
 	selected, err := s.selectPRFixSession(ctx, input, target, policy)
@@ -305,7 +336,7 @@ func (s *Service) requestAutomaticPRFix(ctx context.Context, original store.Reco
 	return err
 }
 
-func (s *Service) automaticPRObservations(ctx context.Context, link domain.SessionPullRequest, problems []domain.PRProblem) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
+func (s *Service) automaticPRObservations(ctx context.Context, link domain.SessionPullRequest, kinds []domain.PRProblemKind) (domain.PRGitTarget, map[domain.PRProblemKind]domain.RepositoryQueryResult, error) {
 	detailCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	detail, err := s.readProblemObservation(detailCtx, link.RepositoryID, link.Number, domain.RepositoryDetail, "")
 	cancel()
@@ -321,21 +352,21 @@ func (s *Service) automaticPRObservations(ctx context.Context, link domain.Sessi
 	}
 	observations := map[domain.PRProblemKind]domain.RepositoryQueryResult{}
 	attempted := map[domain.PRProblemKind]bool{}
-	for _, p := range problems {
-		if attempted[p.Kind] {
+	for _, kind := range kinds {
+		if attempted[kind] {
 			continue
 		}
-		attempted[p.Kind] = true
+		attempted[kind] = true
 		observed := detail
-		if p.Kind != domain.PRMergeConflictProblem {
+		if kind != domain.PRMergeConflictProblem {
 			bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
-			observed, err = s.readProblemObservation(bounded, link.RepositoryID, link.Number, automaticPROperation(p.Kind), "")
+			observed, err = s.readProblemObservation(bounded, link.RepositoryID, link.Number, automaticPROperation(kind), "")
 			cancel()
 			if err != nil {
 				if ctx.Err() != nil {
 					return target, nil, ctx.Err()
 				}
-				s.logger.InfoContext(ctx, "automatic_pr_prerequisite_blocked", "repository_id", link.RepositoryID, "kind", p.Kind, "code", domain.SafeError(err).Code)
+				s.logger.InfoContext(ctx, "automatic_pr_prerequisite_blocked", "repository_id", link.RepositoryID, "kind", kind, "code", domain.SafeError(err).Code)
 				continue
 			}
 		}
@@ -346,7 +377,7 @@ func (s *Service) automaticPRObservations(ctx context.Context, link domain.Sessi
 		if err != nil || fresh != target {
 			return target, nil, prObservationConflict()
 		}
-		observations[p.Kind] = observed
+		observations[kind] = observed
 	}
 	return target, observations, nil
 }

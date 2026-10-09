@@ -6,6 +6,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -45,7 +46,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if err != nil || !s.WorkspaceAvailable() || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
 		return denied()
 	}
-	if _, err := checkedExecutionAssignment(tx, sr, s, machine, i.Assignment); err != nil {
+	if err := checkedExecutionSource(tx, sr, s, machine, i.Assignment); err != nil {
 		return denied()
 	}
 	if err := tx.RequireSessionBudget(sr.ID, s.EstimatedCostBudget); err != nil {
@@ -68,6 +69,13 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	p, err := store.Decode[domain.Provider](pr)
+	if err != nil {
+		return denied()
+	}
+	_, account, err := executionAccountFromTx(tx, v.AccountID, v.ConnectionID)
+	if err == nil {
+		p, err = providers.ResolveAccountProfile(p, account)
+	}
 	if err != nil {
 		return denied()
 	}

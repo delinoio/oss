@@ -103,6 +103,20 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	if err != nil || len(raw) > maxHTTPBody {
 		return nil, response.StatusCode, sessionProblem()
 	}
+	// Exact effective configuration responses intentionally retain private auth.
+	// Every content-bearing read/mutation is guarded before parsing or retention.
+	privateConfiguration := method == http.MethodGet && (path == "/config" || path == "/provider")
+	if len(raw) != 0 && !privateConfiguration && !s.contentGuard().Safe(raw) {
+		clear(raw)
+		s.problem = protectedContentRefused()
+		if s.events != nil {
+			s.events.fail(s.problem)
+		}
+		if s.logger != nil {
+			s.logger.WarnContext(ctx, "OpenCode protected runtime content refused", "owner_id", s.owner, "phase", "snapshot", "code", s.problem.Code)
+		}
+		return nil, response.StatusCode, s.problem
+	}
 	if err := s.accountReconciliationRead(raw); err != nil {
 		return nil, response.StatusCode, err
 	}

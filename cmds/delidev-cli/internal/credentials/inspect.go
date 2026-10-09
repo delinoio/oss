@@ -8,10 +8,10 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-// OpenExisting is the doctor-only read boundary. It cannot initialize a scope,
-// install missing locks/pins, reconcile scratch files or write/delete secrets.
-// Like normal Vault operations it holds the exact private OS scope lock, and
-// callers must close it after their bounded inspection.
+// OpenExisting is the read-only inspection boundary. It cannot initialize a
+// scope, install missing locks/pins, reconcile scratch files or write/delete
+// secrets. Like normal Vault operations it holds the exact private OS scope
+// lock, and callers must close it after their bounded inspection.
 func OpenExisting(root string, scope domain.ID, logger *slog.Logger) (*Vault, error) {
 	native, err := newNative()
 	if err != nil {

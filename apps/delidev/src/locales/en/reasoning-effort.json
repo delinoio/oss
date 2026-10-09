@@ -1,0 +1,10 @@
+{
+  "reasoning-effort.nativeDefault": "Native default",
+  "reasoning-effort.useNativeDefault": "Use native default",
+  "reasoning-effort.noMatchingSuggestions": "No matching suggestions. You can keep typing.",
+  "reasoning-effort.noEffortSuggestions": "No effort suggestions for this harness.",
+  "reasoning-effort.chooseSuggestionOrType": "Choose a suggestion or type a value. Leave empty for native default.",
+  "reasoning-effort.show": "Show",
+  "reasoning-effort.hide": "Hide",
+  "reasoning-effort.suggestions": "suggestions"
+}

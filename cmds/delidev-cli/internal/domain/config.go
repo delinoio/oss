@@ -133,7 +133,7 @@ func (r Reference) Validate(optional bool) error {
 		if err := Text(r.Remote, "Git remote", 256, true); err != nil {
 			return err
 		}
-		if strings.HasPrefix(r.Remote, "-") || strings.ContainsAny(r.Remote, " /\\:\r\n") {
+		if !validGitRemoteName(r.Remote) {
 			return Fail(InvalidArgument, "Invalid Git remote name.", "Use the name from repository inspection.")
 		}
 	} else if r.Remote != "" {
@@ -142,11 +142,27 @@ func (r Reference) Validate(optional bool) error {
 	return nil
 }
 
+func validGitRemoteName(value string) bool {
+	if value == "" || value == "@" || strings.HasPrefix(value, "-") || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") || strings.HasSuffix(value, ".lock") {
+		return false
+	}
+	if strings.Contains(value, "..") || strings.Contains(value, "@{") || strings.ContainsAny(value, " /\\:~^?*[") {
+		return false
+	}
+	for _, character := range value {
+		if character <= ' ' || character == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 type Checkout struct {
 	MachineID ID     `json:"machine_id"`
 	Path      string `json:"path"`
 }
 type Repository struct {
+	RemoteURL       string             `json:"remote_url,omitempty"`
 	Name            string             `json:"name"`
 	Checkouts       []Checkout         `json:"checkouts"`
 	PreferredRemote string             `json:"preferred_remote,omitempty"`
@@ -163,8 +179,22 @@ func (r Repository) Validate() error {
 	if err := Text(r.Name, "repository name", 256, true); err != nil {
 		return err
 	}
-	if len(r.Checkouts) == 0 || len(r.Checkouts) > 1000 {
+	if len(r.Checkouts) > 1000 || len(r.Checkouts) == 0 && r.RemoteURL == "" {
 		return Fail(InvalidArgument, "A repository requires an execution-machine checkout.", "Inspect a checkout on its Worker first.")
+	}
+	if r.RemoteURL != "" {
+		parsed, err := ParseRepositoryCloneURL(r.RemoteURL)
+		if err != nil {
+			return err
+		}
+		if r.GitHubOwner != "" || r.GitHubName != "" {
+			if err := ValidateGitHubRepository(r.GitHubOwner, r.GitHubName); err != nil {
+				return err
+			}
+			if parsed.GitHubOwner == "" || !strings.EqualFold(parsed.GitHubOwner, r.GitHubOwner) || !strings.EqualFold(parsed.GitHubName, r.GitHubName) {
+				return Fail(InvalidArgument, "GitHub repository metadata does not match the remote URL.", "Use the owner and repository name from the configured GitHub URL.")
+			}
+		}
 	}
 	ids := make([]ID, 0, len(r.Checkouts))
 	for _, c := range r.Checkouts {
@@ -205,7 +235,7 @@ func (r Repository) Validate() error {
 	if err := Text(r.PreferredRemote, "preferred remote", 256, false); err != nil {
 		return err
 	}
-	if strings.ContainsAny(r.PreferredRemote, " /\\:\r\n") || strings.HasPrefix(r.PreferredRemote, "-") {
+	if r.PreferredRemote != "" && !validGitRemoteName(r.PreferredRemote) {
 		return Fail(InvalidArgument, "Invalid preferred remote name.", "Use a remote returned by Worker inspection.")
 	}
 	return nil
@@ -237,16 +267,23 @@ type WeightedAccount struct {
 	ID     ID     `json:"id"`
 	Weight uint32 `json:"weight"`
 }
+type AgentSourceRoute struct {
+	ModelID  ID                `json:"model_id"`
+	Accounts []WeightedAccount `json:"accounts,omitempty"`
+	Routing  *RoutingPolicy    `json:"routing,omitempty"`
+}
+
 type Agent struct {
-	ReconfigurationRequired bool              `json:"reconfiguration_required,omitempty"`
-	Name                    string            `json:"name"`
-	Harness                 Harness           `json:"harness"`
-	ModelID                 ID                `json:"model_id"`
-	Effort                  string            `json:"effort,omitempty"`
-	Accounts                []WeightedAccount `json:"accounts"`
-	Routing                 *RoutingPolicy    `json:"routing,omitempty"`
-	Templates               []ID              `json:"templates"`
-	Options                 AgentOptions      `json:"options"`
+	ReconfigurationRequired bool               `json:"reconfiguration_required,omitempty"`
+	Name                    string             `json:"name"`
+	Harness                 Harness            `json:"harness"`
+	ModelID                 ID                 `json:"model_id,omitempty"`
+	Effort                  string             `json:"effort,omitempty"`
+	Accounts                []WeightedAccount  `json:"accounts,omitempty"`
+	Routes                  []AgentSourceRoute `json:"routes,omitempty"`
+	Routing                 *RoutingPolicy     `json:"routing,omitempty"`
+	Templates               []ID               `json:"templates"`
+	Options                 AgentOptions       `json:"options"`
 }
 
 func (a Agent) Validate() error {
@@ -256,17 +293,28 @@ func (a Agent) Validate() error {
 	if !a.Harness.Valid() {
 		return Fail(InvalidArgument, "Unknown harness.", "Choose codex, claude-code, opencode, or grok-build.")
 	}
-	if err := a.ModelID.Validate(); err != nil {
-		return err
+	if len(a.Routes) > 0 && (a.ModelID != "" || len(a.Accounts) != 0 || a.Routing != nil) {
+		return Fail(InvalidArgument, "Worker configuration mixes account route formats.", "Use ordered source routes or the legacy single source, with one authority.")
 	}
-	if a.Routing != nil && !a.Routing.Valid() {
-		return Fail(InvalidArgument, "Unknown routing policy.", "Select one of the six supported policies.")
-	}
-	ids := make([]ID, 0, len(a.Accounts))
-	for _, c := range a.Accounts {
-		ids = append(ids, c.ID)
-		if c.Weight < 1 || c.Weight > 1000 {
-			return Fail(InvalidArgument, "Invalid account weight.", "Use relative weights from 1 through 1000.")
+	ids := []ID{}
+	for _, route := range a.SourceRoutes() {
+		if err := route.ModelID.Validate(); err != nil {
+			return err
+		}
+		if route.Routing != nil && !route.Routing.Valid() {
+			return Fail(InvalidArgument, "Unknown routing policy.", "Select one of the six supported policies.")
+		}
+		if len(a.Routes) > 0 && len(route.Accounts) == 0 {
+			return Fail(MissingInput, "An account source has no accounts.", "Choose at least one account for every source.")
+		}
+		if route.Routing != nil && *route.Routing == Fixed && len(route.Accounts) > 1 {
+			return Fail(InvalidArgument, "Fixed routing accepts one account.", "Select one account or save a legacy account-less draft.")
+		}
+		for _, c := range route.Accounts {
+			ids = append(ids, c.ID)
+			if c.Weight < 1 || c.Weight > 1000 {
+				return Fail(InvalidArgument, "Invalid account weight.", "Use relative weights from 1 through 1000.")
+			}
 		}
 	}
 	if err := UniqueIDs(ids); err != nil {
@@ -275,17 +323,11 @@ func (a Agent) Validate() error {
 	if err := UniqueIDs(a.Templates); err != nil {
 		return err
 	}
-	if a.Routing != nil && *a.Routing == Fixed && len(a.Accounts) > 1 {
-		return Fail(InvalidArgument, "Fixed routing accepts one account.", "Select one account or save an account-less draft.")
-	}
 	if a.Options.Permission != PermissionDefault && a.Options.Permission != PermissionReadOnly && a.Options.Permission != PermissionWorkspaceWrite && a.Options.Permission != PermissionFullAccess {
 		return Fail(InvalidArgument, "Unknown native permission mode.", "Choose an explicit supported permission mode.")
 	}
-	if err := a.Options.validateClaudePermission(a.Harness); err != nil {
-		return err
-	}
-	if a.Options.MaxConcurrency > 64 {
-		return Fail(InvalidArgument, "Invalid native concurrency limit.", "Use at most 64; installed harness limits are checked before dispatch.")
+	if a.Options.ClaudePermission != "" && !a.Options.ClaudePermission.Valid() {
+		return Fail(InvalidArgument, "Unknown Claude permission mode.", "Choose a native Claude permission mode.")
 	}
 	if a.Harness == Codex {
 		if err := ValidateCodexSubagentOptions(a.Options); err != nil {
@@ -298,6 +340,35 @@ func (a Agent) Validate() error {
 		}
 	}
 	return nil
+}
+
+// SourceRoutes gives all reference consumers one view without rewriting legacy documents.
+func (a Agent) SourceRoutes() []AgentSourceRoute {
+	if len(a.Routes) > 0 {
+		return a.Routes
+	}
+	return []AgentSourceRoute{{ModelID: a.ModelID, Accounts: a.Accounts, Routing: a.Routing}}
+}
+func (a Agent) AllAccounts() []WeightedAccount {
+	result := []WeightedAccount{}
+	for _, route := range a.SourceRoutes() {
+		result = append(result, route.Accounts...)
+	}
+	return result
+}
+func (a Agent) ModelIDs() []ID {
+	result := []ID{}
+	for _, route := range a.SourceRoutes() {
+		result = append(result, route.ModelID)
+	}
+	return result
+}
+
+// WithSource constructs the existing execution shape for the chosen source only.
+func (a Agent) WithSource(route AgentSourceRoute) Agent {
+	a.Routes = nil
+	a.ModelID, a.Accounts, a.Routing = route.ModelID, route.Accounts, route.Routing
+	return a
 }
 
 type Template struct {
@@ -325,6 +396,10 @@ func (p APIProtocol) Valid() bool {
 	return p == OpenAIResponses || p == OpenAIChat || p == AnthropicMessages || p == NativeSubscription
 }
 
+func (p APIProtocol) API() bool {
+	return p == OpenAIResponses || p == OpenAIChat || p == AnthropicMessages
+}
+
 type Authentication string
 
 const (
@@ -335,14 +410,34 @@ const (
 )
 
 type Provider struct {
-	Name                string            `json:"name"`
-	Endpoint            string            `json:"endpoint"`
-	Protocol            APIProtocol       `json:"protocol"`
-	Authentication      Authentication    `json:"authentication"`
-	Discovery           bool              `json:"discovery"`
-	Enabled             *bool             `json:"enabled,omitempty"`
-	PresetID            *ProviderPresetID `json:"preset_id,omitempty"`
-	SubscriptionHarness *Harness          `json:"subscription_harness,omitempty"`
+	Name                string              `json:"name"`
+	Endpoint            string              `json:"endpoint"`
+	Protocol            APIProtocol         `json:"protocol"`
+	Authentication      Authentication      `json:"authentication"`
+	Discovery           bool                `json:"discovery"`
+	Enabled             *bool               `json:"enabled,omitempty"`
+	PresetID            *ProviderPresetID   `json:"preset_id,omitempty"`
+	SubscriptionHarness *Harness            `json:"subscription_harness,omitempty"`
+	APIFormats          []ProviderAPIFormat `json:"api_formats,omitempty"`
+}
+
+// ProviderAPIFormat is a server-owned connection tuple. The legacy provider
+// tuple remains independent so existing accounts retain their original format.
+type ProviderAPIFormat struct {
+	Protocol       APIProtocol    `json:"protocol"`
+	Endpoint       string         `json:"endpoint"`
+	Authentication Authentication `json:"authentication"`
+}
+
+func (f ProviderAPIFormat) Validate() error {
+	if !f.Protocol.API() || (f.Authentication != BearerAuth && f.Authentication != APIKeyAuth && f.Authentication != KeylessAuth) {
+		return Fail(InvalidArgument, "Unsupported API format profile.", "Select Responses, Chat Completions or Messages and its API authentication.")
+	}
+	return ValidateEndpoint(f.Endpoint, f.Authentication == KeylessAuth)
+}
+
+func (p Provider) LegacyAPIFormat() ProviderAPIFormat {
+	return ProviderAPIFormat{Protocol: p.Protocol, Endpoint: p.Endpoint, Authentication: p.Authentication}
 }
 
 // EnabledValue keeps pre-activation provider documents available by default.
@@ -351,6 +446,19 @@ func (p Provider) EnabledValue() bool { return p.Enabled == nil || *p.Enabled }
 func (p *Provider) SetEnabled(enabled bool) { p.Enabled = &enabled }
 
 func (p Provider) Validate() error {
+	if p.APIFormats != nil && len(p.APIFormats) == 0 || len(p.APIFormats) > 3 {
+		return Fail(InvalidArgument, "Too many API format profiles.", "Configure each of the three supported API formats once.")
+	}
+	seen := map[APIProtocol]bool{}
+	for _, profile := range p.APIFormats {
+		if err := profile.Validate(); err != nil {
+			return err
+		}
+		if seen[profile.Protocol] {
+			return Fail(InvalidArgument, "Duplicate API format profile.", "Configure each API format once.")
+		}
+		seen[profile.Protocol] = true
+	}
 	if p.SubscriptionHarness != nil && (p.Protocol != NativeSubscription || *p.SubscriptionHarness != Codex) {
 		return Fail(InvalidArgument, "Unsupported managed subscription harness.", "Use codex only on a native subscription provider.")
 	}
@@ -364,7 +472,7 @@ func (p Provider) Validate() error {
 		return Fail(InvalidArgument, "Unknown managed provider preset.", "Use one of the supported API provider preset identifiers.")
 	}
 	if p.Protocol == NativeSubscription {
-		if p.Authentication != SubscriptionAuth || p.Endpoint != "" || p.PresetID != nil {
+		if p.Authentication != SubscriptionAuth || p.Endpoint != "" || p.PresetID != nil || len(p.APIFormats) != 0 {
 			return Fail(InvalidArgument, "Native subscription providers cannot configure an API endpoint.", "Use an isolated official account login.")
 		}
 		return nil
@@ -516,9 +624,11 @@ type QuotaWindow struct {
 	State           ObservationState `json:"state"`
 }
 type AccountConnection struct {
-	ID             ID             `json:"id"`
-	Authentication Authentication `json:"authentication"`
-	ConnectedAt    time.Time      `json:"connected_at"`
+	CredentialID   ID                 `json:"credential_id,omitempty"`
+	ID             ID                 `json:"id"`
+	Authentication Authentication     `json:"authentication"`
+	ConnectedAt    time.Time          `json:"connected_at"`
+	APIFormat      *ProviderAPIFormat `json:"api_format,omitempty"`
 }
 
 // Removal is independent of health: disconnected immediately blocks execution,
@@ -528,24 +638,32 @@ type AccountRemoval struct {
 	ExpectedRevision uint64 `json:"expected_revision"`
 }
 type Account struct {
-	Alias                 string              `json:"alias"`
-	ProviderID            ID                  `json:"provider_id,omitempty"`
-	SubscriptionService   SubscriptionService `json:"subscription_service,omitempty"`
-	Type                  AccountType         `json:"type"`
-	Enabled               bool                `json:"enabled"`
-	ExcludeAutomatic      bool                `json:"exclude_automatic"`
-	RecoveryNotifications bool                `json:"recovery_notifications"`
-	Health                AccountHealth       `json:"health"`
-	Quota                 []QuotaWindow       `json:"quota"`
-	ConfirmedExhausted    bool                `json:"confirmed_exhausted"`
-	Connection            *AccountConnection  `json:"connection,omitempty"`
-	Removal               *AccountRemoval     `json:"removal,omitempty"`
-	Validation            *AccountValidation  `json:"validation,omitempty"`
-	Catalog               *CatalogObservation `json:"catalog,omitempty"`
-	Subscription          *SubscriptionState  `json:"subscription,omitempty"`
+	RetainedConnections   []AccountConnectionGeneration `json:"retained_connections,omitempty"`
+	Alias                 string                        `json:"alias"`
+	ProviderID            ID                            `json:"provider_id,omitempty"`
+	SubscriptionService   SubscriptionService           `json:"subscription_service,omitempty"`
+	Type                  AccountType                   `json:"type"`
+	APIProtocol           APIProtocol                   `json:"api_protocol,omitempty"`
+	Enabled               bool                          `json:"enabled"`
+	ExcludeAutomatic      bool                          `json:"exclude_automatic"`
+	RecoveryNotifications bool                          `json:"recovery_notifications"`
+	Health                AccountHealth                 `json:"health"`
+	Quota                 []QuotaWindow                 `json:"quota"`
+	ConfirmedExhausted    bool                          `json:"confirmed_exhausted"`
+	Connection            *AccountConnection            `json:"connection,omitempty"`
+	Removal               *AccountRemoval               `json:"removal,omitempty"`
+	Validation            *AccountValidation            `json:"validation,omitempty"`
+	Catalog               *CatalogObservation           `json:"catalog,omitempty"`
+	Subscription          *SubscriptionState            `json:"subscription,omitempty"`
 }
 
 func (a Account) Validate() error {
+	if err := a.validateConnectionGenerations(); err != nil {
+		return err
+	}
+	if a.APIProtocol != "" && (a.Type != APIAccount || !a.APIProtocol.API()) {
+		return Fail(InvalidArgument, "Invalid account API format.", "Select one supported API format for an API account.")
+	}
 	if a.Subscription != nil {
 		if err := a.Subscription.Validate(a); err != nil {
 			return err
@@ -570,6 +688,14 @@ func (a Account) Validate() error {
 		return Fail(InvalidArgument, "Unknown account health.", "Refresh account health through the server.")
 	}
 	if a.Connection != nil {
+		if f := a.Connection.APIFormat; f != nil {
+			if err := f.Validate(); err != nil {
+				return err
+			}
+			if a.Type != APIAccount || a.Connection.Authentication != f.Authentication || (a.APIProtocol != "" && a.APIProtocol != f.Protocol) {
+				return Fail(InvalidArgument, "The connection API format does not match its account.", "Disconnect and finish credential cleanup before changing the format.")
+			}
+		}
 		if err := a.Connection.ID.Validate(); err != nil {
 			return err
 		}
@@ -679,7 +805,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
+		if (capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true

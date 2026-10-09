@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -58,11 +59,15 @@ func validateConfig(config Config) (net.IP, error) {
 	return ip, nil
 }
 
-func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
+func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result error) {
 	if config.Listen == "" {
 		config.Listen = DefaultListen
 	}
 	ip, err := validateConfig(config)
+	if err != nil {
+		return err
+	}
+	serviceOptions, err := userservice.CaptureServerOptions(userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins})
 	if err != nil {
 		return err
 	}
@@ -71,6 +76,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	if err := security.PrivateDir(config.DataDir); err != nil {
 		return domain.SafeError(err)
+	}
+	if config.Desktop == nil {
+		lease, err := security.TryLock(filepath.Join(config.DataDir, "desktop-host.lock"))
+		if err != nil {
+			return err
+		}
+		defer lease.Close()
 	}
 	lifecycleLock, err := LockLifecycle(config.DataDir)
 	if err != nil {
@@ -103,7 +115,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err != nil {
 		return err
 	}
-	defer state.Close()
+	defer func() { result = errors.Join(result, state.Close()) }()
 	if config.StartupID == "" {
 		if _, err := WriteRunning(config.DataDir, config); err != nil {
 			return err
@@ -129,7 +141,13 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	if err := state.RestoreSessionDeletionIntents(domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice}), identity.ServerID); err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", config.Listen)
+	listener := config.Listener
+	if listener != nil && (config.Desktop == nil || listener.Addr().String() != config.Listen) {
+		return domain.Fail(domain.Conflict, "The retained desktop listener does not match its runtime.", "Preserve the original listener ownership.")
+	}
+	if listener == nil {
+		listener, err = net.Listen("tcp", config.Listen)
+	}
 	if err != nil {
 		return domain.Fail(domain.Unavailable, "The requested listener could not be bound.", "Free the configured port or explicitly select another listener; DeliDev never remaps it automatically.")
 	}
@@ -141,11 +159,14 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
 	if err := service.initializeServerSubscriptions(child); err != nil {
+		return err
+	}
+	if err := service.initializeServerQuotas(domain.WithPrincipal(child, domain.Principal{Type: domain.OwnerDevice})); err != nil {
 		return err
 	}
 	if err := service.initializeOAuth(child); err != nil {
@@ -153,17 +174,33 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	}
 	defer service.closeAccountSecrets()
 	defer service.closeIntegrationSecrets()
+	if config.Desktop != nil && config.DesktopCredentials != nil {
+		config.DesktopCredentials.attach(child, service)
+		defer config.DesktopCredentials.close()
+	}
 	handler := service.Handler(config.AllowedOrigins, ip.IsLoopback())
+	if config.Desktop != nil {
+		target := *config.Desktop
+		target.ServerID = identity.ServerID
+		target.Root = config.DataDir
+		if err := desktopruntime.Publish(target); err != nil {
+			return err
+		}
+		defer desktopruntime.Retire(target)
+		handler = desktopruntime.Handler(target, handler, config.AllowedOrigins)
+	}
 	defer service.executionAuthority.close()
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
 	raw, err := json.Marshal(service.Endpoint)
 	if err != nil {
 		return err
 	}
-	if err := security.WriteAtomic(filepath.Join(state.Root(), "server.json"), raw); err != nil {
-		return domain.SafeError(err)
+	if config.Desktop == nil {
+		if err := security.WriteAtomic(filepath.Join(state.Root(), "server.json"), raw); err != nil {
+			return domain.SafeError(err)
+		}
+		defer os.Remove(filepath.Join(state.Root(), "server.json"))
 	}
-	defer os.Remove(filepath.Join(state.Root(), "server.json"))
 	// Authenticated HTTP readiness permits immediate controller reuse or Stop.
 	// Release the completed native startup barrier before serving any request;
 	// logging and maintenance startup must not keep a ready server locked.
@@ -173,10 +210,18 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	lifecycleLock = nil
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(listener) }()
+	serverQuotaCtx, stopServerQuota := context.WithCancel(child)
+	serverQuotaDone := make(chan struct{})
+	go func() { defer close(serverQuotaDone); service.runServerQuotas(serverQuotaCtx) }()
+	defer func() { stopServerQuota(); <-serverQuotaDone }()
 	subscriptionCtx, stopSubscription := context.WithCancel(child)
 	subscriptionDone := make(chan struct{})
 	go func() { defer close(subscriptionDone); service.runServerSubscriptions(subscriptionCtx) }()
 	defer func() { stopSubscription(); <-subscriptionDone }()
+	cleanupCtx, stopCleanup := context.WithCancel(child)
+	cleanupDone := make(chan struct{})
+	go func() { defer close(cleanupDone); service.runFailedSubscriptionCleanups(cleanupCtx) }()
+	defer func() { stopCleanup(); <-cleanupDone }()
 	sshCtx, stopSSH := context.WithCancel(child)
 	sshDone := make(chan struct{})
 	go func() { defer close(sshDone); service.runSSHSetups(sshCtx) }()
@@ -189,15 +234,29 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	quotaDone := make(chan struct{})
 	go func() { defer close(quotaDone); service.runSubscriptionQuotaMaintenance(quotaCtx) }()
 	defer func() { stopQuota(); <-quotaDone }()
+	skillsCtx, stopSkills := context.WithCancel(child)
+	skillsDone := make(chan struct{})
+	go func() { defer close(skillsDone); service.runSkillPreparations(skillsCtx) }()
+	defer func() { stopSkills(); <-skillsDone }()
 	catalogCtx, stopCatalog := context.WithCancel(child)
 	catalogDone := make(chan struct{})
 	go func() {
 		defer close(catalogDone)
-		if !config.disableCatalogMaintenance {
+		if !config.disableCatalogMaintenance && !config.DisableBackgroundMaintenanceForTesting {
 			service.runCatalogMaintenance(catalogCtx)
 		}
 	}()
 	defer func() { stopCatalog(); <-catalogDone }()
+	knownCtx, stopKnown := context.WithCancel(child)
+	knownDone := make(chan struct{})
+	go func() {
+		defer close(knownDone)
+		if !config.disableKnownModelMaintenance && !config.DisableBackgroundMaintenanceForTesting {
+			service.knownSubscriptionModels().Run(knownCtx)
+		}
+	}()
+	defer func() { stopKnown(); <-knownDone }()
+
 	dispatchCtx, stopDispatch := context.WithCancel(child)
 	dispatchDone := make(chan struct{})
 	go func() {
@@ -231,6 +290,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	sessionDeletionsDone := make(chan struct{})
 	go func() { defer close(sessionDeletionsDone); service.runSessionDeletions(sessionDeletionsCtx) }()
 	defer func() { stopSessionDeletions(); <-sessionDeletionsDone }()
+	imageCleanupCtx, stopImageCleanup := context.WithCancel(child)
+	imageCleanupDone := make(chan struct{})
+	go func() { defer close(imageCleanupDone); service.runImageDraftCleanups(imageCleanupCtx) }()
+	defer func() { stopImageCleanup(); <-imageCleanupDone }()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
@@ -255,8 +318,15 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 		}
 		<-done
 	}
+	stopSkills()
+	<-skillsDone
 	stopCatalog()
 	<-catalogDone
+	// Catalog refresh may be resolving the account-backed outbound route. Join
+	// it before releasing account secrets so no maintenance request can touch a
+	// closed vault during the explicit shutdown path.
+	stopKnown()
+	<-knownDone
 	stopRemediation()
 	<-remediationDone
 	stopDispatch()
@@ -268,6 +338,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) error {
 	stopDeletions()
 	<-deletionsDone
 	service.executionAuthority.close()
+	if config.Desktop != nil && config.DesktopCredentials != nil {
+		config.DesktopCredentials.close()
+	}
 	if err := service.closeAccountSecrets(); err != nil {
 		return domain.SafeError(err)
 	}

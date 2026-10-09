@@ -312,6 +312,9 @@ func (s *Store) DeleteSession(ctx context.Context, request, session, server doma
 }
 
 func (t *Tx) applySessionDeletion(v SessionDeletion) error {
+	if err := t.applyImageSessionDeletion(v); err != nil {
+		return err
+	}
 	if v.SidechatParentID != "" {
 		key := sidechatDependencyKey(v.SidechatParentID, v.SessionID)
 		if v.FinishedAt == nil {
@@ -406,9 +409,97 @@ func (s *Store) GetSessionDeletion(ctx context.Context, id domain.ID) (SessionDe
 	return s.readSessionDeletion(id)
 }
 func (s *Store) SessionDeletions(ctx context.Context) ([]SessionDeletion, error) {
-	s.gate.RLock()
-	defer s.gate.RUnlock()
-	return s.sessionDeletionInventory(ctx)
+	s.gate.Lock()
+	defer s.gate.Unlock()
+	items, err := s.sessionDeletionInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if err := s.reconcileSessionDeletionForkOwners(ctx, &items[i]); err != nil {
+			if domain.SafeError(err).Code != domain.RecoveryRequired {
+				return nil, err
+			}
+			// Keep this legacy obligation unresolved without blocking unrelated
+			// deletion lanes. The Worker refuses copies with an unproved owner.
+		}
+	}
+	return items, nil
+}
+
+func (s *Store) reconcileSessionDeletionForkOwners(ctx context.Context, v *SessionDeletion) error {
+	// A failed later copy must not publish a partial in-memory enrichment.
+	raw, err := json.Marshal(v)
+	var candidate SessionDeletion
+	if err != nil || domain.DecodeWithLimit(raw, &candidate, domain.MaxSessionDeletionBytes) != nil {
+		return domain.SessionDeletionPending()
+	}
+	changed := false
+	if err := s.readLocked(ctx, func(tx *Tx) error {
+		var err error
+		changed, err = tx.reconcileUnpublishedForkOwners(&candidate)
+		return err
+	}); err != nil {
+		return err
+	}
+	if changed {
+		candidate.Revision++
+		if err := s.writeSessionDeletion(candidate); err != nil {
+			return err
+		}
+		*v = candidate
+	}
+	return nil
+}
+
+// Legacy plans did not inventory child HEAD-read owners. Derive that omission
+// only while the original failed job and immutable assignment remain available.
+// Acknowledged plans and removed databases cannot recreate missing authority.
+func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
+	changed := false
+	for wi := range v.Workers {
+		worker := &v.Workers[wi]
+		if worker.Acknowledged {
+			continue
+		}
+		for ci := range worker.Work.Copies {
+			copy := &worker.Work.Copies[ci]
+			if copy.Type != domain.ForkSessionJob || copy.ExecutionID == "" || copy.UnpublishedSidechatID != "" || copy.UnpublishedChildProcessID != "" {
+				continue
+			}
+			row, err := t.JobAssignment(copy.JobID)
+			if err != nil {
+				return false, domain.SessionDeletionPending()
+			}
+			original, err := Decode[domain.Job](row)
+			h := sha256.Sum256(row.Data)
+			if err != nil || row.Revision != copy.Revision || hex.EncodeToString(h[:]) != copy.Digest || row.SessionID != v.SessionID || original.Type != copy.Type || original.InstanceID != copy.InstanceID || original.MachineID != worker.Work.MachineID || original.AssignedDeviceID != worker.Work.DeviceID {
+				return false, domain.SessionDeletionPending()
+			}
+			currentRow, err := t.Get(domain.JobKind, copy.JobID)
+			if err != nil {
+				return false, domain.SessionDeletionPending()
+			}
+			current, err := Decode[domain.Job](currentRow)
+			var input domain.ForkJobInput
+			if err != nil || current.State == domain.JobSucceeded || domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != v.SessionID || input.RuntimeID != copy.ExecutionID || input.Purpose == domain.SidechatFork {
+				return false, domain.SessionDeletionPending()
+			}
+			copy.UnpublishedChildProcessID = input.ChildSessionID
+			changed = true
+		}
+	}
+	for i := range v.Dependents {
+		childChanged, err := t.reconcileUnpublishedForkOwners(&v.Dependents[i])
+		if err != nil {
+			return false, err
+		}
+		if childChanged {
+			v.Dependents[i].Revision++
+			changed = true
+		}
+	}
+	return changed, nil
 }
 
 func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletion, request, instance domain.ID, digest string) (SessionDeletion, error) {
@@ -441,6 +532,10 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 	if !ok || actor.Type != domain.WorkerDevice || request.Validate() != nil || v.ID != deletion {
 		return v, domain.SessionDeletionPending()
 	}
+	// A stale pre-upgrade acknowledgement cannot omit newly proved child work.
+	if err := s.reconcileSessionDeletionForkOwners(ctx, &v); err != nil {
+		return v, err
+	}
 	for i, w := range v.Workers {
 		if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && w.Work.Digest() == digest {
 			if w.Acknowledged {
@@ -462,6 +557,9 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if err := t.purgeSessionImages(v); err != nil {
+		return err
+	}
 	if e := t.requireTerminalCleanup(v.SessionID); e != nil {
 		return e
 	}
@@ -877,6 +975,8 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			copy.ExecutionID = input.RuntimeID
 			if input.Purpose == domain.SidechatFork {
 				copy.UnpublishedSidechatID = input.ChildSessionID
+			} else {
+				copy.UnpublishedChildProcessID = input.ChildSessionID
 			}
 		}
 		if j.Type == domain.PrepareWorkspaceJob {
@@ -884,6 +984,51 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			w.PreparationDigests = append(w.PreparationDigests, hex.EncodeToString(h[:]))
 		}
 		w.Copies = append(w.Copies, copy)
+	}
+	// Retained queued inputs also own snapshots before any native job is claimed.
+	after := domain.ID("")
+	count := 0
+	for {
+		records, err := t.List(Filter{Kind: domain.QueueKind, SessionID: v.SessionID, After: after, Limit: 200})
+		if err != nil {
+			return v, err
+		}
+		for _, record := range records {
+			queued, err := Decode[domain.QueuedInput](record)
+			if err != nil {
+				return v, err
+			}
+			for _, binding := range append(append([]domain.SkillBinding{}, queued.Skills...), queued.RetiredSkills...) {
+				count++
+				if count > domain.MaxRetainedSkillSnapshots || domain.ValidateSkills([]domain.SkillBinding{binding}) != nil {
+					return v, domain.SessionDeletionPending()
+				}
+				index := -1
+				for i := range v.Workers {
+					if v.Workers[i].Work.DeviceID == binding.WorkerDeviceID {
+						index = i
+					}
+				}
+				if index < 0 {
+					v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: value.MachineID, DeviceID: binding.WorkerDeviceID}})
+					index = len(v.Workers) - 1
+				}
+				w := &v.Workers[index].Work
+				if w.MachineID != value.MachineID {
+					return v, domain.SessionDeletionPending()
+				}
+				w.SkillSnapshots = append(w.SkillSnapshots, binding)
+			}
+			after = record.ID
+		}
+		if len(records) < 200 {
+			break
+		}
+	}
+
+	v, e = t.planImageSessionDeletion(v)
+	if e != nil {
+		return v, e
 	}
 	return v, v.validate()
 }

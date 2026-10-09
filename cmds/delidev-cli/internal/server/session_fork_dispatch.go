@@ -37,6 +37,25 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	// Check current account/project/installation eligibility even when explicit
 	// Resume has no queued input. Neither empty Resume nor fork advances routing.
 	input := domain.ExecutionJobInput{Version: 3, SessionID: sr.ID, MachineID: session.MachineID, ExecutionID: domain.NewID(), InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), Configuration: f.Snapshot.Configuration, ConfigurationDigest: f.Snapshot.ConfigurationDigest, AccountID: f.Snapshot.InitialAccountID, ConnectionID: f.Snapshot.ConnectionID, Fork: &domain.ForkExecution{JobID: f.JobID, RuntimeID: f.RuntimeID, NativeThreadID: f.NativeThreadID, NativeTurnID: f.ChildTurn(), CheckpointDigest: f.CheckpointDigest, HistoryRequestID: domain.NewID()}, Input: domain.SessionInput{Prompt: "Fork eligibility check", Mode: domain.ExecuteMode}}
+	// The child retains the original v4 selection before publication. Parent
+	// deletion may purge the creation job, so it cannot be an execution dependency.
+	input.Startup = f.Startup
+	if input.Startup == nil {
+		// Older children may predate retained selection metadata. Read a surviving
+		// creation job only to recover its original seed, never a replacement path.
+		creation, err := tx.Get(domain.JobKind, f.JobID)
+		if err == nil {
+			creationJob, err := store.Decode[domain.Job](creation)
+			var seed domain.ForkJobInput
+			if err != nil || creationJob.Type != domain.ForkSessionJob || creationJob.State != domain.JobSucceeded || domain.Decode(creationJob.Input, &seed) != nil || seed.Validate() != nil || seed.ChildSessionID != sr.ID || seed.RuntimeID != f.RuntimeID || creationJob.MachineID != session.MachineID {
+				return store.Record{}, forkConflict()
+			}
+			input.Startup, input.Installation = seed.Startup, seed.SourceAssignment.Installation
+		} else {
+			return store.Record{}, forkConflict()
+		}
+	}
+
 	if _, err := checkedExecutionSelection(tx, session, machine, input); err != nil {
 		return store.Record{}, err
 	}
@@ -56,7 +75,7 @@ func queueForkInitialExecution(tx *store.Tx, sr store.Record, session domain.Ses
 	if queued.Delivery != domain.InputQueued || queued.ExecutionID != "" || queued.NativeRequestID != "" || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(queued.Prompt)) {
 		return store.Record{}, forkConflict()
 	}
-	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode}
+	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: queued.Prompt, Mode: queued.Mode, Skills: queued.Skills, Attachments: queued.Attachments}
 	input, err = checkedExecutionAssignment(tx, sr, session, machine, input)
 	if err != nil {
 		return store.Record{}, err

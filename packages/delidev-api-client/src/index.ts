@@ -30,7 +30,12 @@ export * as ForwardQuery from "./gen/delidev/v1/delidev-ForwardService_connectqu
 export * as PullRequestFixQuery from "./gen/delidev/v1/pr_fix-PullRequestFixService_connectquery.js";
 
 export * from "./configuration-identity.js";
+export * from "./api-formats.js";
 
 export * from "./provider-presets.js";
 
 export * as InstallationQuery from "./gen/delidev/v1/installation-InstallationService_connectquery.js";
+
+export * from "./gen/delidev/v1/skills_pb.js";
+export * as SkillQuery from "./gen/delidev/v1/skills-SkillService_connectquery.js";
+export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService_connectquery.js";

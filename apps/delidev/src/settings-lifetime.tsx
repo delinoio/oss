@@ -1,3 +1,4 @@
+import { useLocale } from "./localization";
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { addStaticKeyToTransport, TransportProvider, useTransport } from "@connectrpc/connect-query";
@@ -8,6 +9,23 @@ const Context = createContext<SettingsOpening | undefined>(undefined);
 export const useSettingsOpening = () => useContext(Context);
 
 function canceled() { return new ConnectError("This Settings opening has closed.", Code.Canceled); }
+
+// Nested guards can reject before an abort-ignoring original RPC settles. Keep
+// that deepest completion separate from the visible cancellation outcome.
+const unaryCompletions = new WeakMap<Promise<unknown>, Promise<void>>();
+function unaryCompletion(pending: Promise<unknown>) {
+  return unaryCompletions.get(pending) ?? pending.then(() => undefined, () => undefined);
+}
+
+// Read-pool owners may retain a permit until original work settles. This wrapper
+// still invokes the same guarded transport and preserves its cancellation gates.
+export function observeSettingsUnaryCompletion(transport: Transport, observe: (completion: Promise<void>) => void): Transport {
+  return { ...transport, unary: (method, signal, timeout, headers, input, context) => {
+    const pending = transport.unary(method, signal, timeout, headers, input, context);
+    observe(unaryCompletion(pending));
+    return pending;
+  } };
+}
 
 // Reject client waits even when an accepted server/native operation ignores
 // abort. Its authoritative effects are observed by fresh reads, never replayed.
@@ -20,21 +38,29 @@ function guarded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-// One active category owns this scope. A category change disposes it while
-// the Settings navigation and independent connection controllers stay mounted.
+// One active category or external project creation opening owns this scope. A
+// task dialog may create a nested scope; departure fences every nested task
+// transport while independent connection controllers stay mounted.
 export class SettingsOpening {
   readonly id = newRequestId();
+  readonly categoryOwner: object;
   readonly controller = new AbortController();
   readonly queryKey = ["settings-opening", this.id] as const;
   readonly mutationMeta = { settingsOpening: this.id };
   readonly transport: Transport;
 
-  constructor(upstream: () => Transport) {
+  constructor(upstream: () => Transport, categoryOwner?: object) {
+    this.categoryOwner = categoryOwner ?? this;
     this.transport = addStaticKeyToTransport({
-      unary: async (method, signal, timeout, headers, input, context) => {
+      unary: (method, signal, timeout, headers, input, context) => {
+        if (this.disposed || signal?.aborted) return Promise.reject(canceled());
         const linked = this.link(signal);
-        try { return await guarded(upstream().unary(method, linked.signal, timeout, headers, input, context), linked.signal); }
-        finally { linked.release(); }
+        try {
+          const pending = upstream().unary(method, linked.signal, timeout, headers, input, context);
+          const visible = guarded(pending, linked.signal).finally(linked.release);
+          unaryCompletions.set(visible, unaryCompletion(pending));
+          return visible;
+        } catch (error) { linked.release(); return Promise.reject(error); }
       },
       stream: async (method, signal, timeout, headers, input, context) => {
         const linked = this.link(signal);
@@ -92,7 +118,9 @@ export class SettingsOpening {
 }
 
 export function SettingsLifetime({ children }: { children: (opening: SettingsOpening) => ReactNode }) {
+  useLocale();
   const transport = useTransport();
+  const parent = useContext(Context);
   const upstream = useRef(transport);
   upstream.current = transport;
   const client = useQueryClient();
@@ -100,9 +128,9 @@ export function SettingsLifetime({ children }: { children: (opening: SettingsOpe
   useLayoutEffect(() => {
     // Strict Mode replays setup/cleanup. Each setup publishes a new generation
     // before mounting readers, so no child can reuse an aborted transport.
-    const current = new SettingsOpening(() => upstream.current);
+    const current = new SettingsOpening(() => upstream.current, parent?.categoryOwner);
     setOpening(current);
     return () => current.dispose(client);
-  }, [client]);
+  }, [client, parent?.categoryOwner]);
   return opening && !opening.disposed ? <Context.Provider key={opening.id} value={opening}><TransportProvider transport={opening.transport}>{children(opening)}</TransportProvider></Context.Provider> : null;
 }

@@ -1,33 +1,63 @@
-import { useState } from "react";
+import { SettingsTaskDismissButton } from "./settings-task";
+import { statusLabel } from "./product-status";
+import { LocalizedText, copy, useLocale } from "./localization";
+import { SettingsTaskActions } from "./settings-task";
+import { useCloseSettingsTask } from "./settings-task-context";
+import { useState, useId, useMemo, useRef } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
+import { installationObservation, validRunnerObservation } from "./runner-observation";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text } from "./documents";
 import { Harness, TextField } from "./configuration-fields";
 import { JobState, TrackedJob } from "./jobs";
 import { useRetainedMutation } from "./mutation";
-import { Problem } from "./ui";
+import { InlineRemediation, Problem } from "./ui";
 import { Updates } from "./updates";
 import { NetworkSettings } from "./network-settings";
 import type { PairingAuthority } from "./pairing-grant";
 
-export function MachineSettings({ initial, active, close, authority }: { initial: Resource; active: boolean; close: () => void; authority?: PairingAuthority }) {
+export function useMachineSettingsController(initial: Resource, active: boolean) {
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [acknowledged, setAcknowledged] = useState<Resource>();
-  const current = [initial, result.data?.resource, acknowledged].filter((row): row is Resource => Boolean(row)).reduce((a, b) => a.revision >= b.revision ? a : b);
-  const data = document(current);
+  const exact = (row?: Resource): row is Resource => validRunnerObservation(row) && row.id === initial.id;
+  const current = [initial, result.data?.resource, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
+  const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{ revision: bigint; paths: Record<string, string> }>();
-  const [verify, setVerify] = useState(false);
+  const [verify, setVerifyValue] = useState(false);
+  const [verifyEdited, setVerifyEdited] = useState(false);
+  const setVerify = useMemo(() => (next: boolean) => { setVerifyValue(next); setVerifyEdited(next); }, []);
   const [job, setJob] = useState<Resource | "unknown">();
-  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (response.machine) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); });
+  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (exact(response.machine)) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); setVerifyEdited(false); });
   const pending = discovery.busy || discovery.uncertain || Boolean(job);
-  const stale = Boolean(edit && edit.revision !== current.revision);
-  return <section><header><h3>{resourceName(current)}</h3><button disabled={pending} onClick={close}>Back to Runner Devices</button></header><p>{text(data.os)} · {text(data.architecture)} · Worker {text(data.version)}</p><p>Last observed: {text(data.last_seen) || "Unknown"}{data.disabled === true ? " · Disabled" : ""}</p><p>Checks run on this Worker. DeliDev does not install harnesses. Version detection, native protocol verification and account execution readiness are separate.</p>
-    {items(data.installations).map(object).map((installation) => <article className="result" key={text(installation.harness)}><h4>{text(installation.harness)}</h4><p>{text(installation.state)} · Version: {text(installation.version) || "Unknown"}</p><p>Selected path: {text(installation.explicit_path) || "Worker PATH"}</p><p>Resolved path: {text(installation.resolved_path) || "Unknown"}</p><p>Native protocol: {text(object(installation.protocol).state) || "Not checked"}</p>{text(object(installation.problem).message) ? <p role="alert">{text(object(installation.problem).message)} {text(object(installation.problem).guidance)}</p> : null}{text(object(object(installation.protocol).problem).message) ? <p role="alert">{text(object(object(installation.protocol).problem).message)}</p> : null}</article>)}
-    {job ? job === "unknown" ? <p role="alert">Discovery was acknowledged without a readable job. Inspect the original request before starting another check.</p> : <TrackedJob initial={job} active={active}>{(state) => [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <button onClick={() => { setJob(undefined); setEdit(undefined); void result.refetch(); }}>Finish inspection</button> : null}</TrackedJob> : <form onSubmit={(event) => { event.preventDefault(); if (pending || stale) return; void discovery.send({ mutation: { id: initial.id, expectedRevision: edit?.revision ?? current.revision, requestId: newRequestId() }, verifyProtocol: verify, ...(edit ? { selectionsJson: encode({ executables: Object.values(Harness).map((harness) => ({ harness, path: edit.paths[harness] ?? "" })) }) } : {}) }); }}>
-      <fieldset disabled={pending}>{edit ? <><p>These selections replace all four harness paths. Empty paths explicitly use this Worker's PATH.</p>{Object.values(Harness).map((harness) => <TextField key={harness} label={`${harness} executable path`} value={edit.paths[harness]} max={4096} change={(path) => setEdit({ ...edit, paths: { ...edit.paths, [harness]: path } })} />)}<button type="button" onClick={() => setEdit(undefined)}>Discard path edits</button></> : <button type="button" onClick={() => setEdit({ revision: current.revision, paths: Object.fromEntries(items(data.installations).map(object).map((row) => [text(row.harness), text(row.explicit_path)])) })}>Edit executable paths</button>}
-      <label className="checkbox"><input type="checkbox" checked={verify} onChange={(event) => setVerify(event.target.checked)} />Verify the installed native protocol without login or inference</label><button className="primary" disabled={stale || Boolean(result.error)}>Check installed harnesses</button></fieldset>{stale ? <p role="alert">Worker configuration changed elsewhere. Your path draft is retained; discard it and reopen the latest paths before saving.</p> : null}</form>}
-    <Problem error={result.error || discovery.error} />{discovery.uncertain ? <button disabled={discovery.busy} onClick={discovery.retry}>Retry the same harness check</button> : null}
-    <Updates active={active} machine={current} />
-    <NetworkSettings active={active} machine={initial.id} authority={authority} />
+  const stale = Boolean(edit && edit.revision !== current?.revision);
+  const readError = useMemo(() => result.error || (result.data && !exact(result.data.resource) ? new ConnectError("Runner observation is unavailable.", Code.DataLoss) : undefined), [result.error, result.data, initial.id]);
+  const mutation = useRef(discovery); mutation.current = discovery;
+  const actions = useMemo(() => ({ send: (...args: Parameters<typeof discovery.send>) => mutation.current.send(...args), retry: () => mutation.current.retry() }), []);
+  const retainedDiscovery = useMemo(() => ({ ...actions, busy: discovery.busy, uncertain: discovery.uncertain, error: discovery.error }), [actions, discovery.busy, discovery.uncertain, discovery.error]);
+  return useMemo(() => ({ initial, current, data, edit, setEdit, verify, setVerify, job, setJob, discovery: retainedDiscovery, pending, stale, readError, refetch: result.refetch, loading: result.isFetching, locked: Boolean(edit || pending || verifyEdited) }), [initial, current, data, edit, verify, verifyEdited, setVerify, job, retainedDiscovery, pending, stale, readError, result.refetch, result.isFetching]);
+}
+export type MachineSettingsController = ReturnType<typeof useMachineSettingsController>;
+export function MachineSettings({ initial, active, close, authority }: { initial: Resource; active: boolean; close: () => void; authority?: PairingAuthority }) {
+  const controller = useMachineSettingsController(initial, active);
+  return <MachineSettingsView controller={controller} active={active} close={close} authority={authority} />;
+}
+/** All actions belong to the original retained controller; this view owns no reads or mutations. */
+export function MachineSettingsView({ controller, active, close, authority, compact = false }: { controller: MachineSettingsController; active: boolean; close: () => void; authority?: PairingAuthority; compact?: boolean }) {
+  useLocale();
+  const formId = useId(), closeTask = useCloseSettingsTask(close);
+  const { initial, current, data, edit, setEdit, verify, setVerify, job, setJob, discovery, pending, stale, readError, refetch, loading } = controller;
+  if (!current) return <InlineRemediation summary={copy("machine-settings.observationUnavailable")} actions={<button disabled={!active || loading} onClick={() => void refetch()}>{copy("claude-subscription.refreshRunners")}</button>} />;
+  return <section><header><h3>{resourceName(current)}</h3></header><p><LocalizedText id="machine-settings.worker_5b4b08" components={{ s0: <>{["darwin", "linux", "windows"].includes(text(data.os)) ? text(data.os) : copy("machine-settings.extra.b764cdc0eab7")}</>, s1: <>{["amd64", "arm64", "386", "arm"].includes(text(data.architecture)) ? text(data.architecture) : copy("machine-settings.extra.b764cdc0eab7")}</>, s2: <>{/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]{1,64})?$/.test(text(data.version)) ? text(data.version) : copy("machine-settings.extra.b764cdc0eab7")}</> }} /></p><p><LocalizedText id="machine-settings.lastObserved_f1bd8c" components={{ s0: <>{/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z$/.test(text(data.last_seen)) ? text(data.last_seen) : copy("machine-settings.extra.b764cdc0eab7")}</>, s1: <>{data.disabled === true ? copy("machine-settings.disabled_3c6ef5") : ""}</> }} /></p><p>{copy("machine-settings.checksRunOnThisWorkerDelidev_36310f")}</p>
+    {!Array.isArray(data.installations) || items(data.installations).length > 4 ? <InlineRemediation summary={copy("machine-settings.observationUnavailable")} /> : items(data.installations).map(object).map((installation, index) => {
+      const harness = text(installation.harness), known = Object.values(Harness).includes(harness as Harness), duplicate = items(data.installations).map(object).filter(row => row.harness === harness).length !== 1;
+      const observation = !known || duplicate ? { cause: "unavailable" as const } : installationObservation(installation, harness === Harness.Claude ? "2.1.236" : undefined);
+      return <article className="result" key={index}><h4>{known ? harness : copy("machine-settings.observationUnavailable")}</h4><p><LocalizedText id="machine-settings.nativeProtocol_4de6c7" components={{ s0: <>{statusLabel(["verified", "unsupported", "failed"].includes(text(object(installation.protocol).state)) ? text(object(installation.protocol).state) : "") || copy("machine-settings.extra.d16948e73a68")}</> }} /></p>{observation.detectedVersion ? <p>{copy("machine-settings.detectedVersion", { version: observation.detectedVersion })}</p> : null}{observation.cause ? <InlineRemediation summary={copy(harness === Harness.Claude ? `claude-subscription.excluded.${observation.cause}` : `machine-settings.excluded.${observation.cause}`)} /> : <p>{copy("machine-settings.protocolVerified")}</p>}</article>;
+    })}
+    {job ? job === "unknown" ? <p role="alert">{copy("machine-settings.discoveryWasAcknowledgedWithoutAReadable_b1200f")}</p> : <TrackedJob initial={job} active={active}>{(state) => [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <SettingsTaskActions><button onClick={() => { setJob(undefined); setEdit(undefined); void refetch(); }}>{copy("machine-settings.finishInspection_c3611c")}</button></SettingsTaskActions> : null}</TrackedJob> : <form id={formId} onSubmit={(event) => { event.preventDefault(); if (!active || pending || stale || readError) return; void discovery.send({ mutation: { id: initial.id, expectedRevision: edit?.revision ?? current.revision, requestId: newRequestId() }, verifyProtocol: verify, ...(edit ? { selectionsJson: encode({ executables: Object.values(Harness).map((harness) => ({ harness, path: edit.paths[harness] ?? "" })) }) } : {}) }); }}>
+      <fieldset disabled={!active || pending || Boolean(readError)}>{edit ? <><p>{copy("machine-settings.theseSelectionsReplaceAllFourHarness_a99040")}</p>{Object.values(Harness).map((harness) => <TextField key={harness} label={copy("machine-settings.executablePath_327ca6", { v0: harness })} value={edit.paths[harness]} max={4096} change={(path) => setEdit({ ...edit, paths: { ...edit.paths, [harness]: path } })} />)}<button type="button" onClick={() => setEdit(undefined)}>{copy("machine-settings.discardPathEdits_906d0c")}</button></> : <button type="button" onClick={() => setEdit({ revision: current.revision, paths: Object.fromEntries(items(data.installations).map(object).map((row) => [text(row.harness), text(row.explicit_path)])) })}>{copy("machine-settings.editExecutablePaths_5868fb")}</button>}
+      <label className="checkbox"><input type="checkbox" checked={verify} onChange={(event) => setVerify(event.target.checked)} />{copy("machine-settings.verifyTheInstalledNativeProtocolWithout_0ea550")}</label></fieldset><SettingsTaskActions form={formId}><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={closeTask}>{copy("machine-settings.backToRunnerDevices_3af74a")}</SettingsTaskDismissButton><button className="primary" disabled={pending || stale || Boolean(readError) || !active}>{copy("machine-settings.checkInstalledHarnesses_c38636")}</button></SettingsTaskActions>{stale ? <p role="alert">{copy("machine-settings.workerConfigurationChangedElsewhereYourPath_34c382")}</p> : null}</form>}
+    <Problem error={readError} summary={copy("machine-settings.observationReadFailed")} actions={<button disabled={!active || loading} onClick={() => void refetch()}>{copy("claude-subscription.refreshRunners")}</button>} /><Problem error={discovery.error} />{discovery.uncertain ? <button disabled={discovery.busy} onClick={discovery.retry}>{copy("machine-settings.retryTheSameHarnessCheck_7aa9ae")}</button> : null}
+    {!compact ? <><Updates active={active} machine={current} /><NetworkSettings active={active} machine={initial.id} authority={authority} /></> : null}
   </section>;
 }

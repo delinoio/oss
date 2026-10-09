@@ -1,0 +1,18 @@
+{
+  "queue.input_3547c5": "입력 <s0/>",
+  "queue.removedInputOriginalOrderingRetained_3f3155": "제거된 입력 · 원래 순서 유지됨",
+  "queue.editInput_f7680c": "입력 편집",
+  "queue.removeInput_95e788": "입력 제거",
+  "queue.steerWithThisInput_d835aa": "이 입력으로 방향 안내",
+  "queue.editedInput_e6f7fe": "편집된 입력",
+  "queue.thisInputChangedWhileYouWere_cfe47a": "편집 중 입력이 변경되었습니다. 저장하기 전에 현재 텍스트를 검토하세요.",
+  "queue.saveInput_9f11a2": "입력 저장",
+  "queue.cancelEdit_6fa271": "편집 취소",
+  "queue.edit_262121": "편집",
+  "queue.removal_e57388": "제거",
+  "queue.steer_1cf39e": "방향 안내",
+  "queue.retryTheSame_4cb78a": "같은 <s0/> 다시 시도",
+  "queue.pendingActions": "대기 중인 입력 작업",
+  "queue.sendingOriginal": "원래 입력 작업을 전송하는 중…",
+  "queue.uncertainOriginal": "원래 입력 작업의 승인 여부가 불확실합니다."
+}

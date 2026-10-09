@@ -7,7 +7,10 @@
 pub mod cli;
 pub mod coverage;
 mod publication;
+
 pub mod record;
+#[cfg(any(target_os = "linux", all(test, unix)))]
+mod unix_paths;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod delay;
@@ -26,3 +29,8 @@ pub mod macos;
 
 #[cfg(target_os = "windows")]
 pub mod windows;
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+mod root_program;
+#[cfg(any(target_os = "windows", test))]
+mod windows_frame;

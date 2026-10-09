@@ -216,12 +216,12 @@ fn persist(path: &Path, theme: Theme) -> Result<(), AppearanceProblem> {
 }
 
 #[cfg(not(windows))]
-fn replace(source: &Path, target: &Path) -> std::io::Result<()> {
+pub(crate) fn replace(source: &Path, target: &Path) -> std::io::Result<()> {
     fs::rename(source, target)
 }
 
 #[cfg(windows)]
-fn replace(source: &Path, target: &Path) -> std::io::Result<()> {
+pub(crate) fn replace(source: &Path, target: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     #[link(name = "kernel32")]
     unsafe extern "system" {

@@ -1,0 +1,5 @@
+{
+  "execution-startup.runnerRemedy": "Inspect this original Runner",
+  "execution-startup.runnerReadInvalid": "The original Runner observation is unreadable. Keep the original operation; retry this read without selecting a replacement.",
+  "execution-startup.runnerOwnershipLocked": "Another original Runner inspection is pending or uncertain. Finish or reconcile that retained operation before inspecting this Runner."
+}

@@ -1,0 +1,18 @@
+{
+  "worker-network-native.thisComputerSWorkerNetwork_ddbb96": "이 컴퓨터의 워커 네트워크",
+  "worker-network-native.thisComputerSMatchingWorker_0db01d": "이 컴퓨터에서 일치하는 워커",
+  "worker-network-native.theseControlsUseOnlyTheAlready_4de670": "이 제어는 이 컴퓨터에 이미 등록된 해당 서버의 워커만 사용합니다. 원격 실행 장치는 자체 DeliDev CLI로 준비하고 가져옵니다. 새 수신 대상을 준비하면 새 작업을 계속하기 전에 암호화 가져오기와 명시적인 워커 재시작이 필요합니다.",
+  "worker-network-native.openTheTrustedDesktopAppTo_dce615": "이 컴퓨터의 워커 구성을 준비하거나 가져오려면 신뢰된 데스크톱 앱을 여세요.",
+  "worker-network-native.prepareProtectedRecipient_5b5127": "보호된 수신자 준비",
+  "worker-network-native.inspectOriginalPublicRecipient_579cd7": "공개 수신자 원문 확인",
+  "worker-network-native.encryptedBundleToImportBase64_db23d6": "가져올 암호화 번들(Base64)",
+  "worker-network-native.separatelyAuthenticatedDigest_be070a": "별도로 인증된 다이제스트",
+  "worker-network-native.iVerifiedThisDigestIndependentlyAnd_638722": "이 다이제스트를 독립적으로 확인했으며 이 워커의 원래 보호된 수신 대상으로 가져오려고 합니다.",
+  "worker-network-native.importConfirmedEncryptedConfiguration_30d15e": "확인한 암호화 구성 가져오기",
+  "worker-network-native.retryOriginalEncryptedImport_46c8e9": "원래 암호화 가져오기 재시도",
+  "worker-network-native.extra.0590779bd8e2": "암호화된 Base64 번들과 별도로 인증된 다이제스트를 붙여 넣은 후 원래 수신 대상으로 가져오기를 확인하세요.",
+  "worker-network-native.extra.9b693b5af315": "공개 수신자 원문을 확인했습니다. 보호된 키는 이 컴퓨터에 남습니다.",
+  "worker-network-native.extra.af95af8c4781": "원래 같은 컴퓨터 워커 작업을 검증하지 못했습니다. 등록과 현재 경로를 확인하세요. 가져오기가 저장되었을 수 있으니 직접 상태를 확인할 때까지 원래 암호화 입력과 다이제스트를 유지하세요.",
+  "worker-network-native.sentence.49a8a8c21241": "암호화된 세대 {{v0}}을(를) 가져왔습니다. 워커를 직접 재시작한 후 현재 제어 상태를 확인하세요. 가져오기만으로 네트워크 사용이 입증되지는 않습니다.",
+  "worker-network-native.manualRecheck": "여기서 원래 공개 수신자 검사를 사용해 일치하는 Worker를 다시 읽으세요. 가져오기가 확인되지 않으면 보존된 암호화 입력과 인증된 다이제스트로만 재시도하세요. 필요한 경우에만 원래 컴퓨터의 기존 CLI나 서비스로 Worker를 재시작하세요. 검사와 가져오기는 재시작하지 않습니다."
+}

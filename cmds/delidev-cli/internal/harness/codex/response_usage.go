@@ -3,6 +3,7 @@ package codex
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -19,6 +20,8 @@ func (c *Client) observeResponseUsageLocked(native nativewire.Event) (Event, err
 		Usage      *tokenCountsWire `json:"usage"`
 		Metadata   *struct {
 			Amount *string `json:"amount"`
+			// Native billing metadata is opaque and cannot establish product cost.
+			Metadata json.RawMessage `json:"metadata,omitempty"`
 		} `json:"usageMetadata"`
 	}
 	if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil || domain.Text(params.ResponseID, "native response identity", 1024, true) != nil {

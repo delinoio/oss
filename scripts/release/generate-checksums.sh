@@ -7,12 +7,13 @@ usage() {
 Generate SHA256 checksums for release artifacts and optionally sign each artifact with cosign.
 
 Usage:
-  ./scripts/release/generate-checksums.sh --artifacts-dir <dir> [--sigstore-dir <dir>]
+  ./scripts/release/generate-checksums.sh --artifacts-dir <dir> [--sigstore-dir <dir>] [--skip-signing]
 
 Options:
   --artifacts-dir <dir>  Directory containing release artifacts.
   --sigstore-dir <dir>   Separate destination for Sigstore bundles. Defaults to
                          the artifact directory for backwards compatibility.
+  --skip-signing        Generate checksums without invoking cosign or OIDC.
 
 Environment:
   REQUIRE_COSIGN         When "1" (default), fail if cosign is unavailable.
@@ -21,6 +22,7 @@ USAGE
 
 artifacts_dir=""
 sigstore_dir=""
+skip_signing=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -31,6 +33,10 @@ while [ "$#" -gt 0 ]; do
     --sigstore-dir)
       sigstore_dir="${2:-}"
       shift 2
+      ;;
+    --skip-signing)
+      skip_signing=1
+      shift
       ;;
     --help)
       usage
@@ -122,7 +128,9 @@ done
 
 echo "[release.checksum] wrote SHA256SUMS" >&2
 
-if command -v cosign >/dev/null 2>&1; then
+if [ "$skip_signing" = "1" ]; then
+  echo "[release.checksum] signing explicitly skipped" >&2
+elif command -v cosign >/dev/null 2>&1; then
   for artifact in "${artifacts[@]}"; do
     bundle="$sigstore_dir/${artifact}.sigstore.json"
     mkdir -p "$(dirname "$bundle")"

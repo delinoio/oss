@@ -19,7 +19,7 @@ func activeRuleFixture() map[string]any {
 
 func rulesFixtureClient(t *testing.T, mutate func(int, uint32, map[string]any, http.Header)) (*Client, *int) {
 	t.Helper()
-	c, _ := accessFixture(t, nil)
+	c, _ := repositoryFixture(t, nil)
 	original := c.http.Transport
 	reads := 0
 	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {

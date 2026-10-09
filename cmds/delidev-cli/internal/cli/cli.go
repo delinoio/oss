@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -14,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,6 +27,7 @@ type IO struct {
 }
 
 type options struct {
+	desktop         *desktopruntime.Target
 	dataDir, server string
 	requestID       domain.ID
 	tokenStdin      bool
@@ -41,6 +44,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		streams.Err = os.Stderr
 	}
 	o, remaining, err := globals(args)
+	o.desktop = desktopruntime.FromContext(ctx)
 	emit := func(value any, err error) int { return emitResult(streams, o, value, err) }
 	if err != nil {
 		return emit(nil, err)
@@ -67,6 +71,16 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	command := remaining[0]
 	rest := remaining[1:]
+	if command == "server" && len(rest) > 0 && rest[0] == "desktop-host" {
+		return runDesktopHostCommand(ctx, o, rest[1:], streams)
+	}
+	if command == "worker" && len(rest) > 0 && rest[0] == "desktop-host" {
+		return runDesktopWorkerHostCommand(ctx, o, rest[1:], streams)
+	}
+	if command == "worker" && len(rest) > 0 && rest[0] == "desktop-prepare" {
+		value, err := desktopWorkerExecutable(ctx, o, rest[1:])
+		return emit(value, err)
+	}
 	if command == "service-run" {
 		value, err := runService(ctx, o, rest, streams)
 		return emit(value, err)
@@ -76,7 +90,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if command == "worker" {
 			kind = userservice.Worker
 		}
-		value, err := serviceCommand(ctx, o, kind, rest[1:], streams)
+		value, err := serviceCommand(ctx, &o, kind, rest[1:], streams)
 		return emit(value, err)
 	}
 	if command == "device" && len(rest) > 0 && (rest[0] == "inspect-local" || rest[0] == "recover-local") {
@@ -139,6 +153,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	defer c.transport.CloseIdleConnections()
 	if command != "events" && !(command == "session" && (followsTerminalOutput(rest) || (len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start"))) {
 		limit := 30 * time.Second
+		if extended := extendedUnaryBudget(command, rest); extended != 0 {
+			limit = extended
+			c.transport.ResponseHeaderTimeout = extended
+		}
 		// Network credential work and backup inspection/replacement own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
 		if command == "machine" && len(rest) > 0 && rest[0] == "ssh" {
@@ -158,10 +176,6 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 		if command == "integration" {
 			c.transport.ResponseHeaderTimeout = 25 * time.Second
-			if len(rest) > 0 && rest[0] == "inspect-repository" {
-				limit = 40 * time.Second
-				c.transport.ResponseHeaderTimeout = limit
-			}
 		}
 		if command == "session" && len(rest) > 0 {
 			switch rest[0] {
@@ -192,6 +206,11 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		ctx = bounded
 	}
 	switch command {
+	case "project":
+		if len(rest) > 0 && rest[0] == "prompt-history" {
+			value, err := projectPromptHistoryCommand(ctx, c, o, rest[1:])
+			return emit(value, err)
+		}
 	case "snapshot":
 		if len(rest) > 0 && rest[0] == "list" {
 			value, err := snapshotListCommand(ctx, c, rest[1:])
@@ -199,6 +218,9 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 
 	case "update":
+		if len(rest) > 0 && (rest[0] == "check" || rest[0] == "worker-request" || rest[0] == "cancel") {
+			ensureRequest(&o)
+		}
 		value, err := updateCommand(ctx, c, o, rest)
 		return emit(value, err)
 	case "storage":
@@ -323,6 +345,7 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	project := fs.String("project-id", "", "project scope")
 	session := fs.String("session-id", "", "session scope")
 	accountType := fs.String("account-type", "", "account type: api or subscription")
+	apiProtocol := fs.String("api-protocol", "", "account API format: openai-responses, openai-chat or anthropic-messages")
 	providerID := fs.String("provider-id", "", "account provider ID")
 	if err := parse(fs, rest); err != nil {
 		return emit(nil, err)
@@ -332,10 +355,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		if *limit > 200 || *limit == 0 {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Invalid page size.", "Use 1 through 200."))
 		}
-		if (*accountType != "" || *providerID != "") && kind != domain.AccountKind {
+		if (*accountType != "" || *providerID != "" || *apiProtocol != "") && kind != domain.AccountKind {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters require account resources.", "Select account as the resource kind."))
 		}
-		if action == "snapshot" && (*accountType != "" || *providerID != "") {
+		if action == "snapshot" && (*accountType != "" || *providerID != "" || *apiProtocol != "") {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Account filters apply only to paginated account lists.", "Use account list instead of account snapshot."))
 		}
 		f := &pb.Filter{Kind: rpc.WireKind(kind), PageSize: uint32(*limit), PageToken: *page, ProjectId: *project, SessionId: *session}
@@ -356,7 +379,15 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		default:
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Unknown account type filter.", "Select api or subscription."))
 		}
-		response, err := listWithProviderFilter(ctx, c, f, *providerID, selectedType)
+		protocol := pb.ApiProtocol_API_PROTOCOL_UNSPECIFIED
+		if *apiProtocol != "" {
+			format := domain.APIProtocol(*apiProtocol)
+			if !format.API() || selectedType == pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION {
+				return emit(nil, domain.Fail(domain.InvalidArgument, "Invalid account API format filter.", "Select one supported API format for API accounts."))
+			}
+			protocol = rpc.WireAPIFormat(domain.ProviderAPIFormat{Protocol: format}).Protocol
+		}
+		response, err := listWithAPIFormatFilter(ctx, c, f, *providerID, selectedType, protocol)
 		if err != nil {
 			return emit(nil, err)
 		}
@@ -383,6 +414,22 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		body, err := readDocument(*input, streams.In)
 		if err != nil {
 			return emit(nil, err)
+		}
+		if kind == domain.RepositoryKind {
+			var repository domain.Repository
+			if err := domain.Decode(body, &repository); err != nil {
+				return emit(nil, err)
+			}
+			if _, err := domain.ParseRepositoryCloneURL(repository.RemoteURL); err != nil {
+				return emit(nil, err)
+			}
+			status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+			if err != nil {
+				return emit(nil, rpc.ClientError(err))
+			}
+			if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_REMOTE_REPOSITORIES_V1) {
+				return emit(nil, domain.Fail(domain.Unsupported, "This server does not support remote repositories.", "Update the server before saving a repository."))
+			}
 		}
 		ensureRequest(&o)
 		response, err := c.configuration.SaveConfiguration(ctx, request(c, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(o.requestID), Id: *id, ExpectedRevision: *revision}, Kind: rpc.WireKind(kind), SchemaVersion: rpc.ResourceSchemaVersion(kind, body), DocumentJson: body}))
@@ -444,4 +491,30 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	default:
 		return emit(nil, usage())
 	}
+}
+
+// Leave room for the original bounded server work and its typed settlement.
+// This changes only these unary commands; caller cancellation still wins.
+func extendedUnaryBudget(command string, args []string) time.Duration {
+	if len(args) == 0 {
+		return 0
+	}
+	switch command {
+	case "account":
+		if args[0] == "validate" {
+			return 50 * time.Second
+		}
+		if len(args) >= 2 && args[0] == "oauth" && args[1] == "complete" {
+			return 35 * time.Second
+		}
+	case "provider":
+		if args[0] == "discover" {
+			return 50 * time.Second
+		}
+	case "update":
+		if args[0] == "check" {
+			return 35 * time.Second
+		}
+	}
+	return 0
 }

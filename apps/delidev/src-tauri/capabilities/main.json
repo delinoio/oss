@@ -1,6 +1,6 @@
 {
   "identifier": "main",
-  "description": "Trusted DeliDev main document: local bootstrap, owned browser presentation, and device-local appearance.",
+  "description": "Registered DeliDev local product documents: local bootstrap, owned browser presentation, and device-local appearance.",
   "permissions": [
     "local-bootstrap",
     "saved-manage",
@@ -10,12 +10,19 @@
     "core:event:allow-unlisten",
     "github-presentation",
     "account-oauth",
+    "desktop-update",
+    "provider-guidance",
     "device-appearance",
+    "device-date-format",
+    "session-creation-preferences",
+    "device-language",
     "browser-presentation",
     "repository-folder",
-    "worker-network"
+    "worker-network",
+    "credential-access"
   ],
   "webviews": [
-    "main"
+    "main",
+    "local-*"
   ]
 }

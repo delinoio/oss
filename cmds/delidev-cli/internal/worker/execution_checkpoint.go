@@ -120,7 +120,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !slices.Equal(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || p.Version != 1 || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -132,9 +132,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 			return false
 		}
 	}
-	switch p.Native.Effective.ApprovalPolicy {
-	case codex.ApprovalUntrusted, codex.ApprovalOnRequest, codex.ApprovalNever:
-	default:
+	if domain.Text(string(p.Native.Effective.ApprovalPolicy), "retained approval policy", 256, true) != nil {
 		return false
 	}
 	switch p.Native.Effective.Sandbox.Type {
@@ -210,7 +208,7 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	if err != nil || !bytes.Equal(actual, expected) {
 		return "", executionCheckpointUncertain()
 	}
-	ref := ExecutionCheckpointRef{Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: sha256.Sum256([]byte(input.Input.Prompt))}
+	ref := ExecutionCheckpointRef{Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
 	var manifest workspace.Manifest
 	if domain.Decode(input.Manifest, &manifest) != nil {
 		return "", executionCheckpointUncertain()
@@ -221,6 +219,14 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	if err != nil {
 		return "", err
 	}
+	for i := range nativeInputs {
+		for _, proof := range bound.SkillInputs {
+			if proof.ID == nativeInputs[i].ID && proof.PromptDigest == nativeInputs[i].PromptDigest {
+				nativeInputs[i].SkillDigest = proof.SkillDigest
+			}
+		}
+	}
+
 	if input.Continuation != nil {
 		ref.HistoryExecutionID = input.Continuation.HistoryExecutionID
 	}
@@ -270,4 +276,16 @@ func nativeWorkspaceRoots(manifest workspace.Manifest) []string {
 		return nil
 	}
 	return manifest.WorkspaceRoots()
+}
+
+func sameHistoricalPrompts(a, b []codex.HistoricalInput) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID || a[i].PromptDigest != b[i].PromptDigest {
+			return false
+		}
+	}
+	return true
 }

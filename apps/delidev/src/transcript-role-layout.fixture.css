@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.transcript-role-fixture > aside { padding: 16px; }
+@media (max-width: 760px) {
+  .app.transcript-role-fixture { grid-template-columns: 80px minmax(0, 1fr); }
+  .transcript-role-fixture > aside { padding: 4px; overflow-wrap: anywhere; }
+  .transcript-role-fixture > aside button { width: 100%; }
+}
+
+/* The fixture reserves exactly 80px so cases measure available session width. */
+.app.transcript-role-fixture { grid-template-columns: 80px minmax(0, 1fr); min-height: 0; }
+.transcript-role-fixture > aside { padding: 4px; overflow-wrap: anywhere; }
+.transcript-role-fixture > aside button { width: 100%; }

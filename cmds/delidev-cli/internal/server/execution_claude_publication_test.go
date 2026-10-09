@@ -73,7 +73,7 @@ func TestClaudeBindingPublicationRejectsForeignSettingsAndOwners(t *testing.T) {
 		rpc   func(*pb.PublishExecutionRequest)
 	}{
 		{name: "mode", event: func(e *domain.ExecutionEvent) { e.Observed.ClaudePermission = domain.ClaudePermissionPlan }},
-		{name: "effort", event: func(e *domain.ExecutionEvent) { value := "unknown"; e.Observed.Effort = &value }},
+		{name: "effort", event: func(e *domain.ExecutionEvent) { value := "invalid\x00effort"; e.Observed.Effort = &value }},
 		{name: "model", event: func(e *domain.ExecutionEvent) { e.Observed.Model = "foreign-model" }},
 		{name: "sandbox", event: func(e *domain.ExecutionEvent) { e.Observed.Permission = domain.PermissionReadOnly }},
 		{name: "thread-namespace", event: func(e *domain.ExecutionEvent) { e.NativeThreadID = string(domain.NewID()) }},

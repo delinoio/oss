@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const Version = "0.2.8"
+const Version = "0.2.9"
 
 // Revision is populated by release builds; development builds remain explicit.
 var Revision = "development"
@@ -228,4 +228,9 @@ type Snapshot struct {
 	Stopping             bool                        `json:"stopping"`
 	Cursor               int                         `json:"cursor"`
 	PowerProblem         *Problem                    `json:"power_problem,omitempty"`
+
+	// Private engine authority remains outside public artifact/status records.
+	DockerArtifactEndpoint string `json:"docker_artifact_endpoint,omitempty"`
+	// Quarantine causes are private and never enter public runner/status JSON.
+	RunnerQuarantines map[string]RunnerQuarantineCause `json:"runner_quarantines,omitempty"`
 }

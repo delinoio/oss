@@ -41,7 +41,7 @@ func localOriginFixture(t *testing.T) (*Service, *accountFixture, domain.CreateS
 	repo := domain.NewID()
 	checkout := filepath.Join(t.TempDir(), "checkout")
 	_, err = db.Mutate(context.Background(), domain.NewID(), "fixture.repository", nil, func(tx *store.Tx) (any, error) {
-		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{Name: "Local fixture", Checkouts: []domain.Checkout{{MachineID: input.MachineID, Path: checkout}}, AutoFetch: true, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "missing", Name: "not-selected"}})
+		return tx.Put(domain.RepositoryKind, repo, 0, "", "", domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Local fixture", Checkouts: []domain.Checkout{{MachineID: input.MachineID, Path: checkout}}, AutoFetch: true, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "missing", Name: "not-selected"}})
 	})
 	if err != nil {
 		t.Fatal(err)

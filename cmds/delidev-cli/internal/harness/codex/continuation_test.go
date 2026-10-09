@@ -97,6 +97,9 @@ func continuationFixture(t *testing.T, mode string) (*Client, string, Continuati
 	c, capture := openThreadFixture(t, "thread-continuation-"+mode)
 	settings := threadSettings(t)
 	if mode == "sidechat" {
+		if c.managedHome != "" {
+			settings.Provider = "openai"
+		}
 		settings.Options.Permission = domain.PermissionReadOnly
 		settings.Options.ApprovalPolicy = "never"
 	}

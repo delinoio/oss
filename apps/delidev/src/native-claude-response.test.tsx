@@ -108,11 +108,13 @@ it.each([true, false])("retains an explicit interrupted denial through an uncert
   expect(f.send.mock.calls[0][0]).toEqual(f.send.mock.calls[1][0]);
   expect(decoded(f.send.mock.calls[0][0])).toEqual({ claude: { behavior: "deny", message: "Original interrupted denial", interrupt: true } });
 });
-it("blocks closed, missing and oversized answers before RPC", () => {
+it("blocks closed and missing answers and rejects oversized edits before retention", () => {
   const f = fixture(); const rendered = render(f.form());
   fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("checkbox", { name: "Use an exact custom answer for question 1" }));
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "x".repeat(256 * 1024) } });
-  fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+  expect(screen.getByText(/previous draft was kept/)).toBeTruthy();
+  expect(f.send).not.toHaveBeenCalled();
   rendered.rerender(f.form(false, true)); fireEvent.submit(screen.getByRole("form")); expect(f.send).not.toHaveBeenCalled();
 });

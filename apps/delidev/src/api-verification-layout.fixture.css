@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.api-fixture-shell { min-height: 100vh; display: grid; grid-template-columns: 240px minmax(0, 1fr); background: var(--surface); color: var(--text); }
+.api-fixture-sidebar { padding: 24px; background: var(--surface-subtle); border-right: 1px solid var(--border); }
+.api-fixture-main { grid-column: 2; grid-row: 1; min-width: 0; padding: 32px; }
+@media (max-width: 759px) { .api-fixture-shell { grid-template-columns: minmax(0, 1fr); }.api-fixture-sidebar { display: none; }.api-fixture-main { grid-column: 1; padding: 16px; } }

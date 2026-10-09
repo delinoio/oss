@@ -1,0 +1,11 @@
+{
+  "pagination.loading": "{{label}} 불러오는 중…",
+  "pagination.loadingMore": "{{label}} 더 불러오는 중…",
+  "pagination.previousData": "{{label}}을(를) 읽지 못했습니다. 이전 데이터를 표시합니다.",
+  "pagination.readFailed": "{{label}}을(를) 읽지 못했습니다.",
+  "pagination.reload": "목록 다시 불러오기",
+  "pagination.retry": "다시 시도",
+  "pagination.loadMore": "더 불러오기",
+  "pagination.loadMoreLabel": "{{label}} 더 불러오기",
+  "pagination.restore": "이전에 불러온 항목 복원"
+}

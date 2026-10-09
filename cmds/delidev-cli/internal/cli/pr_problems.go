@@ -13,7 +13,7 @@ func prProblemEnvelope(r *pb.Resource) bool {
 func prProblemResponseError() error {
 	return domain.Fail(domain.RecoveryRequired, "The retained PR problem response is inconsistent.", "Inspect the original PR and exact content version before retrying.")
 }
-func prProblemsCommand(ctx context.Context, c client, o options, args []string) (any, error) {
+func prProblemsCommand(ctx context.Context, c client, o *options, args []string) (any, error) {
 	if len(args) == 0 {
 		return nil, usage()
 	}
@@ -57,7 +57,7 @@ func prProblemsCommand(ctx context.Context, c client, o options, args []string) 
 		default:
 			return nil, domain.Fail(domain.InvalidArgument, "Unknown PR collection kind.", "Use --kind feedback, ci or conflict.")
 		}
-		ensureRequest(&o)
+		ensureRequest(o)
 		r, err := c.integrations.RefreshPullRequestProblems(ctx, request(c, &pb.RefreshPullRequestProblemsRequest{RequestId: string(o.requestID), RepositoryId: repository, Number: number, Kind: kind}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
@@ -107,7 +107,7 @@ func prProblemsCommand(ctx context.Context, c client, o options, args []string) 
 		if domain.ID(id).Validate() != nil || revision == 0 || revision >= 1<<63 || len(version) != 64 {
 			return nil, domain.Fail(domain.InvalidArgument, "Invalid problem dismissal.", "Provide the original UUID, revision and content version.")
 		}
-		ensureRequest(&o)
+		ensureRequest(o)
 		r, err := c.integrations.DismissPullRequestProblem(ctx, request(c, &pb.DismissPullRequestProblemRequest{Mutation: &pb.Mutation{Id: id, ExpectedRevision: revision, RequestId: string(o.requestID)}, ContentVersion: version}))
 		if err != nil {
 			return nil, rpc.ClientError(err)

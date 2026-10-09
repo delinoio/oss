@@ -1,3 +1,4 @@
+import { ProductError } from "./localization";
 const dayMilliseconds = 86_400_000;
 const wallClock = new Map<string, Intl.DateTimeFormat>();
 
@@ -34,13 +35,13 @@ export function detectDeviceTimeZone(): string {
 export function localDateTimeToUnixMs(value: string, timeZone: string): bigint {
   if (!value) return 0n;
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(value);
-  if (!match) throw new Error("Enter a valid calendar date and time.");
+  if (!match) throw new ProductError("validation.ede860515417");
   const [, yearText, monthText, dayText, hourText, minuteText, secondText = "0", fractionText = "0"] = match;
   const year = Number(yearText), month = Number(monthText), day = Number(dayText), hour = Number(hourText), minute = Number(minuteText), second = Number(secondText);
   const millisecond = Number(fractionText.padEnd(3, "0"));
   const wall = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
   const date = new Date(wall);
-  if (year < 1970 || date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day || hour > 23 || minute > 59 || second > 59) throw new Error("Enter a valid calendar date and time.");
+  if (year < 1970 || date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day || hour > 23 || minute > 59 || second > 59) throw new ProductError("validation.ede860515417");
 
   try {
     const offsets = new Set([offsetAt(wall - dayMilliseconds, timeZone), offsetAt(wall, timeZone), offsetAt(wall + dayMilliseconds, timeZone)]);
@@ -50,12 +51,20 @@ export function localDateTimeToUnixMs(value: string, timeZone: string): bigint {
       const local = partsAt(candidate, timeZone);
       if (local.year === year && local.month === month && local.day === day && local.hour === hour && local.minute === minute && local.second === second && candidate % 1000 === millisecond) matches.push(candidate);
     }
-    if (!matches.length) throw new Error("This local time does not exist in the selected timezone.");
+    if (!matches.length) throw new ProductError("validation.62ed9c052a3f");
     // A repeated fall-back clock time maps to two instants; choose its earlier
     // occurrence deterministically and retain the explicit timezone in the query.
     return BigInt(Math.min(...matches));
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("This local time")) throw error;
-    throw new Error("The selected timezone is unavailable. UTC is used when the device timezone cannot be detected.");
+    if (error instanceof ProductError) throw error;
+    throw new ProductError("validation.24d222761f98");
   }
+}
+
+// Preserve the exact millisecond range when a summary opens the Usage editor.
+export function unixMsToLocalDateTime(value: bigint, timeZone: string): string {
+  if (value === 0n) return "";
+  const time = Number(value), parts = partsAt(time, timeZone);
+  const pad = (value: number, length = 2) => String(value).padStart(length, "0");
+  return `${pad(parts.year, 4)}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}.${pad(time % 1000, 3)}`;
 }

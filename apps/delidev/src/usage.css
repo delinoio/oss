@@ -1,0 +1,88 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.page.usage-page { max-width: 1280px; min-width: 0; margin-inline: auto; padding: 24px; }
+.usage-page [hidden] { display: none; }
+.usage-page button, .usage-sidebar button { min-height: 40px; border-radius: 8px; }
+.usage-page .usage-applied { border-radius: 8px; margin-block: 16px; }
+.usage-page .usage-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-block: 16px; }
+.usage-tabs [aria-selected=true] { color: var(--selected-text); background: var(--selected-background); border-color: var(--selected-border); }
+.usage-page .usage-summary { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.usage-page .usage-summary h2, .usage-page .usage-summary p, .usage-page .usage-metric dt, .usage-page .usage-metric small { color: var(--muted); }
+.usage-page .usage-metrics-primary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.usage-page .usage-metric { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.usage-page .usage-metric dd { color: var(--text); font-size: 1.5rem; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.usage-page .usage-summary > p:first-of-type { margin-bottom: 12px; color: var(--muted); }
+.usage-page .usage-summary-breakdown { margin-top: 16px; }
+.usage-page .usage-detail { margin-block: 16px; min-width: 0; }
+.usage-page .usage-table { max-width: 100%; min-width: 0; overscroll-behavior: contain; }
+.usage-page .usage-table th, .usage-page .usage-table td { padding: 12px; font-variant-numeric: tabular-nums; }
+.usage-page .usage-table th { font-size: .85rem; }
+.usage-page .usage-table td { font-size: .875rem; }
+.usage-page .usage-trends, .usage-page .usage-definitions, .usage-page .usage-accounting-source { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.usage-page summary { min-height: 40px; padding-block: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.usage-page .usage-accounting-source > details { margin: 0; padding: 0; border: 0; border-radius: 8px; }
+.usage-page .usage-accounting-source > details > summary { display: list-item; }
+.usage-source-heading { font-weight: 650; }
+.usage-accounting-source > details > summary span { margin-inline-end: 16px; }
+.usage-source-empty-warning { margin: 8px 0 0; color: var(--muted); font-size: .875rem; }
+.usage-source-details { min-width: 0; }
+.usage-source-definitions, .usage-source-pricing { margin-block: 16px; }
+.usage-page .usage-accounting-source .usage-metrics-secondary { color: var(--text); font-variant-numeric: tabular-nums; }
+.usage-page .usage-accounting-source h2 { font-size: 1rem; }
+.sidebar-list:has(.usage-sidebar:not([hidden])) { overflow: hidden; }
+.sidebar-surface-outlet:has(.usage-sidebar:not([hidden])) { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.usage-sidebar:not([hidden]) { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 0; }
+.usage-sidebar > h2, .usage-sidebar > p { flex-shrink: 0; }
+.usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
+.usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
+.usage-sidebar legend { color: var(--muted); font-weight: 650; font-size: .8rem; }
+.usage-sidebar .actions { flex-shrink: 0; padding-block: 12px; border-top: 1px solid var(--border); background: var(--surface); }
+.usage-sidebar .actions button { width: 100%; }
+@media (max-width: 759px) {
+  .page.usage-page { padding: 16px; }
+  .usage-page .usage-metrics-primary, .usage-page .usage-metrics-secondary { grid-template-columns: 1fr; }
+  .usage-accounting-source > details > summary span { display: block; margin: 4px 0; }
+}
+/* Trend-first response presentation. Row evidence stays in the same mounted table on narrow screens. */
+.usage-page { font-size: 14px; line-height: 20px; }
+.usage-page small { font-size: 12px; line-height: 18px; }
+.usage-page .usage-applied { gap: 8px 16px; padding-block: 8px; }
+.usage-page .usage-applied details { margin-left: auto; }
+.usage-applied-exact { display: flex; flex-direction: column; gap: 8px; padding-block: 8px; }
+.usage-page .usage-coverage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 8px; border-radius: 8px; }
+.usage-coverage details { flex-basis: 100%; }
+.usage-page .usage-coverage details summary { min-height: 40px; padding: 8px 0; font-size: 12px; line-height: 18px; }
+.usage-page .usage-trends { padding: 0; border: 0; background: transparent; margin-block: 24px; }
+.usage-page .usage-charts { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.usage-page .usage-chart-panel { min-width: 0; border-radius: 8px; }
+.usage-page .usage-detail { margin-block: 24px; }
+.usage-page .usage-table th, .usage-page .usage-table td { min-width: 0; padding: 8px; }
+.usage-page .usage-detail > .usage-table > table { table-layout: fixed; min-width: 880px; }
+.usage-page .usage-detail > .usage-table th:nth-child(-n+3) { width: 16%; }
+.usage-page .usage-number { text-align: right; }
+.usage-page .usage-number > span { display: block; }
+.usage-page .usage-detail > .usage-table th:nth-child(n+4):nth-child(-n+8) { text-align: right; }
+.usage-page .usage-detail > .usage-table th:last-child { width: 80px; }
+.usage-page .usage-row-detail summary { min-height: 40px; }
+.usage-original-identities { display: grid; gap: 8px; }
+.usage-original-identities dt { font-weight: 600; }
+.usage-original-identities dd { margin: 0; overflow-wrap: anywhere; }
+.usage-row-detail details[open] { min-width: 260px; max-width: 360px; }
+.usage-row-detail .usage-row-measures { grid-template-columns: 1fr; }
+@media (max-width: 759px) {
+ .usage-page .usage-detail > .usage-table > table { min-width: 0; display: block; }
+ .usage-page .usage-detail > .usage-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+ .usage-page .usage-detail > .usage-table caption, .usage-page .usage-detail > .usage-table tbody { display: block; width: 100%; }
+ .usage-page .usage-detail > .usage-table tr { display: grid; grid-template-columns: minmax(0, 1fr); margin-block: 16px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+ .usage-page .usage-detail > .usage-table td { display: block; text-align: left; border: 0; padding: 6px 0; }
+ .usage-page .usage-detail > .usage-table td[data-label]::before { display: block; content: attr(data-label); color: var(--muted); font-size: 12px; line-height: 18px; }
+ .usage-page .usage-row-detail details[open] { min-width: 0; max-width: none; }
+ .usage-page .usage-metrics-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+ .usage-page .usage-applied details { margin-left: 0; width: 100%; }
+}
+.usage-page .usage-applied details, .usage-page .usage-coverage details, .usage-page .usage-summary-breakdown { padding: 0; border: 0; background: transparent; }
+.usage-page .usage-coverage details { flex-basis: auto; margin-left: auto; }
+.usage-page .usage-coverage details[open] { flex-basis: 100%; margin-left: 0; }
+.usage-page .usage-coverage details[open] > span { display: block; margin-top: 8px; }
+.usage-page .usage-summary h2 { margin-bottom: 12px; }
+@media (max-width: 759px) { .usage-page .usage-coverage details { margin-left: 0; } }

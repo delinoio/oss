@@ -5,6 +5,16 @@
 import { ConfigurationService } from "./configuration_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.ConfigurationService.ListProjectPromptHistory
+ */
+export const listProjectPromptHistory = ConfigurationService.method.listProjectPromptHistory;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.ClearProjectPromptHistory
+ */
+export const clearProjectPromptHistory = ConfigurationService.method.clearProjectPromptHistory;
+
+/**
  * @generated from rpc delidev.v1.ConfigurationService.ExportConfiguration
  */
 export const exportConfiguration = ConfigurationService.method.exportConfiguration;
@@ -20,6 +30,17 @@ export const previewConfigurationImport = ConfigurationService.method.previewCon
 export const applyConfigurationImport = ConfigurationService.method.applyConfigurationImport;
 
 /**
+ * Both save paths use the existing revisioned acknowledgement envelope.
+ * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+ * buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+ *
+ * @generated from rpc delidev.v1.ConfigurationService.SaveAgentWorker
+ */
+export const saveAgentWorker = ConfigurationService.method.saveAgentWorker;
+
+/**
+ * buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+ *
  * @generated from rpc delidev.v1.ConfigurationService.SaveConfiguration
  */
 export const saveConfiguration = ConfigurationService.method.saveConfiguration;

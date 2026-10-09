@@ -9,3 +9,7 @@
 - Fixtures use isolated loopback servers and test credentials; never user accounts or real network infrastructure.
 
 - Plaintext loopback HTTP destinations require Direct or an explicit matching host/IP/CIDR and optional-port bypass. Reject other selected proxy routes before opening any connection; never transmit the account key through CONNECT/SOCKS5 or silently select Direct. Verified HTTPS loopback destinations retain explicit proxy routing.
+
+- Direct/exact-bypass HTTP transports pin localhost to literal IPv4/IPv6 loopback before the caller’s base dialer. Preserve that dialer’s context and the original TLS hostname, ordinary nonlocal DNS and explicit proxy authority; cancellation never selects another profile.
+
+- Proxy credential body guards incrementally decode valid JSON string escapes in names/values and JSON SSE data. Retain only bounded decoded matching suffixes and incomplete escapes with their original wire offsets; preserve allowed wire bytes and short-token boundaries. Rejection closes the original response, and cancellation joins without releasing retained protected prefixes.

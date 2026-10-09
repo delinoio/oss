@@ -57,7 +57,7 @@ func (s *Service) requestServerSubscription(ctx context.Context, req *connect.Re
 			a.Subscription = &domain.SubscriptionState{}
 		}
 		state := a.Subscription
-		if state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
+		if state.ServerObservationActive() || state.Pending != nil || state.RecoveryRequired || a.Removal != nil || state.Observation != nil && state.Observation.Active() && action != domain.SubscriptionLogout {
 			return nil, subscriptionDenied()
 		}
 		if action == domain.SubscriptionLogin && (a.Connection != nil || state.Generation != "" || state.Lease != nil) {
@@ -182,7 +182,7 @@ func (s *Service) initializeServerSubscriptions(ctx context.Context) error {
 				continue
 			}
 			o := a.Subscription.ServerOperation
-			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() {
+			if !o.Active() || o.Epoch == s.subscriptionServerEpoch() || o.State == domain.SubscriptionRecovery && a.Subscription.RecoveryRequired && a.Health == domain.AccountFailed {
 				continue
 			}
 			o.State = domain.SubscriptionRecovery
@@ -204,11 +204,16 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 	var workers sync.WaitGroup
 	done := make(chan domain.ID, 16)
 	running := map[domain.ID]bool{}
+	cleanupAttempted := map[domain.ID]bool{}
 	defer func() { stop(); workers.Wait() }()
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		var candidates []domain.ID
+		type candidate struct {
+			account, operation domain.ID
+			cleanup            bool
+		}
+		var candidates []candidate
 		err := s.Store.Read(child, func(tx *store.Tx) error {
 			records, err := all(tx, domain.AccountKind)
 			if err != nil {
@@ -220,7 +225,9 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 					return err
 				}
 				if a.Subscription != nil && !a.Subscription.RecoveryRequired && a.Subscription.ServerOperation != nil && a.Subscription.ServerOperation.State == domain.SubscriptionPreparing && !a.Subscription.ServerOperation.NativeStarted && a.Subscription.ServerOperation.Epoch == s.subscriptionServerEpoch() && a.Subscription.Pending != nil && a.Subscription.Pending.Phase == domain.SubscriptionQueued && a.Subscription.Lease == nil {
-					candidates = append(candidates, r.ID)
+					candidates = append(candidates, candidate{account: r.ID})
+				} else if failedServerLoginNeedsCleanup(a) && !cleanupAttempted[a.Subscription.ServerOperation.ID] {
+					candidates = append(candidates, candidate{account: r.ID, operation: a.Subscription.ServerOperation.ID, cleanup: true})
 				}
 			}
 			return nil
@@ -228,13 +235,28 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 		if err != nil && child.Err() == nil {
 			s.logger.WarnContext(ctx, "server_subscription_scan_failed", "code", domain.SafeError(err).Code)
 		}
-		for _, id := range candidates {
-			if running[id] || len(running) >= 16 {
+		for _, next := range candidates {
+			if running[next.account] || len(running) >= 16 {
 				continue
 			}
-			running[id] = true
+			running[next.account] = true
+			if next.cleanup {
+				// One bounded attempt per original operation in this server epoch.
+				// Failed cleanup stays fenced rather than retrying every scan tick.
+				cleanupAttempted[next.operation] = true
+			}
 			workers.Add(1)
-			go func() { defer workers.Done(); s.runServerSubscription(child, id); done <- id }()
+			go func() {
+				defer workers.Done()
+				if next.cleanup {
+					if err := s.recoverFailedServerLogin(child, next.account, next.operation); err != nil && child.Err() == nil {
+						s.logger.WarnContext(child, "server_subscription_cleanup_pending", "operation_id", next.operation, "code", domain.SafeError(err).Code)
+					}
+				} else {
+					s.runServerSubscription(child, next.account)
+				}
+				done <- next.account
+			}()
 		}
 		select {
 		case <-child.Done():
@@ -274,7 +296,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 			return nil, err
 		}
 		st := a.Subscription
-		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != original.ID || st.ServerOperation.State != domain.SubscriptionPreparing || st.ServerOperation.NativeStarted || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Phase != domain.SubscriptionQueued || st.Lease != nil || st.RecoveryRequired || st.ServerOperation.Epoch != s.subscriptionServerEpoch() {
+		if st == nil || st.ServerOperation == nil || st.ServerOperation.ID != original.ID || st.ServerOperation.State != domain.SubscriptionPreparing || st.ServerOperation.NativeStarted || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Phase != domain.SubscriptionQueued || st.ServerObservationActive() || st.Lease != nil || st.RecoveryRequired || st.ServerOperation.Epoch != s.subscriptionServerEpoch() {
 			return nil, subscriptionDenied()
 		}
 		o := st.ServerOperation
@@ -332,14 +354,24 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	var latest []byte
 	cleanup, success := false, false
 	nativeStarted := false
-	var nativeErr error
 	version, phase := "", domain.CodexRuntime
 	var native serverSubscriptionNative
-	var vault accountSecrets
-	vault, nativeErr = s.secrets()
-	var old []byte
-	if nativeErr == nil && original.Generation != "" {
-		old, nativeErr = vault.Get(ctx, credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin})
+	_, old, nativeErr := s.serverSubscriptionCredentials(ctx, id, original.Generation)
+	if nativeErr != nil && operation.Action == domain.SubscriptionLogin && original.Generation == "" {
+		// No opener or native write ran. Verify the narrower pre-native absence
+		// proof before allowing a checkpoint, even if the vault must be retried
+		// after server restart. Retained evidence remains recovery-owned.
+		verifyCtx := ctx
+		if parent.Err() != nil {
+			var verifyCancel context.CancelFunc
+			verifyCtx, verifyCancel = context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
+			defer verifyCancel()
+		}
+		if err := reconcileFailedServerLoginPreNative(verifyCtx, s.Store.Root(), original.ID); err == nil {
+			cleanup = true
+		} else {
+			nativeErr = domain.CodexRecoveryFailure(version, domain.CodexCleanup, nativeErr, err)
+		}
 	}
 	if nativeErr == nil {
 		opener := s.subscriptionOpen
@@ -400,6 +432,9 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		state = domain.SubscriptionSucceeded
 	} else if parent.Err() != nil || !cleanup || domain.SafeError(nativeErr).Code == domain.RecoveryRequired {
 		state = domain.SubscriptionRecovery
+		if parent.Err() != nil && cleanup && operation.Action == domain.SubscriptionLogin {
+			state = domain.SubscriptionCanceled
+		}
 	} else if !time.Now().Before(original.ExpiresAt) {
 		state = domain.SubscriptionExpired
 	} else if errors.Is(ctx.Err(), context.Canceled) && (errors.Is(nativeErr, context.Canceled) || !nativeStarted && parent.Err() != nil) {
@@ -428,6 +463,7 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 
 func (s *Service) publishServerSubscriptionProgress(ctx context.Context, id domain.ID, o domain.ServerSubscriptionOperation, url, code string) error {
 	if !validServerLoginProgress(url, code) {
+		s.logger.WarnContext(ctx, "server_subscription_login_url_rejected", "operation_id", o.ID, "code", domain.RecoveryRequired)
 		return subscriptionDenied()
 	}
 	unlock, err := s.lockAccounts(ctx)
@@ -525,6 +561,14 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 	})
 	if err != nil {
 		return err
+	}
+	if !success && cleanup && failedServerLoginOwner(a, o.ID) {
+		settled, err := s.cleanupFailedServerLoginLocked(ctx, id, o.ID, true, result, diagnostic)
+		if err != nil {
+			return err
+		}
+		s.logServerSubscriptionFinish(ctx, o, settled, cleanup, diagnostic)
+		return nil
 	}
 	vault, err := s.secrets()
 	if err != nil {
@@ -630,6 +674,27 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 			return err
 		}
 	}
+	if success && cleanup && operation.Action != domain.SubscriptionLogout {
+		_, err := s.Store.Mutate(ctx, domain.NewID(), "subscription.server.quota.ready", struct{ Account, Generation domain.ID }{id, o.FinishID}, func(tx *store.Tx) (any, error) {
+			r, a, err := subscriptionAccount(tx, id, 0)
+			if err != nil {
+				return nil, err
+			}
+			if a.Subscription.Generation != o.FinishID || a.Subscription.RecoveryRequired || a.Subscription.ServerOperation == nil || a.Subscription.ServerOperation.ID != o.ID {
+				return nil, subscriptionDenied()
+			}
+			a.Subscription.ServerQuotaGeneration = o.FinishID
+			if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
+				return nil, err
+			}
+			// The joined quota lane discovers this new generation only after
+			// the final protected-reference cleanup has settled.
+			return struct{}{}, nil
+		})
+		if err != nil {
+			return err
+		}
+	}
 	// Publish the transient suggestion only after credential cleanup and the
 	// original success commit. It never enters the account document or receipt.
 	if success && operation.Action == domain.SubscriptionLogin {
@@ -639,11 +704,15 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 		// The deferred removal applies before this later original-bound publication.
 		suggestion = &subscriptionProgress{Name: suggestedSubscriptionName(identity), Generation: o.FinishID, Until: o.ExpiresAt}
 	}
+	s.logServerSubscriptionFinish(ctx, o, result, cleanup, diagnostic)
+	return nil
+}
+
+func (s *Service) logServerSubscriptionFinish(ctx context.Context, o domain.ServerSubscriptionOperation, result domain.SubscriptionLoginState, cleanup bool, diagnostic *domain.CodexDiagnostic) {
 	s.logger.InfoContext(ctx, "server_subscription_finished", "operation_id", o.ID, "state", result, "cleanup_confirmed", cleanup, "correlation_id", o.ID)
 	if diagnostic != nil {
 		s.logger.WarnContext(ctx, "server_subscription_native_failed", "version", diagnostic.DetectedVersion, "minimum_version", diagnostic.MinimumVersion, "phase", diagnostic.Phase, "code", diagnostic.Code, "correlation_id", diagnostic.CorrelationID, "state", result, "cleanup_confirmed", cleanup)
 	}
-	return nil
 }
 
 func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID, diagnostic *domain.CodexDiagnostic) error {
@@ -663,7 +732,9 @@ func (s *Service) markServerSubscriptionRecovery(id, operation domain.ID, diagno
 		if a.Subscription == nil || a.Subscription.ServerOperation == nil || a.Subscription.ServerOperation.ID != operation {
 			return nil, subscriptionDenied()
 		}
-		a.Subscription.ServerOperation.State = domain.SubscriptionRecovery
+		if a.Subscription.ServerOperation.CleanupPhase != domain.SubscriptionNativeCleanupConfirmed {
+			a.Subscription.ServerOperation.State = domain.SubscriptionRecovery
+		}
 		if a.Subscription.ServerOperation.Diagnostic == nil {
 			a.Subscription.ServerOperation.Diagnostic = diagnostic
 		}
@@ -704,4 +775,20 @@ func codexDiagnosticMessage(d *domain.CodexDiagnostic) *pb.CodexDiagnostic {
 		domain.CodexCleanup:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_CLEANUP,
 	}
 	return &pb.CodexDiagnostic{DetectedVersion: d.DetectedVersion, MinimumVersion: d.MinimumVersion, Phase: phases[d.Phase], Code: string(d.Code), Message: d.Message, Guidance: d.Guidance, CorrelationId: d.CorrelationID}
+}
+
+// Initialize the one shared vault and read only the original generation under
+// the protected account gate. Native sessions must run after this gate releases.
+func (s *Service) serverSubscriptionCredentials(ctx context.Context, account, generation domain.ID) (accountSecrets, []byte, error) {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unlock()
+	vault, err := s.secrets()
+	if err != nil || generation == "" {
+		return vault, nil, err
+	}
+	old, err := vault.Get(ctx, credentials.Ref{Owner: account, ID: generation, Purpose: credentials.AccountLogin})
+	return vault, old, err
 }

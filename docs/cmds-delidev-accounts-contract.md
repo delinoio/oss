@@ -1,5 +1,87 @@
 # DeliDev account lifecycle
 
+## Connected API format changes
+
+ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on main
+in PR #1666. The owner/client operation receives an account ID, expected revision,
+request ID, closed API protocol and editable preferences. Its transaction publishes
+all preferences and the selected profile together with an actor-bound retry receipt.
+An exact replay returns current account metadata without another generation or
+protected-store operation. A conflicting revision or failed transaction publishes
+nothing. Unknown formats, unsupported profiles, pending cleanup and keyless/key
+ownership changes fail closed. Active inspections must settle before the change;
+late original inspection results cannot validate a new connection ID.
+
+A changed connected tuple creates a new connection ID with `credential_id` pointing
+to the original protected reference. The previous connection/profile, health and
+validation are retained in server-owned `retained_connections` in account JSON.
+The new generation is unverified, with validation and catalog observations cleared.
+Quota/exhaustion and ordinary account enablement remain shared controls. Saving
+sends no external API request and performs no key Put/Delete/Enumerate. Explicit
+Validate connection observes only the new generation and gates new-session
+execution. At most 128 previous generations are retained; the next change rejects
+without evicting original session authority. These runtime fields cannot be forged
+or cleared through ordinary configuration writes or portable imports.
+
+Existing executions, queued continuation, Resume, Fork, Sidechat, compaction,
+auxiliary work and title generation resolve their original connection ID and
+profile. New sessions resolve the current generation. Referenced current and old
+profiles remain immutable. Incompatible configured Workers receive a server-owned
+reconfiguration marker atomically; explicit compatible Worker saving clears it.
+Ordered-route schema 3 may contain this marker, while remaining exclusive with
+legacy routing fields. Existing executions require the original Worker to exist,
+without reading its newly edited configuration or this new-session routing marker.
+
+Explicit Disconnect or deletion revokes all generations, requests cancellation of
+all unfinished account work, joins original credential users and uses the existing
+confirmed cleanup path to delete the shared reference once. Failed deletion retains
+the original retry obligation. OAuth completion receipts and refresh serialization
+retain their original account/reference identity through any number of changes.
+No SQLite migration, native change, Provider identity change or format conversion
+is introduced.
+
+
+## OAuth format selection extension
+
+The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
+own the recorded capability 8 and Start/attempt format fields established
+by reservation PR #1657. Preserve manual
+format profiles, original defaults and independent OAuth eligibility. The common
+manual/OAuth connection UI requires selection for multiple profiles and displays
+a sole profile read-only; server-owned Start pins explicit OAuth selections through
+completion/recovery. Provider registration remains independently gated. No
+database migration is added.
+
+## Per-account API formats
+
+API accounts may declare the closed `api_protocol` selection under the
+[catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection).
+Explicit selections use resource schema 3; legacy accounts retain their original
+provider tuple. Connect stores the selected protocol/URL/authentication in the
+immutable connection generation. Validation, discovery and execution resolve
+that same tuple. Capability 9 changes a connected account for future sessions
+without key input under the amendment below. Capability 7 alone requires
+Disconnect, confirmed cleanup, explicit key input and validation. An account cannot change
+between keyless and key-required authentication. Referenced profiles, including
+legacy defaults and disconnected accounts, cannot be removed or replaced.
+
+`account list --api-protocol openai-responses|openai-chat|anthropic-messages`
+requires ProviderInventory capability 7 and composes with API/provider filters
+before pagination. Unknown values and subscription selectors reject the request;
+snapshot/event APIs retain their existing shape. Desktop preference patches may
+add or replace the validated `api_protocol` token while preserving all protected
+JSON tokens and uint64 values exactly. Clearing explicit format identity is
+unsupported. Format edits preserve model/Usage/session identity and grant no
+inference, native execution or OAuth authority.
+
+
+A disconnected SQL record alone does not prove cleanup: a failed native Connect
+may retain protected staging intents. Disconnected format-change admission holds the account
+gate, checks the original revision and credential class, then verifies no remaining
+native references outside SQLite before publication. Failed enumeration rejects
+the edit. Exact accepted receipt replays do not reopen the vault. Keyless proof
+skips native enumeration and cannot be relabeled as credential-owning authority.
+
 OpenRouter OAuth uses the dedicated owner/client Start/Complete/Cancel/Status lifecycle in the [OAuth contract](cmds-delidev-account-oauth-contract.md). Durable completion receipts represent once-only dispatch, never retry authority. Exact original local recovery reads only its reserved protected reference. Account creation reuses configuration validation; final connection reuses the same locked transaction helper as manual Connect and atomically commits the private connected outcome. Defaults are OpenRouter/api/enabled, automatic selection allowed and recovery notifications enabled, preserving the approved API-creation default rather than changing existing accounts or subscription defaults. New connections remain unverified until explicit validation/discovery.
 
 ## Ownership and implemented scope
@@ -7,6 +89,8 @@ OpenRouter OAuth uses the dedicated owner/client Start/Complete/Cancel/Status li
 The server owns account state and credentials under [issue #964](cmds-delidev-requirements.md). This contract currently implements API credential connection, explicit keyless local connection, disconnection, cleanup reconciliation and account status through authenticated Connect and the CLI. Bounded non-inference validation is defined in the [provider inspection contract](cmds-delidev-providers-contract.md). Automatic model catalog publication is defined in the [catalog contract](cmds-delidev-catalog-contract.md). Digest-only execution proxy credentials and first Codex Worker execution are integrated through the [proxy](cmds-delidev-proxy-contract.md) and [session](cmds-delidev-sessions-contract.md) contracts. Disconnect now durably cancels that account's unfinished native assignments; public first Codex API dispatch uses current validated connection readiness; Codex subscription login, refresh, execution and logout follow the separate [managed subscription contract](cmds-delidev-subscription-contract.md); complete native recovery, existing-login import, other subscription harnesses and quota refresh remain pending. Saving a credential is not provider validation or execution readiness.
 
 Account aliases/provider associations and display/routing preferences remain configuration. Health, connection generation, validation/catalog observations, quota observations and pending removal are server-owned. General configuration writes must preserve those fields exactly; new accounts start disconnected. An account's provider/type cannot be relabeled through configuration, and a referenced provider's authentication/authority cannot be changed in place. Credentials never enter configuration documents.
+
+Desktop edits of an existing Account patch only the top-level `alias`, `enabled`, `exclude_automatic`, `recovery_notifications` and validated optional `api_protocol` JSON tokens in the original resource bytes. General preferences, quota notifications and post-login naming share the bounded `account-preferences.ts` scanner. It validates JSON syntax and duplicate fields without converting protected numeric tokens to JavaScript Number values. All other tokens, including uint64 lease revisions above 2^53 and at the uint64 maximum, remain exact. Invalid or overflowing protected numbers are never rounded or repaired; Go retains numeric schema validation and exact protected-observation comparison. Uncertain replay retains the original UUID, protobuf revision and complete resource bytes. Stale revisions and unauthorized or protected-field changes remain rejected without changing account state.
 
 ## CLI and RPC
 
@@ -49,7 +133,19 @@ Before key deletion the server cancels and joins active relay handlers. The Work
 
 No keychain is silently unlocked and no unrelated native credential is enumerated. If the native store, filesystem or transaction is unavailable, the account remains disconnected with a retryable removal marker. `DisconnectAccount` returns an accepted disconnection response containing current account metadata and a typed sanitized cleanup problem. The CLI keeps that result and request ID while returning the problem's nonzero exit code. Retry the original `account disconnect` request with the original expected revision and request ID; a new request while removal is pending conflicts and points to the recorded operation.
 
+The public API removal marker's `expected_revision` remains an unquoted uint64 JSON integer. Desktop recovery reads its original bounded numeric token directly into bigint and preserves the original UUID-v7 request ID. A fresh mounted status view can retry revisions above JavaScript's safe-integer range without changing the request. Malformed, overflowing or conflicting markers grant no retry authority; the server alone clears the marker after confirmed secure deletion.
+
 Successful cleanup permits reconnection or configuration deletion. A validated keyless API provider skips vault opening/enumeration/deletion: account provider/type and referenced-provider authentication are immutable, proving that no credential could have been staged during that account lifetime. This proof remains available after connection clearing and restart; relay cancellation and durable cleanup receipt checks still apply. Credential-bearing accounts, including disconnected accounts with potentially staged intents, continue to require vault reconciliation. A completed deletion tombstone no longer blocks account deletion, but remains durable in the private vault. Deletion still validates every configuration/session/schedule reference: live Agent account lists, project account restrictions, retained session first/current selections, immutable snapshot candidates and routing observations, and tombstone-bound project restrictions. Archived sessions remain references. Schedules reference accounts through their Agent/project selections and derived retained sessions; they have no separate account selector. The deletion transaction repeats the complete relationship check so a concurrent new reference cannot be left dangling. A metadata edit made while cleanup is waiting must survive the original disconnect's later completion.
+
+The desktop API-entry deletion controller in `api-account-deletion.tsx` composes `GetAccountStatus`, `DisconnectAccount` and `DeleteConfiguration` after one explicit current-entry confirmation. The first fresh read must match the confirmed revision, immutable Provider identity and user preferences. Even a disconnected credential-bearing account goes through disconnection to reconcile staged intents; keyless accounts retain the existing server-owned vault bypass. An existing removal marker reconstructs only its original UUID-v7 and exact uint64 expected revision through `accountRemovalMutation`. Malformed or conflicting markers grant no new cleanup request.
+
+A matching original disconnect acknowledgment and independently confirmed credential cleanup permit a fresh status read. Only the same API account/Provider/preferences, a nonregressing bigint revision, disconnected health and absent connection/removal permit one latest-revision configuration deletion. Cleanup problems retain the account and expose an explicit original-cleanup retry. Transport or malformed-acknowledgment uncertainty preserves the original request bytes, including after a later definite replay rejection; no new identity may replace it. Read failures after confirmed cleanup offer only a read retry. Reconnection, preference changes or a definite first-attempt conflict require fresh inspection and explicit confirmation. No renderer account-field write, provider validation, inference, protocol allocation or migration is introduced.
+
+API deletion retains the existing category-owned task lifecycle: X/Escape hide a pending or unconfirmed original operation, while category/Settings departure disposes follow-up deletion authority without undoing accepted cleanup. Confirmed deletion releases retention and invokes completion once before refreshing the current list; browser/device cleanup remains independently owned and never delays dialog closure. Existing complete configuration/history/reference checks remain authoritative. The API-specific failure presentation exposes the sanitized server reason and guidance rather than hiding every conflict behind a revision-change summary. Structured `configuration_delete_rejected` logs contain only a closed phase, stable error code and validated original request/correlation IDs, excluding account documents, aliases, connection identities and native/provider error prose.
+
+The desktop ChatGPT account deletion controller composes existing server-lane `RequestSubscription(LOGOUT)`, original `GetSubscriptionProgress`, fresh account reads and `DeleteConfiguration` after one explicit confirmation. It waits for the original successful logout and cleared native/credential ownership, preserves the confirmed configuration preferences, and passes the latest bigint account revision to deletion. Existing server vault, authorization and complete reference checks remain unchanged. Uncertain mutations retry only their original IDs/bytes; departure stops client follow-up deletion while accepted logout continues. The subscription Settings contract owns the presentation and category lifetime. Other subscription deletion workflows retain their existing dedicated native cleanup requirements.
+
+Failed initial ChatGPT server logins also become disconnected after the subscription contract's independently confirmed native and protected-credential cleanup. Existing recovery metadata is reconciled only for the original login without a connection, generation or Worker owner. Native cleanup checkpoints survive vault failure and restart; uncertain or foreign ownership remains blocked. The deletion screen can explicitly request server-owned cleanup and deletion of that original failed initial LOGIN. Its durable child preserves the confirmed public revision and original requester/login; only cleanup checkpoints advance the effective revision used for account deletion. A recorded terminal failure requires fresh observation and confirmation; it is not an uncertain transport retry. Maintenance never deletes account configuration or relaxes its revision, reference or browser-cleanup checks.
 
 Receipt replay never repeats native staging or deletes a replacement generation. Replaying an old connect after disconnect returns current disconnected metadata without recreating credentials. Replaying an old disconnect after a later connection leaves the new connection untouched. A deleted account cannot be recreated by any of its previous requests. Reads and replays retain current revocation checks. Server shutdown waits for the account operation boundary and closes its owned vault before releasing the data scope or recording the final stopped event.
 
@@ -82,3 +178,12 @@ AI API Keys includes keyed API entries and keyless local connections over the ex
 ## Independent subscription identities
 
 Issue #1235 uses the closed service-native account/model contract in [managed subscriptions](cmds-delidev-subscription-contract.md). `SaveConfiguration` requires schema 2 for subscription accounts/native models and schema 1 for API configuration, rejects mixed identity families and preserves exact request/revision receipts. System capability `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` (17) negotiates this independent support. Metadata-only saves remain disconnected. CLI JSON configuration infers the matching document schema; generated Go/TypeScript descriptors expose the same service enum for new usage, pricing and diagnostic attribution. The CLI result envelope itself remains version 1.
+
+## Failed initial subscription deletion
+
+The [subscription batch contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) admits failed initial ChatGPT server logins and fully disconnected subscription configurations for all supported services. Disconnected configuration children carry no synthetic LOGIN identity; pending/recovery/native/Worker ownership and protected vault references still prevent deletion. Batch and public configuration deletion share `checkAccountDeletionLocked` and `deleteConfigurationTx`, retaining original vault intent checks, exact revision, complete configuration/history references, schedule updates, tombstones and browser obligations. Confirmed batch deletion records its per-account outcome and parent counts in the same deletion receipt transaction. Original actor revocation or account/login changes preserve the account; cleanup never substitutes server bookkeeping authority for the requester's deletion authority.
+
+
+## Automatic API connection verification
+
+Enabled connected API accounts acquire non-inference current-connection validation through the joined server maintenance owner under the [provider verification contract](cmds-delidev-providers-contract.md#automatic-api-verification). Missing evidence is immediately due; subsequent checks use persisted completion plus max(15 minutes, Retry-After). Provider disablement, account disablement, removal and changed connection/profile/revision fence automatic publication. Existing explicit validation, actor-bound replay, quota/exhaustion and immutable execution generations retain their authority. A readable saved key or successful public model list alone cannot become verified authentication.

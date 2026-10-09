@@ -1,3 +1,4 @@
+import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 import { validClaudeToolReference } from "./native-claude-tool-progress";
 
@@ -34,40 +35,44 @@ export function validClaudeTask(value: unknown): boolean {
 }
 
 function TaskUsage({ value }: { value: unknown }) {
+  useLocale();
   const v = object(value);
-  return <><dl><dt>Task tokens</dt><dd>{v.total_tokens as string}</dd><dt>Task tool uses</dt><dd>{v.tool_uses as string}</dd><dt>Task duration (ms)</dt><dd>{v.duration_ms as string}</dd></dl><p>These task counters can overlap provider usage and do not establish billed cost.</p></>;
+  return <><dl><dt>{copy("native-claude-tasks.taskTokens_d80bbe")}</dt><dd>{v.total_tokens as string}</dd><dt>{copy("native-claude-tasks.taskToolUses_32f155")}</dt><dd>{v.tool_uses as string}</dd><dt>{copy("native-claude-tasks.taskDurationMs_458ab8")}</dt><dd>{v.duration_ms as string}</dd></dl><p>{copy("native-claude-tasks.theseTaskCountersCanOverlapProvider_c6a474")}</p></>;
 }
 function TaskText({ label, value }: { label: string; value: unknown }) {
+  useLocale();
   return value === undefined ? null : <details><summary>{label}</summary><pre>{value as string}</pre></details>;
 }
 function TaskFlags({ value }: { value: Document }) {
-  const labels = { is_backgrounded: "Backgrounded", skip_transcript: "Skip transcript", ambient: "Ambient" };
-  return <dl>{flags.map((key) => <div key={key}><dt>{labels[key as keyof typeof labels]}</dt><dd>{value[key] === undefined ? "Not reported" : value[key] ? "True" : "False"}</dd></div>)}</dl>;
+  useLocale();
+  const labels = { get is_backgrounded() { return copy("native-claude-tasks.backgrounded_8c68c1"); }, get skip_transcript() { return copy("native-claude-tasks.skipTranscript_e6deab"); }, get ambient() { return copy("native-claude-tasks.ambient_44bb0e"); } };
+  return <dl>{flags.map((key) => <div key={key}><dt>{labels[key as keyof typeof labels]}</dt><dd>{value[key] === undefined ? copy("native-claude-tasks.notReported_adadfa") : value[key] ? copy("native-claude-tasks.true_3cbc87") : copy("native-claude-tasks.false_60a33e")}</dd></div>)}</dl>;
 }
 export function NativeClaudeTask({ value }: { value: unknown }) {
+  useLocale();
   const v = object(value), patch = object(v.patch), ref = object(v.tool);
-  const labels = { [Kind.Started]: "Task started", [Kind.Progress]: "Task progress", [Kind.Updated]: "Task updated", [Kind.Notification]: "Task notification", [Kind.Background]: "Background task snapshot" };
-  return <section aria-label="Original Claude task observation">
+  const labels = { get [Kind.Started]() { return copy("native-claude-tasks.taskStarted_d9a247"); }, get [Kind.Progress]() { return copy("native-claude-tasks.taskProgress_e38b9d"); }, get [Kind.Updated]() { return copy("native-claude-tasks.taskUpdated_7ebde4"); }, get [Kind.Notification]() { return copy("native-claude-tasks.taskNotification_ed1396"); }, get [Kind.Background]() { return copy("native-claude-tasks.backgroundTaskSnapshot_d6cbb6"); } };
+  return <section aria-label={copy("native-claude-tasks.originalClaudeTaskObservation_7c6c66")}>
     <h4>{labels[v.kind as Kind]}</h4>
     {v.kind === Kind.Background ? <>
-      {(v.background as Document[]).length === 0 ? <p>No background tasks were listed.</p> : <ul>{(v.background as Document[]).map((task) => <li key={task.task_id as string}><dl><dt>Task</dt><dd>{task.task_id as string}</dd><dt>Type</dt><dd>{task.task_type as string}</dd><dt>Ambient</dt><dd>{task.ambient === undefined ? "Not reported" : task.ambient ? "True" : "False"}</dd></dl><TaskText label="Task description" value={task.description} /></li>)}</ul>}
-      <p>This snapshot does not complete or stop previously observed tasks.</p>
+      {(v.background as Document[]).length === 0 ? <p>{copy("native-claude-tasks.noBackgroundTasksWereListed_b1bc46")}</p> : <ul>{(v.background as Document[]).map((task) => <li key={task.task_id as string}><dl><dt>{copy("native-claude-tasks.task_4bc74b")}</dt><dd>{task.task_id as string}</dd><dt>{copy("native-claude-tasks.type_baaddf")}</dt><dd>{task.task_type as string}</dd><dt>{copy("native-claude-tasks.ambient_44bb0e")}</dt><dd>{task.ambient === undefined ? copy("native-claude-tasks.notReported_adadfa") : task.ambient ? copy("native-claude-tasks.true_3cbc87") : copy("native-claude-tasks.false_60a33e")}</dd></dl><TaskText label={copy("native-claude-tasks.taskDescription_175365")} value={task.description} /></li>)}</ul>}
+      <p>{copy("native-claude-tasks.thisSnapshotDoesNotCompleteOr_8b7ae7")}</p>
     </> : <>
-      <dl><dt>Task</dt><dd>{v.task_id as string}</dd>{v.tool !== undefined ? <><dt>Original tool</dt><dd>{ref.name as string}</dd></> : null}{v.task_type !== undefined ? <><dt>Task type</dt><dd>{v.task_type as string}</dd></> : null}
-        {v.status !== undefined || patch.status !== undefined ? <><dt>Reported task status</dt><dd>{(v.status ?? patch.status) as string}</dd></> : null}
-        {v.reason !== undefined ? <><dt>Reported reason</dt><dd>{v.reason as string}</dd></> : null}
-        {v.last_tool_name !== undefined ? <><dt>Last tool</dt><dd>{v.last_tool_name as string}</dd></> : null}
-        {patch.end_time !== undefined ? <><dt>Reported end time</dt><dd>{patch.end_time as string}</dd></> : null}
-        {patch.total_paused_ms !== undefined ? <><dt>Total paused (ms)</dt><dd>{patch.total_paused_ms as string}</dd></> : null}
+      <dl><dt>{copy("native-claude-tasks.task_4bc74b")}</dt><dd>{v.task_id as string}</dd>{v.tool !== undefined ? <><dt>{copy("native-claude-tasks.originalTool_04185b")}</dt><dd>{ref.name as string}</dd></> : null}{v.task_type !== undefined ? <><dt>{copy("native-claude-tasks.taskType_7d3f5c")}</dt><dd>{v.task_type as string}</dd></> : null}
+        {v.status !== undefined || patch.status !== undefined ? <><dt>{copy("native-claude-tasks.reportedTaskStatus_46b098")}</dt><dd>{(v.status ?? patch.status) as string}</dd></> : null}
+        {v.reason !== undefined ? <><dt>{copy("native-claude-tasks.reportedReason_5fb7b8")}</dt><dd>{v.reason as string}</dd></> : null}
+        {v.last_tool_name !== undefined ? <><dt>{copy("native-claude-tasks.lastTool_7ccc8d")}</dt><dd>{v.last_tool_name as string}</dd></> : null}
+        {patch.end_time !== undefined ? <><dt>{copy("native-claude-tasks.reportedEndTime_d22cb3")}</dt><dd>{patch.end_time as string}</dd></> : null}
+        {patch.total_paused_ms !== undefined ? <><dt>{copy("native-claude-tasks.totalPausedMs_f3621c")}</dt><dd>{patch.total_paused_ms as string}</dd></> : null}
       </dl>
-      <TaskText label="Task description" value={v.description ?? patch.description} />
-      <TaskText label="Task summary" value={v.summary} />
-      <TaskText label="Task diagnostic" value={patch.error} />
-      <TaskText label="Reported output file" value={v.output_file} />
+      <TaskText label={copy("native-claude-tasks.taskDescription_175365")} value={v.description ?? patch.description} />
+      <TaskText label={copy("native-claude-tasks.taskSummary_a189c2")} value={v.summary} />
+      <TaskText label={copy("native-claude-tasks.taskDiagnostic_ac5ff8")} value={patch.error} />
+      <TaskText label={copy("native-claude-tasks.reportedOutputFile_014bf5")} value={v.output_file} />
       {v.kind === Kind.Started || v.kind === Kind.Notification ? <TaskFlags value={v} /> : null}
-      {patch.is_backgrounded !== undefined ? <dl><dt>Backgrounded</dt><dd>{patch.is_backgrounded ? "True" : "False"}</dd></dl> : null}
+      {patch.is_backgrounded !== undefined ? <dl><dt>{copy("native-claude-tasks.backgrounded_8c68c1")}</dt><dd>{patch.is_backgrounded ? copy("native-claude-tasks.true_3cbc87") : copy("native-claude-tasks.false_60a33e")}</dd></dl> : null}
       {v.usage !== undefined ? <TaskUsage value={v.usage} /> : null}
-      <p>A task observation does not establish input completion, tool approval or process cleanup.</p>
+      <p>{copy("native-claude-tasks.aTaskObservationDoesNotEstablish_9bb955")}</p>
     </>}
   </section>;
 }

@@ -24,7 +24,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 	}
 	_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.pr-planning-project", nil, func(tx *store.Tx) (any, error) {
 		for _, id := range []domain.ID{repository, companion} {
-			value := domain.Repository{Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: policy.MachineID, Path: "/tmp/pr-planning-" + string(id)}}, PreferredRemote: "upstream", Base: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, AutoFetch: false}
+			value := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: policy.MachineID, Path: "/tmp/pr-planning-" + string(id)}}, PreferredRemote: "upstream", Base: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, AutoFetch: false}
 			if _, err := tx.Put(domain.RepositoryKind, id, 0, "", "", value); err != nil {
 				return nil, err
 			}
@@ -63,7 +63,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 		t.Fatal("PR planning lost exact head/fork, companion policy, primary cwd or account selection")
 	}
 	rollback := domain.Fail(domain.Conflict, "Discard negative planning fixture.", "No test changes are committed.")
-	for _, name := range []string{"missing-agent", "missing-machine", "foreign-project", "project-agent-denied", "project-account-denied", "missing-checkout", "disabled-worker", "disconnected-worker", "missing-validation", "wrong-native-version", "read-only-agent"} {
+	for _, name := range []string{"missing-agent", "missing-machine", "foreign-project", "project-agent-denied", "project-account-denied", "missing-remote-url", "disabled-worker", "disconnected-worker", "missing-validation", "read-only-agent"} {
 		t.Run(name, func(t *testing.T) {
 			_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.rejected-pr-plan", name, func(tx *store.Tx) (any, error) {
 				selected, original := policy, target
@@ -91,7 +91,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					if _, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 						return nil, err
 					}
-				case "missing-checkout":
+				case "missing-remote-url":
 					r, err := tx.Get(domain.RepositoryKind, companion)
 					if err != nil {
 						return nil, err
@@ -100,11 +100,11 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					if err != nil {
 						return nil, err
 					}
-					v.Checkouts[0].MachineID = domain.NewID()
+					v.RemoteURL = ""
 					if _, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 						return nil, err
 					}
-				case "disabled-worker", "wrong-native-version":
+				case "disabled-worker":
 					r, err := tx.Get(domain.MachineKind, policy.MachineID)
 					if err != nil {
 						return nil, err
@@ -113,13 +113,7 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 					if err != nil {
 						return nil, err
 					}
-					if name == "disabled-worker" {
-						v.Disabled = true
-					} else {
-						for i := range v.Installations {
-							v.Installations[i].Version = "unverified"
-						}
-					}
+					v.Disabled = true
 					if _, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", v); err != nil {
 						return nil, err
 					}

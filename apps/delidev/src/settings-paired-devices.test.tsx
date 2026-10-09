@@ -58,8 +58,8 @@ it("renders the approved server order and local Details without an RPC or inferr
   expect(within(panel).getAllByText("This desktop client")).toHaveLength(1);
   expect(screen.getAllByText("Authorization does not mean this device is currently connected.")).toHaveLength(1);
   expect(screen.getAllByRole("button", { name: /^Revoke / })).toHaveLength(1);
-  expect(screen.getByText("Paired: 29 Sep 2026, 00:58 UTC")).toBeTruthy();
-  expect(screen.getByText("Paired: 28 Sep 2026, 23:52 UTC · Revoked: 29 Sep 2026, 02:03 UTC")).toBeTruthy();
+  expect(screen.getAllByTitle("2026-09-29T00:58:53.515872Z")[0]).toBeTruthy();
+  expect(screen.getAllByTitle("2026-09-29T02:03:40.902482Z")[0]).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Create pairing document" })).toHaveLength(1);
   const control = workerDetails(), before = value.list.mock.calls.length;
   expect(control.getAttribute("aria-expanded")).toBe("false");
@@ -70,7 +70,7 @@ it("renders the approved server order and local Details without an RPC or inferr
   expect(within(disclosure).getByText(ids[1])).toBeTruthy();
   expect(within(disclosure).getByText(ids[3])).toBeTruthy();
   expect(within(disclosure).getByText("Runner Device ID")).toBeTruthy();
-  expect(within(disclosure).getByText("2026-09-29T00:58:53.515872Z")).toBeTruthy();
+  expect(within(disclosure).getByTitle("2026-09-29T00:58:53.515872Z")).toBeTruthy();
   expect(value.list).toHaveBeenCalledTimes(before); expect(value.read).not.toHaveBeenCalled(); expect(value.revoke).not.toHaveBeenCalled(); expect(value.issue).not.toHaveBeenCalled();
 });
 
@@ -94,16 +94,12 @@ it("retains disclosure within a category and resets it after category departure"
   expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Revoke DeliDev local Worker" }));
 });
 
-it("resets disclosure only on explicit paired-device paging within a visit", async () => {
+it("preserves disclosure through appended paired-device pages within a visit", async () => {
   const value = fixture(); value.state.next = "opaque-next";
   render(value.view()); await open(); fireEvent.click(workerDetails());
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "opaque-next")).toBe(true));
   expect(workerDetails().getAttribute("aria-expanded")).toBe("true");
-  await waitFor(() => expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(workerDetails()); fireEvent.click(screen.getByRole("button", { name: "First page" }));
-  expect(workerDetails().getAttribute("aria-expanded")).toBe("false");
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).every(([request]) => request.filter?.pageSize === 50)).toBe(true);
 });
 
@@ -140,9 +136,9 @@ it("keeps unknown, unsupported and long values inert without inventing authoriza
   const row = details.closest("article")!;
   expect(within(row).getByRole("heading", { name }).querySelector("b")).toBeNull();
   expect(within(row).getAllByText("Unknown")).toHaveLength(2);
-  expect(within(row).getByText("Paired: Unknown")).toBeTruthy();
+  expect(within(row).getAllByText("2026-02-30T00:00:00Z")).toBeTruthy();
   fireEvent.click(details);
-  expect(within(row).getByText("2026-02-30T00:00:00Z")).toBeTruthy(); expect(within(row).getByText("<invalid>")).toBeTruthy();
+  expect(within(row).getAllByText("2026-02-30T00:00:00Z")).toBeTruthy(); expect(within(row).getAllByText("<invalid>")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /^Revoke / })).toBeNull();
   expect(screen.getByRole("button", { name: "Details for Unknown" })).toBeTruthy();
   expect(screen.queryByText("Revoked")).toBeNull();
@@ -182,15 +178,12 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes loading and in
   expect(screen.getAllByRole("button", { name: "Create pairing document" })).toHaveLength(1);
 });
 
-it("preserves opaque paging on empty continuation and later pages without unrelated cached rows", async () => {
+it("preserves opaque continuation without unrelated cached rows", async () => {
   const value = fixture([]); value.state.next = "opaque-continuation"; render(value.view());
   fireEvent.click(screen.getByRole("button", { name: "Paired devices" })); await screen.findByText("No paired devices on this page");
-  expect(screen.queryByRole("heading", { name: "No paired devices yet" })).toBeNull();
-  expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(true);
-  value.state.next = ""; fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "First page" }) as HTMLButtonElement).disabled).toBe(false));
-  expect((screen.getByRole("button", { name: "Next page" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.DEVICE).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "opaque-continuation"]);
+  fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "opaque-continuation")).toBe(true));
+  expect(screen.queryByRole("button", { name: "Details for DeliDev local Worker" })).toBeNull();
 });
 
 it("retains pairing through reconnect and discards it after category departure", async () => {
@@ -207,22 +200,26 @@ it("retains pairing through reconnect and discards it after category departure",
   expect(screen.queryByRole("textbox", { name: "Device name" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create pairing document" }));
   expect((screen.getByRole("textbox", { name: "Device name" }) as HTMLInputElement).value).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel pairing" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Pair another device" }));
   const trigger = screen.getByRole("button", { name: "Create pairing document" });
-  expect(window.document.activeElement).toBe(trigger);
+  await waitFor(() => expect(window.document.activeElement).toBe(trigger));
   expect(trigger.closest(".settings-toolbar")).toBeTruthy();
   expect(value.issue).not.toHaveBeenCalled();
 });
 
 it("returns confirmed revocation to Details once and falls back to Refresh when the canceled row is absent", async () => {
-  const value = fixture(); render(value.view()); await open();
+  const value = fixture(); render(value.view({ pairing: true })); await open();
+  const pairing = screen.getByRole("button", { name: "Create pairing document" });
   fireEvent.click(screen.getByRole("button", { name: "Revoke DeliDev local Worker" }));
+  expect(pairing.isConnected).toBe(true);
+  expect(pairing.closest("[hidden]")).toBeNull();
+  expect(pairing.closest("fieldset")?.hasAttribute("inert")).toBe(true);
   const confirm = screen.getByRole("button", { name: "Confirm device revocation" }) as HTMLButtonElement;
   await waitFor(() => expect(confirm.disabled).toBe(false)); fireEvent.click(confirm);
   await screen.findByText("Authorization revoked for DeliDev local Worker.");
   expect(screen.getByText("Retained sessions stay saved. Revocation does not confirm native cleanup or erase the device's private files.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Return to devices" }));
-  expect(window.document.activeElement).toBe(workerDetails());
+  await waitFor(() => expect(window.document.activeElement).toBe(workerDetails()));
   const refresh = screen.getByRole("button", { name: "Refresh settings" }); refresh.focus();
   fireEvent.click(refresh); await waitFor(() => expect(screen.queryByRole("button", { name: "Revoke DeliDev local Worker" })).toBeNull());
   expect(window.document.activeElement).toBe(refresh);
@@ -230,6 +227,6 @@ it("returns confirmed revocation to Details once and falls back to Refresh when 
   fireEvent.click(await screen.findByRole("button", { name: "Revoke DeliDev local Worker" }));
   value.state.rows = []; await value.client.invalidateQueries();
   fireEvent.click(screen.getByRole("button", { name: "Keep device authorized" }));
-  expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Refresh settings" }));
+  await waitFor(() => expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Refresh settings" })));
   expect(value.revoke).toHaveBeenCalledTimes(1);
 });

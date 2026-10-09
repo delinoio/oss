@@ -15,7 +15,9 @@
     "test:components": "vitest run src/popup.test.ts src/popup-language.test.ts",
     "test:accessibility": "vitest run src/popup.test.ts src/popup-language.test.ts",
     "test:package": "node --test scripts/policy.test.mjs scripts/deterministic-build.test.mjs",
-    "test": "pnpm lint && pnpm test:unit && pnpm test:accessibility && node --test scripts/deterministic-build.test.mjs"
+    "test": "pnpm lint && pnpm test:unit && pnpm test:accessibility && node --test scripts/deterministic-build.test.mjs",
+    "ci:policy": "node --test scripts/policy.test.mjs",
+    "ci:zip": "node scripts/verify-ci-zips.mjs"
   },
   "devDependencies": {
     "@types/chrome": "0.1.32",

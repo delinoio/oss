@@ -1,25 +1,37 @@
+// SPDX-License-Identifier: Apache-2.0
+import { SettingsTaskDismissButton } from "./settings-task";
+import { LocalizedText, copy, useLocale } from "./localization";
+import { SettingsTaskActions } from "./settings-task";
+import { useCloseSettingsTask } from "./settings-task-context";
 import { useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
-import { BrowserQuery, ConfigurationQuery, EntityKind, newRequestId, type Resource } from "@delinoio/delidev-api-client";
-import { document, items, object, resourceName, text, type Document } from "./documents";
-import { ResourceChoice } from "./configuration-fields";
+import { ConfigurationQuery, EntityKind, SubscriptionServiceId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { document, resourceName } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { ChatGPTAccountDeletion, useAccountDeletionCompletion } from "./account-deletion";
+import { ApiAccountDeletion } from "./api-account-deletion";
+import { serviceAccount } from "./subscription-resource";
 import "./api-account.css";
 
-export function ConfigurationDeletion({ initial, deleted, close }: { initial: Resource; deleted: () => void; close: () => void }) {
+interface DeletionProps { initial: Resource; active?: boolean; deleted: () => void; close: () => void }
+export function ConfigurationDeletion({ active = true, ...props }: DeletionProps) {
+  useLocale();
+  const closeTask = useCloseSettingsTask(props.close);
+  const key = props.initial.id;
+  if (props.initial.kind === EntityKind.ACCOUNT && document(props.initial).type === "api") return <ApiAccountDeletion key={key} {...props} active={active} close={closeTask} />;
+  return serviceAccount(props.initial, undefined, SubscriptionServiceId.ChatGPT) || serviceAccount(props.initial, undefined, SubscriptionServiceId.Claude)
+    ? <ChatGPTAccountDeletion key={key} {...props} active={active} />
+    : <ConfigurationDeletionRequest key={key} {...props} active={active} close={closeTask} />;
+}
+function ConfigurationDeletionRequest({ initial, active, deleted, close }: DeletionProps & { active: boolean }) {
+  useLocale();
+  const closeTask = close;
   const isApiEntry = initial.kind === EntityKind.ACCOUNT && document(initial).type === "api";
   const [accepted, setAccepted] = useState(false);
   const mutation = useRetainedMutation(`configuration-delete:${initial.kind}:${initial.id}`, ConfigurationQuery.deleteConfiguration, () => { if (initial.kind === EntityKind.ACCOUNT) setAccepted(true); else deleted(); });
-  const cleanup = useQuery(BrowserQuery.getAccountBrowserCleanup, { accountId: initial.id }, { enabled: accepted, retry: false });
-  if (accepted) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h2>API key entry deleted</h2><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>Account configuration deleted</h3>}<p>Browser cleanup is tracked separately. Offline devices remain pending until their native browser has shut down, the full profile has been removed and the owning server confirms the acknowledgment.</p><Problem error={cleanup.error} />{cleanup.data ? <p>{cleanup.data.pending} profile cleanup obligations pending · {cleanup.data.removed} confirmed removed</p> : <p>Cleanup status is unavailable until the owning server can be read.</p>}<button onClick={() => void cleanup.refetch()}>Refresh cleanup status</button><button onClick={deleted}>{document(initial).type === "api" ? "Return to AI API Keys" : "Return to accounts"}</button></section>;
-  const blocked = mutation.busy || mutation.uncertain;
-  return <section className={initial.kind === EntityKind.PROJECT ? "project-deletion" : isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h2>Delete entry?</h2><p>{resourceName(initial)}</p><p className="api-entry-scope">Saved on the selected server.</p></header> : <h3>Delete {resourceName(initial)}?</h3>}<p>This deletes its saved configuration. Retained sessions and history remain. The server rejects references that must be reconfigured first.</p>{initial.kind === EntityKind.PROJECT || initial.kind === EntityKind.AGENT ? <p>Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{document(initial).type === "api" ? "Disconnect the entry and finish credential cleanup before deleting it." : "Disconnect the account and finish credential cleanup before deleting it."}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>Browser profile cleanup remains pending on each registered device until its native browser has shut down and the complete profile has been removed, including devices which are offline.</p> : null}<Problem error={mutation.error} /><div className="actions"><button disabled={blocked} onClick={() => void mutation.send({ kind: initial.kind, mutation: { id: initial.id, expectedRevision: initial.revision, requestId: newRequestId() } })}>Confirm configuration deletion</button>{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>Retry the same deletion</button> : null}<button disabled={blocked} onClick={close}>Keep configuration</button></div></section>;
+  useAccountDeletionCompletion(accepted, active, deleted);
+  if (accepted) return null;
+  const blocked = !active || mutation.busy || mutation.uncertain;
+  return <section className={initial.kind === EntityKind.PROJECT ? "project-deletion" : isApiEntry ? "api-entry-workflow" : undefined}>{isApiEntry ? <header className="api-entry-heading"><h2>{copy("configuration-actions.deleteEntry_e570cd")}</h2><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("configuration-actions.savedOnTheSelectedServer_93dbee")}</p></header> : <h3><LocalizedText id="configuration-actions.delete_cac286" components={{ s0: <>{resourceName(initial)}</> }} /></h3>}<p>{copy("configuration-actions.thisDeletesItsSavedConfigurationRetained_8aa78e")}</p>{initial.kind === EntityKind.PROJECT || initial.kind === EntityKind.AGENT ? <p>{copy("configuration-actions.schedulesUsingThisConfigurationWillBe_e67d03")}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{document(initial).type === "api" ? copy("configuration-actions.disconnectTheEntryAndFinishCredential_ad3caf") : copy("configuration-actions.disconnectTheAccountAndFinishCredential_9de80a")}</p> : null}{initial.kind === EntityKind.ACCOUNT ? <p>{copy("configuration-actions.browserProfileCleanupRemainsPendingOn_a24d79")}</p> : null}<Problem error={mutation.error} /><SettingsTaskActions className=""><button disabled={blocked} onClick={() => void mutation.send({ kind: initial.kind, mutation: { id: initial.id, expectedRevision: initial.revision, requestId: newRequestId() } })}>{copy("configuration-actions.confirmConfigurationDeletion_5413bb")}</button>{mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("configuration-actions.retryTheSameDeletion_b32bf6")}</button> : null}<SettingsTaskDismissButton data-settings-task-cancel disabled={blocked} onClick={closeTask}>{copy("configuration-actions.keepConfiguration_1210fc")}</SettingsTaskDismissButton></SettingsTaskActions></section>;
 }
-export function RoutingPreview({ agent, active, close }: { agent: Resource; active: boolean; close: () => void }) {
-  const [project, setProject] = useState("");
-  const result = useQuery(ConfigurationQuery.previewRouting, { agentId: agent.id, projectId: project }, { enabled: active });
-  let route: Document | undefined;
-  try { if (result.data) route = object(JSON.parse(new TextDecoder().decode(result.data.routeJson))); } catch { /* Invalid evidence stays unavailable. */ }
-  return <section><header><h3>Account routing · {resourceName(agent)}</h3><button onClick={close}>Back to Agent Workers</button></header><p>This preview is read-only and does not consume routing turns or reserve an account. Execution rechecks current eligibility.</p><ResourceChoice label="Project" kind={EntityKind.PROJECT} value={project} change={setProject} active={active} /><p>{project ? "Using the selected project's restrictions." : "General Chat · no project restrictions."}</p><button disabled={result.isFetching} onClick={() => void result.refetch()}>Refresh routing preview</button><Problem error={result.error} />{route ? <><p>Policy: {text(route.policy)} · Selected account: {text(route.selected) || "None eligible"}</p>{route.fallback === true ? <p>Insufficient comparable quota evidence; the server used the configured policy's fallback.</p> : null}<ul>{items(route.candidates).map(object).map((candidate) => <li key={text(candidate.id)}><p>{text(candidate.id)} · {text(candidate.eligibility)}</p><p>Weight: {String(candidate.weight)} · Quota: {text(candidate.quota_state)}{typeof candidate.score === "number" ? ` · Score: ${candidate.score}` : ""}{text(candidate.reset_at) ? ` · Reset: ${text(candidate.reset_at)}` : ""}</p></li>)}</ul></> : result.data ? <p role="alert">Routing evidence is unavailable.</p> : null}</section>;
-}
+export { RoutingPreview } from "./routing-preview";

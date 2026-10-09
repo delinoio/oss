@@ -35,6 +35,7 @@ func (s *Service) ListProviderPresets(ctx context.Context, req *connect.Request[
 	legacyPresets := providers.Presets()
 	for i := range legacyPresets {
 		legacyPresets[i].Provider.PresetID = nil
+		legacyPresets[i].Provider.APIFormats = nil
 	}
 	raw, _ := json.Marshal(legacyPresets)
 	response := connect.NewResponse(&pb.ListProviderPresetsResponse{PresetsJson: raw})
@@ -70,9 +71,13 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACTIVE_API_MODEL_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_PROVIDER_FILTER,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_TYPE_FILTER,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_PROTOCOL_V1,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_API_PROTOCOL_V1,
+		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_API_FORMAT_CHANGE_V1,
 		pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_OPENROUTER_OAUTH_PKCE_V1,
 	}}
-	for _, entry := range entries {
+	for i, entry := range entries {
+		capabilities := len(message.Capabilities)
 		wire := &pb.ProviderInventoryEntry{PresetId: wireProviderPreset(entry.PresetID), ProviderId: string(entry.ProviderID), DisplayName: entry.DisplayName, Enabled: entry.Enabled, TotalAccounts: entry.TotalAccounts, ConnectedAccounts: entry.ConnectedAccounts, AccountCountsAvailable: entry.AccountCountsAvailable}
 		wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_API_KEY
 		if entry.Provider != nil {
@@ -83,19 +88,61 @@ func (s *Service) ListProviderInventory(ctx context.Context, req *connect.Reques
 			if p.Authentication == domain.KeylessAuth {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS
 			}
-			if p.PresetID != nil && *p.PresetID == domain.PresetOpenRouter && p.EnabledValue() && p.Endpoint == "https://openrouter.ai/api/v1" && p.Protocol == domain.OpenAIChat && p.Authentication == domain.BearerAuth {
+			if profile, e := s.oauthProfile(p); e == nil {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_PKCE
+				if profile.preset == domain.PresetBaseten {
+					wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_OAUTH_DEVICE
+				}
+				if profile.preset != domain.PresetOpenRouter {
+					found := false
+					for _, capability := range message.Capabilities {
+						if capability == pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1 {
+							found = true
+						}
+					}
+					if !found {
+						message.Capabilities = append(message.Capabilities, pb.ProviderInventoryCapability_PROVIDER_INVENTORY_CAPABILITY_ACCOUNT_OAUTH_V1)
+					}
+				}
 			}
 			wire.Provider = rpc.Resource(*entry.Provider)
+			for _, profile := range providers.APIFormats(p) {
+				wire.ApiFormats = append(wire.ApiFormats, rpc.WireAPIFormat(profile))
+			}
 		} else if entry.PresetID != nil {
+			if p, ok := providerPresetDefaults(*entry.PresetID); ok {
+				for _, profile := range providers.APIFormats(p) {
+					wire.ApiFormats = append(wire.ApiFormats, rpc.WireAPIFormat(profile))
+				}
+			}
 			if p, ok := providerPresetDefaults(*entry.PresetID); ok && p.Authentication == domain.KeylessAuth {
 				wire.ConnectionMethod = pb.ProviderConnectionMethod_PROVIDER_CONNECTION_METHOD_KEYLESS
 			}
 		}
 		message.Entries = append(message.Entries, wire)
+		message.NextPageToken = ""
+		if more || i+1 < len(entries) {
+			message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entry.CursorKey()), Sequence: epoch})
+			if err != nil {
+				return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+			}
+		}
+		fits, e := resourcePageFits(message)
+		if e != nil {
+			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+		}
+		if !fits {
+			message.Entries = message.Entries[:len(message.Entries)-1]
+			message.Capabilities = message.Capabilities[:capabilities]
+			if len(message.Entries) == 0 {
+				return nil, rpc.Error(resourcePageTooLarge(), req.Header().Get(rpc.CorrelationHeader))
+			}
+			more = true
+			break
+		}
 	}
-	if more && len(entries) > 0 {
-		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entries[len(entries)-1].CursorKey()), Sequence: epoch})
+	if more && len(message.Entries) > 0 {
+		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(entries[len(message.Entries)-1].CursorKey()), Sequence: epoch})
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}
@@ -348,7 +395,7 @@ func catalogPlan(tx *store.Tx, provider domain.ID, result accountInspection) ([]
 	return plan, nil
 }
 func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.SearchModelsRequest]) (*connect.Response[pb.SearchModelsResponse], error) {
-	f := store.ModelSearch{Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, EnabledProvidersOnly: req.Msg.EnabledProvidersOnly, Limit: int(req.Msg.PageSize)}
+	f := store.ModelSearch{SubscriptionService: rpc.SubscriptionService(req.Msg.SubscriptionService), Query: req.Msg.Query, ProviderID: domain.ID(req.Msg.ProviderId), IncludeHidden: req.Msg.IncludeHidden, EnabledProvidersOnly: req.Msg.EnabledProvidersOnly, Limit: int(req.Msg.PageSize)}
 	if f.Limit == 0 {
 		f.Limit = 50
 	}
@@ -368,14 +415,47 @@ func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.Sear
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	message := &pb.SearchModelsResponse{}
-	for _, record := range models {
-		message.Models = append(message.Models, rpc.Resource(record))
-	}
+	available := make(map[domain.ID]store.Record, len(providers))
 	for _, record := range providers {
-		message.Providers = append(message.Providers, rpc.Resource(record))
+		available[record.ID] = record
 	}
-	if len(models) == f.Limit {
-		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: models[len(models)-1].ID, Sequence: epoch})
+	included := map[domain.ID]bool{}
+	more := len(models) == f.Limit
+	for i, record := range models {
+		model, e := store.Decode[domain.Model](record)
+		if e != nil {
+			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+		}
+		providerCount := len(message.Providers)
+		message.Models = append(message.Models, rpc.Resource(record))
+		if provider, ok := available[model.ProviderID]; ok && !included[model.ProviderID] {
+			message.Providers = append(message.Providers, rpc.Resource(provider))
+		}
+		message.NextPageToken = ""
+		if more || i+1 < len(models) {
+			message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: record.ID, Sequence: epoch})
+			if err != nil {
+				return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+			}
+		}
+		fits, e := resourcePageFits(message)
+		if e != nil {
+			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
+		}
+		if !fits {
+			message.Models = message.Models[:len(message.Models)-1]
+			message.Providers = message.Providers[:providerCount]
+			if len(message.Models) == 0 {
+				return nil, rpc.Error(resourcePageTooLarge(), req.Header().Get(rpc.CorrelationHeader))
+			}
+			more = true
+			break
+		}
+		included[model.ProviderID] = true
+	}
+	message.NextPageToken = ""
+	if more && len(message.Models) > 0 {
+		message.NextPageToken, err = s.Identity.EncodeCursor(security.Cursor{Scope: scope, After: domain.ID(message.Models[len(message.Models)-1].Id), Sequence: epoch})
 		if err != nil {
 			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 		}

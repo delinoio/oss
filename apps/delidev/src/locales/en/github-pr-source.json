@@ -1,0 +1,9 @@
+{
+  "github-pr-source.sourceRepositoryNotRecordedInThis_fe8030": "Source repository: not recorded in this observation. Refresh to check.",
+  "github-pr-source.sourceRepositoryUnavailableOnGithubIts_9fb632": "Source repository: unavailable on GitHub. Its branch cannot currently be prepared for a fix.",
+  "github-pr-source.private_c9faf8": " · Private",
+  "github-pr-source.public_3469de": " · Public",
+  "github-pr-source.sourceRepository_62ff85": "Source repository: <s0/><s1/>",
+  "github-pr-source.sourceRepositoryIdentity_996ce5": "Source repository identity",
+  "github-pr-source.repositoryIdNodeId_31fb4b": "Repository ID: <s0/> · Node ID: <s1/>"
+}

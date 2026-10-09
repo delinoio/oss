@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-projects .project-row.project-metadata-row { display: block; padding: 16px 0; border-radius: 0; }
+.project-row-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; min-width: 0; }
+.settings-projects .project-row-heading h3 { font-size: 16px; font-weight: 600; margin: 0; }
+.settings-projects .project-row-heading .project-identity { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.project-row-heading p { color: var(--text-secondary); font-size: 14px; margin: 0; }
+.project-row-heading .actions { flex-shrink: 0; }
+.project-repository-rows { list-style: none; margin: 16px 0 0; padding: 0; min-width: 0; }
+.project-repository-rows > li { padding: 10px 0; min-width: 0; }
+.project-repository-heading { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.project-repository-heading strong { font-size: 14px; font-weight: 600; min-width: 0; }
+.project-primary-badge { color: var(--text-secondary); font-size: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 2px 8px; }
+.project-repository-url, .project-repository-stale { font-size: 14px; color: var(--text-secondary); margin: 6px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; user-select: text; }
+.project-show-repositories { margin: 8px 0; }
+.settings-projects .project-original-details { border: 0; padding: 0; border-radius: 0; }
+.settings-projects .project-row[data-single-repository] .project-repository-rows { margin-top: 4px; }
+.settings-projects .project-row[data-single-repository] .project-repository-rows > li { padding: 0; }
+.project-original-details { margin-top: 4px; color: var(--text-secondary); font-size: 14px; }
+.project-original-details summary { cursor: pointer; width: fit-content; padding: 10px 0; min-height: 40px; box-sizing: border-box; }
+.project-original-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+.project-original-details dl { margin: 8px 0; }
+.project-original-details dd { margin: 4px 0 12px; overflow-wrap: anywhere; }
+.project-original-details ol { padding-left: 20px; }
+@media (max-width: 1099px) { .project-row-heading { flex-direction: column; align-items: stretch; } .project-row-heading .project-identity { flex-basis: auto; } .project-row-heading .actions { justify-content: flex-start; flex-wrap: wrap; } }

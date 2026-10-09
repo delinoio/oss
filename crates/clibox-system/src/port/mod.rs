@@ -14,10 +14,14 @@ use crate::{
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(any(target_os = "linux", test))]
+mod linux_snapshot;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]
 mod windows;
+#[cfg(any(windows, test))]
+mod windows_projection;
 #[cfg(target_os = "linux")]
 use linux::Native;
 #[cfg(target_os = "macos")]
@@ -284,6 +288,20 @@ fn kill(report: &mut Report, backend: &mut impl Backend, clock: &mut impl Clock)
     }
 }
 
+// Presentation omits private socket identities; consume all original
+// observations first.
+fn settle_snapshot(
+    report: &mut Report,
+    terminate: bool,
+    backend: &mut impl Backend,
+    clock: &mut impl Clock,
+) {
+    if terminate {
+        kill(report, backend, clock);
+    }
+    report.normalize();
+}
+
 pub fn execute(action: Action) -> Result<i32> {
     let (query, pids, terminate) = match action {
         Action::List { query, pids } => (query, pids, false),
@@ -292,7 +310,6 @@ pub fn execute(action: Action) -> Result<i32> {
     let ports = query.ports.into_iter().collect();
     let mut backend = Native::default();
     let mut report = backend.snapshot(&ports, query.protocol);
-    report.normalize();
     tracing::debug!(
         operation = "port-enumeration",
         backend = std::env::consts::OS,
@@ -300,9 +317,12 @@ pub fn execute(action: Action) -> Result<i32> {
         errors = report.errors.len(),
         "Port snapshot completed"
     );
-    if terminate {
-        kill(&mut report, &mut backend, &mut RealClock(Instant::now()));
-    }
+    settle_snapshot(
+        &mut report,
+        terminate,
+        &mut backend,
+        &mut RealClock(Instant::now()),
+    );
     let mode = if query.json {
         OutputMode::Json
     } else if query.quiet {
@@ -312,7 +332,16 @@ pub fn execute(action: Action) -> Result<i32> {
     } else {
         OutputMode::Human
     };
-    write_report(&report, mode, terminate, &mut io::stdout().lock())?;
+    finish_report(&report, mode, terminate, &mut io::stdout().lock())
+}
+
+fn finish_report(
+    report: &Report,
+    mode: OutputMode,
+    terminate: bool,
+    out: &mut impl Write,
+) -> Result<i32> {
+    write_report(report, mode, terminate, out)?;
     for error in &report.errors {
         error.report(if terminate { "port-kill" } else { "port-list" });
     }

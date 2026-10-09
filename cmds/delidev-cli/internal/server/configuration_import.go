@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -133,12 +134,23 @@ func (s *Service) ApplyConfigurationImport(ctx context.Context, req *connect.Req
 					}
 				}
 				for _, checkout := range repository.Checkouts {
-					if _, _, err := activeMachine(tx, checkout.MachineID); err != nil {
+					_, machine, err := activeMachine(tx, checkout.MachineID)
+					if err != nil {
 						return nil, err
 					}
 					childID := domain.NewID()
 					pending.Inspections = append(pending.Inspections, configurationImportInspection{ID: childID, RepositoryID: change.ID, MachineID: checkout.MachineID, Path: checkout.Path})
-					raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required})
+					identity := ""
+					// Preserve the legacy inspection input for older Workers. The
+					// source identity is advisory only when the Worker negotiated
+					// support for the post-capability field.
+					if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
+						identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+						if err != nil {
+							return nil, err
+						}
+					}
+					raw, err := json.Marshal(domain.RepositoryInspectionInput{Path: checkout.Path, PreferredRemote: repository.PreferredRemote, RequiredRemotes: required, ExpectedRemoteIdentity: identity})
 					if err != nil {
 						return nil, err
 					}

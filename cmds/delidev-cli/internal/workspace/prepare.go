@@ -19,7 +19,23 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
+type RepositorySourceKind string
+
+const (
+	// Omission retains the original linked-checkout contract for accepted history.
+	CheckoutSource        RepositorySourceKind = ""
+	LocalCheckoutSource   RepositorySourceKind = "local-checkout"
+	RemoteCloneSource     RepositorySourceKind = "remote-clone"
+	IndependentForkSource RepositorySourceKind = "independent-fork"
+)
+
+func (kind RepositorySourceKind) managed() bool {
+	return kind == RemoteCloneSource || kind == IndependentForkSource
+}
+
 type RepositorySpec struct {
+	SourceKind RepositorySourceKind `json:"source_kind,omitempty"`
+	RemoteURL  string               `json:"remote_url,omitempty"`
 	// ForkRegistrationSource preserves the original common-directory authority
 	// after the parent managed workspace is deleted. Copying still uses Checkout.
 	ForkRegistrationSource string              `json:"fork_registration_source,omitempty"`
@@ -32,7 +48,9 @@ type RepositorySpec struct {
 	AutoFetch              bool                `json:"auto_fetch"`
 }
 type PrepareRequest struct {
-	SidechatSource *SidechatSource `json:"sidechat_source,omitempty"`
+	// Transient original fork index identity; never serialized into preparation.
+	forkProcessIdentity os.FileInfo
+	SidechatSource      *SidechatSource `json:"sidechat_source,omitempty"`
 	// ForkSourceID is an immutable Worker-owned copy profile. Ordinary creation
 	// never accepts it; the fork coordinator binds the original source manifest.
 	ForkProfile       ForkProfile          `json:"fork_profile,omitempty"`
@@ -54,17 +72,21 @@ const (
 )
 
 type PreparedRepository struct {
-	PRTarget            *domain.PRGitTarget `json:"pr_target,omitempty"`
-	LocalHEAD           LocalHEADState      `json:"local_head,omitempty"`
-	LocalIdentityDigest string              `json:"local_identity_digest,omitempty"`
-	ID                  domain.ID           `json:"id"`
-	Source              string              `json:"source"`
-	Path                string              `json:"path"`
-	Base                domain.Reference    `json:"base"`
-	Starting            domain.Reference    `json:"starting"`
-	BaseCommit          string              `json:"base_commit"`
-	StartingCommit      string              `json:"starting_commit"`
-	Owned               bool                `json:"owned"`
+	SourceKind          RepositorySourceKind `json:"source_kind,omitempty"`
+	RemoteURL           string               `json:"remote_url,omitempty"`
+	CloneRootDigest     string               `json:"clone_root_digest,omitempty"`
+	CloneIdentityDigest string               `json:"clone_identity_digest,omitempty"`
+	PRTarget            *domain.PRGitTarget  `json:"pr_target,omitempty"`
+	LocalHEAD           LocalHEADState       `json:"local_head,omitempty"`
+	LocalIdentityDigest string               `json:"local_identity_digest,omitempty"`
+	ID                  domain.ID            `json:"id"`
+	Source              string               `json:"source"`
+	Path                string               `json:"path"`
+	Base                domain.Reference     `json:"base"`
+	Starting            domain.Reference     `json:"starting"`
+	BaseCommit          string               `json:"base_commit"`
+	StartingCommit      string               `json:"starting_commit"`
+	Owned               bool                 `json:"owned"`
 }
 type State string
 
@@ -75,16 +97,17 @@ const (
 )
 
 type Manifest struct {
-	Reference    *SidechatReference   `json:"reference,omitempty"`
-	Version      int                  `json:"version"`
-	SessionID    domain.ID            `json:"session_id"`
-	MachineID    domain.ID            `json:"machine_id"`
-	Type         domain.WorkspaceType `json:"type"`
-	State        State                `json:"state"`
-	InputDigest  string               `json:"input_digest"`
-	PrimaryPath  string               `json:"primary_path"`
-	Repositories []PreparedRepository `json:"repositories"`
-	CreatedAt    time.Time            `json:"created_at"`
+	ManagedRootDigest string               `json:"managed_root_digest,omitempty"`
+	Reference         *SidechatReference   `json:"reference,omitempty"`
+	Version           int                  `json:"version"`
+	SessionID         domain.ID            `json:"session_id"`
+	MachineID         domain.ID            `json:"machine_id"`
+	Type              domain.WorkspaceType `json:"type"`
+	State             State                `json:"state"`
+	InputDigest       string               `json:"input_digest"`
+	PrimaryPath       string               `json:"primary_path"`
+	Repositories      []PreparedRepository `json:"repositories"`
+	CreatedAt         time.Time            `json:"created_at"`
 }
 type Manager struct {
 	mu                            sync.Mutex
@@ -98,6 +121,7 @@ type Manager struct {
 	storageBeforeRemovalClaim     func()
 	storageBeforeRemovalUnlink    func(string)
 	storageAfterRemovalClaim      func(string)
+	storageFinalRootFault         func(storageFinalRootStage) error
 	storageAfterSnapshot          func()
 	sidechatBeforeMetadataPublish func()
 	sidechatAfterMetadataPublish  func()
@@ -141,7 +165,7 @@ func (r PrepareRequest) validate() error {
 		return err
 	}
 	for _, repo := range r.Repositories {
-		if !filepath.IsAbs(repo.Checkout) || repo.ForkRegistrationSource != "" && !filepath.IsAbs(repo.ForkRegistrationSource) {
+		if repo.SourceKind != RemoteCloneSource && !filepath.IsAbs(repo.Checkout) || repo.ForkRegistrationSource != "" && !filepath.IsAbs(repo.ForkRegistrationSource) {
 			return domain.Fail(domain.InvalidArgument, "A checkout path must be absolute on this Worker.", "Use Worker repository inspection.")
 		}
 	}
@@ -188,6 +212,31 @@ func (r PrepareRequest) validateStructure() error {
 	primary := false
 	prTargets := 0
 	for _, repo := range r.Repositories {
+		switch repo.SourceKind {
+		case CheckoutSource:
+			if repo.RemoteURL != "" {
+				return ResultUncertain()
+			}
+		case LocalCheckoutSource:
+			if r.Type != domain.Local || repo.Checkout == "" || repo.ForkRegistrationSource != "" {
+				return ResultUncertain()
+			}
+			if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
+				return err
+			}
+		case RemoteCloneSource, IndependentForkSource:
+			if r.Type != domain.Worktree || repo.ForkRegistrationSource != "" {
+				return ResultUncertain()
+			}
+			if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
+				return err
+			}
+			if repo.SourceKind == RemoteCloneSource && (repo.Checkout != "" || r.ForkSourceID != "") || repo.SourceKind == IndependentForkSource && (r.ForkSourceID == "" || repo.Checkout == "") {
+				return ResultUncertain()
+			}
+		default:
+			return ResultUncertain()
+		}
 		if repo.ForkRegistrationSource != "" && (r.ForkSourceID == "" || r.Type != domain.Worktree) {
 			return ResultUncertain()
 		}
@@ -279,7 +328,14 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				// effects are not proved by this preparation attempt.
 				return old, ResultUncertain()
 			}
-			if err := m.verify(old); err != nil {
+			if slicesContainManagedClone(request.Repositories) {
+				if _, err := m.verifyWorkspaceIdentity(ctx, request, old, preparationIdentity); err != nil {
+					return old, err
+				}
+			} else if err := m.verify(old); err != nil {
+				// Historical checkout requests can retain a noncanonical source
+				// spelling. Preserve their existing replay contract; managed clones
+				// alone require the new accepted-input and native ownership proof.
 				return old, err
 			}
 			return old, nil
@@ -298,6 +354,13 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return err
 		}
 		return security.WriteAtomic(manifestPath, raw)
+	}
+	if slicesContainManagedClone(request.Repositories) {
+		var err error
+		manifest.ManagedRootDigest, err = directoryIdentityDigest(root)
+		if err != nil {
+			return uncertain(err)
+		}
 	}
 	var copies []forkCopy
 	if err := write(); err != nil {
@@ -328,7 +391,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return failed(domain.SafeError(err))
 		}
 		if request.ForkSourceID != "" {
-			copy, err := copyForkTreeBounded(ctx, request.ForkSourcePath, manifest.PrimaryPath, false, request.forkEntryLimit())
+			copy, err := copyForkTreePinned(ctx, request.ForkSourcePath, manifest.PrimaryPath, false, request.forkEntryLimit(), forkSnapshot.sourceMarker(request.ForkSourcePath))
 			if err != nil {
 				return failed(err)
 			}
@@ -339,11 +402,39 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			if err := ctx.Err(); err != nil {
 				return failed(domain.SafeError(err))
 			}
+			if spec.SourceKind.managed() {
+				prepared, copy, err := m.prepareIndependentRepository(ctx, git, root, spec, &manifest, write)
+				if err != nil {
+					return failed(err)
+				}
+				if copy != nil {
+					copies = append(copies, *copy)
+				}
+				if spec.ID == request.PrimaryRepository {
+					manifest.PrimaryPath = prepared.Path
+				}
+				if err := write(); err != nil {
+					return failed(ResultUncertain())
+				}
+				continue
+			}
 			inspection, err := git.Inspect(ctx, spec.Checkout)
 			if err != nil {
 				return failed(err)
 			}
-			prepared := PreparedRepository{ID: spec.ID, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
+			if request.Type == domain.Local && spec.RemoteURL != "" {
+				expected, err := domain.RepositoryCloneSourceIdentity(spec.RemoteURL)
+				if err != nil {
+					return failed(err)
+				}
+				// Save-time inspection can become stale before this preparation
+				// reopens the checkout. Revalidate the current source remote before
+				// recording Local HEAD or identity evidence.
+				if err := git.ValidateRemoteIdentity(ctx, inspection, spec.PreferredRemote, expected); err != nil {
+					return failed(err)
+				}
+			}
+			prepared := PreparedRepository{ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
 			if spec.ForkRegistrationSource != "" {
 				// Both authorities must still identify one common Git directory before
 				// recording the stable registration source used for recovery and deletion.
@@ -433,7 +524,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 					}
 				}
 				if request.ForkSourceID != "" {
-					copy, err := copyForkRepository(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit)
+					copy, err := copyForkRepositoryPinned(ctx, git, inspection.Root, prepared.Path, prepared.StartingCommit, forkSnapshot.sourceMarker(inspection.Root))
 					if err != nil {
 						return failed(err)
 					}
@@ -464,6 +555,11 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	manifest.State = Ready
 	if forkSnapshot != nil {
 		if err := forkSnapshot.Verify(ctx, manifest); err != nil {
+			return failed(err)
+		}
+	}
+	if slicesContainManagedClone(request.Repositories) {
+		if _, err := m.verifyWorkspaceIdentity(ctx, request, manifest, preparationIdentity); err != nil {
 			return failed(err)
 		}
 	}
@@ -520,10 +616,26 @@ func (m *Manager) verify(manifest Manifest) error {
 	return nil
 }
 func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) error {
+	var claim *cleanupClaim
+	if _, err := os.Lstat(root); err == nil {
+		identity, identityErr := directoryIdentityDigest(root)
+		if identityErr != nil {
+			return identityErr
+		}
+		if manifest.ManagedRootDigest != "" && manifest.ManagedRootDigest != identity {
+			return ResultUncertain()
+		}
+		claim = &cleanupClaim{Version: 1, SessionID: manifest.SessionID, RootIdentity: identity, ManifestDigest: manifestDigest(manifest)}
+	}
+	return m.cleanupWithClaim(ctx, root, manifest, claim)
+}
+func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Manifest, claim *cleanupClaim) error {
 	if err := m.requireNoSidechatReferences(ctx, manifest.SessionID); err != nil {
 		return err
 	}
+	rootPresent := false
 	if _, err := os.Lstat(root); err == nil {
+		rootPresent = true
 		if err := security.CheckPrivateDir(root); err != nil {
 			return ResultUncertain()
 		}
@@ -538,6 +650,22 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 	if manifest.Reference != nil {
 		return m.removeSidechatMetadata(ctx, root, manifest)
 	}
+	if claim == nil || claim.ManifestDigest != manifestDigest(manifest) || claim.SessionID != manifest.SessionID || claim.Version != 1 {
+		return ResultUncertain()
+	}
+	// A persisted cleanup claim is also the authority for replay after the
+	// managed root has already been removed. Re-hashing an absent root would
+	// turn an interrupted, otherwise safe cleanup into a permanent recovery
+	// failure. When the root is still present, retain the stronger replacement
+	// check before inspecting or unlinking any child.
+	if rootPresent {
+		current, err := directoryIdentityDigest(root)
+		if err != nil || current != claim.RootIdentity {
+			return ResultUncertain()
+		}
+	} else {
+		return nil
+	}
 	for i := len(manifest.Repositories) - 1; i >= 0; i-- {
 		repo := manifest.Repositories[i]
 		if !repo.Owned {
@@ -546,7 +674,7 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 		// Paths are recomputed from typed identities, never trusted from a mutable
 		// manifest when removing resources. Local source checkouts are never removed.
 		expected := filepath.Join(root, string(repo.ID))
-		if repo.ID.Validate() != nil || repo.Path != expected || repo.Source == expected {
+		if repo.ID.Validate() != nil || repo.Path != expected {
 			return domain.Fail(domain.RecoveryRequired, "Workspace cleanup ownership could not be verified.", "Inspect the exact repository and session association.")
 		}
 		if info, err := os.Lstat(expected); err == nil {
@@ -554,6 +682,15 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 				return ResultUncertain()
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
+			return ResultUncertain()
+		}
+		if repo.SourceKind.managed() {
+			if repo.Source != expected || verifyIndependentDirectory(repo, false) != nil {
+				return ResultUncertain()
+			}
+			continue
+		}
+		if repo.Source == expected {
 			return ResultUncertain()
 		}
 		registered, err := git.run(ctx, repo.Source, "worktree", "list", "--porcelain", "-z")
@@ -570,6 +707,26 @@ func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) e
 		if present {
 			if _, err := git.run(ctx, repo.Source, "worktree", "remove", "--force", "--", expected); err != nil {
 				return err
+			}
+		}
+	}
+	if manifest.ManagedRootDigest != "" {
+		if current, err := directoryIdentityDigest(root); err != nil || current != claim.RootIdentity {
+			return ResultUncertain()
+		}
+		allowed := map[string]bool{"manifest.json": true}
+		for _, repo := range manifest.Repositories {
+			if repo.Owned {
+				allowed[string(repo.ID)] = true
+			}
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			return ResultUncertain()
+		}
+		for _, entry := range entries {
+			if !allowed[entry.Name()] {
+				return ResultUncertain()
 			}
 		}
 	}

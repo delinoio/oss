@@ -37,7 +37,7 @@ observation controls or canonical model registration.
 Main-established `SystemCapability.SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16`
 and `WorkerCapability.WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7`
 activate the API observation boundary. The [structure contract](cmds-delidev-structure-contract.md)
-still requires shared reservations to reach main before dependent implementation;
+permits allocation records and implementation in the same feature PR;
 other pending reservations never enter status or Worker capability negotiation.
 
 `NativeModelService` in `native_models.proto` owns `DiscoverNativeModels`,
@@ -50,10 +50,11 @@ and installation generations in job JSON are decimal strings, preserving uint64
 precision.
 
 CLI controls are `model native-discover`, `model native-observation`,
-`model native-list` and `model native-cancel`. Desktop Models settings has an
-explicit native observation disclosure, scope selectors, status/cancellation,
-immutable pages and retained last-success selection. Register prepares the
-existing model editor; only its separate Save action writes a canonical model.
+`model native-list` and `model native-cancel`. The desktop Agent Worker wizard Model
+step has an explicit native observation disclosure, selected-account and Runner
+Device scope, status/cancellation, immutable pages and retained last-success
+selection. Use model selects the executable ID; only final atomic Worker saving
+resolves or creates its canonical model.
 
 The feature exposes authenticated owner/client acceptance,
 status, bounded observation pages and cancellation, with equivalent explicit CLI
@@ -78,8 +79,8 @@ observation after failure. Public pages retain the existing 1–200/default-50
 bounds and opaque observation-bound cursors; continuing an old page cannot select
 a newer observation or a different account/installation scope.
 
-Registration remains a separate explicit existing model-save action. Use the
-selected account's provider identity and the observed executable native model ID,
+Registration remains an explicit model-save CLI/RPC action or the final atomic
+Worker save. Use the selected account's provider identity and observed executable ID,
 preserving manual provenance, canonical duplicate and alias rules, revision
 checks, idempotent save and user-selected metadata. Discovery changes no canonical
 model, account readiness or quota, session or execution capability. Existing
@@ -105,7 +106,7 @@ selection. This adds no executable database migration or new migration version.
 The executable registry includes main-established schema 25 for Grok accounting;
 pending versions 26 and 27 retain their original order and every later reservation
 remains unchanged. If
-implementation needs a schema change, establish its version on main first and
+implementation needs a schema change, record its version in the feature PR and
 preserve the complete preceding sequence, backup-first atomic upgrades and historical records. A protocol
 reservation cannot authorize a database version or an empty migration.
 
@@ -183,8 +184,8 @@ Update this contract and affected account/catalog/protocol/desktop contracts whe
 observation ownership, native versions, publication fencing, credential profiles,
 registration semantics or paging bounds change. Keep scoped AGENTS rules aligned
 with ownership/policy changes and the project index aligned with its domain links
-and cross-domain invariants. New shared numbers and migration versions must be
-established on main before dependent implementation.
+and cross-domain invariants. Record new shared numbers and migration versions
+with implementation in the owning feature PR under the structure contract.
 
 ## References
 
@@ -200,3 +201,9 @@ established on main before dependent implementation.
 - [Pinned native model protocol](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/app-server-protocol/src/protocol/v2/model.rs)
 - [Pinned reasoning enum](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/protocol/src/openai_models.rs)
 - [Pinned official model-list tests](https://github.com/openai/codex/blob/78c290807ce710180111df227df3b7a4fe845452/codex-rs/app-server/tests/suite/v2/model_list.rs)
+
+## Inline Worker models and endpoint-only completion reservation
+
+Native model observations remain an independent bounded read-only diagnostic. Remove registration and use-model actions; never feed native observations into API completion or a saved Model registry. Preserve original Account/Worker/native-job ownership and diagnostic acceptance limits.
+
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.

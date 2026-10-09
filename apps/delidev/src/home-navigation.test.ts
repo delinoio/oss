@@ -137,7 +137,7 @@ it("retries only the failed accepted refresh range while keeping its boundaries"
   const retry = vi.fn<NavigationReader>(async () => ({ rows: [refreshedSecond], nextPageToken: "renewed-tail" }));
   await chain.retry(retry);
   expect(retry.mock.calls.map(([token]) => token)).toEqual(["accepted-next"]);
-  expect(chain.getSnapshot().rows).toEqual([first, refreshedSecond]);
+  expect(chain.getSnapshot().rows).toEqual([{ ...first, revision: 2n }, refreshedSecond]);
   expect(chain.getSnapshot().pages.map(({ token }) => token)).toEqual(["", "accepted-next"]);
   expect(chain.getSnapshot().nextPageToken).toBe("tail");
   expect(chain.getSnapshot().error).toBeUndefined();

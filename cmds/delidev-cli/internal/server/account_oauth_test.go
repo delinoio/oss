@@ -98,6 +98,62 @@ func (f *oauthFixture) restart(t *testing.T) {
 	}
 }
 
+func TestAccountOAuthInvalidRuntimeRejectsAdmissionAndExchange(t *testing.T) {
+	f := newOAuthFixture(t)
+	changed := domain.Fail(domain.RecoveryRequired, "The running server executable changed on disk.", "Explicitly restart the server after reviewing active work.")
+	changed.Cause = credentials.ExecutableChangedCause
+	f.s.credentialRuntimeCheck = func(context.Context) error { return changed }
+	request := domain.NewID()
+	_, err := f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: acctMutation(f.provider, request)}))
+	if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.RecoveryRequired {
+		t.Fatalf("runtime admission: %v", err)
+	}
+	if rpc.ClientError(err).Cause != "oauth_start_not_admitted" {
+		t.Fatal("rolled-back runtime rejection did not release the native opening for explicit cancellation")
+	}
+	if err := f.s.Store.Read(f.ctx, func(tx *store.Tx) error {
+		n, err := tx.AccountOAuthPending()
+		if n != 0 {
+			t.Fatal("invalid runtime admitted an OAuth attempt")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.s.credentialRuntimeCheck = func(context.Context) error { return nil }
+	accepted, err := f.s.StartAccountOAuth(f.ctx, connect.NewRequest(&pb.StartAccountOAuthRequest{Provider: acctMutation(f.provider, request)}))
+	if err != nil {
+		t.Fatalf("original request could not retry after runtime repair: %v", err)
+	}
+	a := accepted.Msg
+	var exchanges atomic.Int32
+	f.s.oauthExchange = oauthExchangeFunc(func(context.Context, []byte, []byte) ([]byte, error) {
+		exchanges.Add(1)
+		return []byte("fixture-key"), nil
+	})
+	f.s.credentialRuntimeCheck = func(context.Context) error { return changed }
+	completion := domain.NewID()
+	_, err = f.complete(a.Attempt, completion, "fixture-code")
+	if err == nil || domain.SafeError(rpc.ClientError(err)).Code != domain.RecoveryRequired {
+		t.Fatalf("runtime exchange: %v", err)
+	}
+	if exchanges.Load() != 0 {
+		t.Fatal("invalid runtime dispatched exchange")
+	}
+	current, err := f.s.oauthRead(f.ctx, domain.ID(a.Attempt.Id))
+	if err != nil || current.State != domain.OAuthAwaiting || current.CompletionRequestID != "" {
+		t.Fatalf("runtime check claimed completion: %v", err)
+	}
+	// Original cancellation remains available even when native code is invalid.
+	_, err = f.s.CancelAccountOAuth(f.ctx, connect.NewRequest(&pb.CancelAccountOAuthRequest{Mutation: oauthMutation(a.Attempt, domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.logs.String(), "credential_runtime_check_failed") {
+		t.Fatal("missing structured runtime diagnostic")
+	}
+}
+
 func TestAccountOAuthPKCEOnceOnlyReplayAndPrivateMetadata(t *testing.T) {
 	f := newOAuthFixture(t)
 	a := f.start(t)
@@ -355,7 +411,7 @@ func TestAccountOAuthUnownedDurableDispatchCannotRemainLiveOrResend(t *testing.T
 	original := domain.NewID()
 	actor := domain.Principal{Type: domain.OwnerDevice}
 	commitment := f.s.oauthCommitment("code", original, []byte("unknown-dispatch-code"))
-	_, err = f.s.Store.Mutate(f.ctx, original, "oauth.complete", oauthCompleteInput{private.ID, private.Revision, actor, commitment}, func(tx *store.Tx) (any, error) {
+	_, err = f.s.Store.Mutate(f.ctx, original, "oauth.complete", oauthCompleteInput{private.ID, private.Revision, actor, commitment, ""}, func(tx *store.Tx) (any, error) {
 		current := private
 		current.Revision++
 		current.State = domain.OAuthExchanging

@@ -31,14 +31,14 @@ func queryFixtureItem(kind domain.RepositoryItemKind, number int, detail, search
 	if detail && kind == domain.RepositoryPullRequest {
 		value["merged"] = false
 		value["mergeable"] = nil
-		value["base"] = map[string]any{"ref": "main", "sha": accessSHA, "repo": map[string]any{"id": 37, "node_id": "R_37"}}
+		value["base"] = map[string]any{"ref": "main", "sha": repositorySHA, "repo": map[string]any{"id": 37, "node_id": "R_37"}}
 		value["head"] = map[string]any{"ref": "feature", "sha": strings.Repeat("b", 40), "repo": nil}
 	}
 	return value
 }
 func queryFixture(t *testing.T, query domain.RepositoryQuery, body any, link string) (*Client, *[]string) {
 	t.Helper()
-	client, _ := accessFixture(t, nil)
+	client, _ := repositoryFixture(t, nil)
 	base := client.http.Transport
 	paths := []string{}
 	client.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {

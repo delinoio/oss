@@ -1,5 +1,9 @@
 # DeliDev same-account native session forks
 
+## Direct startup source identity
+
+[Direct startup](cmds-delidev-execution-startup-contract.md) permits source assignments with private execution version 4. Freeze the original successful readiness digest into the Fork input without rewriting source assignment bytes. The Worker resolves and rehashes only the original private resolved executable. Publication retains the original startup selection and successful readiness digest in the child-owned Fork boundary before returning the child. The Worker also retains the original resolved executable identity in the child-owned runtime before native Fork publication. Child execution uses this retained selection and private identity even after parent deletion purges the source-owned creation job and journal. An older child without retained selection may read only its surviving original creation seed; missing evidence requires recovery and cannot select a replacement executable. Independent parent deletion cannot transfer or erase child ownership. Existing API-only, platform, transcript, account/Worker, workspace-copy and native mutation/cleanup limits remain unchanged.
+
 ## Scope
 
 Issue #1092 adds independent native Codex forks to the Go session, Worker and
@@ -19,7 +23,7 @@ to the repository's independently verified native `0.151.0` profile.
 
 Owner and paired clients request/observe Fork through Connect, CLI or desktop.
 Only the original authorized Worker may inspect its private source and create a
-child. Provider/account authorities remain the original immutable selection. The current native Fork coordinator supports API-authenticated Codex sources only. Managed subscription assignments are rejected before acceptance and Worker journaling until Fork has a separately verified protected lease, joined cleanup and final credential write-back. Ordinary Fork capability does not grant managed authentication.
+child. Provider/account authorities remain the original immutable selection. The independent Codex Fork coordinator supports API-authenticated sources only. Managed ChatGPT Sidechat follows the separately negotiated protected lease, joined cleanup and final credential write-back profile in the Sidechat contract. Ordinary Fork capability does not grant managed authentication.
 
 ## Interfaces and Contracts
 
@@ -104,6 +108,13 @@ owns those paths. Use an independent Worktree copy instead. Copying is bounded t
 Worker deadline, with per-chunk cancellation;
 source observations are compared before and after all repositories. Unsupported
 files, mixed snapshots or a failed second copy cannot publish a partial child.
+Fork scans bind each parent’s native `.git` entry with anchored, non-following
+identity checks. Exclude only the declared repository’s top-level administration;
+reject its native case aliases in General Chat and nested directories. Distinct
+ordinary `.GIT` entries remain copyable on case-sensitive filesystems. Recheck
+the original marker presence and native identity in transient snapshot evidence
+through inspection, copying and final verification. Later scans cannot replace
+this pin. Identity changes retain snapshot conflict and cannot publish a child. Never follow gitdir pointers.
 Source reads and destination writes use separate opened filesystem roots;
 canonical destination validation rejects linked targets before copying. Copied
 files and directories are synchronized before the ready manifest is published,
@@ -176,6 +187,26 @@ An unborn later repository, duplicate repository ID or missing primary therefore
 cannot leave an unpublished child process scope after definite rejection. Actual
 source HEADs are read only after those checks; native read/ownership failures
 retain recovery classification and process evidence.
+
+Unpublished independent Fork preparation owns its child Git process index.
+Create that index exclusively before HEAD reads; General Chat creates no index
+when there are no repository reads. Retain the original native directory identity
+through inspection and copying. After a definite pre-native rejection, independently
+reconcile completed original scopes, verify that same empty index, remove only
+the index and its original recovery lock, synchronize parents and confirm absence.
+Any unjoined, foreign, changed or uncertain owner preserves recovery-required
+classification and its evidence. Published children keep their independent owner.
+
+Failed-Fork permanent deletion copies carry an omitted-zero private child process
+owner from the immutable validated original ForkJobInput. Normal deletion and
+completed-proof replay inventory that exact index and recovery lock. Legacy pending
+plans may add this omitted owner only after original assignment digest, revision,
+instance, session, machine, device and runtime checks. Keep unrelated omitted bytes
+unchanged. Rebind only an untouched Worker proof whose digest equals the same plan
+with the newly added fields omitted; started/complete legacy removal without those
+original proofs stays unresolved. Reappearing retired indexes are absence-only and
+never gain removal authority from a completed or started deletion proof. This adds
+no public capability, RPC allocation or database migration.
 
 Every later pre-native workspace rejection applies the same unused-runtime
 cleanup after joined source inspection and independently verified owned-copy
@@ -325,6 +356,11 @@ session revision and native thread, spans at most 10,000 records/8 MiB and
 rejects repeated/incomplete pages, tool/artifact content and non-empty changes.
 An original-revision read before and after pagination detects changed sources.
 Submit refreshes the profile and does not use stale success after read failure.
+Desktop preflight captures one immutable source/revision/turn and draft generation
+before refreshing. Discard or replacement invalidates that generation; recheck it
+after each asynchronous prerequisite and before ForkSession admission. Late reads
+cannot submit the old source or populate another draft. Hiding the operation
+retains its original preflight, accepted job and exact uncertain retry.
 These reads grant no child/native authority: Go independently validates complete
 canonical history at acceptance/publication, and the Worker verifies complete
 native history before exposing the child.
@@ -334,3 +370,17 @@ OpenCode source and child checkpoint readers use the strict 9 MiB private checkp
 Permanent deletion reads original OpenCode fork-completion metadata with the strict 9 MiB checkpoint decoder and the legacy Codex profile with its declared decoder bound. The original digest, canonical bytes and job/runtime/session/machine bindings remain required; larger valid private checkpoints do not strand deletion and replacements grant no cleanup authority.
 
 The same pre-copy eligibility reserves the complete child native checkpoint under its 8 MiB ceiling: original histories, two cloned-history copies, the complete message/part identity proof, metadata bounds and every original file descriptor. The fresh copied SQLite runtime has a separate 64 KiB serialized file-inventory profile. Capacity rejection preserves the source before workspace copying, runtime creation or native claims. Unexpected native auxiliary growth remains unsupported uncertainty and cannot enlarge this admitted profile.
+
+## Image ownership at the Fork boundary
+
+Independent Fork publication atomically adds child ownership for images in the original accepted prefix through the completed native boundary. Later source inputs grant no child ownership. Child references survive source deletion. Last-owner deletion retains the original Worker device and joined native cleanup. Follow the image-input and storage contracts.
+
+### OpenCode child completed-report recovery
+
+Verified OpenCode Fork publication retains the exact original creation request in the immutable child-owned seed. First and all later child executions use that marker and the independent Fork runtime for read-only completed-report recovery, without a synthetic first execution at the runtime ID or a surviving parent job. Native resumed claim version 2 is separate from execution assignment versions 3 and 4. Current binding/input requests, original assignment revision/digests, accepted inputs, Worker device, checkpoint and cleanup remain independently checked; successful reconciliation preserves the report and leaves dispatch paused.
+
+Legacy seeds with an omitted marker may resolve only through the exact retained succeeded Fork job, original input digest and validated complete input/output, source/child/runtime/native checkpoint, original device, snapshot/account/connection and configuration. Missing, deleted, changed or ambiguous proof retains recovery; no marker comes from a native ID and Fork is never repeated. The additive private field is omitted from old records and needs no migration or protocol allocation.
+
+OpenCode lost-report recovery checks a child-owned immutable closed creation proof before admitting inspection work. Verified Fork publication atomically retains the expected creation request, child ID, original accepted output digest and digest binding of the complete original Fork boundary (including accepted input digest, native checkpoint/runtime, Worker and selection). This retains no source prompt or protected native content and survives independent parent purge. Changed valid creation UUIDs, checkpoint/runtime/selection or proof ownership reject before admission. Older seeds without that proof must compare any recorded marker against the exact retained completed original Fork input/output; absence remains recovery-required. The proof is trusted server-owned publication metadata, never authority derived from a later mutable marker; no RPC, allocation or migration.
+
+A settled eligible first child turn may become a manual compaction source under the compaction contract. Its new continuation restore clears the one-shot Fork import and retains the child-owned Fork runtime as history, preserving legacy 3-to-2 and startup 4-to-4 assignment profiles. Independent child lifetime and Sidechat dependent/read-only ownership remain separate.

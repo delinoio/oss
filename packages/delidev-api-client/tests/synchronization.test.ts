@@ -16,6 +16,44 @@ function event(r: Resource, revision = r.revision, action = EventAction.UPDATED,
 }
 const expired = () => new ConnectError("Cursor expired.", Code.OutOfRange, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "cursor_expired" }) }]);
 
+it("keeps unscoped templates live across unrelated dispatch events and opaque cursor gaps", async () => {
+  const template = { ...resource(), kind: EntityKind.TEMPLATE, sessionId: "" };
+  const controls = new AbortController();
+  const cursors: string[] = [];
+  const reads = vi.fn(() => ({ resource: { ...template, revision: 2n } }));
+  const update = event(template, 2n, EventAction.UPDATED, "after-private-pages");
+  const removal = event(template, 3n, EventAction.DELETED, "later-public-sequence");
+  const snapshots = vi.fn(() => ({ resources: [template], cursor: "snapshot" }));
+  const client = createClient(ResourceService, createRouterTransport((router) => router.service(ResourceService, {
+    getSnapshot: snapshots,
+    getResource: reads,
+    async *watchEvents(request) {
+      cursors.push(request.cursor);
+      if (cursors.length === 1) {
+        for (const kind of [EntityKind.QUEUE, EntityKind.SESSION, EntityKind.JOB]) {
+          yield event({ ...resource(), kind }, 1n, EventAction.UPDATED, `dispatch-${kind}`);
+        }
+        // Private routing rows have no wire events. Their sequences are part
+        // of the server's opaque cursor, not a client continuity requirement.
+        yield update;
+        throw new ConnectError("Disconnected.", Code.Unavailable);
+      }
+      yield removal;
+    },
+  })));
+  const updates: SyncUpdate[] = [];
+  for await (const value of synchronizeResources(client, { kind: EntityKind.TEMPLATE }, { signal: controls.signal, initialRetryMs: 1 })) {
+    updates.push(value);
+    if (value.kind === SyncKind.Remove) controls.abort();
+  }
+  expect(snapshots).toHaveBeenCalledTimes(1);
+  expect(reads).toHaveBeenCalledTimes(1);
+  expect(cursors).toEqual(["snapshot", update.cursor]);
+  expect(updates.filter((value) => value.kind === SyncKind.Upsert)).toEqual([{ kind: SyncKind.Upsert, resource: { ...template, revision: 2n }, eventId: update.id }]);
+  expect(updates.at(-1)).toMatchObject({ kind: SyncKind.Remove, id: template.id });
+  expect(updates.some((value) => value.kind === SyncKind.Connection && value.state === ConnectionState.Failed)).toBe(false);
+});
+
 it.each([Code.Unavailable, Code.DeadlineExceeded, Code.Unknown])("applies indexed revisions once and resumes the committed cursor after %s", async (code) => {
   const first = resource();
   const update = event(first, 2n);
@@ -170,4 +208,19 @@ it("uses one session snapshot cursor for explicitly selected indexed message and
   expect(updates.filter((u) => u.kind === SyncKind.Snapshot)).toEqual([{ kind: SyncKind.Snapshot, resources: [session] }]);
   expect(reads.mock.calls.map(([request]) => [request.kind, request.id])).toEqual([[EntityKind.MESSAGE, message.id], [EntityKind.QUEUE, queue.id]]);
   expect(snapshots).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])("accepts typed large-job synchronization while preserving aggregate limits (overflow=%s)", async overflow => {
+  const first = { ...resource(), kind: EntityKind.JOB, documentJson: new TextEncoder().encode(JSON.stringify({ type: "compact-session", input: {} }) + " ".repeat(2 << 20)) };
+  const second = { ...first, id: newRequestId() };
+  const abort = new AbortController();
+  const client = createClient(ResourceService, createRouterTransport(router => router.service(ResourceService, {
+    getSnapshot: () => ({ resources: overflow ? [first, second] : [first], cursor: "original-large-jobs" }),
+    async *watchEvents() { abort.abort(); },
+  })));
+  const updates: SyncUpdate[] = [];
+  for await (const update of synchronizeResources(client, { kind: EntityKind.JOB }, { signal: abort.signal })) updates.push(update);
+  const snapshots = updates.filter(update => update.kind === SyncKind.Snapshot);
+  expect(snapshots).toHaveLength(overflow ? 0 : 1);
+  expect(updates.some(update => update.kind === SyncKind.Connection && update.state === ConnectionState.Failed)).toBe(overflow);
 });

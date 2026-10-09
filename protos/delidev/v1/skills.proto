@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+// Inventory is keyless and belongs to the selected authenticated Runner.
+service SkillService {
+  rpc ListSkills(ListSkillsRequest) returns (ListSkillsResponse);
+}
+enum SkillProvenance {
+  SKILL_PROVENANCE_UNSPECIFIED = 0;
+  SKILL_PROVENANCE_USER = 1;
+  SKILL_PROVENANCE_PROJECT = 2;
+}
+message SkillSelection {
+  string inventory_id = 1;
+  string skill_id = 2;
+  string content_revision = 3;
+  string worker_device_id = 4;
+}
+// Presence distinguishes an old client omission from an explicit clear.
+message SkillSelectionList {
+  repeated SkillSelection selections = 1;
+}
+message SkillEntry {
+  SkillSelection selection = 1;
+  string name = 2;
+  string description = 3;
+  SkillProvenance provenance = 4;
+}
+message ListSkillsRequest {
+  string machine_id = 1;
+  string agent_id = 2;
+  string session_id = 3;
+  string project_id = 4;
+}
+message ListSkillsResponse {
+  repeated SkillEntry skills = 1;
+}

@@ -11,13 +11,24 @@ import { expect, it } from "vitest";
 import { BudgetState, SessionService, ConfigurationService, EntityKind, ResourceService, ScheduleService, newRequestId } from "@delinoio/delidev-api-client";
 import { SessionBudget } from "./session-budget";
 import { Schedules } from "./schedules";
-import { NewSession } from "./new-session";
+import { NewSession, NewSessionKind } from "./new-session";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
+import { copy } from "./localization";
 import { useSettingsFixture } from "./settings-test-fixture";
 
 const fixture = useSettingsFixture();
+
+async function choose(control: HTMLElement, name: string | RegExp) {
+  await waitFor(() => expect(control.matches(":disabled")).toBe(false));
+  fireEvent.click(control);
+  const popup = window.document.getElementById(control.getAttribute("aria-controls")!)!;
+  const option = await within(popup).findByRole("option", { name });
+  const id = option.dataset.pickerId;
+  fireEvent.click(option);
+  await waitFor(() => expect(control.dataset.value).toBe(id));
+}
 
 it("inspects and saves a real owned Git checkout through a separate Go Worker before creating a project", async () => {
   const { directory, transport, providerOrigin, binary, scope, runCLI } = fixture;
@@ -43,18 +54,20 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const canonical = await realpath(checkout);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Settings /></MutationIntents></QueryClientProvider></TransportProvider>);
-  const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
+  const change = (name: string, value: string) => fireEvent.change(screen.getByLabelText(name, { exact: true }), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  change("Git URL", "https://github.com/delinoio/oss.git");
+  fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   fireEvent.click(screen.getByRole("button", { name: "Enter a path…" }));
   change("Computer", "remote");
-  change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }, { timeout: 15000 }) as HTMLOptionElement).value);
+  await choose(screen.getByRole("combobox", { name: "Runner Device" }), "Owned Git Worker");
   change("Absolute checkout path", checkout);
   fireEvent.click(screen.getByRole("button", { name: "Inspect folder" }));
   await screen.findByRole("region", { name: "Repository detected" }, { timeout: 15000 });
   fireEvent.click(screen.getByRole("button", { name: "Optional settings" }));
-  change("Name", "Owned repository");
-  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  change("Repository name", "Owned repository");
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
   await waitFor(() => expect(screen.queryByRole("region", { name: "Add repository" })).toBeNull(), { timeout: 15000 });
   await screen.findByRole("heading", { name: "Owned repository" });
   const repositories = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.REPOSITORY } });
@@ -63,10 +76,11 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   expect(document(repositories.resources[0]).integration_id).toBeUndefined();
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(screen.getByRole("button", { name: "New Project" }));
-  change("Name", "Owned project");
-  change("Add Repository", (await screen.findByRole("option", { name: "Owned repository" }) as HTMLOptionElement).value);
-  fireEvent.click(screen.getByRole("button", { name: "Add selected" }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Owned repository" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  change("Project name", "Owned project");
   change("Primary repository", repositories.resources[0].id);
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" }));
   fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
   await screen.findByRole("heading", { name: "Owned project" });
@@ -76,9 +90,16 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(await screen.findByRole("button", { name: "Inspect installed harnesses" }));
   fireEvent.click(screen.getByRole("button", { name: "Edit executable paths" }));
   for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) change(`${harness} executable path`, join(directory, `missing-${harness}`));
-  fireEvent.click(screen.getByRole("button", { name: "Check installed harnesses" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
   fireEvent.click(await screen.findByRole("button", { name: "Finish inspection" }, { timeout: 15000 }));
-  await waitFor(() => expect(screen.getAllByText("missing · Version: Unknown")).toHaveLength(4));
+  await waitFor(() => {
+    for (const harness of ["codex", "claude-code", "opencode", "grok-build"]) {
+      const article = screen.getByRole("heading", { name: harness }).closest("article")!;
+      expect(within(article).getByText(copy(harness === "claude-code" ? "claude-subscription.excluded.missing" : "machine-settings.excluded.missing"))).toBeTruthy();
+    }
+  });
+  const observedMachines = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.MACHINE } });
+  expect(document(observedMachines.resources[0]).installations).toEqual(expect.arrayContaining(["codex", "claude-code", "opencode", "grok-build"].map(harness => expect.objectContaining({ harness, state: "missing" }))));
   // An account-less Agent is valid configuration but cannot infer readiness or
   // launch a harness. The real Worker has only explicit missing executables.
   const configurations = createClient(ConfigurationService, transport);
@@ -96,11 +117,11 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><NewSession active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={(id) => { createdSessionId = id; }} created={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   const newSession = within(window.document.querySelector(".new-session-page")!);
   const changeNewSession = (name: string, value: string) => fireEvent.change(newSession.getByLabelText(name), { target: { value } });
-  changeNewSession("Project", (await within(newSession.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
+  await choose(newSession.getByRole("combobox", { name: "Project" }), "Owned project");
   fireEvent.click(newSession.getByRole("button", { name: "Options" }));
-  fireEvent.click(newSession.getByRole("button", { name: "Use this computer's Local checkouts" }));
+  fireEvent.click(newSession.getByRole("radio", { name: "Local" }));
   await waitFor(() => expect((newSession.getByLabelText("Runs on") as HTMLSelectElement).disabled).toBe(true));
-  changeNewSession("Agent Worker", (await newSession.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
+  await choose(newSession.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
   changeNewSession("First message", "Local proof fixture without inference");
   fireEvent.click(newSession.getByText("Optional estimated-cost budget"));
   fireEvent.click(newSession.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
@@ -130,12 +151,26 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByText("No estimated-cost budget is configured.");
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view?.state).toBe(BudgetState.DISABLED);
   cleanup();
+  let generalSessionId = "";
+  render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><NewSession kind={NewSessionKind.GeneralChat} active ownsActivation activation={1} back={() => {}} openSettings={() => {}} open={(id) => { generalSessionId = id; }} created={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  expect(screen.queryByLabelText("Project")).toBeNull();
+  await choose(screen.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
+  await choose(screen.getByRole("combobox", { name: "Runs on" }), "Owned Git Worker");
+  change("First message", "General Chat acceptance fixture without inference");
+  fireEvent.click(screen.getByRole("button", { name: "Start general chat" }));
+  await waitFor(() => expect(generalSessionId).not.toBe(""));
+  const generalSession = (await createClient(ResourceService, transport).getResource({ kind: EntityKind.SESSION, id: generalSessionId })).resource!;
+  expect(generalSession.projectId).toBe("");
+  expect(document(generalSession)).toMatchObject({ workspace: "general-chat", name_mode: "automatic", source: "MANUAL", agent_id: accountlessAgent.id });
+  expect(document(generalSession).local_origin).toBeUndefined();
+  expect(document(generalSession).project_id).toBeUndefined();
+  cleanup();
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
-  change("Project", (await within(screen.getByLabelText("Project")).findByRole("option", { name: "Owned project" }) as HTMLOptionElement).value);
-  change("Agent Worker", (await screen.findByRole("option", { name: "Accountless schedule agent" }) as HTMLOptionElement).value);
-  change("Runner Device", (await screen.findByRole("option", { name: "Owned Git Worker" }) as HTMLOptionElement).value);
+  await choose(screen.getByRole("combobox", { name: "Project" }), "Owned project");
+  await choose(screen.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
+  await choose(screen.getByRole("combobox", { name: "Runner Device" }), "Owned Git Worker");
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
   await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));
   change("Frequency", "custom"); change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
