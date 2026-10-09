@@ -2,7 +2,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -25,16 +24,15 @@ func TestSubscriptionConfigurationRPCHasNoProviderDependency(t *testing.T) {
 		return out.Msg.Resource
 	}
 	a := save(domain.AccountKind, domain.Account{Alias: "Independent ChatGPT", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}}, 2)
-	m := save(domain.ModelKind, domain.Model{Name: "Native", NativeID: "fixture-model", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}, 2)
-	if a.SchemaVersion != 2 || m.SchemaVersion != 2 {
-		t.Fatal("native identity downgraded to v1")
+	if a.SchemaVersion != 2 {
+		t.Fatal("native Account identity downgraded to v1")
 	}
 	var account domain.Account
 	domain.Decode(a.DocumentJson, &account)
 	if account.ProviderID != "" || account.Subscription != nil || account.Connection != nil {
 		t.Fatal("metadata manufacture granted authentication")
 	}
-	save(domain.AgentKind, domain.Agent{Name: "Native Agent", Harness: domain.Codex, ModelID: domain.ID(m.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(a.Id), Weight: 1}}, Templates: []domain.ID{}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}, 1)
+	save(domain.AgentKind, domain.Agent{Name: "Native Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{SubscriptionService: domain.SubscriptionChatGPT, NativeID: "fixture-model"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: domain.ID(a.Id), Weight: 1}}}}, Templates: []domain.ID{}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}, 4)
 	list, err := s.ListResources(ctx, connect.NewRequest(&pb.ListResourcesRequest{Filter: &pb.Filter{Kind: pb.EntityKind_ENTITY_KIND_ACCOUNT}, AccountType: pb.AccountTypeFilter_ACCOUNT_TYPE_FILTER_SUBSCRIPTION}))
 	if err != nil || len(list.Msg.Resources) != 1 || list.Msg.Resources[0].Id != a.Id {
 		t.Fatal("service list required Provider inventory", err)
@@ -56,33 +54,15 @@ func TestSubscriptionConfigurationRPCHasNoProviderDependency(t *testing.T) {
 	}
 }
 
-func TestSubscriptionPortableV2AndAPIOnlyV1Import(t *testing.T) {
-	for _, version := range []uint32{1, 2} {
+func TestSubscriptionPortableEarlierBundlesAreUnsupported(t *testing.T) {
+	for _, version := range []uint32{1, 2, 3, 5, 6} {
 		t.Run(string(rune('0'+version)), func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
-			m := transferEntry(domain.ModelKind, domain.Model{Name: "Native", NativeID: "native", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared, Manual: true})
 			a := transferEntry(domain.AccountKind, domain.Account{Alias: "Native", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
-			selection := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: version, Entries: []domain.ConfigurationEntry{m, a}, Machines: []domain.ConfigurationMachine{}}}
+			selection := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: version, Entries: []domain.ConfigurationEntry{a}, Machines: []domain.ConfigurationMachine{}}}
 			raw, _ := json.Marshal(selection)
-			response, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
-			if version == 1 {
-				if err == nil {
-					t.Fatal("v1 native graph imported")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			result := transferApply(t, s, response.Msg.PreviewJson, domain.NewID())
-			if result.State != domain.JobSucceeded || len(result.Resources) != 2 {
-				t.Fatal("v2 native import failed", result)
-			}
-			for _, entry := range result.Resources {
-				r, err := s.Store.Get(context.Background(), entry.Kind, entry.ID)
-				if err != nil || rpc.Resource(r).SchemaVersion != 2 {
-					t.Fatal("new native resource downgraded", err)
-				}
+			if _, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw})); connect.CodeOf(err) != connect.CodeUnimplemented {
+				t.Fatal("earlier portable bundle was converted", err)
 			}
 		})
 	}

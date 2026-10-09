@@ -1173,3 +1173,15 @@ and selected Accounts while preserving all newer current configuration fields.
 Earlier DBs and portable bundles are unsupported without conversion. Startup and
 inspection reject earlier DBs before WAL or other writes; this does not authorize
 removing native or protected credential state.
+
+The current runtime does not execute historical migrations 001–031 or upgrade
+private restore candidates. Frozen historical SQL remains test provenance only;
+every earlier original database or backup is rejected with its bytes and sidecars
+unchanged. A valid schema-32 restore validates and publishes its immutable current
+image. Existing retained migration-copy cleanup journals keep their original
+fingerprint, independent recovery and deletion authority: retirement of upgrade
+code neither adopts a changed copy nor removes uncertain original state. Current
+restore retains protected references, revocations, subscription quarantine and
+independent native cleanup. Persistent Model search, suppression, validation and
+deletion entry points return Unsupported; ephemeral decoding of an exact internal
+source key grants no registry, account or native authority.

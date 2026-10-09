@@ -3530,3 +3530,10 @@ Fixtures cover exact bytes, no replacement, cancellation, changed request/scope 
 Follow the [source-specific pricing contract](cmds-delidev-usage-contract.md#automatic-source-specific-token-prices--issue-2138) and the current-only schema-4 Worker/protocol-2 boundary. Keep the approved Overview / Usage history / Model prices navigation. Model prices uses one exact source/native-ID picker, compact Automatic/Manual, Refresh and Edit controls, and three rate columns. Preserve missing versus zero, freshness, the daily cadence, collapsed reference/history evidence and the existing staged manual editor. Do not add a Model UUID header. A retired API source retains historical read-only evidence without current edit authority.
 
 Usage filters, charts, diagnostics, routing previews, execution details and prerequisite displays consume the retained typed source/native identity. They do not resolve a global Model registry, infer aliases or treat advisory endpoint/native metadata as execution proof. Worker source selection keeps optional endpoint suggestions separate from direct native-ID entry and atomically saves inline routes with their original Accounts. Model hints do not create resources or observations. Preserve original permissions, account profiles, routing order, settings-task receipts, uncertainty and connection generation checks.
+
+Account verification retains its original immutable validation receipt. Its
+follow-up model read and explicit Refresh models use owner/client endpoint hints
+with the captured Account, Provider, connection and revisions. Opening the
+connection panel does not read the endpoint. Cancellation and late-result checks
+preserve the original source; a hint response does not persist an Account catalog,
+create a Model resource or alter validation, credentials or execution eligibility.

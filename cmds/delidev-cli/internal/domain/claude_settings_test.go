@@ -8,7 +8,7 @@ import (
 
 func TestClaudePermissionsKeepNativeMeaningAndStoredSelection(t *testing.T) {
 	for _, selected := range []ClaudePermissionMode{"", ClaudePermissionDefault, ClaudePermissionPlan, ClaudePermissionAcceptEdits, ClaudePermissionDontAsk, ClaudePermissionBypass, ClaudePermissionAuto} {
-		a := Agent{Name: "Private fixture", Harness: ClaudeCode, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault, ClaudePermission: selected}}
+		a := Agent{Name: "Private fixture", Harness: ClaudeCode, Routes: []AgentSourceRoute{{Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: NewID(), NativeID: "fixture"}, MetadataSource: Unknown}, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}}}, Options: AgentOptions{Permission: PermissionDefault, ClaudePermission: selected}}
 		if err := a.Validate(); err != nil {
 			t.Fatal(err)
 		}
@@ -32,7 +32,7 @@ func TestClaudePermissionsKeepNativeMeaningAndStoredSelection(t *testing.T) {
 		}
 	}
 	for _, harness := range []Harness{Codex, OpenCode, GrokBuild} {
-		a := Agent{Name: "Foreign fixture", Harness: harness, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault, ClaudePermission: ClaudePermissionDefault}}
+		a := Agent{Name: "Foreign fixture", Harness: harness, Routes: []AgentSourceRoute{{Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: NewID(), NativeID: "fixture"}, MetadataSource: Unknown}, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}}}, Options: AgentOptions{Permission: PermissionDefault, ClaudePermission: ClaudePermissionDefault}}
 		if err := a.Validate(); err != nil {
 			t.Fatal("retained option cannot be saved", err)
 		}

@@ -2,12 +2,10 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
-	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
 func TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming(t *testing.T) {
@@ -30,29 +28,19 @@ func TestGrokFirstDispatchRetainsUnsupportedSelectionsWithoutClaiming(t *testing
 				f.mutateAgent(t, func(a *domain.Agent) { a.Options.MaxConcurrency = 2 })
 			}
 			if scenario == "missing-context" || scenario == "unknown-context" || scenario == "small-context" || scenario == "large-context" {
-				var agent domain.Agent
-				if domain.Decode(f.agent.DocumentJson, &agent) != nil {
-					t.Fatal("invalid fixture Agent")
-				}
-				r := currentCatalogResource(t, f.accountFixture, &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MODEL, Id: string(agent.ModelID)})
-				var m domain.Model
-				if domain.Decode(r.DocumentJson, &m) != nil {
-					t.Fatal("invalid fixture model")
-				}
-				switch scenario {
-				case "missing-context":
-					m.ContextLimit = nil
-				case "unknown-context":
-					m.MetadataSource = domain.Unknown
-				case "small-context":
-					*m.ContextLimit = 1023
-				case "large-context":
-					*m.ContextLimit = 1_000_000_001
-				}
-				raw, _ := json.Marshal(m)
-				if _, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(r, domain.NewID()), Kind: pb.EntityKind_ENTITY_KIND_MODEL, SchemaVersion: 1, DocumentJson: raw})); err != nil {
-					t.Fatal(err)
-				}
+				f.mutateAgent(t, func(agent *domain.Agent) {
+					m := agent.Routes[0].Model
+					switch scenario {
+					case "missing-context":
+						m.ContextLimit = nil
+					case "unknown-context":
+						m.MetadataSource = domain.Unknown
+					case "small-context":
+						*m.ContextLimit = 1023
+					case "large-context":
+						*m.ContextLimit = 1_000_000_001
+					}
+				})
 			}
 			before := f.refresh(t)
 			if err := f.service.dispatchExecution(context.Background(), before); domain.SafeError(err).Code != domain.Unsupported {

@@ -282,26 +282,7 @@ func TestClaudeSubscriptionFirstInputRequiresOriginalRunnerBeforeClaim(t *testin
 				if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 					return nil, err
 				}
-				ar, err := tx.Get(domain.AgentKind, f.selection.AgentID)
-				if err != nil {
-					return nil, err
-				}
-				agent, err := store.Decode[domain.Agent](ar)
-				if err != nil {
-					return nil, err
-				}
-				mr, err := tx.Get(domain.ModelKind, agent.ModelID)
-				if err != nil {
-					return nil, err
-				}
-				model, err := store.Decode[domain.Model](mr)
-				if err != nil {
-					return nil, err
-				}
-				model.ProviderID = ""
-				model.SourceKind = domain.SubscriptionModel
-				model.SubscriptionService = domain.SubscriptionClaude
-				if _, err = tx.Put(domain.ModelKind, mr.ID, mr.Revision, "", "", model); err != nil {
+				if _, err = fixtureInlineSource(tx, f.selection.AgentID, "", domain.SubscriptionClaude); err != nil {
 					return nil, err
 				}
 				r, m, err := activeMachine(tx, domain.ID(f.machine.Id))
