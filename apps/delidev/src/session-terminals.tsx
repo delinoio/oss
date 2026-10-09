@@ -9,7 +9,7 @@ import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
-import { EntityKind, ResourceService, ResourceQuery, TerminalAction, TerminalQuery, TerminalService, SystemQuery, SystemCapability, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceService, ResourceQuery, TerminalAction, TerminalCreationMode, TerminalQuery, TerminalService, SystemQuery, SystemCapability, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
 import { useRetainedMutationIntents, useRetainedMutation } from "./mutation";
 import { useSessionTabsStore } from "./session-tabs";
@@ -106,7 +106,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
         const original = latest.current.session;
         if (original.revision !== openIntent.revision || text(document(original).archive) !== "active") throw new ConnectError("The session changed before opening a terminal.", Code.Aborted);
         sent = true;
-        void create.send({ mutation: { requestId: openIntent.requestId, id: session.id, expectedRevision: openIntent.revision }, shellOverride: shell, rows: 24, columns: 80 });
+        void create.send({ mutation: { requestId: openIntent.requestId, id: session.id, expectedRevision: openIntent.revision }, creationMode: TerminalCreationMode.REUSE_OR_CREATE, shellOverride: shell, rows: 24, columns: 80 });
       } catch (error) { if (current()) setOpenError(error); }
       finally { if (current()) latest.current.finishOpenIntent?.(); }
     };

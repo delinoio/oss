@@ -318,3 +318,18 @@ contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 
 - [Microsoft pseudoconsole creation and teardown](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session)
 - [Go PTY package API](https://pkg.go.dev/github.com/creack/pty)
+
+## Atomic toolbar terminal admission — issue #2112 / PR #2260
+
+`CreateTerminalRequest.creation_mode = 5` owns the closed
+`TerminalCreationMode` enum: `UNSPECIFIED = 0` preserves explicit additional
+creation, including existing clients and +; `REUSE_OR_CREATE = 1` resolves
+explicit toolbar admission in the authenticated receipt transaction. Preserve
+fields 1–4, existing responses, System 14 / Worker 4 and every original native
+claim. Unknown modes are rejected. Reuse returns a reference to an original
+starting/running terminal on the current Worker instance without close intent,
+including pending input/resize. Otherwise every original terminal must be exited
+or closed with independent cleanup verified and no pending operation before
+creation. Concurrent clients receive the same newly accepted terminal. Exact
+request replay retains actor-bound receipts without dispatching another shell.
+No capability, migration or native protocol change is added.

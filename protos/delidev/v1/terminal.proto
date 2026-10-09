@@ -17,12 +17,18 @@ enum TerminalAction {
   TERMINAL_ACTION_RESIZE = 2;
   TERMINAL_ACTION_CLOSE = 3;
 }
+enum TerminalCreationMode {
+  TERMINAL_CREATION_MODE_UNSPECIFIED = 0;
+  TERMINAL_CREATION_MODE_REUSE_OR_CREATE = 1;
+}
 message CreateTerminalRequest {
   // Mutation targets the session and its current revision.
   Mutation mutation = 1;
   string shell_override = 2;
   uint32 rows = 3;
   uint32 columns = 4;
+  // Unspecified preserves explicit additional creation for existing clients.
+  TerminalCreationMode creation_mode = 5;
 }
 message ControlTerminalRequest {
   // Mutation targets the original terminal and its current revision.

@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, TerminalQuery, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalAction, SystemService, SystemCapability, TerminalCreationMode, TerminalQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTerminals } from "./session-terminals";
@@ -342,7 +342,7 @@ it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit o
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     if (scenario === "empty") {
       await waitFor(() => expect(createTerminal).toHaveBeenCalledOnce());
-      expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 7n }, rows: 24, columns: 80, shellOverride: "" });
+      expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 7n }, rows: 24, columns: 80, shellOverride: "", creationMode: TerminalCreationMode.REUSE_OR_CREATE });
       await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
     } else if (scenario === "later-page") {
       await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id)); expect(pages).toContain("next"); expect(createTerminal).not.toHaveBeenCalled();

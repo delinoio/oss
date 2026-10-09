@@ -92,6 +92,11 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 	if err := domain.Text(req.Msg.ShellOverride, "shell override", 4096, false); err != nil {
 		return fail(err)
 	}
+	switch req.Msg.CreationMode {
+	case pb.TerminalCreationMode_TERMINAL_CREATION_MODE_UNSPECIFIED, pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE:
+	default:
+		return fail(domain.Fail(domain.InvalidArgument, "Unknown terminal creation mode.", "Select additional creation or reuse-or-create."))
+	}
 	meta := req.Msg.Mutation
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "terminal.create", req.Msg, func(tx *store.Tx) (any, error) {
 		sr, session, err := sessionRecord(tx, domain.ID(meta.Id))
@@ -120,6 +125,27 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 		records, err := tx.SessionTerminals(sr.ID)
 		if err != nil {
 			return nil, err
+		}
+		// Resolve the toolbar's no-reusable-terminal condition in the same
+		// receipt transaction as creation. Client inventory reads cannot serialize
+		// independent clients; returning a reference never dispatches native work.
+		if req.Msg.CreationMode == pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE {
+			settled := true
+			for _, r := range records {
+				t, err := store.Decode[domain.Terminal](r)
+				if err != nil {
+					return nil, err
+				}
+				if (t.State == domain.TerminalStarting || t.State == domain.TerminalRunning) && t.CloseRequestID == "" && (t.Pending == nil || t.Pending.Action != domain.TerminalClose) && t.MachineID == session.MachineID && t.InstanceID == instance && t.Live() {
+					return terminalReceipt{TerminalID: r.ID}, nil
+				}
+				if (t.State != domain.TerminalExited && t.State != domain.TerminalClosed) || !t.CleanupVerified || t.Pending != nil || t.CloseRequestID != "" && t.Live() {
+					settled = false
+				}
+			}
+			if !settled {
+				return nil, domain.Fail(domain.Conflict, "Original terminal cleanup is unconfirmed.", "Inspect and reconcile the original terminal before opening another.")
+			}
 		}
 		active := 0
 		for _, r := range records {

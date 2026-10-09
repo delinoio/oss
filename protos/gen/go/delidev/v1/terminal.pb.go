@@ -73,6 +73,52 @@ func (TerminalAction) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_terminal_proto_rawDescGZIP(), []int{0}
 }
 
+type TerminalCreationMode int32
+
+const (
+	TerminalCreationMode_TERMINAL_CREATION_MODE_UNSPECIFIED     TerminalCreationMode = 0
+	TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE TerminalCreationMode = 1
+)
+
+// Enum value maps for TerminalCreationMode.
+var (
+	TerminalCreationMode_name = map[int32]string{
+		0: "TERMINAL_CREATION_MODE_UNSPECIFIED",
+		1: "TERMINAL_CREATION_MODE_REUSE_OR_CREATE",
+	}
+	TerminalCreationMode_value = map[string]int32{
+		"TERMINAL_CREATION_MODE_UNSPECIFIED":     0,
+		"TERMINAL_CREATION_MODE_REUSE_OR_CREATE": 1,
+	}
+)
+
+func (x TerminalCreationMode) Enum() *TerminalCreationMode {
+	p := new(TerminalCreationMode)
+	*p = x
+	return p
+}
+
+func (x TerminalCreationMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TerminalCreationMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_terminal_proto_enumTypes[1].Descriptor()
+}
+
+func (TerminalCreationMode) Type() protoreflect.EnumType {
+	return &file_delidev_v1_terminal_proto_enumTypes[1]
+}
+
+func (x TerminalCreationMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TerminalCreationMode.Descriptor instead.
+func (TerminalCreationMode) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_terminal_proto_rawDescGZIP(), []int{1}
+}
+
 type CreateTerminalRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Mutation targets the session and its current revision.
@@ -80,6 +126,8 @@ type CreateTerminalRequest struct {
 	ShellOverride string    `protobuf:"bytes,2,opt,name=shell_override,json=shellOverride,proto3" json:"shell_override,omitempty"`
 	Rows          uint32    `protobuf:"varint,3,opt,name=rows,proto3" json:"rows,omitempty"`
 	Columns       uint32    `protobuf:"varint,4,opt,name=columns,proto3" json:"columns,omitempty"`
+	// Unspecified preserves explicit additional creation for existing clients.
+	CreationMode  TerminalCreationMode `protobuf:"varint,5,opt,name=creation_mode,json=creationMode,proto3,enum=delidev.v1.TerminalCreationMode" json:"creation_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -140,6 +188,13 @@ func (x *CreateTerminalRequest) GetColumns() uint32 {
 		return x.Columns
 	}
 	return 0
+}
+
+func (x *CreateTerminalRequest) GetCreationMode() TerminalCreationMode {
+	if x != nil {
+		return x.CreationMode
+	}
+	return TerminalCreationMode_TERMINAL_CREATION_MODE_UNSPECIFIED
 }
 
 type ControlTerminalRequest struct {
@@ -944,12 +999,13 @@ var File_delidev_v1_terminal_proto protoreflect.FileDescriptor
 const file_delidev_v1_terminal_proto_rawDesc = "" +
 	"\n" +
 	"\x19delidev/v1/terminal.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\x9e\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xe5\x01\n" +
 	"\x15CreateTerminalRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12%\n" +
 	"\x0eshell_override\x18\x02 \x01(\tR\rshellOverride\x12\x12\n" +
 	"\x04rows\x18\x03 \x01(\rR\x04rows\x12\x18\n" +
-	"\acolumns\x18\x04 \x01(\rR\acolumns\"\xc2\x01\n" +
+	"\acolumns\x18\x04 \x01(\rR\acolumns\x12E\n" +
+	"\rcreation_mode\x18\x05 \x01(\x0e2 .delidev.v1.TerminalCreationModeR\fcreationMode\"\xc2\x01\n" +
 	"\x16ControlTerminalRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x122\n" +
 	"\x06action\x18\x02 \x01(\x0e2\x1a.delidev.v1.TerminalActionR\x06action\x12\x14\n" +
@@ -1023,7 +1079,10 @@ const file_delidev_v1_terminal_proto_rawDesc = "" +
 	"\x1bTERMINAL_ACTION_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15TERMINAL_ACTION_INPUT\x10\x01\x12\x1a\n" +
 	"\x16TERMINAL_ACTION_RESIZE\x10\x02\x12\x19\n" +
-	"\x15TERMINAL_ACTION_CLOSE\x10\x032\xb0\x02\n" +
+	"\x15TERMINAL_ACTION_CLOSE\x10\x03*j\n" +
+	"\x14TerminalCreationMode\x12&\n" +
+	"\"TERMINAL_CREATION_MODE_UNSPECIFIED\x10\x00\x12*\n" +
+	"&TERMINAL_CREATION_MODE_REUSE_OR_CREATE\x10\x012\xb0\x02\n" +
 	"\x0fTerminalService\x12W\n" +
 	"\x0eCreateTerminal\x12!.delidev.v1.CreateTerminalRequest\x1a\".delidev.v1.CreateTerminalResponse\x12Z\n" +
 	"\x0fControlTerminal\x12\".delidev.v1.ControlTerminalRequest\x1a#.delidev.v1.ControlTerminalResponse\x12h\n" +
@@ -1041,46 +1100,48 @@ func file_delidev_v1_terminal_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_terminal_proto_rawDescData
 }
 
-var file_delidev_v1_terminal_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_delidev_v1_terminal_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_delidev_v1_terminal_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_delidev_v1_terminal_proto_goTypes = []any{
 	(TerminalAction)(0),                   // 0: delidev.v1.TerminalAction
-	(*CreateTerminalRequest)(nil),         // 1: delidev.v1.CreateTerminalRequest
-	(*ControlTerminalRequest)(nil),        // 2: delidev.v1.ControlTerminalRequest
-	(*CreateTerminalResponse)(nil),        // 3: delidev.v1.CreateTerminalResponse
-	(*ControlTerminalResponse)(nil),       // 4: delidev.v1.ControlTerminalResponse
-	(*WatchTerminalOutputRequest)(nil),    // 5: delidev.v1.WatchTerminalOutputRequest
-	(*WatchTerminalOutputResponse)(nil),   // 6: delidev.v1.WatchTerminalOutputResponse
-	(*WatchTerminalsRequest)(nil),         // 7: delidev.v1.WatchTerminalsRequest
-	(*WatchTerminalsResponse)(nil),        // 8: delidev.v1.WatchTerminalsResponse
-	(*ClaimTerminalRequest)(nil),          // 9: delidev.v1.ClaimTerminalRequest
-	(*ClaimTerminalResponse)(nil),         // 10: delidev.v1.ClaimTerminalResponse
-	(*ReportTerminalRequest)(nil),         // 11: delidev.v1.ReportTerminalRequest
-	(*ReportTerminalResponse)(nil),        // 12: delidev.v1.ReportTerminalResponse
-	(*PublishTerminalOutputRequest)(nil),  // 13: delidev.v1.PublishTerminalOutputRequest
-	(*PublishTerminalOutputResponse)(nil), // 14: delidev.v1.PublishTerminalOutputResponse
-	(*Mutation)(nil),                      // 15: delidev.v1.Mutation
-	(*Resource)(nil),                      // 16: delidev.v1.Resource
+	(TerminalCreationMode)(0),             // 1: delidev.v1.TerminalCreationMode
+	(*CreateTerminalRequest)(nil),         // 2: delidev.v1.CreateTerminalRequest
+	(*ControlTerminalRequest)(nil),        // 3: delidev.v1.ControlTerminalRequest
+	(*CreateTerminalResponse)(nil),        // 4: delidev.v1.CreateTerminalResponse
+	(*ControlTerminalResponse)(nil),       // 5: delidev.v1.ControlTerminalResponse
+	(*WatchTerminalOutputRequest)(nil),    // 6: delidev.v1.WatchTerminalOutputRequest
+	(*WatchTerminalOutputResponse)(nil),   // 7: delidev.v1.WatchTerminalOutputResponse
+	(*WatchTerminalsRequest)(nil),         // 8: delidev.v1.WatchTerminalsRequest
+	(*WatchTerminalsResponse)(nil),        // 9: delidev.v1.WatchTerminalsResponse
+	(*ClaimTerminalRequest)(nil),          // 10: delidev.v1.ClaimTerminalRequest
+	(*ClaimTerminalResponse)(nil),         // 11: delidev.v1.ClaimTerminalResponse
+	(*ReportTerminalRequest)(nil),         // 12: delidev.v1.ReportTerminalRequest
+	(*ReportTerminalResponse)(nil),        // 13: delidev.v1.ReportTerminalResponse
+	(*PublishTerminalOutputRequest)(nil),  // 14: delidev.v1.PublishTerminalOutputRequest
+	(*PublishTerminalOutputResponse)(nil), // 15: delidev.v1.PublishTerminalOutputResponse
+	(*Mutation)(nil),                      // 16: delidev.v1.Mutation
+	(*Resource)(nil),                      // 17: delidev.v1.Resource
 }
 var file_delidev_v1_terminal_proto_depIdxs = []int32{
-	15, // 0: delidev.v1.CreateTerminalRequest.mutation:type_name -> delidev.v1.Mutation
-	15, // 1: delidev.v1.ControlTerminalRequest.mutation:type_name -> delidev.v1.Mutation
-	0,  // 2: delidev.v1.ControlTerminalRequest.action:type_name -> delidev.v1.TerminalAction
-	16, // 3: delidev.v1.CreateTerminalResponse.terminal:type_name -> delidev.v1.Resource
-	16, // 4: delidev.v1.ControlTerminalResponse.terminal:type_name -> delidev.v1.Resource
-	16, // 5: delidev.v1.WatchTerminalOutputResponse.terminal:type_name -> delidev.v1.Resource
-	16, // 6: delidev.v1.ReportTerminalResponse.terminal:type_name -> delidev.v1.Resource
-	1,  // 7: delidev.v1.TerminalService.CreateTerminal:input_type -> delidev.v1.CreateTerminalRequest
-	2,  // 8: delidev.v1.TerminalService.ControlTerminal:input_type -> delidev.v1.ControlTerminalRequest
-	5,  // 9: delidev.v1.TerminalService.WatchTerminalOutput:input_type -> delidev.v1.WatchTerminalOutputRequest
-	3,  // 10: delidev.v1.TerminalService.CreateTerminal:output_type -> delidev.v1.CreateTerminalResponse
-	4,  // 11: delidev.v1.TerminalService.ControlTerminal:output_type -> delidev.v1.ControlTerminalResponse
-	6,  // 12: delidev.v1.TerminalService.WatchTerminalOutput:output_type -> delidev.v1.WatchTerminalOutputResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	16, // 0: delidev.v1.CreateTerminalRequest.mutation:type_name -> delidev.v1.Mutation
+	1,  // 1: delidev.v1.CreateTerminalRequest.creation_mode:type_name -> delidev.v1.TerminalCreationMode
+	16, // 2: delidev.v1.ControlTerminalRequest.mutation:type_name -> delidev.v1.Mutation
+	0,  // 3: delidev.v1.ControlTerminalRequest.action:type_name -> delidev.v1.TerminalAction
+	17, // 4: delidev.v1.CreateTerminalResponse.terminal:type_name -> delidev.v1.Resource
+	17, // 5: delidev.v1.ControlTerminalResponse.terminal:type_name -> delidev.v1.Resource
+	17, // 6: delidev.v1.WatchTerminalOutputResponse.terminal:type_name -> delidev.v1.Resource
+	17, // 7: delidev.v1.ReportTerminalResponse.terminal:type_name -> delidev.v1.Resource
+	2,  // 8: delidev.v1.TerminalService.CreateTerminal:input_type -> delidev.v1.CreateTerminalRequest
+	3,  // 9: delidev.v1.TerminalService.ControlTerminal:input_type -> delidev.v1.ControlTerminalRequest
+	6,  // 10: delidev.v1.TerminalService.WatchTerminalOutput:input_type -> delidev.v1.WatchTerminalOutputRequest
+	4,  // 11: delidev.v1.TerminalService.CreateTerminal:output_type -> delidev.v1.CreateTerminalResponse
+	5,  // 12: delidev.v1.TerminalService.ControlTerminal:output_type -> delidev.v1.ControlTerminalResponse
+	7,  // 13: delidev.v1.TerminalService.WatchTerminalOutput:output_type -> delidev.v1.WatchTerminalOutputResponse
+	11, // [11:14] is the sub-list for method output_type
+	8,  // [8:11] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_terminal_proto_init() }
@@ -1094,7 +1155,7 @@ func file_delidev_v1_terminal_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_terminal_proto_rawDesc), len(file_delidev_v1_terminal_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,

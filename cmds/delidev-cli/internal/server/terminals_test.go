@@ -4,6 +4,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -357,5 +358,69 @@ func TestTerminalReportEscapedPathBoundsRemainRetryableThroughArchive(t *testing
 	report.ResultJson = append(bytes.Clone(raw), bytes.Repeat([]byte{' '}, terminal.MaxResultBytes-len(raw)+1)...)
 	if _, err := client.ReportTerminal(ctx, ownerRequest(worker, report)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatal("oversized result envelope was accepted", err)
+	}
+}
+
+func TestTerminalAtomicReuseOrCreateAcrossClients(t *testing.T) {
+	f, session, worker, _, _, _ := terminalFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	devices := delidevv1connect.NewDeviceServiceClient(http.DefaultClient, f.endpoint.URL)
+	code, token := randomCode(), randomCode()
+	codeHash, tokenHash := sha256.Sum256([]byte(code)), sha256.Sum256([]byte(token))
+	grant, err := devices.CreatePairing(ctx, ownerRequest(f.identity, &pb.CreatePairingRequest{RequestId: string(domain.NewID()), Name: "Terminal fixture client", Type: pb.DeviceType_DEVICE_TYPE_CLIENT, CodeDigest: codeHash[:]}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := devices.PairDevice(ctx, connect.NewRequest(&pb.PairDeviceRequest{RequestId: string(domain.NewID()), PairingId: grant.Msg.Pairing.Id, Code: code, DeviceId: string(domain.NewID()), CredentialDigest: tokenHash[:]})); err != nil {
+		t.Fatal(err)
+	}
+	paired := security.Identity{Token: token}
+	product := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, f.endpoint.URL)
+	type outcome struct {
+		response *connect.Response[pb.CreateTerminalResponse]
+		err      error
+	}
+	start, results := make(chan struct{}), make(chan outcome, 2)
+	requests := make([]*pb.CreateTerminalRequest, 2)
+	for index, identity := range []security.Identity{f.identity, paired} {
+		request := &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80, CreationMode: pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE}
+		requests[index] = request
+		go func() {
+			<-start
+			response, err := product.CreateTerminal(ctx, ownerRequest(identity, request))
+			results <- outcome{response, err}
+		}()
+	}
+	close(start)
+	first, second := <-results, <-results
+	if first.err != nil || second.err != nil {
+		t.Fatal("concurrent admission failed", first.err, second.err)
+	}
+	if first.response.Msg.Terminal.Id != second.response.Msg.Terminal.Id {
+		t.Fatal("independent clients created separate shells")
+	}
+	replayed, err := product.CreateTerminal(ctx, ownerRequest(f.identity, requests[0]))
+	if err != nil || !replayed.Msg.Replayed || replayed.Msg.Terminal.Id != first.response.Msg.Terminal.Id {
+		t.Fatal("automatic receipt changed original terminal", err)
+	}
+	if _, err := product.CreateTerminal(ctx, ownerRequest(worker, requests[0])); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("Worker gained automatic product admission", err)
+	}
+	unknown := &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80, CreationMode: pb.TerminalCreationMode(99)}
+	if _, err := product.CreateTerminal(ctx, ownerRequest(f.identity, unknown)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatal("unknown mode was accepted", err)
+	}
+	additional, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80}))
+	if err != nil || additional.Msg.Terminal.Id == first.response.Msg.Terminal.Id {
+		t.Fatal("unspecified explicit additional creation stopped creating", err)
+	}
+	for _, row := range []*pb.Resource{first.response.Msg.Terminal, additional.Msg.Terminal} {
+		if _, err := product.ControlTerminal(ctx, ownerRequest(f.identity, &pb.ControlTerminalRequest{Mutation: acctMutation(row, domain.NewID()), Action: pb.TerminalAction_TERMINAL_ACTION_CLOSE})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80, CreationMode: pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE})); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("pending original closes permitted a replacement shell", err)
 	}
 }
