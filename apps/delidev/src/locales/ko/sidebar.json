@@ -77,5 +77,6 @@
   "sidebar.conversationWorkSession": "작업 세션",
   "sidebar.conversationFork": "독립 Fork",
   "sidebar.conversationSidechat": "사이드 채팅",
-  "sidebar.conversationChildren": "{{name}} 아래의 대화"
+  "sidebar.conversationChildren": "{{name}} 아래의 대화",
+  "sidebar.projectActions": "프로젝트 작업 · {{name}} · {{id}}"
 }

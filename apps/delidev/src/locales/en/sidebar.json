@@ -77,5 +77,6 @@
   "sidebar.conversationWorkSession": "Work session",
   "sidebar.conversationFork": "Independent Fork",
   "sidebar.conversationSidechat": "Side Chat",
-  "sidebar.conversationChildren": "Conversations beneath {{name}}"
+  "sidebar.conversationChildren": "Conversations beneath {{name}}",
+  "sidebar.projectActions": "Project actions · {{name}} · {{id}}"
 }
