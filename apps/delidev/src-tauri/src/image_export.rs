@@ -187,25 +187,35 @@ pub fn save_new(path: &Path, bytes: &[u8]) -> Outcome {
         return Outcome::Failed;
     };
     let temporary = parent.join(format!(".delidev-export-{}.tmp", uuid::Uuid::now_v7()));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    // Creation failure grants no ownership of that path, even on a UUID
+    // collision.
+    let Ok(mut file) = options.open(&temporary) else {
+        return Outcome::Failed;
+    };
     let before_publish = || -> std::io::Result<()> {
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         // A hard link is an atomic create-new, unlike a replacing rename.
         fs::hard_link(&temporary, path)?;
         Ok(())
     };
+    let mut before_publish = before_publish;
     if before_publish().is_err() {
-        let _ = fs::remove_file(&temporary);
-        return Outcome::Failed;
+        drop(file);
+        return match fs::remove_file(&temporary) {
+            Ok(()) => Outcome::Failed,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Outcome::Failed,
+            Err(_) => Outcome::Uncertain,
+        };
     }
+    drop(file);
     let removed = fs::remove_file(&temporary);
     #[cfg(unix)]
     let synced = fs::File::open(parent).and_then(|f| f.sync_all());
