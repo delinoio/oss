@@ -133,7 +133,9 @@ func (t *Tx) PricingIdentities() ([]domain.ModelIdentity, error) {
 	if e != nil {
 		return nil, storageError(e)
 	}
-	rows, e = t.tx.QueryContext(t.ctx, "SELECT body FROM entities WHERE kind='agent' ORDER BY id LIMIT 5001")
+	// Stream every Agent row; the bound applies to distinct identities, not
+	// duplicate routes or raw records. The cursor retains one bounded body.
+	rows, e = t.tx.QueryContext(t.ctx, "SELECT body FROM entities WHERE kind='agent' ORDER BY id")
 	if e != nil {
 		return nil, storageError(e)
 	}
