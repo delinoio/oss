@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,17 +137,107 @@ func (f *forwardFixture) runPair(t *testing.T, record *pb.Resource, identity sec
 		t.Fatal("missing original Worker forward", f.lane.Err())
 	}
 	worker := f.config(t, f.lane.Msg().Forward, true, f.worker)
+	workerReady := make(chan string, 1)
+	worker.Ready = func(endpoint string) error { workerReady <- endpoint; return nil }
 	workerDone := make(chan error, 1)
 	go func() { workerDone <- forwarding.Run(f.ctx, worker) }()
-	select {
-	case endpoint := <-ready:
-		return endpoint, clientDone, workerDone
-	case err := <-clientDone:
-		t.Fatal("client ended before readiness", err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("forward readiness timeout")
+	ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
+	defer cancel()
+	endpoint, err := awaitForwardPairReady(ctx, ready, workerReady, clientDone, workerDone)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return "", nil, nil
+	return endpoint, clientDone, workerDone
+}
+
+// Each original stream publishes Ready independently. A client endpoint alone
+// cannot establish that the Worker reached the deletion fixture's ready boundary.
+func awaitForwardPairReady(ctx context.Context, clientReady, workerReady <-chan string, clientDone, workerDone <-chan error) (string, error) {
+	var endpoint string
+	for clientReady != nil || workerReady != nil {
+		select {
+		case endpoint = <-clientReady:
+			clientReady = nil
+		case <-workerReady:
+			workerReady = nil
+		case err := <-clientDone:
+			return "", fmt.Errorf("client ended before pair readiness: %v", err)
+		case err := <-workerDone:
+			return "", fmt.Errorf("Worker ended before pair readiness: %v", err)
+		case <-ctx.Done():
+			return "", fmt.Errorf("forward readiness timeout (client missing=%t, Worker missing=%t): %w", clientReady != nil, workerReady != nil, ctx.Err())
+		}
+	}
+	return endpoint, nil
+}
+
+func TestForwardPairReadyObservation(t *testing.T) {
+	t.Run("delayed Worker", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		client, worker := make(chan string), make(chan string)
+		done := make(chan error, 1)
+		result := make(chan string, 1)
+		go func() {
+			endpoint, err := awaitForwardPairReady(ctx, client, worker, nil, nil)
+			result <- endpoint
+			done <- err
+		}()
+		// The unbuffered send acknowledges receipt of client Ready while the
+		// independent Worker barrier still has not been released.
+		select {
+		case client <- "127.0.0.1:12345":
+		case <-ctx.Done():
+			t.Fatal("client Ready was not observed", ctx.Err())
+		}
+		select {
+		case endpoint := <-result:
+			t.Fatalf("returned before Worker Ready: %s", endpoint)
+		default:
+		}
+		select {
+		case worker <- "":
+		case <-ctx.Done():
+			t.Fatal("Worker Ready was not observed", ctx.Err())
+		}
+		if endpoint := <-result; endpoint != "127.0.0.1:12345" {
+			t.Fatal("changed original endpoint", endpoint)
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
+	for _, peer := range []string{"client", "Worker"} {
+		t.Run(peer+" premature exit", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			clientDone, workerDone := make(chan error, 1), make(chan error, 1)
+			if peer == "client" {
+				clientDone <- fmt.Errorf("fixture ended")
+			} else {
+				workerDone <- fmt.Errorf("fixture ended")
+			}
+			_, err := awaitForwardPairReady(ctx, make(chan string), make(chan string), clientDone, workerDone)
+			if err == nil || !strings.Contains(err.Error(), peer+" ended") {
+				t.Fatal("missing peer diagnostic", err)
+			}
+		})
+	}
+	t.Run("missing Worker", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		client := make(chan string)
+		done := make(chan error, 1)
+		go func() { _, err := awaitForwardPairReady(ctx, client, make(chan string), nil, nil); done <- err }()
+		select {
+		case client <- "127.0.0.1:12345":
+		case <-ctx.Done():
+			t.Fatal("client Ready was not observed", ctx.Err())
+		}
+		cancel()
+		if err := <-done; err == nil || !strings.Contains(err.Error(), "client missing=false, Worker missing=true") {
+			t.Fatal("missing bounded readiness diagnostic", err)
+		}
+	})
 }
 func awaitForward(t *testing.T, done <-chan error) {
 	t.Helper()
