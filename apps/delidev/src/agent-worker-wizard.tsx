@@ -279,7 +279,7 @@ export function AgentWorkerWizard(props: { initial?: Resource; active: boolean; 
   useLocale();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: props.active });
   if (status.data?.capabilities.includes(SystemCapability.AGENT_WORKER_SOURCE_ROUTES_V1)) return <AgentWorkerSourceWizard {...props} />;
-  if (props.initial?.schemaVersion === 3 && status.error) return <><Problem error={status.error} actions={<SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!props.active || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</SettingsActionButton>} /><SettingsTaskDismissButton onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</SettingsTaskDismissButton></>;
-  if (props.initial?.schemaVersion === 3) return <><p role="alert">{copy("agent-worker-wizard.updateSourceServer")}</p><SettingsTaskDismissButton onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</SettingsTaskDismissButton></>;
+  if ((props.initial?.schemaVersion === 3 || props.initial?.schemaVersion===4) && status.error) return <><Problem error={status.error} actions={<SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!props.active || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</SettingsActionButton>} /><SettingsTaskDismissButton onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</SettingsTaskDismissButton></>;
+  if ((props.initial?.schemaVersion === 3 || props.initial?.schemaVersion===4)) return <><p role="alert">{copy("agent-worker-wizard.updateSourceServer")}</p><SettingsTaskDismissButton onClick={props.cancel}>{copy("agent-worker-wizard.cancel")}</SettingsTaskDismissButton></>;
   return <LegacyAgentWorkerWizard {...props} />;
 }

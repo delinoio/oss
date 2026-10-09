@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 export enum SettingsCategory {
+  CodexCLI = "codex-cli",
   Appearance = "appearance",
   KeyboardShortcuts = "keyboard-shortcuts",
   SubscriptionAccounts = "subscription-accounts", ApiAccounts = "api-accounts", Providers = "providers", AgentWorkers = "agent-workers", Instructions = "instructions",

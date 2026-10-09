@@ -3518,3 +3518,31 @@ The dedicated `export_generated_image` native operation accepts one bounded orig
 Publication uses a synced same-directory temporary file and atomic create-new link. Existing destinations, including symlinks, are never replaced; the user chooses a new filename. Cancellation is terminal and writes nothing. A failure after destination publication reports uncertainty and retains its original receipt. Quit fences new export admission and late dialogs on the UI loop, then joins original disk publication off that loop before native exit. The process owns one pending export and at most 128 immutable receipts; receipts are never evicted into new write authority. A changed request or another window instance cannot replay or read one. Frontend remounts retain the uncertainty fence and can explicitly observe the original receipt. Exported files are user-owned independent copies and session deletion never removes them. Downloads, general file dialogs and navigation remain denied under their existing boundaries.
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
+
+## Codex CLI inherited Settings
+
+Issue #1987 uses Settings > Harnesses > Codex CLI as the connected-server
+editor for the existing schema-4 `harness_defaults`. Project configuration and
+Agent Worker Configure use the same typed field editor and inheritance state.
+No desktop-only default store or native installation/account administration is
+introduced. Source and API-profile scopes retain their original identities.
+
+Each field distinguishes Inherit from Override, displays the configured effective
+value and owner, and provides an explicit reset. Unknown native defaults remain
+unavailable until the original Runner process supplies verified source evidence;
+this editor does not obtain that evidence or grant execution support. Agent model
+selections stay attached to original ordered source routes. Its shared preview
+uses the selected source; project-dependent values are resolved only for the
+execution's original Project. Legacy model/effort/options remain reference anchors
+and are not presented as effective inherited values.
+
+System 63 gates edits and schema-4 saves. Subagent and approval-review sections
+require their existing adapters; unsupported retained values remain visible for
+reset. AI auto-review writes `on-request` with the reviewer selection. Service
+tiers reuse Native default, Fast and Custom choices without entitlement claims.
+The original revision-bearing Configuration and Agent Worker save flows own all
+mutations. Revision conflicts retain draft fields and block saving until refreshed.
+English/Korean labels, static search targets and keyboard focus identify the
+original controls without indexing account values or native observations.
+Portable schema 7 and imports 1–6 preserve the foundation's original ownership.
+No protocol numbers, database migration, native launch or validation probe is added.

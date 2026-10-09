@@ -709,3 +709,31 @@ fails before input; it never becomes an explicit cached model override. Explicit
 settings retain their own authority when no native field is consumed. Historical
 configuration proofs remain immutable. Native observed effective settings and
 independent cleanup still belong to the existing execution contract.
+
+## Codex CLI inherited Settings
+
+Issue #1987 uses Settings > Harnesses > Codex CLI as the connected-server
+editor for the existing schema-4 `harness_defaults`. Project configuration and
+Agent Worker Configure use the same typed field editor and inheritance state.
+No desktop-only default store or native installation/account administration is
+introduced. Source and API-profile scopes retain their original identities.
+
+Each field distinguishes Inherit from Override, displays the configured effective
+value and owner, and provides an explicit reset. Unknown native defaults remain
+unavailable until the original Runner process supplies verified source evidence;
+this editor does not obtain that evidence or grant execution support. Agent model
+selections stay attached to original ordered source routes. Its shared preview
+uses the selected source; project-dependent values are resolved only for the
+execution's original Project. Legacy model/effort/options remain reference anchors
+and are not presented as effective inherited values.
+
+System 63 gates edits and schema-4 saves. Subagent and approval-review sections
+require their existing adapters; unsupported retained values remain visible for
+reset. AI auto-review writes `on-request` with the reviewer selection. Service
+tiers reuse Native default, Fast and Custom choices without entitlement claims.
+The original revision-bearing Configuration and Agent Worker save flows own all
+mutations. Revision conflicts retain draft fields and block saving until refreshed.
+English/Korean labels, static search targets and keyboard focus identify the
+original controls without indexing account values or native observations.
+Portable schema 7 and imports 1–6 preserve the foundation's original ownership.
+No protocol numbers, database migration, native launch or validation probe is added.

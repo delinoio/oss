@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { EntityKind, SubscriptionServiceIdentity, type Resource } from "./gen/delidev/v1/delidev_pb.js";
+import { readableHarnessInheritance } from "./harness-inheritance.js";
 import { apiFormat, apiFormatProfile } from "./api-formats.js";
 
 export enum SubscriptionServiceId { ChatGPT = "chatgpt", Claude = "claude", Grok = "grok", OpenCodeGo = "opencode_go" }
@@ -31,7 +32,7 @@ function largeJob(value: ResourceDocument): boolean {
 export function decodeResourceDocument(resource: Resource): ResourceDocument | undefined {
   const size = resource.documentJson.byteLength;
   const typedJob = resource.kind === EntityKind.JOB && resource.schemaVersion === 1;
-  if (size > (typedJob ? 4 << 20 : 1 << 20) || ![1, 2, 3].includes(resource.schemaVersion)) return;
+  if (size > (typedJob ? 4 << 20 : 1 << 20) || ![1, 2, 3, 4].includes(resource.schemaVersion)) return;
   try {
     const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson));
     if (!object(value) || size > 1 << 20 && !largeJob(value)) return;
@@ -46,6 +47,8 @@ export function supportsResourceSchema(resource: Resource): boolean {
 // Version 2 is accepted only for its owning identity family. This does not grant
 // mutation, native readiness or interpretation of a retired original document.
 function supportsDocumentSchema(resource: Resource, value: ResourceDocument): boolean {
+ if(configurationSchemaVersion(resource.kind,value)===4 && resource.schemaVersion!==4)return false;
+ if(resource.schemaVersion===4)return resource.kind===EntityKind.AGENT?readableHarnessInheritance("agent",value):[EntityKind.PROJECT,EntityKind.SETTINGS].includes(resource.kind)&&readableHarnessInheritance("defaults",value);
   if (resource.schemaVersion === 1) return !(resource.kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || resource.kind === EntityKind.SETTINGS && (Object.hasOwn(value, "automatic_plan_approval") || Object.hasOwn(value, "plan_mode_default") || Object.hasOwn(value, "branch_prefix")) || resource.kind === EntityKind.ACCOUNT && Object.hasOwn(value, "api_protocol") || resource.kind === EntityKind.PROVIDER && Object.hasOwn(value, "api_formats") || resource.kind === EntityKind.AGENT && Object.hasOwn(value, "routes"));
   if (resource.schemaVersion === 2 && [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind) && configurationSchemaVersion(resource.kind, value) === 3) return false;
  if (resource.schemaVersion === 2 && [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind)) return resource.kind === EntityKind.PROJECT ? object(value.settings) : typeof value.automatic_plan_approval === "boolean";
@@ -69,6 +72,7 @@ function supportsDocumentSchema(resource: Resource, value: ResourceDocument): bo
     Array.isArray(value.harnesses) && value.harnesses.length === 1 && value.harnesses[0] === subscriptionServiceHarnesses[service];
 }
 export function configurationSchemaVersion(kind: EntityKind, value: Record<string, unknown>): number {
+ if(kind===EntityKind.AGENT && Object.hasOwn(value,"harness_settings") || [EntityKind.PROJECT,EntityKind.SETTINGS].includes(kind) && (Object.hasOwn(value,"harness_defaults")||Object.hasOwn(value,"harness_defaults_version")))return 4;
  if (kind === EntityKind.SETTINGS && (Object.hasOwn(value, "plan_mode_default") || Object.hasOwn(value, "branch_prefix")) || kind === EntityKind.PROJECT && object(value.settings) && (Object.hasOwn(value.settings, "plan_mode_default") || Object.hasOwn(value.settings, "branch_prefix"))) return 3;
   if (kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || kind === EntityKind.SETTINGS && Object.hasOwn(value, "automatic_plan_approval")) return 2;
   if (kind === EntityKind.ACCOUNT && value.type === "api" && apiFormat(value.api_protocol) || kind === EntityKind.PROVIDER && Array.isArray(value.api_formats) && value.api_formats.length > 0) return 3;

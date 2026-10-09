@@ -419,3 +419,5 @@ proof is immutable in accepted configurations and revalidated by the next actual
 process before settings/input/relay release. Unknown observations confer no model
 authority; no separate probe, RPC or SQLite migration is added. Follow the catalog
 and harness contracts.
+
+Codex CLI Settings shares the schema-4 inherited configuration owner across connected-server, Project and Agent edits. Follow the desktop and catalog Codex inherited Settings sections; static localized search and configuration previews grant no native authority.

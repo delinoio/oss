@@ -15,15 +15,16 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
   useLocale();
   const data = document(row), supported = supportsResourceSchema(row);
   const [expanded, expand] = useState(false), region = useId();
-  const routes = supported ? row.schemaVersion === 3 ? items(data.routes).map(object) : [data] : [];
-  const modelIDs = routes.map(route => text(route.model_id));
+  const routes = supported ? [3,4].includes(row.schemaVersion) && items(data.routes).length ? items(data.routes).map(object) : [data] : [];
+  const inheritedModels = items(object(data.harness_settings).models).map(object);
+  const modelIDs = routes.map((route,index) => row.schemaVersion===4 ? inheritedModels[index]?.state==="override" ? text(inheritedModels[index].value) : "" : text(route.model_id));
   const accountCount = (index: number) => {
     const accounts = routes[index]?.accounts;
     return <span className="agent-route-account-count">{Array.isArray(accounts) ? copy("agent-worker-row.accountCount", { count: accounts.length }) : copy("agent-worker-row.accountCountUnavailable")}</span>;
   };
   const metadata = useAgentModels(expanded ? modelIDs : modelIDs.slice(0, 1));
   const harness = text(data.harness), knownHarness = Object.hasOwn(workerHarnessNames, harness);
-  const model = (id: string) => { const value = metadata(id); return <>{value.state === ModelSummaryState.Ready ? <><code className="agent-model-native">{value.nativeID}</code>{value.name !== value.nativeID ? <span className="agent-model-name">{value.name}</span> : null}</> : <span role={value.state === ModelSummaryState.Loading ? "status" : undefined}>{copy(value.state === ModelSummaryState.Loading ? "agent-worker-row.loadingModel" : "agent-worker-row.unavailableModel")}</span>}</>; };
+  const model = (id: string) => { if(row.schemaVersion===4 && !id)return <span>{copy("harness-settings.inherit")}</span>; const value = metadata(id); return <>{value.state === ModelSummaryState.Ready ? <><code className="agent-model-native">{value.nativeID}</code>{value.name !== value.nativeID ? <span className="agent-model-name">{value.name}</span> : null}</> : <span role={value.state === ModelSummaryState.Loading ? "status" : undefined}>{copy(value.state === ModelSummaryState.Loading ? "agent-worker-row.loadingModel" : "agent-worker-row.unavailableModel")}</span>}</>; };
   let name = resourceName(row);
   // Unsupported schemas stay non-actionable. Only bounded inert name text is
   // projected within the Agent name's 256-byte UTF-8 limit for identifying the
@@ -46,7 +47,7 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
       {supported ? <div className="agent-model-summary"><span>{copy("agent-worker-row.configuredModel")}</span>{model(modelIDs[0] ?? "")}{accountCount(0)}{modelIDs.length > 1 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" aria-expanded={expanded} aria-controls={region} onClick={() => expand(value => !value)}>{copy("agent-worker-row.moreModels", { count: modelIDs.length - 1 })}</DisclosureButton> : null}</div> : null}
       {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(id)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
-      {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
+      {!supported && [1, 2, 3, 4].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
       <small>{row.id}</small>
       </div>
