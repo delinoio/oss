@@ -7,6 +7,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -22,7 +24,7 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	s := &Service{Store: db}
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 	m := domain.ModelIdentity{SubscriptionService: domain.SubscriptionClaude, NativeID: "claude-exact"}
@@ -74,6 +76,27 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 		manual = p.ID
 		return e
 	})
+	if e := db.Close(); e != nil {
+		t.Fatal(e)
+	}
+	db, e = store.Open(context.Background(), root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.Store = db
+	if e := db.Read(ctx, func(tx *store.Tx) error {
+		policy, e := tx.PricingPolicy(m)
+		if e != nil || policy.Mode != domain.ManualPricing || policy.Revision != 1 {
+			t.Fatal("restart lost Manual policy", policy, e)
+		}
+		price, e := tx.RetainedActivePricing(m.Key())
+		if e != nil || price == nil || price.ID != manual {
+			t.Fatal("restart lost Manual price", price, e)
+		}
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
 	snapshot.Catalog.References = map[string]tokenprices.Reference{} // successful no-match
 	mutate(func(tx *store.Tx) error {
 		if e := s.applyReference(tx, m, snapshot); e != nil {
@@ -102,6 +125,27 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 		}
 		return e
 	})
+	if e := db.Close(); e != nil {
+		t.Fatal(e)
+	}
+	db, e = store.Open(context.Background(), root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.Store = db
+	if e := db.Read(ctx, func(tx *store.Tx) error {
+		policy, e := tx.PricingPolicy(m)
+		if e != nil || policy.Mode != domain.AutomaticPricing || policy.Revision != 2 {
+			t.Fatal("restart lost unmatched Automatic policy", policy, e)
+		}
+		price, e := tx.RetainedActivePricing(m.Key())
+		if e != nil || price != nil {
+			t.Fatal("restart restored removed automatic price", price, e)
+		}
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
 	// Reappearance after no-match uses a new version; the old active revision is
 	// not reused, and no matching by aliases or another provider occurs.
 	snapshot.Catalog.References["openai\x00claude-exact"] = tokenprices.Reference{Provider: "openai", Model: "claude-exact", Basis: &basis}
@@ -200,6 +244,75 @@ func TestAutomaticPricingUsesOnlyReviewedUnchangedPresetNamespaces(t *testing.T)
 		return nil, err
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManualPriceWinsAgainstInFlightAutomaticRefresh(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := &Service{Store: db}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	model := domain.ModelIdentity{SubscriptionService: domain.SubscriptionClaude, NativeID: "claude-exact"}
+	entered, release := make(chan struct{}), make(chan struct{})
+	manager := tokenprices.New(root, oauthHTTPTransport(func(r *http.Request) (*http.Response, error) {
+		close(entered)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return nil, r.Context().Err()
+		}
+		raw := `{"anthropic":{"id":"anthropic","models":{"claude-exact":{"id":"claude-exact","cost":{"input":1,"output":5}}}}}`
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(raw))}, nil
+	}), nil, s.publishTokenPrices)
+	defer manager.Close()
+	finished := make(chan error, 1)
+	go func() { finished <- manager.Refresh(ctx) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not begin")
+	}
+	var manual domain.ID
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.manual-during-refresh", nil, func(tx *store.Tx) (any, error) {
+		if _, err := tx.SetPricingPolicy(model, domain.ManualPricing, 0); err != nil {
+			return nil, err
+		}
+		input, output := "2", "9"
+		version, err := tx.PutPricing(model.Key(), 0, domain.NewID(), domain.TokenPricing{Currency: "USD", Source: "Manual fixture", AsOf: "2026-10-09", InputMode: domain.UniformInputPrice, InputPerMillion: &input, OutputPerMillion: &output})
+		manual = version.ID
+		return nil, err
+	})
+	close(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not settle")
+	}
+	if err := db.Read(ctx, func(tx *store.Tx) error {
+		price, err := tx.RetainedActivePricing(model.Key())
+		if err != nil || price == nil || price.ID != manual || price.Revision != 1 || *price.Basis.InputPerMillion != "2" {
+			t.Fatal("automatic refresh replaced manual price", price, err)
+		}
+		policy, err := tx.PricingPolicy(model)
+		if err != nil || policy.Mode != domain.ManualPricing || policy.Revision != 1 {
+			t.Fatal("refresh changed manual policy", policy, err)
+		}
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
 }
