@@ -1966,3 +1966,18 @@ profile or retained private checkpoint; legacy profiles retain their closed
 metadata/history checks. Native method or schema rejection does not permit
 rollback, fallback, omission, resend or a fresh target. A retained empty prefix
 is separately proved and never manufactures an old turn or input.
+
+### Native harness defaults — issue #1986
+
+Worker 39 captures typed non-secret defaults from the existing verified Codex
+`config/read` exchange of the original API or managed-subscription execution
+process, before thread settings. Null/absent values remain unknown; malformed
+shapes grant no proof. No separate probe, native model-list default flag or
+requested model grants fallback authority. Consumed default proofs freeze their
+source/Worker/executable scope and digest in execution configuration. Verify them
+at initialization and on the existing exact-directory pre-thread configuration
+check, before overrides, input and protected relay release. Changed or unsupported
+values fail with a named no-input configuration error and retain independent
+original process cleanup. The original Ready receipt records bounded typed values
+for future configurations; it does not rewrite accepted history. Follow the
+[catalog provenance contract](cmds-delidev-catalog-contract.md#verified-native-default-provenance).

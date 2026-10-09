@@ -51,6 +51,7 @@ const (
 )
 
 type ExecutionStartupObservation struct {
+	NativeDefaults   *NativeHarnessDefaults        `json:"native_defaults,omitempty"`
 	FailureKind      ExecutionStartupFailureKind   `json:"failure_kind,omitempty"`
 	State            ExecutionStartupState         `json:"state"`
 	Phase            ExecutionStartupPhase         `json:"phase"`
@@ -79,6 +80,9 @@ func ValidNativeVersionMetadata(v string) bool {
 }
 
 func (o ExecutionStartupObservation) Validate() error {
+	if o.NativeDefaults != nil && (o.State != StartupReady || o.Harness != Codex || o.NativeDefaults.Validate() != nil) {
+		return StartupRejectionUncertain()
+	}
 	if o.FailureKind != StartupFailureUnspecified && (o.FailureKind != StartupImageInputRejected || o.State != StartupFailed || o.Phase != StartupInput || o.Harness != Codex || o.ProblemCode != Unsupported || o.InputDelivery != StartupNotSent || o.Cleanup != StartupCleanupConfirmed) {
 		return StartupRejectionUncertain()
 	}

@@ -428,6 +428,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		unregister := config.observations.register(input.AccountID, client, managed)
 		defer unregister()
 	}
+	// Recheck the frozen original default proof before any thread override or input.
+	if proof := input.Configuration.NativeDefaults; proof != nil {
+		if proof.DeviceID != connection.Credential.DeviceID {
+			return nil, domain.NativeDefaultsUnavailable()
+		}
+		if err := client.VerifyNativeDefaults(proof, input.Installation.ExecutableSHA256); err != nil {
+			return nil, err
+		}
+	}
 	input.Installation.Version = client.Version()
 	publisher.nativeVersion = client.Version()
 	mapper := NewCodexEventPublisher(publisher)
@@ -460,6 +469,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
+	if config.startup != nil && config.nativeHarnessDefaults {
+		config.startup.nativeDefaults = client.NativeDefaults()
+	}
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
 	}

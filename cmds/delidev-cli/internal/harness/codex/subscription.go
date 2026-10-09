@@ -117,6 +117,9 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 	if err := c.managedCall(ctx, "config/read", map[string]any{"cwd": cwd, "includeLayers": false}, &result); err != nil {
 		return err
 	}
+	if err := c.captureNativeDefaults(result.Config); err != nil {
+		return err
+	}
 	store := "file"
 	if c.mode == QuotaProtocol {
 		store = "ephemeral"

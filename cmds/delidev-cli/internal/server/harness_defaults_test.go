@@ -7,6 +7,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"google.golang.org/protobuf/proto"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +71,48 @@ func TestHarnessDefaultsPortableMappingsAndNullRejection(t *testing.T) {
 	}
 	if domain.ConfigurationBundleVersion != 7 {
 		t.Fatal("inheritance must have a versioned portable shape")
+	}
+}
+
+func TestHarnessNativeDefaultsRequireOriginalReadyAndNegotiation(t *testing.T) {
+	f := directStartupFixture(t)
+	f.registerGrant(t)
+	model := "native-fixture"
+	o := domain.ExecutionStartupObservation{State: domain.StartupReady, Phase: domain.StartupSettings, Harness: domain.Codex, NativeVersion: domain.CodexProtocolVersion, ExecutableSHA256: strings.Repeat("a", 64), Protocol: domain.CodexAppServer, CorrelationID: f.job, InputDelivery: domain.StartupNotSent, NativeDefaults: &domain.NativeHarnessDefaults{Version: 1, Model: &model}}
+	if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, o)); err == nil {
+		t.Fatal("unnegotiated defaults accepted")
+	}
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-default-capability", nil, func(tx *store.Tx) (any, error) {
+		r, m, e := activeMachine(tx, f.input.MachineID)
+		if e != nil {
+			return nil, e
+		}
+		m.WorkerCapabilities = append(m.WorkerCapabilities, domain.NativeHarnessDefaultsV1)
+		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := startupRequest(f, o)
+	first, err := f.client.ReportExecutionStartup(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := f.client.ReportExecutionStartup(context.Background(), req)
+	if err != nil || !replay.Msg.Replayed || !proto.Equal(first.Msg.Observation, replay.Msg.Observation) {
+		t.Fatalf("default observation receipt changed: %v", err)
+	}
+	err = f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		proof, e := tx.NativeHarnessDefaults(f.input.MachineID, f.input.AccountID, "")
+		if e != nil {
+			return e
+		}
+		if proof.JobID != f.job || proof.ExecutionID != f.input.ExecutionID || proof.ConnectionID != f.input.ConnectionID || proof.Defaults.Model == nil || *proof.Defaults.Model != model {
+			t.Fatal("original default ownership changed")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

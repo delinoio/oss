@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1     WorkerCapability = 39
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1          WorkerCapability = 29
 	WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1       WorkerCapability = 30
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1   WorkerCapability = 28
@@ -64,6 +65,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		39: "WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1",
 		29: "WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1",
 		30: "WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
 		28: "WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
@@ -99,6 +101,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1":        39,
 		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":             29,
 		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":          30,
 		"WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":      28,
@@ -3472,6 +3475,7 @@ type ExecutionStartupObservation struct {
 	InputDelivery    ExecutionStartupInputDelivery `protobuf:"varint,9,opt,name=input_delivery,json=inputDelivery,proto3,enum=delidev.v1.ExecutionStartupInputDelivery" json:"input_delivery,omitempty"`
 	Cleanup          ExecutionStartupCleanup       `protobuf:"varint,10,opt,name=cleanup,proto3,enum=delidev.v1.ExecutionStartupCleanup" json:"cleanup,omitempty"`
 	FailureKind      ExecutionStartupFailureKind   `protobuf:"varint,11,opt,name=failure_kind,json=failureKind,proto3,enum=delidev.v1.ExecutionStartupFailureKind" json:"failure_kind,omitempty"`
+	NativeDefaults   *NativeHarnessDefaults        `protobuf:"bytes,12,opt,name=native_defaults,json=nativeDefaults,proto3" json:"native_defaults,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -3583,6 +3587,98 @@ func (x *ExecutionStartupObservation) GetFailureKind() ExecutionStartupFailureKi
 	return ExecutionStartupFailureKind_EXECUTION_STARTUP_FAILURE_KIND_UNSPECIFIED
 }
 
+func (x *ExecutionStartupObservation) GetNativeDefaults() *NativeHarnessDefaults {
+	if x != nil {
+		return x.NativeDefaults
+	}
+	return nil
+}
+
+// Original actual-process config/read values; absence means unknown.
+type NativeHarnessDefaults struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Version           uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	Model             *string                `protobuf:"bytes,2,opt,name=model,proto3,oneof" json:"model,omitempty"`
+	Effort            *string                `protobuf:"bytes,3,opt,name=effort,proto3,oneof" json:"effort,omitempty"`
+	ServiceTier       *string                `protobuf:"bytes,4,opt,name=service_tier,json=serviceTier,proto3,oneof" json:"service_tier,omitempty"`
+	ApprovalPolicy    *string                `protobuf:"bytes,5,opt,name=approval_policy,json=approvalPolicy,proto3,oneof" json:"approval_policy,omitempty"`
+	ApprovalsReviewer *string                `protobuf:"bytes,6,opt,name=approvals_reviewer,json=approvalsReviewer,proto3,oneof" json:"approvals_reviewer,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *NativeHarnessDefaults) Reset() {
+	*x = NativeHarnessDefaults{}
+	mi := &file_delidev_v1_worker_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeHarnessDefaults) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeHarnessDefaults) ProtoMessage() {}
+
+func (x *NativeHarnessDefaults) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_worker_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeHarnessDefaults.ProtoReflect.Descriptor instead.
+func (*NativeHarnessDefaults) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *NativeHarnessDefaults) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *NativeHarnessDefaults) GetModel() string {
+	if x != nil && x.Model != nil {
+		return *x.Model
+	}
+	return ""
+}
+
+func (x *NativeHarnessDefaults) GetEffort() string {
+	if x != nil && x.Effort != nil {
+		return *x.Effort
+	}
+	return ""
+}
+
+func (x *NativeHarnessDefaults) GetServiceTier() string {
+	if x != nil && x.ServiceTier != nil {
+		return *x.ServiceTier
+	}
+	return ""
+}
+
+func (x *NativeHarnessDefaults) GetApprovalPolicy() string {
+	if x != nil && x.ApprovalPolicy != nil {
+		return *x.ApprovalPolicy
+	}
+	return ""
+}
+
+func (x *NativeHarnessDefaults) GetApprovalsReviewer() string {
+	if x != nil && x.ApprovalsReviewer != nil {
+		return *x.ApprovalsReviewer
+	}
+	return ""
+}
+
 // Only server-resolved configuration may become a native Git assignment.
 type DiscoverRepositoryBranchesRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -3599,7 +3695,7 @@ type DiscoverRepositoryBranchesRequest struct {
 
 func (x *DiscoverRepositoryBranchesRequest) Reset() {
 	*x = DiscoverRepositoryBranchesRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[46]
+	mi := &file_delidev_v1_worker_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3611,7 +3707,7 @@ func (x *DiscoverRepositoryBranchesRequest) String() string {
 func (*DiscoverRepositoryBranchesRequest) ProtoMessage() {}
 
 func (x *DiscoverRepositoryBranchesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[46]
+	mi := &file_delidev_v1_worker_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3624,7 +3720,7 @@ func (x *DiscoverRepositoryBranchesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use DiscoverRepositoryBranchesRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverRepositoryBranchesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{46}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *DiscoverRepositoryBranchesRequest) GetRequestId() string {
@@ -3687,7 +3783,7 @@ type DiscoverRepositoryBranchesResponse struct {
 
 func (x *DiscoverRepositoryBranchesResponse) Reset() {
 	*x = DiscoverRepositoryBranchesResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[47]
+	mi := &file_delidev_v1_worker_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3699,7 +3795,7 @@ func (x *DiscoverRepositoryBranchesResponse) String() string {
 func (*DiscoverRepositoryBranchesResponse) ProtoMessage() {}
 
 func (x *DiscoverRepositoryBranchesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[47]
+	mi := &file_delidev_v1_worker_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3712,7 +3808,7 @@ func (x *DiscoverRepositoryBranchesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use DiscoverRepositoryBranchesResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverRepositoryBranchesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{47}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *DiscoverRepositoryBranchesResponse) GetJob() *Resource {
@@ -4013,7 +4109,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\vobservation\x18\x04 \x01(\v2'.delidev.v1.ExecutionStartupObservationR\vobservation\"\x87\x01\n" +
 	"\x1eReportExecutionStartupResponse\x12I\n" +
 	"\vobservation\x18\x01 \x01(\v2'.delidev.v1.ExecutionStartupObservationR\vobservation\x12\x1a\n" +
-	"\breplayed\x18\x02 \x01(\bR\breplayed\"\xc0\x04\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"\x8c\x05\n" +
 	"\x1bExecutionStartupObservation\x127\n" +
 	"\x05state\x18\x01 \x01(\x0e2!.delidev.v1.ExecutionStartupStateR\x05state\x127\n" +
 	"\x05phase\x18\x02 \x01(\x0e2!.delidev.v1.ExecutionStartupPhaseR\x05phase\x12\x18\n" +
@@ -4026,7 +4122,20 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x0einput_delivery\x18\t \x01(\x0e2).delidev.v1.ExecutionStartupInputDeliveryR\rinputDelivery\x12=\n" +
 	"\acleanup\x18\n" +
 	" \x01(\x0e2#.delidev.v1.ExecutionStartupCleanupR\acleanup\x12J\n" +
-	"\ffailure_kind\x18\v \x01(\x0e2'.delidev.v1.ExecutionStartupFailureKindR\vfailureKind\"\xac\x02\n" +
+	"\ffailure_kind\x18\v \x01(\x0e2'.delidev.v1.ExecutionStartupFailureKindR\vfailureKind\x12J\n" +
+	"\x0fnative_defaults\x18\f \x01(\v2!.delidev.v1.NativeHarnessDefaultsR\x0enativeDefaults\"\xc4\x02\n" +
+	"\x15NativeHarnessDefaults\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\x12\x19\n" +
+	"\x05model\x18\x02 \x01(\tH\x00R\x05model\x88\x01\x01\x12\x1b\n" +
+	"\x06effort\x18\x03 \x01(\tH\x01R\x06effort\x88\x01\x01\x12&\n" +
+	"\fservice_tier\x18\x04 \x01(\tH\x02R\vserviceTier\x88\x01\x01\x12,\n" +
+	"\x0fapproval_policy\x18\x05 \x01(\tH\x03R\x0eapprovalPolicy\x88\x01\x01\x122\n" +
+	"\x12approvals_reviewer\x18\x06 \x01(\tH\x04R\x11approvalsReviewer\x88\x01\x01B\b\n" +
+	"\x06_modelB\t\n" +
+	"\a_effortB\x0f\n" +
+	"\r_service_tierB\x12\n" +
+	"\x10_approval_policyB\x15\n" +
+	"\x13_approvals_reviewer\"\xac\x02\n" +
 	"!DiscoverRepositoryBranchesRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
@@ -4042,9 +4151,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\xe0\f\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*\x92\r\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12+\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x120\n" +
+	",WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1\x10'\x12+\n" +
 	"'WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1\x10\x1d\x12.\n" +
 	"*WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1\x10\x1e\x122\n" +
 	".WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1\x10\x1c\x120\n" +
@@ -4154,7 +4264,7 @@ func file_delidev_v1_worker_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_delidev_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_delidev_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_delidev_v1_worker_proto_goTypes = []any{
 	(WorkerCapability)(0),                      // 0: delidev.v1.WorkerCapability
 	(WorkerNativeRouteState)(0),                // 1: delidev.v1.WorkerNativeRouteState
@@ -4209,53 +4319,54 @@ var file_delidev_v1_worker_proto_goTypes = []any{
 	(*ReportExecutionStartupRequest)(nil),      // 50: delidev.v1.ReportExecutionStartupRequest
 	(*ReportExecutionStartupResponse)(nil),     // 51: delidev.v1.ReportExecutionStartupResponse
 	(*ExecutionStartupObservation)(nil),        // 52: delidev.v1.ExecutionStartupObservation
-	(*DiscoverRepositoryBranchesRequest)(nil),  // 53: delidev.v1.DiscoverRepositoryBranchesRequest
-	(*DiscoverRepositoryBranchesResponse)(nil), // 54: delidev.v1.DiscoverRepositoryBranchesResponse
-	(*Mutation)(nil),                           // 55: delidev.v1.Mutation
-	(*Resource)(nil),                           // 56: delidev.v1.Resource
-	(*SessionDeletionJob)(nil),                 // 57: delidev.v1.SessionDeletionJob
-	(*WatchTerminalsRequest)(nil),              // 58: delidev.v1.WatchTerminalsRequest
-	(*ClaimTerminalRequest)(nil),               // 59: delidev.v1.ClaimTerminalRequest
-	(*ReportTerminalRequest)(nil),              // 60: delidev.v1.ReportTerminalRequest
-	(*PublishTerminalOutputRequest)(nil),       // 61: delidev.v1.PublishTerminalOutputRequest
-	(*WatchTerminalsResponse)(nil),             // 62: delidev.v1.WatchTerminalsResponse
-	(*ClaimTerminalResponse)(nil),              // 63: delidev.v1.ClaimTerminalResponse
-	(*ReportTerminalResponse)(nil),             // 64: delidev.v1.ReportTerminalResponse
-	(*PublishTerminalOutputResponse)(nil),      // 65: delidev.v1.PublishTerminalOutputResponse
+	(*NativeHarnessDefaults)(nil),              // 53: delidev.v1.NativeHarnessDefaults
+	(*DiscoverRepositoryBranchesRequest)(nil),  // 54: delidev.v1.DiscoverRepositoryBranchesRequest
+	(*DiscoverRepositoryBranchesResponse)(nil), // 55: delidev.v1.DiscoverRepositoryBranchesResponse
+	(*Mutation)(nil),                           // 56: delidev.v1.Mutation
+	(*Resource)(nil),                           // 57: delidev.v1.Resource
+	(*SessionDeletionJob)(nil),                 // 58: delidev.v1.SessionDeletionJob
+	(*WatchTerminalsRequest)(nil),              // 59: delidev.v1.WatchTerminalsRequest
+	(*ClaimTerminalRequest)(nil),               // 60: delidev.v1.ClaimTerminalRequest
+	(*ReportTerminalRequest)(nil),              // 61: delidev.v1.ReportTerminalRequest
+	(*PublishTerminalOutputRequest)(nil),       // 62: delidev.v1.PublishTerminalOutputRequest
+	(*WatchTerminalsResponse)(nil),             // 63: delidev.v1.WatchTerminalsResponse
+	(*ClaimTerminalResponse)(nil),              // 64: delidev.v1.ClaimTerminalResponse
+	(*ReportTerminalResponse)(nil),             // 65: delidev.v1.ReportTerminalResponse
+	(*PublishTerminalOutputResponse)(nil),      // 66: delidev.v1.PublishTerminalOutputResponse
 }
 var file_delidev_v1_worker_proto_depIdxs = []int32{
-	55, // 0: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
-	56, // 1: delidev.v1.ClaimSteerInputResponse.steer:type_name -> delidev.v1.Resource
-	56, // 2: delidev.v1.ClaimSteerInputResponse.input:type_name -> delidev.v1.Resource
-	55, // 3: delidev.v1.ClaimQuestionResponseRequest.mutation:type_name -> delidev.v1.Mutation
-	56, // 4: delidev.v1.ClaimQuestionResponseResponse.interaction:type_name -> delidev.v1.Resource
-	55, // 5: delidev.v1.ClaimApprovalResponseRequest.mutation:type_name -> delidev.v1.Mutation
-	56, // 6: delidev.v1.ClaimApprovalResponseResponse.interaction:type_name -> delidev.v1.Resource
-	55, // 7: delidev.v1.PublishExecutionRequest.mutation:type_name -> delidev.v1.Mutation
-	55, // 8: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	56, // 0: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
+	57, // 1: delidev.v1.ClaimSteerInputResponse.steer:type_name -> delidev.v1.Resource
+	57, // 2: delidev.v1.ClaimSteerInputResponse.input:type_name -> delidev.v1.Resource
+	56, // 3: delidev.v1.ClaimQuestionResponseRequest.mutation:type_name -> delidev.v1.Mutation
+	57, // 4: delidev.v1.ClaimQuestionResponseResponse.interaction:type_name -> delidev.v1.Resource
+	56, // 5: delidev.v1.ClaimApprovalResponseRequest.mutation:type_name -> delidev.v1.Mutation
+	57, // 6: delidev.v1.ClaimApprovalResponseResponse.interaction:type_name -> delidev.v1.Resource
+	56, // 7: delidev.v1.PublishExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	56, // 8: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 9: delidev.v1.AttachWorkerRequest.capabilities:type_name -> delidev.v1.WorkerCapability
-	56, // 10: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
+	57, // 10: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
 	0,  // 11: delidev.v1.AttachWorkerResponse.supported_worker_capabilities:type_name -> delidev.v1.WorkerCapability
-	56, // 12: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
-	56, // 13: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
+	57, // 12: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
+	57, // 13: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
 	25, // 14: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
 	24, // 15: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
 	26, // 16: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
-	55, // 17: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
+	56, // 17: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
 	7,  // 18: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
-	56, // 19: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
-	56, // 20: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	55, // 21: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
-	56, // 22: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
-	56, // 23: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
-	56, // 24: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
-	57, // 25: delidev.v1.ReportSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
-	56, // 26: delidev.v1.SyncWorkerNetworkResponse.route:type_name -> delidev.v1.Resource
-	55, // 27: delidev.v1.ReportWorkerNativeRouteRequest.mutation:type_name -> delidev.v1.Mutation
+	57, // 19: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
+	57, // 20: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
+	56, // 21: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
+	57, // 22: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
+	57, // 23: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
+	57, // 24: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
+	58, // 25: delidev.v1.ReportSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
+	57, // 26: delidev.v1.SyncWorkerNetworkResponse.route:type_name -> delidev.v1.Resource
+	56, // 27: delidev.v1.ReportWorkerNativeRouteRequest.mutation:type_name -> delidev.v1.Mutation
 	1,  // 28: delidev.v1.ReportWorkerNativeRouteRequest.state:type_name -> delidev.v1.WorkerNativeRouteState
 	47, // 29: delidev.v1.CloneRepositoryRequest.github_selection:type_name -> delidev.v1.RepositoryCloneGitHubSelection
-	56, // 30: delidev.v1.CloneRepositoryResponse.job:type_name -> delidev.v1.Resource
-	55, // 31: delidev.v1.ReportExecutionStartupRequest.mutation:type_name -> delidev.v1.Mutation
+	57, // 30: delidev.v1.CloneRepositoryResponse.job:type_name -> delidev.v1.Resource
+	56, // 31: delidev.v1.ReportExecutionStartupRequest.mutation:type_name -> delidev.v1.Mutation
 	52, // 32: delidev.v1.ReportExecutionStartupRequest.observation:type_name -> delidev.v1.ExecutionStartupObservation
 	52, // 33: delidev.v1.ReportExecutionStartupResponse.observation:type_name -> delidev.v1.ExecutionStartupObservation
 	3,  // 34: delidev.v1.ExecutionStartupObservation.state:type_name -> delidev.v1.ExecutionStartupState
@@ -4263,62 +4374,63 @@ var file_delidev_v1_worker_proto_depIdxs = []int32{
 	5,  // 36: delidev.v1.ExecutionStartupObservation.input_delivery:type_name -> delidev.v1.ExecutionStartupInputDelivery
 	6,  // 37: delidev.v1.ExecutionStartupObservation.cleanup:type_name -> delidev.v1.ExecutionStartupCleanup
 	2,  // 38: delidev.v1.ExecutionStartupObservation.failure_kind:type_name -> delidev.v1.ExecutionStartupFailureKind
-	56, // 39: delidev.v1.DiscoverRepositoryBranchesResponse.job:type_name -> delidev.v1.Resource
-	43, // 40: delidev.v1.WorkerService.SyncWorkerNetwork:input_type -> delidev.v1.SyncWorkerNetworkRequest
-	45, // 41: delidev.v1.WorkerService.ReportWorkerNativeRoute:input_type -> delidev.v1.ReportWorkerNativeRouteRequest
-	39, // 42: delidev.v1.WorkerService.ListSessionDeletionWork:input_type -> delidev.v1.ListSessionDeletionWorkRequest
-	41, // 43: delidev.v1.WorkerService.ReportSessionDeletion:input_type -> delidev.v1.ReportSessionDeletionRequest
-	58, // 44: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
-	59, // 45: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
-	60, // 46: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
-	61, // 47: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
-	37, // 48: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
-	33, // 49: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
-	35, // 50: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
-	18, // 51: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	20, // 52: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	21, // 53: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
-	27, // 54: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	53, // 55: delidev.v1.WorkerService.DiscoverRepositoryBranches:input_type -> delidev.v1.DiscoverRepositoryBranchesRequest
-	29, // 56: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	48, // 57: delidev.v1.WorkerService.CloneRepository:input_type -> delidev.v1.CloneRepositoryRequest
-	31, // 58: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	50, // 59: delidev.v1.WorkerService.ReportExecutionStartup:input_type -> delidev.v1.ReportExecutionStartupRequest
-	16, // 60: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
-	14, // 61: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
-	10, // 62: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
-	12, // 63: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
-	8,  // 64: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
-	44, // 65: delidev.v1.WorkerService.SyncWorkerNetwork:output_type -> delidev.v1.SyncWorkerNetworkResponse
-	46, // 66: delidev.v1.WorkerService.ReportWorkerNativeRoute:output_type -> delidev.v1.ReportWorkerNativeRouteResponse
-	40, // 67: delidev.v1.WorkerService.ListSessionDeletionWork:output_type -> delidev.v1.ListSessionDeletionWorkResponse
-	42, // 68: delidev.v1.WorkerService.ReportSessionDeletion:output_type -> delidev.v1.ReportSessionDeletionResponse
-	62, // 69: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
-	63, // 70: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
-	64, // 71: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
-	65, // 72: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
-	38, // 73: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
-	34, // 74: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
-	36, // 75: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
-	19, // 76: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	23, // 77: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	22, // 78: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
-	28, // 79: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	54, // 80: delidev.v1.WorkerService.DiscoverRepositoryBranches:output_type -> delidev.v1.DiscoverRepositoryBranchesResponse
-	30, // 81: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	49, // 82: delidev.v1.WorkerService.CloneRepository:output_type -> delidev.v1.CloneRepositoryResponse
-	32, // 83: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	51, // 84: delidev.v1.WorkerService.ReportExecutionStartup:output_type -> delidev.v1.ReportExecutionStartupResponse
-	17, // 85: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
-	15, // 86: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
-	11, // 87: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
-	13, // 88: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
-	9,  // 89: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
-	65, // [65:90] is the sub-list for method output_type
-	40, // [40:65] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	53, // 39: delidev.v1.ExecutionStartupObservation.native_defaults:type_name -> delidev.v1.NativeHarnessDefaults
+	57, // 40: delidev.v1.DiscoverRepositoryBranchesResponse.job:type_name -> delidev.v1.Resource
+	43, // 41: delidev.v1.WorkerService.SyncWorkerNetwork:input_type -> delidev.v1.SyncWorkerNetworkRequest
+	45, // 42: delidev.v1.WorkerService.ReportWorkerNativeRoute:input_type -> delidev.v1.ReportWorkerNativeRouteRequest
+	39, // 43: delidev.v1.WorkerService.ListSessionDeletionWork:input_type -> delidev.v1.ListSessionDeletionWorkRequest
+	41, // 44: delidev.v1.WorkerService.ReportSessionDeletion:input_type -> delidev.v1.ReportSessionDeletionRequest
+	59, // 45: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
+	60, // 46: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
+	61, // 47: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
+	62, // 48: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
+	37, // 49: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
+	33, // 50: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
+	35, // 51: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
+	18, // 52: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	20, // 53: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	21, // 54: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
+	27, // 55: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	54, // 56: delidev.v1.WorkerService.DiscoverRepositoryBranches:input_type -> delidev.v1.DiscoverRepositoryBranchesRequest
+	29, // 57: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	48, // 58: delidev.v1.WorkerService.CloneRepository:input_type -> delidev.v1.CloneRepositoryRequest
+	31, // 59: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	50, // 60: delidev.v1.WorkerService.ReportExecutionStartup:input_type -> delidev.v1.ReportExecutionStartupRequest
+	16, // 61: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
+	14, // 62: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
+	10, // 63: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
+	12, // 64: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
+	8,  // 65: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
+	44, // 66: delidev.v1.WorkerService.SyncWorkerNetwork:output_type -> delidev.v1.SyncWorkerNetworkResponse
+	46, // 67: delidev.v1.WorkerService.ReportWorkerNativeRoute:output_type -> delidev.v1.ReportWorkerNativeRouteResponse
+	40, // 68: delidev.v1.WorkerService.ListSessionDeletionWork:output_type -> delidev.v1.ListSessionDeletionWorkResponse
+	42, // 69: delidev.v1.WorkerService.ReportSessionDeletion:output_type -> delidev.v1.ReportSessionDeletionResponse
+	63, // 70: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
+	64, // 71: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
+	65, // 72: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
+	66, // 73: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
+	38, // 74: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
+	34, // 75: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
+	36, // 76: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
+	19, // 77: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	23, // 78: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	22, // 79: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
+	28, // 80: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	55, // 81: delidev.v1.WorkerService.DiscoverRepositoryBranches:output_type -> delidev.v1.DiscoverRepositoryBranchesResponse
+	30, // 82: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	49, // 83: delidev.v1.WorkerService.CloneRepository:output_type -> delidev.v1.CloneRepositoryResponse
+	32, // 84: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	51, // 85: delidev.v1.WorkerService.ReportExecutionStartup:output_type -> delidev.v1.ReportExecutionStartupResponse
+	17, // 86: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
+	15, // 87: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
+	11, // 88: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
+	13, // 89: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
+	9,  // 90: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
+	66, // [66:91] is the sub-list for method output_type
+	41, // [41:66] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_worker_proto_init() }
@@ -4328,13 +4440,14 @@ func file_delidev_v1_worker_proto_init() {
 	}
 	file_delidev_v1_common_proto_init()
 	file_delidev_v1_terminal_proto_init()
+	file_delidev_v1_worker_proto_msgTypes[46].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_worker_proto_rawDesc), len(file_delidev_v1_worker_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   48,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

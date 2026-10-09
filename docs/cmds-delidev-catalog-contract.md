@@ -651,7 +651,7 @@ skills retain their original owners. Existing `model_id`, effort and option fiel
 remain legacy reference anchors, not effective new-execution settings when the
 inheritance document is present.
 
-Resolution applies server harness defaults, then server source defaults, then
+Resolution applies verified native defaults, then server harness defaults, then server source defaults, then
 server API-profile defaults, then the corresponding Project scopes and finally
 Agent overrides. Document ordering cannot change specificity. Resolve the
 original accounts' selected API profiles before choosing defaults. Ambiguous
@@ -676,5 +676,36 @@ does not remove this fence. Stale writes retain ordinary revision conflicts.
 
 Default and override model/provider references participate in validation,
 portable remapping and deletion protection. This feature adds no SQLite
-migration, native process operation or Worker capability. Dedicated harness
+migration or new native process operation. Worker 39 negotiates the original
+actual-process default observation described below. Dedicated harness
 menus, selective native imports and web-search adapters remain separate features.
+
+### Verified native default provenance
+
+Worker 39 `NATIVE_HARNESS_DEFAULTS_V1` owns bounded typed Codex defaults from the
+existing original authenticated execution process's `config/read`. Capture model,
+reasoning effort, service tier, approval policy and reviewer before thread settings;
+absent/null fields remain unknown. Catalog `isDefault` flags, requested thread
+models, installation discovery, unrelated accounts and separate probes grant no
+default authority. Other native profiles without equivalent supported observation
+remain explicitly unavailable for an inherited model; configured defaults remain
+usable through their ordinary native profiles.
+
+The original startup Ready mutation stores one latest typed metadata record per
+Machine, Account and Project, retaining original Worker device, connection,
+selected API-profile digest or subscription generation, executable digest/version,
+job/execution and non-secret default digest. Replays retain the original receipt.
+No SQLite migration, model entitlement, native-account access or new process is
+created. A native model default resolves only an existing unambiguous canonical
+model from that same source. All accounts in one route must have matching current
+default observations. Rotated connections, changed source profiles, revoked Worker
+devices and missing capability make prior observations unavailable.
+
+The first claim freezes any consumed default proof and effective values. A later
+actual original process compares the default digest, version and executable before
+any thread override, input or relay release, including repeated configuration
+verification immediately before start/resume. A changed or unknown observation
+fails before input; it never becomes an explicit cached model override. Explicit
+settings retain their own authority when no native field is consumed. Historical
+configuration proofs remain immutable. Native observed effective settings and
+independent cleanup still belong to the existing execution contract.

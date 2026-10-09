@@ -20,6 +20,10 @@ type SourceRoutingPreview struct {
 // PreviewSourceRouting is shared by read-only preview and atomic first dispatch.
 // It reads metadata only; it cannot validate credentials or refresh native quota.
 func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project *domain.Project, defaultPolicy domain.RoutingPolicy) (SourceRoutingPreview, error) {
+	return t.PreviewSourceRoutingForMachine(agentID, agent, project, defaultPolicy, "", "")
+}
+
+func (t *Tx) PreviewSourceRoutingForMachine(agentID domain.ID, agent domain.Agent, project *domain.Project, defaultPolicy domain.RoutingPolicy, machine, projectID domain.ID) (SourceRoutingPreview, error) {
 	var result SourceRoutingPreview
 	if err := agent.Validate(); err != nil {
 		return result, err
@@ -34,7 +38,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	sources := make([]domain.SourceRouteInput, 0, len(agent.SourceRoutes()))
 	effectiveAgents := make([]domain.Agent, 0, len(agent.SourceRoutes()))
 	for index, route := range agent.SourceRoutes() {
-		resolved, err := t.resolveHarnessSource(agent, route, index, project)
+		resolved, err := t.resolveHarnessSource(agent, route, index, project, machine, projectID)
 		if err != nil {
 			return result, err
 		}
@@ -126,6 +130,13 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		index = int(*route.SourceIndex)
 	}
 	result.Agent = effectiveAgents[index]
+	if result.Agent.NativeDefaults != nil {
+		proof, err := t.NativeHarnessDefaults(machine, route.Selected, projectID)
+		if err != nil {
+			return result, err
+		}
+		result.Agent.NativeDefaults = &proof
+	}
 	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
 	if sources[index].Problem != nil {
 		return result, sources[index].Problem

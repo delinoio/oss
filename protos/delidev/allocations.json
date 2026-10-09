@@ -10201,6 +10201,75 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
       "number": 35
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 63
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1",
+      "number": 39
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "ExecutionStartupObservation",
+      "member": "native_defaults",
+      "number": 12
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "NativeHarnessDefaults",
+      "member": "version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "NativeHarnessDefaults",
+      "member": "model",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "NativeHarnessDefaults",
+      "member": "effort",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "NativeHarnessDefaults",
+      "member": "service_tier",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "NativeHarnessDefaults",
+      "member": "approval_policy",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "message",
+      "declaration": "NativeHarnessDefaults",
+      "member": "approvals_reviewer",
+      "number": 6,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

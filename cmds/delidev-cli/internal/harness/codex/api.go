@@ -114,6 +114,9 @@ func (c *Client) verifyAPI(ctx context.Context, cwd string) error {
 	if domain.Decode(response.Result, &result) != nil || result.Config == nil {
 		return incompatible()
 	}
+	if err := c.captureNativeDefaults(result.Config); err != nil {
+		return err
+	}
 	if err := c.api.validateConfig(result.Config); err != nil {
 		if c.logger != nil {
 			c.logger.WarnContext(ctx, "Codex native API authority mismatch", "owner_id", c.ownerID, "code", domain.Unsupported)

@@ -18,6 +18,7 @@ import (
 )
 
 type executionStartupAttempt struct {
+	nativeDefaults    *domain.NativeHarnessDefaults
 	config            Config
 	job               domain.ID
 	input             domain.ExecutionJobInput
@@ -136,6 +137,7 @@ func (a *executionStartupAttempt) ready(ctx context.Context, version string) err
 		a.observation.NativeVersion = version
 	}
 	o := a.observation
+	o.NativeDefaults = a.nativeDefaults
 	o.State, o.Protocol = domain.StartupReady, domain.ProtocolFor(o.Harness)
 	if err := a.report(ctx, "ready", o); err != nil {
 		return err

@@ -57,7 +57,7 @@ func upgradeHarnessAgents(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func (t *Tx) resolveHarnessSource(agent domain.Agent, route domain.AgentSourceRoute, index int, project *domain.Project) (domain.Agent, error) {
+func (t *Tx) resolveHarnessSource(agent domain.Agent, route domain.AgentSourceRoute, index int, project *domain.Project, machine, projectID domain.ID) (domain.Agent, error) {
 	single := agent.WithSource(route)
 	if agent.HarnessSettings == nil {
 		return single, nil
@@ -102,6 +102,42 @@ func (t *Tx) resolveHarnessSource(agent domain.Agent, route domain.AgentSourceRo
 	if selected := agent.HarnessSettings.Models[index]; selected.State == domain.HarnessOverride {
 		values.Model = selected
 	}
+	// Native fallback is account- and Worker-scoped. All accounts in one source
+	// must share observed values; routing cannot change the frozen defaults.
+	var proof *domain.NativeHarnessDefaultProof
+	if agent.Harness == domain.Codex && machine != "" {
+		var native domain.HarnessValues
+		consistent := true
+		for _, link := range route.Accounts {
+			p, e := t.NativeHarnessDefaults(machine, link.ID, projectID)
+			if e != nil {
+				consistent = false
+				break
+			}
+			if proof != nil && p.DefaultsDigest != proof.DefaultsDigest {
+				consistent = false
+				break
+			}
+			if proof == nil {
+				v, e := t.nativeHarnessValues(p, anchor)
+				if e != nil {
+					consistent = false
+					break
+				}
+				native = v
+				proof = &p
+			}
+		}
+		if consistent && proof != nil {
+			var used bool
+			values, used = domain.ApplyNativeHarnessFallback(native, values)
+			if !used {
+				proof = nil
+			}
+		} else {
+			proof = nil
+		}
+	}
 	result, err := values.Apply(single)
 	if err != nil {
 		return domain.Agent{}, err
@@ -113,5 +149,6 @@ func (t *Tx) resolveHarnessSource(agent domain.Agent, route domain.AgentSourceRo
 	if model.ProviderID != anchor.ProviderID || model.SubscriptionService != anchor.SubscriptionService || model.SourceKind != anchor.SourceKind {
 		return domain.Agent{}, domain.Fail(domain.InvalidArgument, "The inherited harness model uses another source.", "Select a default model from the original account source.")
 	}
+	result.NativeDefaults = proof
 	return result, nil
 }

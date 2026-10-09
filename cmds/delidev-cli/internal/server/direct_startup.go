@@ -91,6 +91,13 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 			if input.Startup.ExecutableSHA256 != "" && input.Startup.ExecutableSHA256 != o.ExecutableSHA256 {
 				return nil, executionDenied()
 			}
+			if o.NativeDefaults != nil {
+				if err := tx.RecordNativeHarnessDefaults(input, r.ID, identity.Device, sr.ProjectID, o); err != nil {
+					return nil, err
+				}
+			} else if input.Configuration.NativeDefaults != nil {
+				return nil, executionDenied()
+			}
 			session.Startup.Ready = &o
 		} else {
 			if session.Startup.Failure != nil {

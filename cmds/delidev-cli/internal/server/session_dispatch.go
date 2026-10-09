@@ -56,7 +56,7 @@ func requireSessionProviderEnabled(tx *store.Tx, session domain.Session) (domain
 			if err != nil {
 				return "", err
 			}
-			preview, err := tx.PreviewSourceRouting(session.AgentID, agent, project, policy)
+			preview, err := tx.PreviewSourceRoutingForMachine(session.AgentID, agent, project, policy, session.MachineID, session.ProjectID)
 			if err != nil {
 				return "", err
 			}

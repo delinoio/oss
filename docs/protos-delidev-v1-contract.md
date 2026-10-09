@@ -1059,6 +1059,9 @@ configuration through the existing configuration RPCs. Agent, Project and
 Settings inheritance documents use resource schema 4; portable configuration uses
 version 7 with versions 1–6 import compatibility. Existing source-route ownership
 and all prior allocation numbers remain unchanged. Effective execution values use
-the original closed assignment shape, so this feature allocates no Worker number
-or RPC and requires no SQLite migration. Allocation declarations alone do not
+an immutable optional native-default proof. Worker 39
+`NATIVE_HARNESS_DEFAULTS_V1`, startup-observation field 12 and the complete closed
+`NativeHarnessDefaults` message preserve optional unknown fields. The existing
+startup Ready RPC carries only original actual-process values; negotiation alone
+grants no default authority. No RPC or SQLite migration is added. Allocation declarations alone do not
 grant native/account support.

@@ -484,4 +484,7 @@ immutable historical contexts and separate Fork/Sidechat lifetimes under the
 Issue #1986 owns System 63 `HARNESS_DEFAULTS_V1`, recorded with complete server
 configuration implementation under the allocation workflow. Preserve all prior
 System/Worker allocations. Schema-4 configuration documents and portable version
-7 use existing RPC ownership; no Worker capability or SQLite migration is added.
+7 use existing RPC ownership. The same feature owns Worker 39
+`NATIVE_HARNESS_DEFAULTS_V1`, startup-observation field 12 and the complete closed
+optional native-default observation message. Preserve all earlier startup fields,
+original process/proxy authority and unknown observations; no SQLite migration.

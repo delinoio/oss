@@ -65,7 +65,7 @@ func (v HarnessValues) Validate() error {
 	}
 	return nil
 }
-func mergeHarnessValues(base, overlay HarnessValues) HarnessValues {
+func MergeHarnessValues(base, overlay HarnessValues) HarnessValues {
 	dst, src := reflect.ValueOf(&base).Elem(), reflect.ValueOf(overlay)
 	for i := 0; i < dst.NumField(); i++ {
 		if src.Field(i).FieldByName("State").String() == string(HarnessOverride) {
@@ -154,11 +154,11 @@ func EffectiveHarnessValues(harness Harness, provider ID, service SubscriptionSe
 				if rank != specificity || entry.ProviderID != "" && entry.ProviderID != provider || entry.SubscriptionService != "" && entry.SubscriptionService != service || entry.APIProtocol != "" && entry.APIProtocol != protocol {
 					continue
 				}
-				result = mergeHarnessValues(result, entry.Values)
+				result = MergeHarnessValues(result, entry.Values)
 			}
 		}
 	}
-	return mergeHarnessValues(result, agent)
+	return MergeHarnessValues(result, agent)
 }
 func (v HarnessValues) Apply(agent Agent) (Agent, error) {
 	if v.Model.Value == nil {
@@ -199,4 +199,16 @@ func (v HarnessValues) Apply(agent Agent) (Agent, error) {
 	}
 	agent.HarnessSettings = nil
 	return agent, agent.Validate()
+}
+
+// ApplyNativeHarnessFallback retains a proof only when a verified field is used.
+func ApplyNativeHarnessFallback(native, configured HarnessValues) (HarnessValues, bool) {
+	used := false
+	n, c := reflect.ValueOf(native), reflect.ValueOf(configured)
+	for i := 0; i < n.NumField(); i++ {
+		if n.Field(i).FieldByName("State").String() == string(HarnessOverride) && c.Field(i).FieldByName("State").String() == string(HarnessInherit) {
+			used = true
+		}
+	}
+	return MergeHarnessValues(native, configured), used
 }

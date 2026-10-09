@@ -181,7 +181,7 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		}
 		templates = append(templates, domain.AppliedTemplate{ID: id, Revision: r.Revision, Contents: template.Contents})
 	}
-	preview, err := t.PreviewSourceRouting(ar.ID, agent, project, policy)
+	preview, err := t.PreviewSourceRoutingForMachine(ar.ID, agent, project, policy, session.MachineID, session.ProjectID)
 	if err != nil {
 		return empty, err
 	}

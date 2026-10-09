@@ -21,7 +21,8 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
-	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
+	NativeDefaults *NativeHarnessDefaultProof `json:"native_defaults,omitempty"`
+	BranchPrefix   *BranchPrefixSelection     `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
@@ -94,7 +95,7 @@ func ResolveExecutionConfiguration(agentID ID, agentRevision uint64, agent Agent
 		}
 		parts[i] = template.Contents
 	}
-	result = ExecutionConfiguration{ImageInputDeclared: agent.Harness == Codex && slices.Contains(model.InputModalities, "image"), AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
+	result = ExecutionConfiguration{NativeDefaults: agent.NativeDefaults, ImageInputDeclared: agent.Harness == Codex && slices.Contains(model.InputModalities, "image"), AgentID: agentID, AgentRevision: agentRevision, Harness: agent.Harness, ModelID: agent.ModelID, ModelRevision: modelRevision, ProviderID: model.ProviderID, SubscriptionService: model.SubscriptionService, Subscription: model.SourceKind == SubscriptionModel, NativeModel: model.NativeID, Effort: agent.Effort, Options: agent.Options, Accounts: slices.Clone(agent.Accounts), Routing: policy, Templates: slices.Clone(templates), Instructions: strings.Join(parts, "\n\n")}
 	if agent.Options.ApprovalsReviewer == CodexReviewerAuto && !result.Subscription {
 		result.ReviewerNativeModel = CodexReviewerNativeModel
 	}
@@ -123,6 +124,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.NativeDefaults != nil && (c.Harness != Codex || c.NativeDefaults.Validate() != nil) {
+		return NativeDefaultsUnavailable()
+	}
 	if c.BranchPrefix != nil {
 		if err := c.BranchPrefix.Validate(); err != nil {
 			return err

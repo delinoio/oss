@@ -412,3 +412,10 @@ the transfer contract owns portable version 7 and legacy imports. Effective new
 execution settings freeze at the original atomic claim. Existing history, account
 references, route order and native proof remain independent. This adds no native
 operation, Worker capability or SQLite migration.
+
+Issue #1986 also owns Worker 39 original Codex native-default provenance under
+existing startup Ready ownership. Source/Worker/connection/profile/executable
+proof is immutable in accepted configurations and revalidated by the next actual
+process before settings/input/relay release. Unknown observations confer no model
+authority; no separate probe, RPC or SQLite migration is added. Follow the catalog
+and harness contracts.

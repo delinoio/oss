@@ -1170,3 +1170,11 @@ selections and advance only the affected configuration revisions/events. Failure
 rolls back every Agent conversion. Already upgraded Agents are not rewritten on
 restart. Historical executions, configuration digests, receipts and routing state
 retain their original bytes and ownership.
+
+Native harness defaults (#1986, Worker 39) use the existing typed metadata store,
+without a SQLite migration. One latest Machine/Account/Project proof retains the
+original Worker device, connection, API-profile/subscription generation digest,
+actual process executable/version and observed default digest. Only the original
+validated startup Ready mutation writes it. Current scope checks and next-process
+pre-settings digest validation fence its reuse; accepted historical execution
+snapshots do not change when this metadata advances.

@@ -44,32 +44,35 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
-	managedForkHistory bool
-	quotaUsed          atomic.Bool
-	skillsRoot         string
-	imageRoot          string
-	imageMachine       domain.ID
-	sidechat           SidechatProfile
-	quotaObserver      func(context.Context, domain.SubscriptionQuotaObservation)
-	subagents          map[string]domain.SubagentObservation
-	subagentTurn       domain.ID
-	modelObservation   string
-	home               string
-	wire               *nativewire.Connection
-	version            string
-	ownerID            domain.ID
-	logger             *slog.Logger
-	control            chan struct{}
-	thread             domain.ID
-	problem            *domain.Error
-	mode               ProtocolMode
-	execution          *executionState
-	eventGate          chan struct{}
-	pendingEvent       *nativewire.Event
-	api                *apiBinding
-	managedHome        string
-	revertHistory      bool
-	imageGeneration    bool
+	expectedNativeDefaults   *domain.NativeHarnessDefaultProof
+	nativeDefaultsExecutable string
+	nativeDefaults           *domain.NativeHarnessDefaults
+	managedForkHistory       bool
+	quotaUsed                atomic.Bool
+	skillsRoot               string
+	imageRoot                string
+	imageMachine             domain.ID
+	sidechat                 SidechatProfile
+	quotaObserver            func(context.Context, domain.SubscriptionQuotaObservation)
+	subagents                map[string]domain.SubagentObservation
+	subagentTurn             domain.ID
+	modelObservation         string
+	home                     string
+	wire                     *nativewire.Connection
+	version                  string
+	ownerID                  domain.ID
+	logger                   *slog.Logger
+	control                  chan struct{}
+	thread                   domain.ID
+	problem                  *domain.Error
+	mode                     ProtocolMode
+	execution                *executionState
+	eventGate                chan struct{}
+	pendingEvent             *nativewire.Event
+	api                      *apiBinding
+	managedHome              string
+	revertHistory            bool
+	imageGeneration          bool
 }
 
 type ProtocolMode string

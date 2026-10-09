@@ -63,7 +63,7 @@ func TestHarnessUpgradeAtomicIdempotentAndHistoricalSnapshots(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, err = tx.resolveHarnessSource(a, a.SourceRoutes()[0], 0, nil)
+		_, err = tx.resolveHarnessSource(a, a.SourceRoutes()[0], 0, nil, "", "")
 		if err == nil || domain.SafeError(err).Code != domain.MissingInput {
 			t.Fatal("unknown source defaults did not block")
 		}
@@ -131,7 +131,7 @@ func TestHarnessUpgradeRollbackAndSourceDefaults(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			effective, err := tx.resolveHarnessSource(a, a.SourceRoutes()[0], 0, nil)
+			effective, err := tx.resolveHarnessSource(a, a.SourceRoutes()[0], 0, nil, "", "")
 			if err != nil {
 				return err
 			}

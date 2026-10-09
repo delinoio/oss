@@ -118,6 +118,9 @@ func (i ExecutionJobInput) Validate() error {
 			return err
 		}
 	}
+	if p := i.Configuration.NativeDefaults; p != nil && (i.Version != 4 || p.MachineID != i.MachineID || p.AccountID != i.AccountID || p.ConnectionID != i.ConnectionID) {
+		return NativeDefaultsUnavailable()
+	}
 	if err := i.Configuration.Validate(); err != nil {
 		return err
 	}
