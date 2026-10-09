@@ -121,7 +121,7 @@ func TestAuxiliaryTitleAdmissionKeepsCapacityAndOldWorkerExclusion(t *testing.T)
 		t.Run(scenario, func(t *testing.T) {
 			f, session := queuedTitleLaneFixture(t)
 			if scenario == "old-worker" {
-				_, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version}))
+				_, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version}))
 				if err != nil {
 					t.Fatal(err)
 				}

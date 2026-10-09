@@ -326,16 +326,16 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 }
 func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb.SaveConfigurationRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use schema version 1 for API configuration or version 2 for subscription identity, a UUID-v7 request ID and the current expected revision."), correlation)
+	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 && req.Msg.SchemaVersion != 4 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use the current resource schema, a UUID-v7 request ID and the original expected revision."), correlation)
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	expectedSchema := rpc.ResourceSchemaVersion(kind, req.Msg.DocumentJson)
-	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2 && expectedSchema != 3) {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 2 for service accounts/native models and schema 1 for API configuration. Update older clients before configuring subscriptions."), correlation)
+	if req.Msg.SchemaVersion != expectedSchema {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 4 for inline Worker routes and the current schema for the selected resource."), correlation)
 	}
 	if kind == domain.AccountKind || kind == domain.ProviderKind {
 		unlock, err := s.lockAccounts(ctx)

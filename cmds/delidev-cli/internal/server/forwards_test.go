@@ -67,7 +67,7 @@ func newForwardFixture(t *testing.T) *forwardFixture {
 	f.worker, f.machine, f.instance = worker, domain.ID(paired.Machine.Id), domain.NewID()
 	f.client = delidevv1connect.NewForwardServiceClient(http.DefaultClient, httpServer.URL)
 	f.workers = delidevv1connect.NewWorkerServiceClient(http.DefaultClient, httpServer.URL)
-	_, err = f.workers.AttachWorker(ctx, ownerRequest(worker, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1}}))
+	_, err = f.workers.AttachWorker(ctx, ownerRequest(worker, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1}}))
 	if err != nil {
 		t.Fatal(err)
 	}

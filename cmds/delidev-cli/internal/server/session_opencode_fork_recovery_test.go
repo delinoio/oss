@@ -161,7 +161,7 @@ func TestOpenCodeForkChildLostReportKeepsIndependentCreation(t *testing.T) {
 					t.Fatal(err)
 				}
 				f.workerInstance = string(domain.NewID())
-				if _, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version})); err != nil {
+				if _, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version})); err != nil {
 					t.Fatal(err)
 				}
 				row := f.refresh(t)
@@ -373,7 +373,7 @@ func TestOpenCodeForkForeignCreationRejectedBeforeAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			f.workerInstance = string(domain.NewID())
-			if _, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version})); err != nil {
+			if _, err := f.workerClient.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Version: rpc.Version})); err != nil {
 				t.Fatal(err)
 			}
 			row := f.refresh(t)

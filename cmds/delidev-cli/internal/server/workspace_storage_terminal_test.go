@@ -62,7 +62,7 @@ func newStorageTerminalFixture(t *testing.T) (*storageFixture, delidevv1connect.
 	t.Helper()
 	f := newStorageFixture(t)
 	ctx := context.Background()
-	_, err := f.worker.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
+	_, err := f.worker.AttachWorker(ctx, ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}))
 	if err != nil {
 		t.Fatal(err)
 	}

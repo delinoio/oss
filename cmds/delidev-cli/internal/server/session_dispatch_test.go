@@ -121,9 +121,9 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		limit := uint64(48000)
 		modelValue.ContextLimit = &limit
 	}
-	model := base.save(pb.EntityKind_ENTITY_KIND_MODEL, modelValue)
+	inline := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: domain.ID(provider.Id), NativeID: modelValue.NativeID}, Name: modelValue.Name, ContextLimit: modelValue.ContextLimit, InputModalities: modelValue.InputModalities, MetadataSource: modelValue.MetadataSource}
 	routing := domain.RoundRobin
-	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, ModelID: domain.ID(model.Id), Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Options: domain.AgentOptions{Permission: permission}, Routing: &routing})
+	f.agent = base.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture", Harness: harness, Routes: []domain.AgentSourceRoute{{Model: inline, Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}, Routing: &routing}}, Options: domain.AgentOptions{Permission: permission}})
 	f.selection = domain.CreateSession{Name: "Fixture", AgentID: domain.ID(f.agent.Id), MachineID: domain.ID(f.machine.Id), Workspace: domain.GeneralChat, Prompt: "first retained input", Mode: mode, Source: domain.ExternalCLISession}
 	// This primary stream spans discovery, native workspace preparation and the
 	// later test operations. Ten seconds can expire during Windows setup before
@@ -132,7 +132,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -241,7 +241,7 @@ func (f *firstDispatchFixture) mutateAgent(t *testing.T, edit func(*domain.Agent
 	}
 	edit(&value)
 	raw, _ := json.Marshal(value)
-	response, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(f.agent, domain.NewID()), Kind: pb.EntityKind_ENTITY_KIND_AGENT, SchemaVersion: 1, DocumentJson: raw}))
+	response, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: acctMutation(f.agent, domain.NewID()), Kind: pb.EntityKind_ENTITY_KIND_AGENT, SchemaVersion: 4, DocumentJson: raw}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,14 +356,8 @@ func disableFirstDispatchProvider(f *firstDispatchFixture) error {
 	if err := domain.Decode(f.agent.DocumentJson, &agent); err != nil {
 		return err
 	}
-	modelRecord, err := f.service.Store.Get(context.Background(), domain.ModelKind, agent.ModelID)
-	if err != nil {
-		return err
-	}
-	model, err := store.Decode[domain.Model](modelRecord)
-	if err != nil {
-		return err
-	}
+	model := agent.Routes[0].Model
+	var err error
 	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.disable-provider", model.ProviderID, func(tx *store.Tx) (any, error) {
 		record, err := tx.Get(domain.ProviderKind, model.ProviderID)
 		if err != nil {

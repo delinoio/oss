@@ -277,7 +277,7 @@ accounting or product-action capability.
 
 Token pricing uses exact Provider/service and native-ID identity with its own revision. Preserve immutable price versions, original response estimates, exact category/currency handling and budget gates. New pricing affects only future observations. No independent saved Model or completion history is required.
 
-Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
+Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). The current implementation activates the source/native-ID pricing boundary. It grants no additional native/account acceptance.
 
 ## Automatic desktop filter application
 
@@ -374,3 +374,11 @@ Reference provenance records exact upstream provider/model keys, snapshot SHA-25
 and retrieval time separately from the rate-card `AsOf` label. These are reference
 rates; subscription references are explicitly API-equivalent. Grok closed-input
 units remain unavailable for token estimates and budgets.
+
+### Automatic source-specific token prices — issue #2138
+
+The protocol-2 current layout supersedes the saved-Model pricing and Settings → Models flows described above. Usage filters and price links retain one exact Provider or subscription service plus the original native ID. They use typed `ModelIdentity` values; legacy Model UUID fields remain empty. Diagnostics, charts, routing evidence and immutable execution details preserve the same original source identity. Current Worker readiness accepts schema-4 inline routes and retains existing account, installation and startup checks.
+
+Model prices provides one source/native-ID picker. The compact header contains Automatic (models.dev) or Manual, Refresh prices and Edit. Show input, cached input and output rates, currency, retrieval freshness and the once-per-day update cadence. Missing rates differ from explicit zero. Detailed reference identity, snapshot digest, exclusions and immutable historical versions remain collapsed. Do not display a persistent Model UUID or a separate redundant Model details header. Retired API sources expose historical prices read-only; their metadata does not authorize new policies or rates.
+
+Automatic uses only exact reviewed upstream provider/native-ID matches. A valid last snapshot survives a failed refresh as stale; cold failure and unsupported or unmatched rates remain unavailable. Manual retains independently saved decimal rates and is never overwritten by refresh. A changed automatic basis creates a new immutable version only for later observations. Refresh is an explicit joined server operation and cannot replay inference, native inspection, login or account validation. Mode and manual writes preserve the original actor, provider/policy/price revisions, exact request receipt and uncertain retry ownership. UI polling reads metadata without starting upstream refreshes.

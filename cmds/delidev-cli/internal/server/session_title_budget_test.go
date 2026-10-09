@@ -127,7 +127,7 @@ func TestQueuedAutomaticTitleBudgetRetiresWithoutClaim(t *testing.T) {
 func TestAutomaticTitleBudgetPreservesSuccessfulCompletionReceipt(t *testing.T) {
 	f := publicationFixtureFromAuthority(t, newConfiguredAuthorityFixture(t, "http://127.0.0.1:1", func(input *domain.ExecutionJobInput) { input.Installation.ResolvedPath = "/private/codex" }, false))
 	f.registerGrant(t)
-	if _, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1}})); err != nil {
+	if _, err := f.client.AttachWorker(context.Background(), ownerRequest(security.Identity{Token: f.workerToken}, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1}})); err != nil {
 		t.Fatal(err)
 	}
 	setAutomaticTitleWaiting(t, f)

@@ -73,10 +73,10 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	two, other := pairedWorker(t, ctx, endpoint, owner)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, endpoint.URL)
 	instance := string(domain.NewID())
-	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if _, err := client.AttachWorker(ctx, ownerRequest(two, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version})); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("foreign machine attached: %v", err)
 	}
-	attach := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}
+	attach := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}
 	// Verify duplicate rejection across the entire negotiated set, including
 	// non-adjacent entries and duplicates after both older capabilities.
 	for _, capabilities := range [][]pb.WorkerCapability{
@@ -84,7 +84,7 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 		{attach.Capabilities[0], attach.Capabilities[1], attach.Capabilities[0]},
 		{attach.Capabilities[0], attach.Capabilities[1], attach.Capabilities[2], attach.Capabilities[2]},
 	} {
-		invalid := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: capabilities}
+		invalid := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: capabilities}
 		if _, err := client.AttachWorker(ctx, ownerRequest(one, invalid)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("duplicate Worker capability accepted: %v", err)
 		}
@@ -92,7 +92,7 @@ func TestWorkerPairingOwnershipDispatchAndRevocation(t *testing.T) {
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, attach)); err != nil {
 		t.Fatal(err)
 	}
-	second := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version}
+	second := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: string(domain.NewID()), Version: rpc.Version}
 	if _, err := client.AttachWorker(ctx, ownerRequest(one, second)); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatalf("live instance replaced: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestReplacingExpiredWorkerPreservesUncertainty(t *testing.T) {
 	}
 	service := &Service{Store: db, Identity: security.Identity{ServerID: domain.NewID()}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	actor := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, MachineID: machine, DeviceID: device})
-	_, err = service.AttachWorker(actor, connect.NewRequest(&pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(current), Version: rpc.Version}))
+	_, err = service.AttachWorker(actor, connect.NewRequest(&pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(current), Version: rpc.Version}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestAttachmentReplayReadsCurrentObservationWithoutChangingAcceptance(t *tes
 	}
 	service := &Service{Store: db, Identity: security.Identity{ServerID: domain.NewID()}, logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
 	actor := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, DeviceID: device, MachineID: machine})
-	request := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version}
+	request := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version}
 	accepted, err := service.AttachWorker(actor, connect.NewRequest(request))
 	if err != nil {
 		t.Fatal(err)

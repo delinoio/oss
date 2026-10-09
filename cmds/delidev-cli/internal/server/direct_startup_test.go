@@ -28,7 +28,7 @@ func directStartupFixture(t *testing.T, configure ...func(*domain.ExecutionJobIn
 		if err != nil {
 			return nil, err
 		}
-		machine.WorkerCapabilities = []domain.WorkerCapability{domain.ExecutionStartupV1, domain.BranchPrefixInstructionsV1}
+		machine.WorkerCapabilities = []domain.WorkerCapability{domain.InlineModelExecutionV1, domain.ExecutionStartupV1, domain.BranchPrefixInstructionsV1}
 		// No installation inspection exists on this machine.
 		if _, err = tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine); err != nil {
 			return nil, err
