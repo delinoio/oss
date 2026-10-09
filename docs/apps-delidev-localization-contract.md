@@ -67,7 +67,7 @@ native content is not made available by localization. A disclosure contains only
 original details already admitted by the owning diagnostic contract. A translation
 never replaces original evidence or creates retry permission.
 
-The Appearance category retains all 17 existing categories, theme choices,
+The Appearance category retains all 18 categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
 Use an editable search combobox at most 320 CSS pixels wide and at least 40 pixels
 tall, with 8-pixel corners and full available width below 640 pixels. Keep System
@@ -170,7 +170,7 @@ Run app-local `pnpm test`, root `cargo test`, native compilation, widget fixture
 `pnpm ci:contracts`, `pnpm ci:workflows` and changed-dependency security checks.
 Test System resolution, restart, new/multiple windows, delayed events, conflict,
 failed/uncertain writes, malformed-file preservation and retained drafts/focus/
-operations without added product RPCs. Inspect every screen and all 17 categories
+operations without added product RPCs. Inspect every screen and all 18 categories
 in both languages; verify widget sizes, selection, offline/stale/storage failures.
 `test-settings-layout.mjs` checks both catalogs across all existing categories,
 forms, themes and effective 200% viewports, then primary surfaces and an Appearance
@@ -244,3 +244,13 @@ scope reset. Localize state, unavailable/empty distinctions, quota fallback IDs,
 reset expiry, precision-preserving counts and existing navigation actions. Keep
 explicit service brands and exact safe quota IDs separate from translated copy.
 The auxiliary document has no preference-write or protected widget-store access.
+
+## Keyboard shortcut preferences
+
+The System Keyboard shortcuts category uses bundled English/Korean action names,
+capture guidance, validation, explicit save/discard/default controls and native
+preference problem classifications. Keep ASCII chord identities, action IDs and
+revisions unchanged on locale changes. Re-render labels without resetting the
+editor draft, capture opener, effective bindings or business request owners.
+Browser-only persistence remains visibly unavailable. Follow the desktop
+device-local shortcut preference contract; no captured content enters logs.

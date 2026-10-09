@@ -98,5 +98,7 @@ export class ShortcutStore {
   setSurface(surface: Surface) { if (surface !== this.surface) { this.surface = surface; this.publish(); } }
   register(owner: symbol, definitions: readonly ShortcutDefinition[]) { this.entries.set(owner, definitions); this.publish(); }
   remove(owner: symbol) { this.entries.delete(owner); this.publish(); }
-  private publish() { this.snapshot = [...this.entries.values()].flat().filter(item => item.active !== false && (item.scope === ShortcutScope.Global || item.scope === this.surface)); for (const listener of this.listeners) listener(); }
+  setResolver(resolve: (definitions: readonly ShortcutDefinition[]) => readonly ShortcutDefinition[]) { this.resolve = resolve; this.publish(); }
+  private resolve = (definitions: readonly ShortcutDefinition[]): readonly ShortcutDefinition[] => definitions;
+  private publish() { this.snapshot = this.resolve( [...this.entries.values()].flat().filter(item => item.active !== false && (item.scope === ShortcutScope.Global || item.scope === this.surface))); for (const listener of this.listeners) listener(); }
 }

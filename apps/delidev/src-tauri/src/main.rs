@@ -8,6 +8,7 @@ mod date_format_host;
 mod notification_host;
 mod oauth_host;
 mod session_creation_preferences_host;
+mod shortcut_preferences_host;
 mod tray_host;
 mod tray_status_host;
 mod updater_host;
@@ -51,6 +52,7 @@ use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
     update_runner_device_preferences, update_session_creation_preferences,
 };
+use shortcut_preferences_host::{read_shortcut_preferences, update_shortcut_preferences};
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
@@ -1751,6 +1753,8 @@ fn run() -> Result<(), NativeFailure> {
             desktop_credential_access,
             choose_repository_folder,
             read_appearance,
+            read_shortcut_preferences,
+            update_shortcut_preferences,
             read_date_format,
             update_date_format,
             read_runner_device_preferences,
@@ -1901,6 +1905,9 @@ fn run() -> Result<(), NativeFailure> {
             )));
             app.manage(Arc::new(
                 delidev_desktop::date_format::DateFormatStore::new(config_dir.clone()),
+            ));
+            app.manage(Arc::new(
+                delidev_desktop::shortcut_preferences::ShortcutStore::new(config_dir.clone()),
             ));
             let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
             let initial = language.read();

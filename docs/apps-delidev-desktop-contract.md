@@ -141,11 +141,59 @@ Common shortcuts are logical `?` for help and primary+Shift+N for New session. P
 
 Logical `?` accepts the layout's producing Shift state and remains ordinary text in input, textarea, select, editable/combobox contexts. Ignore handled, composing, keyCode-229, AltGraph and repeated events. Ignore hidden/inert targets and terminal passthrough; external native child views receive no new bridge. Visible modals, including the compact sidebar drawer, suspend background dispatch and help opening. The owned help dialog has only the action-dismissal exception described below. The wide sidebar region is not a modal. The help dialog cannot stack over another modal; Escape and Close dismiss only help.
 
-The Settings-adjacent rail help button opens a 640px maximum-width central dialog with 24px padding, 12px corners and existing semantic light/dark tokens. Use Keyboard shortcuts / 키보드 단축키 and the localized current screen, followed by Common and screen-specific read-only lists. Show each registered binding, native behavior and disabled reason; show an explicit screen-specific empty state. Never execute a list row. English/Korean catalog changes update presentation without remounting the help or changing focus. On opening focus the named 40px Close button and contain Tab. On Escape or Close dismissal, restore the available opener or fall back to the current main. Retain 16px viewport margins, vertical scrolling and stacked rows at narrow widths/200% reflow. No rebinding settings, persistent storage, dependency, API/schema/migration, native permission or OS-global shortcut is added.
+The Settings-adjacent rail help button opens a 640px maximum-width central dialog with 24px padding, 12px corners and existing semantic light/dark tokens. Use Keyboard shortcuts / 키보드 단축키 and the localized current screen, followed by Common and screen-specific read-only lists. Show each registered binding, native behavior and disabled reason; show an explicit screen-specific empty state. Never execute a list row. English/Korean catalog changes update presentation without remounting the help or changing focus. On opening focus the named 40px Close button and contain Tab. On Escape or Close dismissal, restore the available opener or fall back to the current main. Retain 16px viewport margins, vertical scrolling and stacked rows at narrow widths/200% reflow. Device-local customization follows the preference boundary below; no dependency, API/schema/migration, native permission or OS-global shortcut is added.
 
 Validate matching, precedence/conflicts, inactive/disabled registration, editable/IME/repeat/passthrough behavior, native defaults, original form authority, modal suspension, focus restoration, Search drawer entry, locale changes and Strict Mode/connection disposal. Run package-local pnpm test and localization checks. Browser geometry/reflow checks and actual packaged CEF/platform acceptance remain separate; record revision, commands, results and unavailable native checks in PRs/issues/CI artifacts, not repository evidence documents.
 
 Keyboard shortcuts help permits eligible existing non-input-target actions from its own dialog. Match current registrations with the same precedence, enabled and input rules. An accepted unambiguous action closes the native help dialog before its original callback runs exactly once; dismissal must not restore the opener over destination focus. Disabled/conflicting actions and excluded events keep help open with the existing event-consumption rules. Help focus never satisfies a background input target. Pressing `?` keeps the same help instance. Other visible modals and compact navigation still block dispatch and help opening. Ordinary Escape and Close retain opener restoration or main fallback.
+
+### Device-local shortcut preferences (issue #1953)
+
+Keyboard shortcuts is the System category after Appearance. Its static typed
+catalog lists Common, Session, New session / New general chat and Search
+without visiting those screens. Help, NewSession, SessionFocus, SessionSend,
+NewSessionFocus, NewSessionSend and SearchFocus support one primary chord,
+optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
+override. An absent override selects the original default. Native newline,
+Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
+original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
+primary+N, primary+W and primary+1–9 remain fixed reservations. Native editing
+chords cannot be assigned. No palette, window action or tab action is added.
+
+Capture consumes keyboard events before dispatch. Escape cancels capture and
+returns to its initiating control; composing, repeated, AltGraph, Alt/Option,
+modifier-only, mixed-primary and unsupported keys receive localized guidance.
+Validate the complete catalog across inactive scopes, including unavailable
+actions. Reject same-priority winning-action conflicts in overlapping contexts;
+permit mutually exclusive screen reuse and preserve target/screen/global priority.
+Dispatch, read-only help and ARIA resolve the same verified committed map.
+Disable removes only the customizable chord; original buttons remain usable and
+the rail help action remains available.
+
+The editor owns only a category-local draft. Disable, per-action/all defaults
+and capture do not commit. Save changes is explicit; Discard changes or departure
+discards drafts. A clean view adopts concurrent commits; a dirty view retains its
+draft and blocks Save until explicit reinspection/discard resolves the conflict.
+Category disposal cannot cancel an admitted native save or replay business work.
+
+`ShortcutPreferenceProvider` stays above connection and Settings state. Native
+`shortcuts.json` is a separate bounded 4096-byte version-1 document with a revision
+and at most the seven closed action overrides. Read/update commands use original
+product-window authorization and expected-revision atomic replacement, with
+ordered changed events only to authorized product windows. External native
+children receive no preference authority/events. Preserve invalid/newer files,
+last verified effective bindings, stale-revision guards and explicit read-only
+reinspection after failed/uncertain writes. Missing storage uses defaults; browser
+environments expose persistence-unavailable and never use Web Storage. Preferences
+survive restart and server changes and remain excluded from server backups and
+portable configuration. Logs contain only stable operation/problem/action/revision
+metadata, never captured keys, chords, text or native content.
+
+English/Korean fixtures cover capture, draft isolation, dispatch/help/ARIA,
+conflicts, publication/recovery, keyboard and compact/effective-reflow layouts.
+Native store fixtures cover invalid files, atomic write uncertainty, restart and
+revisions. Run frontend/localization and root Rust suites; keep those checks
+separate from packaged macOS/Windows/Linux persistence and multi-window acceptance.
 
 ## In-app toast notifications
 
@@ -948,7 +996,7 @@ acceptance in pull requests, issues and CI runs.
 
 ### Shared Settings body presentation (issue #1256)
 
-All 17 category bodies and their existing child workflows use the internal presentation-only helpers in `settings-presentation.tsx` and static `settings-presentation.css`. Existing category controllers retain RPC/query/mutation/authorization ownership, fields/help, exact revisions and retry bytes, polling/cursors, schemas, permission gates and the visit lifetime below. These shared rules supersede the earlier category-specific presentation exceptions, without changing native window or ordinary-page shell geometry.
+All 18 category bodies and their existing child workflows use the internal presentation-only helpers in `settings-presentation.tsx` and static `settings-presentation.css`. Existing category controllers retain RPC/query/mutation/authorization ownership, fields/help, exact revisions and retry bytes, polling/cursors, schemas, permission gates and the visit lifetime below. These shared rules supersede the earlier category-specific presentation exceptions, without changing native window or ordinary-page shell geometry.
 
 Every body shares one left anchor, `width: 100%` and `max-width: 1040px`, white/semantic-theme surface, 32px padding at viewport widths >=1100px, 24px at 760–1099px and 24px vertical/16px horizontal below 760px. The pane and main scroll independently. Category headings use one live-announced H1 at 26px/32px semibold, one purpose description when applicable and one scope line at 12px/18px. Section headings are 16px/24px; body text is 14px/20px. Toolbars move below titles below 1100px; row actions wrap below metadata. Settings-only controls retain at least 40px height, 8px corners, distinct AA control borders/focus tokens, 16px row padding and 24px section gaps. The application rail retains its 44px targets.
 
@@ -974,7 +1022,7 @@ The catalog and renderer own no RPC, schema, capability, permission, mutation, r
 
 ### Settings task dialogs
 
-Settings keeps all 17 category lists and their owning controllers mounted when an operation opens. `settings-task.tsx`, `settings-task-context.ts` and `settings-task.css` add a Settings shell over the shared native `DialogSurface` in `ui.tsx`. Other dialogs retain their presentation. Appearance immediate choices, Import / Export, Connections, backup operation history and short Details disclosures stay in the category page, except API-entry Details and subscription Account details dialogs defined by their owning contracts. Search, page tokens, disclosures and scroll position survive opening and closing a task.
+Settings keeps all 18 category lists and their owning controllers mounted when an operation opens. `settings-task.tsx`, `settings-task-context.ts` and `settings-task.css` add a Settings shell over the shared native `DialogSurface` in `ui.tsx`. Other dialogs retain their presentation. Appearance immediate choices, Import / Export, Connections, backup operation history and short Details disclosures stay in the category page, except API-entry Details and subscription Account details dialogs defined by their owning contracts. Search, page tokens, disclosures and scroll position survive opening and closing a task.
 
 Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview, read-only API-entry Details and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
 
@@ -1063,6 +1111,8 @@ actual browser chrome zoom or native account/platform acceptance.
 ### Settings search (issue #1869)
 
 Settings search lives above the grouped category navigation in the shared pane and compact drawer. The Settings heading and search field share an opaque sticky header within the existing sidebar-list scroller. Only category navigation, search results and empty guidance scroll beneath it; the final row remains reachable. Focus reveal measures the actual header boundary and retains clearance for the focused row and its outline. Settings search focused-row clearance must not scroll the pointer target between pointerdown and click. Scope the pointer guard to the current visit and release it on activation, cancellation, keyboard intent, independent focus or focus departure. Preserve keyboard/programmatic clearance and original input/controller/scroller identity. Branding, footer, drawer close control, other sidebar surfaces and independent main scrolling retain their ownership. In Settings drawers below 760px wide and at most 320px high, branding and the existing 40px Close navigation control share one grid row, with 4px gaps and a compact 72px pinned heading/search header. The original footer remains scrollable with a 32px cap; retain its complete status text. Reserve a complete 40px navigation/result row plus focus clearance below the pinned controls at 320×240 and adjacent reflow bounds. Keep the original input, DOM order and sidebar-list scroll owner; other surfaces and taller layouts retain their geometry. Its query belongs only to the current Settings visit: category selection, same-identity reconnect, language and responsive changes retain it; departure discards it. Empty or whitespace-only queries restore the original 17 categories in their original groups and order. A nonempty query shows semantic `Category › Setting` result buttons and localized empty guidance. Typing and clearing leave the active category controller, drafts, pending requests and exact uncertain retries mounted. Users clear the query through ordinary input editing, retaining input focus; IME confirmation cannot activate a result. The shared search field has a decorative magnifier, an explicit localized accessible name and the bundled placeholder `Search Settings` (English) / `설정 검색` (Korean). It has no external visible label or application Clear control.
+
+Settings search lives above the grouped category navigation in the shared pane and compact drawer. Its query belongs only to the current Settings visit: category selection, same-identity reconnect, language and responsive changes retain it; departure discards it. Empty or whitespace-only queries restore the 18 categories in their original groups and order. A nonempty query shows semantic `Category › Setting` result buttons and localized empty guidance. Typing and clearing leave the active category controller, drafts, pending requests and exact uncertain retries mounted. Clear restores input focus; IME confirmation cannot activate a result.
 
 The bundled catalog uses existing category IDs, enum-style target IDs and localized label/help keys. It contains every category destination and static top-level Appearance, Git, account routing, Network opener, notification, transfer, backup, API provider group, Runner Device summary/inventory/SSH opener, Git Profiles and Current connection targets. Other resource screens expose their management heading through the category destination. Match only the current language: normalize query and metadata to NFC, trim/split whitespace, compare case-insensitive substrings and require every token. Keep category order and target page order. Do not index another locale, aliases, fuzzy matches, option values, resource/user/account data, URLs, credentials, DOM text, native observations, workflow fields or dynamic reviewer rows. Queries never enter storage, logs, telemetry or RPC parameters.
 
@@ -1398,7 +1448,7 @@ Settings lists paired devices with independent authorization, type, pairing/revo
 Issue #1239 defines the **Paired devices-only** compact list in
 `device-settings.tsx` / `device-settings.css` and the existing Settings workspace.
 Keep the shared native window and Settings application screen owned by #1236,
-its shared category context pane/drawer, all 17 category labels/order/IDs and
+its shared category context pane/drawer, all 18 category labels/order/IDs and
 the shared issue #1256 body rules. Left-align the category in a fluid 100%-width
 column with a 1040px maximum inside shared 32px/24px/16px responsive padding. The one
 26px semibold title precedes **Pair devices using a short-lived document.** (14px)

@@ -6,11 +6,15 @@ import { DialogSurface } from "./ui";
 import { Surface } from "./surface";
 import { ShortcutId, ShortcutScope, ShortcutStore, availableShortcutTarget, bindingAria, bindingKeys, dispatchShortcut, globalShortcutBindings, shortcutModalVisible, shortcutPlatform, type ShortcutDefinition, type ShortcutHelpDispatch, type ShortcutPlatform } from "./shortcuts";
 import "./shortcuts.css";
+import { useShortcutPreferences } from "./shortcut-preference-controller";
+import { customizationBindings, effectiveShortcutDefinitions } from "./shortcut-preferences";
 
 interface Controller { store: ShortcutStore; platform: ShortcutPlatform; openHelp: () => void }
 const Context = createContext<Controller | undefined>(undefined);
 export function ShortcutProvider({ children }: { children: ReactNode }) {
+  const { snapshot } = useShortcutPreferences();
   const [store] = useState(() => new ShortcutStore());
+  useLayoutEffect(() => store.setResolver(definitions => effectiveShortcutDefinitions(definitions, snapshot.overrides)), [store, snapshot.overrides]);
   const [platform] = useState(shortcutPlatform);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpDispatch = useRef<ShortcutHelpDispatch | undefined>(undefined);
@@ -30,20 +34,23 @@ export function useShortcutSurface(surface: Surface) {
 export function useShortcutHelp() { return useContext(Context)?.openHelp ?? (() => undefined); }
 export function useGlobalShortcutAria(id: keyof typeof globalShortcutBindings) {
   const controller = useContext(Context);
-  return globalShortcutBindings[id].map(binding => bindingAria(binding, controller?.platform ?? shortcutPlatform())).join(" ");
+  const { snapshot } = useShortcutPreferences();
+  return customizationBindings(id, snapshot.overrides).map(binding => bindingAria(binding, controller?.platform ?? shortcutPlatform())).join(" ");
 }
 export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
   const controller = useContext(Context);
+  const { snapshot } = useShortcutPreferences();
+  const resolved = effectiveShortcutDefinitions(definitions, snapshot.overrides);
   const [owner] = useState(() => Symbol("shortcuts"));
   useLayoutEffect(() => { controller?.store.register(owner, definitions); });
   useLayoutEffect(() => () => controller?.store.remove(owner), [controller, owner]);
   const platform = controller?.platform ?? shortcutPlatform();
   return {
-    aria: (...ids: ShortcutId[]) => definitions.filter(item => ids.includes(item.id)).flatMap(item => item.bindings.map(binding => bindingAria(binding, platform))).join(" "),
+    aria: (...ids: ShortcutId[]) => resolved.filter(item => ids.includes(item.id)).flatMap(item => item.bindings.map(binding => bindingAria(binding, platform))).join(" "),
     onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
       // Isolated forms keep their original keyboard behavior without a provider.
       const surface = controller?.store.surface ?? (definitions.find(item => item.scope !== ShortcutScope.Global)?.scope as Surface | undefined) ?? Surface.Sessions;
-      if (dispatchShortcut(event.nativeEvent, controller?.store.getSnapshot() ?? definitions, surface, platform, true)) event.stopPropagation();
+      if (dispatchShortcut(event.nativeEvent, controller?.store.getSnapshot() ?? resolved, surface, platform, true)) event.stopPropagation();
     },
   };
 }
@@ -77,7 +84,7 @@ function ShortcutHelp({ store, platform, close, dispatch }: { store: ShortcutSto
     if (event.key === "Tab") { event.preventDefault(); closeButton.current?.focus(); }
   }}>
     <header><div><h2 id={`${id}-title`}>{copy("shortcuts.title")}</h2><p id={`${id}-screen`}>{copy("shortcuts.currentScreen", { name: copy(names[store.surface]) })}</p></div><button ref={closeButton} type="button" aria-label={copy("shortcuts.close")} onClick={close}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></header>
-    <div className="shortcut-help-body">{groups.map((group, index) => <section key={index} aria-labelledby={`${id}-group-${index}`}><h3 id={`${id}-group-${index}`}>{index === 0 ? copy("shortcuts.global") : copy(names[store.surface])}</h3>{group.length ? <dl>{group.map(item => <div key={item.id} className={item.enabled === false ? "shortcut-disabled" : undefined}><dt>{copy(item.label)}{item.enabled === false ? <small>{copy(item.unavailableReason ?? "shortcuts.unavailable")}</small> : null}</dt><dd>{item.bindings.map((binding, bindingIndex) => <span className="shortcut-binding" key={bindingIndex}>{bindingIndex ? <span>{copy("shortcuts.or")}</span> : null}{bindingKeys(binding, platform).map((key, keyIndex) => <kbd key={keyIndex}>{key}</kbd>)}</span>)}</dd></div>)}</dl> : <p>{copy("shortcuts.empty")}</p>}</section>)}</div>
+    <div className="shortcut-help-body">{groups.map((group, index) => <section key={index} aria-labelledby={`${id}-group-${index}`}><h3 id={`${id}-group-${index}`}>{index === 0 ? copy("shortcuts.global") : copy(names[store.surface])}</h3>{group.length ? <dl>{group.map(item => <div key={item.id} className={item.enabled === false ? "shortcut-disabled" : undefined}><dt>{copy(item.label)}{item.enabled === false ? <small>{copy(item.unavailableReason ?? "shortcuts.unavailable")}</small> : null}</dt><dd>{!item.bindings.length ? <span>{copy("shortcut-settings.disabled")}</span> : null}{item.bindings.map((binding, bindingIndex) => <span className="shortcut-binding" key={bindingIndex}>{bindingIndex ? <span>{copy("shortcuts.or")}</span> : null}{bindingKeys(binding, platform).map((key, keyIndex) => <kbd key={keyIndex}>{key}</kbd>)}</span>)}</dd></div>)}</dl> : <p>{copy("shortcuts.empty")}</p>}</section>)}</div>
     <footer><p>{copy("shortcuts.typingHint")}</p><p>{copy("shortcuts.closeHint")} <kbd>Esc</kbd></p></footer>
   </DialogSurface>, document.body);
 }
