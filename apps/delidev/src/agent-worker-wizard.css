@@ -1,3 +1,4 @@
+@import "./harness-mark.css";
 /* SPDX-License-Identifier: Apache-2.0 */
 .settings-layout .worker-wizard { max-width: 720px; width: 100%; }
 .worker-wizard > h2 { font-size: 16px; margin: 0 0 24px; }
@@ -32,19 +33,6 @@
 .settings-task-body .agent-configuration.worker-wizard .worker-harness-card[aria-checked="false"]:enabled:hover { border-color: var(--control-border); background: var(--surface-subtle); }
 .settings-content[aria-label] .settings-content-column .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"],
 .settings-task-body .agent-configuration.worker-wizard .worker-harness-card[aria-checked="true"] { border-color: var(--accent); background: var(--selected-background); }
-.worker-harness-mark { display: block; flex: 0 0 48px; width: 48px; height: 48px; margin-bottom: 16px; background-position: center; background-size: contain; background-repeat: no-repeat; }
-.worker-harness-mark-codex { background-image: url("../public/harness-marks/codex.webp"); }
-.worker-harness-mark-claude-code { background-image: url("../public/harness-marks/claude-code.png"); }
-.worker-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-light.svg"); }
-.worker-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-light.svg"); }
-:root[data-theme="dark"] .worker-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
-:root[data-theme="dark"] .worker-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
-/* Match the semantic theme's OS fallback before native appearance is available.
-   Once data-theme exists, only the resolved device preference selects a variant. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .worker-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
-  :root:not([data-theme]) .worker-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
-}
 .worker-harness-name { font-size: 16px; line-height: 24px; font-weight: 600; }
 .worker-harness-card small { margin-top: 4px; font-size: 12px; line-height: 18px; }
 .worker-harness-indicator { position: absolute; top: 24px; right: 24px; display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--control-border); border-radius: 50%; color: var(--on-accent); }

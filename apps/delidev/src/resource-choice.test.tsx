@@ -90,3 +90,132 @@ it("retains exact selected Runner changes without a shortcut or inspection prese
   expect(screen.queryByRole("button", { name: "이 Runner 검사" })).toBeNull(); expect(picker.dataset.value).toBe(second.id);
   client.clear();
 });
+
+it("decorates exact Agent IDs from their top-level harness without model, account or provider reads", async () => {
+  const harnesses = ["codex", "claude-code", "opencode", "grok-build"];
+  const rows = harnesses.map(harness => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 3, documentJson: encode({ name: "Equal Agent name", harness, routes: [{ model_id: newRequestId(), accounts: [{ id: newRequestId() }] }, { model_id: newRequestId(), harness: "grok-build", accounts: [{ id: newRequestId() }] }] }) }));
+  const reads = vi.fn(request => ({ resource: rows.find(row => row.id === request.id) })), change = vi.fn();
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: rows }), getResource: reads }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Form() { const [value, setValue] = useState(""); return <ResourceChoice label="Agent Worker" kind={EntityKind.AGENT} value={value} active change={(id, data, resource) => { change(id, data, resource); setValue(id); }} />; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Form /></QueryClientProvider></TransportProvider>);
+  const trigger = screen.getByRole("combobox", { name: "Agent Worker" });
+  expect(trigger.querySelector(".scroll-picker-decoration")).toBeTruthy();
+  expect(trigger.querySelector(".worker-harness-mark")).toBeNull();
+  for (const [index, row] of rows.entries()) {
+    fireEvent.click(trigger);
+    const options = await screen.findAllByRole("option", { name: "Equal Agent name" });
+    expect(options).toHaveLength(4);
+    const option = options[index];
+    expect(option.querySelector(".worker-harness-mark")?.getAttribute("data-harness")).toBe(harnesses[index]);
+    expect(option.querySelector(".scroll-picker-decoration")?.getAttribute("aria-hidden")).toBe("true");
+    if (index % 2) {
+      fireEvent.keyDown(trigger, { key: "Home" });
+      for (let next = 0; next <= index; next++) fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.keyDown(trigger, { key: "Enter" });
+    } else fireEvent.click(option);
+    await waitFor(() => expect(trigger.getAttribute("data-value")).toBe(row.id));
+    await waitFor(() => expect(trigger.querySelector(".worker-harness-mark")?.getAttribute("data-harness")).toBe(harnesses[index]));
+    expect(trigger.textContent).toBe("Equal Agent name");
+    expect(change.mock.calls[index][0]).toBe(row.id);
+    expect(change.mock.calls[index][2]?.id).toBe(row.id);
+  }
+  expect(reads.mock.calls.every(([request]) => request.kind === EntityKind.AGENT)).toBe(true);
+  client.clear();
+});
+
+it.each([false, true])("uses the exact off-page Agent Resource, including resolvedChoice fallback %s", async resolved => {
+  const onPage = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Equal name", harness: "codex" }) });
+  const selected = create(ResourceSchema, { ...onPage, id: newRequestId(), revision: 5n, documentJson: encode({ name: "Equal name", harness: "grok-build" }) });
+  const reads = vi.fn((_request: { id: string; kind: EntityKind }) => resolved ? {} : { resource: selected });
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [onPage] }), getResource: reads }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value={selected.id} resolvedChoice={resolved ? selected : undefined} active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
+  const trigger = screen.getByRole("combobox", { name: "Agent" });
+  await waitFor(() => expect(trigger.querySelector("[data-harness=grok-build]")).toBeTruthy());
+  fireEvent.click(trigger);
+  expect((await screen.findByRole("option", { name: "Equal name" })).querySelector("[data-harness=codex]")).toBeTruthy();
+  expect(trigger.querySelector("[data-harness=codex]")).toBeNull();
+  expect(reads.mock.calls.every(([request]) => request.id === selected.id && request.kind === EntityKind.AGENT)).toBe(true);
+  client.clear();
+});
+
+it.each(["unknown", "missing", "unsupported", "wrong-id", "unavailable", "zero-revision"])("keeps a blank selected Agent decoration for %s evidence", async state => {
+  const selected = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: state === "zero-revision" ? 0n : 1n, schemaVersion: state === "unsupported" ? 99 : 1, documentJson: encode({ name: "Selected name", ...(state === "missing" ? {} : { harness: state === "unknown" ? "future-harness" : "codex" }) }) });
+  const response = state === "wrong-id" ? create(ResourceSchema, { ...selected, id: newRequestId() }) : selected;
+  const read = vi.fn(() => { if (state === "unavailable") throw new ConnectError("Not found", Code.NotFound); return { resource: response }; });
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [] }), getResource: read }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value={selected.id} active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  const trigger = screen.getByRole("combobox", { name: "Agent" });
+  expect(trigger.getAttribute("data-value")).toBe(selected.id);
+  expect(trigger.querySelector(".scroll-picker-decoration")).toBeTruthy();
+  expect(trigger.querySelector(".worker-harness-mark")).toBeNull();
+  client.clear();
+});
+
+it.each([EntityKind.PROJECT, EntityKind.MACHINE, EntityKind.MODEL, EntityKind.ACCOUNT])("does not decorate non-Agent kind %s even if its data contains a harness", async kind => {
+  const row = create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Plain choice", harness: "codex" }) });
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [row] }), getResource: () => ({ resource: row }) }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Plain" kind={kind} value={row.id} active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
+  const trigger = screen.getByRole("combobox", { name: "Plain" }); fireEvent.click(trigger);
+  await screen.findByRole("option", { name: /Plain choice/ });
+  expect(document.querySelector(".scroll-picker-decoration")).toBeNull();
+  client.clear();
+});
+
+it("does not borrow a reached row's harness for its independently resolved selected identity", async () => {
+  const row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Same Agent", harness: "codex" }) });
+  const exact = create(ResourceSchema, { ...row, revision: 2n, documentJson: encode({ name: "Same Agent", harness: "claude-code" }) });
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [row] }), getResource: () => ({ resource: exact }) }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value={row.id} active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
+  const trigger = screen.getByRole("combobox", { name: "Agent" });
+  await waitFor(() => expect(trigger.querySelector("[data-harness=claude-code]")).toBeTruthy());
+  fireEvent.click(trigger);
+  expect((await screen.findByRole("option", { name: "Same Agent" })).querySelector("[data-harness=codex]")).toBeTruthy();
+  expect(trigger.querySelector("[data-harness=codex]")).toBeNull();
+  client.clear();
+});
+
+it("reserves blank option slots for missing and unknown harnesses instead of inferring their names", async () => {
+  const rows = [undefined, "future-harness"].map(harness => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Codex", harness }) }));
+  const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: rows }) }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value="" active change={vi.fn()} /></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent" }));
+  for (const option of await screen.findAllByRole("option", { name: "Codex" })) {
+    expect(option.querySelector(".scroll-picker-decoration")).toBeTruthy();
+    expect(option.querySelector(".worker-harness-mark")).toBeNull();
+  }
+  client.clear();
+});
+
+it("fences a pending Agent selection and its decoration when the original connection is replaced", async () => {
+  const first = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Retained Agent", harness: "codex" }) });
+  const target = create(ResourceSchema, { ...first, id: newRequestId(), documentJson: encode({ name: "Pending Agent", harness: "claude-code" }) });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reads = vi.fn(async request => { if (request.id === target.id) await gate; return { resource: request.id === first.id ? first : target }; });
+  const original = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [first, target] }), getResource: reads }));
+  const updated = create(ResourceSchema, { ...first, revision: 2n, documentJson: encode({ name: "Retained Agent", harness: "opencode" }) });
+  const replacement = createRouterTransport(router => router.service(ResourceService, { listResources: () => ({ resources: [updated] }), getResource: () => ({ resource: updated }) }));
+  const oldClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }), newClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }), change = vi.fn();
+  const view = (transport: typeof original, client: QueryClient) => <TransportProvider transport={transport}><QueryClientProvider client={client}><ResourceChoice label="Agent" kind={EntityKind.AGENT} value={first.id} active change={change} /></QueryClientProvider></TransportProvider>;
+  const rendered = render(view(original, oldClient));
+  const trigger = screen.getByRole("combobox", { name: "Agent" });
+  await waitFor(() => expect(trigger.querySelector("[data-harness=codex]")).toBeTruthy());
+  fireEvent.click(trigger); fireEvent.click(await screen.findByRole("option", { name: "Pending Agent" }));
+  await waitFor(() => expect(reads.mock.calls.some(([request]) => request.id === target.id)).toBe(true));
+  rendered.rerender(view(replacement, newClient));
+  await waitFor(() => expect(trigger.querySelector("[data-harness=opencode]")).toBeTruthy());
+  await act(async () => release());
+  expect(change).not.toHaveBeenCalled();
+  expect(trigger.getAttribute("data-value")).toBe(first.id);
+  expect(trigger.querySelector("[data-harness=claude-code]")).toBeNull();
+  expect(trigger.querySelector("[data-harness=opencode]")).toBeTruthy();
+  oldClient.clear(); newClient.clear();
+});

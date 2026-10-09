@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ScrollContinuation, type ScrollContinuationQuery } from "./scroll-continuation";
 import "./scroll-picker.css";
 import { pickerOverlayGeometry, pickerSurfaceBounds, pickerSurfaceOwner } from "./picker-overlay";
 
-export interface ScrollPickerOption { id: string; label: string; disabled?: boolean }
+export interface ScrollPickerOption { id: string; label: string; disabled?: boolean; decoration?: ReactNode }
 
 /** Choices are display projections. The domain owns exact-ID selection,
  * authoritative reads and any resulting configuration change. */
-export function ScrollPicker({ options, label, value, change, query, active, disabled = false, required = false, autoFocus = false, placeholder = "", selectedLabel, markRequired = false }: {
+export function ScrollPicker({ options, label, value, change, query, active, disabled = false, required = false, autoFocus = false, placeholder = "", selectedLabel, selectedDecoration, markRequired = false }: {
   options: ScrollPickerOption[]; label: string; value: string; change: (id: string) => void;
   query: ScrollContinuationQuery; active: boolean; disabled?: boolean; required?: boolean;
-  autoFocus?: boolean; placeholder?: string; selectedLabel?: string; markRequired?: boolean;
+  autoFocus?: boolean; placeholder?: string; selectedLabel?: string; selectedDecoration?: ReactNode; markRequired?: boolean;
 }) {
+  const display = (label: string, decoration?: ReactNode) => decoration === undefined ? label : <span className="scroll-picker-content"><span className="scroll-picker-decoration" aria-hidden="true">{decoration}</span><span>{label}</span></span>;
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), root = useRef<HTMLDivElement>(null), container = useRef<HTMLDivElement>(null);
   const focusedInitially = useRef(false), showing = useRef(false), usable = useRef(false);
   const [open, setOpen] = useState(false), [highlight, setHighlight] = useState("");
@@ -94,10 +95,10 @@ export function ScrollPicker({ options, label, value, change, query, active, dis
     }
   }}>
     <span id={`${id}-label`}>{label}{markRequired ? <span className="agent-required" aria-hidden="true"> *</span> : null}</span>
-    <button ref={trigger} type="button" role="combobox" aria-labelledby={`${id}-label`} aria-expanded={open} aria-controls={`${id}-choices`} aria-haspopup="listbox" aria-required={required || undefined} aria-activedescendant={open && highlight ? `${id}-option-${options.findIndex(option => option.id === highlight)}` : undefined} disabled={!available} data-value={value} onClick={() => open ? close() : reveal()}>{selected?.label ?? selectedLabel ?? placeholder}</button>
+    <button ref={trigger} type="button" role="combobox" aria-labelledby={`${id}-label`} aria-expanded={open} aria-controls={`${id}-choices`} aria-haspopup="listbox" aria-required={required || undefined} aria-activedescendant={open && highlight ? `${id}-option-${options.findIndex(option => option.id === highlight)}` : undefined} disabled={!available} data-value={value} onClick={() => open ? close() : reveal()}>{display(selected?.label ?? selectedLabel ?? placeholder, selectedDecoration === undefined ? selected?.decoration : selectedDecoration)}</button>
     {required ? <input hidden aria-hidden="true" tabIndex={-1} required value={value} onChange={() => {}} disabled={!available} onInvalid={event => { event.preventDefault(); trigger.current?.focus(); reveal(); }} /> : null}
     {open ? <div ref={attachRoot} popover="manual" className="scroll-picker-popup" id={`${id}-choices`} role="listbox" aria-labelledby={`${id}-label`}>
-      {options.map((option, index) => <button key={option.id} id={`${id}-option-${index}`} data-picker-id={option.id} type="button" role="option" aria-selected={value === option.id} disabled={option.disabled} tabIndex={-1} data-highlighted={highlight === option.id} onMouseDown={event => event.preventDefault()} onPointerMove={() => { if (!option.disabled) setHighlight(option.id); }} onClick={() => choose(option)}>{option.label}</button>)}
+      {options.map((option, index) => <button key={option.id} id={`${id}-option-${index}`} data-picker-id={option.id} type="button" role="option" aria-selected={value === option.id} disabled={option.disabled} tabIndex={-1} data-highlighted={highlight === option.id} onMouseDown={event => event.preventDefault()} onPointerMove={() => { if (!option.disabled) setHighlight(option.id); }} onClick={() => choose(option)}>{display(option.label, option.decoration)}</button>)}
       <ScrollContinuation query={query} label={label} root={root} active={available && open && Boolean(scrollRoot)} />
     </div> : null}
   </div>;

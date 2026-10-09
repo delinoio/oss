@@ -15,6 +15,7 @@ import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import type { ScrollContinuationQuery } from "./scroll-continuation";
+import { HarnessMark, knownHarness } from "./harness-mark";
 import { ScrollPicker } from "./scroll-picker";
 import type { MessageShape } from "@bufbuild/protobuf";
 import { SystemCapability, SystemQuery, FailureCode, clientFailure, EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -145,11 +146,11 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const inventory = useQuery(ProviderQuery.listProviderInventory, { query: "", enabledOnly: true, pageSize: 1 }, { enabled: active && needsProviderCapability });
   const ready = providerInventoryReady(inventory.data?.capabilities);
   const allowedKey = allowed === undefined ? "*" : JSON.stringify(allowed);
-  interface ChoiceRow { id: string; revision: bigint; name: string; health: string }
+  interface ChoiceRow { id: string; revision: bigint; name: string; health: string; harness?: Harness }
   const projectResources = useCallback((resources: Resource[]) => {
     if (resources.length > 50 || new Set(resources.map(row => row.id)).size !== resources.length || resources.some(row => row.kind !== kind || !row.id || row.revision <= 0n || !supportsResourceSchema(row))) throw new ConnectError("Invalid resource choices", Code.DataLoss);
     return resources.filter(row => allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(row.id)).map(row => {
-      const data = document(row); return { id: row.id, revision: row.revision, name: text(data.name) || text(data.alias), health: text(data.health) };
+      const data = document(row); return { id: row.id, revision: row.revision, name: text(data.name) || text(data.alias), health: text(data.health), harness: kind === EntityKind.AGENT ? knownHarness(data.harness) : undefined };
     });
   }, [kind, allowedKey]);
   const requestResources = useCallback((token: string) => ({ filter: { kind, pageSize: 50, pageToken: token } }), [kind]);
@@ -173,7 +174,7 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   usePaginationRefresh(ProviderQuery.searchModels, requestModels(""), active && needsProviderCapability && kind === EntityKind.MODEL, models.refresh);
   const selected = useQuery(ResourceQuery.getResource, { kind, id: value }, { enabled: active && Boolean(value) });
   // Creation owns this independently verified exact-ID record. It supplies only
-  // the selected label; reached pages continue to retain metadata projections.
+  // the selected label and decoration; reached pages retain metadata projections.
   const resolvedSelection = resolvedChoice?.id === value && resolvedChoice.kind === kind && resolvedChoice.revision > 0n && supportsResourceSchema(resolvedChoice) && (allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(value)) ? resolvedChoice : undefined;
   const selectedResource = selected.data?.resource?.id === value && selected.data.resource.kind === kind ? selected.data.resource : resolvedSelection;
   const selectedData = document(selectedResource);
@@ -210,8 +211,10 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     } catch (error) { if (generation.current === original) setSelectionError(error); }
     finally { if (generation.current === original) setSelectionBusy(false); }
   };
-  const options = [{ id: "", label: emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() }) }, ...result.rows.map(row => ({ id: row.id, label: (row.name || copy("documents.extra.e504e6152194")) + (kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(row.health) }) : ""), disabled: row.id === value && selectedProviderOff }))];
-  return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedLabel={value ? selectedResource ? resourceName(selectedResource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
+  const decorate = (harness?: Harness) => kind === EntityKind.AGENT ? <HarnessMark harness={harness} /> : undefined;
+  const selectedHarness = selectedResource && selectedResource.revision > 0n && supportsResourceSchema(selectedResource) && (allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(value)) ? knownHarness(selectedData.harness) : undefined;
+  const options = [{ id: "", decoration: decorate(), label: emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() }) }, ...result.rows.map(row => ({ id: row.id, decoration: decorate(row.harness), label: (row.name || copy("documents.extra.e504e6152194")) + (kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(row.health) }) : ""), disabled: row.id === value && selectedProviderOff }))];
+  return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedDecoration={decorate(selectedHarness)} selectedLabel={value ? selectedResource ? resourceName(selectedResource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
     {needsProviderCapability && active && !ready ? <p role="status">{copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}</p> : null}
     {(showStatus || reportRead || markRequired) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead || markRequired) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
