@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { act, fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { i18n, SupportedLanguage } from "./localization";
 import { quotaColor } from "./quota-color";
 import { SubscriptionBrand } from "./subscription-catalog";
 import { QuotaObservationState as Quota, SubscriptionConnectionState as Connection, SubscriptionOperationState as Operation, SubscriptionReadState as Read, SubscriptionSettingsView, quotaPresentation, type SubscriptionAccountRow, type SubscriptionQuotaWindow } from "./subscription-settings";
@@ -336,4 +337,24 @@ it("expires retained paid buckets before freshly observed quota windows without 
     rendered.rerender(view([first],{now:undefined,active:false}));
     expect(vi.getTimerCount()).toBe(0);
   } finally {rendered.unmount();vi.useRealTimers();}
+});
+
+it.each([Connection.Connected, Connection.Disconnected])("retains the original management callback and alias for %s accounts", connection => {
+  const account = { ...row(), connection, connect: vi.fn() };
+  const rendered = render(view([account]));
+  const action = screen.getByRole("button", { name: `Manage ${account.alias}` });
+  expect(action.textContent).toBe(connection === Connection.Disconnected ? "Log in" : "Manage");
+  fireEvent.click(action);
+  expect(account.connect).toHaveBeenCalledTimes(1);
+  rendered.rerender(view([account], { actionsBlocked: true }));
+  expect(action.matches(":disabled")).toBe(true);
+  fireEvent.click(action);
+  expect(account.connect).toHaveBeenCalledTimes(1);
+});
+
+it("preserves Korean subscription management copy", async () => {
+  await i18n.changeLanguage(SupportedLanguage.Korean);
+  const account = { ...row(), connect: vi.fn() };
+  render(view([account]));
+  expect(screen.getByRole("button", { name: `${account.alias} 로그인 관리` }).textContent).toBe("로그인 관리");
 });
