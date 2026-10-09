@@ -512,7 +512,7 @@ it("ignores a late prior read after its Settings visit was replaced", async () =
 it("assigns all policy groups to Project defaults and only Network to Server preferences", async () => {
   const value = fixture([resource(EntityKind.SETTINGS, known)]);
   render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form", { name: "Project defaults form" });
-  expect(screen.queryByRole("button", { name: "Git", exact: true })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Git$/ })).toBeNull();
   expect(routing()).toBeTruthy(); expect(automaticFetch()).toBeTruthy(); expect(details().open).toBe(false);
   expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
   const policyReads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length;
@@ -530,7 +530,7 @@ it("redirects the retained Git destination to the sole policy editor", async () 
  render(value.view(<Settings entryDestination={{ category: SettingsCategory.GitWorkflow, generation: "legacy-git" }} />));
  await screen.findByRole("form", { name: "Project defaults form" });
  expect(screen.getByRole("heading", { level: 1, name: "Project defaults" })).toBeTruthy();
- expect(screen.queryByRole("button", { name: "Git", exact: true })).toBeNull();
+ expect(screen.queryByRole("button", { name: /^Git$/ })).toBeNull();
  expect(routing()).toBeTruthy(); expect(automaticFetch()).toBeTruthy();
  expect(value.save).not.toHaveBeenCalled();
 });
