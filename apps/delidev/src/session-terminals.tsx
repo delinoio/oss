@@ -53,6 +53,9 @@ export function SessionTerminals({ session, close, active = true, presentationCh
   const [shell, setShell] = useState("");
   const [internalSelected, setSelected] = useState("");
   const selected = selectedId ?? internalSelected;
+  // Content-tab selection is owned by SessionTabBar. Retain it before the
+  // toolbar selects the inventory tab, whose selectedId is deliberately empty.
+  useLayoutEffect(() => { if (selectedId) setSelected(selectedId); }, [selectedId]);
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);

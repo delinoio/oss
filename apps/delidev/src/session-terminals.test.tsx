@@ -377,3 +377,28 @@ it.each([{}, [], 12, true, "invalid-id"])("rejects malformed close-request metad
     expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
   } finally { view.unmount(); client.clear(); }
 });
+
+
+it("reopens the last content-tab selection instead of the first inventory terminal", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const terminals = [1, 2].map(() => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) }));
+  const opened = vi.fn(), createTerminal = vi.fn();
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: terminals }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [selected, select] = useState(terminals[0]!.id), [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => select(terminals[1]!.id)}>Select second content tab</button><button onClick={() => { select(""); setIntent({ requestId: newRequestId(), revision: session.revision }); }}>Open fixture</button><SessionTerminals session={session} selectedId={selected} tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: /Terminal 2/ });
+    fireEvent.click(screen.getByRole("button", { name: "Select second content tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith(terminals[1]!.id));
+    expect(createTerminal).not.toHaveBeenCalled();
+  } finally { view.unmount(); client.clear(); }
+});
