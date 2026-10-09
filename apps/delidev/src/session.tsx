@@ -1,3 +1,5 @@
+import { FlatDisclosureScope } from "./disclosure";
+import { useSessionNameEditor } from "./session-name-editor";
 import { NativeAutoReview } from "./native-auto-review";
 import { useSessionRevert } from "./session-revert";
 import { isImageStartupRejectedInput } from "./startup-rejection";
@@ -315,9 +317,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const browserButton = useRef<HTMLButtonElement>(null);
   const infoHeading = useRef<HTMLHeadingElement>(null);
   const infoEvidence = useRef<HTMLDivElement>(null);
-  const budgetDetails = useRef<HTMLDetailsElement>(null);
+  const budgetDetails = useRef<HTMLElement>(null);
   const information = useRef<HTMLElement>(null);
-  const [prOpen, setPROpen] = useState(true), [subagentsOpen, setSubagentsOpen] = useState(true);
+  const [prEmpty, setPREmpty] = useState(false), [subagentsEmpty, setSubagentsEmpty] = useState(false);
+  const [diagnosticsTarget, setDiagnosticsTarget] = useState<HTMLDivElement | null>(null);
+  const editName = useSessionNameEditor();
   const [infoReveal, setInfoReveal] = useState<{ target: InfoTarget }>();
   useLayoutEffect(() => {
     if (!infoReveal) return;
@@ -526,7 +530,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   }}>
     <header className="session-header">
       <div className="session-heading">
-        <SessionHarness resource={session}><div className="session-heading-line"><h2>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
+        <SessionHarness resource={session}><div className="session-heading-line"><h2 tabIndex={-1} onDoubleClick={event => { if (session) editName?.(session.id, event.currentTarget); }}>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
       </div>
       <div className="session-controls" hidden={!embedded && tabs.tab.kind===SessionTabKind.Sidechat} inert={!embedded && tabs.tab.kind===SessionTabKind.Sidechat}>
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
@@ -556,7 +560,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <RunnerTaskRemediation active={conversationActive} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
-      {session ? <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
+      {session ? <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen diagnosticsTarget={diagnosticsTarget} target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
           <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
           {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
           {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
@@ -611,7 +615,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     {active && tabs.tab.kind===SessionTabKind.File ? <div className="session-app-panel"><SessionFilePreview sessionId={id} repository={tabs.tab.repository} path={tabs.tab.path} close={closePanel}/></div> : null}
     {active && (tabs.tab.kind===SessionTabKind.Diff || tabs.tab.kind===SessionTabKind.Comparison) ? <div className="session-app-panel"><SessionDiff sessionId={id} worktree={data.workspace===Workspace.Worktree} close={closePanel} selected={tabs.tab.kind===SessionTabKind.Comparison?tabs.tab:undefined} openComparison={value=>tabs.store.open(id,{kind:SessionTabKind.Comparison,...value})}/></div>:null}
     {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path)=>tabs.store.open(id,{kind:SessionTabKind.File,repository,path})}/></div>:null}
-    {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><RequestDiagnostics sessionId={id} close={closePanel}/></div>:null}
+    {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><div className="session-diagnostics"><div ref={setDiagnosticsTarget}/><FlatDisclosureScope><RequestDiagnostics sessionId={id} close={closePanel}/></FlatDisclosureScope></div></div>:null}
     {session && browserOpened ? <div hidden={!active||panel!==SessionPanel.Browser} inert={!active||panel!==SessionPanel.Browser} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/></div>:null}
     {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}
               hideEmpty={hideEmptyTerminals}
@@ -630,17 +634,17 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     </div>
     <aside hidden={tabs.tab.kind===SessionTabKind.Sidechat} ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
-      <div className="session-information-body">
+      <FlatDisclosureScope><div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />
         {session ? <>
-          <Disclosure open className="session-information-section" onToggle={event => setPROpen(event.currentTarget.open)}><DisclosureSummary>{copy("session.pullRequests")}</DisclosureSummary><SessionPullRequests key={id} session={session} visible={prOpen} /></Disclosure>
-          <Disclosure open className="session-information-section"><DisclosureSummary>{copy("session.executionSettings")}</DisclosureSummary><ExecutionConfiguration resource={session} /></Disclosure>
-          <Disclosure open className="session-information-section"><DisclosureSummary>{copy("session.context")}</DisclosureSummary><SessionContext key={id} session={session} /></Disclosure>
-          <Disclosure open className="session-information-section" onToggle={event => setSubagentsOpen(event.currentTarget.open)}><DisclosureSummary>{copy("session.subagents")}</DisclosureSummary><Subagents key={id} sessionId={id} revision={session.revision.toString()} visible={subagentsOpen} /></Disclosure>
-          <Disclosure open ref={budgetDetails} className="session-information-section" tabIndex={-1}><DisclosureSummary>{copy("session.usageAndBudget")}</DisclosureSummary><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></Disclosure>
+          <section hidden={prEmpty} className="session-information-section"><h3>{copy("session.pullRequests")}</h3><SessionPullRequests key={id} session={session} emptyChanged={setPREmpty} diagnosticsTarget={diagnosticsTarget} /></section>
+          <section className="session-information-section"><h3>{copy("session.executionSettings")}</h3><ExecutionConfiguration resource={session} diagnosticsTarget={diagnosticsTarget} /></section>
+          <section className="session-information-section"><h3>{copy("session.context")}</h3><SessionContext key={id} session={session} /></section>
+          <section hidden={subagentsEmpty} className="session-information-section"><h3>{copy("session.subagents")}</h3><Subagents key={id} sessionId={id} revision={session.revision.toString()} emptyChanged={setSubagentsEmpty} diagnosticsTarget={diagnosticsTarget} /></section>
+          <section ref={budgetDetails} className="session-information-section" tabIndex={-1}><h3>{copy("session.usageAndBudget")}</h3><NativeUsage session={session} diagnosticsTarget={diagnosticsTarget} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></section>
           <SessionStorageAction source={session} />
         </> : null}
-      </div>
+      </div></FlatDisclosureScope>
     </aside>
 
     </div>

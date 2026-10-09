@@ -44,7 +44,7 @@ it("filters and paginates without changing the conversation draft, and disposes 
   fireEvent.click(screen.getByRole("button", { name: "Load more Model request diagnostics" }));
   await waitFor(() => expect(f.read).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: "opaque-page" }), expect.anything()));
   f.read.mockRejectedValueOnce(new ConnectError("PRIVATE_ERROR_SENTINEL", Code.Unavailable));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" }));
+  void f.client.invalidateQueries({ refetchType: "active" });
   await screen.findByText("Refresh failed. The displayed observations may be stale.");
   expect(screen.queryByText("PRIVATE_ERROR_SENTINEL")).toBeNull();
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Model request diagnostics" }), { key: "Escape" });

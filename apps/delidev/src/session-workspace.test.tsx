@@ -9,6 +9,7 @@ import { expect, it, vi } from "vitest";
 import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, newRequestId } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
+import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
 import { SessionTabsProvider } from "./session-tabs";
 import { SessionView } from "./session";
@@ -71,7 +72,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionNameEditorProvider><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></SessionNameEditorProvider></MutationIntents></QueryClientProvider></TransportProvider>;
   return { session, client, view, enqueue, rename, control, recover, budget, draft, list, publish, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
 }
 
@@ -82,10 +83,13 @@ it("retains composer, mode and staged information edits through tool switches an
   await screen.findByRole("heading", { name: "Original session" });
   fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
   screen.getByRole("heading", { name: "Session information" }).focus();
-  fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
-  const name = screen.getByRole("textbox", { name: "Session name" });
+  fireEvent.doubleClick(screen.getByRole("heading", { name: "Original session" }));
+  const name = await screen.findByRole("textbox", { name: "Session name" });
+  await waitFor(()=>expect(name).toHaveProperty("value","Original session"));
   fireEvent.change(name, { target: { value: "Staged name" } });
+  fireEvent.click(screen.getByRole("button",{name:"Close"}));
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.doubleClick(screen.getByRole("heading", { name: "Original session" }));
   expect(composer.isConnected).toBe(true);
   expect(composer.closest("[hidden]")).not.toBeNull();
   screen.getByRole("heading", { name: "Session information" }).focus();
@@ -142,7 +146,7 @@ it("observes reached budgets in persistent Info and reveals the budget without c
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   const info = screen.getByRole("complementary", { name: "Session information" });
-  expect(within(info).getByText("Usage and budget").closest("details")).toHaveProperty("open", true);
+  expect(within(info).getByText("Usage and budget").closest("section")).toHaveProperty("hidden", false);
   fireEvent.keyDown(info, { key: "Escape" });
   expect(info).toHaveProperty("hidden", false);
   expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
@@ -158,7 +162,7 @@ it("keeps original technical evidence in persistent Info and reveals it from the
   const opener = screen.getByRole("button", { name: "Show details" });
   fireEvent.click(opener);
   const evidence = screen.getByText(/Original installation evidence/);
-  expect(evidence.closest("details")).toHaveProperty("open", true);
+  expect(evidence.closest("section")).toHaveProperty("hidden", false);
   expect(evidence.closest("aside")).toHaveProperty("hidden", false);
   fireEvent.keyDown(evidence, { key: "Escape" });
   expect(document.activeElement).toBe(evidence.closest(".session-information-evidence"));
@@ -291,11 +295,15 @@ it("keeps a compact header and all independent status/title evidence in the expa
  const header=document.querySelector(".session-header")!,info=screen.getByRole("complementary",{name:"Session information"});
  expect(header.querySelector(".session-title-status")).toBeNull();expect(header.textContent).not.toContain("Succeeded");expect(header.textContent).not.toContain("Title generation unsupported");
  const values=info.querySelector(".session-status-values")!;
- expect([...values.querySelectorAll("dt")].map(node=>node.textContent)).toEqual(["Session ID","Workspace","Result","Dispatch","Archive","Preparation","Recovery","Automatic title"]);
- expect([...values.querySelectorAll("dd")].slice(0,7).map(node=>node.textContent)).toEqual([f.session.id,"Worktree","succeeded","ready","active","ready","none"]);
- expect(values.textContent).toContain("The original Worker did not prove the required title capability.");
- expect(info.querySelector(".session-tools")).toHaveProperty("open",true);expect([...info.querySelectorAll(".session-information-section")].every(node=>(node as HTMLDetailsElement).open)).toBe(true);
- expect(info.querySelectorAll(".session-information-section")).toHaveLength(5);
+ expect([...values.querySelectorAll("dt")].map(node=>node.textContent)).toEqual(["Workspace","Result","Archive"]);
+ expect([...values.querySelectorAll("dd")].slice(0,7).map(node=>node.textContent)).toEqual(["Worktree","succeeded","active"]);
+ expect(info.textContent).not.toContain("The original Worker did not prove the required title capability.");
+ fireEvent.click(screen.getByRole("button",{name:"Diagnostics"}));
+ await screen.findByText("The original Worker did not prove the required title capability.");
+ expect(screen.getByText(/Session details/)).toBeTruthy();
+ expect(screen.getByText(/Request diagnostics are unavailable/)).toBeTruthy();
+ expect(info.querySelector(".session-tools")?.tagName).toBe("SECTION");expect(info.querySelector(".session-information-section details")).toBeNull();
+ expect(info.querySelectorAll(".session-information-section").length).toBeGreaterThanOrEqual(5);
  expect(screen.queryByRole("button",{name:"Show PR associations"})).toBeNull();
  expect(info.querySelector(".execution-configuration")?.tagName).toBe("DIV");expect(info.querySelector(".conversation-page-scroll")?.tagName).toBe("DIV");
  expect(f.control).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();

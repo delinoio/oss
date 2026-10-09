@@ -1,7 +1,7 @@
 import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 
-import { EntityKind, SessionContextCapability, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceQuery, SessionContextCapability, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 import { JobState, OperationStatus } from "./jobs";
 import { useRetainedMutation } from "./mutation";
@@ -42,6 +42,13 @@ export function contextDocument(bytes: Uint8Array | undefined, session: string, 
   } catch { return; }
 }
 
+export function contextCapacity(resource: Resource | undefined, sessionId: string, native: NativeContextObservation | undefined): number | undefined {
+  if (!native || !resource || resource.kind !== EntityKind.USAGE || resource.id !== native.observation_id || resource.sessionId !== sessionId || resource.schemaVersion !== 1) return;
+  const value = document(resource), observation = object(value.observation), total = object(observation.last_request).total, capacity = observation.context_window;
+  if (value.harness !== "codex" || value.execution_id !== native.execution_id || value.native_thread_id !== native.native_thread_id || value.native_turn_id !== native.native_turn_id || !Number.isSafeInteger(value.sequence) || BigInt(value.sequence as number) !== BigInt(native.sequence) || !Number.isSafeInteger(total) || (total as number) < 0 || BigInt(total as number) !== BigInt(native.tokens) || !Number.isSafeInteger(capacity) || (capacity as number) <= 0) return;
+  return capacity as number;
+}
+
 export function SessionContext({ session }: { session: Resource }) {
   useLocale();
   const status = useQuery(SystemQuery.getStatus, {});
@@ -57,14 +64,19 @@ export function SessionContext({ session }: { session: Resource }) {
   });
   const harness = text(object(object(document(session).initial_execution).configuration).harness);
   const native = harness === "codex" ? nativeContextObservation(view?.native_context) : undefined;
+  const usage = useQuery(ResourceQuery.getResource, { kind: EntityKind.USAGE, id: native?.observation_id ?? "" }, { enabled: Boolean(native), retry: false });
+  const capacity = usage.error ? undefined : contextCapacity(usage.data?.resource, session.id, native);
+  const percent = capacity !== undefined && native ? Number(native.tokens) / capacity * 100 : undefined;
   const historical = native?.native_turn_id !== object(document(session).execution).native_turn_id || native?.status === NativeContextStatus.Historical || Boolean(context.error) || context.isFetching || view?.session_revision !== session.revision.toString();
   const capability = harness === "codex" ? SessionContextCapability.CODEX_MANUAL_COMPACTION_V1 : harness === "claude-code" ? SessionContextCapability.CLAUDE_MANUAL_COMPACTION_V1 : harness === "opencode" ? SessionContextCapability.OPENCODE_MANUAL_COMPACTION_V1 : undefined;
   const eligible = supported && (harness !== "codex" || status.data?.capabilities.includes(SystemCapability.CODEX_SESSION_COMPACTION_V1)) && (harness !== "opencode" || status.data?.capabilities.includes(SystemCapability.OPENCODE_SESSION_COMPACTION_V1)) && capability !== undefined && context.data?.capabilities.includes(capability) && view?.session_revision === session.revision.toString() && !context.error && !context.isFetching;
   const result = object(manual.result), codex = object(result.codex), opencode = object(result.opencode), problem = object(manual.problem);
   if (!supported) return status.isLoading ? <p role="status">{copy("session-context.loadingCapability")}</p> : <section aria-label={copy("session-context.sessionContext_93a2ab")}>{!status.error ? <p>{copy("session-context.updateTheServerAndOriginalWorker_00f78a")}</p> : <p>{copy("session-context.capabilityReadFailed")}</p>}<Problem error={status.error} />{status.error ? <button disabled={status.isFetching} onClick={() => void status.refetch()}>{copy("session-context.retryCapability")}</button> : null}</section>;
-  return <section aria-label={copy("session-context.sessionContext_93a2ab")} className="session-context"><header><button disabled={context.isFetching} onClick={() => void context.refetch()}>{copy("session-context.refreshContext_f79efc")}</button></header>
+  return <section aria-label={copy("session-context.sessionContext_93a2ab")} className="session-context">{context.error ? <button disabled={context.isFetching} onClick={() => void context.refetch()}>{copy("session-name.retryRead")}</button> : null}
     {harness === "codex" ? <>
       <p><LocalizedText id="session-context.latestNativeTokens" components={{ s0: <>{native?.tokens ?? copy("session-context.notReported_adadfa")}</> }} /></p>
+      <div className="context-capacity" role="progressbar" aria-label={copy("session-name.contextSnapshot")} aria-valuemin={0} aria-valuemax={percent === undefined ? 100 : Math.max(100, percent)} aria-valuenow={percent} aria-valuetext={percent === undefined ? copy("session-name.capacityUnavailable") : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}><div hidden={percent === undefined} style={{ width: `${percent === undefined ? 0 : Math.min(100, Math.max(0, percent))}%` }} /></div>
+      <p>{percent === undefined ? copy("session-name.capacityUnavailable") : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}</p>
       {native ? <><p>{copy(historical ? "session-context.historicalSnapshot" : "session-context.latestSnapshot")}</p><p><LocalizedText id="session-context.observedAt" components={{ s0: <Timestamp value={native.observed_at} /> }} /></p></> : null}
       <p>{copy("session-context.nativeSnapshotExplanation")}</p>
       {context.error ? <p role="status">{copy("session-context.contextReadFailed")}</p> : null}

@@ -296,3 +296,16 @@
 
 .new-session-composer .skill-textarea { flex: 1; display: flex; }
 .skill-textarea textarea { display: block; }
+
+.session-information-section { padding:12px 0; border-bottom:1px solid var(--border-subtle); }
+.session-information-section > h3, .session-diagnostics h3, .session-diagnostics h4, .session-information-section h3, .session-information-section h4 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--muted); }
+.session-information-section[hidden] { display:none; }
+.context-capacity { height:6px; background:var(--surface-muted); border-radius:3px; overflow:hidden; }
+.context-capacity > div { height:100%; background:var(--accent); }
+.session-name-dialog { width:480px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:24px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); box-shadow:0 8px 32px var(--shadow-soft); overflow:auto; }
+.session-name-dialog::backdrop { background:rgb(0 0 0 / 12%); }
+.session-name-dialog > header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.session-name-dialog h2 { font-size:20px; }
+.session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
+.session-name-dialog button, .session-name-dialog input { min-height:40px; }
+.session-name-dialog form > .primary { align-self:flex-end; }

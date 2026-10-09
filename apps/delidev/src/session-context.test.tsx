@@ -9,7 +9,7 @@ import { EntityKind, ResourceSchema, SessionContextCapability, SessionService, S
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { i18n } from "./localization";
-import { contextDocument, SessionContext, nativeContextObservation } from "./session-context";
+import { contextDocument, SessionContext, nativeContextObservation, contextCapacity } from "./session-context";
 
 it.each([
  { harness: "codex", large: false }, { harness: "opencode", large: false },
@@ -100,7 +100,7 @@ it.each(["en", "ko"])("renders exact native snapshots, historical transitions an
   await screen.findByText(language === "en" ? "Latest native-reported context tokens: 9007199254740993" : "네이티브가 최근 보고한 컨텍스트 토큰: 9007199254740993");
   await screen.findByText(language === "en" ? "Latest reported snapshot" : "최근 보고된 스냅샷");
   expect(document.querySelector('time[datetime="2026-10-09T01:00:00Z"]')).toBeTruthy();
-  const refresh = () => fireEvent.click(screen.getByRole("button", { name: language === "en" ? "Refresh context" : "컨텍스트 새로고침" }));
+  const refresh = () => { void client.invalidateQueries({ refetchType: "active" }); };
   observation = { ...native, status: "historical", tokens: "0" }; refresh();
   await screen.findByText(language === "en" ? "Latest native-reported context tokens: 0" : "네이티브가 최근 보고한 컨텍스트 토큰: 0");
   await screen.findByText(language === "en" ? "Historical snapshot" : "이전 스냅샷");
@@ -127,8 +127,17 @@ it("polls retained context and refreshes only reads, without invoking compaction
   await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await vi.advanceTimersByTimeAsync(5050);
   await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh context" }));
+  await vi.advanceTimersByTimeAsync(5050);
   await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(3));
   expect(compact).not.toHaveBeenCalled();
  } finally { rendered.unmount(); client.clear(); vi.useRealTimers(); }
+});
+
+it("uses capacity only from the exact same safe native Usage observation",()=>{
+ const native=nativeContextFixture();const sessionId=newRequestId();const paired=nativeContextObservation({...native,tokens:"300",sequence:"2"})!;const document={harness:"codex",execution_id:paired.execution_id,native_thread_id:paired.native_thread_id,native_turn_id:paired.native_turn_id,sequence:2,observation:{last_request:{total:300},context_window:200}};
+ const row=create(ResourceSchema,{kind:EntityKind.USAGE,id:paired.observation_id,sessionId,schemaVersion:1,revision:1n,documentJson:encode(document)});expect(contextCapacity(row,sessionId,paired)).toBe(200);
+ for(const field of ["execution_id","native_thread_id","native_turn_id","harness"])expect(contextCapacity({...row,documentJson:encode({...document,[field]:"wrong"})},sessionId,paired)).toBeUndefined();
+ for(const sequence of [1,-1,9007199254740992])expect(contextCapacity({...row,documentJson:encode({...document,sequence})},sessionId,paired)).toBeUndefined();
+ for(const observation of [{last_request:{total:301},context_window:200},{last_request:{total:300},context_window:0},{last_request:{total:300},context_window:9007199254740992},{last_request:{total:9007199254740992},context_window:200}])expect(contextCapacity({...row,documentJson:encode({...document,observation})},sessionId,paired)).toBeUndefined();
+ for(const changed of [{...row,id:newRequestId()},{...row,sessionId:newRequestId()},{...row,kind:EntityKind.SESSION},{...row,schemaVersion:2}])expect(contextCapacity(changed,sessionId,paired)).toBeUndefined();
 });

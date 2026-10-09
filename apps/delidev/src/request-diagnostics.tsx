@@ -79,10 +79,10 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       <dt>{native ? copy("request-diagnostics.selectedServiceTier_2c8ca9") : copy("request-diagnostics.requestedServiceTier_14f88a")}</dt><dd>{value.requestedServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
       <dt>{native ? copy("request-diagnostics.nativeEffectiveServiceTier_d412ae") : copy("request-diagnostics.providerObservedServiceTier_01a40b")}</dt><dd>{value.effectiveServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
     </dl>
-    <Disclosure><DisclosureSummary>{copy("request-diagnostics.originalIdentities_580b0d")}</DisclosureSummary><dl>{[
+    <section><h3>{copy("request-diagnostics.originalIdentities_580b0d")}</h3><dl>{[
       [copy("request-diagnostics.extra.406c0cd17230"), value.publicationRequestId], [copy("request-diagnostics.extra.5f1a25573a30"), value.correlationId], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
       [copy("request-diagnostics.extra.45d8583658f2"), value.providerRequestId], [copy("request-diagnostics.extra.6e5cd62e3845"), value.nativeResponseId], [copy("request-diagnostics.extra.230d0da59fbf"), value.nativeThreadId], [copy("request-diagnostics.extra.a12de5a8959e"), value.nativeTurnId],
-    ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></Disclosure>
+    ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></section>
   </article>;
 }
 
@@ -115,7 +115,7 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error} /><Failure failure={result.error?.failure} />
     {status.isPending ? <p role="status">{copy("request-diagnostics.checkingDiagnosticSupport_65aa48")}</p> : status.data && !supported ? <p>{copy("request-diagnostics.requestDiagnosticsAreUnavailableOnThis_cb5bc2")}</p> : null}
     {status.error ? <button onClick={() => void status.refetch()}>{copy("request-diagnostics.retryServerCapabilities_18a515")}</button> : null}
-    {supported ? <button disabled={Boolean(result.loading)} onClick={result.refreshExplicit}>{copy("request-diagnostics.refreshDiagnostics_7bce98")}</button> : null}
+    {supported && result.error ? <button disabled={Boolean(result.loading)} onClick={result.retry}>{copy("session-name.retryRead")}</button> : null}
     {supported && !result.loaded && result.loading ? <p role="status">{copy("request-diagnostics.loadingRequestObservations_ac40d6")}</p> : null}
     {result.error && result.loaded ? <p role="alert">{copy("request-diagnostics.refreshFailedTheDisplayedObservationsMay_c02e74")}</p> : null}
     <ScrollPayloadWindow query={result} root={root} active={supported} identity={value => value.id} revision={value => value.revision}>{payload => payload.map(value => <DiagnosticRow key={value.id} value={value} />)}</ScrollPayloadWindow>

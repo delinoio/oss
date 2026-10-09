@@ -126,7 +126,7 @@ test("keeps a failed child read halted across native revisions until explicit re
   mounted.rerender(view("2"));
   expect(tokens).toEqual([""]);
   expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh subagents" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
   await screen.findByText("No native child observations are available.");
   expect(tokens).toEqual(["", ""]);
   client.clear();

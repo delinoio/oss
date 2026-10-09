@@ -1,0 +1,15 @@
+{
+  "session-name.edit": "Edit session",
+  "session-name.save": "Save",
+  "session-name.invalid": "Enter a nonempty session name of at most 256 UTF-8 bytes without NUL characters.",
+  "session-name.discard": "Discard draft and reload",
+  "session-name.retryRead": "Retry read",
+  "session-name.retry": "Retry original rename",
+  "session-name.contextSnapshot": "Native-reported Context snapshot relative to its reported limit",
+  "session-name.capacityUnavailable": "Reported capacity unavailable",
+  "session-name.sessionDetails": "Session details",
+  "session-name.executionReferences": "Execution references",
+  "session-name.operationDetails": "Operation details",
+  "session-name.nativeEvidence": "Native source evidence",
+  "session-name.subagent": "Subagent {{number}}"
+}

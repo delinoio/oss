@@ -19,7 +19,7 @@ function fixture(){
  const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
  const changed=vi.fn(),blocked=vi.fn();
  const renderView=()=> <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBudget resource={resource} changed={changed} blocked={blocked}/></MutationIntents></QueryClientProvider></TransportProvider>;
- return {resource,read,write,changed,blocked,renderView,get view(){return view;},set view(value){view=value;}};
+ return {client,resource,read,write,changed,blocked,renderView,get view(){return view;},set view(value){view=value;}};
 }
 it("sets an exact optional budget and exposes unavailable evidence without claiming zero or compliance",async()=>{
  const f=fixture();render(f.renderView());await screen.findByText("No estimated-cost budget is configured.");
@@ -35,14 +35,14 @@ it("announces a reached threshold and preserves the original uncertain mutation 
  fireEvent.click(screen.getByRole("button",{name:"Edit session budget"}));fireEvent.change(screen.getByLabelText("Estimated-cost threshold"),{target:{value:"2"}});
  f.write.mockRejectedValueOnce(new ConnectError("Lost result",Code.Unavailable));fireEvent.click(screen.getByRole("button",{name:"Save session budget"}));await screen.findByRole("button",{name:"Retry the same budget"});
  const original=f.write.mock.calls[0][0];f.view=create(SessionBudgetViewSchema,{...f.view,session:{...f.resource,revision:5n}});
- fireEvent.click(screen.getByRole("button",{name:"Refresh budget"}));await screen.findByText(/The session changed/);
+ void f.client.invalidateQueries({refetchType:"active"});await screen.findByText(/The session changed/);
  expect((screen.getByLabelText("Estimated-cost threshold") as HTMLInputElement).value).toBe("2");expect(screen.queryByRole("button",{name:"Use latest revision with this draft"})).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Retry the same budget"}));await waitFor(()=>expect(f.write).toHaveBeenCalledTimes(2));expect(f.write.mock.calls[1][0]).toEqual(original);
 });
 it("requires explicit rebasing of a retained stale draft and sends an explicit removal",async()=>{
  const f=fixture();f.view=create(SessionBudgetViewSchema,{...f.view,budget:create(EstimatedCostBudgetSchema,{currency:"USD",threshold:"1"}),state:BudgetState.ALLOW_INCOMPLETE});render(f.renderView());
  await screen.findByText(/Known lifetime subtotal: Unavailable/);fireEvent.click(screen.getByRole("button",{name:"Edit session budget"}));fireEvent.click(screen.getByRole("checkbox",{name:"Enable estimated-cost budget"}));
- f.view=create(SessionBudgetViewSchema,{...f.view,session:{...f.resource,revision:3n}});fireEvent.click(screen.getByRole("button",{name:"Refresh budget"}));await screen.findByText(/The session changed/);
+ f.view=create(SessionBudgetViewSchema,{...f.view,session:{...f.resource,revision:3n}});void f.client.invalidateQueries({refetchType:"active"});await screen.findByText(/The session changed/);
  expect((screen.getByRole("button",{name:"Save session budget"}) as HTMLButtonElement).disabled).toBe(true);expect(f.write).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Use latest revision with this draft"}));fireEvent.click(screen.getByRole("button",{name:"Save session budget"}));await screen.findByText("No estimated-cost budget is configured.");
  expect(f.write.mock.calls[0][0]).toMatchObject({mutation:{expectedRevision:3n},change:{case:"remove",value:true}});

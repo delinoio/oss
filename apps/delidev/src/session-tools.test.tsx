@@ -167,16 +167,13 @@ it("inspects a pre-native Worktree interruption with the original first identity
   expect(value.control).not.toHaveBeenCalled(); expect(value.createSession).not.toHaveBeenCalled(); expect(value.prepare).not.toHaveBeenCalled();
 });
 
-it("keeps a stale name draft and blocks a recovery confirmation selected before a peer revision", async () => {
+it("blocks a recovery confirmation selected before a peer revision without an Info rename entry", async () => {
   const value = fixture(), rendered = render(value.view(<SessionTools resource={value.session} changed={() => {}} />));
   fireEvent.click(screen.getByText("Session details and recovery"));
-  fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
-  fireEvent.change(screen.getByLabelText("Session name"), { target: { value: "Staged name" } });
+  expect(screen.queryByRole("button", { name: "Rename session" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Inspect original workspace recovery" }));
   rendered.rerender(value.view(<SessionTools resource={create(ResourceSchema, { ...value.session, revision: 9n })} changed={() => {}} />));
-  expect((screen.getByRole("button", { name: "Save session name" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Confirm selected recovery action" }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByLabelText("Session name") as HTMLInputElement).value).toBe("Staged name");
   expect(value.rename).not.toHaveBeenCalled(); expect(value.workspace).not.toHaveBeenCalled();
 });
 
@@ -376,5 +373,5 @@ it("labels missing and malformed status without inferring readiness or automatic
  const f=fixture();const row=create(ResourceSchema,{...f.session,documentJson:encode({name:"Manual",name_mode:"manual",title_state:"failed",outcome:17,archive:"archived",dispatch:"unknown-state"})});
  render(f.view(<SessionTools resource={row} changed={()=>{}} initiallyOpen/>));
  const values=globalThis.document.querySelector(".session-status-values")!;const terms=[...values.querySelectorAll("dt")].map(node=>node.textContent);const descriptions=[...values.querySelectorAll("dd")].map(node=>node.textContent);
- expect(terms).not.toContain("Automatic title");expect(descriptions[2]).toBe("Unavailable");expect(descriptions[3]).toBe("unknown-state");expect(descriptions[5]).toBe("Not reported");expect(descriptions[6]).toBe("Not reported");expect(f.control).not.toHaveBeenCalled();expect(f.prepare).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
+ expect(terms).toEqual(["Workspace","Result","Archive"]);expect(descriptions).toEqual(["Workspace","Unavailable","archived"]);expect(f.control).not.toHaveBeenCalled();expect(f.prepare).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
 });

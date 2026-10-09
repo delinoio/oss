@@ -2,7 +2,7 @@
 import { createRef, useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { Disclosure, DisclosureButton, DisclosureContent, DisclosureDensity, DisclosureSummary } from "./disclosure";
+import { FlatDisclosureScope, Disclosure, DisclosureButton, DisclosureContent, DisclosureDensity, DisclosureSummary } from "./disclosure";
 
 describe("shared inline disclosures", () => {
   it("retains real native elements, original refs, programmatic reveal and toggle events", async () => {
@@ -76,3 +76,5 @@ it("restores native descendant focus before attribute-based closes", () => {
   field.focus(); owner.current!.removeAttribute("open"); expect(document.activeElement).toBe(trigger);
   owner.current!.setAttribute("open", ""); field.focus(); owner.current!.toggleAttribute("open", false); expect(document.activeElement).toBe(trigger);
 });
+
+it("renders Info technical groups as flat headings without hiding mounted content",()=>{const view=render(<FlatDisclosureScope><Disclosure><DisclosureSummary>Original source</DisclosureSummary><p>Retained evidence</p></Disclosure></FlatDisclosureScope>);expect(screen.getByRole("heading",{name:"Original source"})).toBeTruthy();expect(screen.getByText("Retained evidence")).toBeTruthy();expect(view.container.querySelector("details,summary")).toBeNull();});
