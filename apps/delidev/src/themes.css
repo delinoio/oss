@@ -170,3 +170,51 @@
 .appearance-settings > p { color: var(--muted); line-height: 1.5; }
 .appearance-settings [role="alert"] { color: var(--danger-text); }
 .appearance-notice { position: fixed; z-index: 1100; inset: auto 16px 16px; max-width: 680px; margin: 0 auto; padding: 12px; border: 1px solid var(--danger-border); border-radius: 8px; background: var(--danger-background); color: var(--danger-text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; pointer-events: none; }
+
+/* Appearance v2 presentation remains bundled; only color tokens use CSSOM. */
+.appearance-settings { display: grid; gap: 24px; }
+.appearance-settings fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.appearance-settings > fieldset { border-top: 1px solid var(--border-subtle); padding-top: 24px; }
+.appearance-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 240px); align-items: center; gap: 16px; margin: 16px 0; }
+.appearance-row input[type="checkbox"] { width: 20px; height: 20px; justify-self: start; }
+.appearance-row select { width: 100%; min-height: 40px; }
+.appearance-actions, .appearance-custom { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.appearance-custom { border-top: 1px solid var(--border-subtle); padding: 16px 0; }
+.appearance-custom > span { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+.appearance-token-grid { display: grid; gap: 16px; }
+.appearance-token-grid fieldset { border-top: 1px solid var(--border-subtle); padding: 12px 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.appearance-token-grid input { width: 120px; }
+.appearance-preview { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; margin: 16px 0; }
+.appearance-preview > div { background: var(--surface); color: var(--text); padding: 16px; border: 1px solid var(--control-border); border-radius: 8px; }
+.appearance-preview-selected { background: var(--selected-background); color: var(--selected-text); padding: 8px; }
+.appearance-preview button { background: var(--accent); color: var(--on-accent); opacity: 1; }
+:root[data-composer-layout="compact"] .session-workspace .composer { padding: 8px 12px; }
+:root[data-composer-layout="compact"] .new-session-composer textarea { padding: 12px; min-height: 64px; }
+:root[data-density="compact"] .session-workspace .transcript, :root[data-density="compact"] .session-workspace .transcript > [data-payload-page] { gap: 8px; }
+:root[data-density="compact"] .message { padding: 12px 16px; }
+:root[data-status-presentation="minimal"] .session-heading-line .connection { font-size: 12px; padding: 0; border: 0; background: transparent; }
+:root[data-session-accent="false"] .session-workspace .message-user { background: var(--surface-selected); color: var(--text); }
+:root[data-color-assistance="true"] .connection.is-live { text-decoration: underline; text-decoration-style: double; }
+:root[data-color-assistance="true"] .notice, :root[data-color-assistance="true"] [role="alert"] { border-inline-start: 3px double currentColor; }
+:root[data-show-time="false"] .transcript time { display: none; }
+:root[data-show-tokens="false"] .transcript [data-token-observation] { display: none; }
+:root[data-animation="false"] *, :root[data-animation="false"] *::before, :root[data-animation="false"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@container settings-content (max-width: 639px) { .appearance-row { grid-template-columns: 1fr; gap: 8px; } }
+@media (max-width: 640px) { .appearance-row, .appearance-preview { grid-template-columns: 1fr; } }
+
+:root[data-composer-size="12"] .session-workspace .composer textarea, :root[data-composer-size="12"] .new-session-composer textarea { font-size: 12px; line-height: 1.5; }
+:root[data-conversation-size="12"] .transcript .message pre, :root[data-conversation-size="12"] .transcript .message p, :root[data-conversation-size="12"] .transcript .message li { font-size: 12px; }
+
+:root[data-composer-size="14"] .session-workspace .composer textarea, :root[data-composer-size="14"] .new-session-composer textarea { font-size: 14px; line-height: 1.5; }
+:root[data-conversation-size="14"] .transcript .message pre, :root[data-conversation-size="14"] .transcript .message p, :root[data-conversation-size="14"] .transcript .message li { font-size: 14px; }
+
+:root[data-composer-size="16"] .session-workspace .composer textarea, :root[data-composer-size="16"] .new-session-composer textarea { font-size: 16px; line-height: 1.5; }
+:root[data-conversation-size="16"] .transcript .message pre, :root[data-conversation-size="16"] .transcript .message p, :root[data-conversation-size="16"] .transcript .message li { font-size: 16px; }
+
+:root[data-composer-size="18"] .session-workspace .composer textarea, :root[data-composer-size="18"] .new-session-composer textarea { font-size: 18px; line-height: 1.5; }
+:root[data-conversation-size="18"] .transcript .message pre, :root[data-conversation-size="18"] .transcript .message p, :root[data-conversation-size="18"] .transcript .message li { font-size: 18px; }
+
+.appearance-palettes { margin-top: -16px; }
+.appearance-palettes h3 { font-size: 14px; }
+:root[data-show-time="false"] .transcript [data-time-observation] { display: none; }

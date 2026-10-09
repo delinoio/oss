@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useAppearancePreferences } from "./appearance";
 import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@connectrpc/connect";
@@ -78,6 +79,9 @@ export function ImageAttachmentInput({ draft, disabled, available, routeReady, r
   </section>;
 }
 function RetainedImage({ sessionId, reference, number, active }: { sessionId: string; reference: ImageAttachment; number: number; active: boolean }) {
+  const preferences=useAppearancePreferences();
+  const [revealed,setRevealed]=useState(false);
+  const visible=preferences.inline_images||revealed;
   const transport = useTransport();
   const element = useRef<HTMLLIElement>(null);
   const [nearViewport, setNearViewport] = useState(typeof IntersectionObserver === "undefined");
@@ -91,7 +95,7 @@ function RetainedImage({ sessionId, reference, number, active }: { sessionId: st
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ url?: string; failed?: boolean }>({});
   useEffect(() => {
-    if (!active || !nearViewport) { setState({}); return; }
+    if (!active || !nearViewport || !visible) { setState({}); return; }
     const client = createClient(AttachmentService, transport), controller = new AbortController();
     let url: string | undefined;
     setState({});
@@ -110,8 +114,8 @@ function RetainedImage({ sessionId, reference, number, active }: { sessionId: st
       setState({ url });
     })().catch(error => { if (!controller.signal.aborted) { console.warn("delidev.image_input.readback_failed", { phase: "readback", classification: clientFailure(error).code }); setState({ failed: true }); } });
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [attempt, active, nearViewport, transport, sessionId, reference.id, reference.byteLength, reference.mediaType, reference.sha256]);
-  return <li ref={element}>{state.url ? <img src={state.url} alt={copy("image-input.image", { number })} /> : <p role="status">{copy(state.failed ? "image-input.readFailed" : "image-input.loading")}</p>}{state.failed ? <button type="button" disabled={!active} onClick={() => setAttempt(value => value + 1)}>{copy("image-input.retryRead")}</button> : null}</li>;
+  }, [attempt, active, nearViewport, visible, transport, sessionId, reference.id, reference.byteLength, reference.mediaType, reference.sha256]);
+  return <li ref={element}>{!visible?<button type="button" disabled={!active} onClick={()=>setRevealed(true)}>{copy("appearance.v2.revealImage")} {number}</button>:state.url ? <img src={state.url} alt={copy("image-input.image", { number })} /> : <p role="status">{copy(state.failed ? "image-input.readFailed" : "image-input.loading")}</p>}{state.failed ? <button type="button" disabled={!active} onClick={() => setAttempt(value => value + 1)}>{copy("image-input.retryRead")}</button> : null}</li>;
 }
 export function RetainedImages({ value, sessionId, active = true }: { value: unknown; sessionId: string; active?: boolean }) {
   useLocale();

@@ -43,7 +43,7 @@ test("System follows live OS changes, explicit choices ignore them and drafts su
   changeScheme(true); changeScheme(false);
   expect(document.documentElement.dataset.theme).toBe(Theme.Dark);
   expect((screen.getByRole("textbox", { name: "Composer draft" }) as HTMLTextAreaElement).value).toBe("unsent");
-  expect(value.bridge.update).toHaveBeenCalledWith(Theme.Dark, 1);
+  expect(value.bridge.update).toHaveBeenCalledWith(Theme.Dark, 1, expect.any(Object));
 });
 
 test("a delayed initial read and old events cannot replace a newer commit", async () => {
@@ -158,4 +158,50 @@ test("foreground inspection reconciles a missed event without clearing uncertain
   vi.mocked(value.bridge.read).mockClear();
   fireEvent.focus(window);
   expect(value.bridge.read).not.toHaveBeenCalled();
+});
+
+
+test("v2 validates custom theme imports and preserves immutable defaults", async () => {
+ const {defaultPreferences,parsePreferences,parseThemeFile,palettes}=await import("./appearance-preferences");
+ const original=defaultPreferences();expect(parsePreferences(original)).toEqual(original);
+ const theme={version:1,name:"Fixture",...structuredClone(palettes.default)};
+ expect(parseThemeFile(JSON.stringify(theme))).toEqual(theme);
+ for(const value of [{...theme,script:"alert(1)"},{...theme,light:{...theme.light,text:"#FFFFFF"}},{...theme,light:{...theme.light,accent:"url(private)"}},{...theme,name:"x".repeat(81)}])expect(()=>parseThemeFile(JSON.stringify(value))).toThrow();
+ expect(()=>parseThemeFile(" ".repeat(32769))).toThrow();
+ expect(()=>parsePreferences({...original,light_palette:"foreign"})).toThrow();
+});
+
+test("v2 ordinary choices autosave full snapshots without replacing a draft", async () => {
+ const {defaultPreferences}=await import("./appearance-preferences");scheme(false);const value=fixture();
+ vi.mocked(value.bridge.read).mockResolvedValue({revision:1,theme:Theme.System,problem:null,preferences:defaultPreferences()});
+ vi.mocked(value.bridge.update).mockImplementation(async(theme,revision,preferences)=>({theme,revision:revision+1,problem:null,preferences}));
+ render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings/><textarea aria-label="Persistent draft" defaultValue="original"/></AppearanceProvider>);
+ const density=await screen.findByRole("combobox",{name:"Display density"});await waitFor(()=>expect((density as HTMLSelectElement).matches(":disabled")).toBe(false));
+ fireEvent.change(density,{target:{value:"compact"}});await waitFor(()=>expect(document.documentElement.dataset.density).toBe("compact"));
+ expect((screen.getByRole("textbox",{name:"Persistent draft"}) as HTMLTextAreaElement).value).toBe("original");
+ expect((screen.getByRole("checkbox",{name:"Markdown"}) as HTMLInputElement).matches(":disabled")).toBe(true);
+});
+
+
+test("custom theme confirmation retains a draft on concurrent appearance commits", async()=>{
+ const {defaultPreferences}=await import("./appearance-preferences");scheme(false);const value=fixture();
+ const preferences=defaultPreferences();vi.mocked(value.bridge.read).mockResolvedValue({revision:1,theme:Theme.System,problem:null,preferences});
+ render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings/></AppearanceProvider>);
+ const duplicate=await screen.findByRole("button",{name:"Duplicate theme"});await waitFor(()=>expect((duplicate as HTMLButtonElement).disabled).toBe(false));fireEvent.click(duplicate);
+ const name=screen.getByRole("textbox",{name:"Theme name"});fireEvent.change(name,{target:{value:"Retained custom draft"}});
+ expect(value.bridge.update).not.toHaveBeenCalled();
+ act(()=>value.publish({revision:2,theme:Theme.Dark,problem:null,preferences}));
+ expect((name as HTMLInputElement).value).toBe("Retained custom draft");expect((screen.getByRole("button",{name:"Save theme"}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button",{name:"Cancel"}));expect(screen.queryByRole("textbox",{name:"Theme name"})).toBeNull();expect(value.bridge.update).not.toHaveBeenCalled();
+});
+
+test("custom theme save waits for the positively committed native map identity",async()=>{
+ const {defaultPreferences}=await import("./appearance-preferences");scheme(false);const value=fixture();const pending=deferred<unknown>();
+ vi.mocked(value.bridge.read).mockResolvedValue({revision:1,theme:Theme.System,problem:null,preferences:defaultPreferences()});vi.mocked(value.bridge.update).mockReturnValueOnce(pending.promise);
+ render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings/></AppearanceProvider>);const duplicate=await screen.findByRole("button",{name:"Duplicate theme"});await waitFor(()=>expect((duplicate as HTMLButtonElement).disabled).toBe(false));fireEvent.click(duplicate);
+ fireEvent.change(screen.getByRole("textbox",{name:"Theme name"}),{target:{value:"Confirmed theme"}});fireEvent.click(screen.getByRole("button",{name:"Save theme"}));
+ expect(screen.getByRole("textbox",{name:"Theme name"})).toBeTruthy();
+ const [theme,revision,preferences]=vi.mocked(value.bridge.update).mock.calls[0];const sorted={...preferences!,custom_themes:preferences!.custom_themes.map(t=>({...t,light:Object.fromEntries(Object.entries(t.light).sort()),dark:Object.fromEntries(Object.entries(t.dark).sort())}))};
+ await act(async()=>pending.resolve({theme,revision:revision+1,problem:null,preferences:sorted}));
+ expect(screen.queryByRole("textbox",{name:"Theme name"})).toBeNull();expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
 });

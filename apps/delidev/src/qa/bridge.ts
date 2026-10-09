@@ -15,10 +15,10 @@ export function appearanceBridge(serverId: string): AppearanceBridge {
   const subscribers = new Set<(snapshot: unknown) => void>();
   return {
     read: async () => read(),
-    update: async (theme, revision) => {
+    update: async (theme, revision, preferences) => {
       const current = read();
       if (current.revision !== revision) return { ...current, problem: AppearanceProblem.Changed };
-      const next = parseAppearance({ theme, revision: revision + 1, problem: null });
+      const next = parseAppearance({ theme, preferences, revision: revision + 1, problem: null });
       window.localStorage.setItem(key, JSON.stringify(next)); subscribers.forEach(changed => changed(next)); return next;
     },
     subscribe: async changed => {

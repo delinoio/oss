@@ -225,7 +225,7 @@ Home (Sessions/New Session/New General Chat) keeps independent bounded 50-record
 
 ## Device appearance invariant
 
-Device appearance is a native desktop-owned preference shared across local and saved-server windows, independent of every server configuration, pairing, backup and configuration transfer. Its controller stays above connection state and follows the [desktop appearance contract](apps-delidev-desktop-contract.md#device-appearance-issue-1238).
+Device appearance includes the issue #2025 complete styling snapshot and bounded custom-theme library. It is a native desktop-owned preference shared across local and saved-server windows, independent of every server configuration, pairing, backup and configuration transfer. Its controller stays above connection state and follows the [desktop appearance contract](apps-delidev-desktop-contract.md#device-appearance-issue-1238).
 
 The device language preference follows the [localization contract](apps-delidev-localization-contract.md). Appearance uses a search combobox with fixed English/native self-names, System pinned first and English-name ordering. Search remains presentation-only; explicit supported choices use the existing native revisioned save boundary.
 

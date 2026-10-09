@@ -258,3 +258,12 @@ device-local shortcut preference contract; no captured content enters logs.
 ## Command menu
 
 Issue #1957 adds Command menu / 명령 메뉴, localized groups, input hint, Close and no-results guidance. Reuse current-language navigation, creation and shared Settings labels/help/breadcrumbs. NFC normalization supports Korean composed/decomposed input; never add cross-language aliases or dynamic resource content. Locale changes retain the palette query/input focus and update matches. The fixed primary+K action shares the typed Help/ARIA catalog and remains outside editable shortcut preferences.
+
+## Device styling localization (issue #2025)
+
+Bundled Appearance labels cover theme libraries, custom editor/import validation,
+composer/status/display/image controls and read-only unavailable-renderer help in
+English and Korean. Theme names and semantic token identifiers remain original
+user/machine values. Locale changes preserve device revisions, dirty custom drafts,
+exact pending saves, focus and committed color/layout preferences. Synthetic theme
+previews use bundled example text and contain no live conversation data.

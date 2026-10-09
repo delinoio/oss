@@ -1,6 +1,7 @@
+import { applyAppearanceColors } from "./appearance-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { copy, displayLocale, i18n, useLocale, type MessageKey } from "./localization";
 import { formatTimestampLabel, TimestampMode } from "./timestamp-format";
@@ -55,6 +56,13 @@ export function TrayStatus({ instance, bridge }: { instance: string; bridge: Tra
   const [busy, setBusy] = useState(false);
   const activationRunning = useRef(false);
   const [now, setNow] = useState(Date.now);
+  useLayoutEffect(()=>{
+    if(!snapshot)return;
+    const media=window.matchMedia?.("(prefers-color-scheme: dark)");let retire=()=>{};
+    const present=()=>{const dark=snapshot.theme==="dark"||snapshot.theme==="system"&&(media?.matches??false);document.documentElement.dataset.theme=dark?"dark":"light";retire();retire=snapshot.colors?applyAppearanceColors(snapshot.colors[dark?"dark":"light"]):()=>{};};
+    present();if(snapshot.theme==="system")media?.addEventListener("change",present);
+    return ()=>{retire();media?.removeEventListener("change",present);};
+  },[snapshot?.theme,snapshot?.colors]);
   const nativeReceived = useRef(performance.now());
   const selection = useRef<HTMLSelectElement>(null);
   const reload = useRef<() => void>(() => {});
@@ -73,7 +81,6 @@ export function TrayStatus({ instance, bridge }: { instance: string; bridge: Tra
           if (disposed) break;
           // Preference projection is read-only: no device controllers or writes.
           void i18n.changeLanguage(next.language);
-          document.documentElement.dataset.theme = next.theme;
           nativeReceived.current = performance.now();
           setSnapshot(next);
           setSelected(original => next.windows.some(row => row.target.instance === original) ? original : next.recent && next.windows.some(row => row.target.instance === next.recent) ? next.recent : next.windows[0]?.target.instance);

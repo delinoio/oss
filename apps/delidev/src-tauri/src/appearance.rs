@@ -8,7 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-const DOCUMENT_LIMIT: u64 = 4096;
+const DOCUMENT_LIMIT: u64 = 256 * 1024;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -17,6 +17,254 @@ pub enum Theme {
     System,
     Light,
     Dark,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Layout {
+    #[default]
+    Regular,
+    Compact,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Status {
+    #[default]
+    Default,
+    Minimal,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImageSize {
+    #[default]
+    Fit,
+    Original,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Disclosure {
+    #[default]
+    Original,
+    Collapsed,
+    Expanded,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CustomTheme {
+    pub version: u32,
+    pub id: String,
+    pub name: String,
+    pub light: std::collections::BTreeMap<String, String>,
+    pub dark: std::collections::BTreeMap<String, String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Preferences {
+    pub light_palette: String,
+    pub dark_palette: String,
+    pub color_assistance: bool,
+    pub custom_themes: Vec<CustomTheme>,
+    pub composer_layout: Layout,
+    pub composer_size: u8,
+    pub status: Status,
+    pub session_accent: bool,
+    pub show_tokens: bool,
+    pub show_time: bool,
+    pub density: Layout,
+    pub conversation_size: u8,
+    pub animation: bool,
+    pub tool_disclosure: Disclosure,
+    pub reasoning_disclosure: Disclosure,
+    pub compaction_disclosure: Disclosure,
+    pub markdown: bool,
+    pub mermaid: bool,
+    pub svg: bool,
+    pub table_charts: bool,
+    pub inline_images: bool,
+    pub image_size: ImageSize,
+}
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            light_palette: "default".into(),
+            dark_palette: "default".into(),
+            color_assistance: false,
+            custom_themes: vec![],
+            composer_layout: Layout::Regular,
+            composer_size: 0,
+            status: Status::Default,
+            session_accent: true,
+            show_tokens: true,
+            show_time: true,
+            density: Layout::Regular,
+            conversation_size: 0,
+            animation: true,
+            tool_disclosure: Disclosure::Original,
+            reasoning_disclosure: Disclosure::Original,
+            compaction_disclosure: Disclosure::Original,
+            markdown: true,
+            mermaid: true,
+            svg: true,
+            table_charts: true,
+            inline_images: true,
+            image_size: ImageSize::Fit,
+        }
+    }
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PaletteColors {
+    pub light: std::collections::BTreeMap<String, String>,
+    pub dark: std::collections::BTreeMap<String, String>,
+}
+impl Preferences {
+    pub fn palette_colors(&self) -> Result<PaletteColors, AppearanceProblem> {
+        let bundled: std::collections::BTreeMap<String, PaletteColors> =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json"))
+                .map_err(|_| AppearanceProblem::InvalidDocument)?;
+        let select =
+            |id: &str,
+             dark: bool|
+             -> Result<std::collections::BTreeMap<String, String>, AppearanceProblem> {
+                if let Some(theme) = self.custom_themes.iter().find(|theme| theme.id == id) {
+                    return Ok(if dark {
+                        theme.dark.clone()
+                    } else {
+                        theme.light.clone()
+                    });
+                }
+                let value = bundled.get(id).ok_or(AppearanceProblem::InvalidDocument)?;
+                Ok(if dark {
+                    value.dark.clone()
+                } else {
+                    value.light.clone()
+                })
+            };
+        Ok(PaletteColors {
+            light: select(&self.light_palette, false)?,
+            dark: select(&self.dark_palette, true)?,
+        })
+    }
+
+    fn valid(&self) -> bool {
+        if ![0, 12, 14, 16, 18].contains(&self.composer_size)
+            || ![0, 12, 14, 16, 18].contains(&self.conversation_size)
+            || self.custom_themes.len() > 32
+        {
+            return false;
+        }
+        let mut identities = std::collections::BTreeSet::new();
+        for t in &self.custom_themes {
+            if t.version != 1
+                || t.name.trim().is_empty()
+                || t.name.chars().count() > 80
+                || t.name.chars().any(|c| c.is_control())
+            {
+                return false;
+            }
+            let Ok(id) = uuid::Uuid::parse_str(&t.id) else {
+                return false;
+            };
+            if id.get_variant() != uuid::Variant::RFC4122
+                || id.get_version_num() != 7
+                || id.to_string() != t.id
+                || !identities.insert(t.id.as_str())
+                || !valid_colors(&t.light)
+                || !valid_colors(&t.dark)
+            {
+                return false;
+            }
+        }
+        [&self.light_palette, &self.dark_palette]
+            .into_iter()
+            .all(|id| {
+                ["default", "titanium", "nord", "dracula", "solarized"].contains(&id.as_str())
+                    || identities.contains(id.as_str())
+            })
+    }
+}
+fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
+    const TOKENS: &[&str] = &[
+        "background",
+        "surface",
+        "surface-subtle",
+        "surface-muted",
+        "surface-inset",
+        "surface-hover",
+        "surface-selected",
+        "text",
+        "text-secondary",
+        "muted",
+        "text-subtle",
+        "border",
+        "control-border",
+        "border-subtle",
+        "accent",
+        "accent-hover",
+        "link",
+        "focus",
+        "on-accent",
+        "inverse-surface",
+        "inverse-hover",
+        "inverse-border",
+        "on-inverse",
+        "on-inverse-muted",
+        "selected-background",
+        "selected-text",
+        "selected-border",
+        "warning-background",
+        "warning-text",
+        "warning-border",
+        "danger-background",
+        "danger-text",
+        "danger-border",
+        "success-text",
+        "execution-running",
+        "conversation-background",
+        "conversation-text",
+        "conversation-border",
+    ];
+    if value.len() != TOKENS.len()
+        || !TOKENS.iter().all(|k| {
+            value.get(*k).is_some_and(|v| {
+                v.len() == 7
+                    && v.starts_with('#')
+                    && v.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+            })
+        })
+    {
+        return false;
+    }
+    let contrast = |a: &str, b: &str| {
+        let x = luminance(&value[a]);
+        let y = luminance(&value[b]);
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    };
+    [
+        ("text", "surface"),
+        ("text-secondary", "surface"),
+        ("muted", "surface"),
+        ("text-subtle", "surface"),
+        ("on-accent", "accent"),
+        ("on-accent", "accent-hover"),
+        ("selected-text", "selected-background"),
+        ("warning-text", "warning-background"),
+        ("danger-text", "danger-background"),
+        ("on-inverse", "inverse-surface"),
+    ]
+    .into_iter()
+    .all(|(a, b)| contrast(a, b) >= 4.5)
+        && contrast("control-border", "surface") >= 3.0
+}
+fn luminance(color: &str) -> f64 {
+    let channel = |start: usize| {
+        let value = u8::from_str_radix(&color[start..start + 2], 16).unwrap_or(0) as f64 / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -36,6 +284,7 @@ pub struct AppearanceSnapshot {
     pub revision: u32,
     pub theme: Theme,
     pub problem: Option<AppearanceProblem>,
+    pub preferences: Preferences,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -43,6 +292,8 @@ pub struct AppearanceSnapshot {
 struct Document {
     version: u32,
     theme: Theme,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preferences: Option<Preferences>,
 }
 
 /// One process-wide device preference, independent of every server connection.
@@ -62,6 +313,7 @@ impl AppearanceStore {
                 revision: 0,
                 theme: Theme::System,
                 problem: Some(AppearanceProblem::Unavailable),
+                preferences: Preferences::default(),
             }),
         }
     }
@@ -79,8 +331,9 @@ impl AppearanceStore {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         let previous = state.clone();
         match self.path.as_deref().map(inspect) {
-            Some(Ok(theme)) => {
+            Some(Ok((theme, preferences))) => {
                 state.theme = theme;
+                state.preferences = preferences;
                 state.problem = None;
             }
             Some(Err(problem)) => {
@@ -89,13 +342,17 @@ impl AppearanceStore {
                     AppearanceProblem::InvalidDocument | AppearanceProblem::UnsupportedVersion
                 ) {
                     state.theme = Theme::System;
+                    state.preferences = Preferences::default();
                 }
                 state.problem = Some(problem);
                 tracing::warn!(operation = "appearance_read", ?problem);
             }
             None => state.problem = Some(AppearanceProblem::Unavailable),
         }
-        if state.revision == 0 || state.theme != previous.theme || state.problem != previous.problem
+        if state.revision == 0
+            || state.theme != previous.theme
+            || state.preferences != previous.preferences
+            || state.problem != previous.problem
         {
             advance(&mut state);
         }
@@ -103,14 +360,38 @@ impl AppearanceStore {
     }
 
     pub fn update(&self, theme: Theme, expected_revision: u32) -> AppearanceSnapshot {
-        self.update_with(theme, expected_revision, persist)
+        let preferences = self.current().preferences;
+        self.update_preferences(theme, preferences, expected_revision)
     }
 
+    pub fn update_preferences(
+        &self,
+        theme: Theme,
+        preferences: Preferences,
+        expected_revision: u32,
+    ) -> AppearanceSnapshot {
+        self.commit(theme, preferences, expected_revision, persist)
+    }
+
+    #[cfg(test)]
     fn update_with(
         &self,
         theme: Theme,
         expected_revision: u32,
         write: impl FnOnce(&Path, Theme) -> Result<(), AppearanceProblem>,
+    ) -> AppearanceSnapshot {
+        let preferences = self.current().preferences;
+        self.commit(theme, preferences, expected_revision, |path, theme, _| {
+            write(path, theme)
+        })
+    }
+
+    fn commit(
+        &self,
+        theme: Theme,
+        preferences: Preferences,
+        expected_revision: u32,
+        write: impl FnOnce(&Path, Theme, &Preferences) -> Result<(), AppearanceProblem>,
     ) -> AppearanceSnapshot {
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
         if state.revision != expected_revision {
@@ -123,6 +404,11 @@ impl AppearanceStore {
         if state.problem.is_some() || state.revision == u32::MAX {
             return state.clone();
         }
+        if !preferences.valid() {
+            let mut rejected = state.clone();
+            rejected.problem = Some(AppearanceProblem::InvalidDocument);
+            return rejected;
+        }
         let result = self
             .path
             .as_deref()
@@ -132,14 +418,15 @@ impl AppearanceStore {
                 // invalid/newer documents instead of silently
                 // upgrading or overwriting them.
                 let current = inspect(path)?;
-                if current != state.theme {
+                if current != (state.theme, state.preferences.clone()) {
                     return Err(AppearanceProblem::Changed);
                 }
-                write(path, theme)
+                write(path, theme, &preferences)
             });
         match result {
             Ok(()) => {
                 state.theme = theme;
+                state.preferences = preferences;
                 tracing::info!(operation = "appearance_update", state = "committed");
             }
             Err(problem) => {
@@ -162,10 +449,12 @@ fn advance(state: &mut AppearanceSnapshot) {
     }
 }
 
-fn inspect(path: &Path) -> Result<Theme, AppearanceProblem> {
+fn inspect(path: &Path) -> Result<(Theme, Preferences), AppearanceProblem> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Theme::System),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((Theme::System, Preferences::default()));
+        }
         Err(_) => return Err(AppearanceProblem::ReadFailed),
     };
     if !metadata.is_file() || metadata.len() > DOCUMENT_LIMIT {
@@ -181,13 +470,16 @@ fn inspect(path: &Path) -> Result<Theme, AppearanceProblem> {
     }
     let document: Document =
         serde_json::from_slice(&bytes).map_err(|_| AppearanceProblem::InvalidDocument)?;
-    if document.version != 1 {
-        return Err(AppearanceProblem::UnsupportedVersion);
-    }
-    Ok(document.theme)
+    let preferences = match (document.version, document.preferences) {
+        (1, None) => Preferences::default(),
+        (2, Some(value)) if value.valid() => value,
+        (1 | 2, _) => return Err(AppearanceProblem::InvalidDocument),
+        _ => return Err(AppearanceProblem::UnsupportedVersion),
+    };
+    Ok((document.theme, preferences))
 }
 
-fn persist(path: &Path, theme: Theme) -> Result<(), AppearanceProblem> {
+fn persist(path: &Path, theme: Theme, preferences: &Preferences) -> Result<(), AppearanceProblem> {
     let parent = path.parent().ok_or(AppearanceProblem::WriteFailed)?;
     fs::create_dir_all(parent).map_err(|_| AppearanceProblem::WriteFailed)?;
     let temporary = parent.join(format!(".appearance-{}.tmp", uuid::Uuid::now_v7()));
@@ -205,8 +497,15 @@ fn persist(path: &Path, theme: Theme) -> Result<(), AppearanceProblem> {
         .map_err(|_| AppearanceProblem::WriteFailed)?;
     let scratch = &temporary;
     let result = (move || {
-        let bytes = serde_json::to_vec(&Document { version: 1, theme })
-            .map_err(|_| AppearanceProblem::WriteFailed)?;
+        let bytes = serde_json::to_vec(&Document {
+            version: 2,
+            theme,
+            preferences: Some(preferences.clone()),
+        })
+        .map_err(|_| AppearanceProblem::WriteFailed)?;
+        if bytes.len() as u64 > DOCUMENT_LIMIT {
+            return Err(AppearanceProblem::InvalidDocument);
+        }
         file.write_all(&bytes)
             .and_then(|_| file.sync_all())
             .map_err(|_| AppearanceProblem::WriteFailed)?;
@@ -251,6 +550,78 @@ mod tests {
     use super::*;
 
     #[test]
+    fn version_one_read_preserves_bytes_and_upgrades_full_preferences() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("appearance.json");
+        let bytes = br#"{"version":1,"theme":"dark"}"#;
+        fs::write(&path, bytes).unwrap();
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let mut preferences = initial.preferences.clone();
+        preferences.density = Layout::Compact;
+        preferences.composer_size = 18;
+        assert_eq!(
+            store
+                .update_preferences(Theme::Dark, preferences.clone(), initial.revision)
+                .problem,
+            None
+        );
+        assert_eq!(
+            AppearanceStore::new(Some(directory.path().into()))
+                .read()
+                .preferences,
+            preferences
+        );
+        let encoded: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(encoded["version"], 2);
+    }
+
+    #[test]
+    fn invalid_complete_preferences_cannot_replace_committed_storage() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        let initial = store.read();
+        let mut invalid = initial.preferences.clone();
+        invalid.light_palette = "foreign".into();
+        let rejected = store.update_preferences(Theme::Dark, invalid, initial.revision);
+        assert_eq!(rejected.problem, Some(AppearanceProblem::InvalidDocument));
+        assert_eq!(store.read(), initial);
+        assert!(!directory.path().join("appearance.json").exists());
+    }
+
+    #[test]
+    fn custom_themes_require_complete_contrast_maps_and_unique_original_references() {
+        let source: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let theme = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Fixture".into(),
+            light: serde_json::from_value(source["default"]["light"].clone()).unwrap(),
+            dark: serde_json::from_value(source["default"]["dark"].clone()).unwrap(),
+        };
+        let mut preferences = Preferences::default();
+        preferences.custom_themes.push(theme.clone());
+        preferences.light_palette = theme.id.clone();
+        assert!(preferences.valid());
+        preferences.custom_themes.push(theme.clone());
+        assert!(!preferences.valid());
+        preferences.custom_themes.pop();
+        preferences.custom_themes[0]
+            .light
+            .insert("text".into(), "#FFFFFF".into());
+        assert!(!preferences.valid());
+        preferences.custom_themes[0] = theme.clone();
+        preferences.custom_themes[0]
+            .dark
+            .insert("backdrop".into(), "#000000".into());
+        assert!(!preferences.valid());
+        preferences.custom_themes = vec![theme.clone(); 33];
+        assert!(!preferences.valid());
+    }
+
+    #[test]
     fn failed_or_uncertain_publication_requires_a_fresh_read() {
         let directory = tempfile::tempdir().unwrap();
         let store = AppearanceStore::new(Some(directory.path().into()));
@@ -267,7 +638,7 @@ mod tests {
         );
         let inspected = store.read();
         let uncertain = store.update_with(Theme::Light, inspected.revision, |path, theme| {
-            persist(path, theme)?;
+            persist(path, theme, &Preferences::default())?;
             Err(AppearanceProblem::OutcomeUnknown)
         });
         assert_eq!(uncertain.theme, Theme::Dark);
