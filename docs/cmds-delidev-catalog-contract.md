@@ -548,7 +548,7 @@ an override replaces the complete policy. Automatic Worktree fetch requires
 server permission, effective project permission and repository permission.
 Local execution never automatically fetches. Resolve only explicit selected or
 original retained project associations; repository membership cannot select a
-project. Existing execution, workspace and remediation snapshots stay immutable.
+project. Existing execution, workspace and remediation snapshots stay immutable. Freeze the exact selected route policy in the execution configuration; selection and historical attribution must agree for inherited, project and source-route/Agent policies.
 
 Global plan automation defaults to disabled. General Chat uses the global value.
 At the first original native plan approval publication, retain the policy

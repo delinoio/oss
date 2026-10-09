@@ -184,7 +184,7 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		return empty, err
 	}
 	agent, model := preview.Agent, preview.Model
-	configuration, err := domain.ResolveExecutionConfiguration(ar.ID, ar.Revision, agent, preview.ModelRevision, model, policy, templates)
+	configuration, err := domain.ResolveExecutionConfiguration(ar.ID, ar.Revision, agent, preview.ModelRevision, model, preview.Route.Policy, templates)
 	if err != nil {
 		return empty, err
 	}
