@@ -153,7 +153,23 @@ pub fn confirm(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    let status = command.status();
+    // Bind the original helper to this desktop even on crash or forced exit.
+    // pre_exec uses only async-signal-safe syscalls; check the parent again to
+    // close the race where it exits before the death signal is installed.
+    use std::os::unix::process::CommandExt;
+    let parent = unsafe { libc::getpid() };
+    unsafe {
+        command.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::getppid() != parent {
+                return Err(std::io::Error::other("original desktop exited"));
+            }
+            Ok(())
+        });
+    }
+    let status = command.spawn().and_then(|mut child| child.wait());
     if status.is_err() {
         tracing::warn!(
             operation = "desktop_quit_confirmation",
