@@ -34,15 +34,15 @@ try {
   const build=await createRsbuild({cwd:source,rsbuildConfig:{plugins:[pluginReact()],source:{entry:{index:join(source,"src/terminal-history.fixture.tsx")},alias:{"@delinoio/delidev-api-client":join(source,"api-client/dist/index.js")}},html:{template:join(app,"index.html")},output:{distPath:{root:dist},assetPrefix:"/",sourceMap:false}}});await build.build();
   const server=createServer(async(request,response)=>{try{const pathname=new URL(request.url,"http://127.0.0.1").pathname;const file=resolve(dist,`.${pathname==="/"?"/index.html":pathname}`);if(!file.startsWith(`${dist}${sep}`))throw new Error("Invalid path");response.setHeader("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'");response.setHeader("Content-Type",{".html":"text/html",".js":"application/javascript",".css":"text/css"}[extname(file)]??"application/octet-stream");response.end(await readFile(file));}catch{response.writeHead(404);response.end();}});
   await new Promise(done=>server.listen(0,"127.0.0.1",done));
-  try {for(const exited of baseline?[false]:[false,true]) {
+  try {for(const closed of baseline?[false]:[false,true]) {
    const page=await browser.newPage({viewport:{width:1200,height:720}}),errors=[];page.on("pageerror",error=>errors.push(error.message));
    try {
-    await page.goto(`http://127.0.0.1:${server.address().port}/?exited=${exited}`);
+    await page.goto(`http://127.0.0.1:${server.address().port}/?closed=${closed}`);
     await page.getByRole("tab").click();await page.locator(".xterm").waitFor();
     await page.waitForFunction(()=>window.__terminalHistoryFixture.metrics.watches===1);
     await page.waitForTimeout(400);
     const bounds=await page.locator(".xterm-screen").boundingBox();
-    process.stdout.write(JSON.stringify({operation:"terminal-scroll-setup",baseline,exited,bounds,native:await page.evaluate(()=>{const {selection,...value}=window.__terminalHistoryFixture.inspect();return value;})})+"\n");
+    process.stdout.write(JSON.stringify({operation:"terminal-scroll-setup",baseline,closed,bounds,native:await page.evaluate(()=>{const {selection,...value}=window.__terminalHistoryFixture.inspect();return value;})})+"\n");
     if(!baseline) { await page.mouse.move(bounds.x+40,bounds.y+20);await page.mouse.wheel(0,-500);
     await page.waitForFunction(()=>{const value=window.__terminalHistoryFixture.inspect();return value.viewport<value.base;},undefined,{timeout:5000});
     await page.mouse.move(bounds.x+10,bounds.y+9);await page.mouse.down();await page.mouse.move(bounds.x+110,bounds.y+9,{steps:5});await page.mouse.up();
@@ -61,10 +61,10 @@ try {
     assert(result.metrics.reads>=6);assert.equal(result.metrics.watches,1);assert.equal(result.metrics.screens,1);assert.equal(result.metrics.removedScreens,0);
     assert(result.samples.every(sample=>sample.same&&sample.focus));assert.deepEqual(result.metrics.requests,[{epoch:"",afterSequence:"0"}]);
     if(baseline){assert(heights.length>1);assert(continuations.length>1);assert(resizes.length>4);}
-    else {assert.equal(heights.length,1);assert.equal(continuations.length,1);assert.equal(resizes.length,exited?0:1);assert(result.samples.every(sample=>sample.scroll===result.scroll));assert(result.samples.every(sample=>sample.native.viewport===result.native.viewport&&sample.native.cursorX===result.native.cursorX&&sample.native.cursorY===result.native.cursorY&&sample.native.selection===result.native.selection));}
-    reports.push({baseline,exited,reads:result.metrics.reads,resizeCount:resizes.length,dimensions:[...new Map(resizes.map(({rows,columns})=>[`${rows}:${columns}`,{rows,columns}])).values()],heights,continuations,watches:result.metrics.watches,screens:result.metrics.screens,removedScreens:result.metrics.removedScreens,viewport:result.native.viewport,selectedCharacters:result.native.selection.length});
+    else {assert.equal(heights.length,1);assert.equal(continuations.length,1);assert.equal(resizes.length,closed?0:1);assert(result.samples.every(sample=>sample.scroll===result.scroll));assert(result.samples.every(sample=>sample.native.viewport===result.native.viewport&&sample.native.cursorX===result.native.cursorX&&sample.native.cursorY===result.native.cursorY&&sample.native.selection===result.native.selection));}
+    reports.push({baseline,closed,reads:result.metrics.reads,resizeCount:resizes.length,dimensions:[...new Map(resizes.map(({rows,columns})=>[`${rows}:${columns}`,{rows,columns}])).values()],heights,continuations,watches:result.metrics.watches,screens:result.metrics.screens,removedScreens:result.metrics.removedScreens,viewport:result.native.viewport,selectedCharacters:result.native.selection.length});
     process.stdout.write(JSON.stringify({operation:"terminal-history-case",...reports.at(-1)})+"\n");
-    if(!baseline&&!exited){
+    if(!baseline&&!closed){
      await page.locator(".xterm-helper-textarea").press("x");await page.waitForFunction(action=>window.__terminalHistoryFixture.metrics.controls.some(value=>value.action===action),TerminalAction.INPUT);
      await page.setViewportSize({width:1200,height:780});await page.setViewportSize({width:1200,height:800});await page.setViewportSize({width:1200,height:820});await page.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done))));
      const before=await page.evaluate(()=>window.__terminalHistoryFixture.metrics.controls.length);assert.equal(before,result.metrics.controls.length+1);

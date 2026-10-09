@@ -13,9 +13,9 @@ import "./themes.css";
 import "./styles.css";
 import "./session.css";
 import "./terminal-history.fixture.css";
-const args=new URLSearchParams(location.search), exited=args.get("exited")==="true";
+const args=new URLSearchParams(location.search), closed=args.get("closed")==="true";
 const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({archive:"active"})});
-let terminal=create(ResourceSchema,{id:newRequestId(),sessionId:session.id,kind:EntityKind.TERMINAL,schemaVersion:1,revision:4n,documentJson:encode({state:exited?"exited":"running",cleanup_verified:exited})});
+let terminal=create(ResourceSchema,{id:newRequestId(),sessionId:session.id,kind:EntityKind.TERMINAL,schemaVersion:1,revision:4n,documentJson:encode({state:closed?"closed":"running",cleanup_verified:closed})});
 const metrics={reads:0,controls:[] as {action:TerminalAction;rows:number;columns:number;input:number[]}[],watches:0,watchClosed:0,requests:[] as {epoch:string;afterSequence:string}[],screens:0,removedScreens:0};
 let inputRelease:(()=>void)|undefined;
 const pause=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
@@ -28,7 +28,7 @@ const transport=createRouterTransport(router=>{
    terminal=create(ResourceSchema,{...terminal,revision:terminal.revision+1n});return {terminal};},
   watchTerminalOutput:async function*(request,context){metrics.watches++;metrics.requests.push({epoch:request.epoch,afterSequence:request.afterSequence.toString()});
    try {yield {epoch:newRequestId(),sequence:1n,data:new TextEncoder().encode(Array.from({length:80},(_,index)=>`unchanged synthetic line ${index}\r\n`).join("")),terminal};
-    if(exited)return;
+    if(closed)return;
     await new Promise<void>(resolve=>{if(context.signal.aborted)resolve();else context.signal.addEventListener("abort",()=>resolve(),{once:true});});
    }finally{metrics.watchClosed++;}
   }
