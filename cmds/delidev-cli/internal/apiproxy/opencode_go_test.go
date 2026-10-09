@@ -92,3 +92,18 @@ func TestOpenCodeGoFailuresNeverRetryOrFallBack(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenCodeGoMissingProofRefusesCredentialBeforeHTTP(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	authority := &fixtureAuthority{ctx: ctx, scope: Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixture-model", Harness: domain.OpenCode, SubscriptionService: domain.SubscriptionOpenCodeGo, Provider: domain.OpenCodeGoProvider(), Operations: []Operation{ChatCompletion}}}
+	request := httptest.NewRequest("POST", Prefix+"/chat/completions", strings.NewReader(`{"model":"fixture-model","messages":[]}`))
+	request.RemoteAddr = "127.0.0.1:1234"
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+fixtureToken)
+	response := httptest.NewRecorder()
+	New(authority, nil).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || authority.keys.Load() != 0 || authority.releases.Load() != 1 {
+		t.Fatal("missing native proof gained credential or lost original lease")
+	}
+}

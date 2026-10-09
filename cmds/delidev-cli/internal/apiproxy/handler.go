@@ -143,6 +143,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusServiceUnavailable, domain.Unsupported)
 		return
 	}
+	if lease.Scope.SubscriptionService == domain.SubscriptionOpenCodeGo && domain.NativeIdentity(lease.Scope.OpenCodeSession).Validate(domain.OpenCode, domain.NativeThreadIdentity) != nil {
+		fail(http.StatusForbidden, domain.PermissionDenied)
+		return
+	}
 	if lease.Scope.Purpose == domain.SessionTitleUsage {
 		bounded, stop := context.WithTimeout(ctx, 30*time.Second)
 		defer stop()
