@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { ShortcutPreferenceProvider, ShortcutPreferenceProblem, useShortcutPreferences, type ShortcutPreferenceBridge, type ShortcutPreferenceSnapshot } from "./shortcut-preference-controller";
 import { ShortcutSettings } from "./shortcut-settings";
+import { SettingsActionScope } from "./settings-action";
 import { ShortcutOverrideState, type ShortcutOverrides } from "./shortcut-preferences";
 import { ShortcutProvider, useGlobalShortcutAria, useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutScope, ShortcutInput, globalShortcutBindings } from "./shortcuts";
@@ -22,7 +23,7 @@ function Probe({run}:{run:()=>void}) {
 }
 function Owner({bridge,run=()=>{}}:{bridge:ShortcutPreferenceBridge;run?:()=>void}) {
  const [visible,setVisible]=useState(true);
- return <ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><button onClick={()=>setVisible(value=>!value)}>Leave category</button><Probe run={run}/>{visible?<ShortcutSettings/>:null}</ShortcutProvider></ShortcutPreferenceProvider>;
+ return <ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><button onClick={()=>setVisible(value=>!value)}>Leave category</button><Probe run={run}/>{visible?<SettingsActionScope><ShortcutSettings/></SettingsActionScope>:null}</ShortcutProvider></ShortcutPreferenceProvider>;
 }
 const capture = async(name="New session",key="j")=>{
  fireEvent.click(screen.getByRole("button",{name:`Capture shortcut for ${name}`}));
@@ -33,6 +34,8 @@ const capture = async(name="New session",key="j")=>{
 };
 it("keeps draft bindings inactive until Save and updates dispatch and ARIA without remount",async()=>{
  const f=fixture(),run=vi.fn();render(<StrictMode><Owner bridge={f.bridge} run={run}/></StrictMode>);await screen.findByText("Current saved shortcuts");
+ expect(screen.getByRole("button",{name:"Save changes"}).getAttribute("data-settings-action")).toBe("save");
+ expect(screen.getByRole("button",{name:"Capture shortcut for New session"}).getAttribute("data-settings-action-presentation")).toBe("label");
  const action=screen.getByRole("button",{name:"Ordinary action"});await capture();expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");fireEvent.keyDown(action,{key:"j",ctrlKey:true,shiftKey:true});expect(run).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Save changes"}));await waitFor(()=>expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+J"));expect(f.bridge.update).toHaveBeenCalledOnce();fireEvent.keyDown(action,{key:"j",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();expect(screen.getByRole("button",{name:"Ordinary action"})).toBe(action);
 });
