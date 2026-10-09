@@ -243,7 +243,7 @@ export function SubscriptionSettingsView({ accounts, accountList, accountIds, ma
     const boundaries = [...accounts, ...(displayed ? [displayed] : [])].flatMap((account) => account.windows.flatMap((window) => [
       Date.parse(window.resetAt ?? ""),
       ...(window.state === QuotaObservationState.Observed ? [Date.parse(window.observedAt ?? "") + 5 * 60 * 1000 + 1] : []),
-    ]));
+    ])).concat(accounts.flatMap((account) => (account.paidCredits ?? []).map((bucket) => Date.parse(bucket.observedAt) + 5 * 60 * 1000 + 1)));
     const next = Math.min(...boundaries.filter((boundary) => Number.isFinite(boundary) && boundary > presentationNow));
     if (!Number.isFinite(next)) return;
     const timer = setTimeout(expireObservation, Math.min(next - presentationNow, 2 ** 31 - 1));

@@ -322,3 +322,18 @@ it("keeps Go quota unavailable and exposes only its key management actions", () 
  expect(screen.queryByRole("progressbar")).toBeNull();
  expect(screen.getByRole("button",{name:`Manage connection for ${account.alias}`})).toBeTruthy();
 });
+
+it("expires retained paid buckets before freshly observed quota windows without reads", () => {
+  vi.useFakeTimers(); vi.setSystemTime(now);
+  const first = {...row("chatgpt", [{...window("five-hour", .68), observedAt: new Date(now).toISOString()}]), paidCredits: [{id:"codex",hasCredits:true,unlimited:false,balance:"7.125",observedAt:new Date(now-299000).toISOString()}]};
+  const rendered = render(view([first], {now:undefined}));
+  try {
+    expect(screen.queryByText(/Stale observation/)).toBeNull();
+    act(()=>vi.advanceTimersByTime(1001));
+    expect(screen.getByText(/Paid credits: 7.125 credits.*Stale observation/)).toBeTruthy();
+    expect(screen.getByText(/Observed · Observed/)).toBeTruthy();
+    expect(first.refresh).not.toHaveBeenCalled();
+    rendered.rerender(view([first],{now:undefined,active:false}));
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {rendered.unmount();vi.useRealTimers();}
+});
