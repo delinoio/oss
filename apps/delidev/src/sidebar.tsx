@@ -1,3 +1,4 @@
+import { useSessionNameEditor } from "./session-name-editor";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
@@ -144,6 +145,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const element = useRef<HTMLButtonElement>(null);
   const hover = useSessionHover(element);
   const actionMenuOpen = useSessionActionMenuOpen();
+  const editName = useSessionNameEditor();
   const title = row.name;
   const outcome = row.outcome;
   const archive = row.archive;
@@ -158,7 +160,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   return <div className="sidebar-session-container">
     <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} data-conversation-kind={row.conversationKind ?? ConversationKind.Unknown} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); if(row.sidechatParent)open(row.id,row.sidechatParent,row.name);else open(row.id); }}>
       <Icon name={conversationKindIcons[row.conversationKind ?? ConversationKind.Unknown]} className="sidebar-workspace-icon" />
-      <span className="sidebar-session-title">{title}</span>
+      <span className="sidebar-session-title" onDoubleClick={event => { event.stopPropagation(); hover.dismiss(); editName?.(row.id, element.current ?? event.currentTarget); }}>{title}</span>
       {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
