@@ -323,6 +323,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
 		}
+		if bundle.Version < 7 && rpc.ResourceSchemaVersion(entry.Kind, entry.Document) == 4 {
+			return plan, domain.Fail(domain.Unsupported, "Harness inheritance requires portable version 7.", "Export the complete current configuration.")
+		}
 		if bundle.Version < 6 && (entry.Kind == domain.ProjectKind || entry.Kind == domain.SettingsKind) && rpc.ResourceSchemaVersion(entry.Kind, entry.Document) == 3 {
 			return plan, domain.Fail(domain.Unsupported, "Session defaults require portable version 6.", "Export the complete current configuration.")
 		}
@@ -469,6 +472,18 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				err = rewrite(&v.ProviderID, domain.ProviderKind)
 			}
 		case *domain.Agent:
+			if v.HarnessSettings != nil {
+				for i := range v.HarnessSettings.Models {
+					if value := v.HarnessSettings.Models[i].Value; value != nil {
+						if err = rewrite(value, domain.ModelKind); err != nil {
+							break
+						}
+					}
+				}
+			}
+			if err != nil {
+				return plan, err
+			}
 			if len(v.Routes) == 0 {
 				err = rewrite(&v.ModelID, domain.ModelKind)
 			} else {
@@ -500,6 +515,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 				}
 			}
 		case *domain.Project:
+			if err = rewriteHarnessDefaults(v.HarnessDefaults, rewrite); err != nil {
+				return plan, err
+			}
 			if err = rewriteIDs(v.Repositories, domain.RepositoryKind); err == nil {
 				err = rewrite(&v.PrimaryRepository, domain.RepositoryKind)
 			}
@@ -525,6 +543,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 			err = rewriteRemediation(v.Remediation)
 		case *domain.Settings:
+			if err = rewriteHarnessDefaults(v.HarnessDefaults, rewrite); err != nil {
+				return plan, err
+			}
 			err = rewriteRemediation(&v.Remediation)
 		}
 		if err != nil {

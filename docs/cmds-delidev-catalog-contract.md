@@ -632,3 +632,49 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 ## OpenCode Go subscriptions — issue #2097
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Inherited harness defaults — issue #1986
+
+System 63 `HARNESS_DEFAULTS_V1` owns server-side harness inheritance. Settings and
+Project documents carry `harness_defaults_version: 1` and bounded
+`harness_defaults` arrays. Each entry selects a harness and optionally one API
+provider/profile or subscription service. A complete `values` object contains
+typed `inherit` or `override` selections for model, effort and each native option.
+An override carries its explicit typed value, including an empty string or zero;
+inherit carries no value. There is at most one entry per scope.
+
+Agent schema 4 adds `harness_settings: {version: 1, models, values}`. `models`
+contains one model selection per original source route. Shared `values.model`
+remains inherit; model overrides belong to their corresponding source. Native
+options inherit independently. Source routes, accounts, weights, instructions and
+skills retain their original owners. Existing `model_id`, effort and option fields
+remain legacy reference anchors, not effective new-execution settings when the
+inheritance document is present.
+
+Resolution applies server harness defaults, then server source defaults, then
+server API-profile defaults, then the corresponding Project scopes and finally
+Agent overrides. Document ordering cannot change specificity. Resolve the
+original accounts' selected API profiles before choosing defaults. Ambiguous
+profiles within one route fail rather than choose another account's defaults.
+A resolved model must retain the original provider/service and harness identity.
+Missing model-default evidence produces a named configuration error before input;
+no legacy model, provider name or guessed native model supplies a fallback.
+Unspecified non-model settings retain native-default semantics and require the
+existing actual-process proof before input, without an extra execution probe.
+
+Server startup upgrades all legacy Agent documents in one transaction. Models,
+effort and options become inherit; legacy source references and unrelated fields
+remain intact. Failure rolls back the complete batch. Restart skips already
+upgraded documents. New legacy creation and legacy portable imports receive the
+same inherited selections. Historical executions, digests, receipts and routing
+state are not rewritten. First-execution routing resolves the current defaults
+inside its atomic claim, then freezes effective values into the existing
+execution configuration. Continuation, Fork and recovery retain their original
+snapshot. Old clients cannot omit or null the schema-4 inheritance owner. An
+empty defaults array retains its version marker so removing the final default
+does not remove this fence. Stale writes retain ordinary revision conflicts.
+
+Default and override model/provider references participate in validation,
+portable remapping and deletion protection. This feature adds no SQLite
+migration, native process operation or Worker capability. Dedicated harness
+menus, selective native imports and web-search adapters remain separate features.

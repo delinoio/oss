@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
@@ -30,6 +31,13 @@ type agentWorkerMutation struct {
 }
 
 func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerMutation) (store.Result, error) {
+	var fields map[string]json.RawMessage
+	if err := domain.Decode(input.Document, &fields); err != nil {
+		return store.Result{}, err
+	}
+	if raw, ok := fields["harness_settings"]; ok && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return store.Result{}, domain.Fail(domain.InvalidArgument, "Harness configuration cannot be null.", "Preserve explicit inherit/override selections.")
+	}
 	var agent domain.Agent
 	if err := domain.Decode(input.Document, &agent); err != nil {
 		return store.Result{}, err
@@ -106,11 +114,23 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 		if id == "" {
 			id = domain.NewID()
 		}
+		if input.ExpectedRevision > 0 {
+			previous, err := tx.Get(domain.AgentKind, id)
+			if err != nil {
+				return nil, err
+			}
+			if rpc.ResourceSchemaVersion(domain.AgentKind, previous.Data) > rpc.ResourceSchemaVersion(domain.AgentKind, input.Document) {
+				return nil, domain.Fail(domain.Unsupported, "Harness inheritance requires a current client.", "Preserve the complete inheritance document.")
+			}
+		}
 		if err := validateNewProviderSelections(tx, input.ConfigurationMutation, id, &agent); err != nil {
 			return nil, err
 		}
 		if err := validateRelationships(tx, domain.AgentKind, id, input.ExpectedRevision, &agent); err != nil {
 			return nil, err
+		}
+		if agent.HarnessSettings == nil {
+			agent.HarnessSettings = domain.NewInheritedAgentSettings(len(agent.SourceRoutes()))
 		}
 		return tx.Put(domain.AgentKind, id, input.ExpectedRevision, "", "", agent)
 	})
@@ -210,7 +230,7 @@ func workerSourceKey(account domain.Account) string {
 
 func (s *Service) SaveAgentWorker(ctx context.Context, req *connect.Request[pb.SaveAgentWorkerRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || (req.Msg.Model == nil) == (len(req.Msg.RouteModels) == 0) || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 {
+	if req.Msg.Mutation == nil || (req.Msg.Model == nil) == (len(req.Msg.RouteModels) == 0) || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 && req.Msg.SchemaVersion != 4 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported Worker document, mutation and typed model selection are required.", "Use the current Worker revision and one model selection."), correlation)
 	}
 	if rpc.ResourceSchemaVersion(domain.AgentKind, req.Msg.DocumentJson) != req.Msg.SchemaVersion && !(req.Msg.SchemaVersion == 2 && len(req.Msg.RouteModels) == 0) {

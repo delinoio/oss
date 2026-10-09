@@ -1051,3 +1051,14 @@ ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKin
 ## Server-owned turn timing JSON (issue #2052)
 
 Authenticated Session progress and primary-user Message resources may include optional `turn_timing` with UTC `accepted_at` and optional `terminal_at`. Go owns capture in the original acceptance/terminal transactions and exact receipt replay. This additive resource metadata changes no protobuf declaration, RPC, capability or allocation. Closed Worker execution event/update documents reject injected timing. Native assignment, continuation/Fork/compaction and checkpoint/digest projections retain their prior closed shapes without timing. Historical omission is unavailable display evidence, never a synthesized zero or changed native outcome.
+
+## Harness defaults allocation — issue #1986
+
+System 63 `HARNESS_DEFAULTS_V1` negotiates complete server-owned inherited harness
+configuration through the existing configuration RPCs. Agent, Project and
+Settings inheritance documents use resource schema 4; portable configuration uses
+version 7 with versions 1–6 import compatibility. Existing source-route ownership
+and all prior allocation numbers remain unchanged. Effective execution values use
+the original closed assignment shape, so this feature allocates no Worker number
+or RPC and requires no SQLite migration. Allocation declarations alone do not
+grant native/account support.

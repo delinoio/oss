@@ -478,3 +478,10 @@ recovery storage through closed versioned variants, without a migration.
 Preserve original native history/account/Worker ownership, independent cleanup,
 immutable historical contexts and separate Fork/Sidechat lifetimes under the
 [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).
+
+### Inherited harness defaults allocation closure
+
+Issue #1986 owns System 63 `HARNESS_DEFAULTS_V1`, recorded with complete server
+configuration implementation under the allocation workflow. Preserve all prior
+System/Worker allocations. Schema-4 configuration documents and portable version
+7 use existing RPC ownership; no Worker capability or SQLite migration is added.

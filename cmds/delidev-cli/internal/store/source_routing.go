@@ -32,7 +32,14 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		return result, err
 	}
 	sources := make([]domain.SourceRouteInput, 0, len(agent.SourceRoutes()))
-	for _, route := range agent.SourceRoutes() {
+	effectiveAgents := make([]domain.Agent, 0, len(agent.SourceRoutes()))
+	for index, route := range agent.SourceRoutes() {
+		resolved, err := t.resolveHarnessSource(agent, route, index, project)
+		if err != nil {
+			return result, err
+		}
+		effectiveAgents = append(effectiveAgents, resolved)
+		route.ModelID = resolved.ModelID
 		mr, model, err := decodeEntity[domain.Model](t, domain.ModelKind, route.ModelID)
 		if err != nil {
 			return result, err
@@ -99,7 +106,17 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		}
 		sources = append(sources, source)
 	}
-	route, next, err := domain.RouteSources(agentID, agent, project, sources, defaultPolicy, state, t.now)
+	routingAgent := agent
+	routingAgent.HarnessSettings = nil
+	routingAgent.Routes = append([]domain.AgentSourceRoute(nil), agent.Routes...)
+	if len(routingAgent.Routes) > 0 {
+		for i := range routingAgent.Routes {
+			routingAgent.Routes[i].ModelID = effectiveAgents[i].ModelID
+		}
+	} else {
+		routingAgent.ModelID = effectiveAgents[0].ModelID
+	}
+	route, next, err := domain.RouteSources(agentID, routingAgent, project, sources, defaultPolicy, state, t.now)
 	result.Route, result.routingRecord, result.nextRouting = route, record, next
 	if err != nil {
 		return result, err
@@ -108,7 +125,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	if route.SourceIndex != nil {
 		index = int(*route.SourceIndex)
 	}
-	result.Agent = agent.WithSource(agent.SourceRoutes()[index])
+	result.Agent = effectiveAgents[index]
 	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
 	if sources[index].Problem != nil {
 		return result, sources[index].Problem

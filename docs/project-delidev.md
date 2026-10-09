@@ -403,3 +403,12 @@ ownership. System 62 / Worker 36 activate no filesystem rewind or migration.
 Original atomic server acceptance/terminal receipts own immutable UTC timing in Session progress and primary-user Message metadata. Bounded desktop projections estimate only the active interval and freeze terminal or unconfirmed display; original inherited Fork attribution remains separate from new child input. Native assignments/checkpoints/digests and older Worker shapes omit display timing. Timing adds no outcome, recovery, cleanup, permission or continuation authority; no allocation or migration. Follow the sessions, storage, protocol, Fork and desktop contracts.
 
 - Issue #2018 native generated images follow the image-input and desktop contracts. System 61/Worker 35 own closed original managed OpenAI observations and authenticated Worker output references. Durable original output intents, independent Fork retention and explicit image-only native export preserve separate cleanup and user-copy ownership; no generation bridge, entitlement inference or migration is introduced.
+
+### Harness inheritance ownership
+
+Issue #1986 adds server-owned source/profile harness defaults with Project and
+Agent overrides under System 63. The catalog contract owns schema-4 inheritance;
+the transfer contract owns portable version 7 and legacy imports. Effective new
+execution settings freeze at the original atomic claim. Existing history, account
+references, route order and native proof remain independent. This adds no native
+operation, Worker capability or SQLite migration.

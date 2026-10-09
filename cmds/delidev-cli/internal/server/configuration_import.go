@@ -61,6 +61,9 @@ func writeConfigurationImport(tx *store.Tx, plan domain.ConfigurationImportPlan)
 			if err = validateRelationships(tx, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
 				return nil, err
 			}
+			if agent, ok := value.(*domain.Agent); ok && agent.HarnessSettings == nil {
+				agent.HarnessSettings = domain.NewInheritedAgentSettings(len(agent.SourceRoutes()))
+			}
 			record, err := tx.Put(change.Kind, change.ID, change.ExpectedRevision, "", "", value)
 			if err != nil {
 				return nil, err

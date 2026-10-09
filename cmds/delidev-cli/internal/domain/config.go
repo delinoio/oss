@@ -79,15 +79,23 @@ func UniqueIDs(ids []ID) error {
 }
 
 type Project struct {
-	Settings          *ProjectBehavior `json:"settings,omitempty"`
-	Name              string           `json:"name"`
-	Repositories      []ID             `json:"repositories"`
-	PrimaryRepository ID               `json:"primary_repository"`
-	Agents            Restriction      `json:"agents"`
-	Accounts          Restriction      `json:"accounts"`
+	HarnessDefaultsVersion uint32           `json:"harness_defaults_version,omitempty"`
+	HarnessDefaults        []HarnessDefault `json:"harness_defaults,omitempty"`
+	Settings               *ProjectBehavior `json:"settings,omitempty"`
+	Name                   string           `json:"name"`
+	Repositories           []ID             `json:"repositories"`
+	PrimaryRepository      ID               `json:"primary_repository"`
+	Agents                 Restriction      `json:"agents"`
+	Accounts               Restriction      `json:"accounts"`
 }
 
 func (p Project) Validate() error {
+	if p.HarnessDefaultsVersion > 1 {
+		return Fail(Unsupported, "Unknown harness defaults document version.", "Use a compatible client.")
+	}
+	if err := ValidateHarnessDefaults(p.HarnessDefaults); err != nil {
+		return err
+	}
 	if p.Settings != nil {
 		if err := p.Settings.Validate(); err != nil {
 			return err
@@ -281,19 +289,25 @@ type AgentSourceRoute struct {
 }
 
 type Agent struct {
-	ReconfigurationRequired bool               `json:"reconfiguration_required,omitempty"`
-	Name                    string             `json:"name"`
-	Harness                 Harness            `json:"harness"`
-	ModelID                 ID                 `json:"model_id,omitempty"`
-	Effort                  string             `json:"effort,omitempty"`
-	Accounts                []WeightedAccount  `json:"accounts,omitempty"`
-	Routes                  []AgentSourceRoute `json:"routes,omitempty"`
-	Routing                 *RoutingPolicy     `json:"routing,omitempty"`
-	Templates               []ID               `json:"templates"`
-	Options                 AgentOptions       `json:"options"`
+	HarnessSettings         *AgentHarnessSettings `json:"harness_settings,omitempty"`
+	ReconfigurationRequired bool                  `json:"reconfiguration_required,omitempty"`
+	Name                    string                `json:"name"`
+	Harness                 Harness               `json:"harness"`
+	ModelID                 ID                    `json:"model_id,omitempty"`
+	Effort                  string                `json:"effort,omitempty"`
+	Accounts                []WeightedAccount     `json:"accounts,omitempty"`
+	Routes                  []AgentSourceRoute    `json:"routes,omitempty"`
+	Routing                 *RoutingPolicy        `json:"routing,omitempty"`
+	Templates               []ID                  `json:"templates"`
+	Options                 AgentOptions          `json:"options"`
 }
 
 func (a Agent) Validate() error {
+	if a.HarnessSettings != nil {
+		if err := a.HarnessSettings.Validate(len(a.SourceRoutes())); err != nil {
+			return err
+		}
+	}
 	if err := Text(a.Name, "Agent Worker name", 256, true); err != nil {
 		return err
 	}
@@ -370,6 +384,13 @@ func (a Agent) ModelIDs() []ID {
 	result := []ID{}
 	for _, route := range a.SourceRoutes() {
 		result = append(result, route.ModelID)
+	}
+	if a.HarnessSettings != nil {
+		for _, selected := range a.HarnessSettings.Models {
+			if selected.Value != nil && !slices.Contains(result, *selected.Value) {
+				result = append(result, *selected.Value)
+			}
+		}
 	}
 	return result
 }
@@ -827,13 +848,15 @@ func (m Machine) Validate() error {
 }
 
 type Settings struct {
-	PlanModeDefault       bool              `json:"plan_mode_default"`
-	BranchPrefix          *string           `json:"branch_prefix,omitempty"`
-	AutomaticPlanApproval bool              `json:"automatic_plan_approval"`
-	DefaultRouting        RoutingPolicy     `json:"default_routing"`
-	Notifications         bool              `json:"notifications"`
-	AutomaticFetch        bool              `json:"automatic_fetch"`
-	Remediation           RemediationPolicy `json:"remediation"`
+	HarnessDefaultsVersion uint32            `json:"harness_defaults_version,omitempty"`
+	HarnessDefaults        []HarnessDefault  `json:"harness_defaults,omitempty"`
+	PlanModeDefault        bool              `json:"plan_mode_default"`
+	BranchPrefix           *string           `json:"branch_prefix,omitempty"`
+	AutomaticPlanApproval  bool              `json:"automatic_plan_approval"`
+	DefaultRouting         RoutingPolicy     `json:"default_routing"`
+	Notifications          bool              `json:"notifications"`
+	AutomaticFetch         bool              `json:"automatic_fetch"`
+	Remediation            RemediationPolicy `json:"remediation"`
 }
 
 func DefaultSettings() Settings {
@@ -841,6 +864,12 @@ func DefaultSettings() Settings {
 	return Settings{BranchPrefix: &prefix, DefaultRouting: SequentialExhaustion, Notifications: true, AutomaticFetch: true, Remediation: DefaultRemediationPolicy()}
 }
 func (s Settings) Validate() error {
+	if s.HarnessDefaultsVersion > 1 {
+		return Fail(Unsupported, "Unknown harness defaults document version.", "Use a compatible client.")
+	}
+	if err := ValidateHarnessDefaults(s.HarnessDefaults); err != nil {
+		return err
+	}
 	if s.BranchPrefix != nil {
 		if err := ValidateBranchPrefix(*s.BranchPrefix); err != nil {
 			return err
