@@ -3,14 +3,14 @@ import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences
 import { productError, ProductError,  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { ConfigurationQuery, EntityKind, ResourceQuery, SystemQuery, SystemCapability, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationQuery, EntityKind, ResourceQuery, SystemQuery, SystemCapability, newRequestId, clientFailure, type ClientFailure, type Resource } from "@delinoio/delidev-api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { document, items, object, text, type Document } from "./documents";
 import { ResourceChoice, TextField } from "./configuration-fields";
 import { useRetainedMutation } from "./mutation";
 import { useSettingsOpening } from "./settings-lifetime";
 import { JobState } from "./jobs";
-import { ServiceProblem, Problem  } from "./ui";
+import { ServiceProblem, Problem, Failure  } from "./ui";
 import "./configuration-transfer.css";
 
 function originalImportJob(resource: Resource | undefined, jobId: string): Document | undefined {
@@ -116,6 +116,8 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const [report, setReport] = useState<Document>();
   const formattedPreview = useMemo(() => preview ? formatConfigurationReview(decoder.decode(preview.bytes)) : "", [preview]);
   const [problem, setProblem] = useProductMessage("");
+  const [exportFailure, setExportFailure] = useState<ClientFailure>();
+  const exportGeneration = useRef(0);
   const [loading, setLoading] = useState(false);
   const alive = useRef(false), generation = useRef(0), gate = useRef(false);
   const exportText = useRef<HTMLTextAreaElement>(null);
@@ -130,7 +132,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   const statusFailed = containsRemoteRepositories && Boolean(status.error);
   const exportRead = useMutation(ConfigurationQuery.exportConfiguration, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
   const previewRead = useMutation(ConfigurationQuery.previewConfigurationImport, { retry: false, gcTime: 0, meta: opening?.mutationMeta });
-  useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; }; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; exportGeneration.current++; }; }, []);
   const mutation = useRetainedMutation("configuration-import", ConfigurationQuery.applyConfigurationImport, (result) => {
     setReport({ state: "unknown" });
     const value = object(JSON.parse(decoder.decode(result.resultJson)));
@@ -160,9 +162,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   }, [loaded, blocked, runner.candidates]);
   const mappingsConfirmed = Boolean(loaded && loaded.bundle.machines.every(row => confirmedMachines[row.id] && machines[row.id]) && new Set(Object.values(machines).filter(Boolean)).size === loaded.bundle.machines.length);
   useEffect(() => {
-    onWorkflowReadyChange?.(Boolean(draft || loaded || preview || report || problem || loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain));
+    onWorkflowReadyChange?.(Boolean(draft || loaded || preview || report || problem || exportFailure || loading || exportRead.isPending || previewRead.isPending || mutation.busy || mutation.uncertain));
     return () => onWorkflowReadyChange?.(false);
-  }, [draft, exportRead.isPending, loaded, loading, mutation.busy, mutation.uncertain, onWorkflowReadyChange, preview, previewRead.isPending, problem, report]);
+  }, [draft, exportRead.isPending, loaded, loading, mutation.busy, mutation.uncertain, onWorkflowReadyChange, preview, previewRead.isPending, problem, exportFailure, report]);
   useEffect(() => { if (state === JobState.Succeeded) void queryClient.invalidateQueries({ refetchType: "active" }); }, [state, queryClient]);
   const invalidate = () => { generation.current++; setPreview(undefined); setProblem(""); };
   const load = (raw: string) => {
@@ -172,9 +174,16 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   };
   const exportNow = async () => {
     if (gate.current || blocked || !active) return;
-    gate.current = true; setProblem("");
-    try { const result = await exportRead.mutateAsync({}); if (alive.current) { const raw = decoder.decode(result.documentJson); readBundle(raw); setExported(raw); } }
-    catch (error) { if (alive.current) setProblem(productError(error, "configuration-transfer.extra.307cfd717ce3")); }
+    gate.current = true; setProblem(""); setExportFailure(undefined);
+    const original = ++exportGeneration.current;
+    try { const result = await exportRead.mutateAsync({}); if (alive.current && exportGeneration.current === original) { const raw = decoder.decode(result.documentJson); readBundle(raw); setExported(raw); } }
+    catch (error) {
+      if (alive.current && exportGeneration.current === original) {
+        if (error instanceof ProductError) setProblem(error.productMessage);
+        // Retain only the shared sanitized projection, never the raw RPC error.
+        else setExportFailure(clientFailure(error));
+      }
+    }
     finally { exportRead.reset(); gate.current = false; }
   };
   const inspect = async () => {
@@ -256,7 +265,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
      {preview ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationChangePreview_226628")}><h3>{copy("configuration-transfer.reviewChangesBeforeApplying_294dcf")}</h3><p>{copy("configuration-transfer.newRepositoryPathsMustPassValidation_178644")}</p>{preview.machines.map((machine) => <p key={text(machine.id)}><LocalizedText id="configuration-transfer.targetWorker_aa1b09" components={{ s0: <>{text(machine.name)}</>, s1: <>{text(machine.os)}</>, s2: <>{text(machine.architecture)}</>, s3: <>{text(machine.id)}</> }} /></p>)}{preview.changes.map((change) => <article key={text(change.id)}><h4>{text(change.action)} · {text(object(change.after).name) || text(object(change.after).alias) || copy("configuration-transfer.extra.eba66b2c00bb")} · {text(change.kind)}</h4><p><LocalizedText id="configuration-transfer.target_8daa2b" components={{ s0: <>{text(change.id)}</> }} /></p><p>{change.before ? copy("configuration-transfer.currentAndImportedValuesAreBoth_99d4dd") : copy("configuration-transfer.newValuesAreIncludedInThe_88d082")}</p></article>)}<label>{copy("configuration-transfer.completeChangeDetails_79b757")}<textarea readOnly value={formattedPreview} rows={12} spellCheck={false} /></label><SettingsActionButton icon={SettingsActionIcon.Save} className="primary" disabled={blocked || !active || remoteUnsupported} onClick={() => { if (!blocked && !remoteUnsupported && mappingsConfirmed) { runner.touch(); originalLastTarget.current = loaded?.bundle.machines.length ? machines[loaded.bundle.machines[loaded.bundle.machines.length - 1].id] : undefined; void mutation.send({ requestId: newRequestId(), previewJson: preview.bytes }); } }}>{copy("configuration-transfer.applyReviewedConfiguration_1229a2")}</SettingsActionButton></section> : null}
     {mutation.uncertain ? <section className="transfer-panel" aria-label={copy("configuration-transfer.uncertainConfigurationImport_4b21c6")}><SettingsActionButton icon={SettingsActionIcon.Retry} disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("configuration-transfer.retryTheSameConfigurationImport_9d3291")}</SettingsActionButton></section> : null}
     {report ? <section className="transfer-panel" aria-label={copy("configuration-transfer.configurationImportResult_7c1375")}><p role="status">{state === JobState.Succeeded ? copy("configuration-transfer.configurationImportCompletedConnectEachImported_2af629") : state === JobState.Failed || state === JobState.Canceled ? copy("configuration-transfer.configurationImportFailedExistingConfigurationWas_c7e5ad") : state === JobState.Queued || state === JobState.Claimed ? copy("configuration-transfer.importAcceptedWaitingForConfirmationOf_8ed561") : copy("configuration-transfer.theImportOutcomeIsUnavailableInspect_7a2ebb")}</p>{jobId && (job.error || (job.data && !jobValue)) ? <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={job.isFetching || !active} onClick={() => void job.refetch()}>{copy("jobs.retryStatusRead")}</SettingsActionButton> : null}{text(importProblem.message) ? <ServiceProblem code={text(importProblem.code) || text(importProblem.problem_code)}><p role="alert">{text(importProblem.message)} {text(importProblem.guidance)}</p></ServiceProblem> : null}<Problem error={job.error} />{[JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState) ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => { setReport(undefined); invalidate(); }}>{copy("configuration-transfer.returnToRetainedImportDocument_9a833a")}</SettingsActionButton> : null}</section> : null}
-    {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
+    {problem ? <p role="alert">{problem}</p> : null}<Failure failure={exportFailure} /><Problem error={mutation.error} />
     <aside className="transfer-guidance" data-settings-search-target="transfer-guidance" aria-labelledby="transfer-guidance-heading">
       <h2 id="transfer-guidance-heading">{copy("configuration-transfer.beforeYouTransfer_1de385")}</h2>
       <ul><li>{copy("configuration-transfer.importedAccountsAreDisconnectedAndNeed_2a3422")}</li><li>{copy("configuration-transfer.authenticationDeviceRegistrationsObservedQuotasDiscovered_57d141")}</li></ul>

@@ -2,9 +2,9 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, ResourceSchema, ResourceService, EntityKind, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { ConfigurationService, ErrorDetailSchema, ResourceSchema, ResourceService, EntityKind, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { ConfigurationTransfer, formatConfigurationReview } from "./configuration-transfer";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
@@ -263,4 +263,39 @@ it("requires explicit confirmation of every unique suggested import target", asy
   fireEvent.click(preview);await waitFor(()=>expect(value.preview).toHaveBeenCalledTimes(1));
   const selection=JSON.parse(new TextDecoder().decode((value.preview.mock.calls[0][0] as {selectionJson:Uint8Array}).selectionJson));
   expect(selection.machines).toEqual([{source_id:sourceA,target_id:targetA},{source_id:sourceB,target_id:targetB}]);expect(bridge.update).not.toHaveBeenCalled();
+});
+
+
+it("retains sanitized typed export guidance and clears it for the next export generation", async () => {
+ const value=fixture(),reference=newRequestId();
+ const message="The configuration transfer exceeds its bound.",guidance="Use at most 256 configuration entries, 64 checkouts and a 384 KiB export document.";
+ value.exported.mockRejectedValueOnce(new ConnectError(message,Code.ResourceExhausted,undefined,[{desc:ErrorDetailSchema,value:{code:"resource_exhausted",guidance,correlationId:reference}}]));
+ render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ await screen.findByText("A capacity limit was reached. Inspect capacity before submitting another request.");
+ expect(screen.queryByText("Export failed.")).toBeNull();expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
+ fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText(message)).toBeTruthy();expect(screen.getByText(guidance)).toBeTruthy();expect(screen.getByText("resource_exhausted")).toBeTruthy();expect(screen.getByText(new RegExp(reference))).toBeTruthy();
+ let finish!: (result:{documentJson:Uint8Array})=>void;
+ value.exported.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ await waitFor(()=>expect(value.exported).toHaveBeenCalledTimes(2));expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText(message)).toBeNull();expect(screen.queryByText(guidance)).toBeNull();
+ const raw=JSON.stringify(value.bundle).replace('"version":1','"version":1,"exact":18446744073709551615');
+ await act(async()=>finish({documentJson:new TextEncoder().encode(raw)}));
+ const exported=await screen.findByRole("textbox",{name:"Exported configuration"}) as HTMLTextAreaElement;expect(exported.value).toBe(raw);
+ fireEvent.click(screen.getByRole("button",{name:"Select export for copying"}));expect(exported.selectionEnd).toBe(raw.length);expect(screen.queryByRole("alert")).toBeNull();expect(value.preview).not.toHaveBeenCalled();expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("sanitizes untyped export errors and preserves local document validation messages",async()=>{
+ const value=fixture();value.exported.mockRejectedValueOnce(new ConnectError("credential=private-token /private/user/config provider response",Code.Unavailable));
+ const mounted=render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ await screen.findByRole("alert");fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText("The DeliDev request could not complete.")).toBeTruthy();expect(document.body.textContent).not.toMatch(/private-token|private\/user|provider response/);expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
+ value.exported.mockResolvedValueOnce({documentJson:encode({version:999,entries:[],machines:[]})});fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a version 1 API-only, version 2 or version 3 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
+ mounted.unmount();
+});
+
+it("does not publish an export failure after the original Settings controller is disposed",async()=>{
+ const value=fixture();let reject!: (reason:unknown)=>void;value.exported.mockImplementationOnce(()=>new Promise((_resolve,rejected)=>{reject=rejected;}));
+ const mounted=render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await waitFor(()=>expect(value.exported).toHaveBeenCalledOnce());mounted.unmount();
+ await act(async()=>reject(new ConnectError("old export generation",Code.ResourceExhausted)));
+ render(value.view());expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
 });
