@@ -54,6 +54,26 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 		original = p.ID
 		return nil
 	})
+	// Restart without a valid models.dev cache must retain SQLite's original
+	// immutable active basis until a successful checked refresh says otherwise.
+	if e := db.Close(); e != nil {
+		t.Fatal(e)
+	}
+	db, e = store.Open(context.Background(), root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.Store = db
+	mutate(func(tx *store.Tx) error {
+		if e := s.applyReference(tx, m, tokenprices.Snapshot{}); e != nil {
+			return e
+		}
+		p, e := tx.RetainedActivePricing(m.Key())
+		if e != nil || p == nil || p.ID != original || p.Revision != 1 {
+			t.Fatal("unavailable snapshot discarded original automatic basis", p, e)
+		}
+		return e
+	})
 	// A daily retrieval date alone does not create a new immutable price version.
 	snapshot.Checked = checked.Add(24 * time.Hour)
 	basis.AsOf = "2026-10-10"

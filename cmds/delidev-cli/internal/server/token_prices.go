@@ -132,7 +132,9 @@ func (s *Service) applyReference(tx *store.Tx, m domain.ModelIdentity, snapshot 
 		return nil
 	}
 	if snapshot.Checked.IsZero() {
-		return tx.ClearActivePricing(m)
+		// Missing or failed cache admission is not a successful no-match.
+		// Retain the durable basis until a checked catalog supersedes it.
+		return nil
 	}
 	ref, _, e := priceReference(tx, m, snapshot)
 	if e != nil {
