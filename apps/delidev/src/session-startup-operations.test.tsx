@@ -2,7 +2,7 @@
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { encode } from "./documents";
 import { startupOperations, observedStartupOperation, startupWorkerCurrent } from "./session-startup-operations";
 import { SessionProgressPhase } from "./session-progress";
@@ -44,11 +44,11 @@ it("renders grouped applicable operations with stable polite status and native k
 it("stops animation for unavailable expired or replaced original Worker presence",()=>{
  const now=Date.now(), instance=scope.instance_id, machineId=scope.machine_id;
  const session=resource({workspace},{machine_id:machineId});
- const machine=(last_seen:unknown,owner=instance)=>create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({last_seen,network:{instance_id:owner},disabled:false})});
- expect(startupWorkerCurrent(session,machine(new Date(now).toISOString()),now,true)).toBe(true);
- for(const last_seen of [undefined,"invalid",new Date(now-60_000).toISOString(),new Date(now+1000).toISOString()])expect(startupWorkerCurrent(session,machine(last_seen),now,true)).toBe(false);
- expect(startupWorkerCurrent(session,machine(new Date(now).toISOString(),newRequestId()),now,true)).toBe(false);
- expect(startupWorkerCurrent(session,machine(new Date(now).toISOString()),now,false)).toBe(false);
+ const machine=(last_seen:unknown,owner=instance)=>create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({last_seen,heartbeat_observed_at:new Date(now).toISOString(),network:{instance_id:owner},disabled:false})});
+ expect(startupWorkerCurrent(session,machine(new Date(now).toISOString()),true)).toBe(true);
+ for(const last_seen of [undefined,"invalid",new Date(now-60_000).toISOString(),new Date(now+1000).toISOString()])expect(startupWorkerCurrent(session,machine(last_seen),true)).toBe(false);
+ expect(startupWorkerCurrent(session,machine(new Date(now).toISOString(),newRequestId()),true)).toBe(false);
+ expect(startupWorkerCurrent(session,machine(new Date(now).toISOString()),false)).toBe(false);
 });
 
 it("does not animate an earlier descriptive stage after authoritative startup advances",()=>{
@@ -85,7 +85,23 @@ it("binds continuation summaries to their selected execution rather than precedi
 it("uses original workspace presence before any execution is selected", () => {
  const now=Date.now(),machineId=scope.machine_id;
  const session=resource({workspace},{machine_id:machineId,initial_execution:undefined,current_execution:undefined,execution:undefined,startup:undefined});
- const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({last_seen:new Date(now).toISOString(),network:{instance_id:scope.instance_id},disabled:false})});
- expect(startupWorkerCurrent(session,machine,now,true)).toBe(true);
- expect(startupWorkerCurrent(session,machine,now,false)).toBe(false);
+ const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({last_seen:new Date(now).toISOString(),heartbeat_observed_at:new Date(now).toISOString(),network:{instance_id:scope.instance_id},disabled:false})});
+ expect(startupWorkerCurrent(session,machine,true)).toBe(true);
+ expect(startupWorkerCurrent(session,machine,false)).toBe(false);
+});
+
+
+it("uses the server-clock heartbeat observation despite desktop clock skew", () => {
+ const serverNow=Date.parse("2026-10-09T12:00:00Z"), machineId=scope.machine_id;
+ const session=resource({workspace},{machine_id:machineId});
+ const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({last_seen:new Date(serverNow-5000).toISOString(),heartbeat_observed_at:new Date(serverNow).toISOString(),network:{instance_id:scope.instance_id},disabled:false})});
+ for(const skew of [-300_000,300_000]) {
+  vi.spyOn(Date,"now").mockReturnValue(serverNow+skew);
+  expect(startupWorkerCurrent(session,machine,true)).toBe(true);
+ }
+ machine.documentJson=encode({last_seen:new Date(serverNow-60_000).toISOString(),heartbeat_observed_at:new Date(serverNow).toISOString(),network:{instance_id:scope.instance_id},disabled:false});
+ expect(startupWorkerCurrent(session,machine,true)).toBe(false);
+ machine.documentJson=encode({last_seen:new Date(serverNow).toISOString(),network:{instance_id:scope.instance_id},disabled:false});
+ expect(startupWorkerCurrent(session,machine,true)).toBe(false);
+ vi.restoreAllMocks();
 });

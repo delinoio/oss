@@ -3551,7 +3551,11 @@ details or execution rejection. The independently owned initial-readiness warnin
 boundary remains separate.
 
 Detailed startup presence reads use the original Machine network instance and
-server-projected heartbeat through the existing Resource query. Failed/missing
+server-projected heartbeat and same-read `heartbeat_observed_at` through the
+existing Resource query. Compare lease timestamps only in that server clock
+domain; browser-clock skew cannot grant or remove presence. Both projected
+timestamps are transient and leave original Machine revisions, storage and
+portable configuration unchanged. Failed/missing
 reads, instance replacement and the original 60-second lease boundary stop
 animation; a report timestamp or long-running step duration is never a freshness
 substitute. Rechecks are read-only and suspend with the owning conversation.

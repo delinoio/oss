@@ -527,7 +527,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // the original progress projection still has a current startup to display.
   const observeStartupOwner = conversationActive && hasStartupOperations && Boolean(observedProgress) && Boolean(data.machine_id);
   const startupMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: text(data.machine_id) }, { enabled: observeStartupOwner, refetchInterval: observeStartupOwner ? 5000 : false, refetchOnWindowFocus: false, refetchOnReconnect: false });
-  const startupOwnerCurrent = !hasStartupOperations || startupWorkerCurrent(session, startupMachine.data?.resource, startupMachine.dataUpdatedAt, Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending);
+  const startupOwnerCurrent = !hasStartupOperations || startupWorkerCurrent(session, startupMachine.data?.resource, Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending);
   const progress = startupOwnerCurrent ? observedProgress : undefined;
   return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {

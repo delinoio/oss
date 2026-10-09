@@ -63,11 +63,12 @@ export function observedStartupOperation(resource: Resource | undefined): { nati
 }
 
 /** Original Worker presence from a successful server-owned read, never report age. */
-export function startupWorkerCurrent(session: Resource | undefined, machine: Resource | undefined, observedAt: number, successfulRead: boolean): boolean {
- if (!session || !machine || !successfulRead || !Number.isFinite(observedAt) || machine.kind !== EntityKind.MACHINE || machine.schemaVersion !== 1 || machine.revision < 1n) return false;
+export function startupWorkerCurrent(session: Resource | undefined, machine: Resource | undefined, successfulRead: boolean): boolean {
+ if (!session || !machine || !successfulRead || machine.kind !== EntityKind.MACHINE || machine.schemaVersion !== 1 || machine.revision < 1n) return false;
  const d = document(session), m = document(machine), p = object(d.startup_progress), selected = object(d.current_execution ?? d.initial_execution);
  const native = object(p.native), preparation = object(p.workspace);
  const a = uuid(selected.id) && native.execution_id === selected.id ? native : preparation;
+ const observedAt = typeof m.heartbeat_observed_at === "string" ? Date.parse(m.heartbeat_observed_at) : NaN;
  const lastSeen = typeof m.last_seen === "string" ? Date.parse(m.last_seen) : NaN;
- return uuid(a.instance_id) && a.machine_id === machine.id && d.machine_id === machine.id && object(m.network).instance_id === a.instance_id && m.disabled === false && Number.isFinite(lastSeen) && lastSeen > 0 && observedAt >= lastSeen && observedAt - lastSeen < 60_000;
+ return uuid(a.instance_id) && a.machine_id === machine.id && d.machine_id === machine.id && object(m.network).instance_id === a.instance_id && m.disabled === false && Number.isFinite(observedAt) && Number.isFinite(lastSeen) && lastSeen > 0 && observedAt >= lastSeen && observedAt - lastSeen < 60_000;
 }

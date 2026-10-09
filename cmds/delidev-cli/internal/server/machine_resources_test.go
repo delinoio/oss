@@ -60,6 +60,10 @@ func TestMachineResourceProjectsOnlyOriginalWorkerHeartbeat(t *testing.T) {
 				return
 			}
 			var got time.Time
+			var observed time.Time
+			if json.Unmarshal(fields["heartbeat_observed_at"], &observed) != nil || observed.Before(now) {
+				t.Fatal("missing server-clock lease observation")
+			}
 			if json.Unmarshal(fields["last_seen"], &got) != nil || !got.Equal(seen[i]) {
 				t.Fatalf("wrong exact-machine lease: %s", resource.DocumentJson)
 			}
@@ -132,7 +136,7 @@ func TestMachineHeartbeatProjectionMissingMalformedAndFutureRemainUnknown(t *tes
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(projected.Data, []byte("last_seen")) || !bytes.Contains(projected.Data, []byte(`"opaque":{"keep":true}`)) || !bytes.Equal(record.Data, original) {
+		if bytes.Contains(projected.Data, []byte("heartbeat_observed_at")) || bytes.Contains(projected.Data, []byte("last_seen")) || !bytes.Contains(projected.Data, []byte(`"opaque":{"keep":true}`)) || !bytes.Equal(record.Data, original) {
 			t.Fatal("unknown lease leaked attachment evidence or rewrote source")
 		}
 	}
