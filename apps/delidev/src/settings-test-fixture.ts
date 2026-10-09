@@ -28,6 +28,7 @@ export async function stopChild(child?: ChildProcess) {
 export function useSettingsFixture() {
 const originalUiConfig = getConfig();
 let directory: string, transport: Transport, providerOrigin: string, binary: string, scope: string;
+let providerModelReads = 0;
 let process: ChildProcess | undefined, worker: ChildProcess | undefined, provider: Server | undefined;
 afterEach(() => vi.unstubAllGlobals());
 beforeAll(async () => {
@@ -50,7 +51,8 @@ beforeAll(async () => {
       const origin = JSON.parse(await readFile(join(scope, "server.json"), "utf8")).url;
       const token = JSON.parse(await readFile(join(scope, "owner.json"), "utf8")).token;
       transport = createDeliDevTransport({ origin, getToken: () => token });
-      await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
+      const status = await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
+      if (status.protocolVersion !== 2 || status.stopping) throw new Error("Owned fixture server protocol mismatch");
       ready = true;
       break;
     } catch { await pause(); }
@@ -60,6 +62,7 @@ beforeAll(async () => {
   // server, user credential store, upstream account or harness is accessed.
   provider = createServer((request, response) => {
     if (request.method !== "GET" || request.url !== "/v1/models") { response.writeHead(404); response.end(); return; }
+    providerModelReads++;
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ object: "list", data: [{ id: "fixture-model", object: "model" }] }));
   });
@@ -88,5 +91,5 @@ afterAll(async () => {
     if (directory) await rm(directory, { recursive: true, force: true });
   }
 }, 15000);
-return { get directory() { return directory; }, get transport() { return transport; }, get providerOrigin() { return providerOrigin; }, get binary() { return binary; }, get scope() { return scope; }, get worker() { return worker; }, set worker(value: ChildProcess | undefined) { worker = value; }, runCLI };
+return { get providerModelReads() { return providerModelReads; }, get directory() { return directory; }, get transport() { return transport; }, get providerOrigin() { return providerOrigin; }, get binary() { return binary; }, get scope() { return scope; }, get worker() { return worker; }, set worker(value: ChildProcess | undefined) { worker = value; }, runCLI };
 }

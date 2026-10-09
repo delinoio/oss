@@ -36,7 +36,8 @@ it("configures a real Go server through the settings forms and explicitly valida
   await waitFor(() => expect(responses.matches(":disabled")).toBe(false));
   fireEvent.click(responses);
   change("API base URL", providerOrigin); change("Authentication", "keyless");
-  fireEvent.click(screen.getByRole("checkbox", { name: "Discover models automatically for connected entries" }));
+  // Endpoint hints are explicit and cannot activate a persistent catalog.
+  expect(screen.queryByRole("checkbox", { name: "Discover models automatically for connected entries" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
   await screen.findByRole("heading", { name: "Owned local API" });
   fireEvent.click(screen.getByRole("button", { name: "AI API Keys" }));
@@ -47,7 +48,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   change("Entry name", "Owned keyless account");
   await screen.findByText("OpenAI Responses", { selector: "output" });
   expect(screen.queryByRole("combobox", { name: "API format" })).toBeNull();
-  // Automatic validation is independent of model discovery. Keep this entry
+  // Automatic validation is independent of optional endpoint hints. Keep this entry
   // off until the explicit validation settles so maintenance cannot race it.
   fireEvent.click(screen.getByText("Advanced preferences", { selector: "summary" }));
   const enabled = screen.getByRole("checkbox", { name: "Enable this entry" });
@@ -78,6 +79,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   const accounts = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } });
   expect(accounts.resources).toHaveLength(1);
   expect(document(accounts.resources[0])).toMatchObject({ enabled: true, health: "ready" });
+  const beforeModelHints = fixture.providerModelReads;
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const next = async () => {
@@ -93,11 +95,24 @@ it("configures a real Go server through the settings forms and explicitly valida
   await waitFor(() => expect(window.document.querySelector("[data-source-group] .worker-routing ol strong")?.textContent).toBe("Owned keyless account"));
   // The source reports its independent account proof after the row renders.
   await next();
-  fireEvent.change(await screen.findByRole("combobox", { name: /^Model for / }), { target: { value: "fixture-model" } }); await next();
+  const model = await screen.findByRole("combobox", { name: /^Model for / });
+  expect(fixture.providerModelReads).toBe(beforeModelHints);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh models from endpoint" }));
+  fireEvent.focus(model);
+  fireEvent.click(await screen.findByRole("option", { name: /^fixture-model/ }));
+  expect((model as HTMLInputElement).value).toBe("fixture-model");
+  expect(fixture.providerModelReads).toBe(beforeModelHints + 1);
+  await next();
   change("Name", "Configured agent");
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   await screen.findByRole("heading", { name: "Configured agent" });
   const agents = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.AGENT } });
   expect(agents.resources).toHaveLength(1);
-  expect(document(agents.resources[0])).toMatchObject({ name: "Configured agent", harness: "codex", accounts: [{ weight: 1 }], options: { permission: "default" } });
+  expect(agents.resources[0].schemaVersion).toBe(4);
+  expect(document(agents.resources[0])).toMatchObject({ name: "Configured agent", harness: "codex", routes: [{ model: { provider_id: document(accounts.resources[0]).provider_id, native_id: "fixture-model" }, accounts: [{ id: accounts.resources[0].id, weight: 1 }] }], options: { permission: "default" } });
+  expect(document(agents.resources[0]).model_id).toBeUndefined();
+  expect(document(agents.resources[0]).accounts).toBeUndefined();
+  const originalAccount = (await createClient(ResourceService, transport).getResource({ kind: EntityKind.ACCOUNT, id: accounts.resources[0].id })).resource!;
+  expect(originalAccount.revision).toBe(accounts.resources[0].revision);
+  expect(originalAccount.documentJson).toEqual(accounts.resources[0].documentJson);
 }, 30000);
