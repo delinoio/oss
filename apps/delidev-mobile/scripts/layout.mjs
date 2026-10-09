@@ -68,6 +68,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
+      for (const notifications of ["legacy", "granular"])
       for (const [width, height] of [
         [360, 780],
         [390, 844],
@@ -77,7 +78,7 @@ try {
       ]) {
         await page.setViewportSize({ width, height });
         await page.goto(
-          `http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}`,
+          `http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&notifications=${notifications}`,
         );
         await page.locator(".connection button").waitFor();
         await page.waitForFunction(
@@ -94,6 +95,16 @@ try {
         );
         await page.locator("nav button").nth(2).click();
         await page.locator("select").first().waitFor();
+        const notificationGroup = page.locator("fieldset").filter({ has: page.locator("legend") });
+        await notificationGroup.locator("input[type=checkbox]").first().waitFor();
+        await page.waitForFunction(() => [...document.querySelectorAll("fieldset input[type=checkbox]")].every(node => !node.matches(":disabled")));
+        assert.equal(await notificationGroup.locator("input[type=checkbox]").count(), notifications === "granular" ? 12 : 2);
+        assert.equal(await notificationGroup.locator("h3").count(), notifications === "granular" ? 4 : 0);
+        const notificationControls = await notificationGroup.locator("label.check").evaluateAll(nodes => nodes.map(node => ({ height: node.getBoundingClientRect().height, width: node.getBoundingClientRect().width, scroll: node.scrollWidth })));
+        assert(notificationControls.every(control => control.height >= 47 && control.scroll <= control.width + 1), "notification targets and text reflow");
+        const lastPreference = notificationGroup.locator("input[type=checkbox]").last();
+        await lastPreference.focus();
+        assert(await lastPreference.evaluate(node => document.activeElement === node), "last preference keyboard focus");
         assert(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth + 1,

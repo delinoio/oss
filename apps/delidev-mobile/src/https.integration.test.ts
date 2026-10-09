@@ -14,8 +14,8 @@ import {
 } from "node:https";
 import { request as httpRequest } from "node:http";
 import { Readable } from "node:stream";
-import { createClient } from "@connectrpc/connect";
-import { create, fromJson } from "@bufbuild/protobuf";
+import { Code, createClient } from "@connectrpc/connect";
+import { create, fromJson, fromJsonString } from "@bufbuild/protobuf";
 import {
   createDeliDevTransport,
   DeviceService,
@@ -32,6 +32,7 @@ import {
   SteerQueuedInputRequestSchema,
   RespondQuestionRequestSchema,
   SetInboxReadStateRequestSchema,
+  SetNotificationPreferencesRequestSchema,
   InboxReadState,
   InboxService,
   ResourceSchema,
@@ -879,3 +880,64 @@ it("foreground synchronization fences old streams, resnapshots and never retries
   expect(connection.canMutate()).toBe(false);
   connection.suspend();
 }, 15000);
+
+it("retains granular false presence and the original revision through HTTPS acknowledgment loss, reload and exact retry", async () => {
+  let raw: string | null = null, lost = true;
+  const bodies: string[] = [];
+  const storage = { read: async () => raw, write: async (value: string) => { raw = value; } };
+  const fetcher: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    if (!request.url.endsWith("/SetNotificationPreferences")) return trustedFetch(request);
+    bodies.push(Buffer.from(await request.clone().arrayBuffer()).toString("hex"));
+    const response = await trustedFetch(request);
+    if (lost && response.status === 200) {
+      lost = false;
+      await response.arrayBuffer();
+      throw new Error("lost preference acknowledgment");
+    }
+    return response;
+  };
+  const state = new ProtectedState(storage, fetcher);
+  // A fresh client grant avoids adopting any shared interaction/Inbox fixture.
+  const id = await state.preparePair("Granular preferences", first.origin, await grant(first));
+  await state.pair(id);
+  const inbox = createClient(InboxService, state.transport(id));
+  const original = (await inbox.getNotificationPreferences({ situations: true })).preferences!;
+  expect(original.situations).toBeDefined();
+  const request = create(SetNotificationPreferencesRequestSchema, {
+    requestId: uuid(), expectedRevision: original.revision, changes: { questions: false },
+  });
+  await expect(state.perform(id, Operation.Preferences, request, "")).rejects.toThrow();
+  const pending = state.profile(id).pending!;
+  const retained = fromJsonString(SetNotificationPreferencesRequestSchema, pending.request);
+  expect(retained).toMatchObject({ requestId: request.requestId, expectedRevision: original.revision, changes: { questions: false } });
+  expect(retained.preferences).toBeUndefined();
+  expect(retained.changes?.approvals).toBeUndefined();
+  // Subsequent draft edits cannot change the durably captured false selection.
+  request.changes!.questions = true;
+  const reloaded = new ProtectedState(storage, fetcher);
+  await reloaded.load();
+  expect(reloaded.profile(id).pending).toEqual(pending);
+  const current = (await inbox.getNotificationPreferences({ situations: true })).preferences!;
+  expect(current.revision).toBe(original.revision + 1n);
+  expect(current.situations).toEqual({ ...original.situations, questions: false });
+  expect(reloaded.profile(id).pending).toEqual(pending);
+  // Another explicit server-side change advances the snapshot. Receipt replay
+  // must preserve it rather than replacing preferences with the old snapshot.
+  const concurrent = await createClient(InboxService, createDeliDevTransport({ origin: first.origin, getToken: () => state.profile(id).token, fetch: trustedFetch })).setNotificationPreferences({
+    requestId: uuid(), expectedRevision: current.revision,
+    changes: { approvals: !current.situations!.approvals },
+  });
+  expect(concurrent.preferences?.revision).toBe(current.revision + 1n);
+  const replay = await reloaded.retry(id);
+  expect(replay).toMatchObject({ requestId: retained.requestId, replayed: true, preferences: concurrent.preferences });
+  expect(bodies).toHaveLength(2);
+  expect(bodies[0]).toBe(bodies[1]);
+  expect(reloaded.profile(id).pending).toBeUndefined();
+  const stale = create(SetNotificationPreferencesRequestSchema, {
+    requestId: uuid(), expectedRevision: original.revision, changes: { questions: true },
+  });
+  await expect(reloaded.perform(id, Operation.Preferences, stale, "")).rejects.toMatchObject({ code: Code.Aborted });
+  expect(reloaded.profile(id).pending?.request).toContain(stale.requestId);
+  expect((await inbox.getNotificationPreferences({ situations: true })).preferences).toEqual(concurrent.preferences);
+}, 30000);

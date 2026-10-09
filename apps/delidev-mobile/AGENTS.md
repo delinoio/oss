@@ -16,3 +16,5 @@
   bytes, versions, source SHA, signer and checksum evidence. Unknown upload
   outcomes require exact authoritative reconciliation. Never publish a public
   track, provision owner accounts or invent credentials as part of fixtures.
+
+- New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.

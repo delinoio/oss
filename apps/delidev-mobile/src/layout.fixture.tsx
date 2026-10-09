@@ -9,6 +9,7 @@ import {
   SystemService,
   SessionService,
   InboxService,
+  SystemCapability,
 } from "@delinoio/delidev-api-client";
 import { App } from "./app";
 import { ProtectedState, documentBytes, uuid } from "./state";
@@ -19,13 +20,14 @@ const parameters = new URLSearchParams(location.search),
   project = uuid(),
   agent = uuid(),
   runner = uuid(),
-  session = uuid();
+  session = uuid(),
+  granular = parameters.get("notifications") === "granular";
 const resource = (id: string, kind: EntityKind, data: unknown) =>
   create(ResourceSchema, {
     id,
     kind,
     revision: 1n,
-    schemaVersion: 1,
+    schemaVersion: kind === EntityKind.SETTINGS || kind === EntityKind.PROJECT ? 3 : 1,
     documentJson: documentBytes(data),
   });
 const sessions = [
@@ -42,8 +44,10 @@ const sessions = [
   }),
 ];
 const saved = [
+  resource(uuid(), EntityKind.SETTINGS, { plan_mode_default: true, automatic_plan_approval: false, branch_prefix: "delidev/" }),
   resource(project, EntityKind.PROJECT, {
     name: "Project with a long readable name",
+    settings: { plan_mode_default: "inherit" },
   }),
   resource(agent, EntityKind.AGENT, { name: "Codex Agent" }),
   resource(runner, EntityKind.MACHINE, {
@@ -58,6 +62,7 @@ const transport = createRouterTransport(({ service }) => {
       serverId: server,
       protocolVersion: 1,
       version: "0.1.0",
+      capabilities: granular ? [SystemCapability.SESSION_DEFAULTS_V1] : [],
     }),
   });
   service(ResourceService, {
@@ -86,7 +91,9 @@ const transport = createRouterTransport(({ service }) => {
   service(InboxService, {
     listInbox: () => ({ entries: [] }),
     getNotificationPreferences: () => ({
-      preferences: { revision: 1n, interactions: true, terminals: false },
+      preferences: { revision: 1n, interactions: true, terminals: false,
+        ...(granular ? { situations: { questions: true, approvals: true, succeeded: false, failed: true, stopped: false, serverLost: true, serverRestored: false, workerUnavailable: true, workerAvailable: false, quotaExhausted: true, scheduleStartFailed: true, scheduleOffline: false } } : {}),
+      },
     }),
   });
 });

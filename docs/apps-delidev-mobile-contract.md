@@ -35,6 +35,16 @@ text in Execute or Plan mode. Local execution and image attachments are absent.
 Existing generated Connect RPCs retain Go validation, revisions, authorization,
 receipt replay and immutable execution ownership.
 
+Current authenticated server and Project observations supply initial Plan defaults.
+Project inheritance and explicit overrides follow the session-defaults contract.
+An explicit draft mode choice wins; an unavailable or stale default blocks
+automatic creation until reinspection, while pending original requests retain
+their captured mode. Definitive request errors preserve the creation draft.
+Granular notification generations expose the existing twelve situations and
+write only the selected situation against its captured client revision. Legacy
+servers retain their combined-category compatibility; neither shape rewrites
+an uncertain protected request.
+
 Every profile pins its explicit HTTPS origin, server identity, client device
 identity and original pairing request. Pairing accepts the existing version-1
 client grant document only when its HTTPS endpoint matches the explicit origin.

@@ -22,6 +22,9 @@ import {
 } from "@connectrpc/connect-query";
 import {
   SessionQuery,
+  SystemQuery,
+  SystemCapability,
+  type SituationNotificationPreferences,
   ResourceQuery,
   InboxQuery,
   ResourceService,
@@ -507,7 +510,7 @@ function NotificationSettings({
     </QueryClientProvider>
   );
 }
-function ServerNotificationSettings({
+export function ServerNotificationSettings({
   state,
   id,
   changed,
@@ -523,15 +526,15 @@ function ServerNotificationSettings({
     [failed, setFailed] = useState(false),
     query = useQuery(
       InboxQuery.getNotificationPreferences,
-      {},
+      { situations: true },
       { enabled: active },
     ),
     preferences = query.data?.preferences;
   const update = async (
-    field: "interactions" | "terminals",
+    field: "interactions" | "terminals" | SituationKey,
     enabled: boolean,
   ) => {
-    if (!active || !preferences || busy || state.profile(id).pending) return;
+    if (!active || !preferences || query.isFetching || query.isError || busy || state.profile(id).pending) return;
     setBusy(true);
     setFailed(false);
     try {
@@ -540,7 +543,9 @@ function ServerNotificationSettings({
         Operation.Preferences,
         create(SetNotificationPreferencesRequestSchema, {
           requestId: uuid(),
-          preferences: { ...preferences, [field]: enabled },
+          ...(preferences.situations && field !== "interactions" && field !== "terminals"
+            ? { expectedRevision: preferences.revision, changes: { [field]: enabled } }
+            : { preferences: { ...preferences, [field]: enabled } }),
         }),
         "",
       );
@@ -554,23 +559,30 @@ function ServerNotificationSettings({
   };
   return (
     <fieldset
-      disabled={!active || busy || !preferences || !!state.profile(id).pending}
+      disabled={!active || busy || !preferences || query.isError || query.isFetching || !!state.profile(id).pending}
     >
       <legend>{c.serverNotifications}</legend>
-      {(["interactions", "terminals"] as const).map((field) => (
-        <label key={field} className="check">
-          <input
-            type="checkbox"
-            checked={preferences?.[field] ?? false}
-            onChange={(e) => void update(field, e.target.checked)}
-          />
-          {c[field]}
-        </label>
-      ))}
+      {(preferences?.situations ? situationGroups : [{ label: undefined, keys: legacyNotificationKeys }]).map((group, index) => <section key={group.label ?? index}>
+        {group.label ? <h3>{c[group.label]}</h3> : null}
+        {group.keys.map(field => <label key={field} className="check">
+          <input type="checkbox" checked={preferences?.situations && field !== "interactions" && field !== "terminals"
+            ? preferences.situations[field] : preferences?.[field as "interactions" | "terminals"] ?? false}
+            onChange={event => void update(field, event.target.checked)} />{c[field]}
+        </label>)}
+      </section>)}
       {query.isError || failed ? <p role="alert">{c.error}</p> : null}
     </fieldset>
   );
 }
+type SituationKey = Exclude<keyof SituationNotificationPreferences, "$typeName" | "$unknown">;
+const legacyNotificationKeys = ["interactions", "terminals"] as const;
+const situationGroups = [
+  { label: "notificationRequests", keys: ["questions", "approvals"] },
+  { label: "notificationExecution", keys: ["succeeded", "failed", "stopped"] },
+  { label: "notificationConnections", keys: ["serverLost", "serverRestored", "workerUnavailable", "workerAvailable"] },
+  { label: "notificationOperations", keys: ["quotaExhausted", "scheduleStartFailed", "scheduleOffline"] },
+] as const satisfies readonly { label: keyof Labels; keys: readonly SituationKey[] }[];
+
 function Connected({
   state,
   id,
@@ -609,12 +621,14 @@ function Connected({
     operation: Operation,
     request: Message,
     target: string,
+    accepted?: () => void,
   ) => {
     if (!connection.canMutate() || busy) return;
     setBusy(true);
     setError("");
     try {
       await state.perform(id, operation, request, target);
+      accepted?.();
       changed();
       await connection.cache.invalidateQueries();
     } catch (error) {
@@ -669,7 +683,7 @@ function Connected({
           await createClient(
             InboxService,
             transport,
-          ).getNotificationPreferences({});
+          ).getNotificationPreferences({ situations: true });
         else
           await createClient(InboxService, transport).getNotificationDelivery({
             inboxId: pending.target,
@@ -782,9 +796,9 @@ function Connected({
             <Modal title={c.newSession} close={() => setCreation(false)}>
               <NewSession
                 enabled={enabled && !busy && !pending}
+                error={error}
                 mutate={async (r) => {
-                  await mutate(Operation.Create, r, "");
-                  if (!state.profile(id).pending) setCreation(false);
+                  await mutate(Operation.Create, r, "", () => setCreation(false));
                 }}
               />
             </Modal>
@@ -999,12 +1013,14 @@ function Sessions({
     </section>
   );
 }
-function NewSession({
+export function NewSession({
   enabled,
   mutate,
+  error,
 }: {
   enabled: boolean;
   mutate: (request: Message) => Promise<void>;
+  error?: string;
 }) {
   const c = useCopy(),
     [project, setProject] = useState(""),
@@ -1013,8 +1029,24 @@ function NewSession({
     [workspace, setWorkspace] = useState("worktree"),
     [title, setTitle] = useState(""),
     [prompt, setPrompt] = useState(""),
-    [mode, setMode] = useState("execute");
+    [manualMode, setMode] = useState<string>();
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled });
+  const supportsDefaults = status.data?.capabilities.includes(SystemCapability.SESSION_DEFAULTS_V1) ?? false;
+  const defaults = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: enabled && supportsDefaults });
+  const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: enabled && supportsDefaults && workspace === "worktree" && !!project });
+  const rows = defaults.data?.resources;
+  const global = rows?.[0];
+  const globalReady = !defaults.isFetching && !defaults.isError && rows !== undefined && rows.length <= 1 && !defaults.data?.nextPageToken && (!global || global.kind === EntityKind.SETTINGS && global.revision > 0n && supportsResourceSchema(global));
+  const selected = selectedProject.data?.resource;
+  const projectReady = workspace !== "worktree" || !project || !selectedProject.isFetching && !selectedProject.isError && selected?.kind === EntityKind.PROJECT && selected.id === project && selected.revision > 0n && supportsResourceSchema(selected);
+  const override = workspace !== "worktree" || !project ? "inherit" : text(record(value(selected).settings).plan_mode_default) || "inherit";
+  const modeReady = manualMode !== undefined || !status.isFetching && !status.isError && !!status.data && (!supportsDefaults || globalReady && projectReady && ["inherit", "enabled", "disabled"].includes(override));
+  const automaticMode = supportsDefaults && (override === "enabled" || override === "inherit" && value(global).plan_mode_default === true) ? "plan" : "execute";
+  const retainedMode = useRef("execute");
+  if (enabled && modeReady) retainedMode.current = manualMode ?? automaticMode;
+  const mode = enabled ? manualMode ?? automaticMode : retainedMode.current;
   const valid =
+    modeReady &&
     enabled &&
     agent &&
     runner &&
@@ -1100,6 +1132,8 @@ function NewSession({
             onChange={(e) => setPrompt(e.target.value)}
           />
         </label>
+        {!modeReady ? <div><p role="status">{c.defaultsUnavailable}</p><button type="button" disabled={!enabled || status.isFetching || defaults.isFetching || selectedProject.isFetching} onClick={() => { void status.refetch(); if (supportsDefaults) void defaults.refetch(); if (supportsDefaults && project && workspace === "worktree") void selectedProject.refetch(); }}>{c.refresh}</button></div> : null}
+        {error ? <p role="alert">{error}</p> : null}
         <button disabled={!valid}>{c.newSession}</button>
       </fieldset>
     </form>
