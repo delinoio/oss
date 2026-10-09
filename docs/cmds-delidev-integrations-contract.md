@@ -412,7 +412,11 @@ Feedback/reviewer, required CI and conflict collection are independent, bounded
 reads through the selected explicit GitHub profile. Failed or unknown CI cannot
 supply a CI problem or veto independently authorized feedback/conflict collection.
 Fresh acceptance observes original source/base/head identity and current reviewer
-identity/permission, filters eligible original versions, and rechecks complete
+identity/permission once per enabled kind, then traverses stable ordered problem
+pages and counts only fully eligible original versions toward the existing
+100-problem request limit. Denied versions and eligible remainder stay unhandled;
+page traversal remains cancellable within the original operation deadline. It
+rechecks complete
 policy, repository/profile generation, project membership and source-link controls
 inside the same transaction as attempt/session/queue/workspace publication.
 The ordinary execution dispatcher repeats the original per-kind remote gates

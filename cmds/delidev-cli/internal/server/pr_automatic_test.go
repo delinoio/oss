@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -634,6 +635,169 @@ func TestAutomaticPRChangedPrerequisiteCancelsOnlyUnclaimedInputAndFeedbackProce
 			next, _ := store.Decode[domain.PRRemediationAttempt](attempts[0])
 			if next.State != domain.PRRemediationBound || len(next.Problems) != 2 {
 				t.Fatal("feedback did not proceed independently")
+			}
+		})
+	}
+}
+
+func automaticPagedFeedback(f *automaticPRFixture, denied, eligible int) {
+	f.service.githubQueries = queryFunc(func(ctx context.Context, _ []byte, _, _ string, q domain.RepositoryQuery) (gh.RepositoryQueryObservation, error) {
+		f.calls.Add(1)
+		if f.queryHook != nil {
+			if err := f.queryHook(ctx, q); err != nil {
+				return gh.RepositoryQueryObservation{}, err
+			}
+		}
+		v := automaticPRObservation(q, true, f.ciFailed.Load())
+		if q.Operation != domain.RepositoryReviewers {
+			return v, nil
+		}
+		template := v.Reviewers.Feedback.Entries[1]
+		template.Body = "Retained feedback"
+		originalActor := v.Reviewers.Actors[0]
+		selectedActor := originalActor
+		selectedActor.Author.ID, selectedActor.Author.NodeID, selectedActor.Author.Login = "23", "U_23", "selected-reviewer"
+		identity := *selectedActor.Identity
+		identity.ID, identity.NodeID, identity.Login = "23", "U_23", "selected-reviewer"
+		selectedActor.Identity = &identity
+		v.Reviewers.Actors = []domain.PRReviewerIdentity{originalActor}
+		if eligible > 0 {
+			v.Reviewers.Actors = append(v.Reviewers.Actors, selectedActor)
+		}
+		v.Reviewers.Feedback.Entries = nil
+		v.Reviewers.Applications = nil
+		for i := 0; i < denied+eligible; i++ {
+			entry := template
+			entry.ID = strconv.Itoa(1000 + i)
+			entry.NodeID = "COMMENT_" + entry.ID
+			entry.URL = v.Items[0].URL + "#issuecomment-" + entry.ID
+			actor := originalActor.Author
+			if i >= denied {
+				actor = selectedActor.Author
+			}
+			entry.Author = &actor
+			entry.ContentVersion = entry.Version()
+			v.Reviewers.Feedback.Entries = append(v.Reviewers.Feedback.Entries, entry)
+			v.Reviewers.Applications = append(v.Reviewers.Applications, domain.FeedbackApplication{FeedbackNodeID: entry.NodeID, ContentVersion: entry.ContentVersion, Access: domain.IntegrationAccessAvailable, State: domain.FeedbackAppNone})
+		}
+		return v, nil
+	})
+}
+
+func TestAutomaticPRPagesCountOnlyEligibleOriginalProblems(t *testing.T) {
+	for _, scenario := range []struct {
+		name         string
+		eligible     int
+		ci, conflict bool
+		want         int
+	}{
+		{"later-conflict", 0, false, true, 1},
+		{"later-feedback", 1, false, false, 1},
+		{"independent-kinds", 1, true, true, 3},
+		{"capacity", 101, false, false, 100},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f := newAutomaticPRFixture(t)
+			f.savePolicy(t, func(p *domain.RemediationPolicy) {
+				p.ReviewFeedback = true
+				p.CIFailure = scenario.ci
+				p.MergeConflict = scenario.conflict
+				p.ReviewerSelectors = []domain.ReviewerSelector{{Kind: domain.ReviewerUser, ID: "23", NodeID: "U_23"}}
+			})
+			f.ciFailed.Store(scenario.ci)
+			automaticPagedFeedback(f, 100, scenario.eligible)
+			kinds := map[domain.PRProblemKind]bool{domain.PRFeedbackProblem: true}
+			if scenario.ci {
+				kinds[domain.PRCIProblem] = true
+			}
+			if scenario.conflict {
+				kinds[domain.PRMergeConflictProblem] = true
+			}
+			// Feedback is retained first, so every enabled independent problem follows
+			// the 100 earlier denied records in the store's stable UUID order.
+			for _, kind := range []domain.PRProblemKind{domain.PRFeedbackProblem, domain.PRCIProblem, domain.PRMergeConflictProblem} {
+				if kinds[kind] {
+					if err := f.service.collectAutomaticPRKind(f.owner, f.link, kind); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			before := f.calls.Load()
+			if err := f.service.requestAutomaticPRFix(f.owner, f.link, kinds); err != nil {
+				t.Fatal(err)
+			}
+			attempts, _ := f.attempts(t)
+			if len(attempts) != 1 {
+				t.Fatal("eligible later problems starved", len(attempts))
+			}
+			attempt, err := store.Decode[domain.PRRemediationAttempt](attempts[0])
+			if err != nil || len(attempt.Problems) != scenario.want {
+				t.Fatal("wrong eligible capacity", err, len(attempt.Problems))
+			}
+			// One detail plus one reviewer and, when enabled, one CI read refreshes
+			// the complete evidence regardless of the number of retained pages.
+			wantReads := int32(2)
+			if scenario.ci {
+				wantReads++
+			}
+			if got := f.calls.Load() - before; got != wantReads {
+				t.Fatal("sources refreshed more than once", got, wantReads)
+			}
+			selected := map[domain.ID]bool{}
+			for _, ref := range attempt.Problems {
+				selected[ref.ID] = true
+			}
+			if err := f.service.Store.Read(f.owner, func(tx *store.Tx) error {
+				link, _ := store.Decode[domain.SessionPullRequest](f.link)
+				set, _, err := tx.FindPRProblemSet(link.Provider, link.RemoteRepositoryID, link.PullRequestID)
+				if err != nil {
+					return err
+				}
+				var after domain.ID
+				denied, remaining := 0, 0
+				for {
+					page, more, err := tx.ListPRProblems(set.ID, after, 50)
+					if err != nil {
+						return err
+					}
+					for _, row := range page {
+						p, err := store.Decode[domain.PRProblem](row)
+						if err != nil {
+							return err
+						}
+						after = row.ID
+						if p.State != domain.PRProblemUnhandled || !p.Current {
+							t.Fatal("selection changed retained handling", p.State, p.Current)
+						}
+						if p.Kind == domain.PRFeedbackProblem && p.Feedback.Author.ID == "19" {
+							denied++
+							if selected[row.ID] {
+								t.Fatal("unselected reviewer admitted")
+							}
+						}
+						if !selected[row.ID] {
+							remaining++
+						}
+					}
+					if !more {
+						break
+					}
+				}
+				if denied != 100 || remaining != 100+scenario.eligible+map[bool]int{true: 1}[scenario.ci]+map[bool]int{true: 1}[scenario.conflict]-scenario.want {
+					t.Fatal("skipped original evidence lost", denied, remaining)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// An active chain still refuses a second ordinary poll without provider work.
+			before = f.calls.Load()
+			if err := f.service.requestAutomaticPRFix(f.owner, f.link, kinds); err != nil {
+				t.Fatal(err)
+			}
+			again, _ := f.attempts(t)
+			if len(again) != 1 || f.calls.Load() != before {
+				t.Fatal("active attempt exclusion changed")
 			}
 		})
 	}
