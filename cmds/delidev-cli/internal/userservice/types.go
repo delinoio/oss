@@ -48,6 +48,32 @@ type ServerOptions struct {
 	AllowedOrigins []string `json:"allowed_origins,omitempty"`
 }
 
+// CaptureServerOptions resolves new relative TLS references in the original
+// installing/server process, never later in a native user manager's cwd. It
+// preserves references only; it neither reads nor copies credential bytes.
+func CaptureServerOptions(options ServerOptions) (ServerOptions, error) {
+	for _, path := range []*string{&options.TLSCertificate, &options.TLSKey} {
+		if *path == "" || filepath.IsAbs(*path) {
+			continue
+		}
+		absolute, err := filepath.Abs(*path)
+		if err != nil {
+			return ServerOptions{}, domain.Fail(domain.InvalidArgument, "The original TLS references could not be resolved.", "Inspect the installing process directory and reinstall with explicit absolute references.")
+		}
+		*path = absolute
+	}
+	return options, nil
+}
+
+func (options ServerOptions) requireAbsoluteTLS() error {
+	for _, path := range []string{options.TLSCertificate, options.TLSKey} {
+		if path != "" && !filepath.IsAbs(path) {
+			return domain.Fail(domain.Unsupported, "This historical service has relative TLS references.", "Inspect and stop/remove the original registration, then explicitly reinstall with absolute TLS references; do not reinterpret them from a new directory.")
+		}
+	}
+	return nil
+}
+
 type Spec struct {
 	Options        ServerOptions `json:"options"`
 	Version        int           `json:"version"`
@@ -252,6 +278,13 @@ func definitionPath(s Spec) string {
 	return ""
 }
 func newSpec(root string, kind Kind, options ServerOptions) (Spec, error) {
+	var err error
+	if kind == Server {
+		options, err = CaptureServerOptions(options)
+		if err != nil {
+			return Spec{}, err
+		}
+	}
 	binary, err := os.Executable()
 	if err != nil {
 		return Spec{}, failure()

@@ -67,6 +67,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	if err != nil {
 		return err
 	}
+	serviceOptions, err := userservice.CaptureServerOptions(userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins})
+	if err != nil {
+		return err
+	}
 	if config.Logger == nil {
 		config.Logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	}
@@ -155,7 +159,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	}
 	child, stop := context.WithCancel(ctx)
 	defer stop()
-	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: userservice.ServerOptions{Listen: config.Listen, TLSCertificate: config.TLSCertificate, TLSKey: config.TLSKey, AllowedOrigins: config.AllowedOrigins}, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
