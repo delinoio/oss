@@ -1,4 +1,6 @@
 {
+  "session-terminals.retryInventory": "Retry terminal inventory read",
+  "session-terminals.openingTerminal": "Opening terminal…",
   "session-terminals.sessionTerminals_db991c": "Session terminals",
   "session-terminals.terminals_7482c4": "Terminals",
   "session-terminals.hideTerminals_522e2b": "Hide terminals",
