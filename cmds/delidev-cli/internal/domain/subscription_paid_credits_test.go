@@ -48,3 +48,48 @@ func TestPaidCreditRejectsInvalidDecimalWithoutChangingLastGood(t *testing.T) {
 		}
 	}
 }
+
+func TestPaidCreditNewerBucketSurvivesOlderAggregateQuotaSnapshot(t *testing.T) {
+	now := time.Now().UTC()
+	latestQuota := now.Add(-10 * time.Second)
+	retainedBucket := now.Add(-50 * time.Second)
+	incomingBucket := now.Add(-30 * time.Second)
+	yes, no := true, false
+	zero, positive := 0.0, 0.8
+	oldBalance, newBalance := "1.000", "2.000000000000000000001"
+	a := Account{Type: SubscriptionAccount, SubscriptionService: SubscriptionChatGPT, ConfirmedExhausted: true, RecoveryNotifications: true,
+		Subscription: &SubscriptionState{QuotaObservedAt: &latestQuota, QuotaState: Observed, SpendControlReached: &yes, SpendControlObservedAt: &latestQuota,
+			PaidCredits: []SubscriptionPaidCreditBucket{{ID: "codex", HasCredits: &yes, Unlimited: &no, Balance: &oldBalance, ObservedAt: retainedBucket}}},
+		Quota: []QuotaWindow{{ID: "codex:primary", Blocking: true, Remaining: &zero, ObservedAt: latestQuota, State: Observed}}}
+	observation := SubscriptionQuotaObservation{ObservedAt: incomingBucket, SpendControlReached: &no,
+		Windows:     []SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &positive}},
+		PaidCredits: []SubscriptionPaidCreditBucket{{ID: "codex", HasCredits: &yes, Unlimited: &no, Balance: &newBalance, ObservedAt: incomingBucket}}}
+	assertQuotaUnchanged := func() {
+		t.Helper()
+		if !a.Subscription.QuotaObservedAt.Equal(latestQuota) || a.Subscription.QuotaState != Observed || !*a.Subscription.SpendControlReached || !a.Subscription.SpendControlObservedAt.Equal(latestQuota) || !a.ConfirmedExhausted || *a.Quota[0].Remaining != zero || !a.Quota[0].ObservedAt.Equal(latestQuota) {
+			t.Fatal("older aggregate quota altered exhaustion or newer quota evidence")
+		}
+	}
+	if recovered, err := ApplySubscriptionQuota(&a, observation, now); err != nil || recovered {
+		t.Fatal("independent paid merge failed or granted quota recovery", err)
+	}
+	if *a.Subscription.PaidCredits[0].Balance != newBalance || !a.Subscription.PaidCredits[0].ObservedAt.Equal(incomingBucket) {
+		t.Fatal("aggregate ordering dropped newer exact paid-credit evidence")
+	}
+	assertQuotaUnchanged()
+	observation.ObservedAt = now.Add(-40 * time.Second)
+	observation.PaidCredits[0].ObservedAt = observation.ObservedAt
+	observation.PaidCredits[0].Balance = &oldBalance
+	if recovered, err := ApplySubscriptionQuota(&a, observation, now); err != nil || recovered || *a.Subscription.PaidCredits[0].Balance != newBalance || !a.Subscription.PaidCredits[0].ObservedAt.Equal(incomingBucket) {
+		t.Fatal("older bucket rolled back retained successful evidence", err)
+	}
+	assertQuotaUnchanged()
+	observation.ObservedAt = now.Add(-20 * time.Second)
+	observation.PaidCredits[0].ObservedAt = observation.ObservedAt
+	badBalance := "1e3"
+	observation.PaidCredits[0].Balance = &badBalance
+	if _, err := ApplySubscriptionQuota(&a, observation, now); err == nil || *a.Subscription.PaidCredits[0].Balance != newBalance || !a.Subscription.PaidCredits[0].ObservedAt.Equal(incomingBucket) {
+		t.Fatal("invalid older aggregate changed retained bucket")
+	}
+	assertQuotaUnchanged()
+}

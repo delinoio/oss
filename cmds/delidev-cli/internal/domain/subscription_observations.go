@@ -180,11 +180,14 @@ func ApplySubscriptionQuota(a *Account, v SubscriptionQuotaObservation, now time
 		return false, InvalidSubscriptionObservation()
 	}
 	state := a.Subscription
-	if state.QuotaObservedAt != nil && v.ObservedAt.Before(*state.QuotaObservedAt) {
-		return false, nil
-	}
+	// Paid buckets own independent successful timestamps. An earlier rolling
+	// quota response can carry a newer bucket than a later sparse quota read;
+	// merge that evidence before guarding the aggregate quota snapshot.
 	if err := mergePaidCredits(state, v.PaidCredits); err != nil {
 		return false, err
+	}
+	if state.QuotaObservedAt != nil && v.ObservedAt.Before(*state.QuotaObservedAt) {
+		return false, nil
 	}
 	wasExhausted := a.ConfirmedExhausted
 	freshPositive := v.SpendControlReached != nil && !*v.SpendControlReached
