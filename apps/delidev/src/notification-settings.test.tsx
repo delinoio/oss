@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { InboxService, NotificationPreferencesSchema, SituationNotificationPreferencesSchema } from "@delinoio/delidev-api-client";
+import { i18n } from "./localization";
+import { settingsSearchTargets } from "./settings-search";
+import { SettingsCategory } from "./settings-category";
 import { NotificationSettings } from "./notification-settings";
 import { MutationIntents } from "./mutation";
 import { StrictMode } from "react";
@@ -140,10 +143,7 @@ it("shows confirmed text values, exact guidance and no implicit write controls",
   expect(screen.getByRole("heading", { name: "Notifications" })).toBeTruthy();
   for (const text of ["Choose which updates this client receives.", "For this client on the selected server", "Enabled", "Disabled", "Inbox requests stay available even when notifications are off.", "Opening a notification never marks an item read, answers a request, approves work or resumes a session."]) expect(screen.getByText(text)).toBeTruthy();
   expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("switch")).toBeNull();
-  const details = screen.getByText("About notification delivery").closest("details")!;
-  expect(details.open).toBe(false);
-  expect(details.textContent).toContain("A submitted notification does not prove that its banner was displayed.");
-  expect(details.textContent).toContain("Reading an inbox item never answers it.");
+  expect(screen.queryByText("About notification delivery")).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
 });
 
@@ -211,16 +211,15 @@ for (const interruption of ["focus", "modal", "drawer", "inactivity"] as const) 
   expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Edit notification preferences" }));
 });
 
-it("retains disclosure/draft on reconnect but discards departed state and late save focus under Strict Mode", async () => {
+it("retains the draft on reconnect but discards departed state and late save focus under Strict Mode", async () => {
   const value = fixture();
   const body = (visible: boolean, transport = value.transport) => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={value.client}>{visible ? <SettingsLifetime>{() => <MutationIntents><NotificationSettings active /></MutationIntents>}</SettingsLifetime> : null}<button>Sibling</button></QueryClientProvider></TransportProvider></StrictMode>;
   const mounted = render(body(true));
   fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Save notification preferences" }) as HTMLButtonElement).disabled).toBe(false));
-  const details = screen.getByText("About notification delivery").closest("details")!; details.open = true;
   const replacement = createRouterTransport((router) => router.service(InboxService, { getNotificationPreferences: value.read, setNotificationPreferences: value.save }));
   mounted.rerender(body(true, replacement));
-  expect(details.open).toBe(true); expect(screen.getByRole("checkbox", { name: "Questions and approval requests" })).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: "Questions and approval requests" })).toBeTruthy();
   const save = deferred<Awaited<ReturnType<typeof value.save>>>(); value.save.mockImplementationOnce(() => save.promise);
   fireEvent.click(screen.getByRole("button", { name: "Save notification preferences" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
@@ -230,12 +229,12 @@ it("retains disclosure/draft on reconnect but discards departed state and late s
   await act(async () => save.resolve({ preferences: create(NotificationPreferencesSchema, { revision: 2n, interactions: true, terminals: false }) }));
   expect(value.read.mock.calls.length).toBe(readCount); expect(value.save).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("button", { name: "Retry the same notification preferences" })).toBeNull();
-  expect(screen.getByText("About notification delivery").closest("details")!.open).toBe(false);
+  expect(screen.queryByText("About notification delivery")).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Sibling" }));
 });
 
 it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s interaction during refetch", async (interaction) => {
-  const value = fixture();
+  const value = fixture(true, vi.fn());
   let finishRead!: (result: Awaited<ReturnType<typeof value.read>>) => void;
   render(value.view());
   fireEvent.click(await screen.findByRole("button", { name: "Edit notification preferences" }));
@@ -245,13 +244,13 @@ it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s in
   const edit = await screen.findByRole("button", { name: "Edit notification preferences" }) as HTMLButtonElement;
   await waitFor(() => { expect(finishRead).toBeTypeOf("function"); expect(edit.disabled).toBe(true); });
   const returned = vi.spyOn(edit, "focus");
-  const disclosure = screen.getByText("About notification delivery");
-  if (interaction === "focus") disclosure.focus();
-  else fireEvent.pointerDown(disclosure);
-  await act(async () => finishRead({ preferences: create(NotificationPreferencesSchema, { revision: 2n, interactions: true, terminals: false }) }));
+  const independentAction = screen.getByRole("button", { name: "AI Subscription settings" });
+  if (interaction === "focus") independentAction.focus();
+  else fireEvent.pointerDown(independentAction);
+  await act(async () => finishRead({ preferences: create(NotificationPreferencesSchema, { ...value.save.mock.calls[0][0].preferences, revision: 2n }) }));
   await waitFor(() => expect(edit.disabled).toBe(false));
   expect(returned).not.toHaveBeenCalled();
-  if (interaction === "focus") expect(document.activeElement).toBe(disclosure);
+  if (interaction === "focus") expect(document.activeElement).toBe(independentAction);
 });
 
  it("edits a complete twelve-choice generation with separate account recovery consent", async () => {
@@ -274,3 +273,18 @@ it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s in
   expect(sent.situations?.approvals).toBe(true);expect(sent.situations?.serverRestored).toBe(false);
   expect(sent.interactions).toBe(true);expect(sent.terminals).toBe(false);
  });
+
+it.each(["en", "ko"])("ends Notifications with Inbox guidance and no delivery disclosure in %s", async language => {
+  const value = fixture();
+  render(value.view());
+  await screen.findByRole("button", { name: "Edit notification preferences" });
+  await act(async () => { await i18n.changeLanguage(language); });
+  const section = document.querySelector(".notification-settings")!;
+  expect(section.querySelector(".notification-delivery")).toBeNull();
+  expect(section.querySelector('[data-settings-search-target="notification-delivery"]')).toBeNull();
+  expect(section.querySelector("details")).toBeNull();
+  expect(section.lastElementChild?.classList.contains("notification-inbox-guidance")).toBe(true);
+  expect(section.textContent).not.toContain(language === "en" ? "About notification delivery" : "알림 전달 정보");
+  expect(settingsSearchTargets[SettingsCategory.Notifications]?.some(target => String(target.target) === "notification-delivery")).toBe(false);
+  expect(value.save).not.toHaveBeenCalled();
+});
