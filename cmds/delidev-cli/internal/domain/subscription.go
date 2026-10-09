@@ -23,6 +23,7 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	PaidCredits            []SubscriptionPaidCreditBucket    `json:"paid_credits,omitempty"`
 	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
 	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
 	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
@@ -99,6 +100,9 @@ func (s SubscriptionState) Validate(account Account) error {
 		return invalid()
 	}
 	if s.OwnerMachineID != "" && s.OwnerMachineID.Validate() != nil || s.Observation != nil && s.Observation.Validate() != nil || s.ResetCredits != nil && s.ResetCredits.Validate() != nil {
+		return invalid()
+	}
+	if len(s.PaidCredits) > 0 && (account.SubscriptionService != SubscriptionChatGPT || ValidatePaidCreditBuckets(s.PaidCredits) != nil) {
 		return invalid()
 	}
 	if s.QuotaState != "" && s.QuotaState != Observed && s.QuotaState != ObservationFailed && s.QuotaState != ObservationUnknown || (s.SpendControlReached == nil) != (s.SpendControlObservedAt == nil) {

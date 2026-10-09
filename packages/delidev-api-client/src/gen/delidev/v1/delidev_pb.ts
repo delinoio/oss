@@ -4,12 +4,39 @@
 
 import type { GenFile } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc } from "@bufbuild/protobuf/codegenv2";
+import { file_delidev_v1_account } from "./account_pb.js";
+import { file_delidev_v1_activity } from "./activity_pb.js";
+import { file_delidev_v1_attachments } from "./attachments_pb.js";
+import { file_delidev_v1_browser } from "./browser_pb.js";
+import { file_delidev_v1_common } from "./common_pb.js";
+import { file_delidev_v1_configuration } from "./configuration_pb.js";
+import { file_delidev_v1_device } from "./device_pb.js";
+import { file_delidev_v1_forward } from "./forward_pb.js";
+import { file_delidev_v1_inbox } from "./inbox_pb.js";
+import { file_delidev_v1_installation } from "./installation_pb.js";
+import { file_delidev_v1_integration } from "./integration_pb.js";
+import { file_delidev_v1_interaction } from "./interaction_pb.js";
+import { file_delidev_v1_native_models } from "./native_models_pb.js";
+import { file_delidev_v1_network } from "./network_pb.js";
+import { file_delidev_v1_pr_fix } from "./pr_fix_pb.js";
+import { file_delidev_v1_provider } from "./provider_pb.js";
+import { file_delidev_v1_resource } from "./resource_pb.js";
+import { file_delidev_v1_schedule } from "./schedule_pb.js";
+import { file_delidev_v1_search } from "./search_pb.js";
+import { file_delidev_v1_session } from "./session_pb.js";
+import { file_delidev_v1_skills } from "./skills_pb.js";
+import { file_delidev_v1_subscription } from "./subscription_pb.js";
+import { file_delidev_v1_system } from "./system_pb.js";
+import { file_delidev_v1_terminal } from "./terminal_pb.js";
+import { file_delidev_v1_usage } from "./usage_pb.js";
+import { file_delidev_v1_worker } from "./worker_pb.js";
+import { file_delidev_v1_workspace_storage } from "./workspace_storage_pb.js";
 
 /**
  * Describes the file delidev/v1/delidev.proto.
  */
 const legacyBase: GenFile = /*@__PURE__*/
-  fileDesc("ChhkZWxpZGV2L3YxL2RlbGlkZXYucHJvdG8SCmRlbGlkZXYudjFCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z");
+  fileDesc("ChhkZWxpZGV2L3YxL2RlbGlkZXYucHJvdG8SCmRlbGlkZXYudjFCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MVAAUAFQAlADUARQBVAGUAdQCFAJUApQC1AMUA1QDlAPUBBQEVASUBNQFFAVUBZQF1AYUBlQGmIGcHJvdG8z", [file_delidev_v1_account, file_delidev_v1_activity, file_delidev_v1_attachments, file_delidev_v1_browser, file_delidev_v1_common, file_delidev_v1_configuration, file_delidev_v1_device, file_delidev_v1_forward, file_delidev_v1_inbox, file_delidev_v1_installation, file_delidev_v1_integration, file_delidev_v1_interaction, file_delidev_v1_native_models, file_delidev_v1_network, file_delidev_v1_pr_fix, file_delidev_v1_provider, file_delidev_v1_resource, file_delidev_v1_schedule, file_delidev_v1_search, file_delidev_v1_session, file_delidev_v1_skills, file_delidev_v1_subscription, file_delidev_v1_system, file_delidev_v1_terminal, file_delidev_v1_usage, file_delidev_v1_worker, file_delidev_v1_workspace_storage]);
 
 // @generated DeliDev compatibility re-exports
 import { file_delidev_v1_account } from "./account_pb.js";

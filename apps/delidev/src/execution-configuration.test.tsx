@@ -3,7 +3,9 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { ExecutionConfiguration } from "./execution-configuration";
+import { ExecutionConfiguration as OriginalExecutionConfiguration } from "./execution-configuration";
+import { useState, type ComponentProps } from "react";
+function ExecutionConfiguration(props: ComponentProps<typeof OriginalExecutionConfiguration>) { const [target, setTarget] = useState<HTMLDivElement | null>(null); return <><div ref={setTarget}/><OriginalExecutionConfiguration {...props} diagnosticsTarget={target}/></>; }
 
 function fixture(harness = "codex") {
   const execution = newRequestId(), input = newRequestId(), account = newRequestId();
@@ -63,8 +65,8 @@ it("shows the immutable ordered instructions as inert read-only text without nat
   expect(templates).toHaveLength(2);
   expect(templates[0].querySelector("pre")?.textContent).toBe(value.first);
   expect(templates[1].querySelector("pre")?.textContent).toBe(value.second);
-  expect(templates[0].textContent).toContain("revision 2");
-  expect(templates[1].textContent).toContain("revision 8");
+  expect(screen.getByText(/Template 1.*revision 2/)).toBeTruthy();
+  expect(screen.getByText(/Template 2.*revision 8/)).toBeTruthy();
   const saved = screen.getByRole("region", { name: "Saved execution configuration" });
   expect(detail(saved, "Requested subagent model")).toBe("original-child");
   expect(detail(saved, "Requested concurrency")).toBe("4");
@@ -95,8 +97,8 @@ it("preserves first-execution choices while separately identifying retained prio
   expect(screen.getByText(/retained observations belong to an earlier execution/)).toBeTruthy();
   expect(screen.getByLabelText("Combined applied instructions").textContent).toBe(value.configuration.instructions);
   const saved = screen.getByRole("region", { name: "Saved execution configuration" });
-  expect(detail(saved, "First account")).toBe(value.data.initial_execution.initial_account_id);
-  expect(detail(saved, "Selected execution account")).toBe(next.current_execution.account_id);
+  expect(detail(document.body, "First account")).toBe(value.data.initial_execution.initial_account_id);
+  expect(detail(document.body, "Selected execution account")).toBe(next.current_execution.account_id);
   const bound = { ...next, execution: { ...next.execution, execution_id: next.current_execution.id, input_id: next.current_execution.input_id } };
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, revision: 11n, documentJson: encode(bound) }} />);
   expect(screen.queryByText(/retained observations belong to an earlier execution/)).toBeNull();
