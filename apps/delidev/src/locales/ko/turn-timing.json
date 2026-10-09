@@ -1,0 +1,13 @@
+{
+  "turnTiming.inProgress": "진행 중 · {{v0}}",
+  "turnTiming.elapsed": "소요 시간 · {{v0}}",
+  "turnTiming.unconfirmed": "미확인 · {{v0}}",
+  "turnTiming.unavailable": "시간 정보 없음",
+  "turnTiming.unconfirmedLabel": "미확인",
+  "turnTiming.days": "{{v0}}일",
+  "turnTiming.hours": "{{v0}}시간",
+  "turnTiming.minutes": "{{v0}}분",
+  "turnTiming.seconds": "{{v0}}초",
+  "turnTiming.inherited": "상속된 턴",
+  "turnTiming.inheritedOrigin": "세션 {{v0}}, 실행 {{v1}}, 입력 {{v2}}에서 상속되었습니다."
+}

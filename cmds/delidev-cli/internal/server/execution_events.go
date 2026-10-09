@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -223,6 +224,12 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 }
 
 func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent) error {
+	return applyExecutionEventAt(tx, job, input, actor, sr, session, ir, queued, event, tx.ObservationTime())
+}
+
+// The production caller supplies the original transaction clock. Fixtures can
+// exercise exact boundaries without sleeping or exposing a Worker clock input.
+func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.ExecutionJobInput, actor domain.ID, sr store.Record, session *domain.Session, ir store.Record, queued *domain.QueuedInput, event domain.ExecutionEvent, observedAt time.Time) error {
 	var responseUncertain bool
 	var responseErr error
 	progress := session.Execution
@@ -309,6 +316,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				progress.GrokUserMessageID = event.GrokUserMessageID
 			}
 			progress.NativeTurnID = event.NativeTurnID
+			progress.TurnTiming = &domain.TurnTiming{AcceptedAt: observedAt}
 			progress.Outcome = domain.ExecutionRunning
 			progress.AcceptedInputs = []domain.ExecutionInputBinding{domain.BindSessionInput(input.InputID, input.Input)}
 			queued.Delivery = domain.InputAccepted
@@ -406,6 +414,14 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 					if !complete {
 						return executionEventConflict()
 					}
+				}
+				if progress.TurnTiming != nil {
+					timing := *progress.TurnTiming
+					timing.TerminalAt = &observedAt
+					if err := tx.PublishTurnTerminalTiming(sr.ID, input.ExecutionID, input.InputID, event.NativeThreadID, event.NativeTurnID, timing); err != nil {
+						return err
+					}
+					progress.TurnTiming = &timing
 				}
 				progress.Outcome = event.Outcome
 				// Stop/recovery and earlier failure are product facts. Late native
@@ -654,6 +670,10 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	}
 	if err := domain.Text(value.Text, "retained native message", domain.MaxMessageText, false); err != nil {
 		return err
+	}
+	if value.Role == domain.UserMessage && value.InputID == input.InputID && progress.TurnTiming != nil {
+		timing := *progress.TurnTiming
+		value.TurnTiming = &timing
 	}
 	value.LastSequence = event.Sequence
 	if _, err := tx.Put(domain.MessageKind, update.ID, revision, session.ID, session.ProjectID, value); err != nil {

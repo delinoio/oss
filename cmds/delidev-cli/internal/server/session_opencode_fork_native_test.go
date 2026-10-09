@@ -253,6 +253,19 @@ func nativePublicOpenCodeFork(t *testing.T, fault string) {
 		if err != nil || value.Inherited == nil || value.Inherited.SessionID != row.ID || value.ExecutionID != child.Fork.RuntimeID || value.InputID != "" || value.NativeThreadID != string(child.Fork.NativeThreadID) {
 			t.Fatal("inherited transcript borrowed input/accounting authority")
 		}
+		source, err := f.service.Store.Get(ctx, domain.MessageKind, value.Inherited.MessageID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original, err := store.Decode[domain.ExecutionMessage](source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		originalTiming, _ := json.Marshal(original.TurnTiming)
+		inheritedTiming, _ := json.Marshal(value.TurnTiming)
+		if !bytes.Equal(originalTiming, inheritedTiming) || value.Role == domain.UserMessage && (value.TurnTiming == nil || value.TurnTiming.TerminalAt == nil) {
+			t.Fatal("Fork changed original completed turn timing")
+		}
 	}
 	childDirectory := filepath.Join(f.workerRoot, "workspaces", result.Msg.Session.Id, "chat")
 	if err := os.WriteFile(filepath.Join(childDirectory, ".hidden-original"), []byte("Private child edit"), 0600); err != nil {

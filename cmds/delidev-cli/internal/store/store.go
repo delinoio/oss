@@ -97,6 +97,10 @@ type Tx struct {
 	readOnly            bool
 }
 
+// ObservationTime is the UTC clock captured for this original transaction.
+// Receipt replay never invokes the mutation or recaptures its observations.
+func (t *Tx) ObservationTime() time.Time { return t.now }
+
 func Open(ctx context.Context, root string) (_ *Store, returned error) {
 	root, err := filepath.Abs(root)
 	if err != nil {

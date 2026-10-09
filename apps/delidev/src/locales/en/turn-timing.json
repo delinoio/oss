@@ -1,0 +1,13 @@
+{
+  "turnTiming.inProgress": "In progress · {{v0}}",
+  "turnTiming.elapsed": "Elapsed · {{v0}}",
+  "turnTiming.unconfirmed": "Unconfirmed · {{v0}}",
+  "turnTiming.unavailable": "Time unavailable",
+  "turnTiming.unconfirmedLabel": "Unconfirmed",
+  "turnTiming.days": "{{v0}}d",
+  "turnTiming.hours": "{{v0}}h",
+  "turnTiming.minutes": "{{v0}}m",
+  "turnTiming.seconds": "{{v0}}s",
+  "turnTiming.inherited": "Inherited turn",
+  "turnTiming.inheritedOrigin": "Inherited from session {{v0}}, execution {{v1}}, input {{v2}}."
+}

@@ -63,7 +63,7 @@ func publishGrokUser(tx *store.Tx, input domain.ExecutionJobInput, sr store.Reco
 	if e1 != nil || e2 != nil || original >= first {
 		return executionEventConflict()
 	}
-	message := domain.ExecutionMessage{GrokUser: &user, ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: user.NativeEventID, Role: domain.UserMessage, InputID: input.InputID, Text: input.Input.Prompt, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+	message := domain.ExecutionMessage{TurnTiming: p.TurnTiming, GrokUser: &user, ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: user.NativeEventID, Role: domain.UserMessage, InputID: input.InputID, Text: input.Input.Prompt, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence}
 	if _, err := tx.Put(domain.MessageKind, p.GrokUserMessageID, 0, sr.ID, sr.ProjectID, message); err != nil {
 		return err
 	}
