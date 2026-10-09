@@ -123,6 +123,7 @@ enum WidgetMessage: String {
     case serverLostNotice
     case serverRestoredNotice
     case exportGeneratedImage
+    case inboxBadgeUnread
     case quitTitle
     case quitCount
     case quitUnknown
@@ -252,6 +253,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "serverLostNotice": "Server connection lost",
         "serverRestoredNotice": "Server connection restored",
         "exportGeneratedImage": "Export original image",
+        "inboxBadgeUnread": "DeliDev: {{count}} unread Inbox items",
         "quitTitle": "Quit DeliDev?",
         "quitCount": "{{count}} sessions have not finished.",
         "quitUnknown": "Session status could not be verified for some connections.",
@@ -380,6 +382,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "serverLostNotice": "서버 연결 끊김",
         "serverRestoredNotice": "서버 연결 복구",
         "exportGeneratedImage": "원본 이미지 내보내기",
+        "inboxBadgeUnread": "DeliDev: 읽지 않은 받은 편지함 항목 {{count}}개",
         "quitTitle": "DeliDev를 종료할까요?",
         "quitCount": "아직 완료되지 않은 세션이 {{count}}개 있습니다.",
         "quitUnknown": "일부 연결의 세션 상태를 확인할 수 없습니다.",

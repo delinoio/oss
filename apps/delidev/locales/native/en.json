@@ -119,6 +119,7 @@
   "serverLostNotice": "Server connection lost",
   "serverRestoredNotice": "Server connection restored",
   "exportGeneratedImage": "Export original image",
+  "inboxBadgeUnread": "DeliDev: {{count}} unread Inbox items",
   "quitTitle": "Quit DeliDev?",
   "quitCount": "{{count}} sessions have not finished.",
   "quitUnknown": "Session status could not be verified for some connections.",

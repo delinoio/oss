@@ -274,3 +274,11 @@ func (t *Tx) deleteAccountRecoveryInbox(account domain.ID) error {
 		}
 	}
 }
+
+// UnreadInboxCount reads every retained source in one transaction. Notification
+// preferences, source joins and delivery claims cannot filter this aggregate.
+func (t *Tx) UnreadInboxCount() (uint64, error) {
+	var count uint64
+	err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(body,'$.read_state')=?", domain.InboxUnread).Scan(&count)
+	return count, storageError(err)
+}

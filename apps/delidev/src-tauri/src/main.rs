@@ -3,6 +3,7 @@
 use tauri_runtime_cef::{CefRuntime, WebviewCefExt};
 
 mod appearance_host;
+mod badge_host;
 mod browser_host;
 mod date_format_host;
 mod notification_host;
@@ -1877,8 +1878,12 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&connector))
         .manage(Arc::clone(&supervision))
         .manage(Arc::new(tray_status_host::PanelHost::default()))
+        .manage(Arc::new(badge_host::BadgeHost::default()))
         .invoke_handler({
             let ordinary: fn(tauri::ipc::Invoke<CefRuntime>) -> bool = tauri::generate_handler![
+                badge_host::begin_inbox_badge,
+                badge_host::read_inbox_badge_selection,
+                badge_host::publish_inbox_badge,
                 tray_status_host::watch_tray_status,
                 quit_host::present_quit_attempt,
                 quit_host::read_quit_attempt,
@@ -1991,6 +1996,15 @@ fn run() -> Result<(), NativeFailure> {
             {
                 registry.focus(window.label());
             }
+            if matches!(event, WindowEvent::Destroyed) {
+                window
+                    .state::<Arc<badge_host::BadgeHost>>()
+                    .retire(window.app_handle(), window.label());
+            } else if matches!(event, WindowEvent::Focused(true)) {
+                window
+                    .state::<Arc<badge_host::BadgeHost>>()
+                    .reconcile(window.app_handle());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let tray = window
                     .state::<Arc<TrayHost>>()
@@ -2053,6 +2067,8 @@ fn run() -> Result<(), NativeFailure> {
             }
         })
         .setup(|app| {
+            app.state::<Arc<badge_host::BadgeHost>>()
+                .start(app.handle());
             let config_dir = app.path().app_config_dir().ok();
             if config_dir.is_none() {
                 tracing::warn!(
@@ -2133,6 +2149,7 @@ fn run() -> Result<(), NativeFailure> {
                 confirmation.inner().request(_app, 0);
                 return;
             }
+            _app.state::<Arc<badge_host::BadgeHost>>().stop(_app);
             _app.state::<Arc<tray_status_host::PanelHost>>()
                 .request_stop(_app);
             let _ = _app
@@ -2183,6 +2200,7 @@ fn run() -> Result<(), NativeFailure> {
                             );
                         }
                         notifications.stop();
+                        app.state::<Arc<badge_host::BadgeHost>>().join();
                         tracing::info!(operation = "desktop_exit", state = "notifications-joined");
                         app.state::<Arc<tray_status_host::PanelHost>>().join(&app);
                         tray.stop();
@@ -2222,6 +2240,10 @@ fn run() -> Result<(), NativeFailure> {
     }
     supervision.stop();
     returning_updates.join(&returning_connector);
+    returning_app
+        .state::<Arc<badge_host::BadgeHost>>()
+        .stop(&returning_app);
+    returning_app.state::<Arc<badge_host::BadgeHost>>().join();
     returning_oauth.stop();
     browser.stop();
     notifications.stop();
