@@ -375,3 +375,10 @@ it("labels missing and malformed status without inferring readiness or automatic
  const values=globalThis.document.querySelector(".session-status-values")!;const terms=[...values.querySelectorAll("dt")].map(node=>node.textContent);const descriptions=[...values.querySelectorAll("dd")].map(node=>node.textContent);
  expect(terms).toEqual(["Workspace","Result","Archive"]);expect(descriptions).toEqual(["Workspace","Unavailable","archived"]);expect(f.control).not.toHaveBeenCalled();expect(f.prepare).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
 });
+
+it("restores the surviving recovery opener after canceling flat confirmation", () => {
+ const f=fixture();render(f.view(<SessionTools resource={f.session} changed={()=>{}} initiallyOpen />));
+ const opener=screen.getByRole("button",{name:"Inspect original workspace recovery"});fireEvent.click(opener);
+ const cancel=screen.getByRole("button",{name:"Cancel recovery action"});cancel.focus();fireEvent.click(cancel);
+ expect(globalThis.document.activeElement).toBe(opener);expect(screen.queryByRole("button",{name:"Confirm selected recovery action"})).toBeNull();expect(f.workspace).not.toHaveBeenCalled();
+});
