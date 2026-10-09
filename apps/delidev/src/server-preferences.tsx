@@ -46,7 +46,7 @@ export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceS
 }
 
 export function serverPreferenceLabel(section: ServerPreferenceSection): string {
-  return section === ServerPreferenceSection.ProjectDefaults ? copy("configuration-fields.projectDefaults") : section === ServerPreferenceSection.GitWorkflow ? copy("server-preferences.gitWorkflow") : copy("settings.serverPreferences_eba66b");
+  return copy("configuration-fields.projectDefaults");
 }
 
 export function ServerPreferencesEmpty({ section = ServerPreferenceSection.All }: { section?: ServerPreferenceSection }) {
