@@ -606,7 +606,7 @@ it("discards delayed named continuations on collapse and preserves accepted rows
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
   value.setProps({ surface: Surface.NewGeneralChat });
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
-  expect(screen.getAllByRole("button", { name: "New general chat" })[0].getAttribute("aria-current")).toBe("page");
+  expect(screen.getAllByRole("button", { name: "New Chat" })[0].getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
   value.setProps({ surface: Surface.Activity });
@@ -795,9 +795,9 @@ it("keeps the General Chat header shortcut independent of disclosure and project
   const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { projectSelectionBlocked: true, setDrawerOpen } });
   const toggle = await screen.findByRole("button", { name: "General Chat" });
   const group = toggle.parentElement!;
-  const shortcut = within(group).getByRole("button", { name: "New general chat" });
+  const shortcut = within(group).getByRole("button", { name: "New Chat" });
   expect(toggle.contains(shortcut)).toBe(false);
-  expect(shortcut.getAttribute("title")).toBe("New general chat");
+  expect(shortcut.getAttribute("title")).toBe("New Chat");
   expect(shortcut).toHaveProperty("disabled", false);
   for (const expanded of [true, false, true]) {
     expect(toggle.getAttribute("aria-expanded")).toBe(String(expanded));
