@@ -60,7 +60,12 @@ export function useUsageFilters(active: boolean, entry?: UsageEntry) {
   }, [active, state.draft, state.pending]);
   const edit = (patch: Partial<Filters>, date = false) => {
     cancel();
-    const snapshot = { ...current.current, draft: { ...current.current.draft, ...patch }, preset: date ? undefined : current.current.preset, pending: date, invalid: date ? false : current.current.invalid };
+    const previous = current.current.draft;
+    const sourceChanged = patch.providerId !== undefined && patch.providerId !== previous.providerId || patch.subscriptionService !== undefined && patch.subscriptionService !== previous.subscriptionService;
+    // A native ID belongs to its exact selected source. Source changes cannot
+    // retain an apparently applied model while the RPC silently drops it.
+    const nextPatch = sourceChanged && patch.nativeId === undefined ? { ...patch, nativeId: "" } : patch;
+    const snapshot = { ...current.current, draft: { ...previous, ...nextPatch }, preset: date ? undefined : current.current.preset, pending: date, invalid: date ? false : current.current.invalid };
     if (date || !active) publish(snapshot);
     else validate(snapshot);
   };

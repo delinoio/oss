@@ -199,3 +199,15 @@ it.each(["2026-11-01T06:30:00.123Z", "2026-11-02T06:30:00.123Z"])("retains later
   expect(result.current.preset).toBeUndefined();
   expect(result.current.selection).toMatchObject({ accountId: "account", fromUnixMs: 1n, untilUnixMs: 2n, timeZone: "Asia/Seoul" });
 });
+
+it.each([
+  [{providerId:"original-provider"},{providerId:""}],
+  [{providerId:"original-provider"},{providerId:"another-provider"}],
+  [{subscriptionService:SubscriptionServiceIdentity.CHATGPT},{subscriptionService:SubscriptionServiceIdentity.UNSPECIFIED}],
+  [{subscriptionService:SubscriptionServiceIdentity.CHATGPT},{subscriptionService:SubscriptionServiceIdentity.CLAUDE}],
+])("clears the applied native ID when its original source changes from %o to %o", (original, next) => {
+  const {result}=controller(); act(()=>result.current.edit(original)); act(()=>result.current.change("nativeId","Exact/Native"));
+  expect(result.current.selection.nativeId).toBe("Exact/Native");
+  act(()=>result.current.edit(next)); expect(result.current.draft.nativeId).toBe(""); expect(result.current.selection.nativeId).toBe("");
+  expect(result.current.selection).toMatchObject(next); expect(result.current.invalid).toBe(false);
+});
