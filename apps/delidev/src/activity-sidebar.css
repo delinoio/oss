@@ -23,8 +23,6 @@
 .sidebar-surface-content.activity-sidebar .problem { min-width: 0; margin: 8px 0 0; padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .sidebar-surface-content.activity-sidebar .problem p { margin: 8px 0 0; }
 .sidebar-surface-content.activity-sidebar .resource-choice .actions { gap: 8px; margin-top: 8px; }
-.sidebar-surface-content.activity-sidebar .activity-filter-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(52px, max-content); align-items: stretch; gap: 8px; }
-.sidebar-surface-content.activity-sidebar .activity-apply { background: var(--inverse-surface); color: var(--on-inverse); border-color: var(--inverse-surface); font-weight: 600; overflow-wrap: anywhere; }
-.sidebar-surface-content.activity-sidebar .activity-apply:hover { background: var(--inverse-hover); border-color: var(--inverse-hover); }
+.sidebar-surface-content.activity-sidebar .activity-filter-actions { display: flex; justify-content: flex-start; }
 .sidebar-surface-content.activity-sidebar .activity-reset { min-width: 52px; padding-inline: 4px; background: transparent; border-color: transparent; color: var(--muted); overflow-wrap: anywhere; }
 .sidebar-surface-content.activity-sidebar .activity-reset:hover { background: var(--surface-hover); }
