@@ -415,8 +415,20 @@ Fresh acceptance observes original source/base/head identity and current reviewe
 identity/permission once per enabled kind, then traverses stable ordered problem
 pages and counts only fully eligible original versions toward the existing
 100-problem request limit. Denied versions and eligible remainder stay unhandled;
-page traversal remains cancellable within the original operation deadline. It
-rechecks complete
+page traversal remains cancellable within the original operation deadline.
+
+Automatic PR fix selection measures each complete trial through the existing
+`PRFixPrompt` formatter, including JSON escaping, wrapper and context, against
+the 256 KiB UTF-8 input bound. Select an ordered fitting subset with at most 100
+original problems across 50-row pages. Skip an individually unfit or aggregate
+unfit item without handling its version and continue considering later items.
+If eligible evidence exists but none fits, return the existing ResourceExhausted
+failure without an empty attempt. Atomic acceptance revalidates the original
+versions/head and formats again; manual selections retain their existing refusal.
+Source observations, policy/set revisions, chain limits, Stop/Archive and original
+account/Worker leases retain their independent authority.
+
+Fresh acceptance rechecks complete
 policy, repository/profile generation, project membership and source-link controls
 inside the same transaction as attempt/session/queue/workspace publication.
 The ordinary execution dispatcher repeats the original per-kind remote gates
