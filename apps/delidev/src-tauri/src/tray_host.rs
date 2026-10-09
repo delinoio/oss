@@ -355,15 +355,14 @@ pub async fn read_tray_action(
             .get(window.label())
             .cloned();
         Ok(action.filter(|action| {
-            if let Some(target) = &action.panel_target {
-                if target.instance != original_authority.entry.instance
+            if let Some(target) = &action.panel_target
+                && (target.instance != original_authority.entry.instance
                     || !host
                         .state
                         .lock()
-                        .is_ok_and(|state| panel_target_current(&state, target))
-                {
-                    return false;
-                }
+                        .is_ok_and(|state| panel_target_current(&state, target)))
+            {
+                return false;
             }
             action.notification_scope.as_ref().is_none_or(|scope| {
                 window

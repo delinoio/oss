@@ -1804,7 +1804,7 @@ fn run() -> Result<(), NativeFailure> {
                 match event {
                     WindowEvent::Focused(false) => window
                         .state::<Arc<tray_status_host::PanelHost>>()
-                        .focus_lost(&window),
+                        .focus_lost(window),
                     WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
                         let _ = window.hide();
