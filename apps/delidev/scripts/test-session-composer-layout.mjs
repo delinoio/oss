@@ -15,6 +15,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-composer-layout-"));
 const screenshots = process.env.DELIDEV_COMPOSER_SCREENSHOTS === "1" ? await mkdtemp(join(tmpdir(), "delidev-composer-preview-")) : null;
 const catalogs = { en: {}, ko: {} };
 for (const file of await readdir(join(app, "src/locales/en"))) if (file.endsWith(".json")) for (const language of ["en", "ko"]) Object.assign(catalogs[language], JSON.parse(await readFile(join(app, "src/locales", language, file))));
+const guidanceOnly = process.env.DELIDEV_COMPOSER_GUIDANCE_ONLY === "1";
 let browser, server, cases = 0;
 const errors = [];
 try {
@@ -89,7 +90,8 @@ try {
   assert(await submit.isDisabled());
   assert.equal(await page.locator(".composer").evaluate(node => getComputedStyle(node).borderRadius), "24px");
   assert.equal(await input.evaluate(node => getComputedStyle(node).resize), "none");
-  assert.equal((await geometry()).input, 48);
+  assert.equal(await input.evaluate(node => node.clientHeight), 48);
+  if (!guidanceOnly) await geometry();
   if (screenshots && width === 1440) await page.screenshot({ path: join(screenshots, `${language}-${theme}-empty.png`) });
   assert.equal(await page.locator(".composer-attachment-help").count(), 0);
   const plus = page.getByRole("button", { name: c("image-input.attach"), exact: true });
@@ -112,6 +114,7 @@ try {
   await page.keyboard.press("Escape"); assert.equal(await tooltip.count(), 0); assert(await plus.evaluate(node => node === document.activeElement));
   await input.focus(); await plus.focus(); await tooltip.waitFor();
   await input.focus(); await tooltip.waitFor({state: "detached"});
+  if (guidanceOnly) { cases++; continue; }
   await input.fill("First line"); await input.press("End"); await input.press("Enter"); assert.equal(await input.inputValue(), "First line\n");
   await input.fill("A long multiline message\n".repeat(30)); const growing = await geometry(); assert(growing.input <= growing.max && growing.inputScroll > growing.input);
   await input.fill(""); assert.equal((await geometry()).input, 48);
@@ -138,5 +141,5 @@ try {
   cases++;
  }
  assert.deepEqual(errors, []);
- console.log(JSON.stringify({ operation: "session_composer_layout", result: "passed", cases, languages: 2, themes: 2, effectiveZoom: "200% at480x320", nativeAcceptance: "not-performed", screenshots }));
+ console.log(JSON.stringify({ operation: "session_composer_layout", result: "passed", cases, languages: 2, themes: 2, effectiveZoom: "200% at480x320", nativeAcceptance: "not-performed", guidanceOnly, screenshots }));
 } finally { await browser?.close(); if (server?.listening) await new Promise(done => server.close(done)); await rm(directory, { recursive: true, force: true }); }
