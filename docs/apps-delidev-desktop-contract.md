@@ -68,13 +68,17 @@ window/provider acceptance is separate from component/browser fixtures.
 
 ## Modal background visibility
 
-All app-owned dialogs and compact modal navigation drawers use a transparent
-backdrop in light, dark and system themes. Opening a modal preserves the underlying
-screen's content, ordinary brightness, layout, filters, pagination and scroll.
+All app-owned dialogs and compact modal navigation drawers use the shared
+`--backdrop: #0000001f` token: approximately 12% black dimming in light, dark and
+system themes, including initial OS-dark paint. Opening a modal preserves the
+underlying screen's visible content, layout, filters, pagination and scroll.
 Do not hide category inventories, local Worker controls or pairing presentation,
 or change category headings or column geometry solely because a dialog is open.
 Keep dialog surfaces opaque with their existing borders and local shadows; do not
-apply a viewport-sized shadow, dimming or blur to the background.
+apply a viewport-sized shadow, additional overlay, blur or new animation to the
+background. Native per-modal backdrops retain their existing stacking and may
+compound for nested modals. Wide nonmodal navigation regions have no backdrop;
+closing the final modal removes dimming.
 
 Preserve native `showModal()` input blocking, Settings background inertness,
 initial focus, contained Tab navigation, existing Escape/backdrop-click behavior,

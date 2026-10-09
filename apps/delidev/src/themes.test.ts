@@ -50,3 +50,16 @@ test("semantic text, states, primary controls and focus retain accessible contra
     expect(contrast(palette.get("control-border")!, palette.get("surface")!)).toBeGreaterThanOrEqual(3);
   }
 });
+
+test("all native modal backdrops use the same subtle dimming token without surface overrides", () => {
+  for (const palette of palettes) expect(palette.get("backdrop")).toBe("#0000001f");
+  const rules = readdirSync(directory).filter(name => name.endsWith(".css") && name !== "themes.css").flatMap(filename => {
+    const css = readFileSync(join(directory, filename), "utf8");
+    return [...css.matchAll(/([^{}]+)::backdrop\s*\{([^}]+)\}/g)].map(match => ({ filename, declarations: match[2] }));
+  });
+  expect(rules.length).toBeGreaterThan(0);
+  for (const rule of rules) {
+    expect(rule.declarations, rule.filename).toMatch(/background:\s*var\(--backdrop\)/);
+    expect(rule.declarations, rule.filename).not.toMatch(/backdrop-filter|animation|box-shadow/);
+  }
+});

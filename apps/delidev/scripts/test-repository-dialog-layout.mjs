@@ -55,6 +55,14 @@ try {
     await opener.click();
     const dialog = page.getByRole("dialog", { name: l("Add repository"), exact: true });
     await dialog.waitFor();
+    const assertBackdrop=async target=>{
+      const color=await target.evaluate(node=>getComputedStyle(node,'::backdrop').backgroundColor);
+      const channels=color.match(/rgba\(0, 0, 0, ([\d.]+)\)/);
+      // Chromium may serialize the 8-bit alpha with two decimal places.
+      assert(channels && Math.abs(Number(channels[1])-31/255)<.005,'Each native modal uses the shared dimming token');
+      assert(await target.evaluate(node=>node.matches(':modal') && getComputedStyle(node).opacity==='1' && !getComputedStyle(node).backgroundColor.startsWith('rgba')),'The active surface stays opaque');
+    };
+    await assertBackdrop(dialog);
     assert.equal(await dialog.getByRole("button", {name:"Cancel",exact:true}).count(),0);
     assert.equal(await dialog.getByRole("button", {name:"Back to repositories",exact:true}).count(),0);
     assert(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).evaluate(node => node === document.activeElement));
@@ -80,10 +88,13 @@ try {
     const chooser = dialog.getByRole("button", { name: c("choose"), exact: true });
     await chooser.click();
     const child = page.getByRole("dialog", { name: c("title"), exact: true });
-    await child.waitFor(); assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 2);
+    await child.waitFor(); await assertBackdrop(child); await assertBackdrop(dialog); assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 2);
     const profile = child.getByRole("combobox", { name: c("profile"), exact: true });
     assert(await profile.evaluate(node => node === document.activeElement), "The child profile must receive focus");
-    const profileId = await profile.locator("option").nth(1).getAttribute("value"); await profile.selectOption(profileId);
+    // The profile uses the shared ScrollPicker, not a native select.
+    await profile.click();
+    const choice=child.getByRole("option",{name:"Fixture GitHub profile",exact:true});
+    const profileId=await choice.getAttribute("data-picker-id");await choice.click();
     const repository = child.getByRole("button", { name: `example/desktop ${c("private")}`, exact: true }); await repository.waitFor();
     const childLayout = await child.evaluate(node => {
       const rect = node.getBoundingClientRect(), body = node.querySelector(".repository-github-body"), header = node.querySelector("header").getBoundingClientRect();
@@ -102,11 +113,12 @@ try {
       if (action === "Escape") await page.keyboard.press("Escape");
       else await child.getByRole("button", { name: c("close"), exact: true }).click();
       await child.waitFor({ state: "detached" }); assert.equal(await page.locator("dialog[open]:not([role=region])").count(), 1);
+      await assertBackdrop(dialog);
       assert(await chooser.evaluate(node => node === document.activeElement), "Child close must restore its opener");
       assert.equal(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).inputValue(), "https://github.com/owner/repo.git");
       assert.equal(await dialog.getByRole("textbox", { name: "Repository name", exact: true }).inputValue(), "Edited repository name");
       await chooser.click(); await child.waitFor();
-      assert.equal(await profile.inputValue(), profileId); assert.equal(await filter.inputValue(), "desktop");
+      assert.equal(await profile.getAttribute("data-value"), profileId); assert.equal(await filter.inputValue(), "desktop");
     }
     await repository.click(); await child.waitFor({ state: "detached" });
     assert.equal(await dialog.getByRole("textbox", { name: "Git URL", exact: true }).inputValue(), "https://github.com/example/desktop.git");
