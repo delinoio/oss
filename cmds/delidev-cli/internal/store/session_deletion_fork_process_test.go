@@ -15,8 +15,9 @@ import (
 
 func failedForkDeletionInput(t *testing.T, session, machine domain.ID) domain.ForkJobInput {
 	t.Helper()
-	account, modelID := domain.NewID(), domain.NewID()
-	configuration, err := domain.ResolveExecutionConfiguration(domain.NewID(), 1, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: account, Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}, 1, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: domain.NewID(), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}, domain.Priority, nil)
+	account, provider := domain.NewID(), domain.NewID()
+	model := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: provider, NativeID: "fixture-model"}, MetadataSource: domain.UserDeclared}
+	configuration, err := domain.ResolveExecutionConfiguration(domain.NewID(), 1, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: model.ModelIdentity.Key(), Model: model, Accounts: []domain.WeightedAccount{{ID: account, Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}, 4, domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}, domain.Priority, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
