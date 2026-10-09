@@ -322,7 +322,7 @@ removed resources are redacted and UUID/kind tombstones prevent stale publicatio
 Shared PR remediation histories lose the deleted session's operands and retire
 coordination while preserving contiguous history and lifetime counters, without
 inventing a native outcome or refunding attempts. Erasure removes original
-attempt-source PR activity, including reservation activity recorded before session
+legacy attempt-source PR Activity, including reservation activity recorded before session
 binding. Redaction updates the validated shared attempt and its typed index
 without publishing replacement business activity; unrelated PR history remains.
 Secure-delete plus a successful
@@ -433,7 +433,7 @@ request IDs and completed cleanup states survive an older source image. Offline
 and revoked clients retain their obligations. The historical Device documents
 are discarded rather than merged back into that current inventory.
 Use the permanent deletion redactor for shared remediation operands and their
-source-linked activity before removing the original session graph.
+legacy source-linked Activity before removing the original session graph.
 Schema-25 native accounting retains its original verified unit, attribution and
 first-retention timestamp from the selected image without backfill. Current
 session tombstones remove its derived rows through the same foreign-key cascade;

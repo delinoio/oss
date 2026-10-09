@@ -13,13 +13,13 @@ import { settingsCategories, settingsGroups, type SettingsNavigationEntry } from
 import { settingsSearchTargets } from "./settings-search";
 
 export enum CommandGroup { Navigate = "navigate", Create = "create", Settings = "settings", Help = "help" }
-export enum CommandId { Sessions = "sessions", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Activity = "activity", Inbox = "inbox", Search = "search", Settings = "settings", NewSession = "new-session", NewGeneralChat = "new-general-chat", NewProject = "new-project", Shortcuts = "shortcuts" }
+export enum CommandId { Sessions = "sessions", PullRequests = "pull-requests", Usage = "usage", Schedules = "schedules", Inbox = "inbox", Search = "search", Settings = "settings", NewSession = "new-session", NewGeneralChat = "new-general-chat", NewProject = "new-project", Shortcuts = "shortcuts" }
 export interface MenuCommand { value: string; group: CommandGroup; label: string; help?: string; enabled?: boolean; reason?: string; run: () => void }
 export interface CommandActions { navigate: (surface: Surface) => void; navigateHeader: (surface: Surface.Inbox | Surface.Search) => void; openSettings: (entry?: SettingsNavigationEntry) => void; newSession: () => void; newGeneralChat: () => void; newProject: () => void; help: () => void }
 /** This catalog contains bundled metadata and original callbacks only. */
 export function applicationCommands(actions: CommandActions): MenuCommand[] {
  const navigations: [CommandId, Surface, string][] = [
-  [CommandId.Sessions,Surface.Sessions,copy("sidebar.sessions_6fa3cb")], [CommandId.PullRequests,Surface.PullRequests,copy("sidebar.pullRequests_d9e3f2")], [CommandId.Usage,Surface.Usage,copy("sidebar.usage_8d5982")], [CommandId.Schedules,Surface.Schedules,copy("sidebar.schedules_221ff1")], [CommandId.Activity,Surface.Activity,copy("sidebar.activity_38da15")], [CommandId.Inbox,Surface.Inbox,copy("sidebar.inbox_94835e")], [CommandId.Search,Surface.Search,copy("sidebar.search_49c266")], [CommandId.Settings,Surface.Settings,copy("sidebar.settings_74a883")],
+  [CommandId.Sessions,Surface.Sessions,copy("sidebar.sessions_6fa3cb")], [CommandId.PullRequests,Surface.PullRequests,copy("sidebar.pullRequests_d9e3f2")], [CommandId.Usage,Surface.Usage,copy("sidebar.usage_8d5982")], [CommandId.Schedules,Surface.Schedules,copy("sidebar.schedules_221ff1")], [CommandId.Inbox,Surface.Inbox,copy("sidebar.inbox_94835e")], [CommandId.Search,Surface.Search,copy("sidebar.search_49c266")], [CommandId.Settings,Surface.Settings,copy("sidebar.settings_74a883")],
  ];
  return [
   ...navigations.map(([value,surface,label])=>({value:`navigate:${value}`,group:CommandGroup.Navigate,label,run:()=>surface===Surface.Settings?actions.openSettings():surface===Surface.Search||surface===Surface.Inbox?actions.navigateHeader(surface):actions.navigate(surface)})),

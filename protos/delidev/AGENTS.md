@@ -53,7 +53,7 @@
 
 - Issue #1206 reserves `SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16` and `WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7` without activating either. Follow `docs/cmds-delidev-native-models-contract.md`; record reservations in the owning feature PR, preserve native observations separately from explicit manual registration, and keep subscription discovery typed unsupported until #1095's exclusive managed-account boundary is available.
 
-- PR activity activates only #1118's existing main reservations in `activity.proto`: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3. Keep typed metadata/actor/mode/state separate from private source content and independently verified handling. Regenerate service-owned bindings and compatibility facades together.
+- Preserve original #1118 Activity ownership: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3 remain allocated legacy declarations. Retirement grants no live support and never reuses these numbers.
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
@@ -121,7 +121,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - DeliDev `SearchService` is owner/paired-client-only. Search current retained message resources, including Archive, with literal Unicode queries and original-execution account filters. Keep query contents out of logs and readable cursor payloads; bind actor/filter/source epoch, recheck revocation transactionally, reject unknown enum values and bound both wire encodings without truncating source messages. Search grants no response or execution authority.
 
-- DeliDev `ActivityService.ListActivity` returns only typed metadata from durable original sources. Preserve source UUID/revision/time and origin links, separate dispatch from native completion/cleanup, and retain original execution-account identity. Owner/client-only pages bind actor/filter/source epoch and recheck revocation; no source document or native conversation identity enters activity.
+- Activity retirement preserves all existing RPC/field/enum numbers and generated clients. ListActivity remains authenticated owner/client-only Unsupported/Unimplemented compatibility with no product dependency; original missing/revoked/Worker refusals remain.
 
 - DeliDev schema generation includes `packages/delidev-api-client/src/gen` TypeScript/Connect Query output. Keep root freshness, Turbo source/output tracking and the shared protocol CI client/real-Go-server checks synchronized; never handwrite generated descriptors or move business authority into the client.
 

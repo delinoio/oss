@@ -19,7 +19,7 @@ import { SessionQuery, SystemQuery, newRequestId, EntityKind, type Resource } fr
 import { document, text } from "./documents";
 import { SettingsCategory } from "./settings-category";
 import { SessionView } from "./session";
-import { Activity, Search, Settings, Surface } from "./views";
+import { Search, Settings, Surface } from "./views";
 import { NewSession, NewSessionKind } from "./new-session";
 import { Inbox } from "./inbox";
 import { Usage } from "./usage";
@@ -143,7 +143,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     if(resource.kind===EntityKind.MACHINE||resource.kind===EntityKind.ACCOUNT){openSettings({category:resource.kind===EntityKind.MACHINE?SettingsCategory.ExecutionWorkers:SettingsCategory.SubscriptionAccounts,generation:newRequestId(),resourceId:resource.id,resourceKind:resource.kind});return;}
     if(resource.kind===EntityKind.OCCURRENCE){setNotificationOccurrence({id:resource.id,scheduleId:text(document(resource).schedule_id),generation:newRequestId()});leaveSurface(Surface.Schedules);setSurface(Surface.Schedules);setDrawerOpen(false);}
   };
-  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession || surface === Surface.NewGeneralChat ? copy("App.extra.2998edd080d1") : surface === Surface.Settings ? copy("App.extra.a1de4eceaa3b") : surface === Surface.PullRequests ? copy("App.extra.23533b15bc29") : surface === Surface.Usage ? copy("App.extra.34d76f3f7da4") : surface === Surface.Schedules ? copy("App.extra.a6a986427e87") : surface === Surface.Activity ? copy("App.extra.3fa855f8f6de") : surface === Surface.Inbox ? copy("App.extra.a1de2be5c09b") : copy("App.extra.1f73d5f3eac5");
+  const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession || surface === Surface.NewGeneralChat ? copy("App.extra.2998edd080d1") : surface === Surface.Settings ? copy("App.extra.a1de4eceaa3b") : surface === Surface.PullRequests ? copy("App.extra.23533b15bc29") : surface === Surface.Usage ? copy("App.extra.34d76f3f7da4") : surface === Surface.Schedules ? copy("App.extra.a6a986427e87") : surface === Surface.Inbox ? copy("App.extra.a1de2be5c09b") : copy("App.extra.1f73d5f3eac5");
   const startNewSession = (projectId?: string) => {
     if (projectId && newSessionProjectBlocked) return;
     leaveSurface(Surface.NewSession);
@@ -186,7 +186,6 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
     {newGeneralChatActivation > 0 ? <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
     <Search active={surface === Surface.Search} open={open} />
-    <Activity active={surface === Surface.Activity} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} openOperational={openOperationalNotification} /></div>
     <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />
     <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} notificationOccurrence={notificationOccurrence} clearNotificationOccurrence={()=>setNotificationOccurrence(undefined)} />

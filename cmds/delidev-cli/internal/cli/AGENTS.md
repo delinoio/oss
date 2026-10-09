@@ -13,7 +13,7 @@
 - `session sidechat` requires independent server support before purpose submission, preserves original parent workspace and accepts no Local override. `session sidechat send` freezes exact selected reply and parent revisions under one request; receipt retry never infers or automatically Steers. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- `activity list` exposes typed PR metadata and capability names from the authenticated ActivityService response. Preserve exact original revisions, numeric identity strings and outcome enums without additional mutations or handling inference; follow the activity contract.
+- Activity is retired. Keep it out of dispatch, help and client wiring; reject unknown commands before connection, credential input or state creation. Preserve other CLI commands and generated compatibility clients.
 
 - `account list` accepts optional closed `--account-type api|subscription` and `--provider-id UUID` selectors through the list-only Connect request. Preserve the unfiltered default for existing callers; filters are applied before SQL pagination and bound to cursors. Snapshots and event streams must not inherit them.
 

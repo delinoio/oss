@@ -116,18 +116,6 @@ func TestCLISearchRetainedConversationsAndFilters(t *testing.T) {
 			t.Fatal("invalid usage scope accepted", bad)
 		}
 	}
-	code, activity := cliRun(t, root, []string{"activity", "list", "--session-id", string(session)}, "")
-	if code != 0 {
-		t.Fatal(activity)
-	}
-	entries := activity["result"].(map[string]any)["entries"].([]any)
-	if len(entries) != 1 {
-		t.Fatal("CLI activity omitted accepted dispatch")
-	}
-	entry := entries[0].(map[string]any)
-	if entry["kind"] != "execution-accepted" || entry["session_id"] != string(session) || entry["account_id"] != string(account) || entry["execution_id"] != string(execution) || entry["source_kind"] != "job" || entry["data"] != nil {
-		t.Fatal("CLI activity changed metadata projection")
-	}
 	for _, invalid := range [][]string{{"activity"}, {"activity", "list", "--limit", "0"}, {"activity", "list", "--limit", "201"}, {"activity", "list", "--session-id", "bad"}} {
 		if code, value := cliRun(t, root, invalid, ""); code == 0 || value["error"] == nil {
 			t.Fatal("invalid activity command accepted", invalid)

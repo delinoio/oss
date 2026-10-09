@@ -1,7 +1,7 @@
 package domain
 
-// PR activity retains only original metadata. It is published with its source
-// transaction, never reconstructed from a later provider or execution result.
+// Retired PR Activity shapes validate legacy snapshots for safe cleanup and
+// backup restoration. Production workflows publish no new Activity snapshots.
 const PRActivityRecord PRProblemRecordType = "pull-request-activity"
 
 type PRActivityAction string
@@ -84,10 +84,9 @@ func (v PRActivity) Validate() error {
 
 const PRHandlingVerificationRecord PRProblemRecordType = "pull-request-handling-verification"
 
-// Only an independently verified original handling result may create this
-// immutable source. There is deliberately no public write or inferred-success
-// adapter: production creation belongs to the separate remediation verifier.
-// A digest commits to that verifier's proof without copying provider bodies.
+// Legacy Activity-only verification snapshots retain their original validator.
+// Canonical PR handling owns current native/cleanup/push proof; no new snapshot
+// or public write adapter is admitted after Activity retirement.
 type PRHandlingVerification struct {
 	Version     uint32                    `json:"version"`
 	Type        PRProblemRecordType       `json:"type"`

@@ -56,8 +56,8 @@ func (t *Tx) redactSessionRemediation(session domain.ID) error {
 			return e
 		}
 		// Erasure retires shared coordination metadata, not a remediation
-		// action. The ordinary attempt writer publishes activity on state
-		// changes; using it here would recreate a copy after its removal.
+		// action. Preserve the exact original erasure publication and receipt
+		// redaction independently of retired Activity snapshot writers.
 		if _, e := t.Put(domain.ProblemKind, id, r.Revision, "", "", v); e != nil {
 			return e
 		}

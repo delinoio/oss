@@ -12,7 +12,7 @@
 - Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `docs/cmds-delidev-sidechat-contract.md`.
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- PR activity follows `docs/cmds-delidev-activity-contract.md`: publish immutable metadata with its source transaction, preserve receipt/alias/unchanged-state deduplication and original actor/time/version references, and remove all session-owned attempt transitions on deletion, including pre-binding reservations. Do not backfill inferred history. Dedicated verification retention is independently bounded and proof-replay-safe; no production verifier or public write is enabled by its private storage boundary.
+- Activity is retired under `docs/cmds-delidev-activity-contract.md`: publish no new transition or dedicated verification snapshots and expose no live projection. Keep legacy validators, session-dependent erasure including pre-binding reservations, and managed restore/tombstone quarantine. Preserve canonical PR transactions, receipts, indexes, handling and independent native/cleanup/push proof.
 
 - `backup create --wait` returns a typed nonzero exit for failed or unconfirmed completion and retains the accepted request/job result on failure, interruption and read errors. Waiting never creates a replacement job.
 
@@ -143,7 +143,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Manual fixes retain optional original Git/project selection on existing attempts. Only original assignment-bound verified push plus successful native completion/cleanup can handle exact evidence; dismissal wins a race and handled audit cannot be erased. Missing/uncertain proof retains stable PR ownership. Cancel only an explicitly removed unstarted original input atomically; preserve legacy attempts without inventing push proof.
 
-- Manual fix completion must retain dedicated Activity verification in the same transaction as exact handled versions, after original native, cleanup and push proof. An outcome alone cannot create verification.
+- Manual fix completion retains exact canonical handled versions after original assignment, native, cleanup and verified-push proof. Activity retirement removes only its additional snapshot; an outcome alone cannot establish handling.
 
 - Manual push proof ordering uses original server-observed assignment/report and cleanup barriers. Worker wall time is metadata only; clock skew cannot override server handling timestamps or strand a matching verified push.
 
