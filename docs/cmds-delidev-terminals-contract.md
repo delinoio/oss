@@ -33,7 +33,7 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
-The Terminals header action opens the shared session-tab inventory. Explicit
+The explicit Terminals toolbar/menu gesture (#2112) resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
 creation/selection opens a full-pane tab by original terminal ID while retaining
 conversation authoring and original mutation controllers. Presentation Close or
 inactive selection releases only the client attachment; it never closes the shell
@@ -318,3 +318,28 @@ contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 
 - [Microsoft pseudoconsole creation and teardown](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session)
 - [Go PTY package API](https://pkg.go.dev/github.com/creack/pty)
+
+## Atomic toolbar terminal admission — issue #2112 / PR #2260
+
+`CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
+session candidate preference under the same #2112 / PR #2260 ownership. Every
+toolbar gesture uses atomic admission after complete inventory inspection;
+inventory alone cannot select a terminal. Admission prefers that ID only if it
+remains eligible in the same original session and current Worker instance, then
+uses the first eligible terminal. Empty, missing, foreign or retired preferences
+grant no authority and fall back to ordinary eligibility. Unknown IDs are not
+read outside the original session; malformed IDs and preferences on additional
+creation are rejected. Exact receipts retain the preference bytes.
+
+`CreateTerminalRequest.creation_mode = 5` owns the closed
+`TerminalCreationMode` enum: `UNSPECIFIED = 0` preserves explicit additional
+creation, including existing clients and +; `REUSE_OR_CREATE = 1` resolves
+explicit toolbar admission in the authenticated receipt transaction. Preserve
+fields 1–4, existing responses, System 14 / Worker 4 and every original native
+claim. Unknown modes are rejected. Reuse returns a reference to an original
+starting/running terminal on the current Worker instance without close intent,
+including pending input/resize. Otherwise every original terminal must be exited
+or closed with independent cleanup verified and no pending operation before
+creation. Concurrent clients receive the same newly accepted terminal. Exact
+request replay retains actor-bound receipts without dispatching another shell.
+No capability, migration or native protocol change is added.

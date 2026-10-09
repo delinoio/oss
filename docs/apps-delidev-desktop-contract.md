@@ -3528,6 +3528,9 @@ Publication uses a synced same-directory temporary file and atomic create-new li
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
 
+### Explicit first-terminal opening (issue #2112)
+
+The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
 ## Detailed session startup — issue #2120
 
 Ordinary Session and General Chat render authenticated original operation

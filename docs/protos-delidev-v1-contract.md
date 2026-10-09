@@ -1052,6 +1052,30 @@ ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKin
 
 Authenticated Session progress and primary-user Message resources may include optional `turn_timing` with UTC `accepted_at` and optional `terminal_at`. Go owns capture in the original acceptance/terminal transactions and exact receipt replay. This additive resource metadata changes no protobuf declaration, RPC, capability or allocation. Closed Worker execution event/update documents reject injected timing. Native assignment, continuation/Fork/compaction and checkpoint/digest projections retain their prior closed shapes without timing. Historical omission is unavailable display evidence, never a synthesized zero or changed native outcome.
 
+## Atomic toolbar terminal admission — issue #2112 / PR #2260
+
+`CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
+session candidate preference under the same #2112 / PR #2260 ownership. Every
+toolbar gesture uses atomic admission after complete inventory inspection;
+inventory alone cannot select a terminal. Admission prefers that ID only if it
+remains eligible in the same original session and current Worker instance, then
+uses the first eligible terminal. Empty, missing, foreign or retired preferences
+grant no authority and fall back to ordinary eligibility. Unknown IDs are not
+read outside the original session; malformed IDs and preferences on additional
+creation are rejected. Exact receipts retain the preference bytes.
+
+`CreateTerminalRequest.creation_mode = 5` owns the closed
+`TerminalCreationMode` enum: `UNSPECIFIED = 0` preserves explicit additional
+creation, including existing clients and +; `REUSE_OR_CREATE = 1` resolves
+explicit toolbar admission in the authenticated receipt transaction. Preserve
+fields 1–4, existing responses, System 14 / Worker 4 and every original native
+claim. Unknown modes are rejected. Reuse returns a reference to an original
+starting/running terminal on the current Worker instance without close intent,
+including pending input/resize. Otherwise every original terminal must be exited
+or closed with independent cleanup verified and no pending operation before
+creation. Concurrent clients receive the same newly accepted terminal. Exact
+request replay retains actor-bound receipts without dispatching another shell.
+No capability, migration or native protocol change is added.
 ## Session startup progress — issue #2120
 
 System 74 / Worker 50 and the complete `ReportSessionStartupProgress` closed
