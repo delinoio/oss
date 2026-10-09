@@ -244,9 +244,10 @@ func TestOfficialSDKStdioToolsAndNoDaemon(t *testing.T) {
 }
 
 type startupOutcome struct {
-	data []byte
-	err  error
-	exit int
+	data        []byte
+	diagnostics []byte
+	err         error
+	exit        int
 }
 
 func lifecycleBusy(outcome startupOutcome) bool {
@@ -260,8 +261,12 @@ func lifecycleBusy(outcome startupOutcome) bool {
 func daemonStartAttempt(ctx context.Context, config string) startupOutcome {
 	cmd := exec.CommandContext(ctx, binary, "daemon", "start", "--config", config, "--json")
 	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
-	data, err := cmd.CombinedOutput()
-	result := startupOutcome{data: data, err: err, exit: -1}
+	// JSON stdout and human stderr are separate CLI contracts. Never classify
+	// combined output as JSON or parse a diagnostic line as retry authority.
+	var diagnostics bytes.Buffer
+	cmd.Stderr = &diagnostics
+	data, err := cmd.Output()
+	result := startupOutcome{data: data, diagnostics: diagnostics.Bytes(), err: err, exit: -1}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		result.exit = exit.ExitCode()
@@ -403,7 +408,7 @@ func TestConcurrentDaemonStartConverges(t *testing.T) {
 			for i := 0; i < 6; i++ {
 				result := <-done
 				if result.err != nil {
-					t.Errorf("competing startup: %s %v", result.data, result.err)
+					t.Errorf("competing startup: %s %s %v", result.data, result.diagnostics, result.err)
 				}
 			}
 			response, exit := invoke(t, config, repo, "daemon", "status")
