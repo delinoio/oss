@@ -534,7 +534,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       </div>
       <form className="composer" {...imageEntryHandlers(images, locked || !imageRoute.systemSupported)} onSubmit={event => { event.preventDefault(); enqueue(); }}>
         <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
-        <ImageAttachmentInput compact active={active && !upperOccluded} draft={images} disabled={locked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={text(data.machine_id)} controls={<>
+        <ImageAttachmentInput compact active={conversationActive} draft={images} disabled={locked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={text(data.machine_id)} controls={<>
           <label className="plan-mode"><input type="checkbox" checked={mode === Mode.Plan} disabled={locked} onChange={event => setMode(event.target.checked ? Mode.Plan : Mode.Execute)} />{copy("session.planMode")}</label>
           <button className="primary composer-submit" aria-label={copy("session.queueMessage_891d4e")} title={copy("session.queueMessage_891d4e")} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" /></svg></button>
         </>}>
