@@ -495,7 +495,9 @@ it("preserves explicit empty restrictions and requires a primary repository afte
   const project = resource(EntityKind.PROJECT, { name: "Project", repositories: [first.id, second.id], primary_repository: first.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
   const value = fixture([project, first, second]);
   render(value.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.click(screen.getByRole("tab", { name: "Access" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Restrict ai accounts" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove entry 1" }));
   expect((screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement).value).toBe("");
   fireEvent.change(screen.getByRole("combobox", { name: "Primary repository" }), { target: { value: second.id } });
@@ -1219,4 +1221,13 @@ it.each(Object.values(SupportedLanguage))("shows API provider guidance once with
   expect(screen.getAllByText(guidance)).toHaveLength(1);
   expect(value.connect).not.toHaveBeenCalled();
   expect(value.save).not.toHaveBeenCalled();
+});
+
+it("reveals a hidden invalid Project branch prefix through complete-document Save validation", async () => {
+ const repository=resource(EntityKind.REPOSITORY,{name:"Repository"}),project=resource(EntityKind.PROJECT,{name:"Project",repositories:[repository.id],primary_repository:repository.id,agents:{configured:false,ids:[]},accounts:{configured:false,ids:[]},settings:{branch_prefix:"delidev/",plan_mode_default:"inherit"}});
+ const f=fixture([project,repository],{systemCapabilities:[SystemCapability.SESSION_DEFAULTS_V1,SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1]});
+ render(f.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={()=>{}} cancel={()=>{}}/>));
+ fireEvent.click(screen.getByRole("tab",{name:"Execution"}));const prefix=await screen.findByLabelText("Literal branch prefix");fireEvent.change(prefix,{target:{value:"bad..prefix"}});
+ fireEvent.click(screen.getByRole("tab",{name:"General"}));const save=screen.getByRole("button",{name:"Save Project"});await waitFor(()=>expect(save).toHaveProperty("disabled",false));fireEvent.click(save);
+ await waitFor(()=>expect(screen.getByRole("tab",{name:"Execution"}).getAttribute("aria-selected")).toBe("true"));await waitFor(()=>expect(document.activeElement).toBe(prefix));expect(f.save).not.toHaveBeenCalled();
 });
