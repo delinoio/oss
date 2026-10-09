@@ -209,3 +209,18 @@ it("uses one session snapshot cursor for explicitly selected indexed message and
   expect(reads.mock.calls.map(([request]) => [request.kind, request.id])).toEqual([[EntityKind.MESSAGE, message.id], [EntityKind.QUEUE, queue.id]]);
   expect(snapshots).toHaveBeenCalledTimes(1);
 });
+
+it.each([false, true])("accepts typed large-job synchronization while preserving aggregate limits (overflow=%s)", async overflow => {
+  const first = { ...resource(), kind: EntityKind.JOB, documentJson: new TextEncoder().encode(JSON.stringify({ type: "compact-session", input: {} }) + " ".repeat(2 << 20)) };
+  const second = { ...first, id: newRequestId() };
+  const abort = new AbortController();
+  const client = createClient(ResourceService, createRouterTransport(router => router.service(ResourceService, {
+    getSnapshot: () => ({ resources: overflow ? [first, second] : [first], cursor: "original-large-jobs" }),
+    async *watchEvents() { abort.abort(); },
+  })));
+  const updates: SyncUpdate[] = [];
+  for await (const update of synchronizeResources(client, { kind: EntityKind.JOB }, { signal: abort.signal })) updates.push(update);
+  const snapshots = updates.filter(update => update.kind === SyncKind.Snapshot);
+  expect(snapshots).toHaveLength(overflow ? 0 : 1);
+  expect(updates.some(update => update.kind === SyncKind.Connection && update.state === ConnectionState.Failed)).toBe(overflow);
+});

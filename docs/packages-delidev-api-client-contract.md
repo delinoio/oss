@@ -287,3 +287,14 @@ the general 1 MiB document parser remains unchanged. Result identity must match
 original project/repository/selected Worker revisions. Discovery remains advisory;
 session creation uses existing remote starting overrides and ordinary preparation
 validation. Older peers retain saved/manual reference flows.
+
+## Typed large Job document reads
+
+`decodeResourceDocument` owns the shared UTF-8 JSON/schema read boundary. Ordinary
+resources remain bounded to 1 MiB. Only schema-1 Job documents with type
+`compact-session`, or `workspace-storage` with input action `recover`, may use
+their existing 4 MiB Job bound. Unsupported families, invalid UTF-8/JSON and
+oversized documents remain unavailable. This read exception grants no operation
+or native authority. Desktop document/receipt readers and synchronization use
+the same decoder; synchronization retains its existing aggregate memory,
+resource-count, identity/revision and snapshot/event publication bounds.
