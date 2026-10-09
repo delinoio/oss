@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureDensity, DisclosureSummary } from "./disclosure";
+import { statusLabel } from "./product-status";
 import { copy, useLocale } from "./localization";
 import { ScrollPayloadWindow, type PayloadWindowQuery } from "./scroll-payload-window";
 import { conversationProjection, type ConversationProjection } from "./tool-turn-projection";
@@ -22,7 +23,7 @@ function ToolEntry({ row, payload, token, query, choices, changed, render }: { r
     return () => element?.removeEventListener("toggle", remember, true);
   }, [hasPayload, choices, row.id]);
   return <li onFocusCapture={event => { event.stopPropagation(); query.protect?.(token); }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}><Disclosure density={DisclosureDensity.Compact} open={open} onToggle={event => { choices.entries.set(row.id, event.currentTarget.open); changed(); }}>
-    <DisclosureSummary><span>{row.tool?.name || copy("session.tool_7c9bbe")}</span><small>{row.tool?.state}</small></DisclosureSummary>
+    <DisclosureSummary><span>{row.tool?.name || copy("session.tool_7c9bbe")}</span><small>{statusLabel(row.tool?.state ?? "")}</small></DisclosureSummary>
     {payload ? <div className="tool-entry-payload" ref={node}>{render(payload)}</div> : <button type="button" disabled={Boolean(query.loading || query.error)} onClick={() => { if (token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
   </Disclosure></li>;
 }
