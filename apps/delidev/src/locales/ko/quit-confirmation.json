@@ -1,0 +1,10 @@
+{
+  "quit-confirmation.title": "DeliDev를 종료할까요?",
+  "quit-confirmation.count": "아직 완료되지 않은 세션이 {{count}}개 있습니다.",
+  "quit-confirmation.unknown": "일부 연결의 세션 상태를 확인할 수 없습니다.",
+  "quit-confirmation.explanation": "앱이 시작한 로컬 Worker의 작업은 중단될 수 있습니다. 독립 실행 중인 Worker와 원격 Worker는 계속 실행됩니다.",
+  "quit-confirmation.cancel": "취소",
+  "quit-confirmation.confirm": "종료",
+  "quit-confirmation.checking": "세션 상태를 확인하고 있습니다…",
+  "quit-confirmation.unavailable": "원래 종료 요청을 확인할 수 없습니다. 취소하거나 네이티브 경고를 기다려 주세요."
+}
