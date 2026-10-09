@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, SessionContextCapability, SessionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, SessionContextCapability, SessionService, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { i18n } from "./localization";
@@ -140,4 +140,26 @@ it("uses capacity only from the exact same safe native Usage observation",()=>{
  for(const sequence of [1,-1,9007199254740992])expect(contextCapacity({...row,documentJson:encode({...document,sequence})},sessionId,paired)).toBeUndefined();
  for(const observation of [{last_request:{total:301},context_window:200},{last_request:{total:300},context_window:0},{last_request:{total:300},context_window:9007199254740992},{last_request:{total:9007199254740992},context_window:200}])expect(contextCapacity({...row,documentJson:encode({...document,observation})},sessionId,paired)).toBeUndefined();
  for(const changed of [{...row,id:newRequestId()},{...row,sessionId:newRequestId()},{...row,kind:EntityKind.SESSION},{...row,schemaVersion:2}])expect(contextCapacity(changed,sessionId,paired)).toBeUndefined();
+});
+
+it("retries failed original capacity reads and preserves raw over-capacity accessible text", async () => {
+ const native = { ...nativeContextFixture(), tokens: "300", sequence: "2" };
+ const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ initial_execution: { configuration: { harness: "codex" } }, execution: { execution_id: native.execution_id, native_thread_id: native.native_thread_id, native_turn_id: native.native_turn_id } }) });
+ const usage = create(ResourceSchema, { kind: EntityKind.USAGE, id: native.observation_id, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ harness: "codex", execution_id: native.execution_id, native_thread_id: native.native_thread_id, native_turn_id: native.native_turn_id, sequence: 2, observation: { last_request: { total: 300 }, context_window: 200 } }) });
+ const read = vi.fn(() => ({ resource: usage })); read.mockImplementationOnce(() => { throw new ConnectError("PRIVATE_CAPACITY_SENTINEL", Code.Unavailable); });
+ const compact = vi.fn();
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SESSION_COMPACTION_V1] }) });
+  router.service(SessionService, { getSessionContext: () => ({ documentJson: encode({ session_id: session.id, session_revision: "8", execution_id: native.execution_id, current_tokens: null, native_context: native }), capabilities: [] }), compactSession: compact });
+  router.service(ResourceService, { getResource: read });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionContext session={session} /></MutationIntents></QueryClientProvider></TransportProvider>);
+ try {
+  const retry = await screen.findByRole("button", { name: "Retry read" }); expect(read).toHaveBeenCalledTimes(1); expect(screen.queryByText("PRIVATE_CAPACITY_SENTINEL")).toBeNull();
+  fireEvent.click(retry); const progress = await screen.findByRole("progressbar");
+  await waitFor(() => expect(progress.getAttribute("aria-valuetext")).toBe("300 / 200 (150.0%)"));
+  expect(progress.getAttribute("aria-valuenow")).toBe("150"); expect(progress.getAttribute("aria-valuemax")).toBe("150"); expect((progress.firstElementChild as HTMLElement).style.width).toBe("100%");
+  expect(read).toHaveBeenCalledTimes(2); expect(compact).not.toHaveBeenCalled(); expect(screen.queryByRole("button", { name: "Retry read" })).toBeNull();
+ } finally { view.unmount(); client.clear(); }
 });

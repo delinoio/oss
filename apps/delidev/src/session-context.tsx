@@ -77,6 +77,7 @@ export function SessionContext({ session }: { session: Resource }) {
       <p><LocalizedText id="session-context.latestNativeTokens" components={{ s0: <>{native?.tokens ?? copy("session-context.notReported_adadfa")}</> }} /></p>
       <div className="context-capacity" role="progressbar" aria-label={copy("session-name.contextSnapshot")} aria-valuemin={0} aria-valuemax={percent === undefined ? 100 : Math.max(100, percent)} aria-valuenow={percent} aria-valuetext={percent === undefined ? copy("session-name.capacityUnavailable") : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}><div hidden={percent === undefined} style={{ width: `${percent === undefined ? 0 : Math.min(100, Math.max(0, percent))}%` }} /></div>
       <p>{percent === undefined ? copy("session-name.capacityUnavailable") : `${native?.tokens} / ${capacity} (${percent.toFixed(1)}%)`}</p>
+      <Problem error={usage.error} actions={<button disabled={usage.isFetching} onClick={() => void usage.refetch()}>{copy("session-name.retryRead")}</button>} />
       {native ? <><p>{copy(historical ? "session-context.historicalSnapshot" : "session-context.latestSnapshot")}</p><p><LocalizedText id="session-context.observedAt" components={{ s0: <Timestamp value={native.observed_at} /> }} /></p></> : null}
       <p>{copy("session-context.nativeSnapshotExplanation")}</p>
       {context.error ? <p role="status">{copy("session-context.contextReadFailed")}</p> : null}
