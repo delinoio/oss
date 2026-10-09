@@ -79,7 +79,9 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 			}
 			if len(agent.Routes) > 0 {
 				blocked := false
-				if account.Type == domain.SubscriptionAccount {
+				if account.IsOpenCodeGo() {
+					blocked = account.Connection == nil || account.Connection.Authentication != domain.BearerAuth || account.Validate() != nil
+				} else if account.Type == domain.SubscriptionAccount {
 					managed := account.Subscription
 					blocked = managed == nil || managed.Generation == "" || managed.RecoveryRequired || managed.Lease != nil || managed.Pending != nil && managed.Pending.Action != domain.SubscriptionRefresh || account.Connection == nil || account.Connection.Authentication != domain.SubscriptionAuth
 				} else {

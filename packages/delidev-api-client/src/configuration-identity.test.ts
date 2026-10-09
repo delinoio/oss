@@ -44,6 +44,7 @@ describe("service-native configuration schema negotiation", () => {
 it("maps only closed generated service enums without inferring an API provider", () => {
   expect(subscriptionServiceFromWire(SubscriptionServiceIdentity.CHATGPT)).toBe(SubscriptionServiceId.ChatGPT);
   expect(subscriptionServiceFromWire(SubscriptionServiceIdentity.CLAUDE)).toBe(SubscriptionServiceId.Claude);
+  expect(subscriptionServiceFromWire(SubscriptionServiceIdentity.OPENCODE_GO)).toBe(SubscriptionServiceId.OpenCodeGo);
   expect(subscriptionServiceFromWire(SubscriptionServiceIdentity.GROK)).toBe(SubscriptionServiceId.Grok);
   expect(subscriptionServiceFromWire(SubscriptionServiceIdentity.UNSPECIFIED)).toBeUndefined();
   expect(subscriptionServiceFromWire(99 as SubscriptionServiceIdentity)).toBeUndefined();

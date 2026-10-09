@@ -207,7 +207,14 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	}
 	route, accounts := preview.Route, preview.Accounts
 	selected := accounts[route.Selected]
-	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || (configuration.Subscription && selected.Connection.Authentication != domain.SubscriptionAuth) || (!configuration.Subscription && selected.Connection.Authentication != provider.Authentication) || !model.MatchesAccount(selected, agent.Harness) {
+	authentication := provider.Authentication
+	if configuration.Subscription {
+		authentication = domain.SubscriptionAuth
+	}
+	if configuration.IsOpenCodeGo() {
+		authentication = domain.BearerAuth
+	}
+	if selected.Connection == nil || selected.Connection.ID.Validate() != nil || selected.Connection.Authentication != authentication || !model.MatchesAccount(selected, agent.Harness) {
 		return empty, domain.Fail(domain.Conflict, "The selected account connection is incompatible with the provider.", "Revalidate the current account connection before dispatch.")
 	}
 	if err := t.resolveCodexSubagentModel(&configuration, selected); err != nil {

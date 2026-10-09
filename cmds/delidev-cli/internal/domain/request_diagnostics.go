@@ -125,7 +125,7 @@ func (d RequestDiagnostic) Validate() error {
 		if d.ProviderID.Validate() != nil {
 			return invalidObservation()
 		}
-	} else if !d.SubscriptionService.Valid() || d.ProviderID != "" || d.Source != DiagnosticNativeInput || d.Harness != d.SubscriptionService.Harness() {
+	} else if !d.SubscriptionService.Valid() || d.ProviderID != "" || (d.Source != DiagnosticNativeInput && (d.SubscriptionService != SubscriptionOpenCodeGo || d.Source != DiagnosticProxyHTTP)) || d.Harness != d.SubscriptionService.Harness() {
 		return invalidObservation()
 	}
 	for _, id := range []ID{d.InputID, d.PublicationRequestID, d.CorrelationID} {

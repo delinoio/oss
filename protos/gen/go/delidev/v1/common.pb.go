@@ -379,6 +379,7 @@ const (
 	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT     SubscriptionServiceIdentity = 1
 	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE      SubscriptionServiceIdentity = 2
 	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_GROK        SubscriptionServiceIdentity = 3
+	SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO SubscriptionServiceIdentity = 4
 )
 
 // Enum value maps for SubscriptionServiceIdentity.
@@ -388,12 +389,14 @@ var (
 		1: "SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT",
 		2: "SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE",
 		3: "SUBSCRIPTION_SERVICE_IDENTITY_GROK",
+		4: "SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO",
 	}
 	SubscriptionServiceIdentity_value = map[string]int32{
 		"SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED": 0,
 		"SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT":     1,
 		"SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE":      2,
 		"SUBSCRIPTION_SERVICE_IDENTITY_GROK":        3,
+		"SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO": 4,
 	}
 )
 
@@ -927,12 +930,13 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x14SessionDeletionState\x12&\n" +
 	"\"SESSION_DELETION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eSESSION_DELETION_STATE_PENDING\x10\x01\x12$\n" +
-	" SESSION_DELETION_STATE_SUCCEEDED\x10\x02*\xc9\x01\n" +
+	" SESSION_DELETION_STATE_SUCCEEDED\x10\x02*\xf8\x01\n" +
 	"\x1bSubscriptionServiceIdentity\x12-\n" +
 	")SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%SUBSCRIPTION_SERVICE_IDENTITY_CHATGPT\x10\x01\x12(\n" +
 	"$SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE\x10\x02\x12&\n" +
-	"\"SUBSCRIPTION_SERVICE_IDENTITY_GROK\x10\x03B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\"SUBSCRIPTION_SERVICE_IDENTITY_GROK\x10\x03\x12-\n" +
+	")SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO\x10\x04B<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_common_proto_rawDescOnce sync.Once

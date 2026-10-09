@@ -1009,3 +1009,7 @@ Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-def
 ## Codex approval reviewer allocation — issue #1980
 
 The complete owning feature records System `CODEX_APPROVAL_REVIEW_V1 = 55` and Worker `CODEX_APPROVAL_REVIEW_V1 = 30`, preserving all existing numbers and owners. System capability enables the separate Configure picker; Worker capability independently gates immutable reviewer execution, original checkpoint/fork/continuation and typed lifecycle observations. Existing closed Agent options/settings JSON adds optional `approvals_reviewer`; absent historical documents are unchanged. Existing progress documents add exclusive `codex-auto-review` metadata, and usage/diagnostic documents retain closed builtin/unknown reviewer attribution. No new RPC, protobuf payload field, enum authority outside these capabilities or SQLite migration is required. Declarations alone grant no account/native support; follow the harness, proxy and usage contracts.
+
+## OpenCode Go subscriptions — issue #2097
+
+The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

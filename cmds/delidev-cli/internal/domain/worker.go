@@ -97,10 +97,12 @@ const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configurat
 type WorkerCapability string
 
 const (
-	CodexReadOnlySidechatWorkerV1  WorkerCapability = "codex-read-only-sidechat-v1"
-	ManagedCodexSidechatV1         WorkerCapability = "managed-codex-sidechat-v1"
-	RemoteWorkspaceCloneV1         WorkerCapability = "remote-workspace-clone-v1"
-	BranchPrefixInstructionsV1     WorkerCapability = "branch-prefix-instructions-v1"
+	CodexReadOnlySidechatWorkerV1 WorkerCapability = "codex-read-only-sidechat-v1"
+	ManagedCodexSidechatV1        WorkerCapability = "managed-codex-sidechat-v1"
+	RemoteWorkspaceCloneV1        WorkerCapability = "remote-workspace-clone-v1"
+	BranchPrefixInstructionsV1    WorkerCapability = "branch-prefix-instructions-v1"
+
+	OpenCodeGoSubscriptionsV1      WorkerCapability = "opencode-go-subscriptions-v1"
 	RepositoryBranchDiscoveryV1    WorkerCapability = "repository-branch-discovery-v1"
 	RepositoryCloneV1              WorkerCapability = "repository-clone-v1"
 	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"

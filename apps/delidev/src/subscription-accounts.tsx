@@ -1,3 +1,4 @@
+import { OpenCodeGoAccount, OpenCodeGoManagement } from "./opencode-go-account";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -9,7 +10,7 @@ import { useCloseSettingsTask } from "./settings-task-context";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
-  AccountTypeFilter, EntityKind, FailureCode, ResourceQuery,
+  AccountQuery, AccountTypeFilter, EntityKind, FailureCode, ResourceQuery,
   SubscriptionAction, SubscriptionObservationAction, SubscriptionQuery, SubscriptionServiceId, SystemCapability, SystemQuery,
   clientFailure, isEntityId, newRequestId, subscriptionService, subscriptionServiceNames, type Resource,
 } from "@delinoio/delidev-api-client";
@@ -26,7 +27,11 @@ import { QuotaObservationState, SubscriptionOperationState, SubscriptionConnecti
 export { serviceAccount } from "./subscription-resource";
 
 interface SubscriptionManagementSelection { id: string; revision: bigint; service: SubscriptionServiceId; opener?: HTMLElement | null }
-export function ManagedSubscriptionAccount({ initial, active, close }: { initial: Resource | SubscriptionManagementSelection; active: boolean; close: () => void }) {
+export function ManagedSubscriptionAccount(props: { initial: Resource | SubscriptionManagementSelection; active: boolean; close: () => void }) {
+  const service = "kind" in props.initial ? subscriptionService(document(props.initial).subscription_service) : props.initial.service;
+  return service === SubscriptionServiceId.OpenCodeGo ? <OpenCodeGoManagement {...props} /> : <NativeManagedSubscriptionAccount {...props} />;
+}
+function NativeManagedSubscriptionAccount({ initial, active, close }: { initial: Resource | SubscriptionManagementSelection; active: boolean; close: () => void }) {
   useLocale();
   const closeTask = useCloseSettingsTask(close);
   const initialResource = "kind" in initial ? initial : undefined;
@@ -87,13 +92,16 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
   useLocale();
   const content = useRef<HTMLDivElement>(null), root = useScrollRoot(content);
   const [selected, setSelected] = useState<Resource | SubscriptionManagementSelection>();
+  const [goManagementVisible, setGoManagementVisible] = useState(true);
+  const selectedGo = selected && ("kind" in selected ? subscriptionService(document(selected).subscription_service) : selected.service) === SubscriptionServiceId.OpenCodeGo;
+  const [goCreate, setGoCreate] = useState(false), [goIntent, setGoIntent] = useState(false);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const capable = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
   const refreshInventory = useRef<() => void>(() => {});
   // Login/status authority stays active while its own presentation pauses only
   // the background inventory reader. The callback uses the current reader.
   const flow = useSubscriptionLogin(active, () => refreshInventory.current());
-  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable && !selected && !flow.workflow, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount, true);
+  const inventory = useResourceScrollQuery(EntityKind.ACCOUNT, active && capable && !selected && !goCreate && !flow.workflow, "subscriptions", false, AccountTypeFilter.SUBSCRIPTION, "", serviceAccount, true);
   // An inert parent beneath its original edit/delete dialog retains its three
   // resident pages and mounted disclosure owners. Reads remain suspended; the
   // Settings visit/category owns disposal when this component unmounts.
@@ -102,11 +110,12 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     error: inventory.error?.failure, isFetching: Boolean(inventory.loading), refetch: () => inventory.refreshExplicit() };
   refreshInventory.current = rows.refetch;
   const quota = useRetainedMutation("subscription:quota:row",SubscriptionQuery.requestSubscriptionObservation,()=>{void rows.refetch();},(result,request)=>result.operationId===request.mutation?.requestId && serviceAccount(result.account,request.mutation?.id,undefined,request.mutation?.expectedRevision ?? 1n));
+ const goDisconnect = useRetainedMutation("subscription:go:disconnect", AccountQuery.disconnectAccount, () => { void rows.refetch(); }, (result, request) => result.requestId === request.mutation?.requestId && serviceAccount(result.account, request.mutation?.id, SubscriptionServiceId.OpenCodeGo, request.mutation?.expectedRevision ?? 1n));
  const refreshAll = useRetainedMutation("subscription:quota:all",SubscriptionQuery.refreshAllSubscriptionQuotas,()=>{void rows.refetch();},(result,request)=>result.requestId===request.requestId && result.accounts.length<=10000 && new Set(result.accounts).size===result.accounts.length && result.accounts.every(isEntityId));
  const serverQuotaSupported=status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2)===true;
  const quotaSupported=serverQuotaSupported;
  const loginCapable = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1) === true;
- const accountOperationsBlocked = Boolean(selected || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain);
+ const accountOperationsBlocked = Boolean(selected || goIntent || flow.workflow || quota.busy || quota.uncertain || refreshAll.busy || refreshAll.uncertain || goDisconnect.busy || goDisconnect.uncertain);
  const cleanupCapable = status.data?.capabilities.includes(SystemCapability.FAILED_SUBSCRIPTION_CLEANUP_V1) === true;
  const cleanup = useFailedSubscriptionCleanup(active, cleanupCapable && !status.error && !rows.error && Boolean(rows.data) && !accountOperationsBlocked, () => { void rows.refetch(); });
  const workflow = Boolean(cleanup.blocked || accountOperationsBlocked);
@@ -123,8 +132,9 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
       refresh: quotaSupported && service===SubscriptionServiceId.ChatGPT && quotaAccountAvailable(data) && serverQuotaAvailable(object(data.subscription), serverQuotaSupported) && !quota.busy && !quota.uncertain ? ()=>{ if (cleanup.canMutate()) void quota.send({mutation:{requestId:newRequestId(),id:row.id,expectedRevision:row.revision},machineId:"",action:SubscriptionObservationAction.QUOTA,connectionId:text(object(data.connection).id),generationId:text(object(data.subscription).generation)}); } : undefined,
  health: text(data.health), enabled: data.enabled === true, providerState: copy("subscription-accounts.extra.22fc4e1096f2"), confirmedExhausted: data.confirmed_exhausted === true,
       windows: items(data.quota).map((entry) => { const window = object(entry); return { id: text(window.id), state: Object.values(QuotaObservationState).find((state) => state === window.state) ?? QuotaObservationState.Unknown, remaining: typeof window.remaining === "number" ? window.remaining : undefined, observedAt: text(window.observed_at), resetAt: text(window.reset_at) }; }),
-      metadataAvailable: true, connect: service === SubscriptionServiceId.ChatGPT || service === SubscriptionServiceId.Claude ? () => { if (cleanup.canMutate()) setSelected(row); } : undefined,
-      details: () => { if (cleanup.canMutate()) setSelected(row); }, edit: () => { if (cleanup.canMutate()) editAccount(row); }, delete: () => { if (cleanup.canMutate()) deleteAccount(row); },
+      metadataAvailable: true, connect: service === SubscriptionServiceId.OpenCodeGo || service === SubscriptionServiceId.ChatGPT || service === SubscriptionServiceId.Claude ? () => { if (cleanup.canMutate()) { setGoManagementVisible(true); setSelected(row); } } : undefined,
+      disconnect: service === SubscriptionServiceId.OpenCodeGo && status.data?.capabilities.includes(SystemCapability.OPENCODE_GO_SUBSCRIPTIONS_V1) ? () => { if (cleanup.canMutate()) void goDisconnect.send({mutation:{id:row.id,expectedRevision:row.revision,requestId:newRequestId()}}); } : undefined,
+      details: () => { if (cleanup.canMutate()) { setGoManagementVisible(true); setSelected(row); } }, edit: () => { if (cleanup.canMutate()) editAccount(row); }, delete: () => { if (cleanup.canMutate()) deleteAccount(row); },
     };
   }) : [];
   const blocked = cleanup.blocked || accountOperationsBlocked;
@@ -135,18 +145,24 @@ export function SubscriptionAccounts({ active, editAccount, deleteAccount, onWor
     // The retained read-only projection grants no lifecycle authority. The
     // existing management reader must verify this exact ID/service/revision.
     const revision = account.revision !== undefined && account.revision > identity.revision ? account.revision : identity.revision;
+    setGoManagementVisible(true);
     setSelected({ id: identity.id, revision, service, opener });
   };
   return <div ref={content}>
     <SubscriptionSettingsView manageDetails={manageDetails} accountIds={inventory.loaded && !inventory.loading && !inventory.error ? inventory.rows.map(row => row.id) : undefined} actionsBlocked={blocked} cleanup={active && readState === SubscriptionReadState.Ready && cleanupCapable && !status.data?.stopping && !accountOperationsBlocked ? cleanup.begin : undefined} cleanupBusy={cleanup.busy} cleanupBlocked={cleanup.blocked} cleanupStatus={cleanup.body} cleanupUnavailable={readState !== SubscriptionReadState.Ready || !active || status.data?.stopping ? copy("subscription-settings.cleanupUnavailable") : !cleanupCapable ? copy("subscription-settings.cleanupUnsupported") : undefined} refreshAll={quotaSupported && !blocked ? ()=>{ if (cleanup.canMutate()) void refreshAll.send({requestId:newRequestId()}); } : undefined} refreshAllOperation={refreshAll.uncertain ? {state:SubscriptionOperationState.Uncertain,retry:refreshAll.retry} : refreshAll.busy ? {state:SubscriptionOperationState.Busy} : undefined} accountList={(now, openDetails) => <><ScrollPayloadWindow query={inventory} root={root} active={active && !workflow} identity={paginationIdentity} revision={paginationRevision}>{resources => resources.map(row => { const account = accounts.find(value => value.id === row.id); return account ? <SubscriptionRow key={row.id} account={account} now={now} unavailable={copy("claude-subscription.availability")} actionsBlocked={blocked} openDetails={openDetails} /> : null; })}</ScrollPayloadWindow>{inventory.loaded && !inventory.rows.length && !inventory.nextPageToken && !inventory.error ? <SettingsEmpty title={copy("subscription-settings.noSubscriptionsYet_9c2ace")}><p>{copy("subscription-settings.savedSubscriptionsWillAppearHereIncluding_383bff")}</p></SettingsEmpty> : null}</>} completeEmpty={!inventory.nextPageToken} accounts={accounts} state={readState} active={active} clearFilter={() => {}} problem={<><Problem error={problem} /><Failure failure={rows.error} />{!validPage ? <p role="alert">{copy("subscription-accounts.theServerReturnedAnUnsupportedSubscription_ac7e8b")}</p> : null}</>} retryRead={() => { void status.refetch(); if (capable) void rows.refetch(); }}
       lifecycleUnavailable={copy("claude-subscription.availability")}
-      selectService={capable && (loginCapable || status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1)) && flow.available && !blocked ? (brand) => { const service = subscriptionService(brand); if (service && cleanup.canMutate()) flow.begin(service); } : undefined}
-      serviceLoginAvailable={(brand) => brand === SubscriptionBrand.ChatGPT ? loginCapable : brand === SubscriptionBrand.Claude && status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1) === true}
+      selectService={capable && !blocked ? (brand) => { const service = subscriptionService(brand); if (!cleanup.canMutate()) return; if (service === SubscriptionServiceId.OpenCodeGo && status.data?.capabilities.includes(SystemCapability.OPENCODE_GO_SUBSCRIPTIONS_V1)) { setGoIntent(true); setGoCreate(true); } else if (service && flow.available) flow.begin(service); } : undefined}
+      serviceLoginAvailable={(brand) => brand === SubscriptionBrand.OpenCodeGo ? status.data?.capabilities.includes(SystemCapability.OPENCODE_GO_SUBSCRIPTIONS_V1) === true : brand === SubscriptionBrand.ChatGPT ? loginCapable && flow.available : brand === SubscriptionBrand.Claude && flow.available && status.data?.capabilities.includes(SystemCapability.CLAUDE_SUBSCRIPTIONS_V1) === true}
       pagination={<ScrollContinuation showInitial={false} showErrors={false} query={inventory} root={root} active={active && !workflow} label={copy("subscription-accounts.subscriptionAccountPages_6c8f61")} />}
       advanced={<p>{copy("subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6")}</p>} />
+    {goIntent && !goCreate ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => setGoCreate(true)}>{copy("opencode-go.title")}</SettingsActionButton> : null}
+    {goIntent ? <OpenCodeGoAccount active={active} visible={goCreate} changed={() => refreshInventory.current()} close={() => setGoCreate(false)} completed={() => setGoIntent(false)} /> : null}
     {flow.hidden ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={flow.show}>{copy("claude-subscription.viewOriginalOperation")}</SettingsActionButton> : null}
     {flow.body ? <SettingsTaskDialog title={copy(flow.service === SubscriptionServiceId.Claude ? "claude-subscription.title" : "subscription-accounts.connectSubscription")} size={SettingsDialogSize.Wide} retained={flow.retained} close={flow.hide}>{flow.body}</SettingsTaskDialog> : null}
-    {selected ? <SettingsTaskDialog key={selected.id} fallbackFocus={"kind" in selected ? undefined : () => selected.opener?.isConnected && !selected.opener.closest("[hidden]") && !selected.opener.hasAttribute("disabled") ? selected.opener : content.current?.querySelector<HTMLElement>("h1, [data-subscription-details-fallback]") ?? null} title={copy("subscription-accounts.manageSubscriptionTitle")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => { setSelected(undefined); void rows.refetch(); }}><ManagedSubscriptionAccount initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    {selectedGo && selected ? <OpenCodeGoManagement initial={selected} active={active} visible={goManagementVisible} close={() => setGoManagementVisible(false)} completed={() => { setSelected(undefined); void rows.refetch(); }} /> : null}
+    {selectedGo && !goManagementVisible ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => setGoManagementVisible(true)}>{copy("opencode-go.manageTitle")}</SettingsActionButton> : null}
+    {selected && !selectedGo ? <SettingsTaskDialog key={selected.id} fallbackFocus={"kind" in selected ? undefined : () => selected.opener?.isConnected && !selected.opener.closest("[hidden]") && !selected.opener.hasAttribute("disabled") ? selected.opener : content.current?.querySelector<HTMLElement>("h1, [data-subscription-details-fallback]") ?? null} title={copy("subscription-accounts.manageSubscriptionTitle")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={() => { setSelected(undefined); void rows.refetch(); }}><ManagedSubscriptionAccount initial={selected} active={active} close={() => { setSelected(undefined); void rows.refetch(); }} /></SettingsTaskDialog> : null}
+    <Problem error={goDisconnect.error} />{goDisconnect.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={goDisconnect.busy || !active} onClick={goDisconnect.retry}>{copy("opencode-go.retryOriginal")}</SettingsActionButton> : null}
     <Problem error={quota.error || refreshAll.error} summary={<p>{copy("account-connection.inline.quota")}</p>} />{quota.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={quota.busy} onClick={quota.retry}>{copy("subscription-accounts.retryOriginalQuotaRefresh_8a9eca")}</SettingsActionButton> : null}
   </div>;
 }

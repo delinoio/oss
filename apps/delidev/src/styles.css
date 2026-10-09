@@ -1143,3 +1143,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .starting-branch > .disclosure-native-content { padding: 8px; }
 @media (max-width: 1100px) { .new-project-session-page { --project-session-center-adjustment: 0px; } }
 @media (max-height: 760px) { .new-project-session-page { --project-session-center: 0; } }
+
+.subscription-opencode-mark { display: block; width: 24px; height: 24px; background: url("../public/harness-marks/opencode-light.svg") center / contain no-repeat; }
+:root[data-theme="dark"] .subscription-opencode-mark { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) .subscription-opencode-mark { background-image: url("../public/harness-marks/opencode-dark.svg"); } }

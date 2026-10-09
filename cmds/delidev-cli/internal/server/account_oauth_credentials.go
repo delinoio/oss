@@ -38,8 +38,16 @@ func (s *Service) resolveAPICredential(ctx context.Context, account, connection,
 				return e
 			}
 			a = a.ForConnection(requestedConnection)
-			if a.Type != domain.APIAccount || a.Connection == nil || a.Removal != nil || a.Connection.ID != requestedConnection || a.ProviderID != providerID {
+			if (a.Type != domain.APIAccount && !a.IsOpenCodeGo()) || a.Connection == nil || a.Removal != nil || a.Connection.ID != requestedConnection || a.ProviderID != providerID {
 				return domain.Fail(domain.PermissionDenied, "The original account connection is no longer active.", "Use its current explicit connection.")
+			}
+			if a.IsOpenCodeGo() {
+				if a.Validate() != nil {
+					return executionDenied()
+				}
+				provider = domain.OpenCodeGoProvider()
+				connection = a.Connection.CredentialReferenceID()
+				return nil
 			}
 			row, e = tx.Get(domain.ProviderKind, providerID)
 			if e != nil {
@@ -189,6 +197,14 @@ func (s *Service) resolveAPICredential(ctx context.Context, account, connection,
 			a = a.ForConnection(requestedConnection)
 			if a.Connection == nil || a.Connection.CredentialReferenceID() != connection || a.Removal != nil || a.ProviderID != providerID {
 				return oauthCredentialProblem()
+			}
+			if a.IsOpenCodeGo() {
+				if a.Validate() != nil {
+					return executionDenied()
+				}
+				provider = domain.OpenCodeGoProvider()
+				connection = a.Connection.CredentialReferenceID()
+				return nil
 			}
 			row, e = tx.Get(domain.ProviderKind, providerID)
 			if e != nil {

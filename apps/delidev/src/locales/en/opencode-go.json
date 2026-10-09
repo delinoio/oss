@@ -1,0 +1,18 @@
+{
+  "opencode-go.guidance": "Supports Go and Go Plus. Obtain your API key from OpenCode Console.",
+  "opencode-go.console": "Open OpenCode Console",
+  "opencode-go.storage": "Your API key is stored securely on the selected server. Connecting stores the key; it does not verify subscription entitlement.",
+  "opencode-go.quotaUnavailable": "Quota unavailable",
+  "opencode-go.unsupported": "This server does not support OpenCode Go connections.",
+  "opencode-go.accountName": "Account name",
+  "opencode-go.apiKey": "API key",
+  "opencode-go.hideKey": "Hide API key",
+  "opencode-go.revealKey": "Reveal API key",
+  "opencode-go.connect": "Connect account",
+  "opencode-go.disconnectGuidance": "Disconnecting cancels active account requests and removes its protected key. Existing session history remains.",
+  "opencode-go.retryOriginal": "Retry the original request",
+  "opencode-go.title": "Connect OpenCode Go",
+  "opencode-go.manageTitle": "Manage OpenCode Go connection",
+  "opencode-go.manageConnection": "Manage connection",
+  "opencode-go.manageFor": "Manage connection for {{account}}"
+}

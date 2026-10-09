@@ -2,13 +2,13 @@
 import { EntityKind, SubscriptionServiceIdentity, type Resource } from "./gen/delidev/v1/delidev_pb.js";
 import { apiFormat, apiFormatProfile } from "./api-formats.js";
 
-export enum SubscriptionServiceId { ChatGPT = "chatgpt", Claude = "claude", Grok = "grok" }
+export enum SubscriptionServiceId { ChatGPT = "chatgpt", Claude = "claude", Grok = "grok", OpenCodeGo = "opencode_go" }
 export enum NativeModelSourceKind { Subscription = "subscription" }
 export const subscriptionServiceNames: Readonly<Record<SubscriptionServiceId, string>> = {
-  [SubscriptionServiceId.ChatGPT]: "ChatGPT", [SubscriptionServiceId.Claude]: "Claude", [SubscriptionServiceId.Grok]: "Grok",
+  [SubscriptionServiceId.ChatGPT]: "ChatGPT", [SubscriptionServiceId.Claude]: "Claude", [SubscriptionServiceId.Grok]: "Grok", [SubscriptionServiceId.OpenCodeGo]: "OpenCode Go",
 };
 export const subscriptionServiceHarnesses: Readonly<Record<SubscriptionServiceId, string>> = {
-  [SubscriptionServiceId.ChatGPT]: "codex", [SubscriptionServiceId.Claude]: "claude-code", [SubscriptionServiceId.Grok]: "grok-build",
+  [SubscriptionServiceId.ChatGPT]: "codex", [SubscriptionServiceId.Claude]: "claude-code", [SubscriptionServiceId.Grok]: "grok-build", [SubscriptionServiceId.OpenCodeGo]: "opencode",
 };
 export function subscriptionService(value: unknown): SubscriptionServiceId | undefined {
   return Object.values(SubscriptionServiceId).find((service) => service === value);
@@ -83,6 +83,7 @@ export function subscriptionServiceFromWire(value: SubscriptionServiceIdentity):
     case SubscriptionServiceIdentity.CHATGPT: return SubscriptionServiceId.ChatGPT;
     case SubscriptionServiceIdentity.CLAUDE: return SubscriptionServiceId.Claude;
     case SubscriptionServiceIdentity.GROK: return SubscriptionServiceId.Grok;
+    case SubscriptionServiceIdentity.OPENCODE_GO: return SubscriptionServiceId.OpenCodeGo;
     default: return undefined;
   }
 }

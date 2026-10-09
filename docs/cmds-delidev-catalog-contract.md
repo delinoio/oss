@@ -628,3 +628,7 @@ operation identities, revisions and safe outcomes, never prefixes/instructions.
 ## Codex reviewer selection — issue #1980
 
 Configure exposes a separate localized User / AI auto-review picker for Codex. AI selection explicitly sets `on-request` while preserving sandbox and unrelated native options. The server capability `CODEX_APPROVAL_REVIEW_V1 = 55` enables this configuration surface; the selected Runner must independently advertise Worker capability 30 before dispatch. Unsupported consumers fail without stripping a selected reviewer. The retained foreign option has an explicit Clear action; harness switching alone never clears it. Portable configuration and atomic Agent/Worker saves preserve this optional enum through the existing typed options document, without changing absent historical bytes or adding a database migration. Follow the [native reviewer profile](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980).
+
+## OpenCode Go subscriptions — issue #2097
+
+The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

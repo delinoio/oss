@@ -6,9 +6,10 @@ package domain
 type SubscriptionService string
 
 const (
-	SubscriptionChatGPT SubscriptionService = "chatgpt"
-	SubscriptionClaude  SubscriptionService = "claude"
-	SubscriptionGrok    SubscriptionService = "grok"
+	SubscriptionChatGPT    SubscriptionService = "chatgpt"
+	SubscriptionClaude     SubscriptionService = "claude"
+	SubscriptionGrok       SubscriptionService = "grok"
+	SubscriptionOpenCodeGo SubscriptionService = "opencode_go"
 )
 
 func (s SubscriptionService) Harness() Harness {
@@ -19,6 +20,8 @@ func (s SubscriptionService) Harness() Harness {
 		return ClaudeCode
 	case SubscriptionGrok:
 		return GrokBuild
+	case SubscriptionOpenCodeGo:
+		return OpenCode
 	default:
 		return ""
 	}
