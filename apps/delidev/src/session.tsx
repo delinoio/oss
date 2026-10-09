@@ -49,7 +49,7 @@ import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -65,6 +65,7 @@ import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
 import { SidechatFindings } from "./sidechat";
+import { useSidechatQuestionRetry, SidechatRetryAction, sidechatAnswerFilter } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
 import { SessionStorageAction } from "./session-storage";
 import { SessionPullRequests } from "./session-pull-requests";
@@ -177,7 +178,7 @@ function ConversationStatus({ state }: { state: string }) {
   return !state || state === "complete" || state === "completed" ? null : <header><small>{statusLabel(state)}</small></header>;
 }
 
-export const TranscriptItem = memo(function TranscriptItem({ resource, active = true }: { resource: Resource; active?: boolean }) {
+export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions }: { resource: Resource; active?: boolean; actions?: ReactNode }) {
   useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
@@ -218,6 +219,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+    {data.role==="user"?actions:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
     {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
@@ -342,6 +344,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const observed = live.resources.get(id);
   const original = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
   const { resource: session, control, action } = useSessionControl(id, original, active && tabs.tab.kind!==SessionTabKind.Sidechat);
+  const retryQuestion=useSidechatQuestionRetry(session,conversationActive);
+  const historyHeights=useRef(new Map<string,number>());
+  const historyRoot=useRef<HTMLDivElement>(null);
   const data = readDocument(session);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);
@@ -543,9 +548,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} actions={<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/>}/>} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
         {progress ? <SessionProgressStatus phase={progress} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
+        {items(data.sidechat_retries).length ? <Disclosure className="sidechat-answer-history"><DisclosureSummary>{copy("sidechat.retry.history")}</DisclosureSummary><p>{copy("sidechat.retry.retainedHistory")}</p><div className="sidechat-history-content" ref={historyRoot}><ToolTurnTranscript sessionId={id} active={conversationActive} query={{...messages,pages:messages.pages.map(page=>({...page,height:historyHeights.current.get(page.token)})),measure:(token,height)=>{historyHeights.current.set(token,height);}}} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={historyRoot} include={sidechatAnswerFilter(session,true)} render={row=><TranscriptItem resource={row} active={conversationActive}/>} /></div></Disclosure> : null}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
+        {retryQuestion.sidechat && retryQuestion.unsupported ? <p role="status">{copy("sidechat.retry.unsupported")}</p> : null}
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
         {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedUserMessage")}>
           <SubmissionStatus phase={row.observationUnavailable ? SubmissionPhase.Uncertain : row.phase} />

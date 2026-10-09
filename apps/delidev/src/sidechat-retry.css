@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.sidechat-retry-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .4rem .6rem; margin-top: .35rem; }
+.sidechat-retry-actions small { min-width: 0; overflow-wrap: anywhere; }
+.sidechat-retry-help { display: inline-flex; position: relative; }
+.sidechat-retry-help button[aria-disabled="true"] { color: var(--muted); cursor: default; }
+.sidechat-retry-help [role="tooltip"] { position: absolute; z-index: 20; inset-inline-end: 0; top: 100%; width: min(28rem, 70vw); max-width: min(calc(100vw - 3rem), calc(100cqw - 3rem)); box-sizing: border-box; padding: .7rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface); color: var(--text); font-size: .85rem; line-height: 1.5; overflow-wrap: anywhere; box-shadow: 0 4px 16px var(--shadow); }
+.sidechat-retry-help [hidden] { display: none; }
+.sidechat-answer-history { margin-block: 1rem; max-width: 100%; min-width: 0; }
+.sidechat-answer-history .sidechat-history-content { max-height: 28rem; overflow: auto; padding-block: .5rem; }
+@media (max-width: 600px) { .sidechat-retry-help [role="tooltip"] { width: min(18rem, 70vw); } }
+
+.message-user .sidechat-retry-actions small { color: inherit; }

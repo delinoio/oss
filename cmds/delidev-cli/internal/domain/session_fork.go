@@ -57,6 +57,7 @@ func (f ForkOrigin) VerifyOpenCodeCreation(child ID) bool {
 }
 
 type ForkJobInput struct {
+	Retry                  *SidechatRetryFork         `json:"retry,omitempty"`
 	SubscriptionGeneration ID                         `json:"subscription_generation,omitempty"`
 	Startup                *ExecutionStartupSelection `json:"startup,omitempty"`
 	Purpose                ForkPurpose                `json:"purpose,omitempty"`
@@ -80,6 +81,9 @@ type ForkJobInput struct {
 }
 
 func (i ForkJobInput) Validate() error {
+	if i.Retry != nil && (i.Purpose != SidechatFork || i.Retry.Validate(i.ChildSessionID) != nil) {
+		return SidechatUnavailable()
+	}
 	if i.SourceAssignment.Version == 4 {
 		if i.Startup == nil || i.Startup.Validate(i.SourceAssignment.Configuration.Harness) != nil || i.Startup.ExecutableSHA256 == "" {
 			return Fail(RecoveryRequired, "The Fork executable selection is incomplete.", "Retain the original source assignment and executable identity.")

@@ -380,3 +380,7 @@ Issues #2054/#2057 compose System 56, Worker 38, schema-3 Project/Settings and p
 Codex AI approval review composes the harness, catalog, sessions, proxy and usage domains under issue #1980. System 55 and Worker 30 retain separate configuration/adapter gates. Preserve immutable effective reviewer verification, original lifecycle observations, same-account bounded canonical relay and unproved model attribution; Sidechat always applies its original User/read-only/never overlay. This feature changes neither account ownership nor the database schema.
 
 Independent managed ChatGPT Fork is owned by the [Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979), composing separate System 53 / Worker 29 with protected subscription lifecycle. Preserve independent child lifetime, immutable reviewer and branch-prefix provenance, and exact settled native tool history; Sidechat retains its separate read-only dependent lifetime.
+
+## Same-question Sidechat retry
+
+Issue #2061 adds authenticated same-question Sidechat retry with System 57 / Worker 31. Preserve original public child/snapshots/reference ownership, freeze the latest accepted completed parent turn, retain all native generations and prior answer/usage history, and select a replacement answer only after verified completion. Complete dependent cleanup covers every retry runtime. See [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061); no migration or broader native/account support is implied.

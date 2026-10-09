@@ -9,5 +9,15 @@
   "sidechat.sendSelectedFindingsToParentQueue_5db660": "Send selected findings to parent queue",
   "sidechat.theOriginalSelectedMessagesAndRevisions_45372d": "The original selected messages and revisions are retained while the result is uncertain.",
   "sidechat.retryTheSameFindingsRequest_23e1d3": "Retry the same findings request",
-  "sidechat.selectedFindingsQueuedAsReviewThem_7c06ec": "Selected findings queued as <s0/>. Review them in the parent queue."
+  "sidechat.selectedFindingsQueuedAsReviewThem_7c06ec": "Selected findings queued as <s0/>. Review them in the parent queue.",
+  "sidechat.retry.label": "Retry",
+  "sidechat.retry.explanation": "Ask the same question again using the parent session's latest completed execution. This keeps the same Side Chat and replaces the displayed answer when complete. Previous answers remain in history.",
+  "sidechat.retry.busy": "Retry is unavailable while original work, queued input or cleanup is pending. No retry is scheduled.",
+  "sidechat.retry.unsupported": "Update the server and original Runner Device to retry this text-only Side Chat question.",
+  "sidechat.retry.recovery": "Keep the original attempt and resolve its recovery and cleanup before retrying.",
+  "sidechat.retry.failed": "The retry did not complete. The previous answer remains displayed.",
+  "sidechat.retry.uncertain": "Acceptance is unconfirmed. Check only the original request; do not create another retry.",
+  "sidechat.retry.originalRequest": "Check original retry request",
+  "sidechat.retry.history": "Previous answers and attempts",
+  "sidechat.retry.retainedHistory": "Earlier answers keep their original execution and usage. Findings already sent to the parent are unchanged."
 }

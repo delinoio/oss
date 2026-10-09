@@ -3,6 +3,7 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -167,8 +168,10 @@ func (f *managedSidechatRPC) FinishSubscription(_ context.Context, r *connect.Re
 }
 
 func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
-	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup"} {
+	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup", "retry-success", "retry-native-response-loss", "retry-finish-response-loss"} {
 		t.Run(fault, func(t *testing.T) {
+			retry := strings.HasPrefix(fault, "retry-")
+			fault = strings.TrimPrefix(fault, "retry-")
 			f := newCheckpointFixture(t)
 			ctx := context.Background()
 			f.input.Configuration.Subscription = true
@@ -232,6 +235,16 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 			token, _ := security.RandomToken()
 			credential := Credential{Version: 1, Type: domain.WorkerDevice, Endpoint: server.URL, ServerID: domain.NewID(), DeviceID: domain.NewID(), PairingID: domain.NewID(), MachineID: f.input.MachineID, Token: token}
 			config := Config{Root: f.root, Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), execution: &PublicationConfig{Credential: credential, Instance: instance, Assignment: &pb.Resource{Id: string(owner), Revision: 7}}}
+			var retainedPrep, retainedManifest json.RawMessage
+			if retry {
+				cp, cm, e := manager.PrepareSidechatReference(ctx, domain.NewID(), input.ChildSessionID, prep, manifest)
+				if e != nil {
+					t.Fatal(e)
+				}
+				retainedPrep, retainedManifest = mustForkJSON(cp), mustForkJSON(cm)
+				input.Retry = &domain.SidechatRetryFork{WorkerInstanceID: instance, WorkerDeviceID: credential.DeviceID, GenerationID: domain.NewID(), ChildRevision: 3, QuestionID: domain.NewID(), QuestionRevision: 1, PreviousJobID: domain.NewID(), PreviousExecutionID: domain.NewID(), ChildPreparation: retainedPrep, ChildManifest: retainedManifest}
+				job.Input = mustForkJSON(input)
+			}
 			output, err := forkSession(ctx, config, owner, job)
 			if auth.takes != 1 || auth.finishes != 1 {
 				t.Fatalf("protected original claim counts take=%d finish=%d error=%v", auth.takes, auth.finishes, err)
@@ -240,6 +253,9 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 				var result domain.ForkJobResult
 				if err != nil || domain.Decode(output, &result) != nil || result.ValidateIdentity(input) != nil || !result.CleanupVerified || result.ManagedFinish != domain.ID(auth.finish.Mutation.RequestId) {
 					t.Fatal("lost protected Finish before paused-child result", err)
+				}
+				if retry && (!bytes.Equal(result.Preparation, retainedPrep) || !bytes.Equal(result.Manifest, retainedManifest)) {
+					t.Fatal("retry replaced original child metadata")
 				}
 				if !auth.finish.CleanupConfirmed || subscription.Refreshed(workerSubscriptionBundle("first"), auth.finish.Bundle) != nil {
 					t.Fatal("lost rotated bundle/cleanup")

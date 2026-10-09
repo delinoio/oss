@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
@@ -82,6 +83,68 @@ func TestSessionOpenCodeForkDeletionRetainsCheckpointSizedDecoding(t *testing.T)
 				}
 			} else if err != nil || !proof.Complete {
 				t.Fatal("bounded original fork could not be deleted", err)
+			}
+		})
+	}
+}
+
+func TestSidechatRetryDeletionJoinsAllCheckpointGenerationsAndPreservesParent(t *testing.T) {
+	for _, replaced := range []bool{false, true} {
+		t.Run(map[bool]string{false: "original", true: "replacement"}[replaced], func(t *testing.T) {
+			config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			parent := filepath.Join(config.Root, "runtimes", string(domain.NewID()))
+			if err := security.PrivateDir(parent); err != nil {
+				t.Fatal(err)
+			}
+			if err := security.WriteAtomic(filepath.Join(parent, "keep.json"), []byte("parent retained")); err != nil {
+				t.Fatal(err)
+			}
+			var homes []string
+			for n := 0; n < 3; n++ {
+				runtimeID, jobID := domain.NewID(), domain.NewID()
+				checkpoint := ForkCheckpoint{Version: 3, SidechatPolicy: domain.CodexReadOnlySidechatV1, JobID: jobID, RuntimeID: runtimeID, SessionID: work.SessionID, MachineID: work.MachineID, JobInputDigest: strings.Repeat("ab", 32)}
+				checkpoint.Native.Effective.Sandbox.Type = codex.ReadOnly
+				checkpoint.Native.Effective.ApprovalPolicy = codex.ApprovalNever
+				raw := mustForkJSON(checkpoint)
+				work.RetryForks = append(work.RetryForks, domain.SessionDeletionFork{JobID: jobID, RuntimeID: runtimeID, JobInputDigest: checkpoint.JobInputDigest, CheckpointDigest: executionInputDigest(raw)})
+				if replaced && n == 2 {
+					checkpoint.SessionID = domain.NewID()
+					raw = mustForkJSON(checkpoint)
+				}
+				home := filepath.Join(config.Root, "runtimes", string(runtimeID))
+				homes = append(homes, home)
+				if err := security.PrivateDir(home); err != nil {
+					t.Fatal(err)
+				}
+				if err := security.WriteAtomic(filepath.Join(home, "fork-completion.json"), raw); err != nil {
+					t.Fatal(err)
+				}
+			}
+			proof, err := deleteSessionCopies(context.Background(), config, work)
+			if replaced {
+				if err == nil || proof.Complete {
+					t.Fatal("replacement native generation granted cleanup")
+				}
+				for _, home := range homes {
+					if _, err := os.Stat(home); err != nil {
+						t.Fatal("partial removal before all-generation proof", err)
+					}
+				}
+			} else {
+				if err != nil || !proof.Complete {
+					t.Fatal("original generations stranded cleanup", err)
+				}
+				for _, home := range homes {
+					if _, err := os.Stat(home); !os.IsNotExist(err) {
+						t.Fatal("retry runtime retained", err)
+					}
+				}
+				if _, err := deleteSessionCopies(context.Background(), config, work); err != nil {
+					t.Fatal("joined cleanup replay changed", err)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(parent, "keep.json")); err != nil {
+				t.Fatal("retry deletion removed parent", err)
 			}
 		})
 	}

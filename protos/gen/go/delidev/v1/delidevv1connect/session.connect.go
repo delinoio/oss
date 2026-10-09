@@ -36,6 +36,12 @@ const (
 	// SessionServiceListRequestDiagnosticsProcedure is the fully-qualified name of the SessionService's
 	// ListRequestDiagnostics RPC.
 	SessionServiceListRequestDiagnosticsProcedure = "/delidev.v1.SessionService/ListRequestDiagnostics"
+	// SessionServiceRetrySidechatQuestionProcedure is the fully-qualified name of the SessionService's
+	// RetrySidechatQuestion RPC.
+	SessionServiceRetrySidechatQuestionProcedure = "/delidev.v1.SessionService/RetrySidechatQuestion"
+	// SessionServiceGetSidechatQuestionRetryProcedure is the fully-qualified name of the
+	// SessionService's GetSidechatQuestionRetry RPC.
+	SessionServiceGetSidechatQuestionRetryProcedure = "/delidev.v1.SessionService/GetSidechatQuestionRetry"
 	// SessionServiceSendSidechatFindingsProcedure is the fully-qualified name of the SessionService's
 	// SendSidechatFindings RPC.
 	SessionServiceSendSidechatFindingsProcedure = "/delidev.v1.SessionService/SendSidechatFindings"
@@ -131,6 +137,8 @@ const (
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
+	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
+	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
 	SendSidechatFindings(context.Context, *connect.Request[v1.SendSidechatFindingsRequest]) (*connect.Response[v1.SendSidechatFindingsResponse], error)
 	ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error)
 	GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error)
@@ -178,6 +186,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+SessionServiceListRequestDiagnosticsProcedure,
 			connect.WithSchema(sessionServiceMethods.ByName("ListRequestDiagnostics")),
+			connect.WithClientOptions(opts...),
+		),
+		retrySidechatQuestion: connect.NewClient[v1.RetrySidechatQuestionRequest, v1.RetrySidechatQuestionResponse](
+			httpClient,
+			baseURL+SessionServiceRetrySidechatQuestionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RetrySidechatQuestion")),
+			connect.WithClientOptions(opts...),
+		),
+		getSidechatQuestionRetry: connect.NewClient[v1.GetSidechatQuestionRetryRequest, v1.GetSidechatQuestionRetryResponse](
+			httpClient,
+			baseURL+SessionServiceGetSidechatQuestionRetryProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSidechatQuestionRetry")),
 			connect.WithClientOptions(opts...),
 		),
 		sendSidechatFindings: connect.NewClient[v1.SendSidechatFindingsRequest, v1.SendSidechatFindingsResponse](
@@ -366,6 +386,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
 	listRequestDiagnostics   *connect.Client[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse]
+	retrySidechatQuestion    *connect.Client[v1.RetrySidechatQuestionRequest, v1.RetrySidechatQuestionResponse]
+	getSidechatQuestionRetry *connect.Client[v1.GetSidechatQuestionRetryRequest, v1.GetSidechatQuestionRetryResponse]
 	sendSidechatFindings     *connect.Client[v1.SendSidechatFindingsRequest, v1.SendSidechatFindingsResponse]
 	forkSession              *connect.Client[v1.ForkSessionRequest, v1.ForkSessionResponse]
 	getSessionFork           *connect.Client[v1.GetSessionForkRequest, v1.GetSessionForkResponse]
@@ -401,6 +423,16 @@ type sessionServiceClient struct {
 // ListRequestDiagnostics calls delidev.v1.SessionService.ListRequestDiagnostics.
 func (c *sessionServiceClient) ListRequestDiagnostics(ctx context.Context, req *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
 	return c.listRequestDiagnostics.CallUnary(ctx, req)
+}
+
+// RetrySidechatQuestion calls delidev.v1.SessionService.RetrySidechatQuestion.
+func (c *sessionServiceClient) RetrySidechatQuestion(ctx context.Context, req *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error) {
+	return c.retrySidechatQuestion.CallUnary(ctx, req)
+}
+
+// GetSidechatQuestionRetry calls delidev.v1.SessionService.GetSidechatQuestionRetry.
+func (c *sessionServiceClient) GetSidechatQuestionRetry(ctx context.Context, req *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error) {
+	return c.getSidechatQuestionRetry.CallUnary(ctx, req)
 }
 
 // SendSidechatFindings calls delidev.v1.SessionService.SendSidechatFindings.
@@ -556,6 +588,8 @@ func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *co
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
+	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
+	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
 	SendSidechatFindings(context.Context, *connect.Request[v1.SendSidechatFindingsRequest]) (*connect.Response[v1.SendSidechatFindingsResponse], error)
 	ForkSession(context.Context, *connect.Request[v1.ForkSessionRequest]) (*connect.Response[v1.ForkSessionResponse], error)
 	GetSessionFork(context.Context, *connect.Request[v1.GetSessionForkRequest]) (*connect.Response[v1.GetSessionForkResponse], error)
@@ -599,6 +633,18 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		SessionServiceListRequestDiagnosticsProcedure,
 		svc.ListRequestDiagnostics,
 		connect.WithSchema(sessionServiceMethods.ByName("ListRequestDiagnostics")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceRetrySidechatQuestionHandler := connect.NewUnaryHandler(
+		SessionServiceRetrySidechatQuestionProcedure,
+		svc.RetrySidechatQuestion,
+		connect.WithSchema(sessionServiceMethods.ByName("RetrySidechatQuestion")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetSidechatQuestionRetryHandler := connect.NewUnaryHandler(
+		SessionServiceGetSidechatQuestionRetryProcedure,
+		svc.GetSidechatQuestionRetry,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSidechatQuestionRetry")),
 		connect.WithHandlerOptions(opts...),
 	)
 	sessionServiceSendSidechatFindingsHandler := connect.NewUnaryHandler(
@@ -785,6 +831,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case SessionServiceListRequestDiagnosticsProcedure:
 			sessionServiceListRequestDiagnosticsHandler.ServeHTTP(w, r)
+		case SessionServiceRetrySidechatQuestionProcedure:
+			sessionServiceRetrySidechatQuestionHandler.ServeHTTP(w, r)
+		case SessionServiceGetSidechatQuestionRetryProcedure:
+			sessionServiceGetSidechatQuestionRetryHandler.ServeHTTP(w, r)
 		case SessionServiceSendSidechatFindingsProcedure:
 			sessionServiceSendSidechatFindingsHandler.ServeHTTP(w, r)
 		case SessionServiceForkSessionProcedure:
@@ -856,6 +906,14 @@ type UnimplementedSessionServiceHandler struct{}
 
 func (UnimplementedSessionServiceHandler) ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListRequestDiagnostics is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RetrySidechatQuestion is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSidechatQuestionRetry is not implemented"))
 }
 
 func (UnimplementedSessionServiceHandler) SendSidechatFindings(context.Context, *connect.Request[v1.SendSidechatFindingsRequest]) (*connect.Response[v1.SendSidechatFindingsResponse], error) {

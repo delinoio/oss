@@ -464,7 +464,7 @@ func (t *Tx) reconcileUnpublishedForkOwners(v *SessionDeletion) (bool, error) {
 		}
 		for ci := range worker.Work.Copies {
 			copy := &worker.Work.Copies[ci]
-			if copy.Type != domain.ForkSessionJob || copy.ExecutionID == "" || copy.UnpublishedSidechatID != "" || copy.UnpublishedChildProcessID != "" {
+			if copy.Type != domain.ForkSessionJob || copy.ExecutionID == "" || copy.UnpublishedSidechatID != "" || copy.UnpublishedChildProcessID != "" || copy.SidechatRetry {
 				continue
 			}
 			row, err := t.JobAssignment(copy.JobID)
@@ -853,7 +853,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	}
 	// An unresolved native fork can own an unpublished workspace. Preserve its
 	// reservation until the original operation proves cleanup or publication.
-	if e := t.RequireNoSessionFork(v.SessionID); e != nil {
+	if e := t.RequireNoOriginalSessionFork(v.SessionID); e != nil {
 		return v, e
 	}
 	value, e := Decode[domain.Session](row)
@@ -881,6 +881,13 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 		}
 		digest := sha256.Sum256(j.Input)
 		v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: value.MachineID, DeviceID: f.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{hex.EncodeToString(digest[:])}, Fork: &domain.SessionDeletionFork{JobID: f.JobID, RuntimeID: f.RuntimeID, CheckpointDigest: f.CheckpointDigest, JobInputDigest: f.JobInputDigest}}})
+	}
+	if value.IsSidechat() && len(v.Workers) != 0 {
+		for _, generation := range value.SidechatRetries {
+			if generation.Fork != nil {
+				v.Workers[0].Work.RetryForks = append(v.Workers[0].Work.RetryForks, *generation.Fork)
+			}
+		}
 	}
 	// Every current session-owned Worker operation contributes its original
 	// claimed metadata. Never reconstruct ownership from a mutable terminal job.
@@ -965,18 +972,23 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			}
 			copy.ActionID = input.ActionID
 		}
-		if j.Type == domain.ForkSessionJob && j.State != domain.JobSucceeded {
+		if j.Type == domain.ForkSessionJob {
 			var input domain.ForkJobInput
-			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || input.SourceSessionID != v.SessionID {
+			if domain.Decode(original.Input, &input) != nil || input.Validate() != nil || (input.Retry == nil && input.SourceSessionID != v.SessionID || input.Retry != nil && input.ChildSessionID != v.SessionID) {
 				return v, domain.SessionDeletionPending()
 			}
 			// Definite failed/canceled forks never published a child. Their empty or
 			// partially prepared private runtime remains owned by the source job.
-			copy.ExecutionID = input.RuntimeID
-			if input.Purpose == domain.SidechatFork {
-				copy.UnpublishedSidechatID = input.ChildSessionID
-			} else {
-				copy.UnpublishedChildProcessID = input.ChildSessionID
+			if input.Retry != nil {
+				copy.ExecutionID = input.RuntimeID
+				copy.SidechatRetry = true
+			} else if j.State != domain.JobSucceeded {
+				copy.ExecutionID = input.RuntimeID
+				if input.Purpose == domain.SidechatFork {
+					copy.UnpublishedSidechatID = input.ChildSessionID
+				} else {
+					copy.UnpublishedChildProcessID = input.ChildSessionID
+				}
 			}
 		}
 		if j.Type == domain.PrepareWorkspaceJob {

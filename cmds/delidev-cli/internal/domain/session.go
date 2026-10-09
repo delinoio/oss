@@ -247,6 +247,9 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
+	SidechatRetries       []SidechatRetry         `json:"sidechat_retries,omitempty"`
+	SidechatCurrentAnswer ID                      `json:"sidechat_current_answer,omitempty"`
+	SidechatActiveRetry   ID                      `json:"sidechat_active_retry,omitempty"`
 	NativeExecutionRootID ID                      `json:"native_execution_root_id,omitempty"`
 	Startup               *ExecutionStartupRecord `json:"startup,omitempty"`
 	LastCompactionJobID   ID                      `json:"last_compaction_job_id,omitempty"`
@@ -336,17 +339,18 @@ type SessionStartPreparation struct {
 }
 
 type QueuedInput struct {
-	RetiredSkills   []SkillBinding    `json:"retired_skills,omitempty"`
-	SkillNames      map[ID]string     `json:"skill_names,omitempty"`
-	Skills          []SkillBinding    `json:"skills,omitempty"`
-	Sequence        uint64            `json:"sequence"`
-	ContentRevision uint64            `json:"content_revision"`
-	Prompt          string            `json:"prompt"`
-	Mode            SessionMode       `json:"mode"`
-	Delivery        InputDelivery     `json:"delivery"`
-	ExecutionID     ID                `json:"execution_id,omitempty"`
-	NativeRequestID ID                `json:"native_request_id,omitempty"`
-	Attachments     []ImageAttachment `json:"attachments,omitempty"`
+	SidechatRetryGeneration ID                `json:"sidechat_retry_generation,omitempty"`
+	RetiredSkills           []SkillBinding    `json:"retired_skills,omitempty"`
+	SkillNames              map[ID]string     `json:"skill_names,omitempty"`
+	Skills                  []SkillBinding    `json:"skills,omitempty"`
+	Sequence                uint64            `json:"sequence"`
+	ContentRevision         uint64            `json:"content_revision"`
+	Prompt                  string            `json:"prompt"`
+	Mode                    SessionMode       `json:"mode"`
+	Delivery                InputDelivery     `json:"delivery"`
+	ExecutionID             ID                `json:"execution_id,omitempty"`
+	NativeRequestID         ID                `json:"native_request_id,omitempty"`
+	Attachments             []ImageAttachment `json:"attachments,omitempty"`
 }
 
 func SessionExecutionUnavailable() *Error {

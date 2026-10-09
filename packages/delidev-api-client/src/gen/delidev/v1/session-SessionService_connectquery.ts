@@ -10,6 +10,16 @@ import { SessionService } from "./session_pb.js";
 export const listRequestDiagnostics = SessionService.method.listRequestDiagnostics;
 
 /**
+ * @generated from rpc delidev.v1.SessionService.RetrySidechatQuestion
+ */
+export const retrySidechatQuestion = SessionService.method.retrySidechatQuestion;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetSidechatQuestionRetry
+ */
+export const getSidechatQuestionRetry = SessionService.method.getSidechatQuestionRetry;
+
+/**
  * @generated from rpc delidev.v1.SessionService.SendSidechatFindings
  */
 export const sendSidechatFindings = SessionService.method.sendSidechatFindings;

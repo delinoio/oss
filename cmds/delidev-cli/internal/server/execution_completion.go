@@ -122,6 +122,24 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 			return store.Record{}, err
 		}
 	}
+	if input.SidechatRetry != nil {
+		for i := range session.SidechatRetries {
+			g := &session.SidechatRetries[i]
+			if g.ID == input.SidechatRetry.GenerationID && g.ExecutionID == input.ExecutionID && g.ExecutionJobID == record.ID {
+				if verified {
+					canceled, err := tx.JobCancellationRequested(record.ID)
+					if err != nil {
+						return store.Record{}, err
+					}
+					if completion.Outcome == domain.ExecutionSucceeded && !canceled && session.Archive == domain.NotArchived && session.Recovery == domain.NoRecovery {
+						g.Completed = true
+						session.SidechatCurrentAnswer = input.ExecutionID
+					}
+					session.SidechatActiveRetry = ""
+				}
+			}
+		}
+	}
 	if verified && completion.Outcome == domain.ExecutionSucceeded {
 		if err := queueAutomaticSessionTitle(tx, sr, &session, record, input, false); err != nil {
 			return store.Record{}, err

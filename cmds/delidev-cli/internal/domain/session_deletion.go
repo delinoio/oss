@@ -14,6 +14,7 @@ const MaxSessionDeletionBytes = 4 << 20
 // Deletion work contains only immutable ownership references. Native paths,
 // prompts, credentials and transcript content never cross this boundary.
 type SessionDeletionCopy struct {
+	SidechatRetry             bool    `json:"sidechat_retry,omitempty"`
 	JobID                     ID      `json:"job_id"`
 	UnpublishedChildProcessID ID      `json:"unpublished_child_process_id,omitempty"`
 	UnpublishedSidechatID     ID      `json:"unpublished_sidechat_id,omitempty"`
@@ -34,6 +35,7 @@ type SessionDeletionFork struct {
 }
 
 type SessionDeletionWork struct {
+	RetryForks         []SessionDeletionFork `json:"retry_forks,omitempty"`
 	SkillSnapshots     []SkillBinding        `json:"skill_snapshots,omitempty"`
 	Fork               *SessionDeletionFork  `json:"fork,omitempty"`
 	Version            uint32                `json:"version"`
@@ -56,11 +58,24 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
-	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0) || len(w.Copies) > 4096 || len(w.Images) > MaxSessionImageAttachments || len(w.PreparationDigests) > 4096 {
+	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0 && len(w.RetryForks) == 0) || len(w.Copies) > 4096 || len(w.Images) > MaxSessionImageAttachments || len(w.PreparationDigests) > 4096 {
 		return SessionDeletionPending()
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {
 		if id.Validate() != nil {
+			return SessionDeletionPending()
+		}
+	}
+	if len(w.RetryForks) > 4096 {
+		return SessionDeletionPending()
+	}
+	retryJobs, retryRuntimes := map[ID]bool{}, map[ID]bool{}
+	for _, f := range w.RetryForks {
+		if retryJobs[f.JobID] || retryRuntimes[f.RuntimeID] || w.Fork != nil && (w.Fork.JobID == f.JobID || w.Fork.RuntimeID == f.RuntimeID) {
+			return SessionDeletionPending()
+		}
+		retryJobs[f.JobID], retryRuntimes[f.RuntimeID] = true, true
+		if f.JobID.Validate() != nil || f.RuntimeID.Validate() != nil || !deletionHash(f.CheckpointDigest) || !deletionHash(f.JobInputDigest) || len(w.PreparationDigests) == 0 {
 			return SessionDeletionPending()
 		}
 	}
@@ -82,6 +97,9 @@ func (w SessionDeletionWork) Validate() error {
 				return SessionDeletionPending()
 			}
 		default:
+			return SessionDeletionPending()
+		}
+		if c.SidechatRetry && (c.Type != ForkSessionJob || c.ExecutionID == "" || c.UnpublishedSidechatID != "" || c.UnpublishedChildProcessID != "") {
 			return SessionDeletionPending()
 		}
 		if c.UnpublishedChildProcessID != "" && (c.Type != ForkSessionJob || c.UnpublishedChildProcessID.Validate() != nil || c.UnpublishedChildProcessID == w.SessionID || c.UnpublishedChildProcessID == c.JobID || c.UnpublishedChildProcessID == c.ExecutionID || c.ExecutionID == "" || c.UnpublishedSidechatID != "") {

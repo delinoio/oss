@@ -314,6 +314,9 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 }
 
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
+	if input.Retry != nil {
+		return validateSidechatRetryForkAuthority(tx, input)
+	}
 	clones, err := workspace.ForkRequiresManagedClone(input)
 	if err != nil {
 		return err
@@ -404,6 +407,9 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 			problem = domain.Fail(domain.RecoveryRequired, "Fork workspace does not match its original source inventory.", "Preserve the original job and all private workspace evidence.")
 		}
 	}
+	if input.Retry != nil {
+		return finishSidechatRetryFork(tx, r, job, revision, raw, problem, input, output)
+	}
 	var inherited []forkCanonicalMessage
 	if problem == nil && input.Version == 2 {
 		var err error
@@ -469,6 +475,9 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 }
 
 func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.PrepareRequest, manifest workspace.Manifest) error {
+	if input.Retry != nil {
+		return validateSidechatRetryWorkspace(input, preparation, manifest)
+	}
 
 	if err := validateForkSharing(input); err != nil {
 		return err

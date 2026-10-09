@@ -389,6 +389,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if sidechatExpected {
 				profile += "\x00codex-read-only-sidechat-v1"
+				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1) {
+					profile += "\x00sidechat-question-retry-v1"
+				}
 			}
 			if openCodeForkExpected {
 				profile += "\x00opencode-general-chat-fork-v1"
@@ -405,6 +408,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 
 			if sidechatExpected {
+				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1) {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1)
+				}
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 				if managedSidechatExpected && managedCapabilityExpected {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1)

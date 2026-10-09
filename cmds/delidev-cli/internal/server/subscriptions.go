@@ -527,7 +527,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 
 			case domain.ForkSessionJob:
 				var fork domain.ForkJobInput
-				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != state.Generation || fork.SourceSessionID != jr.SessionID {
+				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != state.Generation || (fork.Retry == nil && fork.SourceSessionID != jr.SessionID || fork.Retry != nil && fork.ChildSessionID != jr.SessionID) {
 					return nil, subscriptionDenied()
 				}
 				if err := validateForkAuthority(tx, fork); err != nil {
