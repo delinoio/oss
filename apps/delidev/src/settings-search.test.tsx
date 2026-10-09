@@ -26,7 +26,7 @@ it("retains query and input focus on language updates, clears to the input and r
  const result=screen.getByRole('button',{name:'Appearance › Theme'});
  fireEvent.compositionStart(input);fireEvent.click(result);expect(select).not.toHaveBeenCalled();fireEvent.compositionEnd(input);fireEvent.click(result);expect(select).toHaveBeenCalledTimes(1);
  input.focus();await act(()=>i18n.changeLanguage('ko'));expect((input as HTMLInputElement).value).toBe('theme');expect(document.activeElement).toBe(input);
- fireEvent.click(screen.getByRole('button',{name:'검색 지우기'}));expect((input as HTMLInputElement).value).toBe('');expect(document.activeElement).toBe(input);
+ fireEvent.change(input,{target:{value:''}});expect((input as HTMLInputElement).value).toBe('');expect(document.activeElement).toBe(input);
 });
 function FocusFixture({request,pending=false,present=false}:{request?:SettingsSearchRequest;pending?:boolean;present?:boolean}){
  const root=useRef<HTMLDivElement>(null);return <><SettingsSearchFocus request={request} category={SettingsCategory.GitWorkflow} root={root}/><div ref={root}><h1>Git</h1><input aria-label="User focus"/><span data-settings-search-pending={pending?'true':undefined}/>{present?<details className="server-remediation-details"><summary>Details</summary><label data-settings-search-target="remediation-attempts">Attempts<input defaultValue="7"/></label></details>:null}</div></>;
@@ -56,3 +56,33 @@ it("cancels an armed target on locale changes without rearming its generation",a
 it("cancels an armed target on responsive reflow before a late read",async()=>{const view=render(<FocusFixture request={request} pending/>);fireEvent(window,new Event('resize'));view.rerender(<FocusFixture request={request} present/>);await act(async()=>{await new Promise(done=>setTimeout(done,40));});expect(document.activeElement?.getAttribute('data-settings-search-target')).not.toBe('remediation-attempts');expect(screen.getByText('Details').closest('details')?.open).toBe(false);});
 
 it("retains a once-only target across Strict Mode setup cleanup replay",async()=>{render(<StrictMode><FocusFixture request={request} present/></StrictMode>);await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('remediation-attempts'));expect(screen.getByText('Details').closest('details')?.open).toBe(true);});
+
+it("uses a named icon search field without a visible label or application clear control",async()=>{
+ render(<SettingsSearch categories={categories} select={vi.fn()}/>);
+ const input=screen.getByRole('searchbox',{name:'Search settings'});
+ expect(input.getAttribute('placeholder')).toBe('Search Settings');
+ expect(screen.getByRole('heading',{name:'Settings'})).toBeTruthy();
+ expect(screen.queryByText('Search settings')).toBeNull();
+ expect(screen.queryByRole('button',{name:'Clear search'})).toBeNull();
+ expect(document.querySelector('.settings-search-field svg')?.getAttribute('aria-hidden')).toBe('true');
+ fireEvent.change(input,{target:{value:'theme'}});
+ expect(input.getAttribute('aria-label')).toBe('Search settings');
+ fireEvent.change(input,{target:{value:'no-match'}});
+ expect(screen.getByRole('status')).toBeTruthy();
+ expect(screen.queryByRole('button',{name:'Clear search'})).toBeNull();
+ input.focus();await act(()=>i18n.changeLanguage('ko'));
+ expect(input.getAttribute('placeholder')).toBe('설정 검색');
+ expect(input.getAttribute('aria-label')).toBe('설정 검색');
+ expect(document.activeElement).toBe(input);
+});
+
+it("keeps a pointer target still until click while keyboard and independent focus clear the pinned header",()=>{
+ const activate=vi.fn();const view=render(<div className="sidebar-list"><SettingsSearch categories={categories} select={vi.fn()}><button onClick={activate}><span>Original pointer row</span></button><button>Keyboard row</button></SettingsSearch></div>);
+ const scroller=view.container.querySelector<HTMLElement>('.sidebar-list')!,header=view.container.querySelector<HTMLElement>('.settings-search-header')!;
+ const pointer=screen.getByRole('button',{name:'Original pointer row'}),keyboard=screen.getByRole('button',{name:'Keyboard row'});
+ vi.spyOn(scroller,'getBoundingClientRect').mockReturnValue({top:0,bottom:300} as DOMRect);vi.spyOn(header,'getBoundingClientRect').mockReturnValue({top:0,bottom:100} as DOMRect);
+ vi.spyOn(pointer,'getBoundingClientRect').mockReturnValue({top:80,bottom:120} as DOMRect);vi.spyOn(keyboard,'getBoundingClientRect').mockReturnValue({top:80,bottom:120} as DOMRect);
+ scroller.scrollTop=200;fireEvent.pointerDown(pointer.querySelector('span')!);pointer.focus();expect(scroller.scrollTop).toBe(200);fireEvent.pointerUp(pointer);expect(scroller.scrollTop).toBe(200);fireEvent.click(pointer);expect(activate).toHaveBeenCalledTimes(1);
+ fireEvent.keyDown(pointer,{key:'Tab'});keyboard.focus();expect(scroller.scrollTop).toBe(174);
+ fireEvent.pointerDown(pointer);fireEvent.pointerCancel(pointer);pointer.focus();expect(scroller.scrollTop).toBe(148);
+});

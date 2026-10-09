@@ -16,11 +16,11 @@ export function SidebarOutletProvider({ target, closeDrawer, drawerOpen, openDra
   return <SidebarOutletContext.Provider value={{ target, closeDrawer, drawerOpen, openDrawer }}>{children}</SidebarOutletContext.Provider>;
 }
 
-export function SidebarSurface({ active, title, children, className = "" }: { active: boolean; title: string; children: ReactNode; className?: string }) {
+export function SidebarSurface({ active, title, children, className = "", showHeading = true }: { active: boolean; title: string; children: ReactNode; className?: string; showHeading?: boolean }) {
   useLocale();
   const { target } = useContext(SidebarOutletContext);
   const panel = <section className={`sidebar-surface-content${className ? ` ${className}` : ""}`} aria-label={copy("sidebar-context.navigationAndFilters_2aa4c3", { v0: title })} hidden={!active}>
-    <h2>{title}</h2>
+    {showHeading ? <h2>{title}</h2> : null}
     {children}
   </section>;
   return target ? createPortal(panel, target) : panel;

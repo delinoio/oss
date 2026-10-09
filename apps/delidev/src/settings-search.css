@@ -1,9 +1,26 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .settings-search { display: grid; gap: 8px; margin: 0 0 16px; min-width: 0; }
-.settings-search label { display: grid; gap: 8px; min-width: 0; }
-.settings-search input { width: 100%; min-width: 0; min-height: 40px; }
+.settings-search-header { position: sticky; top: 0; z-index: 2; display: grid; gap: 8px; padding-block: 8px; background: var(--surface-muted); }
+.settings-search-header h2 { margin: 3px 4px 4px; color: var(--text); font-size: 16px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
+.settings-search-field { position: relative; min-width: 0; }
+.settings-search-field svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; pointer-events: none; color: var(--muted); }
+.settings-navigation .settings-search input { width: 100%; min-width: 0; min-height: 40px; padding-inline-start: 36px; }
 .settings-search button { min-height: 40px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
+/* Keep row focus outlines inside the existing clipped sidebar scroll owner. */
+.settings-navigation .settings-search button:focus-visible { outline-offset: -3px; }
 .settings-search-results { display: grid; gap: 8px; min-width: 0; }
-.settings-search[data-searching] + nav[data-settings-groups] { display: none; }
+.settings-search[data-searching] > nav[data-settings-groups] { display: none; }
 [data-settings-search-target]:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 .settings-search-unavailable { margin: 8px 16px; }
+
+/* Reserve a complete focused row below the pinned controls in short drawers.
+ * Keep the existing DOM, 40px controls and both original scroll owners. */
+@media (max-width: 759px) and (max-height: 320px) {
+  .sidebar-pane:has(.settings-navigation:not([hidden])) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr) auto; gap: 4px; }
+  .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-header { grid-column: 1; grid-row: 1; }
+  .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-drawer-close { grid-column: 2; grid-row: 1; }
+  .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-list { grid-column: 1 / -1; grid-row: 2; }
+  .sidebar-pane:has(.settings-navigation:not([hidden])) > .sidebar-footer { grid-column: 1 / -1; grid-row: 3; max-height: 32px; }
+  .settings-navigation .settings-search-header { padding-block: 4px; gap: 4px; }
+  .settings-navigation .settings-search-header h2 { margin-block: 0; }
+}
