@@ -30,7 +30,8 @@ try {
   page.on("pageerror", error => console.error("fixture_page_error", error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const catalogs = Object.fromEntries(await Promise.all(["en","ko"].map(async language=>[language, Object.assign(...await Promise.all(["settings","remediation-policy","network-settings","ssh-setup","appearance","language","date-format","notification-settings"].map(async name=>JSON.parse(await readFile(join(app,`src/locales/${language}/${name}.json`),"utf8")))))])));
-  for (const language of ["en","ko"]) for(const theme of ["light","dark","system"]) for(const [width,height] of [[1440,900],[1280,820],[960,640],[640,480],[720,450],[480,320]]) {
+  for (const language of ["en","ko"]) for(const theme of ["light","dark","system"]) for(const [width,height] of [[1440,900],[1280,820],[960,640],[640,480],[720,450],[480,320],[320,240],[320,280],[480,321],[759,320],[760,320]]) {
+    console.log(JSON.stringify({operation:"settings-search-case",language,theme,width,height}));
     await page.setViewportSize({width,height}); await page.goto(`${origin}/?language=${language}&theme=${theme}`);
     const t=key=>catalogs[language][key];
     await page.getByRole("button",{name:t("settings.settings_74a883"),exact:true}).click();
@@ -59,6 +60,30 @@ try {
     await page.locator('.sidebar-list').evaluate(node=>{node.scrollTop=node.scrollHeight;});
     await assertPinned();await assertFocusedRow(page.locator('[data-settings-category]').last());
     await assertFocusedRow(page.locator('[data-settings-category]').first());await assertPinned();
+    if(width<760 && height<=320){
+      const retained=await input.elementHandle();
+      // Pointer scrolling and programmatic focus must both clear the header.
+      for(const category of ['projects','subscription-accounts','backups']){
+        await page.locator('.sidebar-list').evaluate(node=>{node.scrollTop=node.scrollHeight;});
+        const row=page.locator(`[data-settings-category="${category}"]`);
+        await row.click(); await open();
+        await assertFocusedRow(row);
+        assert(await row.evaluate(node=>{const box=node.getBoundingClientRect();return node.contains(document.elementFromPoint(box.left+box.width/2,box.top+box.height/2));}));
+        await row.click(); await open();assert(await input.evaluate((node,original)=>node===original,retained));
+      }
+      await input.focus();await input.press('Tab');await assertFocusedRow(page.locator('[data-settings-category]').first());
+      const footer=page.locator('.sidebar-footer'),original=await footer.textContent();
+      // Synthetic long status proves the same footer scroller retains all text.
+      await footer.locator('p').evaluate(node=>{node.textContent='Retained connection status '.repeat(80);});
+      assert(await footer.evaluate(node=>node.scrollHeight>node.clientHeight));
+      await footer.evaluate(node=>{node.scrollTop=node.scrollHeight;});
+      assert(await footer.evaluate(node=>node.scrollTop+node.clientHeight>=node.scrollHeight-1));
+      await assertFocusedRow(page.locator('[data-settings-category]').last());await assertPinned();
+      await footer.locator('p').evaluate((node,text)=>{node.textContent=text;},original);
+      assert(await page.locator('.sidebar-drawer-close').evaluate(node=>node.getBoundingClientRect().height>=40));
+      await retained.dispose();
+    }
+
     // Common letters in bundled metadata produce an overflowing result list.
     await input.fill(language==='en'?'a':'이');
     const results=page.locator('[data-settings-search-result]');
@@ -101,8 +126,9 @@ try {
     await input.fill('');
     await page.locator('[data-settings-category="appearance"]').click();
     await page.getByRole('button',{name:language==='ko'?'사용량':'Usage',exact:true}).click();
+    assert.equal(await page.locator('.sidebar-pane').evaluate(node=>getComputedStyle(node).display),'flex','Other sidebar surfaces retain flex geometry');
     await page.getByRole('button',{name:t('settings.settings_74a883'),exact:true}).click();await open();assert.equal(await page.getByRole('searchbox').inputValue(),'');
     checks++;
   }
-  console.log(JSON.stringify({operation:'settings_search_layout',result:'passed',checks,languages:2,themes:3,viewports:6,effectiveZoom:[1,2],nativeAcceptance:'not-performed'}));
+  console.log(JSON.stringify({operation:'settings_search_layout',result:'passed',checks,languages:2,themes:3,viewports:11,effectiveZoom:[1,2],nativeAcceptance:'not-performed'}));
 } finally { await browser?.close(); if (server?.listening) await new Promise(done => server.close(done)); await rm(directory, { recursive: true, force: true }); }
