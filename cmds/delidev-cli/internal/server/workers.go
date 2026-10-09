@@ -423,6 +423,13 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			if err != nil {
 				return rpc.Error(err, correlation)
 			}
+			// Automatic titles belong exclusively to the auxiliary admission lane,
+			// including already claimed jobs. Primary dispatch cannot acquire their
+			// authority or compete with the original auxiliary owner.
+			if job.Type == domain.GenerateSessionTitleJob {
+				after = record.ID
+				continue
+			}
 			if job.State == domain.JobQueued && job.Type == domain.WorkspaceStorageJob {
 				var storageInput workspace.StorageRequest
 				if workspace.DecodeStorageRequest(job.Input, &storageInput) != nil {
@@ -458,7 +465,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					if err != nil {
 						return nil, err
 					}
-					if j.State != domain.JobQueued {
+					if j.State != domain.JobQueued || j.Type == domain.GenerateSessionTitleJob {
 						return r, nil
 					}
 					if j.Type == domain.DiscoverRepositoryBranchesJob {
@@ -573,7 +580,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					continue
 				}
 			}
-			if job.State == domain.JobClaimed && job.InstanceID == instance {
+			if job.Type != domain.GenerateSessionTitleJob && job.State == domain.JobClaimed && job.InstanceID == instance {
 				var cancelRequested bool
 				if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 					var err error
