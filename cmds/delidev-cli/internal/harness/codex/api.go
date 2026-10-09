@@ -155,6 +155,8 @@ func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
 		SupportsWebSearch  *bool           `json:"supports_standalone_web_search"`
 		RequestRetries     *uint64         `json:"request_max_retries"`
 		StreamRetries      *uint64         `json:"stream_max_retries"`
+		ModelCatalogURL    json.RawMessage `json:"model_catalog_url"`
+		GatewayOAuth       json.RawMessage `json:"gateway_oauth"`
 		EnvKeyInstructions json.RawMessage `json:"env_key_instructions"`
 		BearerToken        json.RawMessage `json:"experimental_bearer_token"`
 		Auth               json.RawMessage `json:"auth"`
@@ -186,7 +188,7 @@ func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
 	// config/read serializes all optional native provider fields as null. Only
 	// those exact null observations are equivalent to absent configuration;
 	// populated extra authority cannot be silently discarded by decoding.
-	for _, optional := range []json.RawMessage{provider.EnvKeyInstructions, provider.BearerToken, provider.Auth, provider.AWS, provider.Query, provider.Headers, provider.EnvHeaders, provider.StreamIdleTimeout, provider.WebsocketTimeout} {
+	for _, optional := range []json.RawMessage{provider.ModelCatalogURL, provider.GatewayOAuth, provider.EnvKeyInstructions, provider.BearerToken, provider.Auth, provider.AWS, provider.Query, provider.Headers, provider.EnvHeaders, provider.StreamIdleTimeout, provider.WebsocketTimeout} {
 		if len(optional) != 0 && string(optional) != "null" {
 			return apiConfigMismatch("additional-provider-authority")
 		}
