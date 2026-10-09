@@ -617,8 +617,8 @@ version gate. This preference never creates/renames branches, changes detached
 Worktree or Local preparation, grants Git workspace authority, or guarantees
 model compliance. General Chat gains no repository authority.
 
-UI uses the existing explicit-save singleton editors: the Plan checkbox belongs
-to Project defaults; Branch prefix belongs to global Git settings. Project
+UI uses the existing explicit-save Project defaults singleton editor for both
+the Plan checkbox and the global Branch prefix. Project
 settings expose typed Plan inheritance and Use server default / Override project
 prefix choices with effective values and literal-input guidance. Preserve hidden
 fields, revision conflicts, exact uncertain requests, English/Korean text,
