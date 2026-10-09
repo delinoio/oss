@@ -29,3 +29,5 @@
 - Include the original private HTTP password in SSE and content-snapshot guards. Exact owned GET `/config` and `/provider` responses remain private credential-verification inputs; this exception grants no content publication or other route authority.
 
 - Foreground child success/error projections require the same closed native message/part predicate: completion time, ended text/reasoning and terminal tools. Unfinished histories retain running partial telemetry; only the independent original verified Stop/joined-scope cleanup source may interrupt an unfinished abort. Missing/busy status never supplies settlement.
+
+- Issue #2120 permits only transient nonblocking descriptive observations from the original interactive native process and validated initialization/settings boundaries. Preserve exact native/protocol/account/input/history/cleanup checks; observed stage success grants no input or recovery authority, and no helper/probe may stand in for agent launch. Follow the startup and harness contracts.

@@ -247,6 +247,7 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
+	StartupProgress       *SessionStartupProgress `json:"startup_progress,omitempty"`
 	SidechatRetries       []SidechatRetry         `json:"sidechat_retries,omitempty"`
 	SidechatCurrentAnswer ID                      `json:"sidechat_current_answer,omitempty"`
 	SidechatActiveRetry   ID                      `json:"sidechat_active_retry,omitempty"`
