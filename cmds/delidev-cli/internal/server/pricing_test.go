@@ -92,6 +92,18 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 	}
 	for _, action := range []func() error{
 		func() error {
+			r := connect.NewRequest(&pb.SetTokenPricingModeRequest{RequestId: string(domain.NewID()), Model: model, Mode: pb.TokenPricingMode_TOKEN_PRICING_MODE_AUTOMATIC})
+			r.Header().Set("Authorization", "Bearer "+f.workerToken)
+			_, e := c.SetTokenPricingMode(ctx, r)
+			return e
+		},
+		func() error {
+			r := connect.NewRequest(&pb.RefreshTokenPricesRequest{})
+			r.Header().Set("Authorization", "Bearer "+f.workerToken)
+			_, e := c.RefreshTokenPrices(ctx, r)
+			return e
+		},
+		func() error {
 			r := connect.NewRequest(&pb.GetTokenPricingRequest{Model: model})
 			r.Header().Set("Authorization", "Bearer "+f.workerToken)
 			_, e := c.GetTokenPricing(ctx, r)

@@ -77,11 +77,23 @@ func priceNamespace(tx *store.Tx, m domain.ModelIdentity) (string, uint64, error
 	for _, preset := range providers.Presets() {
 		if preset.ID == *p.PresetID && preset.Provider.LegacyAPIFormat() == p.LegacyAPIFormat() && reflect.DeepEqual(preset.Provider.APIFormats, p.APIFormats) {
 			namespace := string(preset.ID)
-			switch namespace {
-			case "gemini":
+			switch preset.ID {
+			case domain.PresetGemini:
 				namespace = "google"
-			case "vercel-ai-gateway":
+			case domain.PresetVercel:
 				namespace = "vercel"
+			case domain.PresetOpenRouter, domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetXAI, domain.PresetDeepSeek,
+				domain.PresetGroq, domain.PresetMistral, domain.PresetTogetherAI, domain.PresetFireworksAI, domain.PresetPerplexity,
+				domain.PresetCohere, domain.PresetCerebras, domain.PresetNebius, domain.PresetNovita, domain.PresetDeepInfra,
+				domain.PresetHuggingFace, domain.PresetVenice, domain.PresetScaleway, domain.PresetBaseten, domain.PresetMoonshot,
+				domain.PresetMoonshotCN, domain.PresetMiniMax, domain.PresetMiniMaxCN, domain.PresetSiliconFlow, domain.PresetSiliconFlowCN,
+				domain.PresetQianfan, domain.PresetTencentTokenHub, domain.PresetTencentTokenHubInternational,
+				domain.PresetAlibabaModelStudioInternational, domain.PresetAlibabaModelStudioHongKong:
+				// These reviewed remote presets use their exact upstream namespace.
+			default:
+				// Local and future presets remain unmapped even if a new upstream
+				// namespace happens to share the preset's spelling.
+				return "", row.Revision, nil
 			}
 			return namespace, row.Revision, nil
 		}
