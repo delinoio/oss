@@ -44,7 +44,7 @@ async function open() {
 }
 async function choose(row: Resource) {
   fireEvent.click(await screen.findByRole("button", { name: `${resourceName(row)}. Repository ID: ${row.id}` }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled") && !screen.queryByText(/Set a supported GitHub profile/)).toBe(false));
+  await waitFor(() => expect(screen.queryByText("Loading repository settings…")).toBeNull());
 }
 const submitted = (value: ReturnType<typeof fixture>, index: number) => JSON.parse(new TextDecoder().decode(value.query.mock.calls[index][0].queryJson));
 
@@ -54,7 +54,7 @@ it("shows the approved empty-page hierarchy and scopes styles only while PR is a
   const pane = await open();
   const empty = await pane.findByText("No repositories on this page.");
   expect(empty.closest(".sidebar-repository-empty")?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
-  expect(pane.getByText("Select a repository. No GitHub request is made until you load pull requests.")).toBeTruthy();
+  expect(pane.getByText("Select a repository to load pull requests automatically.")).toBeTruthy();
   expect(pane.queryByRole("button", { name: "First" })).toBeNull();
   expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
   expect(pane.queryByRole("heading", { name: "Query options" })).toBeNull();
@@ -66,7 +66,7 @@ it("shows the approved empty-page hierarchy and scopes styles only while PR is a
   expect(value.query).not.toHaveBeenCalled();
 });
 
-it("shows only the selected name and sends only the explicit default Load", async () => {
+it("shows only the selected name and loads the selected default query automatically", async () => {
   const value = fixture(); render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);
   expect(pane.getByRole("heading", { name: "Query options" })).toBeTruthy();
@@ -77,9 +77,9 @@ it("shows only the selected name and sends only the explicit default Load", asyn
   expect(pane.queryByRole("region", { name: /Details for/ })).toBeNull();
   expect(row.getAttribute("aria-pressed")).toBe("true");
   expect(row.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
-  expect(pane.getByText("No GitHub request is made until you load pull requests.")).toBeTruthy();
-  expect(value.query).not.toHaveBeenCalled();
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  expect(pane.getByText("Pull requests load automatically when you select a repository or change filters.")).toBeTruthy();
+  expect(pane.queryByRole("button", { name: "Load pull requests" })).toBeNull();
+
   await screen.findByText(/Original fixture title/);
   expect(value.query).toHaveBeenCalledTimes(1);
   expect(submitted(value, 0)).toEqual({ kind: "pull-request", operation: "list", state: "open", page: 1, page_size: 20 });
@@ -134,7 +134,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   expect(pane.getByRole("button", { name: `${resourceName(row).trim()} 상세. 저장소 ID: ${row.id}` }).getAttribute("aria-expanded")).toBe("true");
   expect((pane.getByRole("radio", { name: "닫힘" }) as HTMLInputElement).checked).toBe(true);
   expect((pane.getByLabelText("제목과 본문 검색") as HTMLInputElement).value).toBe("fix");
-  expect(value.query).not.toHaveBeenCalled();
+  expect(value.query).toHaveBeenCalled();
 });
 
 it("keeps missing repository mapping and original content inert in Details", async () => {
@@ -172,36 +172,27 @@ it("preserves selected identity and filter drafts through empty appended pages a
   expect(tokens.slice(0, 2)).toEqual(["", "repository-next"]);
   // Refresh reads only the accepted two-page range and does not discover a tail.
   expect(tokens.slice(2).every((token) => token === "" || token === "repository-next")).toBe(true);
-  expect(value.query).not.toHaveBeenCalled();
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
-  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
-  expect(submitted(value, 0)).toEqual({ kind: "pull-request", operation: "search", state: "closed", search: "fix", page: 1, page_size: 5 });
+  await waitFor(() => expect(submitted(value, value.query.mock.calls.length - 1).search).toBe("fix"));
+  expect(submitted(value, value.query.mock.calls.length - 1)).toEqual({ kind: "pull-request", operation: "search", state: "closed", search: "fix", page: 1, page_size: 5 });
 });
 
-it("keeps applied results during edits and drops them on navigation without losing controls", async () => {
+it("applies filters and reloads page one on return with retained controls", async () => {
   const second = repository("Other repository"); second.id = newRequestId();
   const value = fixture([repository(), second]);
-  const view = render(<App transport={value.transport} />);
+  render(<App transport={value.transport} />);
   let pane = await open(); await choose(value.rows[0]);
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
   await screen.findByText(/Original fixture title/);
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
+  await waitFor(() => expect(submitted(value, value.query.mock.calls.length - 1).state).toBe("closed"));
   fireEvent.change(pane.getByLabelText("Search title and body"), { target: { value: "fix" } });
+  expect(pane.getByText(/displayed results belong to the last applied/)).toBeTruthy();
   fireEvent.change(pane.getByLabelText("PR page size"), { target: { value: "5" } });
-  expect(pane.getByText(/displayed results belong to the last loaded/)).toBeTruthy();
-  expect(screen.getByText(/Original fixture title/)).toBeTruthy();
-  expect(value.query).toHaveBeenCalledTimes(1);
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
-  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2));
-  expect(submitted(value, 1)).toMatchObject({ state: "closed", search: "fix", page_size: 5 });
+  await waitFor(() => expect(submitted(value, value.query.mock.calls.length - 1)).toMatchObject({ state: "closed", search: "fix", page_size: 5 }));
+  const count = value.query.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   pane = await open();
-  expect(screen.queryByText(/Original fixture title/)).toBeNull();
-  expect((pane.getByRole("radio", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
-  view.rerender(<App transport={value.transport} connectionEpoch={1} />);
-  await waitFor(() => expect(value.list.mock.calls.length).toBeGreaterThan(2));
-  expect(value.query).toHaveBeenCalledTimes(2);
-  expect((pane.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("fix");
+  await waitFor(() => expect(value.query.mock.calls.length).toBe(count + 1));
+  expect(submitted(value, count)).toMatchObject({ state: "closed", search: "fix", page: 1, page_size: 5 });
   await choose(second);
   expect((pane.getByRole("radio", { name: "Open" }) as HTMLInputElement).checked).toBe(true);
   expect((pane.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("");
@@ -229,7 +220,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failur
   await pane.findByText("Refresh failed. Showing the previous repository page.");
   expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
   expect(pane.queryByText("No repositories on this page.")).toBeNull();
-  expect(value.query).not.toHaveBeenCalled();
+  expect(value.query).toHaveBeenCalledTimes(1);
 });
 
 it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unconfigured %s guidance and existing plain-search validation", async (missing) => {
@@ -239,7 +230,7 @@ it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unco
   const value = fixture([row]); render(<App transport={value.transport} />);
   const pane = await open(); await choose(row);
   expect(pane.getByText(/Set a supported GitHub profile/)).toBeTruthy();
-  expect((pane.getByRole("button", { name: "Load pull requests" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(pane.queryByRole("button", { name: "Load pull requests" })).toBeNull();
   const search = pane.getByLabelText("Search title and body") as HTMLInputElement;
   expect(search.maxLength).toBe(120);
   fireEvent.change(search, { target: { value: "is:pr" } });
@@ -269,7 +260,6 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
     return { ...reply, documentJson: encode(data) };
   });
   const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
-  expect(value.query).not.toHaveBeenCalled(); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
   const heading = await screen.findByRole("heading", { name: title.trim() });
   const card = heading.closest("article")!; expect(card.className).toBe("pr-list-card");
   expect(within(card).getByText("Open")).toBeTruthy(); expect(within(card).getByText("Draft")).toBeTruthy(); expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
@@ -282,7 +272,7 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
 });
 
 it.each([Code.PermissionDenied, Code.Unavailable])("keeps the card observation after failed explicit refresh %s and explicitly retries it", async code => {
-  const value = fixture(); render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  const value = fixture(); render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
   await screen.findByRole("heading", { name: "Original fixture title" }); value.query.mockRejectedValueOnce(new ConnectError("Synthetic read failed", code));
   fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub results" })); await screen.findByRole("alert");
   expect(screen.getByRole("heading", { name: "Original fixture title" })).toBeTruthy(); expect(screen.getByText(/Previous observation/)).toBeTruthy();
@@ -294,7 +284,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])("keeps the card observation a
 it("keeps successful empty query pages distinct from initial errors", async () => {
   const value = fixture(), original = value.query.getMockImplementation()!;
   value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.items = []; return { ...reply, documentJson: encode(data) }; });
-  render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
   await screen.findByText("No pull requests were returned on page 1."); expect(screen.queryByRole("alert")).toBeNull();
 });
 
@@ -302,20 +292,20 @@ it("keeps successful empty query pages distinct from initial errors", async () =
 it("does not label an unverified non-UTC timestamp as a UTC card observation", async () => {
   const value = fixture(), original = value.query.getMockImplementation()!;
   value.query.mockImplementation(async request => { const reply = await original(request), data = JSON.parse(new TextDecoder().decode(reply.documentJson)); data.observed_at = "2026-10-07T17:11:52+09:00"; return { ...reply, documentJson: encode(data) }; });
-  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]); fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
   await screen.findByRole("alert"); expect(view.container.querySelector(".pr-list-card")).toBeNull(); expect(screen.queryByText("No pull requests were returned on page 1.")).toBeNull();
 });
 
 
-it("announces standalone initial Load and refresh while preserving returned cards", async () => {
+it("announces standalone automatic loading and refresh while preserving returned cards", async () => {
   const value = fixture(), read = value.query.getMockImplementation()!;
   let finish!: () => void;
   const pending = new Promise<void>(resolve => { finish = resolve; });
   value.query.mockImplementationOnce(async request => { await pending; return read(request); });
   render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);
-  expect(value.query).not.toHaveBeenCalled();
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+  expect(value.query).toHaveBeenCalledTimes(1);
+
   const results = within(await screen.findByRole("region", { name: "GitHub query results" }));
   expect((await results.findByText("Reading GitHub…")).getAttribute("role")).toBe("status");
   await act(async () => { finish(); await pending; });
@@ -342,7 +332,7 @@ it("explains a continuation page containing only unchanged duplicate pull reques
   });
   render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+
   await screen.findByText("Original fixture title");
   fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
   const second = within(await screen.findByRole("region", { name: "Pull request results · Page 2" }));
@@ -362,7 +352,7 @@ it("reserves boundary-expiry recovery for explicit Reload list instead of header
   });
   render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);
-  fireEvent.click(pane.getByRole("button", { name: "Load pull requests" }));
+
   await screen.findByText("Original fixture title");
   fireEvent.click(screen.getByRole("button", { name: "Load more GitHub query results" }));
   const reload = await screen.findByRole("button", { name: "Reload list" });
@@ -391,4 +381,79 @@ it("keeps repository inventory visits free of GitHub content reads across langua
     expect(value.query).not.toHaveBeenCalled();
   }
   await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
+});
+
+it("debounces trimmed search, waits for IME and cancels invalid pending terms", async () => {
+  const value = fixture(); render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]); await screen.findByText("Original fixture title");
+  const search = pane.getByLabelText("Search title and body");
+  fireEvent.change(search, { target: { value: "fix" } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); });
+  expect(value.query).toHaveBeenCalledTimes(1);
+  fireEvent.change(search, { target: { value: "fixed" } });
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(2));
+  expect(submitted(value, 1).search).toBe("fixed");
+  fireEvent.change(search, { target: { value: " fixed " } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(value.query).toHaveBeenCalledTimes(2);
+  fireEvent.compositionStart(search);
+  fireEvent.change(search, { target: { value: "composed" } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(value.query).toHaveBeenCalledTimes(2);
+  fireEvent.compositionEnd(search);
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(3));
+  expect(submitted(value, 2).search).toBe("composed");
+  fireEvent.change(search, { target: { value: "pending" } });
+  fireEvent.change(search, { target: { value: "is:open" } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(value.query).toHaveBeenCalledTimes(3);
+  fireEvent.change(search, { target: { value: "" } });
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(4));
+  expect(submitted(value, 3).operation).toBe("list");
+});
+
+it("waits for validated selected metadata before automatic GitHub reads", async () => {
+  const value = fixture(), read = value.get.getMockImplementation()!;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  value.get.mockImplementation(async request => { await pending; return read(request); });
+  render(<App transport={value.transport} />); await open();
+  fireEvent.click(await screen.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` }));
+  await screen.findByText("Loading repository settings…");
+  expect(value.query).not.toHaveBeenCalled();
+  await act(async () => { release(); await pending; });
+  await screen.findByText("Original fixture title");
+  expect(value.query).toHaveBeenCalledTimes(1);
+});
+
+it("rejects late repository results even when the transport ignores cancellation", async () => {
+  const other = repository("Other repository"); other.id = newRequestId();
+  const value = fixture([repository(), other]), read = value.query.getMockImplementation()!;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  value.query.mockImplementation(async request => {
+    if (request.repositoryId === repositoryId) await pending;
+    const result = await read(request);
+    const data = JSON.parse(new TextDecoder().decode(result.documentJson));
+    data.items[0].title = request.repositoryId === repositoryId ? "Late A title" : "Current B title";
+    return { ...result, documentJson: encode(data) };
+  });
+  render(<App transport={value.transport} />); await open(); await choose(value.rows[0]);
+  await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1));
+  await choose(other); await screen.findByText("Current B title");
+  await act(async () => { release(); await pending; });
+  expect(screen.queryByText("Late A title")).toBeNull();
+  expect(screen.getByText("Current B title")).toBeTruthy();
+});
+
+it("disposes pending search timers while inactive and resumes retained filters", async () => {
+  const value = fixture(); render(<App transport={value.transport} />);
+  const pane = await open(); await choose(value.rows[0]); await screen.findByText("Original fixture title");
+  fireEvent.change(pane.getByLabelText("Search title and body"), { target: { value: "retained" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(value.query).toHaveBeenCalledTimes(1);
+  await open();
+  await waitFor(() => expect(submitted(value, value.query.mock.calls.length - 1).search).toBe("retained"));
+  expect(submitted(value, value.query.mock.calls.length - 1).page).toBe(1);
 });
