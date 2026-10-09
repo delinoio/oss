@@ -28,6 +28,15 @@ func publishClaudeMessage(tx *store.Tx, input domain.ExecutionJobInput, session 
 		}
 		revision = r.Revision
 	}
+	if u.Mutation == domain.ClaudeBlockStart && u.Block.Web != nil && u.Block.Kind == domain.ClaudeWebCall {
+		available, err := tx.ClaudeWebIdentityAvailable(session.ID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, u.Block.Web.NativeID)
+		if err != nil {
+			return err
+		}
+		if !available {
+			return executionEventConflict()
+		}
+	}
 	content, state, err := domain.ApplyClaudeContent(value.Claude, value.State, *u)
 	if err != nil {
 		return err

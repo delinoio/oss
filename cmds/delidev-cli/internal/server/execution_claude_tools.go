@@ -11,6 +11,15 @@ func publishClaudeTool(tx *store.Tx, input domain.ExecutionJobInput, session sto
 	if u == nil || input.Configuration.Harness != domain.ClaudeCode || u.Validate() != nil {
 		return executionEventConflict()
 	}
+	if u.Mutation == domain.ClaudeToolStart {
+		available, err := tx.ClaudeWebIdentityAvailable(session.ID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, u.Reference.NativeID)
+		if err != nil {
+			return err
+		}
+		if !available {
+			return executionEventConflict()
+		}
+	}
 	provider, err := tx.Get(domain.MessageKind, u.MessageID)
 	if err != nil {
 		return err
