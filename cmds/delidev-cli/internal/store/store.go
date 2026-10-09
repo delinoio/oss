@@ -731,6 +731,9 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	if expected != r.Revision {
 		return domain.Fail(domain.Conflict, "The entity revision changed.", "Reload its current revision before deletion.")
 	}
+	if err := t.deleteOperationalSourceInbox(kind, id); err != nil {
+		return err
+	}
 	if kind == domain.ProjectPromptHistoryKind {
 		// Live history removal is independent of receipt/native retirement. Older
 		// managed backups may restore captured text; project tombstones still fence

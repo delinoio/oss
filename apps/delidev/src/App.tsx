@@ -14,7 +14,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { type Transport } from "@connectrpc/connect";
 import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { SessionQuery, SystemQuery, newRequestId } from "@delinoio/delidev-api-client";
+import { SessionQuery, SystemQuery, newRequestId, EntityKind, type Resource } from "@delinoio/delidev-api-client";
+import { document, text } from "./documents";
+import { SettingsCategory } from "./settings-category";
 import { SessionView } from "./session";
 import { Activity, Search, Settings, Surface } from "./views";
 import { NewSession, NewSessionKind } from "./new-session";
@@ -68,6 +70,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [newSessionEntry, setNewSessionEntry] = useState<{ activation: number; projectId?: string }>({ activation: 0 });
   const [newSessionProjectBlocked, setNewSessionProjectBlocked] = useState(false);
   const [newGeneralChatActivation, setNewGeneralChatActivation] = useState(0);
+  const [notificationOccurrence,setNotificationOccurrence]=useState<{scheduleId:string;id:string;generation:string}>();
   const [usageEntry, setUsageEntry] = useState<UsageEntry>();
   const [settingsEntry, setSettingsEntry] = useState<SettingsNavigationEntry>();
   const [projectCreation, setProjectCreation] = useState<{ id: string; activation: number }>();
@@ -102,6 +105,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     setVisited(previous => previous.includes(id) ? previous : [...previous, id]); leaveSurface(Surface.Sessions); if (id !== selected) setProjectCreation(undefined); setSelected(id); setSurface(Surface.Sessions); setDrawerOpen(false); };
   const navigateTray = (destination: TrayDestination, inboxId?: string) => {
     if (destination === TrayDestination.Settings) { openSettings(); return; }
+    if(destination===TrayDestination.ConnectionDiagnostics){openSettings(SettingsEntryDestination.ConnectionDiagnostics);return;}
     const next = destination === TrayDestination.Inbox ? Surface.Inbox : destination === TrayDestination.Usage ? Surface.Usage : Surface.Sessions;
     leaveSurface(next);
     if (destination === TrayDestination.Inbox) { setSelectedInbox(inboxId ?? ""); setInboxActivation((value) => value + 1); }
@@ -125,6 +129,10 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   };
   const closeProjectCreation = useCallback(() => setProjectCreation(undefined), []);
   const projectFallbackFocus = useCallback(() => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches ? contextOpener.current : main.current, []);
+  const openOperationalNotification=(resource:Resource)=>{
+    if(resource.kind===EntityKind.MACHINE||resource.kind===EntityKind.ACCOUNT){openSettings({category:resource.kind===EntityKind.MACHINE?SettingsCategory.ExecutionWorkers:SettingsCategory.SubscriptionAccounts,generation:newRequestId(),resourceId:resource.id,resourceKind:resource.kind});return;}
+    if(resource.kind===EntityKind.OCCURRENCE){setNotificationOccurrence({id:resource.id,scheduleId:text(document(resource).schedule_id),generation:newRequestId()});leaveSurface(Surface.Schedules);setSurface(Surface.Schedules);setDrawerOpen(false);}
+  };
   const surfaceName = surface === Surface.Sessions || surface === Surface.NewSession || surface === Surface.NewGeneralChat ? copy("App.extra.2998edd080d1") : surface === Surface.Settings ? copy("App.extra.a1de4eceaa3b") : surface === Surface.PullRequests ? copy("App.extra.23533b15bc29") : surface === Surface.Usage ? copy("App.extra.34d76f3f7da4") : surface === Surface.Schedules ? copy("App.extra.a6a986427e87") : surface === Surface.Activity ? copy("App.extra.3fa855f8f6de") : surface === Surface.Inbox ? copy("App.extra.a1de2be5c09b") : copy("App.extra.1f73d5f3eac5");
   const startNewSession = (projectId?: string) => {
     if (projectId && newSessionProjectBlocked) return;
@@ -168,9 +176,9 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     {newGeneralChatActivation > 0 ? <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
     <Search active={surface === Surface.Search} open={open} />
     <Activity active={surface === Surface.Activity} open={open} />
-    <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} /></div>
+    <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} openOperational={openOperationalNotification} /></div>
     <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />
-    <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} />
+    <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} notificationOccurrence={notificationOccurrence} clearNotificationOccurrence={()=>setNotificationOccurrence(undefined)} />
     <PullRequests active={surface === Surface.PullRequests} openSettings={openSettings} />
     <Settings openUsage={openAccountUsage} readLocalWorker={readLocalWorker} connectionSettings={connectionSettings} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} visible={surface === Surface.Settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} />
     {localServer}

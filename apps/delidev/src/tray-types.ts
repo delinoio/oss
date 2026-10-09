@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Closed presentation types, independent of product clients and observations.
-export enum TrayDestination { Sessions = "sessions", Inbox = "inbox", Usage = "usage", Settings = "settings" }
+export enum TrayDestination { Sessions = "sessions", Inbox = "inbox", Usage = "usage", Settings = "settings", ConnectionDiagnostics = "connection-diagnostics" }
 export enum TrayQuotaState { Observed = "observed", Unknown = "unknown", Stale = "stale", Failed = "failed", Unsupported = "unsupported" }
 export enum TraySubscriptionService { ChatGPT = "chatgpt", Claude = "claude", Grok = "grok" }
 export interface TrayQuota { id?: string; state: TrayQuotaState; remaining_basis_points: number | null; observed_at: string | null; reset_at: string | null }

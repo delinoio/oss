@@ -107,5 +107,15 @@
   "resetMinute": "Resets in {{minutes}} minute",
   "resetMinutes": "Resets in {{minutes}} minutes",
   "resetSoon": "Resets soon",
-  "openStatus": "Open status"
+  "openStatus": "Open status",
+  "questionNotice": "Question needs your answer",
+  "approvalNotice": "Approval requested",
+  "workerUnavailableNotice": "Worker unavailable",
+  "workerAvailableNotice": "Worker available again",
+  "quotaExhaustedNotice": "Account quota exhausted",
+  "scheduleStartFailedNotice": "Schedule start failed",
+  "scheduleServerOfflineNotice": "Schedule skipped: server offline",
+  "scheduleWorkerOfflineNotice": "Schedule skipped: Worker offline",
+  "serverLostNotice": "Server connection lost",
+  "serverRestoredNotice": "Server connection restored"
 }

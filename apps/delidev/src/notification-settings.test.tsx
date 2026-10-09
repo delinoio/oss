@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { InboxService, NotificationPreferencesSchema } from "@delinoio/delidev-api-client";
+import { InboxService, NotificationPreferencesSchema, SituationNotificationPreferencesSchema } from "@delinoio/delidev-api-client";
 import { NotificationSettings } from "./notification-settings";
 import { MutationIntents } from "./mutation";
 import { StrictMode } from "react";
@@ -13,16 +13,16 @@ import { SidebarOutletProvider } from "./sidebar-context";
 import { NotificationProvider } from "./toast-notifications";
 import { SettingsTasks, SettingsTaskBackground } from "./settings-task";
 
-function fixture() {
-  let preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false });
+function fixture(granular = false, openSubscriptions?:()=>void) {
+  let preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false, situations: granular ? create(SituationNotificationPreferencesSchema, { questions:true,approvals:true,serverLost:true,workerUnavailable:true,quotaExhausted:true,scheduleStartFailed:true,scheduleOffline:true }) : undefined });
   const save = vi.fn(async (request: { preferences?: typeof preferences }) => {
-    preferences = create(NotificationPreferencesSchema, { interactions: request.preferences?.interactions, terminals: request.preferences?.terminals, revision: preferences.revision + 1n });
+    preferences = create(NotificationPreferencesSchema, { ...request.preferences!, revision: preferences.revision + 1n });
     return { preferences };
   });
   const read = vi.fn(async () => ({ preferences }));
   const transport = createRouterTransport((router) => router.service(InboxService, { getNotificationPreferences: read, setNotificationPreferences: save }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} openSubscriptions={openSubscriptions} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { view, save, read, transport, client, change: async () => { preferences = create(NotificationPreferencesSchema, { revision: 9n, interactions: false, terminals: false }); await client.invalidateQueries(); } };
 }
 
@@ -253,3 +253,24 @@ it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s in
   expect(returned).not.toHaveBeenCalled();
   if (interaction === "focus") expect(document.activeElement).toBe(disclosure);
 });
+
+ it("edits a complete twelve-choice generation with separate account recovery consent", async () => {
+  const openSubscriptions=vi.fn();const value=fixture(true,openSubscriptions);render(value.view());
+  await screen.findByText("Managed per account");
+  fireEvent.click(screen.getByRole("button",{name:"AI Subscription settings"}));expect(openSubscriptions).toHaveBeenCalledTimes(1);
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  expect(screen.getByRole("heading",{name:"Connections"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Edit notification preferences"}));
+  const dialog=screen.getByRole("dialog");
+  expect(screen.getAllByRole("checkbox")).toHaveLength(12);
+  const questions=dialog.querySelector('input[data-settings-search-target="notification-questions"]') ?? screen.getAllByRole("checkbox",{name:"Questions"}).find(v=>!(v as HTMLInputElement).disabled)!;
+  fireEvent.click(questions);
+  expect(value.save).not.toHaveBeenCalled();
+  await waitFor(()=>expect((screen.getByRole("button",{name:"Save notification preferences"}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button",{name:"Save notification preferences"}));
+  await waitFor(()=>expect(value.save).toHaveBeenCalledTimes(1));
+  const sent=value.save.mock.calls[0][0].preferences!;
+  expect(sent.revision).toBe(1n);expect(sent.situations?.questions).toBe(false);
+  expect(sent.situations?.approvals).toBe(true);expect(sent.situations?.serverRestored).toBe(false);
+  expect(sent.interactions).toBe(true);expect(sent.terminals).toBe(false);
+ });

@@ -111,6 +111,16 @@ pub enum Message {
     ResetMinutes,
     ResetSoon,
     OpenStatus,
+    QuestionNotice,
+    ApprovalNotice,
+    WorkerUnavailableNotice,
+    WorkerAvailableNotice,
+    QuotaExhaustedNotice,
+    ScheduleStartFailedNotice,
+    ScheduleServerOfflineNotice,
+    ScheduleWorkerOfflineNotice,
+    ServerLostNotice,
+    ServerRestoredNotice,
 }
 impl Message {
     pub fn key(self) -> &'static str {
@@ -224,6 +234,16 @@ impl Message {
             Self::ResetMinutes => "resetMinutes",
             Self::ResetSoon => "resetSoon",
             Self::OpenStatus => "openStatus",
+            Self::QuestionNotice => "questionNotice",
+            Self::ApprovalNotice => "approvalNotice",
+            Self::WorkerUnavailableNotice => "workerUnavailableNotice",
+            Self::WorkerAvailableNotice => "workerAvailableNotice",
+            Self::QuotaExhaustedNotice => "quotaExhaustedNotice",
+            Self::ScheduleStartFailedNotice => "scheduleStartFailedNotice",
+            Self::ScheduleServerOfflineNotice => "scheduleServerOfflineNotice",
+            Self::ScheduleWorkerOfflineNotice => "scheduleWorkerOfflineNotice",
+            Self::ServerLostNotice => "serverLostNotice",
+            Self::ServerRestoredNotice => "serverRestoredNotice",
         }
     }
 }

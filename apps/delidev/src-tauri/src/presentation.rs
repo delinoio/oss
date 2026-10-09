@@ -11,6 +11,7 @@ pub enum TrayDestination {
     Inbox,
     Usage,
     Settings,
+    ConnectionDiagnostics,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

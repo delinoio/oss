@@ -271,6 +271,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		service.runAutomaticPRRemediation(remediationCtx)
 	}()
 	defer func() { stopRemediation(); <-remediationDone }()
+	notificationCtx, stopNotifications := context.WithCancel(child)
+	notificationDone := make(chan struct{})
+	go func() { defer close(notificationDone); service.runWorkerNotificationObservation(notificationCtx) }()
+	defer func() { stopNotifications(); <-notificationDone }()
 	scheduleCtx, stopSchedules := context.WithCancel(child)
 	schedulesDone := make(chan struct{})
 	go func() {

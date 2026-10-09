@@ -119,8 +119,13 @@ func TestNotificationCLIRealServerClaimReportAndReplay(t *testing.T) {
 	if values := run("list")["candidates"].([]any); len(values) != 0 {
 		t.Fatal("reconnect queued duplicate")
 	}
-	configured := run("configure", "--revision", "1", "--interactions", "off", "--terminals", "on")["preferences"].(map[string]any)
-	if configured["revision"] != "2" || configured["interactions"] != false || configured["terminals"] != true {
+	configureArgs := []string{"configure", "--request-id", string(domain.NewID()), "--revision", "1", "--questions", "off", "--approvals", "off", "--succeeded", "on", "--failed", "on", "--stopped", "on"}
+	configured := run(configureArgs...)["preferences"].(map[string]any)
+	replayed := run(configureArgs...)
+	if replayed["replayed"] != true {
+		t.Fatal("exact preference retry lost receipt", replayed)
+	}
+	if configured["revision"] != "2" || configured["situations"].(map[string]any)["questions"] != false || configured["situations"].(map[string]any)["succeeded"] != true {
 		t.Fatal("preferences not persisted", configured)
 	}
 }

@@ -384,3 +384,6 @@ Independent managed ChatGPT Fork is owned by the [Fork contract](cmds-delidev-fo
 ## Same-question Sidechat retry
 
 Issue #2061 adds authenticated same-question Sidechat retry with System 57 / Worker 31. Preserve original public child/snapshots/reference ownership, freeze the latest accepted completed parent turn, retain all native generations and prior answer/usage history, and select a replacement answer only after verified completion. Complete dependent cleanup covers every retry runtime. See [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061); no migration or broader native/account support is implied.
+
+### Situation-specific notifications (#2055)
+The Inbox, storage, subscription, Schedule and desktop contracts jointly own granular client choices, durable future-only operational claims and the trusted native original-connection observer under System 58. Preserve legacy preferences/receipts, real migration 32 ownership, original-source eligibility, separate quota recovery consent and explicit OS permission. EN/KO Settings/search and fresh original-target navigation are part of this boundary. Automated checks do not establish installed native/account/platform acceptance.

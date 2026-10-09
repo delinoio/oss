@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"google.golang.org/protobuf/encoding/protojson"
 	"time"
 
 	"connectrpc.com/connect"
@@ -12,11 +13,24 @@ import (
 )
 
 func notificationPreferencesWire(v domain.NotificationPreferences) *pb.NotificationPreferences {
-	return &pb.NotificationPreferences{Revision: v.Revision, Interactions: v.Interactions, Terminals: v.Terminals}
+	value := &pb.NotificationPreferences{Revision: v.Revision, Interactions: v.Interactions, Terminals: v.Terminals}
+	if v.Situations != nil {
+		p := v.Situations
+		value.Situations = &pb.SituationNotificationPreferences{Questions: p.Questions, Approvals: p.Approvals, Succeeded: p.Succeeded, Failed: p.Failed, Stopped: p.Stopped, ServerLost: p.ServerLost, ServerRestored: p.ServerRestored, WorkerUnavailable: p.WorkerUnavailable, WorkerAvailable: p.WorkerAvailable, QuotaExhausted: p.QuotaExhausted, ScheduleStartFailed: p.ScheduleStartFailed, ScheduleOffline: p.ScheduleOffline}
+	}
+	return value
+}
+func notificationPreferencesDomain(v *pb.NotificationPreferences) domain.NotificationPreferences {
+	value := domain.NotificationPreferences{Revision: v.Revision, Interactions: v.Interactions, Terminals: v.Terminals}
+	if v.Situations != nil {
+		p := v.Situations
+		value.Situations = &domain.SituationNotificationPreferences{Questions: p.Questions, Approvals: p.Approvals, Succeeded: p.Succeeded, Failed: p.Failed, Stopped: p.Stopped, ServerLost: p.ServerLost, ServerRestored: p.ServerRestored, WorkerUnavailable: p.WorkerUnavailable, WorkerAvailable: p.WorkerAvailable, QuotaExhausted: p.QuotaExhausted, ScheduleStartFailed: p.ScheduleStartFailed, ScheduleOffline: p.ScheduleOffline}
+	}
+	return value
 }
 func notificationCandidateWire(v domain.NotificationCandidate) *pb.NotificationCandidate {
-	kind := map[domain.NotificationKind]pb.NotificationKind{domain.SubscriptionRecoveryNotification: pb.NotificationKind_NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY, domain.RequestNotification: pb.NotificationKind_NOTIFICATION_KIND_REQUEST, domain.SucceededNotification: pb.NotificationKind_NOTIFICATION_KIND_SUCCEEDED, domain.FailedNotification: pb.NotificationKind_NOTIFICATION_KIND_FAILED, domain.StoppedNotification: pb.NotificationKind_NOTIFICATION_KIND_STOPPED}[v.Kind]
-	return &pb.NotificationCandidate{InboxId: string(v.InboxID), SessionId: string(v.SessionID), Kind: kind, AccountId: string(v.AccountID)}
+	kind := map[domain.NotificationKind]pb.NotificationKind{domain.SubscriptionRecoveryNotification: pb.NotificationKind_NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY, domain.RequestNotification: pb.NotificationKind_NOTIFICATION_KIND_REQUEST, domain.SucceededNotification: pb.NotificationKind_NOTIFICATION_KIND_SUCCEEDED, domain.FailedNotification: pb.NotificationKind_NOTIFICATION_KIND_FAILED, domain.StoppedNotification: pb.NotificationKind_NOTIFICATION_KIND_STOPPED, domain.QuestionNotification: pb.NotificationKind_NOTIFICATION_KIND_QUESTION, domain.ApprovalNotification: pb.NotificationKind_NOTIFICATION_KIND_APPROVAL, domain.WorkerUnavailableNotification: pb.NotificationKind_NOTIFICATION_KIND_WORKER_UNAVAILABLE, domain.WorkerAvailableNotification: pb.NotificationKind_NOTIFICATION_KIND_WORKER_AVAILABLE, domain.QuotaExhaustedNotification: pb.NotificationKind_NOTIFICATION_KIND_QUOTA_EXHAUSTED, domain.ScheduleStartFailedNotification: pb.NotificationKind_NOTIFICATION_KIND_SCHEDULE_START_FAILED, domain.ScheduleServerOfflineNotification: pb.NotificationKind_NOTIFICATION_KIND_SCHEDULE_SERVER_OFFLINE, domain.ScheduleWorkerOfflineNotification: pb.NotificationKind_NOTIFICATION_KIND_SCHEDULE_WORKER_OFFLINE}[v.Kind]
+	return &pb.NotificationCandidate{InboxId: string(v.InboxID), SessionId: string(v.SessionID), Kind: kind, AccountId: string(v.AccountID), MachineId: string(v.MachineID), OccurrenceId: string(v.OccurrenceID)}
 }
 func notificationDeliveryWire(v domain.NotificationDelivery) *pb.NotificationDelivery {
 	state := map[domain.NotificationState]pb.NotificationState{domain.NotificationClaimed: pb.NotificationState_NOTIFICATION_STATE_CLAIMED, domain.NotificationSubmitted: pb.NotificationState_NOTIFICATION_STATE_SUBMITTED, domain.NotificationDenied: pb.NotificationState_NOTIFICATION_STATE_DENIED, domain.NotificationFailed: pb.NotificationState_NOTIFICATION_STATE_FAILED, domain.NotificationUncertain: pb.NotificationState_NOTIFICATION_STATE_UNCERTAIN}[v.State]
@@ -35,6 +49,11 @@ func (s *Service) readNotificationPreferences(ctx context.Context) (domain.Notif
 	return value, err
 }
 func (s *Service) GetNotificationPreferences(ctx context.Context, req *connect.Request[pb.GetNotificationPreferencesRequest]) (*connect.Response[pb.GetNotificationPreferencesResponse], error) {
+	if req.Msg.Situations {
+		if err := s.Store.EnsureSituationNotificationPreferences(ctx); err != nil {
+			return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
+		}
+	}
 	value, err := s.readNotificationPreferences(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -49,18 +68,86 @@ func (s *Service) SetNotificationPreferences(ctx context.Context, req *connect.R
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if req.Msg.Preferences == nil {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Notification preferences are required.", "Read this client's current preferences and retain their revision."), correlation)
+	var result store.Result
+	if req.Msg.Changes != nil {
+		if req.Msg.Preferences != nil || req.Msg.ExpectedRevision == 0 {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Use one revision-bound notification changes shape.", "Do not mix complete preferences and changes."), correlation)
+		}
+		raw, marshalErr := protojson.Marshal(req.Msg.Changes)
+		if marshalErr != nil {
+			return nil, rpc.Error(domain.SafeError(marshalErr), correlation)
+		}
+		identity := struct {
+			Actor    domain.Principal
+			Revision uint64
+			Changes  string
+		}{actor, req.Msg.ExpectedRevision, string(raw)}
+		result, err = s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "notification.preferences.changes", identity, func(tx *store.Tx) (any, error) {
+			v, err := tx.InitializeSituationNotificationPreferences()
+			if err != nil {
+				return nil, err
+			}
+			if v.Revision != identity.Revision || v.Situations == nil {
+				return nil, domain.Fail(domain.Conflict, "Notification preferences changed or are unavailable.", "Read current individual choices and their revision before a new change.")
+			}
+			changes := req.Msg.Changes
+			if changes.Questions != nil {
+				v.Situations.Questions = *changes.Questions
+			}
+			if changes.Approvals != nil {
+				v.Situations.Approvals = *changes.Approvals
+			}
+			if changes.Succeeded != nil {
+				v.Situations.Succeeded = *changes.Succeeded
+			}
+			if changes.Failed != nil {
+				v.Situations.Failed = *changes.Failed
+			}
+			if changes.Stopped != nil {
+				v.Situations.Stopped = *changes.Stopped
+			}
+			if changes.ServerLost != nil {
+				v.Situations.ServerLost = *changes.ServerLost
+			}
+			if changes.ServerRestored != nil {
+				v.Situations.ServerRestored = *changes.ServerRestored
+			}
+			if changes.WorkerUnavailable != nil {
+				v.Situations.WorkerUnavailable = *changes.WorkerUnavailable
+			}
+			if changes.WorkerAvailable != nil {
+				v.Situations.WorkerAvailable = *changes.WorkerAvailable
+			}
+			if changes.QuotaExhausted != nil {
+				v.Situations.QuotaExhausted = *changes.QuotaExhausted
+			}
+			if changes.ScheduleStartFailed != nil {
+				v.Situations.ScheduleStartFailed = *changes.ScheduleStartFailed
+			}
+			if changes.ScheduleOffline != nil {
+				v.Situations.ScheduleOffline = *changes.ScheduleOffline
+			}
+			_, err = tx.SetNotificationPreferences(v)
+			return struct{}{}, err
+		})
+	} else {
+		if req.Msg.ExpectedRevision != 0 {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "An expected revision requires typed notification changes.", "Use the complete preferences revision otherwise."), correlation)
+		}
+		if req.Msg.Preferences == nil {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Notification preferences are required.", "Read this client's current preferences and retain their revision."), correlation)
+		}
+		v := req.Msg.Preferences
+		identity := struct {
+			Actor       domain.Principal
+			Preferences domain.NotificationPreferences
+		}{actor, notificationPreferencesDomain(v)}
+		result, err = s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "notification.preferences", identity, func(tx *store.Tx) (any, error) {
+			_, err := tx.SetNotificationPreferences(identity.Preferences)
+			return struct{}{}, err
+		})
 	}
-	v := req.Msg.Preferences
-	identity := struct {
-		Actor       domain.Principal
-		Preferences domain.NotificationPreferences
-	}{actor, domain.NotificationPreferences{Revision: v.Revision, Interactions: v.Interactions, Terminals: v.Terminals}}
-	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "notification.preferences", identity, func(tx *store.Tx) (any, error) {
-		_, err := tx.SetNotificationPreferences(identity.Preferences)
-		return struct{}{}, err
-	})
+
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}

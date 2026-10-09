@@ -75,5 +75,11 @@
   "inbox.extra.9b9a8d05a7ec": "Read",
   "inbox.filters": "Filters",
   "inbox.executionMetadata": "Execution metadata",
-  "inbox.originalIdentifiersAndOutcome": "Original identifiers and outcome"
+  "inbox.originalIdentifiersAndOutcome": "Original identifiers and outcome",
+  "inbox.operational.serverOffline": "Schedule skipped: server offline",
+  "inbox.operational.workerOffline": "Schedule skipped: Worker offline",
+  "inbox.operational.metadataOnly": "This records an observed operational change. It does not start or recover execution.",
+  "inbox.operational.openTarget": "Open original target",
+  "inbox.operational.unavailable": "The original target is unavailable.",
+  "inbox.operational.originalOccurrence": "Original schedule occurrence"
 }

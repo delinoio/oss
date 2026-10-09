@@ -126,7 +126,17 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"DELETE FROM receipt_entities",
 		"UPDATE receipts SET result='" + quarantinedReceipt + "'",
 		"UPDATE receipts SET result=(SELECT r.result FROM current_state.receipts r WHERE r.id=receipts.id) WHERE id IN (SELECT request_id FROM current_state.backup_deletions)",
+		// Granular preference generations are current client authority and their
+		// public revision is coupled to the original preference row.
+		"DELETE FROM notification_preferences WHERE client_id IN (SELECT substr(key,length('notification-situations-v1:')+1) FROM current_state.metadata WHERE key LIKE 'notification-situations-v1:%')",
+		"INSERT INTO notification_preferences SELECT p.* FROM current_state.notification_preferences p JOIN current_state.metadata m ON m.key='notification-situations-v1:'||p.client_id",
+		// Retain immutable operational observations/independent reads with their
+		// retained source rather than restoring an old presentation backlog.
+		"INSERT OR REPLACE INTO entities SELECT * FROM current_state.entities WHERE kind='inbox' AND json_extract(body,'$.source')='operational'",
 		"INSERT OR REPLACE INTO metadata SELECT * FROM current_state.metadata WHERE key<>'event_floor'",
+		"DELETE FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')='operational' AND (id IN (SELECT id FROM tombstones) OR (json_extract(body,'$.operational.machine_id') IS NOT NULL AND json_extract(body,'$.operational.machine_id') NOT IN (SELECT id FROM entities WHERE kind='machine')) OR (json_extract(body,'$.operational.account_id') IS NOT NULL AND json_extract(body,'$.operational.account_id') NOT IN (SELECT id FROM entities WHERE kind='account')) OR (json_extract(body,'$.operational.occurrence_id') IS NOT NULL AND json_extract(body,'$.operational.occurrence_id') NOT IN (SELECT id FROM entities WHERE kind='occurrence')))",
+		"DELETE FROM metadata WHERE key LIKE 'notification-delivery-v1:%' AND substr(key,length('notification-delivery-v1:')+1,36) NOT IN (SELECT id FROM entities WHERE kind='inbox')",
+		"DELETE FROM metadata WHERE key LIKE 'notification-worker-baseline-v1:%'",
 	}
 	for _, query := range queries {
 		if query == "DELETE FROM entities WHERE id IN (SELECT id FROM tombstones) OR session_id IN (SELECT id FROM tombstones WHERE kind='session')" {
@@ -317,7 +327,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		return storageError(err)
 	}
 	var highwater uint64
-	if err := tx.QueryRowContext(ctx, "SELECT MAX(COALESCE((SELECT MAX(sequence) FROM events),0),COALESCE((SELECT MAX(sequence) FROM current_state.events),0))+1").Scan(&highwater); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT MAX(COALESCE((SELECT seq FROM sqlite_sequence WHERE name='events'),0),COALESCE((SELECT seq FROM current_state.sqlite_sequence WHERE name='events'),0),COALESCE((SELECT MAX(sequence) FROM events),0),COALESCE((SELECT MAX(sequence) FROM current_state.events),0))+1").Scan(&highwater); err != nil {
 		return storageError(err)
 	}
 	if highwater >= 1<<63-1 {
@@ -327,6 +337,19 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		return storageError(err)
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO events(sequence,id,entity_id,kind,session_id,revision,action,created_at) VALUES(?,?,?,'snapshot','',1,'updated',?)", highwater, domain.NewID(), receipt.RequestID, receipt.CreatedAt.UnixMilli()); err != nil {
+		return storageError(err)
+	}
+	// Restore ends the original observation timeline. Retained unclaimed
+	// operational records remain history, never a revived presentation backlog.
+	checkpoints := map[domain.NotificationKind]uint64{}
+	for _, kind := range domain.OperationalNotificationKinds {
+		checkpoints[kind] = highwater
+	}
+	checkpointJSON, err := json.Marshal(checkpoints)
+	if err != nil {
+		return storageError(err)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE metadata SET value=json_set(value,'$.checkpoints',json(?)) WHERE key LIKE 'notification-situations-v1:%'", string(checkpointJSON)); err != nil {
 		return storageError(err)
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE metadata SET value=? WHERE key='event_floor'", highwater); err != nil {

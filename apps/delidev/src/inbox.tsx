@@ -42,6 +42,7 @@ function itemLabel(view: InboxView): string {
     if (type === "native-approval") return copy("inbox.extra.c515b98726fe");
     return copy("inbox.extra.6e39d7d8300f");
   }
+  if(source==="operational")return operationalLabel(text(object(document(entry).operational).kind));
   if (source==="subscription-recovery") return copy("inbox.extra.41bb49877013");
  if (source === "execution-terminal") {
     const outcome = text(object(document(entry).terminal).outcome);
@@ -52,6 +53,17 @@ function itemLabel(view: InboxView): string {
   return copy("inbox.extra.3414410d9a33");
 }
 
+function operationalLabel(kind:string):string {
+ switch(kind){
+ case "worker-unavailable":return copy("notification-settings.situations.workerUnavailable");
+ case "worker-available":return copy("notification-settings.situations.workerAvailable");
+ case "quota-exhausted":return copy("notification-settings.situations.quotaExhausted");
+ case "schedule-start-failed":return copy("notification-settings.situations.scheduleStartFailed");
+ case "schedule-server-offline":return copy("inbox.operational.serverOffline");
+ case "schedule-worker-offline":return copy("inbox.operational.workerOffline");
+ default:return copy("inbox.operational.unavailable");
+ }
+}
 function recordedTime(resource: Resource): { label: string; machineValue?: string } {
   const raw = resource.createdAt;
   if (!raw) return { label: copy("inbox.extra.b0e8642e6377") };
@@ -93,7 +105,7 @@ function closureText(value: unknown): string {
   return copy("inbox.extra.ca1844969742");
 }
 
-export function Inbox({ active, open, notificationId = "", notificationActivation = 0 }: { active: boolean; open: (sessionId: string) => void; notificationId?: string; notificationActivation?: number }) {
+export function Inbox({ active, open, notificationId = "", notificationActivation = 0, openOperational }: { active: boolean; open: (sessionId: string) => void; notificationId?: string; notificationActivation?: number; openOperational?: (resource:Resource)=>void }) {
   useLocale();
   const emptyFilters = { source: InboxSource.UNSPECIFIED, readState: InboxReadState.UNSPECIFIED, projectId: "", sessionId: "" };
   const [filters, setFilters] = useState(emptyFilters);
@@ -228,6 +240,15 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
 
   const selectedView = detailRead?.id === selectedId ? detailRead.view : undefined;
   const latestReadReady = detailRead?.id === selectedId && detailRead.state === DetailReadState.Ready && Boolean(selectedView && currentInboxSource(selectedView, selectedId));
+
+  const resolvedOperationalActivation=useRef(0);
+  useEffect(()=>{
+    if(!active||!latestReadReady||!selectedView||selectedId!==notificationId||notificationActivation===0||resolvedOperationalActivation.current===notificationActivation)return;
+    if(document(selectedView.entry).source!=="operational")return;
+    resolvedOperationalActivation.current=notificationActivation;
+    const target=selectedView.machine??selectedView.account??selectedView.occurrence;
+    if(target)openOperational?.(target);
+  },[active,latestReadReady,selectedView,selectedId,notificationId,notificationActivation,openOperational]);
   const drafts = draftCollection.values;
   const saveDraft = (resource: Resource, editable: InteractionDraftState) => {
     setDraftCollection((current) => {
@@ -314,7 +335,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
           {detailRead?.id === selectedId && detailRead.state === DetailReadState.Loading ? <p role="status" className="inbox-read-progress">{copy("inbox.loadingTheCurrentItem_15d15c")}</p> : null}
           {detailRead?.id === selectedId && detailRead.state === DetailReadState.Stale ? <div className="inbox-stale-warning"><p>{copy("inbox.theLatestReadFailedThisRetained_cb4adc")}</p><Problem error={detailRead.error} /><button onClick={() => setReadTrigger((value) => value + 1)}>{copy("inbox.retryCurrentRead_79b708")}</button></div> : null}
           {detailRead?.id === selectedId && detailRead.state === DetailReadState.Unavailable ? <div className="inbox-unavailable"><p>{copy("inbox.thisItemIsUnavailableItsCurrent_5617b2")}</p><Problem error={detailRead.error} actions={detailRead.error ? <button type="button" disabled={!active} onClick={() => setReadTrigger(value => value + 1)}>{copy("inbox.retryCurrentRead_79b708")}</button> : undefined} /></div> : null}
-          {selectedView && detailRead?.state !== DetailReadState.Unavailable ? <InboxDetail view={selectedView} readOnly={!latestReadReady} draft={selectedView.interaction ? drafts.get(selectedView.interaction.id) ?? initialInteractionDraft(selectedView.interaction) : undefined} draftError={selectedView.interaction ? draftCollection.errors.get(selectedView.interaction.id) : undefined} saveDraft={saveDraft} clearDraft={clearDraft} open={open} refresh={refresh} pageContains={list.rows.some(entry => entry.id === selectedId)} /> : null}
+          {selectedView && detailRead?.state !== DetailReadState.Unavailable ? <InboxDetail view={selectedView} readOnly={!latestReadReady} draft={selectedView.interaction ? drafts.get(selectedView.interaction.id) ?? initialInteractionDraft(selectedView.interaction) : undefined} draftError={selectedView.interaction ? draftCollection.errors.get(selectedView.interaction.id) : undefined} saveDraft={saveDraft} clearDraft={clearDraft} open={open} refresh={refresh} openOperational={openOperational} pageContains={list.rows.some(entry => entry.id === selectedId)} /> : null}
           {!selectedView && detailRead?.state !== DetailReadState.Unavailable && detailRead?.state !== DetailReadState.Stale ? <div className="inbox-skeleton" role="status" aria-label={copy("inbox.loadingSelectedItem_903c91")}><span /><span /></div> : null}
         </>}
       </section>
@@ -322,7 +343,7 @@ export function Inbox({ active, open, notificationId = "", notificationActivatio
   </section></>;
 }
 
-function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft, open, refresh, pageContains }: { view: InboxView; readOnly: boolean; draft?: InboxInteractionDraft; draftError?: string; saveDraft: (resource: Resource, editable: InteractionDraftState) => void; clearDraft: (resourceId: string) => void; open: (sessionId: string) => void; refresh: () => void; pageContains: boolean }) {
+function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft, open, refresh, pageContains,openOperational }: { view: InboxView; readOnly: boolean; draft?: InboxInteractionDraft; draftError?: string; saveDraft: (resource: Resource, editable: InteractionDraftState) => void; clearDraft: (resourceId: string) => void; open: (sessionId: string) => void; refresh: () => void; pageContains: boolean;openOperational?:(resource:Resource)=>void }) {
   useLocale();
   const entry = view.entry!;
   const data = document(entry);
@@ -347,7 +368,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
         {responseCurrent ? null : <p>{copy("inbox.thisRequestIsRetainedForInspection_208dff")}</p>}
         <Interaction resource={view.interaction} refresh={refresh} draft={draft} saveDraft={(editable) => saveDraft(view.interaction!, editable)} clearDraft={() => clearDraft(view.interaction!.id)} submissionAllowed={canMutate && responseCurrent && !identityChanged} receiptRetryAllowed={canMutate} />
       </section>
-    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <Timestamp value={text(object(data.recovery).observed_at)} /> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p><Disclosure className="inbox-execution-metadata" key={entry.id}><DisclosureSummary>{copy("inbox.executionMetadata")}<small>{copy("inbox.originalIdentifiersAndOutcome")}</small></DisclosureSummary><pre>{JSON.stringify(terminal, null, 2)}</pre></Disclosure></section>}
+    </> : data.source==="operational"?<section className="inbox-operational"><h4>{itemLabel(view)}</h4><Timestamp value={text(object(data.operational).observed_at)}/><p>{copy("inbox.operational.metadataOnly")}</p>{view.machine||view.account||view.occurrence ? <button type="button" disabled={readOnly||!currentSource} onClick={()=>openOperational?.((view.machine??view.account??view.occurrence)!)}>{copy("inbox.operational.openTarget")}</button>:<p role="status">{copy("inbox.operational.unavailable")}</p>}</section> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <Timestamp value={text(object(data.recovery).observed_at)} /> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p><Disclosure className="inbox-execution-metadata" key={entry.id}><DisclosureSummary>{copy("inbox.executionMetadata")}<small>{copy("inbox.originalIdentifiersAndOutcome")}</small></DisclosureSummary><pre>{JSON.stringify(terminal, null, 2)}</pre></Disclosure></section>}
   </article>;
 }
 

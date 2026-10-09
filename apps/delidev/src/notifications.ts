@@ -3,7 +3,7 @@ import { InboxService, NotificationKind, NotificationState, isEntityId, newReque
 
 export enum NativeNotificationPermission { NotDetermined = "not-determined", Granted = "granted", ServiceAvailable = "service-available", Denied = "denied", Unavailable = "unavailable" }
 export enum NativeNotificationProblem { None = "none", BundleRequired = "bundle-required", ActionsUnavailable = "actions-unavailable", OsUnavailable = "os-unavailable", Capacity = "capacity" }
-export enum NativeNotificationKind { Request = "request", Succeeded = "succeeded", Failed = "failed", Stopped = "stopped", SubscriptionRecovery = "subscription-recovery" }
+export enum NativeNotificationKind {Question="question",Approval="approval",WorkerUnavailable="worker-unavailable",WorkerAvailable="worker-available",QuotaExhausted="quota-exhausted",ScheduleStartFailed="schedule-start-failed",ScheduleServerOffline="schedule-server-offline",ScheduleWorkerOffline="schedule-worker-offline", Request = "request", Succeeded = "succeeded", Failed = "failed", Stopped = "stopped", SubscriptionRecovery = "subscription-recovery" }
 export enum NativeNotificationResult { Submitted = "submitted", Denied = "denied", Failed = "failed", Uncertain = "uncertain" }
 export interface NotificationReadiness { permission: NativeNotificationPermission; problem: NativeNotificationProblem }
 export interface NativeNotice { claim_id: string; inbox_id: string; kind: NativeNotificationKind }
@@ -14,7 +14,7 @@ export function notificationReadiness(value: unknown): NotificationReadiness {
   if (!raw || !Object.values(NativeNotificationPermission).includes(raw.permission!) || !Object.values(NativeNotificationProblem).includes(raw.problem!)) throw new Error("Native notification status is unavailable.");
   return { permission: raw.permission!, problem: raw.problem! };
 }
-const nativeKinds: Partial<Record<NotificationKind, NativeNotificationKind>> = { [NotificationKind.SUBSCRIPTION_RECOVERY]: NativeNotificationKind.SubscriptionRecovery, [NotificationKind.REQUEST]: NativeNotificationKind.Request, [NotificationKind.SUCCEEDED]: NativeNotificationKind.Succeeded, [NotificationKind.FAILED]: NativeNotificationKind.Failed, [NotificationKind.STOPPED]: NativeNotificationKind.Stopped };
+const nativeKinds: Partial<Record<NotificationKind, NativeNotificationKind>> = {[NotificationKind.QUESTION]:NativeNotificationKind.Question,[NotificationKind.APPROVAL]:NativeNotificationKind.Approval,[NotificationKind.WORKER_UNAVAILABLE]:NativeNotificationKind.WorkerUnavailable,[NotificationKind.WORKER_AVAILABLE]:NativeNotificationKind.WorkerAvailable,[NotificationKind.QUOTA_EXHAUSTED]:NativeNotificationKind.QuotaExhausted,[NotificationKind.SCHEDULE_START_FAILED]:NativeNotificationKind.ScheduleStartFailed,[NotificationKind.SCHEDULE_SERVER_OFFLINE]:NativeNotificationKind.ScheduleServerOffline,[NotificationKind.SCHEDULE_WORKER_OFFLINE]:NativeNotificationKind.ScheduleWorkerOffline, [NotificationKind.SUBSCRIPTION_RECOVERY]: NativeNotificationKind.SubscriptionRecovery, [NotificationKind.REQUEST]: NativeNotificationKind.Request, [NotificationKind.SUCCEEDED]: NativeNotificationKind.Succeeded, [NotificationKind.FAILED]: NativeNotificationKind.Failed, [NotificationKind.STOPPED]: NativeNotificationKind.Stopped };
 const reportedStates: Record<NativeNotificationResult, NotificationState> = { [NativeNotificationResult.Submitted]: NotificationState.SUBMITTED, [NativeNotificationResult.Denied]: NotificationState.DENIED, [NativeNotificationResult.Failed]: NotificationState.FAILED, [NativeNotificationResult.Uncertain]: NotificationState.UNCERTAIN };
 type Service = Pick<Client<typeof InboxService>, "claimNotification" | "reportNotification">;
 
@@ -27,9 +27,14 @@ export class NotificationPump {
   private closed = false;
   private scope?: Promise<string>;
   constructor(private readonly service: Service, private readonly bridge: NotificationBridge, private readonly problem: (failed: boolean) => void, private readonly changed: () => void) {}
+  prepare(){
+    if(this.closed)return;
+    this.scope??=this.bridge.begin().catch((error:unknown)=>{this.scope=undefined;this.problem(true);throw error;});
+    void this.scope.catch(()=>{});
+  }
   update(values: readonly NotificationCandidate[]) {
     if (this.closed) return;
-    if (values.length > 50 || values.some((v) => !isEntityId(v.inboxId) || (v.kind===NotificationKind.SUBSCRIPTION_RECOVERY ? !isEntityId(v.accountId) || Boolean(v.sessionId) : !isEntityId(v.sessionId) || Boolean(v.accountId)) || !nativeKinds[v.kind])) { this.problem(true); return; }
+    if (values.length > 50 || values.some((v) => !isEntityId(v.inboxId) || !validNotificationTarget(v) || !nativeKinds[v.kind])) { this.problem(true); return; }
     this.pending = values.map((v) => ({ ...v })); void this.drain();
   }
   close() { this.closed = true; this.pending = undefined; this.abort.abort(); void this.scope?.then((scope) => this.bridge.end(scope)).catch(() => {}); }
@@ -37,9 +42,9 @@ export class NotificationPump {
     if (this.running) return;
     this.running = true;
     try {
-      this.scope ??= this.bridge.begin().catch((error: unknown) => { this.scope = undefined; throw error; });
+      this.prepare();
       const scope = await this.scope;
-      if (!isEntityId(scope)) throw new Error("Native presentation scope is unavailable.");
+      if (!scope || !isEntityId(scope)) throw new Error("Native presentation scope is unavailable.");
       while (!this.closed && this.pending) {
         const batch = this.pending; this.pending = undefined;
         let failed = false, accepted = false;
@@ -53,7 +58,7 @@ export class NotificationPump {
           if (this.closed) return;
           if (!claim.mayPresent) continue;
           const current = claim.delivery?.candidate;
-          if (claim.replayed || claim.requestId !== requestId || claim.delivery?.claimId !== requestId || claim.delivery.state !== NotificationState.CLAIMED || current?.inboxId !== candidate.inboxId || current.sessionId !== candidate.sessionId || current.kind !== candidate.kind || current.accountId!==candidate.accountId) throw new Error("Original notification claim could not be verified.");
+          if (claim.replayed || claim.requestId !== requestId || claim.delivery?.claimId !== requestId || claim.delivery.state !== NotificationState.CLAIMED || current?.inboxId !== candidate.inboxId || current.sessionId !== candidate.sessionId || current.kind !== candidate.kind || current.accountId!==candidate.accountId || current.machineId!==candidate.machineId || current.occurrenceId!==candidate.occurrenceId) throw new Error("Original notification claim could not be verified.");
           let result: NativeNotificationResult;
           try { result = await this.bridge.present(scope, { claim_id: requestId, inbox_id: candidate.inboxId, kind: nativeKinds[candidate.kind]! }); }
           catch { result = NativeNotificationResult.Uncertain; }
@@ -70,4 +75,11 @@ export class NotificationPump {
     } catch { if (!this.closed) { this.pending = undefined; this.problem(true); } }
     finally { this.running = false; }
   }
+}
+
+export function validNotificationTarget(v:NotificationCandidate):boolean {
+ if([NotificationKind.WORKER_UNAVAILABLE,NotificationKind.WORKER_AVAILABLE].includes(v.kind))return isEntityId(v.machineId)&&!v.sessionId&&!v.accountId&&!v.occurrenceId;
+ if([NotificationKind.SUBSCRIPTION_RECOVERY,NotificationKind.QUOTA_EXHAUSTED].includes(v.kind))return isEntityId(v.accountId)&&!v.sessionId&&!v.machineId&&!v.occurrenceId;
+ if([NotificationKind.SCHEDULE_START_FAILED,NotificationKind.SCHEDULE_SERVER_OFFLINE,NotificationKind.SCHEDULE_WORKER_OFFLINE].includes(v.kind))return isEntityId(v.occurrenceId)&&!v.sessionId&&!v.accountId&&!v.machineId;
+ return isEntityId(v.sessionId)&&!v.accountId&&!v.machineId&&!v.occurrenceId;
 }
