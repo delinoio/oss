@@ -118,5 +118,11 @@
   "scheduleWorkerOfflineNotice": "Schedule skipped: Worker offline",
   "serverLostNotice": "Server connection lost",
   "serverRestoredNotice": "Server connection restored",
-  "exportGeneratedImage": "Export original image"
+  "exportGeneratedImage": "Export original image",
+  "quitTitle": "Quit DeliDev?",
+  "quitCount": "{{count}} sessions have not finished.",
+  "quitUnknown": "Session status could not be verified for some connections.",
+  "quitExplanation": "Quitting can interrupt work on local Workers started by this app. Independently running and remote Workers keep running.",
+  "quitCancel": "Cancel",
+  "quitConfirm": "Quit"
 }
