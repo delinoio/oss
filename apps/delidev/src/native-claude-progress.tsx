@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { NativeClaudeCompactionBoundary, NativeClaudeCompactionSummary, validClaudeCompactionBoundary, validClaudeCompactionSummary } from "./native-claude-compaction";
 import { NativeClaudeTask, validClaudeTask } from "./native-claude-tasks";
@@ -49,7 +50,7 @@ export function NativeClaudeProgress({ data }: { data: Document }) {
         <dt>{copy("native-claude-progress.reportedPermissionMode_eb94a5")}</dt><dd>{s.permission === null ? copy("native-claude-progress.notReported_adadfa") : s.permission as string}</dd>
         {s.compact_result !== null ? <><dt>{copy("native-claude-progress.compactionResult_5a6b3c")}</dt><dd>{s.compact_result === "success" ? copy("native-claude-progress.succeeded_6d9a6f") : copy("native-claude-progress.failed_031a8f")}</dd></> : null}
       </dl>
-      {s.compact_error !== null ? <details><summary>{copy("native-claude-progress.compactionDiagnostic_f316f6")}</summary><pre>{s.compact_error as string}</pre></details> : null}
+      {s.compact_error !== null ? <Disclosure><DisclosureSummary>{copy("native-claude-progress.compactionDiagnostic_f316f6")}</DisclosureSummary><pre>{s.compact_error as string}</pre></Disclosure> : null}
       <p>{copy("native-claude-progress.thisStatusDoesNotConfirmInput_8c3d56")}</p>
     </> : <>
       <dl><dt>{copy("native-claude-progress.estimatedThinkingTokens_8bcb46")}</dt><dd>{t.estimated_tokens as string}</dd><dt>{copy("native-claude-progress.estimatedThinkingTokenDelta_4b1b48")}</dt><dd>{t.estimated_tokens_delta as string}</dd></dl>

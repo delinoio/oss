@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -105,11 +106,11 @@ export function useFailedSubscriptionCleanup(active: boolean, available: boolean
     {job && job.state !== State.PENDING && job.retained > 0 ? <InlineRemediation summary={<p>{copy("account-connection.inline.cleanupTerminal")}</p>} /> : null}
     {mutation.uncertain ? <button type="button" disabled={mutation.busy || !active} onClick={mutation.retry}>{copy("subscription-settings.cleanupRetryOriginal")}</button> : null}
     {accepted && (status.error || invalid) ? <div><p>{copy("subscription-settings.cleanupStatusUnavailable")}</p><button type="button" disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("subscription-settings.cleanupRetryStatus")}</button></div> : null}
-    {job && job.state !== State.PENDING && job.retained > 0 ? <details ref={resultsRoot} className="subscription-cleanup-results" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
-      <summary>{copy("subscription-settings.cleanupRetainedDetails", { count: job.retained })}</summary>
+    {job && job.state !== State.PENDING && job.retained > 0 ? <Disclosure density={DisclosureDensity.Settings} ref={resultsRoot} className="subscription-cleanup-results" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+      <DisclosureSummary>{copy("subscription-settings.cleanupRetainedDetails", { count: job.retained })}</DisclosureSummary>
       {results.length ? <ul>{results.map(result => <li key={result.id}><strong>{result.alias}</strong> · {copy(reasons[result.reason])}</li>)}</ul> : resultsQuery.loaded && !resultsQuery.loading && !resultsQuery.error && !status.error && !invalid ? <p>{copy("subscription-settings.cleanupNoRetainedOnPage")}</p> : null}
       <ScrollContinuation query={resultsQuery} label={copy("subscription-settings.cleanupResultPages")} root={scrollRoot} active={active && expanded} />
-    </details> : null}
+    </Disclosure> : null}
   </>;
   return { begin, blocked, canMutate, body, busy: mutation.busy || accepted?.state === State.PENDING };
 }

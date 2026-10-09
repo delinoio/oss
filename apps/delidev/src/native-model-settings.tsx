@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampText } from "./timestamp-display";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
@@ -60,7 +61,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
 
   useEffect(() => { pendingOperation?.(blocked || observationPending); return () => pendingOperation?.(false); }, [blocked, observationPending, pendingOperation]);
   const reset = () => { setRetainedJobID(""); setJobID(""); setObservationID(""); };
-  return <details onToggle={(event) => setOpened(event.currentTarget.open)}><summary>{copy("native-model-settings.nativeCodexModelObservations_e3a909")}</summary>{opened ? <section aria-label={copy("native-model-settings.nativeCodexModelObservations_e3a909")}>
+  return <Disclosure density={DisclosureDensity.Settings} onToggle={(event) => setOpened(event.currentTarget.open)}><DisclosureSummary>{copy("native-model-settings.nativeCodexModelObservations_e3a909")}</DisclosureSummary>{opened ? <section aria-label={copy("native-model-settings.nativeCodexModelObservations_e3a909")}>
     <h2>{copy("native-model-settings.observeNativeCodexModels_7d4b36")}</h2>
     <p>{copy("native-model-settings.chooseARunnerDeviceWithCodex_8f2ab4")}</p>
     <Problem error={status.error} actions={<button type="button" disabled={!active || blocked || observationPending || status.isFetching} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} />
@@ -99,5 +100,5 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
       </article>)}
     </>;
     }}</ScrollPayloadWindow><ScrollContinuation query={models} root={listRoot} active={active && opened && supported && Boolean(source) && !blocked} label={copy("native-model-settings.nativeCodexModelObservations_e3a909")} /></div>
-  </section> : null}</details>;
+  </section> : null}</Disclosure>;
 }

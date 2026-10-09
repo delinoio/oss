@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
@@ -39,11 +40,11 @@ export function NativeGrokUser({ data }: { data: Document }) {
   return <article className="message message-user" aria-label={copy("native-grok.grokUserInput_b19458")}>
     <header><strong>{copy("native-grok.user_04f899")}</strong><small>{copy("native-grok.verifiedFromClosedNativeHistory_2d5065")}</small></header>
     <pre>{data.text as string}</pre>
-    <details><summary>{copy("native-grok.grokInputDetails_e34cc2")}</summary><dl>
+    <Disclosure><DisclosureSummary>{copy("native-grok.grokInputDetails_e34cc2")}</DisclosureSummary><dl>
       <dt>{copy("native-grok.originalNativeEvent_3cd761")}</dt><dd>{v.native_event_id as string}</dd>
       <dt>{copy("native-grok.model_5e2c61")}</dt><dd>{v.model as string}</dd>
       <dt>{copy("native-grok.nativeTimestampMs_0d220f")}</dt><dd>{v.timestamp_ms as string}</dd>
-    </dl><p>{copy("native-grok.thisInputWasCheckedAgainstThe_61b918")}</p></details>
+    </dl><p>{copy("native-grok.thisInputWasCheckedAgainstThe_61b918")}</p></Disclosure>
   </article>;
 }
 
@@ -54,13 +55,13 @@ export function NativeGrokText({ data }: { data: Document }) {
   return <article className="message message-assistant" aria-label={copy("native-grok.grokAssistantText_45c8b0")}>
     <header><strong>{copy("native-grok.assistant_a39a7f")}</strong><small>{v.interruption !== undefined ? copy("native-grok.partialResponseStopped_fb17b3") : data.state === "complete" ? copy("native-grok.responseTextComplete_9a599a") : copy("native-grok.streaming_a951c5")}</small></header>
     <pre>{data.text as string}</pre>
-    <details><summary>{copy("native-grok.grokTextDetails_97e9e2")}</summary><dl>
+    <Disclosure><DisclosureSummary>{copy("native-grok.grokTextDetails_97e9e2")}</DisclosureSummary><dl>
       <dt>{copy("native-grok.responseOrderInThisInput_902357")}</dt><dd>{v.response_ordinal as number}</dd>
       <dt>{copy("native-grok.firstNativeTextEvent_f187af")}</dt><dd>{first.event_id as string}</dd>
       <dt>{copy("native-grok.latestNativeTextEvent_f4751f")}</dt><dd>{last.event_id as string}</dd>
       <dt>{copy("native-grok.latestNativeChunk_2975cf")}</dt><dd>{last.chunk_id as string}</dd>
       <dt>{copy("native-grok.latestReportedContextTokens_5d3e70")}</dt><dd>{last.context_tokens as string}</dd>
-    </dl><p>{copy("native-grok.contextIsANativeEstimateSeparate_286d1f")}</p>{v.interruption !== undefined ? <p>{copy("native-grok.theOriginalResponseWasInterruptedIts_b25935")}</p> : null}</details>
+    </dl><p>{copy("native-grok.contextIsANativeEstimateSeparate_286d1f")}</p>{v.interruption !== undefined ? <p>{copy("native-grok.theOriginalResponseWasInterruptedIts_b25935")}</p> : null}</Disclosure>
   </article>;
 }
 
@@ -88,13 +89,13 @@ export function NativeGrokTerminal({ progress }: { progress: Document }) {
   const valid = uuid(progress.execution_id, 7) && uuid(progress.native_thread_id, 7) && uuid(progress.native_turn_id, 4) && progress.outcome === "succeeded" && exact(v, ["kind", "native_event_id", "timestamp_ms", "elapsed_ms", "model", "counts", "total_tokens", "model_calls", "api_duration_ms", "turns", "closure_id", "history_digest", ...(v.user !== undefined ? ["user"] : [])]) && v.kind === "closed-first-text" && eventIndex(v.native_event_id, progress.native_thread_id) !== undefined && count(v.timestamp_ms) && BigInt(v.timestamp_ms) <= 253402300799999n && [v.elapsed_ms, v.total_tokens, v.api_duration_ms].every(count) && v.model_calls === "1" && v.turns === "1" && uuid(v.closure_id, 7) && typeof v.history_digest === "string" && /^[a-f0-9]{64}$/.test(v.history_digest) && typeof v.model === "string" && v.model.length > 0 && v.model === observed.model && observed.grok_mode === "default" && closedResponse(content, progress.native_thread_id, v.native_event_id) && exact(counts, labels().map(([key]) => key)) && labels().every(([key]) => count(counts[key])) && [progress.grok_stop, progress.claude_terminal, progress.claude_stop, progress.claude_denial, progress.opencode_stop].every((value) => value == null);
   const userValid = v.user === undefined ? progress.grok_user_message_id === undefined : uuid(progress.grok_user_message_id, 7) && typeof progress.native_thread_id === "string" && userHistory(object(v.user), progress.native_thread_id) && object(v.user).model === v.model && eventIndex(object(v.user).native_event_id, progress.native_thread_id)! < eventIndex(content.last_event, progress.native_thread_id)!;
   if (!valid || !userValid) return <p>{copy("native-grok.theRetainedGrokCompletionIsUnavailable_0c1237")}</p>;
-  return <details><summary>{copy("native-grok.originalGrokInputCompletion_0d2093")}</summary><dl>
+  return <Disclosure><DisclosureSummary>{copy("native-grok.originalGrokInputCompletion_0d2093")}</DisclosureSummary><dl>
     <dt>{copy("native-grok.nativeOutcome_826145")}</dt><dd>{copy("native-grok.endTurn_dacb1c")}</dd><dt>{copy("native-grok.model_5e2c61")}</dt><dd>{v.model as string}</dd>
     <dt>{copy("native-grok.reportedInputTotalTokens_a90319")}</dt><dd>{v.total_tokens as string}</dd>
     <dt>{copy("native-grok.nativeModelCalls_521256")}</dt><dd>{v.model_calls as string}</dd>
     <dt>{copy("native-grok.nativeApiDurationMs_796aa3")}</dt><dd>{v.api_duration_ms as string}</dd>
     <dt>{copy("native-grok.nativeElapsedTimeMs_3a0a11")}</dt><dd>{v.elapsed_ms as string}</dd>
-  </dl><p>{copy("native-grok.theOriginalNativeSessionWasClosed_df240a")}</p></details>;
+  </dl><p>{copy("native-grok.theOriginalNativeSessionWasClosed_df240a")}</p></Disclosure>;
 }
 
 function stoppedInput(progress: Document) {
@@ -132,7 +133,7 @@ export function NativeGrokStop({ progress }: { progress: Document }) {
   if (!stoppedInput(progress)) return <p>{copy("native-grok.theRetainedGrokStopIsUnavailable_6b1957")}</p>;
   const v = object(progress.grok_stop), result = object(v.completed), beforeText = v.kind === "interrupted-before-text", interrupted = beforeText || v.kind === "interrupted-text";
   const retries = Array.isArray(v.retries) ? v.retries : [];
-  return <details><summary>{copy("native-grok.originalGrokStopResult_a32b1a")}</summary><dl>
+  return <Disclosure><DisclosureSummary>{copy("native-grok.originalGrokStopResult_a32b1a")}</DisclosureSummary><dl>
     <dt>{copy("native-grok.nativeOutcome_826145")}</dt><dd>{beforeText ? copy("native-grok.interruptedBeforeFirstText_ec77f5") : interrupted ? copy("native-grok.interrupted_132d12") : copy("native-grok.completedWhileStopWasRequested_99bc08")}</dd>
     <dt>{copy("native-grok.model_5e2c61")}</dt><dd>{v.model as string}</dd>
     <dt>{copy("native-grok.nativeElapsedTimeMs_3a0a11")}</dt><dd>{v.elapsed_ms as string}</dd>
@@ -140,5 +141,5 @@ export function NativeGrokStop({ progress }: { progress: Document }) {
     <dt>{copy("native-grok.observedHttpRetriesBeforeStopSettled_e5884b")}</dt><dd>{retries.length}</dd>
     <dt>{copy("native-grok.nativeProcessCleanup_f7f01d")}</dt><dd>{copy("native-grok.joined_69318b")}</dd>
     <dt>{copy("native-grok.workspaceCleanupReport_a4940f")}</dt><dd>{progress.cleanup_verified === true ? copy("native-grok.verified_4f7838") : copy("native-grok.notYetVerified_5b2f7a")}</dd>
-  </dl><p><LocalizedText id="native-grok.thisResultDoesNotAuthorizeAnother_f4977e" components={{ s0: <>{beforeText ? copy("native-grok.noAssistantTextWasObservedContext_8f05d7") : interrupted ? copy("native-grok.partialOutputRemainsVisibleContextTokens_cf473f") : copy("native-grok.theOriginalSuccessfulResultIsRetained_9490e8")}</> }} /></p></details>;
+  </dl><p><LocalizedText id="native-grok.thisResultDoesNotAuthorizeAnother_f4977e" components={{ s0: <>{beforeText ? copy("native-grok.noAssistantTextWasObservedContext_8f05d7") : interrupted ? copy("native-grok.partialOutputRemainsVisibleContextTokens_cf473f") : copy("native-grok.theOriginalSuccessfulResultIsRetained_9490e8")}</> }} /></p></Disclosure>;
 }

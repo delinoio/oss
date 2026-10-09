@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -60,21 +61,21 @@ const labels: Record<Builtin, string> = { get write() { return copy("native-buil
 export function NativeBuiltin({ tool, state }: { tool: Record<string, unknown>; state: string }) {
   useLocale();
   const values = retained(tool, state), latest = values?.at(-1);
-  if (!values || !latest) return <details><summary>{copy("native-builtin.nativeToolUnavailable_efe84c")}</summary><p>{copy("native-builtin.theRetainedNativeOperationIsUnavailable_ed146e")}</p></details>;
-  return <details><summary>{labels[latest.name]} · {latest.status}</summary>
+  if (!values || !latest) return <Disclosure><DisclosureSummary>{copy("native-builtin.nativeToolUnavailable_efe84c")}</DisclosureSummary><p>{copy("native-builtin.theRetainedNativeOperationIsUnavailable_ed146e")}</p></Disclosure>;
+  return <Disclosure><DisclosureSummary>{labels[latest.name]} · {latest.status}</DisclosureSummary>
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
-    <details><summary>{copy("native-builtin.originalNativeInput_b3b718")}</summary><pre>{latest.input}</pre></details>
+    <Disclosure><DisclosureSummary>{copy("native-builtin.originalNativeInput_b3b718")}</DisclosureSummary><pre>{latest.input}</pre></Disclosure>
     {latest.output !== undefined ? <section aria-label={copy("native-builtin.nativeToolResult_1cf5a0")}><pre>{latest.output}</pre></section> : null}
     {latest.error !== undefined ? <section aria-label={copy("native-builtin.nativeToolError_440d26")}><pre>{latest.error}</pre></section> : null}
-    {latest.metadata !== undefined ? <details><summary>{copy("native-builtin.originalNativeMetadata_d7e8f9")}</summary><pre>{latest.metadata}</pre></details> : null}
-    <details><summary>{copy("native-builtin.originalProposalAndObservations_8d63b6")}</summary><ol>{values.map((v, i) => <li key={i}><details><summary>{v.status}</summary><pre>{v.input}</pre>{v.raw !== undefined ? <pre>{v.raw}</pre> : null}{v.metadata !== undefined ? <pre>{v.metadata}</pre> : null}</details></li>)}</ol></details>
-  </details>;
+    {latest.metadata !== undefined ? <Disclosure><DisclosureSummary>{copy("native-builtin.originalNativeMetadata_d7e8f9")}</DisclosureSummary><pre>{latest.metadata}</pre></Disclosure> : null}
+    <Disclosure><DisclosureSummary>{copy("native-builtin.originalProposalAndObservations_8d63b6")}</DisclosureSummary><ol>{values.map((v, i) => <li key={i}><Disclosure><DisclosureSummary>{v.status}</DisclosureSummary><pre>{v.input}</pre>{v.raw !== undefined ? <pre>{v.raw}</pre> : null}{v.metadata !== undefined ? <pre>{v.metadata}</pre> : null}</Disclosure></li>)}</ol></Disclosure>
+  </Disclosure>;
 }
 
 const fileLabels: Record<FileEvent, string> = { get "file-edited"() { return copy("native-builtin.nativeFileEdited_132303"); }, get "file-added"() { return copy("native-builtin.nativeFileAdded_82ed0c"); }, get "file-changed"() { return copy("native-builtin.nativeFileChanged_05aac0"); }, get "file-unlinked"() { return copy("native-builtin.nativeFileUnlinked_b796f3"); } };
 export function NativeWorkspaceEvent({ progress, state }: { progress: Record<string, unknown>; state: string }) {
   useLocale();
   const w = object(progress.workspace);
-  if (state !== "complete" || progress.kind !== "opencode-workspace" || progress.plan != null || progress.diff != null || progress.todo != null || progress.changes != null || !shape(progress.workspace, ["kind", "native_event_id", "file"]) || !Object.values(FileEvent).includes(w.kind as FileEvent) || typeof w.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(w.native_event_id) || !bounded(w.file, 32768) || !w.file.trim()) return <details><summary>{copy("native-builtin.nativeWorkspaceEventUnavailable_904936")}</summary><p>{copy("native-builtin.theRetainedFileNotificationIsUnavailable_ebdf4c")}</p></details>;
-  return <details><summary>{fileLabels[w.kind as FileEvent]}</summary><pre>{w.file}</pre><p>{copy("native-builtin.thisNativeWorkspaceNotificationDoesNot_5280e0")}</p></details>;
+  if (state !== "complete" || progress.kind !== "opencode-workspace" || progress.plan != null || progress.diff != null || progress.todo != null || progress.changes != null || !shape(progress.workspace, ["kind", "native_event_id", "file"]) || !Object.values(FileEvent).includes(w.kind as FileEvent) || typeof w.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(w.native_event_id) || !bounded(w.file, 32768) || !w.file.trim()) return <Disclosure><DisclosureSummary>{copy("native-builtin.nativeWorkspaceEventUnavailable_904936")}</DisclosureSummary><p>{copy("native-builtin.theRetainedFileNotificationIsUnavailable_ebdf4c")}</p></Disclosure>;
+  return <Disclosure><DisclosureSummary>{fileLabels[w.kind as FileEvent]}</DisclosureSummary><pre>{w.file}</pre><p>{copy("native-builtin.thisNativeWorkspaceNotificationDoesNot_5280e0")}</p></Disclosure>;
 }

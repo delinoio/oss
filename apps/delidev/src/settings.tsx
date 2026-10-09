@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+import { DisclosureDensity, DisclosureDensityScope } from "./disclosure";
 import { SettingsCategory } from "./settings-category";
 import { SettingsSearch, SettingsSearchFocus, type SettingsSearchRequest } from "./settings-search";
 import { AgentWorkerRow } from "./agent-worker-row";
 import { AgentWorkerMetadataProvider } from "./agent-worker-models";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsTaskDismissButton } from "./settings-task";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import type { UsageEntry } from "./usage-entry";
@@ -282,7 +283,7 @@ function entrySelection(destination?: SettingsEntryDestination): SettingsSelecti
 
 export function Settings({ visible = true, ...props }: SettingsProps) {
   useLocale();
-  return visible ? <SettingsVisit {...props} /> : null;
+  return visible ? <DisclosureDensityScope density={DisclosureDensity.Settings}><SettingsVisit {...props} /></DisclosureDensityScope> : null;
 }
 
 function SettingsVisit({ entryDestination, destinationConsumed, ...props }: SettingsProps) {

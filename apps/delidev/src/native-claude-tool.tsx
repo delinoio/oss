@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -51,19 +52,19 @@ export function NativeClaudeTool({ content, state, id, native, parent }: { conte
   const retained = tool(content, state);
   if (!retained || retained.reference.id !== id || retained.reference.native_id !== native || retained.native_message_id !== parent) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
   const result = retained.result;
-  return <section aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}><details>
-    <summary>{retained.reference.name} · {result ? copy("native-claude-tool.resultObserved_447816") : retained.proposal ? copy("native-claude-tool.proposalComplete_1ebb0e") : copy("native-claude-tool.receivingProposal_2dfe67")}</summary>
+  return <section aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}><Disclosure>
+    <DisclosureSummary>{retained.reference.name} · {result ? copy("native-claude-tool.resultObserved_447816") : retained.proposal ? copy("native-claude-tool.proposalComplete_1ebb0e") : copy("native-claude-tool.receivingProposal_2dfe67")}</DisclosureSummary>
     <p><LocalizedText id="native-claude-tool.providerBlockCaller_c07946" components={{ s0: <>{retained.index + 1}</>, s1: <>{retained.caller === null ? copy("native-claude-tool.notReported_adadfa") : copy("native-claude-tool.direct_002c7c")}</> }} /></p>
-    <details><summary>{copy("native-claude-tool.initialInput_f6c601")}</summary><pre>{retained.initial_input}</pre></details>
-    {retained.input_delta !== null ? <details><summary>{copy("native-claude-tool.streamedInput_bafbd1")}</summary><pre>{retained.input_delta}</pre></details> : null}
-    {retained.proposal ? <><details><summary>{copy("native-claude-tool.originalProposedInput_0ecc84")}</summary><pre>{retained.proposal.proposed}</pre></details><details><summary>{copy("native-claude-tool.nativeAppliedInput_6397df")}</summary><pre>{retained.proposal.applied}</pre></details></> : null}
+    <Disclosure><DisclosureSummary>{copy("native-claude-tool.initialInput_f6c601")}</DisclosureSummary><pre>{retained.initial_input}</pre></Disclosure>
+    {retained.input_delta !== null ? <Disclosure><DisclosureSummary>{copy("native-claude-tool.streamedInput_bafbd1")}</DisclosureSummary><pre>{retained.input_delta}</pre></Disclosure> : null}
+    {retained.proposal ? <><Disclosure><DisclosureSummary>{copy("native-claude-tool.originalProposedInput_0ecc84")}</DisclosureSummary><pre>{retained.proposal.proposed}</pre></Disclosure><Disclosure><DisclosureSummary>{copy("native-claude-tool.nativeAppliedInput_6397df")}</DisclosureSummary><pre>{retained.proposal.applied}</pre></Disclosure></> : null}
     {result ? <section aria-label={copy("native-claude-tool.originalToolResult_2b1077")}>
       <p><LocalizedText id="native-claude-tool.nativeErrorFlag_e3d9ff" components={{ s0: <>{result.is_error === null ? copy("native-claude-tool.notReported_adadfa") : result.is_error ? copy("native-claude-tool.errorReported_284ccd") : copy("native-claude-tool.noErrorReported_71376f")}</> }} /></p>
       {result.non_execution ? <p>{result.non_execution.non_execution_kind === "user-rejected" ? copy("native-claude-tool.theOriginalUserRejectionPreventedThis_97b97e") : copy("native-claude-tool.nativePermissionPolicyPreventedThisTool_8e5f57")}</p> : null}
       {result.text !== null ? <pre>{result.text}</pre> : null}
       {result.blocks !== null ? <ol aria-label={copy("native-claude-tool.toolResultBlocks_7800be")}>{result.blocks.map((b, index) => <li key={index}><pre>{b.text}</pre></li>)}</ol> : null}
-      {result.structured !== null ? <details><summary>{copy("native-claude-tool.structuredNativeResult_762fc2")}</summary><pre>{result.structured}</pre></details> : null}
+      {result.structured !== null ? <Disclosure><DisclosureSummary>{copy("native-claude-tool.structuredNativeResult_762fc2")}</DisclosureSummary><pre>{result.structured}</pre></Disclosure> : null}
     </section> : <p>{copy("native-claude-tool.noToolResultHasBeenObserved_39f5c0")}</p>}
     <p>{copy("native-claude-tool.proposalCompletionDoesNotEstablishApproval_0d9759")}</p>
-  </details></section>;
+  </Disclosure></section>;
 }

@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.disclosure { min-width: 0; }
+.disclosure.disclosure > .disclosure-header, button.disclosure-header.disclosure-header { display: flex; align-items: center; gap: 8px; min-height: 36px; height: auto; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-muted); color: var(--text); font: 500 13px/1.4 system-ui, sans-serif; text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; list-style: none; }
+.disclosure.disclosure > .disclosure-header::-webkit-details-marker { display: none; }
+.disclosure.disclosure > .disclosure-header::marker { content: ""; }
+.disclosure.disclosure > .disclosure-header:hover, button.disclosure-header.disclosure-header:hover:not(:disabled) { background: var(--surface-hover); }
+.disclosure.disclosure > .disclosure-header:focus-visible, button.disclosure-header.disclosure-header:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.disclosure[data-disclosure-density="settings"] > .disclosure-header, button.disclosure-header.disclosure-header[data-disclosure-density="settings"] { min-height: 40px; font-size: 14px; }
+.disclosure[data-disclosure-density="compact"] > .disclosure-header, button.disclosure-header.disclosure-header[data-disclosure-density="compact"] { min-height: 32px; padding: 5px 8px; }
+.disclosure-header .disclosure-chevron { width: 14px; height: 14px; flex: 0 0 14px; }
+.disclosure[open] > .disclosure-header > .disclosure-chevron, button.disclosure-header.disclosure-header[aria-expanded="true"] > .disclosure-chevron { transform: rotate(90deg); }
+.disclosure-label { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.disclosure-header:disabled { cursor: default; }
+
+[data-disclosure-content][hidden] { display: none !important; }
+[data-disclosure-content]:not([hidden]):not([class]) { display: contents; }
+
+.disclosure-header .sidebar-project-title { white-space: normal; overflow: visible; text-overflow: clip; }

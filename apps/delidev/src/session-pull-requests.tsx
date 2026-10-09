@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
+import { useId } from "react";
 import { Timestamp } from "./timestamp-display";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -84,7 +86,7 @@ function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: D
   return <article aria-label={copy("session-pull-requests.linkedPr_299ef1", { v0: text(value.owner), v1: text(value.name), v2: text(value.number) })}>
     <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
     <p><LocalizedText id="session-pull-requests.linkedObservationCurrentPrStateAnd_e8d519" components={{ s0: <><Timestamp value={text(value.observed_at)} /></> }} /></p>
-    <details><summary>{copy("session-pull-requests.originalPrIdentity_92b511")}</summary><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <>{text(value.repository_id)}</> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></details>
+    <Disclosure><DisclosureSummary>{copy("session-pull-requests.originalPrIdentity_92b511")}</DisclosureSummary><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <>{text(value.repository_id)}</> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></Disclosure>
     <OpenPRProblemHistory selection={{ repositoryId: text(value.repository_id), remoteRepositoryId: text(value.remote_repository_id), pullRequestId: text(value.pull_request_id), number: text(value.number) }} />
     <button disabled={remove.busy || remove.uncertain} onClick={() => void remove.send({ sessionId, mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() } })}><LocalizedText id="session-pull-requests.unlink_1c427a" components={{ s0: <>{text(value.number)}</> }} /></button>
     {!remove.busy && !remove.uncertain ? <Problem error={remove.error} /> : null}
@@ -118,7 +120,8 @@ function RetainedLinks({ session }: { session: Resource }) {
 }
 
 export function SessionPullRequests({ session }: { session: Resource }) {
+  const disclosureContentId1 = useId();
   useLocale();
   const [open, setOpen] = useState(false);
-  return <section><button aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("session-pull-requests.closePrAssociations_622b6a") : copy("session-pull-requests.showPrAssociations_8dbf45")}</button>{open ? <RetainedLinks key={session.id} session={session} /> : null}</section>;
+  return <section><DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Details} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("session-pull-requests.closePrAssociations_622b6a") : copy("session-pull-requests.showPrAssociations_8dbf45")}</DisclosureButton><DisclosureContent id={disclosureContentId1} hidden={!open}>{open ? <RetainedLinks key={session.id} session={session} /> : null}</DisclosureContent></section>;
 }

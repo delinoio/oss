@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 import { validClaudeToolReference } from "./native-claude-tool-progress";
@@ -41,7 +42,7 @@ function TaskUsage({ value }: { value: unknown }) {
 }
 function TaskText({ label, value }: { label: string; value: unknown }) {
   useLocale();
-  return value === undefined ? null : <details><summary>{label}</summary><pre>{value as string}</pre></details>;
+  return value === undefined ? null : <Disclosure><DisclosureSummary>{label}</DisclosureSummary><pre>{value as string}</pre></Disclosure>;
 }
 function TaskFlags({ value }: { value: Document }) {
   useLocale();

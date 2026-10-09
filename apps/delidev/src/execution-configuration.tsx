@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokToolsTerminal } from "./native-grok-interactions";
@@ -72,8 +73,8 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
   const templates = items(configuration.templates);
   const accounts = items(configuration.accounts);
   const ready = Boolean(text(initial.id) && text(configuration.agent_id) && text(configuration.native_model));
-  return <details className="execution-configuration">
-    <summary>{copy("execution-configuration.executionConfigurationAndInstructions_2a7935")}</summary>
+  return <Disclosure className="execution-configuration">
+    <DisclosureSummary>{copy("execution-configuration.executionConfigurationAndInstructions_2a7935")}</DisclosureSummary>
     {resource.schemaVersion !== 1 ? <p>{copy("execution-configuration.thisSessionDocumentVersionIsNot_9413f8")}</p> : !ready ? <p>{data.initial_execution == null ? copy("execution-configuration.noAcceptedExecutionConfigurationIsAvailable_17c6b2") : copy("execution-configuration.theSavedExecutionConfigurationIsIncomplete_2c32e0")}</p> : <>
       <section aria-label={copy("execution-configuration.savedExecutionConfiguration_2d8ee9")}>
         <h3>{copy("execution-configuration.savedConfiguration_d194b3")}</h3>
@@ -97,18 +98,18 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
           <dt>{copy("execution-configuration.selectedExecutionAccount_012de8")}</dt><dd>{text(selection.account_id) || copy("execution-configuration.extra.ca1844969742")}</dd>
         </dl>
         {Object.keys(options).some((key) => !knownOptions.has(key)) ? <p className="notice">{copy("execution-configuration.thisSnapshotContainsAdditionalOptionsThat_76c12b")}</p> : null}
-        <details><summary>{copy("execution-configuration.snapshotReferencesAndAccountOrder_513309")}</summary>
+        <Disclosure><DisclosureSummary>{copy("execution-configuration.snapshotReferencesAndAccountOrder_513309")}</DisclosureSummary>
           <dl><dt>{copy("execution-configuration.firstExecution_5294a1")}</dt><dd>{text(initial.id)}</dd><dt>{copy("execution-configuration.selectedExecution_c6fa3c")}</dt><dd>{text(selection.id)}</dd><dt>{copy("execution-configuration.agentWorker_a4caa7")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.agent_id)}</>, s1: <>{integer(configuration.agent_revision)}</> }} /></dd><dt>{copy("execution-configuration.model_5e2c61")}</dt><dd><LocalizedText id="execution-configuration.revision_dfefbf" components={{ s0: <>{text(configuration.model_id)}</>, s1: <>{integer(configuration.model_revision)}</> }} /></dd><dt>{copy("execution-configuration.provider_472590")}</dt><dd>{text(configuration.provider_id)}</dd><dt>{copy("execution-configuration.acceptedAt_1b8950")}</dt><dd>{<Timestamp value={text(initial.accepted_at)} fallback={copy("execution-configuration.extra.ca1844969742")} />}</dd></dl>
           {Array.isArray(configuration.accounts) ? <ol aria-label={copy("execution-configuration.savedAccountOrder_c00a0a")}>{accounts.map((value, index) => { const account = object(value); return <li key={index}><LocalizedText id="execution-configuration.weight_0d7216" components={{ s0: <>{text(account.id) || copy("execution-configuration.extra.643fd990f260")}</>, s1: <>{integer(account.weight)}</> }} /></li>; })}</ol> : <p>{copy("execution-configuration.savedAccountOrderIsUnavailable_e54c4a")}</p>}
-        </details>
+        </Disclosure>
       </section>
       <NativeObservations progress={object(data.execution)} selection={selection} harness={configuration.harness} />
       <section aria-label={copy("execution-configuration.appliedDelidevInstructions_f2bcde")}>
         <h3>{copy("execution-configuration.appliedDelidevInstructions_f2bcde")}</h3>
         <p>{copy("execution-configuration.readOnlyAdditionalInstructionsFromThis_8850cd")}</p>
         {typeof configuration.instructions !== "string" ? <p>{copy("execution-configuration.appliedInstructionTextIsUnavailable_b0a185")}</p> : configuration.instructions === "" ? <p>{copy("execution-configuration.noAdditionalDelidevInstructionsWereSelected_7b2306")}</p> : <pre aria-label={copy("execution-configuration.attribute.e9ae418fcc27")}>{configuration.instructions}</pre>}
-        {Array.isArray(configuration.templates) ? <ol aria-label={copy("execution-configuration.appliedInstructionTemplateOrder_be0ff4")}>{templates.map((value, index) => { const template = object(value); return <li key={index}><details><summary><LocalizedText id="execution-configuration.templateRevision_10577b" components={{ s0: <>{index + 1}</>, s1: <>{text(template.id) || copy("execution-configuration.extra.ccd130d59f4b")}</>, s2: <>{integer(template.revision)}</> }} /></summary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>{copy("execution-configuration.savedTemplateTextIsUnavailable_95e25e")}</p>}</details></li>; })}</ol> : <p>{copy("execution-configuration.appliedTemplateOrderIsUnavailable_02e090")}</p>}
+        {Array.isArray(configuration.templates) ? <ol aria-label={copy("execution-configuration.appliedInstructionTemplateOrder_be0ff4")}>{templates.map((value, index) => { const template = object(value); return <li key={index}><Disclosure><DisclosureSummary><LocalizedText id="execution-configuration.templateRevision_10577b" components={{ s0: <>{index + 1}</>, s1: <>{text(template.id) || copy("execution-configuration.extra.ccd130d59f4b")}</>, s2: <>{integer(template.revision)}</> }} /></DisclosureSummary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>{copy("execution-configuration.savedTemplateTextIsUnavailable_95e25e")}</p>}</Disclosure></li>; })}</ol> : <p>{copy("execution-configuration.appliedTemplateOrderIsUnavailable_02e090")}</p>}
       </section>
     </>}
-  </details>;
+  </Disclosure>;
 });

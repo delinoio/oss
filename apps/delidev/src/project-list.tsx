@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
+import { useId, useState } from "react";
 import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
 import { copy, useLocale } from "./localization";
@@ -14,13 +15,14 @@ export function ProjectList({ resources, metadata, edit, remove }: { resources: 
 }
 function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: ReadonlyMap<string, RepositoryDetails>; edit: (row: Resource) => void; remove: (row: Resource) => void }) {
   const [expanded, setExpanded] = useState(false);
+  const repositoriesId = useId();
   const name = resourceName(row), ids = projectRepositoryIds(row), primary = text(document(row).primary_repository);
   const singleton = ids.length === 1;
   return <article className="project-row project-metadata-row" data-single-repository={singleton || undefined}>
     <header className="project-row-heading"><div className="project-identity"><h3>{name}</h3>{!singleton ? <p>{copy("settings.projectRepositoryCount", { count: ids.length })}</p> : null}</div>
       <div className="actions"><button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={() => edit(row)}>{copy("settings.edit_464c4f")}</button><button type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={() => remove(row)}>{copy("settings.delete_e2d0a5")}</button></div>
     </header>
-    <ol className="project-repository-rows">{(expanded ? ids : ids.slice(0, 3)).map((id, index) => {
+    <ol id={repositoriesId} className="project-repository-rows">{(expanded ? ids : ids.slice(0, 3)).map((id, index) => {
       const details = metadata.get(id), ready = details?.state === RepositoryDetailsState.Ready;
       const redundantName = singleton && ready && details.name === name;
       return <li key={`${id}:${index}`}>{!redundantName ? <div className="project-repository-heading"><strong>{ready ? details.name : copy(details?.state === RepositoryDetailsState.Unavailable ? "settings.projectRepositoryUnavailable" : "settings.projectRepositoryLoading")}</strong>{!singleton && id === primary ? <span className="project-primary-badge">{copy("settings.projectRepositoryPrimary")}</span> : null}</div> : null}
@@ -29,7 +31,7 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
         <Failure failure={details?.failure} />
       </li>;
     })}</ol>
-    {ids.length > 3 ? <button type="button" className="project-show-repositories" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{copy(expanded ? "settings.projectRepositoriesShowFewer" : "settings.projectRepositoriesShowAll")}</button> : null}
-    <details className="project-original-details"><summary>{copy("settings.projectDetails")}</summary><dl><dt>{copy("settings.projectOriginalID")}</dt><dd>{row.id}</dd><dt>{copy("settings.projectRepositoryOriginalIDs")}</dt><dd><ol>{ids.map((id, index) => <li key={`${id}:${index}`}>{id}</li>)}</ol></dd></dl></details>
+    {ids.length > 3 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" className="project-show-repositories" aria-controls={repositoriesId} aria-expanded={expanded} onClick={() => setExpanded(value => !value)} focusWhenCollapsing={element => { const row = element.closest("li"); return Boolean(row && [...row.parentElement!.children].indexOf(row) >= 3); }}>{copy(expanded ? "settings.projectRepositoriesShowFewer" : "settings.projectRepositoriesShowAll")}</DisclosureButton> : null}
+    <Disclosure density={DisclosureDensity.Settings} className="project-original-details"><DisclosureSummary>{copy("settings.projectDetails")}</DisclosureSummary><dl><dt>{copy("settings.projectOriginalID")}</dt><dd>{row.id}</dd><dt>{copy("settings.projectRepositoryOriginalIDs")}</dt><dd><ol>{ids.map((id, index) => <li key={`${id}:${index}`}>{id}</li>)}</ol></dd></dl></Disclosure>
   </article>;
 }

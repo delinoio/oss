@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { NativeGrokInteraction } from "./native-grok-interactions";
@@ -112,7 +113,7 @@ function Approval({ resource, accepted, draft, saveDraft, submissionAllowed, rec
     {text(request.command) ? <pre>{text(request.command)}</pre> : null}
     {text(request.cwd) ? <p><LocalizedText id="interactions.directory_369f13" components={{ s0: <code>{text(request.cwd)}</code> }} /></p> : null}
     {text(request.grant_root) ? <p><LocalizedText id="interactions.requestedRoot_a5811f" components={{ s0: <code>{text(request.grant_root)}</code> }} /></p> : null}
-    <details><summary>{copy("interactions.exactNativeRequestScope_984d63")}</summary><pre>{JSON.stringify(request, null, 2)}</pre></details>
+    <Disclosure><DisclosureSummary>{copy("interactions.exactNativeRequestScope_984d63")}</DisclosureSummary><pre>{JSON.stringify(request, null, 2)}</pre></Disclosure>
     {!compatible ? <p>{copy("interactions.thisNativeApprovalVersionIsNot_3fac55")}</p> : null}
     <fieldset disabled={blocked}>
       {native.kind === "permissions" ? <PermissionSelection profile={object(request.permissions)} editable={editable} change={setEditable} /> : <label>{copy("interactions.decision_640ae4")}<select required value={editable.choice || ""} onChange={(event) => setEditable({ ...editable, choice: Number(event.target.value) || 0 })}><option value="">{copy("interactions.selectADecision_087ce7")}</option>{offered.map((value, index) => <option key={index} value={index + 1} disabled={!Object.hasOwn(decisionNames, text(value.kind))}>{decisionNames[text(value.kind) as Decision] ?? copy("interactions.unsupportedNativeDecision_72a15c")}</option>)}</select></label>}

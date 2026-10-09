@@ -1,3 +1,4 @@
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
 import { SessionRowActions, SessionRowActionsProvider, useSessionActionMenuOpen } from "./session-row-actions";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -191,13 +192,14 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
   newSession: (projectId: string) => void; projectSelectionBlocked: boolean;
 }) {
+  const disclosureContentId1 = useId();
   useLocale();
   return <section className={`sidebar-project-group${fallback ? "" : " has-new-session"}`} data-project-id={projectId}>
-    <button type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
-      <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span><Icon name="chevron" className={`sidebar-disclosure ${expanded ? "is-expanded" : ""}`} />
-    </button>
+    <DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
+      <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span>
+    </DisclosureButton>
     {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: projectId })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
-    {expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}
+    <DisclosureContent id={disclosureContentId1} hidden={!expanded}>{expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}</DisclosureContent>
   </section>;
 }
 
@@ -205,6 +207,7 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
   surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsEntryDestination) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
+  const disclosureContentId3 = useId();
   useLocale();
   const [compact, setCompact] = useState(false);
   const drawer = useRef<HTMLDialogElement>(null);
@@ -395,14 +398,14 @@ export function Sidebar({ surface, selectedSessionId, serverPresentation, connec
         {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
         <ScrollContinuation showInitial={false} showErrors={false} query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat has-new-session">
-          <button type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span><Icon name="chevron" className={`sidebar-disclosure ${generalExpanded ? "is-expanded" : ""}`} /></button>
+          <DisclosureButton aria-controls={disclosureContentId3} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span></DisclosureButton>
           <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newGeneralChat")} aria-label={copy("sidebar.newGeneralChat")} onClick={(event) => { event.currentTarget.focus(); newGeneralChat(); setDrawerOpen(false); }}><Icon name="plus" /></button>
-          {generalExpanded ? <>
+          <DisclosureContent id={disclosureContentId3} hidden={!generalExpanded}>{generalExpanded ? <>
             {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingSessions_c4141f")}</p> : null}
             {generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />)}
             {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
             <ScrollContinuation showInitial={false} showErrors={false} query={sessions} label={copy("sidebar.sessions_1225ae")} root={list} active={active && generalExpanded} />
-          </> : null}
+          </> : null}</DisclosureContent>
         </section>
         </div>
         <div className="sidebar-surface-outlet" ref={setContextTarget} />

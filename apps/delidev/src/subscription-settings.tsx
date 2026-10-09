@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { quotaColorStyle } from "./quota-color";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -270,6 +271,6 @@ export function SubscriptionSettingsView({ accounts, accountList, accountIds, ma
         if (manageDetails) manageDetails(displayed, detailsOpener.current); else latest?.details();
       }}>{copy("subscription-settings.manageMetadata_ddc14e")}</button></SettingsTaskActions>
     </SettingsTaskDialog> : null}
-    <details className="subscription-advanced"><summary>{copy("subscription-settings.advancedSettings_7b0bd2")}</summary><div>{advanced}</div></details>
+    <Disclosure density={DisclosureDensity.Settings} className="subscription-advanced"><DisclosureSummary>{copy("subscription-settings.advancedSettings_7b0bd2")}</DisclosureSummary><div>{advanced}</div></Disclosure>
   </section>;
 }

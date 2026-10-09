@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -81,22 +82,22 @@ function TodoList({ todos }: { todos: Todo[] }) {
 export function NativeTodoProgress({ progress, state }: { progress: Record<string, unknown>; state: string }) {
   useLocale();
   const todo = object(progress.todo);
-  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.workspace != null || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <details><summary>{copy("native-todo.todoProgressUnavailable_9bbed9")}</summary><p>{copy("native-todo.theRetainedTodoProgressIsUnavailable_67a7c6")}</p></details>;
-  return <details open><summary>{copy("native-todo.todoProgress_d14a6c")}</summary><TodoList todos={todo.todos} /><p>{copy("native-todo.thisListIsAnOriginalNative_a9e1fd")}</p></details>;
+  if (state !== "complete" || progress.kind !== "opencode-todo" || progress.workspace != null || progress.changes != null || progress.plan != null || progress.diff != null || !shape(progress.todo, ["native_event_id", "todos"]) || typeof todo.native_event_id !== "string" || !/^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(todo.native_event_id) || !list(todo.todos)) return <Disclosure><DisclosureSummary>{copy("native-todo.todoProgressUnavailable_9bbed9")}</DisclosureSummary><p>{copy("native-todo.theRetainedTodoProgressIsUnavailable_67a7c6")}</p></Disclosure>;
+  return <Disclosure open><DisclosureSummary>{copy("native-todo.todoProgress_d14a6c")}</DisclosureSummary><TodoList todos={todo.todos} /><p>{copy("native-todo.thisListIsAnOriginalNative_a9e1fd")}</p></Disclosure>;
 }
 
 export function NativeTodo({ tool, state }: { tool: Record<string, unknown>; state: string }) {
   useLocale();
   const snapshots = retained(tool, state), latest = snapshots?.at(-1);
-  if (!snapshots || !latest) return <details><summary>{copy("native-todo.todoUpdateUnavailable_aabc67")}</summary><p>{copy("native-todo.theRetainedTodoOperationIsUnavailable_f3c01c")}</p></details>;
-  return <details><summary><LocalizedText id="native-todo.todoUpdate_23ea76" components={{ s0: <>{latest.status}</> }} /></summary>
+  if (!snapshots || !latest) return <Disclosure><DisclosureSummary>{copy("native-todo.todoUpdateUnavailable_aabc67")}</DisclosureSummary><p>{copy("native-todo.theRetainedTodoOperationIsUnavailable_f3c01c")}</p></Disclosure>;
+  return <Disclosure><DisclosureSummary><LocalizedText id="native-todo.todoUpdate_23ea76" components={{ s0: <>{latest.status}</> }} /></DisclosureSummary>
     {latest.todos !== undefined ? <TodoList todos={latest.todos} /> : <p>{copy("native-todo.theNativeProposalHasNoApplied_e4bc45")}</p>}
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
-    {latest.output !== undefined ? <details><summary>{copy("native-todo.originalNativeResult_0b43e3")}</summary><pre>{latest.output}</pre></details> : null}
+    {latest.output !== undefined ? <Disclosure><DisclosureSummary>{copy("native-todo.originalNativeResult_0b43e3")}</DisclosureSummary><pre>{latest.output}</pre></Disclosure> : null}
     {latest.error !== undefined ? <section aria-label={copy("native-todo.todoError_8b3b5e")}><pre>{latest.error}</pre></section> : null}
     {latest.truncated !== undefined ? <p>{latest.truncated ? copy("native-todo.theNativeResultIsTruncated_a74cd4") : copy("native-todo.theNativeResultIsNotTruncated_b9c5cf")}</p> : null}
     {latest.outputPath !== undefined ? <p><LocalizedText id="native-todo.nativeSavedOutputPath_8c8556" components={{ s0: <code>{latest.outputPath}</code> }} /></p> : null}
     {latest.interrupted !== undefined ? <p><LocalizedText id="native-todo.nativeInterruption_edde92" components={{ s0: <>{latest.interrupted ? copy("native-todo.observed_64fa8a") : copy("native-todo.notObserved_1d3efc")}</> }} /></p> : null}
-    <details><summary>{copy("native-todo.originalProposalAndObservations_8d63b6")}</summary><ol>{snapshots.map((s, i) => <li key={i}><details><summary>{s.status}</summary>{s.todos !== undefined ? <TodoList todos={s.todos} /> : null}{s.raw !== undefined ? <pre>{s.raw}</pre> : null}{s.result !== undefined ? <section aria-label={copy("native-todo.observedNativeList_5e0e77")}><TodoList todos={s.result} /></section> : null}</details></li>)}</ol></details>
-  </details>;
+    <Disclosure><DisclosureSummary>{copy("native-todo.originalProposalAndObservations_8d63b6")}</DisclosureSummary><ol>{snapshots.map((s, i) => <li key={i}><Disclosure><DisclosureSummary>{s.status}</DisclosureSummary>{s.todos !== undefined ? <TodoList todos={s.todos} /> : null}{s.raw !== undefined ? <pre>{s.raw}</pre> : null}{s.result !== undefined ? <section aria-label={copy("native-todo.observedNativeList_5e0e77")}><TodoList todos={s.result} /></section> : null}</Disclosure></li>)}</ol></Disclosure>
+  </Disclosure>;
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { AccountingSource, type AccountingDisclosures } from "./usage-accounting-source";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
@@ -27,9 +28,9 @@ export function GrokAccounting({ data, open, disclosures }: { data: GetUsageSumm
     <div className="usage-detail">
     <h2 id="grok-accounting-title">{copy("grok-accounting.verifiedGrokClosedInputs_f343dd")}</h2>
     <p>{units ? copy("grok-accounting.closedInputsKnownTotalTokens_a55f2e", { v0: units.units.toLocaleString(displayLocale()), v1: total(data.totals) }) : copy("grok-accounting.noVerifiedGrokClosedInputsAre_244c3c")}</p>
-    <details className="usage-source-definitions"><summary>{copy("usage.sourceDefinitions")}</summary><p>{copy("grok-accounting.eachInputRequiresMatchingOriginalHistory_2f9fce")}</p>
+    <Disclosure className="usage-source-definitions"><DisclosureSummary>{copy("usage.sourceDefinitions")}</DisclosureSummary><p>{copy("grok-accounting.eachInputRequiresMatchingOriginalHistory_2f9fce")}</p>
     <p>{copy("grok-accounting.grokInputTimesUseTheServer_55cef2")}</p>
-    </details>
+    </Disclosure>
     {groups.length ? <div className="usage-table" role="region" aria-label={copy("grok-accounting.verifiedGrokInputAccountingTables_ee8ebe")} tabIndex={0}>
       <table><caption>{copy("grok-accounting.grokInputsByOriginalSessionAccount_d2226c")}</caption><thead><tr><th scope={"col"}>{copy("grok-accounting.sessionProject_59a44c")}</th><th scope={"col"}>{copy("grok-accounting.account_7e1b0d")}</th><th scope={"col"}>{copy("grok-accounting.modelApi_6a8129")}</th><th scope={"col"}>{copy("grok-accounting.closedInputs_85c5d8")}</th><th scope={"col"}>{copy("grok-accounting.knownTokens_682912")}</th></tr></thead><tbody>{groups.map((group) => <tr key={`${group.sessionId}:${group.accountId}:${group.providerId}:${group.modelId}`}>
         <td><button type="button" onClick={() => open(group.sessionId)}>{group.sessionName || group.sessionId}</button><small>{group.sessionId}</small><p>{group.projectId ? group.projectName || group.projectId : copy("grok-accounting.generalChat_f634bc")}</p>{group.projectId ? <small>{group.projectId}</small> : null}</td>

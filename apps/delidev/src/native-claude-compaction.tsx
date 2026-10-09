@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
@@ -37,7 +38,7 @@ export function NativeClaudeCompactionBoundary({ value }: { value: unknown }) {
   return <>
     <dl><dt>{copy("native-claude-compaction.compactionTrigger_aedcf8")}</dt><dd>{v.trigger === "auto" ? copy("native-claude-compaction.automatic_d461a4") : copy("native-claude-compaction.manual_b0b9fe")}</dd><dt>{copy("native-claude-compaction.tokensBeforeCompaction_602d37")}</dt><dd>{v.pre_tokens as string}</dd>
       <dt>{copy("native-claude-compaction.tokensAfterCompaction_047fdc")}</dt><dd>{v.post_tokens as string ?? copy("native-claude-compaction.notReported_adadfa")}</dd><dt>{copy("native-claude-compaction.durationMilliseconds_60d19b")}</dt><dd>{v.duration_ms as string ?? copy("native-claude-compaction.notReported_adadfa")}</dd><dt>{copy("native-claude-compaction.cumulativeDroppedTokens_b82734")}</dt><dd>{v.cumulative_dropped_tokens as string ?? copy("native-claude-compaction.notReported_adadfa")}</dd></dl>
-    <details><summary>{copy("native-claude-compaction.originalContextReferences_ea9604")}</summary><pre>{JSON.stringify({ logical_parent_uuid: v.logical_parent_uuid, preserved_segment: v.preserved_segment, preserved_messages: v.preserved_messages }, null, 2)}</pre></details>
+    <Disclosure><DisclosureSummary>{copy("native-claude-compaction.originalContextReferences_ea9604")}</DisclosureSummary><pre>{JSON.stringify({ logical_parent_uuid: v.logical_parent_uuid, preserved_segment: v.preserved_segment, preserved_messages: v.preserved_messages }, null, 2)}</pre></Disclosure>
     <p>{copy("native-claude-compaction.contextCountsAreSeparateFromProvider_92356b")}</p>
   </>;
 }
@@ -45,9 +46,9 @@ export function NativeClaudeCompactionBoundary({ value }: { value: unknown }) {
 export function NativeClaudeCompactionSummary({ value }: { value: unknown }) {
   useLocale();
   const v = object(value);
-  return <details><summary>{copy("native-claude-compaction.originalNativeCompactionSummary_809770")}</summary>
+  return <Disclosure><DisclosureSummary>{copy("native-claude-compaction.originalNativeCompactionSummary_809770")}</DisclosureSummary>
     <p>{copy("native-claude-compaction.thisIsContextSuppliedByClaude_cbc806")}</p>
     {v.text !== null ? <pre>{v.text as string}</pre> : (v.blocks as Document[]).map((block, index) => <pre key={index}>{block.text as string}</pre>)}
     <dl><dt>{copy("native-claude-compaction.originalBoundary_3e1890")}</dt><dd>{v.boundary_native_id as string}</dd></dl>
-  </details>;
+  </Disclosure>;
 }

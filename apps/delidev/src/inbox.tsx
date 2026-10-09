@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -346,7 +347,7 @@ function InboxDetail({ view, readOnly, draft, draftError, saveDraft, clearDraft,
         {responseCurrent ? null : <p>{copy("inbox.thisRequestIsRetainedForInspection_208dff")}</p>}
         <Interaction resource={view.interaction} refresh={refresh} draft={draft} saveDraft={(editable) => saveDraft(view.interaction!, editable)} clearDraft={() => clearDraft(view.interaction!.id)} submissionAllowed={canMutate && responseCurrent && !identityChanged} receiptRetryAllowed={canMutate} />
       </section>
-    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <Timestamp value={text(object(data.recovery).observed_at)} /> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p><details className="inbox-execution-metadata" key={entry.id}><summary>{copy("inbox.executionMetadata")}<small>{copy("inbox.originalIdentifiersAndOutcome")}</small></summary><pre>{JSON.stringify(terminal, null, 2)}</pre></details></section>}
+    </> : data.source === "subscription-recovery" ? <section className="inbox-recovery" aria-label={copy("inbox.subscriptionQuotaRecovery_44e5d3")}><h4>{copy("inbox.subscriptionQuotaRecovery_44e5d3")}</h4><p><LocalizedText id="inbox.account_e07497" components={{ s0: <>{resourceName(view.account)}</> }} /></p><p><LocalizedText id="inbox.observed_e8e2c1" components={{ s0: <Timestamp value={text(object(data.recovery).observed_at)} /> }} /></p><p>{copy("inbox.thisRecordsTheAccountSObserved_bd3f28")}</p></section> : <section className="inbox-terminal"><h4>{copy("inbox.originalTerminalObservation_b3bd33")}</h4><p>{itemLabel(view)}</p><p>{copy("inbox.recordedTimeIsTheInboxRecord_4acabe")}</p><Disclosure className="inbox-execution-metadata" key={entry.id}><DisclosureSummary>{copy("inbox.executionMetadata")}<small>{copy("inbox.originalIdentifiersAndOutcome")}</small></DisclosureSummary><pre>{JSON.stringify(terminal, null, 2)}</pre></Disclosure></section>}
   </article>;
 }
 

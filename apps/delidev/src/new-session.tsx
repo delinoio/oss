@@ -1,3 +1,5 @@
+import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
+import { useId } from "react";
 import { useProjectPromptHistory } from "./project-prompt-history";
 import { useSkillCompletion } from "./skill-completion";
 import { acknowledgeImages } from "./image-input";
@@ -72,6 +74,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const [mode, setMode] = useState(Mode.Execute);
   const [starting, setStarting] = useState<unknown[]>([]);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsContentId = useId();
   const [promptLimit, setPromptLimit] = useState(false);
   const [budget, setBudget] = useState(emptyBudget);
   const [budgetProblem, setBudgetProblem] = useProductMessage("");
@@ -291,7 +294,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
                 <label className="new-session-mode plan-mode"><input type="checkbox" checked={mode === Mode.Plan} onChange={(event) => { touched.current = true; setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
               </div>
               <div className="new-session-submit-row">
-                <button type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</button>
+                <DisclosureButton density={DisclosureDensity.Settings} type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} aria-controls={optionsContentId} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</DisclosureButton>
                 <button className="new-session-submit" type="submit" aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionSend)} aria-label={submitLabel} title={submitLabel} disabled={!canCreate}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
                 </button>
@@ -299,7 +302,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
             </div>} />
           </div>
           <div className="new-session-hints" ref={placement.hints}><span>{generalChat ? copy("new-session.conversationsAreNamedAutomatically") : copy("new-session.sessionsAreNamedAutomatically_ba66e8")}</span><span>{copy("new-session.shiftEnterForANewLine_5e4b35")}</span></div>
-          {optionsOpen ? <section className="new-session-options" aria-label={copy("new-session.sessionOptions_0bccf5")}>
+          {optionsOpen ? <section id={optionsContentId} className="new-session-options" aria-label={copy("new-session.sessionOptions_0bccf5")}>
             {!generalChat && project ? <>
               <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
               {workspace === Workspace.Local ? <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p> : <StartingReferences key={project} project={project} starting={starting} change={(value) => { touched.current = true; setStarting(value); }} active={active} />}
@@ -308,7 +311,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               <h3>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</h3>
               <BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} />
               <p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p>
-            </> : <details><summary>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</summary><BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} /><p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p></details>}
+            </> : <Disclosure density={DisclosureDensity.Settings}><DisclosureSummary>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</DisclosureSummary><BudgetFields draft={budget} change={(value) => { touched.current = true; setBudget(value); }} /><p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p></Disclosure>}
           </section> : null}
         </fieldset>
       </form>

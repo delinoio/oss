@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useId } from "react";
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampText } from "./timestamp-display";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -71,7 +73,8 @@ export function PRRemediationHistory({ selection, validateSet }: Props) {
 }
 
 export function OpenPRRemediationHistory(props: Props) {
+  const disclosureContentId1 = useId();
   useLocale();
   const [open, setOpen] = useState(false);
-  return <div><button aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("pr-remediation-history.closeRemediationAttemptHistory_1082e5") : copy("pr-remediation-history.showRemediationAttemptHistory_0b60bc")}</button>{open ? <PRRemediationHistory key={`${props.selection.remoteRepositoryId}:${props.selection.pullRequestId}`} {...props} /> : null}</div>;
+  return <div><DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Details} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("pr-remediation-history.closeRemediationAttemptHistory_1082e5") : copy("pr-remediation-history.showRemediationAttemptHistory_0b60bc")}</DisclosureButton><DisclosureContent id={disclosureContentId1} hidden={!open}>{open ? <PRRemediationHistory key={`${props.selection.remoteRepositoryId}:${props.selection.pullRequestId}`} {...props} /> : null}</DisclosureContent></div>;
 }

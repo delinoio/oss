@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "./ui";
@@ -105,10 +106,10 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
         </div>
         {actions}
       </div>
-      <details ref={explanation} className="settings-runner-worker-details">
-        <summary>{copy("local-worker-controls.details")}</summary>
+      <Disclosure density={DisclosureDensity.Settings} ref={explanation} className="settings-runner-worker-details">
+        <DisclosureSummary>{copy("local-worker-controls.details")}</DisclosureSummary>
         <div>{generalExplanation}{compactRunning ? <>{managedDescription ? <p>{managedDescription}</p> : null}<p>{descriptions[status.state]}</p></> : null}{quitExplanation}{machineIdentity}</div>
-      </details>
+      </Disclosure>
     </> : <><h3>{copy("local-worker-controls.thisComputerSWorker_80a5ac")}</h3>{generalExplanation}{stateGuidance}{machineIdentity}{quitExplanation}{managedDescription && management?.state !== LocalWorkerManagementState.Running && status?.machine_id ? <p>{descriptions[status.state]}</p> : null}{problem ? <p role="alert">{problem}</p> : null}{actions}</>}
     {runnerDevices && problem ? <p role="alert">{problem}</p> : null}
     {detailsOpen ? <Modal title={copy("local-worker-controls.problemTitle")} close={() => setDetailsOpen(false)} visible={active} focusClose trapFocus>

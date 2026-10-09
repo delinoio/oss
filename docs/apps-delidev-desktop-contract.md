@@ -2910,3 +2910,40 @@ sends the original immutable request only. Missing rows never permit resurrectio
 replacement requests or repeated queue accounting. Definite acknowledgment clears
 the intent; connection disposal prevents replay and discards presentation. The
 existing 1,000-intent/8 MiB registry bounds apply without another content cache.
+
+### Shared inline content disclosures — issue #1970
+
+`src/disclosure.tsx` owns the frontend-local disclosure family. `Disclosure` and
+`DisclosureSummary` retain actual native `details`/`summary`, original refs,
+`open` access, native toggle events and closed-ancestor pagination behavior.
+`DisclosureButton` and `DisclosureContent` retain caller-owned expansion and
+original hidden-mounted or conditionally disposed content. Domain readers,
+drafts, confirmations and retained requests stay with their original owners.
+Each trigger has a stable content association. Programmatic native closing and
+controlled collapse restore descendant focus to the owning trigger; focus
+outside the hidden content remains unchanged. Keep existing reveal-and-focus
+validation and Settings search flows.
+
+All product inline disclosures, including nested native evidence, Settings,
+conversation records, sidebar groups and expandable lists, use this family.
+Action menus (saved connections and Browser overflow), popovers, comboboxes,
+attachment-help overlays, file trees, Browser/Files panels and the Terminal dock
+keep their specialized controls. Modal launchers also keep their original modal
+semantics. QA-only and test/fixture markup is outside product migration coverage.
+
+Headers share a semantic subtle surface, 1px border, 8px corners and a decorative
+14px left chevron separated from wrapped titles by 8px. The closed
+`DisclosureDensity` enum selects Settings (40px minimum/14px type), Details
+(36px/13px) and Compact (32px/13px). Keep theme hover and visible focus, remove
+native and duplicate surface indicators, and retain content geometry and scroll
+ownership. The full header activates with pointer or native Enter/Space. Sibling
+actions remain outside it. Nested and sibling disclosures remain independent;
+there is no exclusive accordion, height animation or persistent preference.
+
+Preserve all current initial states, callbacks and lifetime boundaries. Closing
+Network settings still disposes its scoped opening; Worker transfer and mounted
+schedule forms retain drafts. Opening adds no business authority or automatic
+mutation/retry. Complete inert evidence, loading, failures, unavailable states,
+page restoration and original exact requests remain intact. This family adds no
+RPC, allocation, storage/native change, dependency, flag or telemetry. Separate
+component/build evidence from installed-native/account/platform acceptance.

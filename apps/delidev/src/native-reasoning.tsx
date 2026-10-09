@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -42,8 +43,8 @@ function reasoningText(artifact: Record<string, unknown>, state: string): string
 export function NativeReasoning({ artifact, state }: { artifact: Record<string, unknown>; state: string }) {
   useLocale();
   const content = reasoningText(artifact, state);
-  return <details>
-    <summary><LocalizedText id="native-reasoning.reasoning_4d3137" components={{ s0: <>{content === undefined ? copy("native-reasoning.unavailable_ca1844") : state === ReasoningState.Complete ? copy("native-reasoning.complete_143b27") : copy("native-reasoning.streaming_a951c5")}</> }} /></summary>
+  return <Disclosure>
+    <DisclosureSummary><LocalizedText id="native-reasoning.reasoning_4d3137" components={{ s0: <>{content === undefined ? copy("native-reasoning.unavailable_ca1844") : state === ReasoningState.Complete ? copy("native-reasoning.complete_143b27") : copy("native-reasoning.streaming_a951c5")}</> }} /></DisclosureSummary>
     {content === undefined ? <p>{copy("native-reasoning.theRetainedReasoningContentIsUnavailable_d2c416")}</p> : <pre>{content}</pre>}
-  </details>;
+  </Disclosure>;
 }

@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { createContext, useCallback, useId, useState, type ReactNode, type SyntheticEvent } from "react";
 import { items, object, type Document } from "./documents";
@@ -33,17 +34,17 @@ function SectionIcon({ section }: { section: AgentSection }) {
   return <svg className="agent-section-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[section]} /></svg>;
 }
 
-function Disclosure({ section, summary, children, invalidValue = false, note }: { section: AgentSection; summary: string; children: ReactNode; invalidValue?: boolean; note?: string }) {
+function AgentDisclosure({ section, summary, children, invalidValue = false, note }: { section: AgentSection; summary: string; children: ReactNode; invalidValue?: boolean; note?: string }) {
   useLocale();
   const [reads, setReads] = useState<Record<string, boolean>>({});
   const [invalid, setInvalid] = useState(false);
   const reportRead = useCallback((label: string, problem: boolean) => setReads(current => current[label] === problem ? current : { ...current, [label]: problem }), []);
   const problem = invalid || invalidValue || Object.values(reads).some(Boolean);
   return <div className="agent-optional-section">
-    <details className="agent-disclosure" onInvalidCapture={event => { event.currentTarget.open = true; setInvalid(true); }} onChangeCapture={event => setInvalid(Boolean(firstInvalidControl(event.currentTarget)))}>
-      <summary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{copy(section === AgentSection.Reasoning ? "agent-configuration.section.reasoning" : section === AgentSection.Accounts ? "agent-configuration.section.accounts" : section === AgentSection.Instructions ? "agent-configuration.section.instructions" : "agent-configuration.section.native")}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span><svg className="agent-chevron" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m9 5 7 7-7 7" /></svg></summary>
+    <Disclosure density={DisclosureDensity.Settings} className="agent-disclosure" onInvalidCapture={event => { event.currentTarget.open = true; setInvalid(true); }} onChangeCapture={event => setInvalid(Boolean(firstInvalidControl(event.currentTarget)))}>
+      <DisclosureSummary><SectionIcon section={section} /><span className="agent-section-copy"><span className="agent-section-title">{copy(section === AgentSection.Reasoning ? "agent-configuration.section.reasoning" : section === AgentSection.Accounts ? "agent-configuration.section.accounts" : section === AgentSection.Instructions ? "agent-configuration.section.instructions" : "agent-configuration.section.native")}{problem ? <span className="agent-section-problem" role="status">{copy("agent-configuration.needsAttention_c1ebc7")}</span> : null}</span><span className="agent-section-summary">{summary}</span></span></DisclosureSummary>
       <div className="agent-section-fields"><AgentReadProblem.Provider value={reportRead}>{children}</AgentReadProblem.Provider></div>
-    </details>
+    </Disclosure>
     {note ? <p className="agent-section-note">{note}</p> : null}
   </div>;
 }
@@ -60,10 +61,10 @@ export function AgentConfiguration({ data, core, permissions, reasoning, account
   return <>
     <section className="agent-core" aria-labelledby={coreId}><header><h4 id={coreId}>{copy("agent-configuration.coreSettings_3f8268")}</h4><p>{copy("agent-configuration.requiredFieldsAreMarked_a99eff")}</p></header>{core}<div className="agent-permissions">{permissions}</div></section>
     <section className="agent-optional" aria-labelledby={optionalId}><header><h4 id={optionalId}>{copy("agent-configuration.optionalSettings_e88b5c")}</h4><p>{copy("agent-configuration.leaveTheseUnchangedToKeepThe_73a428")}</p></header>
-      <Disclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, copy("agent-configuration.extra.2bab94029bed"))} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</Disclosure>
-      {accounts !== undefined ? <Disclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</Disclosure> : null}
-      <Disclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</Disclosure>
-      <Disclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</Disclosure>
+      <AgentDisclosure section={AgentSection.Reasoning} summary={retainedSummary(data.effort, copy("agent-configuration.extra.2bab94029bed"))} invalidValue={data.effort !== undefined && typeof data.effort !== "string"}>{reasoning}</AgentDisclosure>
+      {accounts !== undefined ? <AgentDisclosure section={AgentSection.Accounts} summary={copy("agent-configuration.sentence.ad26a61b1351", { v0: links.length, v1: retainedSummary(data.routing, copy("agent-configuration.extra.42b998374988")) })} invalidValue={invalidWeight || routingProblem} note={links.length === 0 ? copy("agent-configuration.extra.8116757327fb") : undefined}>{accounts}</AgentDisclosure> : null}
+      <AgentDisclosure section={AgentSection.Instructions} summary={copy("agent-configuration.sentence.74d105c1160d", { v0: items(data.templates).length })}>{instructions}</AgentDisclosure>
+      <AgentDisclosure section={AgentSection.Native} summary={nativeSummary(data)} invalidValue={invalidConcurrency}>{native}</AgentDisclosure>
     </section>
   </>;
 }

@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -105,22 +106,22 @@ export function NativeRead({ tool, state }: { tool: Record<string, unknown>; sta
   useLocale();
   const snapshots = retainedRead(tool, state);
   const latest = snapshots?.at(-1);
-  if (!snapshots || !latest) return <details><summary>{copy("native-read.readUnavailable_c88714")}</summary><p>{copy("native-read.theRetainedReadOperationIsUnavailable_1b346a")}</p></details>;
+  if (!snapshots || !latest) return <Disclosure><DisclosureSummary>{copy("native-read.readUnavailable_c88714")}</DisclosureSummary><p>{copy("native-read.theRetainedReadOperationIsUnavailable_1b346a")}</p></Disclosure>;
   const first = snapshots[0]!;
-  return <details>
-    <summary><LocalizedText id="native-read.read_b6b49e" components={{ s0: <>{labels[latest.status]}</> }} /></summary>
+  return <Disclosure>
+    <DisclosureSummary><LocalizedText id="native-read.read_b6b49e" components={{ s0: <>{labels[latest.status]}</> }} /></DisclosureSummary>
     <Arguments input={latest.input} />
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
     {latest.output !== undefined ? <section aria-label={copy("native-read.readResult_7000d0")}><pre>{latest.output}</pre></section> : null}
     {latest.error !== undefined ? <section aria-label={copy("native-read.readError_dbb719")}><pre>{latest.error}</pre></section> : null}
     {typeof latest.metadata.truncated === "boolean" ? <p>{latest.metadata.truncated ? copy("native-read.theNativeReadResultIsTruncated_827385") : copy("native-read.theNativeReadResultIsNot_846aa5")}</p> : null}
     {typeof latest.metadata.interrupted === "boolean" ? <p><LocalizedText id="native-read.nativeInterruption_edde92" components={{ s0: <>{latest.metadata.interrupted ? copy("native-read.observed_64fa8a") : copy("native-read.notObserved_1d3efc")}</> }} /></p> : null}
-    <details><summary>{copy("native-read.originalProposalAndObservations_8d63b6")}</summary>
+    <Disclosure><DisclosureSummary>{copy("native-read.originalProposalAndObservations_8d63b6")}</DisclosureSummary>
       <Arguments input={first.input} />
       <pre>{first.raw}</pre>
       <ol>{snapshots.map((snapshot, index) => <li key={index}>{labels[snapshot.status]}{snapshot.title !== undefined ? copy("native-read.message_2fa20b", { v0: snapshot.title }) : ""}</li>)}</ol>
-      {typeof latest.metadata.preview === "string" ? <details><summary>{copy("native-read.nativePreview_31ab5c")}</summary><pre>{latest.metadata.preview}</pre></details> : null}
+      {typeof latest.metadata.preview === "string" ? <Disclosure><DisclosureSummary>{copy("native-read.nativePreview_31ab5c")}</DisclosureSummary><pre>{latest.metadata.preview}</pre></Disclosure> : null}
       {Array.isArray(latest.metadata.loaded) ? <><p><LocalizedText id="native-read.loadedInstructionFiles_2266b4" components={{ s0: <>{latest.metadata.loaded.length}</> }} /></p><ul>{latest.metadata.loaded.map((path, index) => <li key={index}><pre>{path as string}</pre></li>)}</ul></> : null}
-    </details>
-  </details>;
+    </Disclosure>
+  </Disclosure>;
 }
