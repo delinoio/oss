@@ -87,7 +87,7 @@ export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker
     const props: ScheduleCreationProps = { definition, change, active, blocked, submitBlocked: automaticRunnerBlocked, cancel, submit,
       localAvailable: localProof.available,
       selectLocal: () => { void localProof.load().then((proof) => { if (proof) change({ ...definition, workspace: Workspace.Local, machine_id: proof.machineId, starting: [] }); }); },
-      references: local ? null : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={active} />,
+      references: (referencesActive) => local ? null : <StartingReferences key={text(definition.project_id)} project={text(definition.project_id)} starting={items(definition.starting)} change={field("starting")} active={referencesActive} />,
       errors: <><Problem error={runnerProject.error} actions={<button type="button" disabled={!active || blocked || runnerProject.isFetching} onClick={() => void runnerProject.refetch()}>{copy("ui.retryCurrentRead")}</button>} />{runner.guidance}{limit ? <p role="alert">{limit}</p> : null}{localProof.problem ? <p role="alert">{localProof.problem}</p> : null}<Problem error={mutation.error} /></>,
       retry: mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("schedules.retryTheSameSchedule_7702b8")}</button> : null };
     return <ScheduleCreation {...props} />;
