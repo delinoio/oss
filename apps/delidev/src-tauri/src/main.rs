@@ -244,7 +244,14 @@ async fn export_generated_image(
         let path = handle.path().to_path_buf();
         let owned_scope = scope.clone();
         let operation = request.operation_id.clone();
+        let dispatch_window = window.clone();
+        let dispatch_authority = authority.clone();
         tauri::async_runtime::spawn_blocking(move || {
+            if recheck_registered(dispatch_window.app_handle(), &dispatch_authority).is_err() {
+                return IMAGE_EXPORTS
+                    .finish(&owned_scope, &operation, Outcome::Canceled)
+                    .unwrap_or(Outcome::Uncertain);
+            }
             IMAGE_EXPORTS
                 .publish(&owned_scope, &operation, &path, &bytes)
                 .unwrap_or(Outcome::Uncertain)
