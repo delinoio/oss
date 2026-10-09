@@ -61,6 +61,7 @@ func TestSidechatSnapshotPreservesSelectionAndFreezesNativeAuthority(t *testing.
 func TestManagedSidechatRetainsChatGPTSelectorAndReadOnlyOverlay(t *testing.T) {
 	config := managedSubscriptionExecutionConfiguration(t, PermissionWorkspaceWrite)
 	config.ProviderID, config.SubscriptionService = "", SubscriptionChatGPT
+	config.ModelID = (ModelIdentity{SubscriptionService: config.SubscriptionService, NativeID: config.NativeModel}).Key()
 	digest, err := config.Digest()
 	if err != nil {
 		t.Fatal(err)
