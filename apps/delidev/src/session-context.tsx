@@ -6,12 +6,37 @@ import { JobState, OperationStatus } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { NativeContextCompaction } from "./native-context-compaction";
 import { ServiceProblem, Problem  } from "./ui";
+import { timestampInstant } from "./timestamp-format";
+import { Timestamp } from "./timestamp-display";
 
-export function contextDocument(bytes: Uint8Array | undefined, session: string): Document | undefined {
+export enum NativeContextStatus { Latest = "latest", Historical = "historical" }
+export interface NativeContextObservation {
+ harness: "codex"; source: "last-request-total"; tokens: string;
+ observation_id: string; execution_id: string; native_thread_id: string; native_turn_id: string;
+ sequence: string; observed_at: string; status: NativeContextStatus;
+}
+const contextID = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+export function nativeContextObservation(value: unknown): NativeContextObservation | undefined {
+ const v = object(value);
+ const fields = ["harness", "source", "tokens", "observation_id", "execution_id", "native_thread_id", "native_turn_id", "sequence", "observed_at", "status"];
+ if (Object.keys(v).length !== fields.length || Object.keys(v).some(key => !fields.includes(key)) || v.harness !== "codex" || v.source !== "last-request-total" || ![v.observation_id, v.execution_id, v.native_thread_id, v.native_turn_id].every(contextID)) return;
+ if (typeof v.tokens !== "string" || !/^(0|[1-9][0-9]{0,18})$/.test(v.tokens) || BigInt(v.tokens) > 9223372036854775807n || typeof v.sequence !== "string" || !/^[1-9][0-9]{0,19}$/.test(v.sequence) || BigInt(v.sequence) > 18446744073709551615n || typeof v.observed_at !== "string" || timestampInstant(v.observed_at) === undefined || !Object.values(NativeContextStatus).includes(v.status as NativeContextStatus)) return;
+ return v as unknown as NativeContextObservation;
+}
+
+export function contextDocument(bytes: Uint8Array | undefined, session: string, expected?: Document): Document | undefined {
   if (!bytes || bytes.byteLength > 1 << 20) return;
   try {
     const value = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
     if (value.session_id !== session || typeof value.session_revision !== "string" || !/^[1-9][0-9]*$/.test(value.session_revision)) return;
+    if ("native_context" in value) {
+      const native = nativeContextObservation(value.native_context);
+      if (!native || !contextID(value.execution_id) || native.status === NativeContextStatus.Latest && native.execution_id !== value.execution_id || value.current_tokens !== null) return;
+      if (expected) {
+        const progress = object(expected.execution);
+        if (object(object(expected.initial_execution).configuration).harness !== "codex" || native.execution_id !== progress.execution_id || native.native_thread_id !== progress.native_thread_id) return;
+      }
+    }
     return value;
   } catch { return; }
 }
@@ -21,7 +46,7 @@ export function SessionContext({ session }: { session: Resource }) {
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = Boolean(status.data?.capabilities.includes(SystemCapability.NATIVE_SESSION_COMPACTION_V1));
   const context = useQuery(SessionQuery.getSessionContext, { sessionId: session.id }, { enabled: supported, refetchInterval: 5000 });
-  const view = contextDocument(context.data?.documentJson, session.id);
+  const view = contextDocument(context.data?.documentJson, session.id, document(session));
   const manual = object(object(view?.manual_action).document);
   const state = text(manual.state);
   const pending = Boolean(state && ![JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState));
@@ -30,12 +55,20 @@ export function SessionContext({ session }: { session: Resource }) {
     return reply.requestId === request.mutation?.requestId && reply.job?.kind === EntityKind.JOB && reply.job.sessionId === session.id && input.action_id === request.mutation.requestId && object(input.assignment).session_id === session.id;
   });
   const harness = text(object(object(document(session).initial_execution).configuration).harness);
+  const native = harness === "codex" ? nativeContextObservation(view?.native_context) : undefined;
+  const historical = native?.native_turn_id !== object(document(session).execution).native_turn_id || native?.status === NativeContextStatus.Historical || Boolean(context.error) || context.isFetching || view?.session_revision !== session.revision.toString();
   const capability = harness === "codex" ? SessionContextCapability.CODEX_MANUAL_COMPACTION_V1 : harness === "claude-code" ? SessionContextCapability.CLAUDE_MANUAL_COMPACTION_V1 : harness === "opencode" ? SessionContextCapability.OPENCODE_MANUAL_COMPACTION_V1 : undefined;
   const eligible = supported && (harness !== "codex" || status.data?.capabilities.includes(SystemCapability.CODEX_SESSION_COMPACTION_V1)) && (harness !== "opencode" || status.data?.capabilities.includes(SystemCapability.OPENCODE_SESSION_COMPACTION_V1)) && capability !== undefined && context.data?.capabilities.includes(capability) && view?.session_revision === session.revision.toString() && !context.error && !context.isFetching;
   const result = object(manual.result), codex = object(result.codex), opencode = object(result.opencode), problem = object(manual.problem);
   if (!supported) return status.isLoading ? null : <section aria-label={copy("session-context.sessionContext_93a2ab")}><h3>{copy("session-context.context_a6e600")}</h3>{!status.error ? <p>{copy("session-context.updateTheServerAndOriginalWorker_00f78a")}</p> : <p>{copy("session-context.capabilityReadFailed")}</p>}<Problem error={status.error} />{status.error ? <button disabled={status.isFetching} onClick={() => void status.refetch()}>{copy("session-context.retryCapability")}</button> : null}</section>;
   return <section aria-label={copy("session-context.sessionContext_93a2ab")} className="session-context"><header><h3>{copy("session-context.context_a6e600")}</h3><button disabled={context.isFetching} onClick={() => void context.refetch()}>{copy("session-context.refreshContext_f79efc")}</button></header>
-    <p><LocalizedText id="session-context.currentContextTokens_2fb474" components={{ s0: <>{view?.current_tokens === null || view?.current_tokens === undefined ? copy("session-context.notReported_adadfa") : text(view.current_tokens)}</> }} /></p>
+    {harness === "codex" ? <>
+      <p><LocalizedText id="session-context.latestNativeTokens" components={{ s0: <>{native?.tokens ?? copy("session-context.notReported_adadfa")}</> }} /></p>
+      {native ? <><p>{copy(historical ? "session-context.historicalSnapshot" : "session-context.latestSnapshot")}</p><p><LocalizedText id="session-context.observedAt" components={{ s0: <Timestamp value={native.observed_at} /> }} /></p></> : null}
+      <p>{copy("session-context.nativeSnapshotExplanation")}</p>
+      {context.error ? <p role="status">{copy("session-context.contextReadFailed")}</p> : null}
+      {context.data && !view && !context.error ? <p role="status">{copy("session-context.invalidContext")}</p> : null}
+    </> : <p><LocalizedText id="session-context.currentContextTokens_2fb474" components={{ s0: <>{view?.current_tokens === null || view?.current_tokens === undefined ? copy("session-context.notReported_adadfa") : text(view.current_tokens)}</> }} /></p>}
     {(harness === "codex" || harness === "opencode") && view?.automatic_boundary ? <NativeContextCompaction progress={object(object(object(view.automatic_boundary).document).progress)} state="complete" /> : null}
     {state && (state !== JobState.Succeeded || result.compact_result === "success" || typeof codex.actions === "number" || typeof opencode.actions === "number" || text(problem.message)) ? <div><OperationStatus state={state} />
       {state === JobState.Succeeded && result.compact_result === "success" ? <p>{copy("session-context.theNativeContextWasCompactedAnd_c4307f")}</p> : null}

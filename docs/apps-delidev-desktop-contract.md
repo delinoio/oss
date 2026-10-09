@@ -3054,3 +3054,35 @@ Each original project exposes a direct Settings action and uses the same retaine
 The shared Agent Worker native options form offers Native default, Fast mode and Custom service tier for Codex API and ChatGPT subscription configurations. Explicit default deletes the override, Fast writes exact `fast`, and existing nonempty custom tiers remain unchanged until edited. Preserve empty/null input on opening, unrelated options, original wizard/editor loading and save gates, unavailable harness guidance and explicit clearing. English/Korean guidance links official native Fast documentation and describes availability and potentially greater subscription usage without entitlement, billing or measured-speed claims. Native selected/effective Fast diagnostics retain original source evidence and do not expand provider HTTP tiers. Existing immutable executions/continuations, exact applied-setting checks and recovery/cleanup ownership remain unchanged. Fixture/build evidence is separate from installed-native, real-account and platform acceptance.
 
 Fast guidance reuses the existing product-authorized provider opener through the closed `codex-fast`/OpenAI selector and fixed verified official destination. Product webviews retain external navigation/popup denial; browser-only rendering uses the same fixed public link. Original native origin/generation checks and unconfirmed-opening feedback remain unchanged.
+
+## Latest native-reported Codex context snapshot
+
+Issue #1959 extends the existing authorized context JSON with optional
+`native_context`; `current_tokens` remains null. The Codex root's retained
+last-request total is an exact nonnegative decimal string, separate from
+cumulative usage, response accounting, cache breakdowns and model limits.
+Preserve its observation/execution IDs, original native thread/turn, decimal
+sequence and server observation time. Validate the original immutable
+assignment, account/connection/model/provider and Worker attribution in the same
+authorized read transaction. Malformed or foreign observations fail the read;
+missing observations remain unavailable and reported zero remains zero.
+
+The closed status is `latest` only for the selected execution and current native
+turn without a later retained compaction boundary or pending input. Otherwise it
+is `historical`; new matching reports may replace older counts without monotonic
+clamping. Manual compaction admission is a later boundary too. Reads and refresh
+use retained resources and never start native work, tokenization, inference or
+compaction. No RPC, allocation or migration is added. Claude/OpenCode and all
+original action, retry, account, history and cleanup boundaries remain unchanged.
+
+The existing Context presentation labels this as “Latest native-reported context
+tokens” in English and Korean and shows its observation time. It explains that
+this native snapshot may exclude later local context changes and may include a
+native context-limit estimate; it is not exact continuous occupancy or billing.
+Retained data after a failed/in-flight refresh or changed session revision is
+explicitly historical, with a visible read error on failure. Keep existing
+five-second polling and Refresh context separate from Compact context. Strict
+client decoding preserves exact decimal strings above JavaScript's safe integer
+range, source/status enums and original provenance; old absent-field replies
+remain readable. Fixture/build checks do not establish installed-native, account
+or platform acceptance.

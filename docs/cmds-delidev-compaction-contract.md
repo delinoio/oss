@@ -379,3 +379,35 @@ The closed compaction HTTP usage source retains sparse nullable token observatio
 An eligible completed first Fork-child execution uses its exact immutable `Fork.RuntimeID` as compaction history, independently of its fresh execution/report ID. Construct a new continuation restore with the one-shot `Fork` import cleared. The shared validator compares that exact derived shape and history authority together: legacy assignment version 3 produces restore version 2, while direct-startup version 4 retains version 4 and its original startup selection. Later child continuations retain their existing history root; ordinary first root executions keep their own execution ID.
 
 Source assignment/completion, account/connection/configuration, manifest/preparation, accepted-input evidence and cleanup remain unchanged. Independent parent deletion cannot remove child history authority. Supported Sidechat retains its original read-only/external-write restrictions, workspace reference and separate dependent-parent gate. Pending input/children, pause, Stop, Archive, recovery and missing/foreign checkpoint/runtime continue to reject before admission. This composition adds no harness support, replay, protocol allocation or migration.
+
+## Latest native-reported Codex context snapshot
+
+Issue #1959 extends the existing authorized context JSON with optional
+`native_context`; `current_tokens` remains null. The Codex root's retained
+last-request total is an exact nonnegative decimal string, separate from
+cumulative usage, response accounting, cache breakdowns and model limits.
+Preserve its observation/execution IDs, original native thread/turn, decimal
+sequence and server observation time. Validate the original immutable
+assignment, account/connection/model/provider and Worker attribution in the same
+authorized read transaction. Malformed or foreign observations fail the read;
+missing observations remain unavailable and reported zero remains zero.
+
+The closed status is `latest` only for the selected execution and current native
+turn without a later retained compaction boundary or pending input. Otherwise it
+is `historical`; new matching reports may replace older counts without monotonic
+clamping. Manual compaction admission is a later boundary too. Reads and refresh
+use retained resources and never start native work, tokenization, inference or
+compaction. No RPC, allocation or migration is added. Claude/OpenCode and all
+original action, retry, account, history and cleanup boundaries remain unchanged.
+
+The existing Context presentation labels this as “Latest native-reported context
+tokens” in English and Korean and shows its observation time. It explains that
+this native snapshot may exclude later local context changes and may include a
+native context-limit estimate; it is not exact continuous occupancy or billing.
+Retained data after a failed/in-flight refresh or changed session revision is
+explicitly historical, with a visible read error on failure. Keep existing
+five-second polling and Refresh context separate from Compact context. Strict
+client decoding preserves exact decimal strings above JavaScript's safe integer
+range, source/status enums and original provenance; old absent-field replies
+remain readable. Fixture/build checks do not establish installed-native, account
+or platform acceptance.
