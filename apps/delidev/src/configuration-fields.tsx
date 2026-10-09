@@ -13,6 +13,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { createQueryOptions, useQuery, useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
+import type { ScrollContinuationQuery } from "./scroll-continuation";
 import { ScrollPicker } from "./scroll-picker";
 import type { MessageShape } from "@bufbuild/protobuf";
 import { FailureCode, clientFailure, EntityKind, NativeModelSourceKind, SubscriptionServiceId, subscriptionService, subscriptionServiceHarnesses, subscriptionServiceNames, supportsResourceSchema, ProviderQuery, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -83,13 +84,29 @@ function Choice({ label, value, choices, change, disabled = false, inherited = f
   return <label>{label}<select value={selected} disabled={disabled} onChange={(event) => change(event.target.value)}>{inherited ? <option value="">{copy("configuration-fields.useServerDefault_2bbfe2")}</option> : null}{selected && !choices.includes(selected) ? <option value={selected}><LocalizedText id="configuration-fields.unsupportedSelection_7c6fcd" components={{ s0: <>{selected}</> }} /></option> : null}{choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label>;
 }
 
-function AgentPermissions({ harness, options, change }: { harness: unknown; options: Document; change: (value: Document) => void }) {
+const localPermissionChoices: ScrollContinuationQuery = { loaded: true, nextPageToken: "", append: () => {}, retry: () => {}, reload: () => {} };
+function PermissionChoice({ label, value, choices, change, active, disabled }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; active: boolean; disabled: boolean }) {
+  const owner = useRef<HTMLDivElement>(null), admission = useRef({ active, disabled, change });
+  admission.current = { active, disabled, change };
+  const selected = text(value);
+  const retainedLabel = copy("configuration-fields.unsupportedPermissionSelection", { value: selected });
+  const options = [...(selected && !choices.includes(selected) ? [{ id: selected, label: retainedLabel }] : []), ...choices.map(id => ({ id, label: id }))];
+  return <div ref={owner}><ScrollPicker label={label} value={selected} selectedLabel={selected} options={options} query={localPermissionChoices} active={active} disabled={disabled} change={value => {
+    const current = admission.current, trigger = owner.current?.querySelector("button[role=combobox]");
+    // A retained popup callback must also honor a native ancestor fieldset lock
+    // before MutationObserver positioning gets a chance to retire the popup.
+    if (!current.active || current.disabled || !trigger?.isConnected || trigger.matches(":disabled") || trigger.closest("[hidden], [inert]") || trigger.closest("dialog")?.open === false) return;
+    current.change(value);
+  }} /></div>;
+}
+
+export function AgentPermissions({ harness, options, change, active, disabled }: { harness: unknown; options: Document; change: (value: Document) => void; active: boolean; disabled: boolean }) {
   useLocale();
   if (harness === Harness.Claude) {
     const conflict = options.permission !== Permission.Default || Boolean(text(options.approval_policy));
     const selected = options.claude_permission ?? ClaudePermission.Default;
     return <fieldset><legend>{copy("configuration-fields.claudeToolPermissions_145abc")}</legend>
-      <Choice label={copy("configuration-fields.claudePermissionMode_6cb4cf")} value={selected} choices={Object.values(ClaudePermission)} change={(claude_permission) => change({ ...options, claude_permission })} />
+      <PermissionChoice active={active} disabled={disabled} label={copy("configuration-fields.claudePermissionMode_6cb4cf")} value={selected} choices={Object.values(ClaudePermission)} change={(claude_permission) => change({ ...options, claude_permission })} />
       <p>{copy("configuration-fields.planInputsUseClaudeSNative_a3fec5")}</p>
       {selected === ClaudePermission.AcceptEdits ? <p className="notice">{copy("configuration-fields.claudeCanAcceptFileEditsAnd_71cb59")}</p> : null}
       {selected === ClaudePermission.DontAsk ? <p>{copy("configuration-fields.claudeDeniesOperationsThatWouldRequire_4763c5")}</p> : null}
@@ -99,7 +116,7 @@ function AgentPermissions({ harness, options, change }: { harness: unknown; opti
     </fieldset>;
   }
   return <>
-    <Choice label={copy("configuration-fields.permissionMode_c7a8e6")} value={options.permission} choices={harness === Harness.Codex ? Object.values(Permission) : [Permission.Default]} change={(permission) => change({ ...options, permission })} />
+    <PermissionChoice active={active} disabled={disabled} label={copy("configuration-fields.permissionMode_c7a8e6")} value={options.permission} choices={harness === Harness.Codex ? Object.values(Permission) : [Permission.Default]} change={(permission) => change({ ...options, permission })} />
     {options.permission === Permission.Default ? <p>{copy("configuration-fields.usesTheHarnessDefaultReviewPermissions_077a8d")}</p> : null}
     {harness !== Harness.Codex ? <p>{copy("configuration-fields.nativePermissionUnavailable")}</p> : null}
     {options.permission === Permission.Full ? <p className="notice">{copy("configuration-fields.fullAccessPermitsNativeOperationsBeyond_c45c2a")}</p> : null}
@@ -223,7 +240,7 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", ProjectDefaults = "project-defaults" }
-interface FieldsProps { supportsProjectBehavior?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+interface FieldsProps { disabled?: boolean; supportsProjectBehavior?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false } = props;
@@ -251,7 +268,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
     const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
       core={<>{!props.workerWizard ? <AgentReconfiguration data={data} change={change} active={active} /> : null}<TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /><ResourceChoice label={copy("configuration-fields.model_5e2c61")} kind={EntityKind.MODEL} value={text(data.model_id)} change={field("model_id")} activeApiOnly active={active} required markRequired /></div> : null}</>}
-      permissions={<AgentPermissions harness={data.harness} options={options} change={field("options")} />}
+      permissions={<AgentPermissions active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
       reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}

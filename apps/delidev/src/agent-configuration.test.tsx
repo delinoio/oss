@@ -222,11 +222,11 @@ it("preserves incompatible permission values across harness switches and clears 
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value);
   change("Harness", "claude-code"); expect(screen.getByText(/Retained sandbox or approval-policy settings/)).toBeTruthy();
   expect(screen.getByText(/do not establish filesystem sandbox isolation/)).toBeTruthy();
-  change("Harness", "codex"); expect((screen.getByLabelText("Permission mode") as HTMLSelectElement).value).toBe("workspace-write");
+  change("Harness", "codex"); expect(scrollChoiceValue(screen.getByRole("combobox", { name: "Permission mode" }))).toBe("workspace-write");
   toggle(disclosure("Native harness options"), true); expect((screen.getByLabelText("Approval policy") as HTMLInputElement).value).toBe("on-request");
-  change("Permission mode", "full-access"); expect(screen.getByText(/Full access permits/)).toBeTruthy();
+  await choose("Permission mode", "full-access"); expect(screen.getByText(/Full access permits/)).toBeTruthy();
   change("Harness", "claude-code"); fireEvent.click(screen.getByRole("button", { name: "Clear incompatible permission settings" }));
-  for (const [mode, explanation] of [["acceptEdits", /Claude can accept file edits/], ["dontAsk", /Claude denies operations/], ["bypassPermissions", /Bypass skips native/]] as const) { change("Claude permission mode", mode); expect(screen.getByText(explanation)).toBeTruthy(); }
+  for (const [mode, explanation] of [["acceptEdits", /Claude can accept file edits/], ["dontAsk", /Claude denies operations/], ["bypassPermissions", /Bypass skips native/]] as const) { await choose("Claude permission mode", mode); expect(screen.getByText(explanation)).toBeTruthy(); }
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(decoded(value.save.mock.calls[0][0]).options).toEqual({ permission: "default", claude_permission: "bypassPermissions", future_option: "keep" });
 });
@@ -246,14 +246,14 @@ it("shows unsupported stored enums and native options without changing them", as
   const value = fixture(); const agent = resource(EntityKind.AGENT, { name: "Future", harness: "claude-code", model_id: value.model.id, effort: "future-effort", routing: "future-routing", accounts: [], templates: [], options: { permission: "default", claude_permission: "future-mode", future_option: "retained" } }); value.resources.push(agent);
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value);
   expect(screen.getByText("Customized · unknown options retained")).toBeTruthy(); expect(screen.getByText("future-effort")).toBeTruthy(); expect(screen.getByText("0 accounts · future-routing")).toBeTruthy();
-  expect(screen.getByRole("option", { name: "Unsupported selection · future-mode" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Claude permission mode" }).textContent).toBe("Unsupported selection · future-mode");
   fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1)); expect(decoded(value.save.mock.calls[0][0])).toEqual(JSON.parse(new TextDecoder().decode(agent.documentJson)));
 });
 
 it("keeps the byte-identical uncertain request through disclosure and resize", async () => {
   const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Lost response", Code.Unavailable));
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
-  change("Name", "Exact retry"); await choose("Model", value.model.id); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  change("Name", "Exact retry"); await choose("Model", value.model.id); await choose("Permission mode", "full-access"); fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
   const retry = await screen.findByRole("button", { name: "Retry the same configuration" });
   for (const section of document.querySelectorAll<HTMLDetailsElement>(".agent-disclosure")) { toggle(section, true); toggle(section, false); } fireEvent(window, new Event("resize")); fireEvent.click(retry);
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2)); expect(value.save.mock.calls[1][0]).toEqual(value.save.mock.calls[0][0]);
@@ -271,10 +271,12 @@ it("keeps all Codex permissions selectable and saves concurrency above the forme
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
   await ready(value);
   const permission = screen.getByLabelText("Permission mode");
-  expect(within(permission).getAllByRole("option").map(option => (option as HTMLOptionElement).value)).toEqual(["default", "read-only", "workspace-write", "full-access"]);
+  fireEvent.click(permission);
+  expect(within(document.getElementById(permission.getAttribute("aria-controls")!)!).getAllByRole("option").map(option => (option as HTMLElement).dataset.pickerId)).toEqual(["default", "read-only", "workspace-write", "full-access"]);
+  fireEvent.keyDown(permission, { key: "Escape" });
   for (const mode of ["default", "read-only", "workspace-write", "full-access"]) {
-    change("Permission mode", mode);
-    expect((permission as HTMLSelectElement).value).toBe(mode);
+    await choose("Permission mode", mode);
+    expect(scrollChoiceValue(permission)).toBe(mode);
   }
   expect(screen.getByText(/managed authentication file/)).toBeTruthy();
   toggle(disclosure("Native harness options"), true);
@@ -300,4 +302,11 @@ it("disables unavailable Claude settings and clears only the explicitly selected
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const saved = decoded(value.save.mock.calls[0][0]);
   expect(saved).toEqual({ ...data, options: { ...data.options, service_tier: "" } });
+});
+
+it("permission menus perform no additional resource or provider reads", async () => {
+ const value = fixture(); render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />)); await ready(value);
+ const reads = () => [value.list.mock.calls.length, value.get.mock.calls.length, value.inventory.mock.calls.length, value.search.mock.calls.length]; const before = reads();
+ const trigger = screen.getByRole("combobox", { name: "Permission mode" }); fireEvent.click(trigger); fireEvent.keyDown(trigger, { key: "End" }); fireEvent.keyDown(trigger, { key: "Escape" }); await choose("Permission mode", "workspace-write");
+ await act(async () => {}); expect(reads()).toEqual(before); expect(value.save).not.toHaveBeenCalled();
 });

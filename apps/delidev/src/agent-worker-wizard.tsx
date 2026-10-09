@@ -262,7 +262,7 @@ function LegacyAgentWorkerWizard({ initial, active, saved, cancel, openAccounts 
         <p>{copy(source?.kind === SourceKind.Subscription ? "agent-worker-wizard.subscriptionModelAvailability" : "agent-worker-wizard.modelReadiness")}</p>
       </section>
       <fieldset hidden={step !== Step.Configure} disabled={step !== Step.Configure}>
-        <ConfigurationFields kind={EntityKind.AGENT} data={data} change={change} active={active && step === Step.Configure} existing={Boolean(initial)} workerWizard />
+        <ConfigurationFields disabled={blocked} kind={EntityKind.AGENT} data={data} change={change} active={active && step === Step.Configure} existing={Boolean(initial)} workerWizard />
         <section className="worker-summary" aria-label={copy("agent-worker-wizard.workerConfigurationSummary")}><h4>{copy("agent-worker-wizard.reviewConfiguration")}</h4><p>{harnessNames[data.harness as Harness]} · {sourceLabel}</p><p>{copy("agent-worker-wizard.modelSummary", { v0: input || copy("agent-worker-wizard.noneSelected") })}</p><ol>{ids.map(id => <li key={id}>{knownAccounts[id] ? resourceName(knownAccounts[id]) : selectedLabels.current[id]?.name || id}</li>)}</ol><p>{copy("agent-worker-wizard.routingSummary", { v0: text(data.routing) || copy("agent-worker-wizard.serverDefault") })}</p><p>{copy("agent-worker-wizard.savedCompatibility")}</p></section>
       </fieldset>
     </fieldset>
