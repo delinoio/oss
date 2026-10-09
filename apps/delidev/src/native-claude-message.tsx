@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeClaudeCitations, validClaudeCitationHistory, claudeCitationHistoryBytes } from "./native-claude-citations";
 import { object, type Document } from "./documents";
@@ -47,10 +48,10 @@ export function NativeClaudeMessage({ content, state }: { content: unknown; stat
   if (!retained) return <section aria-label={copy("native-claude-message.claudeMessageUnavailable_9efc2c")}><p>{copy("native-claude-message.theRetainedClaudeMessageIsUnavailable_453226")}</p></section>;
   return <section className="native-claude-message-content" aria-label={copy("native-claude-message.claudeMessageContent_fa712d")}>
     <ol>{retained.blocks.map((block) => <li key={block.index}>
-      {block.kind === BlockKind.Tool ? <p><LocalizedText id="native-claude-message.toolProposal_e8bdb5" components={{ s0: <>{block.tool!.name}</>, s1: <small>{blockLabels[block.state]}</small> }} /></p> : block.kind === BlockKind.Thinking ? <details><summary><LocalizedText id="native-claude-message.reasoning_4d3137" components={{ s0: <>{blockLabels[block.state]}</> }} /></summary><pre>{block.text}</pre></details> : block.kind === BlockKind.Redacted ? <p><LocalizedText id="native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3" components={{ s0: <small>{blockLabels[block.state]}</small> }} /></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
+      {block.kind === BlockKind.Tool ? <p><LocalizedText id="native-claude-message.toolProposal_e8bdb5" components={{ s0: <>{block.tool!.name}</>, s1: <small>{blockLabels[block.state]}</small> }} /></p> : block.kind === BlockKind.Thinking ? <Disclosure><DisclosureSummary><LocalizedText id="native-claude-message.reasoning_4d3137" components={{ s0: <>{blockLabels[block.state]}</> }} /></DisclosureSummary><pre>{block.text}</pre></Disclosure> : block.kind === BlockKind.Redacted ? <p><LocalizedText id="native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3" components={{ s0: <small>{blockLabels[block.state]}</small> }} /></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
       {block.citations ? <NativeClaudeCitations value={block.citations} /> : null}
     </li>)}</ol>
     {retained.reason !== null ? <p><LocalizedText id="native-claude-message.nativeStopReason_e2e029" components={{ s0: <>{retained.reason}</> }} /></p> : null}
-    {retained.sequence !== null ? <details><summary>{copy("native-claude-message.nativeStopSequence_96951d")}</summary><pre>{retained.sequence}</pre></details> : null}
+    {retained.sequence !== null ? <Disclosure><DisclosureSummary>{copy("native-claude-message.nativeStopSequence_96951d")}</DisclosureSummary><pre>{retained.sequence}</pre></Disclosure> : null}
   </section>;
 }

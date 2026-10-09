@@ -1,5 +1,6 @@
-import { LocalConnectionHelp } from "./local-connection-presentation";
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
+import { LocalConnectionHelp } from "./local-connection-presentation";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { statusLabel } from "./product-status";
@@ -611,14 +612,14 @@ function AccountCreationWizard({
           {keyless ? <p>{copy("account-settings.connectToThisLocalEndpointOn_70be8a")}</p> : <>
             <label>{copy("account-settings.apiKey_16f0ee")}<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} value={apiKey} aria-invalid={(attempted || apiKey.length > 0) && !apiKeyValid} onChange={(event) => setApiKey(event.target.value)} /></label>
             {!providerChecking && !create.busy && !create.uncertain && (attempted || apiKey.length > 0) && !apiKeyValid ? <p role="alert">{copy("account-settings.enter18192PrintableAsciiBytes_5695b1")}</p> : null}
-            <details><summary>{copy("account-settings.whereToGetAnApiKey_525ff8")}</summary><p>{selectedProvider?.keyGuidance || copy("account-settings.extra.7a611b78ccfc")}</p>{selectedProvider ? <ProviderGuidance preset={selectedProvider.presetId} documentation={selectedProvider.documentationUrl} keyCreation={selectedProvider.keyCreationUrl} /> : null}</details>
+            <Disclosure density={DisclosureDensity.Settings}><DisclosureSummary>{copy("account-settings.whereToGetAnApiKey_525ff8")}</DisclosureSummary><p>{selectedProvider?.keyGuidance || copy("account-settings.extra.7a611b78ccfc")}</p>{selectedProvider ? <ProviderGuidance preset={selectedProvider.presetId} documentation={selectedProvider.documentationUrl} keyCreation={selectedProvider.keyCreationUrl} /> : null}</Disclosure>
           </>}
           <p>{copy("account-settings.useASeparateEntryForEach_d8b0c8")}</p><p>{copy("account-settings.storedSecurelyOnTheSelectedServer_110ddf")}</p>
-          <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><summary>{copy("account-settings.advancedPreferences_6abb0c")}</summary>
+          <Disclosure density={DisclosureDensity.Settings} open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><DisclosureSummary>{copy("account-settings.advancedPreferences_6abb0c")}</DisclosureSummary>
             <label className="checkbox"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />{copy("account-settings.enableThisEntry_9d9bf5")}</label>
             <label className="checkbox"><input type="checkbox" checked={excludeAutomatic} onChange={(event) => setExcludeAutomatic(event.target.checked)} />{copy("account-settings.excludeFromAutomaticEntrySelection_464713")}</label>
             <label className="checkbox"><input type="checkbox" checked={recoveryNotifications} onChange={(event) => setRecoveryNotifications(event.target.checked)} />{copy("account-settings.notifyWhenEntryQuotaRecovers_b06486")}</label>
-          </details>
+          </Disclosure>
         </fieldset>
         <p className="api-entry-validation-note">{copy("api-verification.manualGuidance")}</p>
         <Problem error={create.error} summary={<p>{copy("account-connection.inline.operation")}</p>} />

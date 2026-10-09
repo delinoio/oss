@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -25,7 +26,7 @@ function ChildRows({ rows }: { rows: readonly SubagentRow[] }) {
       const output = object(child.output), usage = object(child.usage);
       const blocks = items(output.blocks).map(object);
       return <tr key={row.id}>
-        <td><code>{text(child.native_id)}</code><details><summary>{copy("subagents.sourceCoverage_0b8649")}</summary><p>{text(record.harness)} {text(record.native_version)}</p><p><LocalizedText id="subagents.execution_2ce365" components={{ s0: <>{text(record.execution_id)}</> }} /></p><p><LocalizedText id="subagents.parentTool_5586e7" components={{ s0: <>{text(child.parent_tool_id) || copy("subagents.extra.ca1844969742")}</> }} /></p><ul>{items(record.sources).map(object).map((source, index) => <li key={index}><LocalizedText id="subagents.sequence_440e77" components={{ s0: <>{text(source.source)}</>, s1: <>{text(source.source_id)}</>, s2: <>{String(source.sequence ?? copy("subagents.extra.ca1844969742"))}</>, s3: <>{text(object(source.usage).native_report) ? <pre>{text(object(source.usage).native_report)}</pre> : null}</> }} /></li>)}</ul></details></td>
+        <td><code>{text(child.native_id)}</code><Disclosure><DisclosureSummary>{copy("subagents.sourceCoverage_0b8649")}</DisclosureSummary><p>{text(record.harness)} {text(record.native_version)}</p><p><LocalizedText id="subagents.execution_2ce365" components={{ s0: <>{text(record.execution_id)}</> }} /></p><p><LocalizedText id="subagents.parentTool_5586e7" components={{ s0: <>{text(child.parent_tool_id) || copy("subagents.extra.ca1844969742")}</> }} /></p><ul>{items(record.sources).map(object).map((source, index) => <li key={index}><LocalizedText id="subagents.sequence_440e77" components={{ s0: <>{text(source.source)}</>, s1: <>{text(source.source_id)}</>, s2: <>{String(source.sequence ?? copy("subagents.extra.ca1844969742"))}</>, s3: <>{text(object(source.usage).native_report) ? <pre>{text(object(source.usage).native_report)}</pre> : null}</> }} /></li>)}</ul></Disclosure></td>
         <td><code>{text(child.parent_id)}</code>{child.parent_id === record.root_id ? <p>{copy("subagents.rootSession_6cdfaa")}</p> : null}</td>
         <td>{text(child.status) || copy("subagents.extra.ca1844969742")}</td>
         <td><LocalizedText id="subagents.observed_ae32e4" components={{ s0: <>{text(child.observed_model) || copy("subagents.extra.ca1844969742")}</> }} /><p><LocalizedText id="subagents.requested_a7d830" components={{ s0: <>{text(child.requested_model) || copy("subagents.extra.ca1844969742")}</> }} /></p></td>
@@ -56,7 +57,7 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
     return pages.every((page): page is SubagentRow[] => page !== undefined) ? pages.flat() : undefined;
   }, [query.loaded, query.payloadPages, sessionId]);
   const needsOpenCodeUpdate = rows?.some(row => row.record.harness === "opencode") === true && !openCodeSupported;
-  return <details ref={root} className="conversation-page-scroll" onToggle={event => setOpen(event.currentTarget.open)}><summary>{copy("subagents.subagents_88296a")}</summary>
+  return <Disclosure ref={root} className="conversation-page-scroll" onToggle={event => setOpen(event.currentTarget.open)}><DisclosureSummary>{copy("subagents.subagents_88296a")}</DisclosureSummary>
     <p>{copy("subagents.readOnlyNativeHierarchyParentCompletion_036e57")}</p>
     {status.error ? <Problem error={status.error} /> : null}
     {status.data && !supported ? <p>{copy("subagents.thisServerDoesNotSupportChild_0baf88")}</p> : null}
@@ -67,5 +68,5 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
     {needsOpenCodeUpdate ? <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p> : supported && rows && rows.length > 0 ? <div><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={query} root={root} active={open}>{payload => <SubagentRows rows={payload} sessionId={sessionId} />}</ScrollPayloadWindow></div> : null}
     <button disabled={!supported || query.isFetching} onClick={() => void query.refetch()}>{copy("subagents.refreshSubagents_1ffca1")}</button>
     <ScrollContinuation query={query} root={root} active={open && supported && !needsOpenCodeUpdate} label={copy("subagents.subagents_88296a")} />
-  </details>;
+  </Disclosure>;
 }

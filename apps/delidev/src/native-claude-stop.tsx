@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 import { validClaudeAPIRetry } from "./native-claude-retry";
@@ -31,11 +32,11 @@ export function NativeClaudeStop({ progress }: { progress: Document }) {
     <dl><dt>{copy("native-claude-stop.nativeInterruptRequest_f33630")}</dt><dd>{copy("native-claude-stop.acknowledged_d87cdf")}</dd><dt>{copy("native-claude-stop.nativeLoop_fec242")}</dt><dd>{copy("native-claude-stop.idleObserved_34b00d")}</dd>
       <dt>{copy("native-claude-stop.ownedNativeProcessCleanup_05bea7")}</dt><dd>{copy("native-claude-stop.confirmed_fe00b6")}</dd><dt>{copy("native-claude-stop.workerWorkspaceCleanupReport_e52033")}</dt><dd>{progress.cleanup_verified === true ? copy("native-claude-stop.confirmed_fe00b6") : copy("native-claude-stop.notConfirmed_bc1c29")}</dd></dl>
     {v.content_evidence === "closed-stream-before-retry" ? <p>{copy("native-claude-stop.theStreamClosedBeforeRetryWait_d850de")}</p> : <p>{copy("native-claude-stop.theTranscriptPreservesClaudeSOriginal_0dd473")}</p>}
-    {Array.isArray(v.retries) ? <details><summary>{copy("native-claude-stop.nativeRetryObservations_7f1b4d")}</summary><ol>{v.retries.map((entry, index) => { const r = object(entry); return <li key={index}><LocalizedText id="native-claude-stop.attemptOfDelayMsHttp_904c77" components={{ s0: <>{r.attempt as string}</>, s1: <>{r.max_retries as string}</>, s2: <>{r.retry_delay_ms as string}</>, s3: <>{r.error as string}</>, s4: <>{r.error_status === null ? copy("native-claude-stop.unavailable_ba691b") : String(r.error_status)}</> }} /></li>; })}</ol><p>{copy("native-claude-stop.theseAreObservationsFromTheStopped_ffb6f4")}</p></details> : null}
-    <details><summary>{copy("native-claude-stop.originalInterruptionContext_fb2fe5")}</summary><pre>{v.context as string}</pre></details>
-    <details><summary>{copy("native-claude-stop.nativeInterruptionUsage_fd5e14")}</summary><NativeClaudeResultUsage value={v.usage} />
+    {Array.isArray(v.retries) ? <Disclosure><DisclosureSummary>{copy("native-claude-stop.nativeRetryObservations_7f1b4d")}</DisclosureSummary><ol>{v.retries.map((entry, index) => { const r = object(entry); return <li key={index}><LocalizedText id="native-claude-stop.attemptOfDelayMsHttp_904c77" components={{ s0: <>{r.attempt as string}</>, s1: <>{r.max_retries as string}</>, s2: <>{r.retry_delay_ms as string}</>, s3: <>{r.error as string}</>, s4: <>{r.error_status === null ? copy("native-claude-stop.unavailable_ba691b") : String(r.error_status)}</> }} /></li>; })}</ol><p>{copy("native-claude-stop.theseAreObservationsFromTheStopped_ffb6f4")}</p></Disclosure> : null}
+    <Disclosure><DisclosureSummary>{copy("native-claude-stop.originalInterruptionContext_fb2fe5")}</DisclosureSummary><pre>{v.context as string}</pre></Disclosure>
+    <Disclosure><DisclosureSummary>{copy("native-claude-stop.nativeInterruptionUsage_fd5e14")}</DisclosureSummary><NativeClaudeResultUsage value={v.usage} />
       {v.partial_usage !== null ? <><h4>{copy("native-claude-stop.interruptedResponseReport_751c6f")}</h4><NativeClaudeProviderUsage value={v.partial_usage} /></> : <p>{copy("native-claude-stop.interruptedResponseUsageUnavailable_d58c68")}</p>}
-      <p>{copy("native-claude-stop.theseReportsOverlapAndDoNot_c16702")}</p></details>
+      <p>{copy("native-claude-stop.theseReportsOverlapAndDoNot_c16702")}</p></Disclosure>
     <p>{copy("native-claude-stop.originalHistoryMustBeReconciledBefore_9378d6")}</p>
   </section>;
 }

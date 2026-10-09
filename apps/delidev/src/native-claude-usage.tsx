@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -48,7 +49,7 @@ function ProviderCounts({ value }: { value: unknown }) {
   useLocale();
   if (value == null) return <><p>{copy("native-claude-usage.mainLoopUsageUnavailable_8890bb")}</p><p>{copy("native-claude-usage.evidenceHelp")}</p></>;
   const p = object(value);
-  return <><dl>{labels().map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><details><summary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</summary><pre>{JSON.stringify(p, null, 2)}</pre></details></>;
+  return <><dl>{labels().map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><Disclosure><DisclosureSummary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</DisclosureSummary><pre>{JSON.stringify(p, null, 2)}</pre></Disclosure></>;
 }
 
 export function NativeClaudeProviderUsage({ value }: { value: unknown }) {
@@ -76,7 +77,7 @@ export function NativeClaudeResultUsage({ value }: { value: unknown }) {
   return <section aria-label={copy("native-claude-usage.claudeResultUsage_3e6c8f")}>
       <h4>{copy("native-claude-usage.nativeMainLoopTurn_7fae43")}</h4><ProviderCounts value={retained.main_loop_turn} />
       <h4>{copy("native-claude-usage.nativeCumulativeModelLedger_46974a")}</h4>
-      {retained.native_cumulative_models == null ? <p>{copy("native-claude-usage.unavailable_ca1844")}</p> : Object.keys(models).length === 0 ? <p>{copy("native-claude-usage.noModelEntriesReported_d168a7")}</p> : Object.entries(models).map(([name, usage]) => <details key={name}><summary>{name}</summary><pre>{JSON.stringify(usage, null, 2)}</pre></details>)}
+      {retained.native_cumulative_models == null ? <p>{copy("native-claude-usage.unavailable_ca1844")}</p> : Object.keys(models).length === 0 ? <p>{copy("native-claude-usage.noModelEntriesReported_d168a7")}</p> : Object.entries(models).map(([name, usage]) => <Disclosure key={name}><DisclosureSummary>{name}</DisclosureSummary><pre>{JSON.stringify(usage, null, 2)}</pre></Disclosure>)}
       {retained.native_cumulative_models == null || retained.native_cumulative_cost_usd == null ? <p>{copy("native-claude-usage.evidenceHelp")}</p> : null}
       <dl><dt>{copy("native-claude-usage.nativeCumulativeUsdEstimate_f82a7c")}</dt><dd>{retained.native_cumulative_cost_usd == null ? copy("native-claude-usage.unavailable_ca1844") : retained.native_cumulative_cost_usd as string}</dd></dl>
   </section>;

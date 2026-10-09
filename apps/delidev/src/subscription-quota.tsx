@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { timestampInstant } from "./timestamp-format";
 import { statusLabel } from "./product-status";
@@ -115,8 +116,8 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
       </div>
       {creditReason ? <p role="status" className="reset-credit-secondary">{creditReason}</p> : null}
       {creditsSupported && !isEntityId(ownerMachine) && !serverCreditsSupported ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.serverCreditsUnavailable")}</p> : null}
-      <button type="button" className="reset-credit-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>{copy(expanded ? "subscription-quota.hideDetails" : "subscription-quota.viewDetails")}</button>
-      <div id={detailsId} hidden={!expanded}>
+      <DisclosureButton density={DisclosureDensity.Settings} type="button" className="reset-credit-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>{copy(expanded ? "subscription-quota.hideDetails" : "subscription-quota.viewDetails")}</DisclosureButton>
+      <DisclosureContent id={detailsId} hidden={!expanded}>
         <h4 ref={detailsHeading} id={detailsHeadingId} tabIndex={-1}>{copy("subscription-quota.creditDetails")}</h4>
         <p className="reset-credit-secondary">{details === null ? copy("subscription-quota.detailsUnavailable") : credits ? copy("subscription-quota.returnedDetailCount", { v0: credits.length }) : copy("subscription-quota.creditDetailsMalformed")}</p>
         <div className="reset-credit-rows">
@@ -125,7 +126,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
             {selectable.includes(credit) ? <button type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={event => confirmCredit(text(credit.id), false, event.currentTarget)} aria-label={copy("subscription-quota.selectCreditName", { v0: text(credit.id) })}>{copy("subscription-quota.selectCredit")}</button> : null}
           </div>)}
         </div>
-      </div>
+      </DisclosureContent>
       {confirmation ? <section className="reset-credit-confirmation" aria-label={copy("subscription-quota.confirmResetCreditConsumption_1ce436")}>
         <h4 ref={confirmationHeading} tabIndex={-1}>{copy("subscription-quota.confirmResetCreditConsumption_1ce436")}</h4>
         <p>{copy("subscription-quota.confirmAccount", { v0: text(document(confirmation.account).alias) || copy("subscription-quota.extra.ca1844969742") })}</p>

@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef, useState } from "react";
@@ -65,9 +66,9 @@ export function Updates({ active, machine, controls }: { active: boolean; machin
   const target = data ? `${text(data.os)}-${text(data.architecture)}` : nativeContext?.target ?? "", version = data ? text(data.version) : nativeContext?.current_version ?? "";
   const selected = read.data?.update?.id === id ? read.data.update : candidate?.id === id ? candidate : undefined;
   const knownWorker = !machine || (Array.isArray(data?.worker_capabilities) && data.worker_capabilities.includes("signed-worker-updates-v1"));
-  return <details data-connection-attention={Boolean(check.busy || check.uncertain || check.error || read.error || error)} onToggle={event => setExpanded(event.currentTarget.open)}><summary>{machine ? copy("updates.workerUpdates_86b3ca") : copy("updates.desktopUpdates_1431d4")}</summary>{expanded ? <>{!supported || !knownWorker ? <p>{status.isPending ? copy("updates.checkingUpdateSupport_9f8283") : copy("updates.thisServerOrWorkerRequiresAn_e35658")}</p> : <>
+  return <Disclosure density={DisclosureDensity.Settings} data-connection-attention={Boolean(check.busy || check.uncertain || check.error || read.error || error)} onToggle={event => setExpanded(event.currentTarget.open)}><DisclosureSummary>{machine ? copy("updates.workerUpdates_86b3ca") : copy("updates.desktopUpdates_1431d4")}</DisclosureSummary>{expanded ? <>{!supported || !knownWorker ? <p>{status.isPending ? copy("updates.checkingUpdateSupport_9f8283") : copy("updates.thisServerOrWorkerRequiresAn_e35658")}</p> : <>
     <p>{copy("updates.onlySignedStableDelidevReleasesAre_fdf83e")}</p><button disabled={!active || !targets[target] || !version || check.busy || check.uncertain} onClick={() => void check.send({ requestId: newRequestId(), component: machine ? UpdateComponent.WORKER : UpdateComponent.DESKTOP, target: targets[target], currentVersion: version, machineId: machine?.id ?? "", expectedMachineRevision: machine?.revision ?? 0n })}><LocalizedText id="updates.checkForUpdate_8ac71d" components={{ s0: <>{machine ? copy("updates.worker_a67b04") : copy("updates.desktop_68693d")}</> }} /></button>{check.uncertain ? <button disabled={check.busy || !active} onClick={check.retry}>{copy("updates.retryTheSameUpdateCheck_919af6")}</button> : null}
     <form onSubmit={event => { event.preventDefault(); void read.refetch(); }}><label>{copy("updates.originalUpdateId_51ae1b")}<input value={id} maxLength={36} onChange={event => { setId(event.target.value); setCandidate(undefined); }} /></label><button disabled={!active || !id}>{copy("updates.inspectOriginalUpdate_3b2c2e")}</button></form>
     {selected ? <UpdateCandidate key={selected.id} current={selected} active={active && expanded} worker={Boolean(machine)} controls={controls} /> : null}<Problem error={check.error || read.error || error} />
-  </>}{controls && !machine ? <LocalInstallationInspection active={active && expanded} controls={controls} /> : null}</> : null}</details>;
+  </>}{controls && !machine ? <LocalInstallationInspection active={active && expanded} controls={controls} /> : null}</> : null}</Disclosure>;
 }

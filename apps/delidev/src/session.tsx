@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { SessionHarness } from "./session-harness";
 import { useSessionBrowserLayout } from "./session-browser-layout";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
@@ -207,22 +208,22 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
     <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
-    {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <details><summary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></summary>
+    {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p><LocalizedText id="session.directory_369f13" components={{ s0: <>{text(command.cwd)}</> }} /></p> : null}
       {text(tool.output) ? <pre>{text(tool.output)}</pre> : null}
-      {typeof command.aggregated_output === "string" ? <details><summary>{copy("session.nativeAggregateOutput_2d06e4")}</summary><pre>{command.aggregated_output}</pre></details> : null}
+      {typeof command.aggregated_output === "string" ? <Disclosure><DisclosureSummary>{copy("session.nativeAggregateOutput_2d06e4")}</DisclosureSummary><pre>{command.aggregated_output}</pre></Disclosure> : null}
       {items((tool.completed ? toolCompleted : toolStarted).changes).map((item, index) => <pre key={index}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}
-      {items(tool.patches).map((patch, index) => <details key={index}><summary><LocalizedText id="session.patchObservation_8b886e" components={{ s0: <>{index + 1}</> }} /></summary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</details>)}
+      {items(tool.patches).map((patch, index) => <Disclosure key={index}><DisclosureSummary><LocalizedText id="session.patchObservation_8b886e" components={{ s0: <>{index + 1}</> }} /></DisclosureSummary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</Disclosure>)}
       {items(tool.inputs).map((input, index) => <pre key={index}>Tool input: {text(object(object(input).input).text)}</pre>)}
-    </details> : null}
-    {started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <details open><summary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</summary>
+    </Disclosure> : null}
+    {started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <Disclosure open><DisclosureSummary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</DisclosureSummary>
       {text(started.text) ? <pre>{text(started.text)}</pre> : null}
       {[...items(started.summary), ...items(started.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}
-      {items(artifact.deltas).length ? <details><summary>{copy("session.streamedObservations_589dae")}</summary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</details> : null}
+      {items(artifact.deltas).length ? <Disclosure><DisclosureSummary>{copy("session.streamedObservations_589dae")}</DisclosureSummary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</Disclosure> : null}
       {artifact.completed ? <section aria-label={copy("session.completedArtifact_de26fd")}><h3>{copy("session.completedArtifact_de26fd")}</h3><pre>{text(completed.text)}</pre>{[...items(completed.summary), ...items(completed.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}</section> : null}
-    </details> : null}
-    {progress.kind === "native-compaction" ? <NativeContextCompaction progress={progress} state={text(data.state)} /> : progress.kind === "opencode-workspace" ? <NativeWorkspaceEvent progress={progress} state={text(data.state)} /> : progress.kind === "opencode-changes" ? <NativeChanges progress={progress} state={text(data.state)} turn={text(data.native_turn_id)} /> : progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <details open><summary><LocalizedText id="session.progress_a4d877" components={{ s0: <>{text(progress.kind)}</> }} /></summary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></details> : null}
+    </Disclosure> : null}
+    {progress.kind === "native-compaction" ? <NativeContextCompaction progress={progress} state={text(data.state)} /> : progress.kind === "opencode-workspace" ? <NativeWorkspaceEvent progress={progress} state={text(data.state)} /> : progress.kind === "opencode-changes" ? <NativeChanges progress={progress} state={text(data.state)} turn={text(data.native_turn_id)} /> : progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <Disclosure open><DisclosureSummary><LocalizedText id="session.progress_a4d877" components={{ s0: <>{text(progress.kind)}</> }} /></DisclosureSummary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></Disclosure> : null}
   </article>;
 });
 
@@ -529,19 +530,19 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </article>)}
       </div>
       <div className="session-input-tray">
-        <details className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><summary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</summary>
+        <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
           <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
             <ScrollContinuation query={interactions} root={requestsRoot} active={requestsOpen} label={copy("session.requestPages_d06a30")} />
           </div>
-        </details>
+        </Disclosure>
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
-        <details className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><summary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.length}</> }} />}</summary>
+        <Disclosure className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><DisclosureSummary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.length}</> }} />}</DisclosureSummary>
           <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
             <ScrollContinuation query={queue} root={queueRoot} active={queueOpen} label={copy("session.queuePages_1acdd8")} />
           </div>
-        </details>
+        </Disclosure>
       </div>
       <form className="composer" {...imageEntryHandlers(images, locked || !imageRoute.systemSupported)} onSubmit={event => { event.preventDefault(); enqueue(); }}>
         <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
@@ -581,11 +582,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           <Problem error={send.error} />
         </div>
         {session ? <>
-          <details className="session-information-section"><summary>{copy("session.pullRequests")}</summary><SessionPullRequests key={id} session={session} /></details>
-          <details className="session-information-section"><summary>{copy("session.executionSettings")}</summary><ExecutionConfiguration resource={session} /></details>
-          <details className="session-information-section"><summary>{copy("session.context")}</summary><SessionContext key={id} session={session} /></details>
-          <details className="session-information-section"><summary>{copy("session.subagents")}</summary><Subagents key={id} sessionId={id} revision={session.revision.toString()} /></details>
-          <details ref={budgetDetails} className="session-information-section" tabIndex={-1}><summary>{copy("session.usageAndBudget")}</summary><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></details>
+          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.pullRequests")}</DisclosureSummary><SessionPullRequests key={id} session={session} /></Disclosure>
+          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.executionSettings")}</DisclosureSummary><ExecutionConfiguration resource={session} /></Disclosure>
+          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.context")}</DisclosureSummary><SessionContext key={id} session={session} /></Disclosure>
+          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.subagents")}</DisclosureSummary><Subagents key={id} sessionId={id} revision={session.revision.toString()} /></Disclosure>
+          <Disclosure ref={budgetDetails} className="session-information-section" tabIndex={-1}><DisclosureSummary>{copy("session.usageAndBudget")}</DisclosureSummary><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></Disclosure>
           <SessionStorageAction source={session} />
         </> : null}
       </div>

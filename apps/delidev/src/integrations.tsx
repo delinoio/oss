@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -155,10 +156,10 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
     <ProfileFacts profile={current} />
     {text(identity.login) ? <p><LocalizedText id="integrations.authenticatedAsGithubId_5a4d87" components={{ s0: <>{text(identity.login)}</>, s1: <>{text(identity.id)}</> }} /></p> : null}
     <section className="integration-section" aria-label={copy("integrations.connectAToken_d30079")}><h4>{copy("integrations.connectAToken_d30079")}</h4>
-      <details className="integration-token-guidance" open={initiallyExplainToken.current}>
-        <summary>{copy("integrations.createATokenOnGithub_519994")}</summary>
+      <Disclosure density={DisclosureDensity.Settings} className="integration-token-guidance" open={initiallyExplainToken.current}>
+        <DisclosureSummary>{copy("integrations.createATokenOnGithub_519994")}</DisclosureSummary>
         {active ? <GitHubTokenForm key={`${current.id}:${current.revision}`} profile={current} active={active} disabled={blocked || Boolean(retryIdentity || data.pending || result.error)} showHeading={false} /> : null}
-      </details>
+      </Disclosure>
       <form id={tokenFormId} onSubmit={(event) => { event.preventDefault(); void sendToken(); }}><fieldset disabled={blocked || deleting || Boolean(result.error)}>
         <label>{copy("integrations.githubPersonalAccessToken_235203")}<input type="password" autoComplete="off" spellCheck={false} maxLength={512} placeholder={copy("integrations.enterAPersonalAccessToken_b4175a")} value={token} onChange={(event) => setToken(event.target.value)} /></label>
         <p className="integration-secondary">{tokenStorageNote()}</p>

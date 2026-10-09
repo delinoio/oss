@@ -1,3 +1,5 @@
+import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
+import { useId } from "react";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
@@ -40,9 +42,10 @@ function OriginalPRSource({ target, revision }: { target: ActivityPRMetadata; re
 }
 
 export function ActivityPRSource({ target, revision }: { target: ActivityPRMetadata; revision: bigint }) {
+  const disclosureContentId1 = useId();
   useLocale();
   const [open, setOpen] = useState(false);
-  return <div><button aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("activity-pr-source.closeOriginalPrRecord_963c00") : copy("activity-pr-source.inspectOriginalPrRecord_fa92e2")}</button>{open ? <OriginalPRSource target={target} revision={revision} /> : null}</div>;
+  return <div><DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Details} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("activity-pr-source.closeOriginalPrRecord_963c00") : copy("activity-pr-source.inspectOriginalPrRecord_fa92e2")}</DisclosureButton><DisclosureContent id={disclosureContentId1} hidden={!open}>{open ? <OriginalPRSource target={target} revision={revision} /> : null}</DisclosureContent></div>;
 }
 
 export function ActivityPRDetails({ target, revision, active }: { target: ActivityPRMetadata; revision: bigint; active: boolean }) {
@@ -51,7 +54,7 @@ export function ActivityPRDetails({ target, revision, active }: { target: Activi
     <p>{target.owner}/{target.name} #{target.number}</p>
     {target.attemptState !== ActivityPRAttemptState.ACTIVITY_PR_ATTEMPT_STATE_UNSPECIFIED ? <p><LocalizedText id="activity-pr-source.attemptSuccessDoesNotEstablishVerified_f0764b" components={{ s0: <>{ActivityPRAttemptState[target.attemptState]?.replace("ACTIVITY_PR_ATTEMPT_STATE_", "").toLowerCase().replaceAll("_", " ")}</>, s1: <>{ActivityPRMode[target.mode]?.replace("ACTIVITY_PR_MODE_", "").toLowerCase()}</> }} /></p> : null}
     <p><LocalizedText id="activity-pr-source.actor_3b75fc" components={{ s0: <>{ActivityPRActorType[target.actorType]?.replace("ACTIVITY_PR_ACTOR_TYPE_", "").toLowerCase()}</>, s1: <>{target.deviceId ? copy("activity-pr-source.message_a4e9a4", { v0: target.deviceId }) : ""}</> }} /></p>
-    <details><summary>{copy("activity-pr-source.originalActivityReferences_bae436")}</summary><p><LocalizedText id="activity-pr-source.sourceRevisionRequest_b783ad" components={{ s0: <>{target.sourceId}</>, s1: <>{revision.toString()}</>, s2: <>{target.requestId}</> }} /></p>{target.problems.map(ref => <p key={ref.id}><LocalizedText id="activity-pr-source.problemVersion_f62c8e" components={{ s0: <>{ref.id}</>, s1: <code>{ref.contentVersion}</code> }} /></p>)}</details>
+    <Disclosure><DisclosureSummary>{copy("activity-pr-source.originalActivityReferences_bae436")}</DisclosureSummary><p><LocalizedText id="activity-pr-source.sourceRevisionRequest_b783ad" components={{ s0: <>{target.sourceId}</>, s1: <>{revision.toString()}</>, s2: <>{target.requestId}</> }} /></p>{target.problems.map(ref => <p key={ref.id}><LocalizedText id="activity-pr-source.problemVersion_f62c8e" components={{ s0: <>{ref.id}</>, s1: <code>{ref.contentVersion}</code> }} /></p>)}</Disclosure>
     {active ? <ActivityPRSource target={target} revision={revision} /> : null}
   </>;
 }

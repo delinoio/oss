@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
 import { createPortal } from "react-dom";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale } from "./localization";
@@ -29,6 +30,7 @@ import "./network-settings.css";
 export function NetworkSettings({ active, machine = "", authority, onPresentationChange }: { active: boolean; machine?: string; authority?: PairingAuthority; onPresentationChange?: (open: boolean) => void }) {
   useLocale();
   const [open, setOpen] = useState(false);
+  const workspaceId = useId();
   const disclosure = useRef<HTMLButtonElement>(null), workspace = useRef<HTMLDivElement>(null);
   const [headerActions, setHeaderActions] = useState<HTMLDivElement | null>(null);
   // Only the Runner Device modal makes the containing inventory inactive.
@@ -37,12 +39,13 @@ export function NetworkSettings({ active, machine = "", authority, onPresentatio
     if (workspace.current?.contains(globalThis.document.activeElement)) disclosure.current?.focus({ preventScroll: true });
     setOpen(false);
   };
-  const trigger = <button ref={disclosure} type="button" aria-label={machine && open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")} aria-expanded={open} onClick={() => open ? close() : setOpen(true)}>{machine && open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")}</button>;
+  const Trigger = machine ? "button" : DisclosureButton;
+  const trigger = <Trigger density={machine ? undefined : DisclosureDensity.Settings} ref={disclosure} type="button" aria-label={machine && open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")} aria-expanded={open} aria-controls={machine ? undefined : workspaceId} onClick={() => open ? close() : setOpen(true)}>{machine && open ? copy("network-settings.hideNetworkSettings_b1aa7f") : copy("network-settings.networkSettings_600f22")}</Trigger>;
   return <section data-settings-search-target={machine ? undefined : "network"} className={machine ? undefined : "network-inline"} aria-label={machine ? copy("network-settings.runnerDeviceNetwork_1f2f36") : copy("network-settings.networkSettings_600f22")}>
     {machine ? trigger : <div className="network-disclosure-header">{trigger}<div ref={setHeaderActions} /></div>}
     {open ? machine ? <SettingsTaskDialog title={copy("network-settings.runnerDeviceNetwork_1f2f36")} size={SettingsDialogSize.Wide} focus={SettingsDialogFocus.Heading} close={close}><NetworkWorkspace active={active} machine={machine} authority={authority} /></SettingsTaskDialog>
       // A plain nested lifetime keeps each profile dialog independently disposable.
-      : <div ref={workspace}><SettingsLifetime>{() => <MutationIntents><NetworkWorkspace active={active} machine="" authority={authority} inline headerActions={headerActions} /></MutationIntents>}</SettingsLifetime></div> : null}
+      : <DisclosureContent id={workspaceId} ref={workspace}><SettingsLifetime>{() => <MutationIntents><NetworkWorkspace active={active} machine="" authority={authority} inline headerActions={headerActions} /></MutationIntents>}</SettingsLifetime></DisclosureContent> : null}
   </section>;
 }
 function NetworkWorkspace({ active, machine, authority, inline = false, headerActions }: { active: boolean; machine: string; authority?: PairingAuthority; inline?: boolean; headerActions?: HTMLElement | null }) {
@@ -113,7 +116,7 @@ function NetworkWorkspace({ active, machine, authority, inline = false, headerAc
       {draft ? <SettingsTaskDialog key={draft === "new" ? "new" : draft.id} title={draft === "new" ? copy("network-settings.newNetworkProfile_100d40") : copy("network-settings.editNetworkProfile_14453e")} size={SettingsDialogSize.Form} close={() => setDraft(undefined)}><ProfileEditor initial={draft === "new" ? undefined : draft} saved={() => { setDraft(undefined); changed(); }} close={() => setDraft(undefined)} /></SettingsTaskDialog> : null}
       {!inline ? <button disabled={Boolean(profiles.loading) || route.isFetching || observation.isFetching} onClick={changed}>{copy("network-settings.refreshRouting_8a54e5")}</button> : null}
       {select.uncertain ? <button disabled={select.busy} onClick={select.retry}>{copy("network-settings.retryOriginalRouteSelection_3cdea3")}</button> : null}
-      {authority ? inline ? <details className="network-transfer"><summary>{copy("network-settings.workerTransfer")}</summary>{bootstrap ? <EncryptedWorkerExport active={active} choicesActive={inventoryActive} authority={authority} machine={machine} /> : <p>{copy("network-settings.updateTheSelectedServerToExport_9ba35a")}</p>}</details> : bootstrap ? <EncryptedWorkerExport active={active} choicesActive={inventoryActive} authority={authority} machine={machine} /> : <p>{copy("network-settings.updateTheSelectedServerToExport_9ba35a")}</p> : null}
+      {authority ? inline ? <Disclosure density={DisclosureDensity.Settings} className="network-transfer"><DisclosureSummary>{copy("network-settings.workerTransfer")}</DisclosureSummary>{bootstrap ? <EncryptedWorkerExport active={active} choicesActive={inventoryActive} authority={authority} machine={machine} /> : <p>{copy("network-settings.updateTheSelectedServerToExport_9ba35a")}</p>}</Disclosure> : bootstrap ? <EncryptedWorkerExport active={active} choicesActive={inventoryActive} authority={authority} machine={machine} /> : <p>{copy("network-settings.updateTheSelectedServerToExport_9ba35a")}</p> : null}
     </> : null}
   </div>;
 }

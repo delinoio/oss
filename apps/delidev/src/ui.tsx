@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale, type MessageKey } from "./localization";
 import { useLayoutEffect, useId, useRef, type ReactNode, type RefObject, type ComponentPropsWithRef } from "react";
 import { clientFailure, FailureCode, type ClientFailure } from "@delinoio/delidev-api-client";
@@ -7,7 +8,7 @@ export interface InlineProblemPresentation { summary?: ReactNode; actions?: Reac
 /** Presentation only. The owning workflow supplies original actions and guards. */
 export function InlineRemediation({ summary, actions, details }: { summary: ReactNode; actions?: ReactNode; details?: ReactNode }) {
   useLocale();
-  return <div role="alert" className="problem"><div>{summary}</div>{actions ? <div className="actions">{actions}</div> : null}{details ? <details><summary>{copy("ui.technicalDetails")}</summary>{details}</details> : null}</div>;
+  return <div role="alert" className="problem"><div>{summary}</div>{actions ? <div className="actions">{actions}</div> : null}{details ? <Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>{details}</Disclosure> : null}</div>;
 }
 
 export function Problem({ error, ...presentation }: { error: unknown } & InlineProblemPresentation) {
@@ -19,13 +20,13 @@ export function Problem({ error, ...presentation }: { error: unknown } & InlineP
 export function Failure({ failure, summary, actions }: { failure?: ClientFailure } & InlineProblemPresentation) {
   useLocale();
   if (!failure) return null;
-  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<details><summary>{copy("ui.technicalDetails")}</summary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></details>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
+  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></Disclosure>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
 }
 export function ServiceProblem({ code, children, summary, actions }: { code?: string; children: ReactNode } & InlineProblemPresentation) {
   useLocale();
   const normalized = code?.replaceAll("-", "_");
   const key = normalized && Object.hasOwn(failureGuidance, normalized) ? failureGuidance[normalized as FailureCode] : "ui.failure.internal";
-  return <div className="problem" role="alert"><p>{copy(key)}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<details><summary>{copy("ui.technicalDetails")}</summary>{children}</details></div>;
+  return <div className="problem" role="alert"><p>{copy(key)}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>{children}</Disclosure></div>;
 }
 /** Localized summary only; callers retain the original evidence separately. */
 export function failureSummary(code?: string): string {

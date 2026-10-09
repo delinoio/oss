@@ -97,8 +97,6 @@
 .routing-details { min-width: 0; border-block: 1px solid var(--border); }
 .routing-details > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 0; cursor: pointer; list-style: none; }
 .routing-details > summary::-webkit-details-marker { display: none; }
-.routing-details > summary::before { content: ""; width: 6px; height: 6px; flex: none; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-inline: 3px 5px; }
-.routing-details[open] > summary::before { transform: rotate(45deg); }
 .routing-details-count { margin-left: auto; font-size: 12px; color: var(--muted); text-align: end; overflow-wrap: anywhere; }
 .routing-details-body { padding-block: 8px 12px; }
 @container settings-body (width < 640px) {

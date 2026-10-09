@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { useEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
@@ -48,7 +49,7 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
   const delivery = ["", copy("session.startupNotSent"), copy("session.startupClaimed"), copy("session.startupAcknowledged"), copy("session.startupUnknown")];
   // Project only validated metadata. Never copy the resource or native output.
   const metadata = { phase: failure.phase, harness: failure.harness, native_version: failure.native_version ?? "", problem_code: failure.problem_code, correlation_id: failure.correlation_id, input_delivery: failure.input_delivery, cleanup: failure.cleanup };
-  return <details className="execution-startup-details"><summary>{copy("session.startupDetails")}</summary>
+  return <Disclosure className="execution-startup-details"><DisclosureSummary>{copy("session.startupDetails")}</DisclosureSummary>
     <dl><dt>{copy("session.startupPhase")}</dt><dd>{phases[Number(failure.phase)]}</dd>
       <dt>{copy("session.startupVersion")}</dt><dd>{text(failure.native_version) || copy("session.startupUnavailable")}</dd>
       <dt>{copy("session.startupCode")}</dt><dd>{text(failure.problem_code)}</dd>
@@ -58,5 +59,5 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
     <p>{failure.state === StartupState.Failed ? copy("session.startupManualSteps") : copy("session.startupRecover")}</p>
     <button type="button" onClick={() => { setCopied(false); setCopyFailed(false); if (!navigator.clipboard) { setCopyFailed(true); return; } void navigator.clipboard.writeText(JSON.stringify(metadata, null, 2)).then(() => { if (alive.current) setCopied(true); }, () => { if (alive.current) setCopyFailed(true); }); }}>{copy("session.startupCopy")}</button>
     {copied ? <p role="status">{copy("session.startupCopied")}</p> : null}{copyFailed ? <p role="status">{copy("session.startupCopyFailed")}</p> : null}
-  </details>;
+  </Disclosure>;
 }

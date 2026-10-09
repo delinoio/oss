@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { SettingsHeading } from "./settings-presentation";
@@ -30,9 +31,9 @@ function completeness(more: unknown, kind: string) {
   if (more === true) return <p className="notice"><LocalizedText id="doctor.onlyTheFirst50AreIncluded_eb0ea8" components={{ s0: <>{kind}</> }} /></p>;
   return more === false ? null : <p>{copy("doctor.inventoryCompletenessIsUnknown_44746c")}</p>;
 }
-function Disclosure({ title, children }: { title: string; children: ReactNode }) {
+function DiagnosticDisclosure({ title, children }: { title: string; children: ReactNode }) {
   useLocale();
-  return <details className="diagnostics-disclosure"><summary>{title}</summary>{children}</details>;
+  return <Disclosure density={DisclosureDensity.Settings} className="diagnostics-disclosure"><DisclosureSummary>{title}</DisclosureSummary>{children}</Disclosure>;
 }
 function Storage({ value }: { value: Document }) {
   useLocale();
@@ -42,7 +43,7 @@ function Storage({ value }: { value: Document }) {
     <dl className="diagnostics-facts"><dt>{copy("doctor.databaseFile_812d99")}</dt><dd>{bytes(value.database_bytes)}</dd><dt>{copy("doctor.writeAheadLog_ccc16f")}</dt><dd>{bytes(value.wal_bytes)}</dd><dt>{copy("doctor.logicalDatabaseSize_e1995b")}</dt><dd>{bytes(value.logical_database_bytes)}</dd><dt>{copy("doctor.filesystemCapacity_b12161")}</dt><dd>{bytes(value.volume_capacity_bytes)}</dd><dt>{copy("doctor.availableToTheServer_c4503b")}</dt><dd>{bytes(value.volume_available_bytes)}</dd></dl>
     <p>{copy("doctor.sizesAreSampledSeparatelyTheyCannot_10fb3e")}</p>
     {resources ? resources.length ? null : <p>{copy("doctor.noRetainedResourcesWereCounted_24a23d")}</p> : <p>{copy("doctor.resourceCountsAreUnavailable_55abbd")}</p>}
-    <Disclosure title={copy("doctor.retainedResources_0846dd")}>{resources?.length ? <ul>{resources.slice(0, 100).map((entry, index) => { const count = object(entry); return <li key={index}>{text(count.kind) || copy("doctor.extra.b32d920f3e25")}: {decimal(count.count) ?? copy("doctor.unknown_b764cd")}</li>; })}</ul> : null}</Disclosure>
+    <DiagnosticDisclosure title={copy("doctor.retainedResources_0846dd")}>{resources?.length ? <ul>{resources.slice(0, 100).map((entry, index) => { const count = object(entry); return <li key={index}>{text(count.kind) || copy("doctor.extra.b32d920f3e25")}: {decimal(count.count) ?? copy("doctor.unknown_b764cd")}</li>; })}</ul> : null}</DiagnosticDisclosure>
   </section>;
 }
 const installationStates: Record<string, string> = { get unchecked() { return copy("doctor.extra.d16948e73a68"); }, get detected() { return copy("doctor.extra.4db4587e4b04"); }, get missing() { return copy("doctor.extra.1c2850a512c4"); }, get "permission-denied"() { return copy("doctor.extra.59b77dbd5bd2"); }, get incompatible() { return copy("doctor.extra.8777e3a9e3ec"); }, get failed() { return copy("doctor.extra.450e4a86d32c"); } };
@@ -60,7 +61,7 @@ function Workers({ report, recordKey }: { report: Document; recordKey: RecordKey
     const machine = object(entry), installations = items(machine.installations).slice(0, 4);
     return <article className="diagnostics-record" key={recordKey(machine, text(machine.machine_id))}><h3>{text(machine.name) || copy("doctor.extra.cdc2f44852c6")}</h3><p><LocalizedText id="doctor.reportedVersion_e37bb8" components={{ s0: <>{text(machine.version) || copy("doctor.extra.b764cdc0eab7")}</>, s1: <>{text(machine.os) || copy("doctor.extra.5bf49f5564d9")}</>, s2: <>{text(machine.architecture) || copy("doctor.extra.5181df98c1d2")}</> }} /></p><p>{machine.active_stream === true ? copy("doctor.connectedAtObservation_2685ce") : machine.active_stream === false ? copy("doctor.noActiveStreamObserved_57ef54") : copy("doctor.connectionUnknown_e68b86")} · {machine.disabled === true ? copy("doctor.disabled_75081b") : machine.disabled === false ? copy("doctor.enabled_92c1cd") : copy("doctor.availabilityUnknown_2e0078")}</p><p><LocalizedText id="doctor.lastContact_052200" components={{ s0: <>{<Timestamp value={text(machine.last_seen).startsWith("0001-") ? "" : text(machine.last_seen)} fallback={copy("doctor.notObserved_1d3efc")} />}</> }} /></p>
       <ul className="diagnostics-installations">{installations.map((value, key) => <Installation key={key} value={object(value)} />)}</ul>
-      <Disclosure title={copy("doctor.installationDetails_7ee3b5")}><p><LocalizedText id="doctor.machineIdentity_a4bfec" components={{ s0: <>{text(machine.machine_id) || copy("doctor.extra.a1dddb1d9c42")}</> }} /></p><ul>{installations.map((value, key) => <Installation key={key} value={object(value)} secondary />)}</ul></Disclosure>
+      <DiagnosticDisclosure title={copy("doctor.installationDetails_7ee3b5")}><p><LocalizedText id="doctor.machineIdentity_a4bfec" components={{ s0: <>{text(machine.machine_id) || copy("doctor.extra.a1dddb1d9c42")}</> }} /></p><ul>{installations.map((value, key) => <Installation key={key} value={object(value)} secondary />)}</ul></DiagnosticDisclosure>
     </article>;
   })}</div> : <p>{copy("doctor.noWorkersAreRegistered_9b7693")}</p> : <p>{copy("doctor.workerObservationsAreUnavailable_ef7c26")}</p>}</section>;
 }
@@ -84,7 +85,7 @@ function Report({ report }: { report: Document }) {
       <section className="diagnostics-panel diagnostics-observation"><h2>{copy("doctor.inferenceProbes_3cbb76")}</h2><p><span className="diagnostics-neutral" aria-hidden="true">−</span>{report.inference_probes === false ? copy("doctor.notPerformed_c48729") : copy("doctor.unknown_b764cd")}</p></section>
     </div>
     <div className="diagnostics-sections">
-      <section className="diagnostics-panel" aria-label={copy("doctor.serverInformation_078792")}><h2>{copy("doctor.serverInformation_078792")}</h2><dl className="diagnostics-facts"><dt>{copy("doctor.serverVersion_3f34bb")}</dt><dd>{text(report.version) || copy("doctor.extra.b764cdc0eab7")}</dd>{expanded ? <><dt>{copy("doctor.serverPlatform_9d0c00")}</dt><dd>{text(report.os) || copy("doctor.extra.b764cdc0eab7")} / {text(report.architecture) || copy("doctor.extra.b764cdc0eab7")}</dd><dt>{copy("doctor.protocolVersion_cdd735")}</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : copy("doctor.unknown_b764cd")}</dd><dt>{copy("doctor.databaseSchema_bf3efc")}</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : copy("doctor.unknown_b764cd")}</dd></> : null}<dt>{copy("doctor.boundEndpoint_5501d6")}</dt><dd>{text(report.listener) || copy("doctor.extra.b764cdc0eab7")}</dd></dl><p>{ownerCaveat()}</p><Disclosure title={copy("doctor.serverIdentity_fa4fb0")}><p>{text(report.server_id) || copy("doctor.extra.b764cdc0eab7")}</p></Disclosure></section>
+      <section className="diagnostics-panel" aria-label={copy("doctor.serverInformation_078792")}><h2>{copy("doctor.serverInformation_078792")}</h2><dl className="diagnostics-facts"><dt>{copy("doctor.serverVersion_3f34bb")}</dt><dd>{text(report.version) || copy("doctor.extra.b764cdc0eab7")}</dd>{expanded ? <><dt>{copy("doctor.serverPlatform_9d0c00")}</dt><dd>{text(report.os) || copy("doctor.extra.b764cdc0eab7")} / {text(report.architecture) || copy("doctor.extra.b764cdc0eab7")}</dd><dt>{copy("doctor.protocolVersion_cdd735")}</dt><dd>{Number.isSafeInteger(report.protocol_version) && Number(report.protocol_version) > 0 ? Number(report.protocol_version) : copy("doctor.unknown_b764cd")}</dd><dt>{copy("doctor.databaseSchema_bf3efc")}</dt><dd>{Number.isSafeInteger(report.database_schema_version) && Number(report.database_schema_version) > 0 ? Number(report.database_schema_version) : copy("doctor.unknown_b764cd")}</dd></> : null}<dt>{copy("doctor.boundEndpoint_5501d6")}</dt><dd>{text(report.listener) || copy("doctor.extra.b764cdc0eab7")}</dd></dl><p>{ownerCaveat()}</p><DiagnosticDisclosure title={copy("doctor.serverIdentity_fa4fb0")}><p>{text(report.server_id) || copy("doctor.extra.b764cdc0eab7")}</p></DiagnosticDisclosure></section>
       {expanded ? <><Storage value={object(report.storage)} /><Workers report={report} recordKey={recordKey} /></> : <p>{copy("doctor.thisServerReturnedALegacyReport_0a90d0")}</p>}
     </div>
   </>;

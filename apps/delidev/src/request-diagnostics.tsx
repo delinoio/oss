@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
@@ -77,10 +78,10 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       <dt>{native ? copy("request-diagnostics.selectedServiceTier_2c8ca9") : copy("request-diagnostics.requestedServiceTier_14f88a")}</dt><dd>{value.requestedServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
       <dt>{native ? copy("request-diagnostics.nativeEffectiveServiceTier_d412ae") : copy("request-diagnostics.providerObservedServiceTier_01a40b")}</dt><dd>{value.effectiveServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
     </dl>
-    <details><summary>{copy("request-diagnostics.originalIdentities_580b0d")}</summary><dl>{[
+    <Disclosure><DisclosureSummary>{copy("request-diagnostics.originalIdentities_580b0d")}</DisclosureSummary><dl>{[
       [copy("request-diagnostics.extra.406c0cd17230"), value.publicationRequestId], [copy("request-diagnostics.extra.5f1a25573a30"), value.correlationId], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
       [copy("request-diagnostics.extra.45d8583658f2"), value.providerRequestId], [copy("request-diagnostics.extra.6e5cd62e3845"), value.nativeResponseId], [copy("request-diagnostics.extra.230d0da59fbf"), value.nativeThreadId], [copy("request-diagnostics.extra.a12de5a8959e"), value.nativeTurnId],
-    ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></details>
+    ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></Disclosure>
   </article>;
 }
 

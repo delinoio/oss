@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { useEffect, useRef, type ReactNode, type SyntheticEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery } from "@delinoio/delidev-api-client";
@@ -34,7 +35,7 @@ function RepositoryDisclosure({ title, summary, children, problem = false }: { t
     reveal();
     return () => observer.disconnect();
   }, []);
-  return <details ref={disclosure} className="repository-disclosure"><summary>{title}{summary ? <span>{summary}</span> : null}</summary><div className="repository-disclosure-body">{children}</div></details>;
+  return <Disclosure density={DisclosureDensity.Settings} ref={disclosure} className="repository-disclosure"><DisclosureSummary>{title}{summary ? <span>{summary}</span> : null}</DisclosureSummary><div className="repository-disclosure-body">{children}</div></Disclosure>;
 }
 
 export function RepositoryCheckoutIdentity({ machineId, path, active }: { machineId: string; path: string; active: boolean }) {

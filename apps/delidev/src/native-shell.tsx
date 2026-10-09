@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -87,22 +88,22 @@ function Arguments({ input }: { input: ShellInput }) {
 export function NativeShell({ tool, state }: { tool: Record<string, unknown>; state: string }) {
   useLocale();
   const snapshots = retained(tool, state), latest = snapshots?.at(-1);
-  if (!snapshots || !latest) return <details><summary>{copy("native-shell.shellUnavailable_e21cae")}</summary><p>{copy("native-shell.theRetainedShellOperationIsUnavailable_289f4b")}</p></details>;
-  return <details>
-    <summary><LocalizedText id="native-shell.shell_c1d0ae" components={{ s0: <>{labels[latest.status]}</> }} /></summary>
+  if (!snapshots || !latest) return <Disclosure><DisclosureSummary>{copy("native-shell.shellUnavailable_e21cae")}</DisclosureSummary><p>{copy("native-shell.theRetainedShellOperationIsUnavailable_289f4b")}</p></Disclosure>;
+  return <Disclosure>
+    <DisclosureSummary><LocalizedText id="native-shell.shell_c1d0ae" components={{ s0: <>{labels[latest.status]}</> }} /></DisclosureSummary>
     <Arguments input={latest.input} />
     {latest.title !== undefined ? <p>{latest.title}</p> : null}
     {latest.exit !== undefined ? <p><LocalizedText id="native-shell.nativeExitCode_991101" components={{ s0: <>{latest.exit === null ? copy("native-shell.unavailable_ca1844") : latest.exit}</> }} /></p> : null}
     {latest.output !== undefined ? <section aria-label={copy("native-shell.shellResult_8e738a")}><pre>{latest.output}</pre></section> : null}
     {latest.error !== undefined ? <section aria-label={copy("native-shell.shellError_662943")}><pre>{latest.error}</pre></section> : null}
-    {latest.preview !== undefined ? <details><summary>{copy("native-shell.latestNativeOutputPreview_b55362")}</summary><pre>{latest.preview}</pre></details> : null}
+    {latest.preview !== undefined ? <Disclosure><DisclosureSummary>{copy("native-shell.latestNativeOutputPreview_b55362")}</DisclosureSummary><pre>{latest.preview}</pre></Disclosure> : null}
     {latest.truncated !== undefined ? <p>{latest.truncated ? copy("native-shell.theNativeShellResultIsTruncated_e8b1dd") : copy("native-shell.theNativeShellResultIsNot_9537c3")}</p> : null}
     {latest.outputPath !== undefined ? <p><LocalizedText id="native-shell.nativeSavedOutputPath_6ce1ca" components={{ s0: <br />, s1: <code>{latest.outputPath}</code> }} /></p> : null}
     {latest.interrupted !== undefined ? <p><LocalizedText id="native-shell.nativeInterruption_edde92" components={{ s0: <>{latest.interrupted ? copy("native-shell.observed_64fa8a") : copy("native-shell.notObserved_1d3efc")}</> }} /></p> : null}
-    <details><summary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</summary><ol>{snapshots.map((item, index) => <li key={index}><details>
-      <summary>{labels[item.status]}</summary><Arguments input={item.input} />
+    <Disclosure><DisclosureSummary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</DisclosureSummary><ol>{snapshots.map((item, index) => <li key={index}><Disclosure>
+      <DisclosureSummary>{labels[item.status]}</DisclosureSummary><Arguments input={item.input} />
       {item.raw !== undefined ? <pre>{item.raw}</pre> : null}
       {item.preview !== undefined ? <pre>{item.preview}</pre> : null}
-    </details></li>)}</ol></details>
-  </details>;
+    </Disclosure></li>)}</ol></Disclosure>
+  </Disclosure>;
 }

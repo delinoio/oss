@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { copy, useLocale } from "./localization";
@@ -38,6 +39,6 @@ export function ConnectionsPage({ onSlots, local = false }: { onSlots: (slots: C
     <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><div className="connections-current" ref={current} /></section>
     {local ? <div ref={saved} /> : null}
     {attention ? <p className="connections-attention" role="status">{copy("settings.connections.attention")}</p> : null}
-    <details className="connections-advanced"><summary>{copy("settings.connections.advanced")}</summary><p>{copy("settings.connections.advancedHelp")}</p><div ref={advanced} /></details>
+    <Disclosure density={DisclosureDensity.Settings} className="connections-advanced"><DisclosureSummary>{copy("settings.connections.advanced")}</DisclosureSummary><p>{copy("settings.connections.advancedHelp")}</p><div ref={advanced} /></Disclosure>
   </div>;
 }

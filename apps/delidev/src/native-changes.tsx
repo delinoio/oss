@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object } from "./documents";
 
@@ -26,10 +27,10 @@ const revisionLabels: Record<RevisionSource, string> = { get snapshot() { return
 export function NativeRevision({ artifact, state }: { artifact: Record<string, unknown>; state: string }) {
   useLocale();
   const first = revisionSnapshot(artifact.started), completed = revisionSnapshot(artifact.completed);
-  if (!first || artifact.deltas != null || state !== "complete" || !completed || first.source !== completed.source || first.hash !== completed.hash || (first.files == null) !== (completed.files == null) || first.files && (!completed.files || first.files.length !== completed.files.length || first.files.some((f, i) => f !== completed.files![i]))) return <details><summary>{copy("native-changes.nativeRevisionUnavailable_5ba088")}</summary><p>{copy("native-changes.theRetainedRevisionObservationIsIncomplete_cf4770")}</p></details>;
-  return <details><summary>{revisionLabels[first.source]}</summary><p><LocalizedText id="native-changes.originalNativeReference_bbb471" components={{ s0: <code>{first.hash}</code> }} /></p>
+  if (!first || artifact.deltas != null || state !== "complete" || !completed || first.source !== completed.source || first.hash !== completed.hash || (first.files == null) !== (completed.files == null) || first.files && (!completed.files || first.files.length !== completed.files.length || first.files.some((f, i) => f !== completed.files![i]))) return <Disclosure><DisclosureSummary>{copy("native-changes.nativeRevisionUnavailable_5ba088")}</DisclosureSummary><p>{copy("native-changes.theRetainedRevisionObservationIsIncomplete_cf4770")}</p></Disclosure>;
+  return <Disclosure><DisclosureSummary>{revisionLabels[first.source]}</DisclosureSummary><p><LocalizedText id="native-changes.originalNativeReference_bbb471" components={{ s0: <code>{first.hash}</code> }} /></p>
     {first.files ? first.files.length ? <ul>{first.files.map((path, i) => <li key={i}><code>{path}</code></li>)}</ul> : <p>{copy("native-changes.theOriginalFileListIsEmpty_e072b3")}</p> : null}
-  </details>;
+  </Disclosure>;
 }
 
 type FileDiff = { file?: string; patch?: string; additions: number; deletions: number; status?: FileStatus };
@@ -48,13 +49,13 @@ export function NativeChanges({ progress, state, turn }: { progress: Record<stri
     && typeof c.native_event_id === "string" && /^evt_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_event_id)
     && (c.source === ChangeSource.Session && c.native_message_id === undefined && c.title == null && c.body == null || c.source === ChangeSource.Input && typeof c.native_message_id === "string" && /^msg_[0-9a-f]{12}[a-zA-Z0-9]{14}$/.test(c.native_message_id) && c.native_message_id === turn)
     && (c.title == null || bounded(c.title)) && (c.body == null || bounded(c.body)) && Array.isArray(c.diffs) && c.diffs.length <= 4096 && c.diffs.every(fileDiff);
-  if (!valid) return <details><summary>{copy("native-changes.nativeChangesUnavailable_06d3fa")}</summary><p>{copy("native-changes.theRetainedChangeObservationIsUnavailable_2cf048")}</p></details>;
+  if (!valid) return <Disclosure><DisclosureSummary>{copy("native-changes.nativeChangesUnavailable_06d3fa")}</DisclosureSummary><p>{copy("native-changes.theRetainedChangeObservationIsUnavailable_2cf048")}</p></Disclosure>;
   const diffs = c.diffs as FileDiff[];
-  return <details><summary>{c.source === ChangeSource.Session ? copy("native-changes.nativeSessionDiff_dd228a") : copy("native-changes.nativeInputChangeSummary_a7b5ad")}</summary>
+  return <Disclosure><DisclosureSummary>{c.source === ChangeSource.Session ? copy("native-changes.nativeSessionDiff_dd228a") : copy("native-changes.nativeInputChangeSummary_a7b5ad")}</DisclosureSummary>
     {typeof c.title === "string" ? <pre>{c.title}</pre> : null}{typeof c.body === "string" ? <pre>{c.body}</pre> : null}
-    {diffs.length ? <ol>{diffs.map((d, i) => <li key={i}><details>
-      <summary>{d.file === undefined ? copy("native-changes.fileUnavailable_b3b9ef") : d.file} · {d.status ?? copy("native-changes.statusUnavailable_7eb5af")} · +{d.additions} / −{d.deletions}</summary>
+    {diffs.length ? <ol>{diffs.map((d, i) => <li key={i}><Disclosure>
+      <DisclosureSummary>{d.file === undefined ? copy("native-changes.fileUnavailable_b3b9ef") : d.file} · {d.status ?? copy("native-changes.statusUnavailable_7eb5af")} · +{d.additions} / −{d.deletions}</DisclosureSummary>
       {d.patch === undefined ? <p>{copy("native-changes.patchUnavailable_87d458")}</p> : <pre>{d.patch}</pre>}
-    </details></li>)}</ol> : <p>{copy("native-changes.theOriginalDiffListIsEmpty_078d07")}</p>}
-  </details>;
+    </Disclosure></li>)}</ol> : <p>{copy("native-changes.theOriginalDiffListIsEmpty_078d07")}</p>}
+  </Disclosure>;
 }

@@ -1,3 +1,4 @@
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { EntityKind } from "@delinoio/delidev-api-client";
@@ -103,8 +104,8 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
             <label><input type="radio" name={`${radios}-mode`} checked={definition.mode === Mode.Plan} onChange={() => field("mode")(Mode.Plan)} /><span>{copy("schedule-creation.plan_fa8ed0")}</span></label>
           </div></fieldset>
           {local ? <p>{copy("schedule-creation.localComputerOriginatingWorkerSelectedExisting_b1be46")}</p> : <div className="schedule-creation-disclosure">
-            <button type="button" aria-expanded={expanded} aria-controls={disclosure} onClick={() => setExpanded(!expanded)}><span>{copy("schedule-creation.startingReferenceOverrides_58881e")}</span><small>{items(definition.starting).length ? copy("schedule-creation.override_ed569d", { v0: items(definition.starting).length, v1: items(definition.starting).length === 1 ? "" : copy("schedule-creation.s_043a71") }) : copy("schedule-creation.usingSavedProjectReferences_48868d")}</small></button>
-            <div id={disclosure} hidden={!expanded} onInvalidCapture={(event) => { if (!expanded) { invalidReference.current ??= event.target as HTMLElement; setExpanded(true); } }}>{references}</div>
+            <DisclosureButton density={DisclosureDensity.Settings} type="button" aria-expanded={expanded} aria-controls={disclosure} onClick={() => setExpanded(!expanded)}><span>{copy("schedule-creation.startingReferenceOverrides_58881e")}</span><small>{items(definition.starting).length ? copy("schedule-creation.override_ed569d", { v0: items(definition.starting).length, v1: items(definition.starting).length === 1 ? "" : copy("schedule-creation.s_043a71") }) : copy("schedule-creation.usingSavedProjectReferences_48868d")}</small></DisclosureButton>
+            <DisclosureContent id={disclosure} hidden={!expanded} onInvalidCapture={(event) => { if (!expanded) { invalidReference.current ??= event.target as HTMLElement; setExpanded(true); } }}>{references}</DisclosureContent>
           </div>}
         </section>
         <section className="schedule-creation-card schedule-creation-repeat" aria-labelledby={`${radios}-repeat`}>

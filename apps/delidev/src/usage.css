@@ -20,7 +20,6 @@
 .usage-page .usage-trends, .usage-page .usage-definitions, .usage-page .usage-accounting-source { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .usage-page summary { min-height: 40px; padding-block: 8px; cursor: pointer; overflow-wrap: anywhere; }
 .usage-page .usage-accounting-source > details { margin: 0; padding: 0; border: 0; border-radius: 8px; }
-.usage-page .usage-accounting-source > details > summary { display: list-item; }
 .usage-source-heading { font-weight: 650; }
 .usage-accounting-source > details > summary span { margin-inline-end: 16px; }
 .usage-source-empty-warning { margin: 8px 0 0; color: var(--muted); font-size: .875rem; }
@@ -83,6 +82,6 @@
 .usage-page .usage-applied details, .usage-page .usage-coverage details, .usage-page .usage-summary-breakdown { padding: 0; border: 0; background: transparent; }
 .usage-page .usage-coverage details { flex-basis: auto; margin-left: auto; }
 .usage-page .usage-coverage details[open] { flex-basis: 100%; margin-left: 0; }
-.usage-page .usage-coverage details[open] > span { display: block; margin-top: 8px; }
+.usage-page .usage-coverage details[open] > .disclosure-native-content > span { display: block; margin-top: 8px; }
 .usage-page .usage-summary h2 { margin-bottom: 12px; }
 @media (max-width: 759px) { .usage-page .usage-coverage details { margin-left: 0; } }

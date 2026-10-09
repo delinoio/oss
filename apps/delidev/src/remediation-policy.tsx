@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useId, type ReactNode } from "react";
 import { items, object, text, type Document } from "./documents";
@@ -52,9 +53,9 @@ export function RemediationPolicyFields({ value, change, children, presentation 
   return <fieldset><legend>{copy("remediation-policy.pullRequestRemediationPolicy_98e643")}</legend>
     <p>{copy("remediation-policy.enabledPoliciesRunBoundedFixesFor_2758c5")}</p>
     {[["ci_failure", copy("remediation-policy.extra.5ecef0b36ba3")], ["review_feedback", copy("remediation-policy.extra.feab8b0b6d7b")], ["merge_conflict", copy("remediation-policy.extra.7f64e75c8c6e")]].map(([key, label]) => <label data-settings-search-target={`remediation-${key}`} className="checkbox" key={key}><input type="checkbox" checked={value[key] === true} onChange={event => field(key, event.target.checked)} />{label}</label>)}
-    {presentation === RemediationDetailPresentation.Collapsible ? <details className="server-remediation-details">
-      <summary aria-label={copy("remediation-policy.remediationDetails_15b723")} aria-describedby={helperId}><LocalizedText id="remediation-policy.remediationDetails_8af20a" components={{ s0: <span id={helperId} className="server-remediation-helper">{copy("remediation-policy.sessionStrategyExecutionTargetsConflictsAttempt_ef59b9")}</span> }} /></summary>
+    {presentation === RemediationDetailPresentation.Collapsible ? <Disclosure density={DisclosureDensity.Settings} className="server-remediation-details">
+      <DisclosureSummary aria-label={copy("remediation-policy.remediationDetails_15b723")} aria-describedby={helperId}><LocalizedText id="remediation-policy.remediationDetails_8af20a" components={{ s0: <span id={helperId} className="server-remediation-helper">{copy("remediation-policy.sessionStrategyExecutionTargetsConflictsAttempt_ef59b9")}</span> }} /></DisclosureSummary>
       <div className="server-remediation-fields">{details}</div>
-    </details> : details}
+    </Disclosure> : details}
   </fieldset>;
 }

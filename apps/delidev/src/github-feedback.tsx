@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampText } from "./timestamp-display";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { object, text, type Document } from "./documents";
@@ -79,8 +80,8 @@ export function PRFeedback({ value }: { value: Document }) {
         <p><LocalizedText id="github-feedback.published_3e1d2d" components={{ s0: <><Timestamp value={text(entry.published_at)} /></>, s1: <>{entry.last_edited_at ? <TimestampText id={"github-feedback.edited_01b606"} values={{ v0: <Timestamp value={text(entry.last_edited_at)} /> }} /> : ""}</>, s2: <>{entry.native_state ? copy("github-feedback.message_2fa20b", { v0: text(entry.native_state) }) : ""}</>, s3: <>{entry.review_state ? copy("github-feedback.review_741980", { v0: text(entry.review_state) }) : ""}</> }} /></p>
         {thread ? <p>{thread.resolved ? copy("github-feedback.threadResolvedOnGithub_0cf45e") : copy("github-feedback.threadUnresolvedOnGithub_2d3df9")}{thread.outdated ? copy("github-feedback.outdatedCodePosition_881964") : ""}</p> : null}
         <pre>{text(entry.body) || copy("github-feedback.extra.b8e6ea915c53")}</pre>
-        {entry.code != null ? <details><summary><LocalizedText id="github-feedback.codeContext_df3a2f" components={{ s0: <>{text(code.path)}</> }} /></summary><p><LocalizedText id="github-feedback.currentLineOriginalLine_72e6d7" components={{ s0: <>{code.line == null ? copy("github-feedback.unavailable_ca1844") : String(code.line)}</>, s1: <>{code.original_line == null ? copy("github-feedback.unavailable_ca1844") : String(code.original_line)}</> }} /></p><pre>{text(code.diff_hunk)}</pre></details> : null}
-        <details><summary>{copy("github-feedback.feedbackIdentityAndContentVersion_56157d")}</summary><p><LocalizedText id="github-feedback.githubAddress_e2d25b" components={{ s0: <code>{text(entry.url)}</code> }} /></p><p><LocalizedText id="github-feedback.originalId_b7f034" components={{ s0: <>{text(entry.id)}</>, s1: <code>{text(entry.node_id)}</code> }} /></p><p><LocalizedText id="github-feedback.contentVersion_0bc2d3" components={{ s0: <code>{text(entry.content_version)}</code> }} /></p></details>
+        {entry.code != null ? <Disclosure><DisclosureSummary><LocalizedText id="github-feedback.codeContext_df3a2f" components={{ s0: <>{text(code.path)}</> }} /></DisclosureSummary><p><LocalizedText id="github-feedback.currentLineOriginalLine_72e6d7" components={{ s0: <>{code.line == null ? copy("github-feedback.unavailable_ca1844") : String(code.line)}</>, s1: <>{code.original_line == null ? copy("github-feedback.unavailable_ca1844") : String(code.original_line)}</> }} /></p><pre>{text(code.diff_hunk)}</pre></Disclosure> : null}
+        <Disclosure><DisclosureSummary>{copy("github-feedback.feedbackIdentityAndContentVersion_56157d")}</DisclosureSummary><p><LocalizedText id="github-feedback.githubAddress_e2d25b" components={{ s0: <code>{text(entry.url)}</code> }} /></p><p><LocalizedText id="github-feedback.originalId_b7f034" components={{ s0: <>{text(entry.id)}</>, s1: <code>{text(entry.node_id)}</code> }} /></p><p><LocalizedText id="github-feedback.contentVersion_0bc2d3" components={{ s0: <code>{text(entry.content_version)}</code> }} /></p></Disclosure>
       </article>;
     })}
   </section>;

@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 
@@ -54,15 +55,15 @@ function Citation({value}: {value: Document}) {
 }
 function Collection({value,label}: {value: unknown;label: string}) {
   useLocale();
- return <details><summary>{label}</summary>{value===null?<p>{copy("native-claude-citations.notReported_adadfa")}</p>:object(value).null===true?<p>{copy("native-claude-citations.explicitlyNull_a8f253")}</p>:entries(value).length===0?<p>{copy("native-claude-citations.emptyNativeList_c4376f")}</p>:<ol>{entries(value).map((entry,index)=><Citation key={index} value={entry}/>)}</ol>}</details>;
+ return <Disclosure><DisclosureSummary>{label}</DisclosureSummary>{value===null?<p>{copy("native-claude-citations.notReported_adadfa")}</p>:object(value).null===true?<p>{copy("native-claude-citations.explicitlyNull_a8f253")}</p>:entries(value).length===0?<p>{copy("native-claude-citations.emptyNativeList_c4376f")}</p>:<ol>{entries(value).map((entry,index)=><Citation key={index} value={entry}/>)}</ol>}</Disclosure>;
 }
 export function NativeClaudeCitations({value}: {value: Document}) {
   useLocale();
- return <details><summary>{copy("native-claude-citations.originalCitations_ec8a0d")}</summary>
+ return <Disclosure><DisclosureSummary>{copy("native-claude-citations.originalCitations_ec8a0d")}</DisclosureSummary>
   <p>{copy("native-claude-citations.locationsReferToNativeSourcesThese_f537fe")}</p>
   {value.completion==="omitted-by-native"?<p>{copy("native-claude-citations.claudeOmittedStreamedCitationsFromIts_989f28")}</p>:null}
   <Collection value={value.initial} label={copy("native-claude-citations.initialNativeCitations_ec43fb")}/>
-  <details><summary>{copy("native-claude-citations.streamedCitations_4cfef6")}</summary><ol>{(value.deltas as Document[]).map((v,index)=><Citation key={index} value={v}/>)}</ol></details>
+  <Disclosure><DisclosureSummary>{copy("native-claude-citations.streamedCitations_4cfef6")}</DisclosureSummary><ol>{(value.deltas as Document[]).map((v,index)=><Citation key={index} value={v}/>)}</ol></Disclosure>
   {value.completion!==undefined?<Collection value={value.completed} label={copy("native-claude-citations.completedNativeCitations_f0aab4")}/>:null}
- </details>;
+ </Disclosure>;
 }

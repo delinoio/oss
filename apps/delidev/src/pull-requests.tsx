@@ -1,3 +1,4 @@
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { ScrollContinuation } from "./scroll-continuation";
 import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -41,14 +42,14 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
         <svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg>
         <span className="sidebar-repository-info">{name}</span>
       </button>
-      <button type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
-        <Icon name="chevron" />
-      </button>
+      <DisclosureButton density={DisclosureDensity.Compact} type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
+        <span className="sidebar-sr-only">{detailsLabel}</span>
+      </DisclosureButton>
     </div>
-    <div id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
+    <DisclosureContent id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
       <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
         <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
-    </div>
+    </DisclosureContent>
   </div>;
 }
 

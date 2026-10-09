@@ -1,3 +1,5 @@
+import { useId } from "react";
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -25,6 +27,7 @@ function fixAcknowledgement({ repositoryId, remoteRepositoryId, pullRequestId, n
 }
 
 export function PRFixAction({ row, set, value, selection, disabled, refreshed }: { row: Resource; set: Resource; value: Document; selection: PRProblemSelection; disabled: boolean; refreshed: () => void }) {
+  const disclosureContentId1 = useId();
  useLocale();
  const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useProductMessage("");
  const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
@@ -33,8 +36,8 @@ export function PRFixAction({ row, set, value, selection, disabled, refreshed }:
  const chain = readRemediationChain(document(set).remediation);
  const owner = text(chain?.active_attempt_id);
  const blocked = disabled || fix.busy || fix.uncertain || Boolean(owner);
- return <div>{owner ? <p><LocalizedText id="pr-fix.fixAttemptOwnsThisPrInspect_85a121" components={{ s0: <code>{owner}</code> }} /></p> : null}<button disabled={blocked} aria-expanded={open} onClick={() => setOpen(!open)}>{copy("pr-fix.fixNow_879349")}</button>
-  {open ? <PRFixForm blocked={blocked} project={project} setProject={setProject} cancel={() => setOpen(false)} send={() => { setNotice(""); void fix.send({ requestId: newRequestId(), schemaVersion: 1, documentJson: encode({ set_id: set.id, set_revision: set.revision.toString(), project_id: project, repository_id: selection.repositoryId, problems: [{ id: row.id, revision: row.revision.toString(), content_version: text(value.content_version) }] }) }, fixAcknowledgement(selection)); }} /> : null}
+ return <div>{owner ? <p><LocalizedText id="pr-fix.fixAttemptOwnsThisPrInspect_85a121" components={{ s0: <code>{owner}</code> }} /></p> : null}<DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Details} disabled={blocked} aria-expanded={open} onClick={() => setOpen(!open)}>{copy("pr-fix.fixNow_879349")}</DisclosureButton>
+  <DisclosureContent id={disclosureContentId1} hidden={!open}>{open ? <PRFixForm blocked={blocked} project={project} setProject={setProject} cancel={() => setOpen(false)} send={() => { setNotice(""); void fix.send({ requestId: newRequestId(), schemaVersion: 1, documentJson: encode({ set_id: set.id, set_revision: set.revision.toString(), project_id: project, repository_id: selection.repositoryId, problems: [{ id: row.id, revision: row.revision.toString(), content_version: text(value.content_version) }] }) }, fixAcknowledgement(selection)); }} /> : null}</DisclosureContent>
   <Problem error={fix.error} />{fix.uncertain ? <button disabled={fix.busy} onClick={fix.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}{notice ? <p role="status">{notice}</p> : null}
  </div>;
 }

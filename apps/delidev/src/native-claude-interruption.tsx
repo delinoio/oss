@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
 import { NativeClaudeResultUsage, validClaudeResultUsage } from "./native-claude-usage";
@@ -25,7 +26,7 @@ export function NativeClaudeInterruption({ data }: { data: Document }) {
     {value.kind === Kind.Context ? <><pre>{value.context as string}</pre><p>{copy("native-claude-interruption.claudeAddedThisContextAfterProcessing_fad43c")}</p></> : <>
       <p>{copy("native-claude-interruption.claudeStoppedAfterTheDeniedRequest_c27488")}</p>
       <p>{copy("native-claude-interruption.thisSessionResultObservationDoesNot_14e92c")}</p>
-      <details><summary>{copy("native-claude-interruption.nativeSessionResultUsage_1cb51d")}</summary><NativeClaudeResultUsage value={object(value.result).usage} /><p>{copy("native-claude-interruption.theseOverlappingNativeReportsDoNot_a741ea")}</p></details>
+      <Disclosure><DisclosureSummary>{copy("native-claude-interruption.nativeSessionResultUsage_1cb51d")}</DisclosureSummary><NativeClaudeResultUsage value={object(value.result).usage} /><p>{copy("native-claude-interruption.theseOverlappingNativeReportsDoNot_a741ea")}</p></Disclosure>
     </>}
   </article>;
 }

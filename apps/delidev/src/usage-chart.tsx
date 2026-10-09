@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
 // SPDX-License-Identifier: Apache-2.0
+import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
+import type { ReactNode } from "react";
 import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
 import { SubscriptionServiceIdentity, subscriptionServiceLabel } from "@delinoio/delidev-api-client";
@@ -79,16 +80,16 @@ function keyIndex(event: KeyboardEvent<SVGSVGElement>, index: number, count: num
 
 function ViewData({ id, open, change }: { id: string; open: boolean; change: (value: boolean) => void }) {
   useLocale();
-  return <button type="button" className="usage-data-toggle" aria-expanded={open} aria-controls={id} onClick={() => change(!open)}>{open ? copy("usage-chart.hideData_3bfb0a") : copy("usage-chart.viewData_249495")}</button>;
+  return <DisclosureButton density={DisclosureDensity.Details} type="button" className="usage-data-toggle" aria-expanded={open} aria-controls={id} onClick={() => change(!open)}>{open ? copy("usage-chart.hideData_3bfb0a") : copy("usage-chart.viewData_249495")}</DisclosureButton>;
 }
 
 function DailyViewData({ days, timeZone, id, open }: { days: UsageAnalyticsDay[]; timeZone: string; id: string; open: boolean }) {
   useLocale();
-  return <div id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.dailyUsageDataTableScrollHorizontally_3f2b6c")} tabIndex={0} hidden={!open}><table><caption><LocalizedText id="usage-chart.allCalendarDayIntervalsAndExact_a9c769" components={{ s0: <>{timeZone}</> }} /></caption><thead><tr><th scope="col">{copy("usage-chart.from_218197")}</th><th scope="col">{copy("usage-chart.until_7caf85")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>{days.map((day) => <tr key={`${day.fromUnixMs}:${day.untilUnixMs}`}>
+  return <DisclosureContent id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.dailyUsageDataTableScrollHorizontally_3f2b6c")} tabIndex={0} hidden={!open}><table><caption><LocalizedText id="usage-chart.allCalendarDayIntervalsAndExact_a9c769" components={{ s0: <>{timeZone}</> }} /></caption><thead><tr><th scope="col">{copy("usage-chart.from_218197")}</th><th scope="col">{copy("usage-chart.until_7caf85")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>{days.map((day) => <tr key={`${day.fromUnixMs}:${day.untilUnixMs}`}>
     <td><Timestamp value={new Date(Number(day.fromUnixMs)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} /></td>
     <td><><Timestamp value={new Date(Number(day.untilUnixMs)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} /><span>{copy("usage-chart.exclusive_b71bef")}</span></></td>
     <td>{day.totals?.responses ?? 0}</td><MeasureCells totals={day.totals} />
-  </tr>)}</tbody></table></div>;
+  </tr>)}</tbody></table></DisclosureContent>;
 }
 
 export function DailyUsageChart({ days, timeZone }: { days: UsageAnalyticsDay[]; timeZone: string }) {
@@ -144,10 +145,10 @@ function modelRows(analytics: UsageAnalytics): ModelBar[] {
 
 function ModelViewData({ models, otherModels, id, open }: { models: UsageAnalyticsModel[]; otherModels?: UsageOtherModels; id: string; open: boolean }) {
   useLocale();
-  return <div id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.modelUsageDataTableScrollHorizontally_2489e8")} tabIndex={0} hidden={!open}><table><caption>{copy("usage-chart.everyOriginalProviderAndModelGroup_82fc11")}</caption><thead><tr><th scope="col">{copy("usage-chart.providerId_751108")}</th><th scope="col">{copy("usage-chart.provider_472590")}</th><th scope="col">{copy("usage-chart.modelId_089ef2")}</th><th scope="col">{copy("usage-chart.model_5e2c61")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>
+  return <DisclosureContent id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.modelUsageDataTableScrollHorizontally_2489e8")} tabIndex={0} hidden={!open}><table><caption>{copy("usage-chart.everyOriginalProviderAndModelGroup_82fc11")}</caption><thead><tr><th scope="col">{copy("usage-chart.providerId_751108")}</th><th scope="col">{copy("usage-chart.provider_472590")}</th><th scope="col">{copy("usage-chart.modelId_089ef2")}</th><th scope="col">{copy("usage-chart.model_5e2c61")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>
     {models.map((model) => <tr key={`${model.providerId}:${model.subscriptionService}:${model.modelId}`}><td>{model.subscriptionService ? subscriptionServiceLabel(model.subscriptionService) : model.providerId}</td><td>{model.subscriptionService ? copy("usage-chart.subscriptionService_0e16df") : model.providerName || copy("usage-chart.extra.3947dfdaa0f8")}</td><td>{model.modelId}</td><td>{model.modelName || copy("usage-chart.extra.a99bc331d9ad")}</td><td>{model.totals?.responses ?? 0}</td><MeasureCells totals={model.totals} /></tr>)}
     {otherModels ? <tr><td colSpan={4}><LocalizedText id="usage-chart.otherModelsMeasuredGroups_01ba79" components={{ s0: <>{otherModels.modelCount}</> }} /></td><td>{otherModels.totals?.responses ?? 0}</td><MeasureCells totals={otherModels.totals} /></tr> : null}
-  </tbody></table><p>{copy("usage-chart.unmeasuredGroupsAreExcludedFromRanking_223165")}</p></div>;
+  </tbody></table><p>{copy("usage-chart.unmeasuredGroupsAreExcludedFromRanking_223165")}</p></DisclosureContent>;
 }
 
 export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {

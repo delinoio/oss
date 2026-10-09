@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokUsage } from "./native-grok";
 import { useQuery } from "@connectrpc/connect-query";
@@ -60,7 +61,7 @@ export function NativeUsage({ session }: { session: Resource }) {
   const retained = result.data?.resource;
   const record = document(retained);
   const matches = retained?.id === id && retained.kind === EntityKind.USAGE && retained.sessionId === session.id && record.execution_id === progress.execution_id && record.harness === configuration.harness && record.native_version === (grok ? "1.0.41" : claude ? "2.1.236" : "1.18.32") && (grok ? record.claude_observation == null && record.opencode_observation == null && record.usage == null && record.response == null && record.native_thread_id === progress.native_thread_id && record.native_turn_id === progress.native_turn_id : record.grok_observation == null && (claude ? record.opencode_observation == null && record.usage == null && record.response == null : record.claude_observation == null));
-  return <details><summary>{copy("native-usage.nativeUsageObservation_6d9842")}</summary>
+  return <Disclosure><DisclosureSummary>{copy("native-usage.nativeUsageObservation_6d9842")}</DisclosureSummary>
     <Problem error={result.error} summary={copy("native-usage.recheckHelp")} />
     {result.error ? <p>{copy("native-usage.refreshFailedAnyDisplayedObservationIs_9ff040")}</p> : null}
     {!id ? <p>{copy("native-usage.noNativeUsageHasBeenRetained_f51bbb")}</p> : result.isPending ? <p>{copy("native-usage.loadingNativeUsage_976abd")}</p> : !matches ? <p>{copy("native-usage.theMatchingNativeUsageObservationIs_14a62c")}</p> : <>
@@ -71,5 +72,5 @@ export function NativeUsage({ session }: { session: Resource }) {
     </>}
     {id && !result.isPending && !matches && !result.error ? <p>{copy("native-usage.recheckHelp")}</p> : null}
     {id ? <button disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("native-usage.refreshNativeUsage_4fc93f")}</button> : null}
-  </details>;
+  </Disclosure>;
 }
