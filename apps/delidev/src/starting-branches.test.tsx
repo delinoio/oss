@@ -128,3 +128,17 @@ it.each(["Escape", "Tab", "outside"])("keeps invalid-draft guidance visible afte
  expect(change).not.toHaveBeenCalled();expect(validity).toHaveBeenLastCalledWith(false);
  fireEvent.change(input,{target:{value:""}});fireEvent.keyDown(input,{key:"Escape"});expect(screen.queryByRole("alert")).toBeNull();
 });
+
+
+it("clamps the existing popup at both viewport edges after anchor scrolling", async()=>{
+ const f=fixture(),change=vi.fn();render(f.view([],change));await openFirst();
+ const input=screen.getByRole("combobox",{name:"Starting branch"}),panel=document.querySelector<HTMLElement>(".starting-branch-popup")!;
+ Object.defineProperty(panel,"offsetHeight",{configurable:true,value:180});Object.defineProperty(panel,"offsetWidth",{configurable:true,value:240});Object.defineProperty(panel,"scrollHeight",{configurable:true,value:180});
+ const bounds=vi.spyOn(input,"getBoundingClientRect");
+ bounds.mockReturnValue({top:-140,bottom:-100,left:20,right:260,width:240,height:40,x:20,y:-140,toJSON:()=>({})});
+ fireEvent.scroll(window);expect(Number.parseFloat(panel.style.top)).toBe(8);
+ bounds.mockReturnValue({top:window.innerHeight+100,bottom:window.innerHeight+140,left:20,right:260,width:240,height:40,x:20,y:window.innerHeight+100,toJSON:()=>({})});
+ fireEvent.scroll(window);expect(Number.parseFloat(panel.style.top)+panel.offsetHeight).toBeLessThanOrEqual(window.innerHeight-8);
+ expect(panel).toBe(document.querySelector(".starting-branch-popup"));expect(screen.getByRole("button",{name:"Refresh"})).toBeTruthy();expect(change).not.toHaveBeenCalled();expect(f.discover).toHaveBeenCalledOnce();
+ bounds.mockRestore();
+});
