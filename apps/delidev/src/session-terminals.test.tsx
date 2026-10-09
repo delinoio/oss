@@ -1,3 +1,4 @@
+import { StrictMode, useState } from "react";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -310,4 +311,46 @@ it("keeps every existing terminal picker keyboard reachable in the single-pane w
  const open=vi.fn(),transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:()=>({resources:terminals})});});
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} tabbed close={()=>{}} openTerminal={open}/></MutationIntents></TransportProvider></QueryClientProvider>);
  const first=await screen.findByRole("button",{name:/Terminal 1/}),second=screen.getByRole("button",{name:/Terminal 2/});expect(first.tabIndex).toBe(0);expect(second.tabIndex).toBe(0);first.focus();expect(fireEvent.keyDown(first,{key:"ArrowRight"})).toBe(true);expect(open).not.toHaveBeenCalled();second.focus();expect(document.activeElement).toBe(second);view.unmount();client.clear();
+});
+
+
+it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit opening once under Strict Mode (%s)", async (scenario) => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const row = (state: string, cleanup = false) => create(ResourceSchema, { id: newRequestId(), sessionId: session.id, kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 2n, documentJson: encode({ state, cleanup_verified: cleanup }) });
+  const terminal = row("running"), history = Array.from({ length: 50 }, () => row("closed", true));
+  const opened = vi.fn(), createTerminal = vi.fn((_request: unknown) => ({ terminal }));
+  const pages: string[] = [];
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: request => {
+      pages.push(request.filter?.pageToken ?? "");
+      if (scenario === "read-error") throw new ConnectError("Fixture read failure", Code.Unavailable);
+      if (scenario === "later-page") return request.filter?.pageToken ? { resources: [terminal] } : { resources: history, nextPageToken: "next" };
+      return { resources: scenario === "uncertain" ? [row("uncertain")] : [] };
+    } });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent(value => value ?? { requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<StrictMode><QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider></StrictMode>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    expect(createTerminal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    if (scenario === "empty") {
+      await waitFor(() => expect(createTerminal).toHaveBeenCalledOnce());
+      expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 7n }, rows: 24, columns: 80, shellOverride: "" });
+      await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
+    } else if (scenario === "later-page") {
+      await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id)); expect(pages).toContain("next"); expect(createTerminal).not.toHaveBeenCalled();
+    } else {
+      await screen.findByRole("button", { name: "Retry terminal inventory read" });
+      expect(createTerminal).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Retry terminal inventory read" }));
+      expect(createTerminal).not.toHaveBeenCalled(); expect(opened).not.toHaveBeenCalled();
+    }
+  } finally { view.unmount(); client.clear(); }
 });

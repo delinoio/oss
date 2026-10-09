@@ -33,7 +33,7 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
-The Terminals header action opens the shared session-tab inventory. Explicit
+The explicit Terminals toolbar/menu gesture (#2112) resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
 creation/selection opens a full-pane tab by original terminal ID while retaining
 conversation authoring and original mutation controllers. Presentation Close or
 inactive selection releases only the client attachment; it never closes the shell

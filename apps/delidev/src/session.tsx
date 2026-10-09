@@ -305,6 +305,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const upperContent = useRef<HTMLDivElement>(null);
   const [filesOpened,setFilesOpened]=useState(false);
   const [terminalOpened, setTerminalOpened] = useState(false);
+  const [terminalOpenIntent, setTerminalOpenIntent] = useState<{ requestId: string; revision: bigint }>();
   const [browserOpened,setBrowserOpened]=useState(false);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
@@ -472,7 +473,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   };
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
     if(next===SessionPanel.Files)setFilesOpened(true);
-    if(next === SessionPanel.Terminals) setTerminalOpened(true);
+    if(next === SessionPanel.Terminals) { setTerminalOpened(true); if (session) setTerminalOpenIntent(current => current ?? { requestId: newRequestId(), revision: session.revision }); }
     if(next === SessionPanel.Browser) setBrowserOpened(true);
     const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Terminals]:SessionTabKind.Terminals,[SessionPanel.Browser]:SessionTabKind.Browser,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
     tabs.store.open(id, {kind:kinds[next]});
@@ -613,7 +614,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path)=>tabs.store.open(id,{kind:SessionTabKind.File,repository,path})}/></div>:null}
     {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><RequestDiagnostics sessionId={id} close={closePanel}/></div>:null}
     {session && browserOpened ? <div hidden={!active||panel!==SessionPanel.Browser} inert={!active||panel!==SessionPanel.Browser} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/></div>:null}
-    {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}
+    {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} openIntent={terminalOpenIntent} finishOpenIntent={() => setTerminalOpenIntent(undefined)} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}
               hideEmpty={hideEmptyTerminals}
               dismissTerminal={(terminalId, fallback) => {
                 const selected = tabs.store.snapshot(id).selected === sessionTabKey({ kind: SessionTabKind.Terminal, id: terminalId });
