@@ -9,6 +9,7 @@
     "dev:qa": "node scripts/qa/run.mjs",
     "test:qa": "node --test scripts/qa/*.test.mjs",
     "test:qa:browser": "node scripts/qa/test-browser.mjs",
+    "test:worker-model-layout": "node scripts/test-worker-model-layout.mjs",
     "build": "pnpm prepare:localization && rsbuild build",
     "build:frontend": "pnpm prepare:localization && rsbuild build",
     "typecheck": "tsc --noEmit",

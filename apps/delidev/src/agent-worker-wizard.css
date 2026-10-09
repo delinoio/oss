@@ -56,7 +56,9 @@
 .worker-routing summary small { display: block; margin-top: 6px; }
 .worker-routing li { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .worker-model-combobox { position: relative; }
-.worker-model-combobox > ul { position: relative; z-index: 1; margin: 4px 0 0; padding: 0; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; }
+.worker-model-results { height: 280px; min-height: 280px; max-height: 280px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; display: flow-root; margin-top: 4px; }
+.worker-model-results:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.worker-model-results > ul { position: relative; z-index: 1; margin: 0; padding: 0; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .worker-model-combobox li { padding: 12px 16px; cursor: pointer; overflow-wrap: anywhere; }
 .worker-model-combobox li small { display: block; margin-top: 4px; }
 .worker-model-combobox li[aria-selected="true"], .worker-model-combobox li:hover { background: var(--selected-background); }
