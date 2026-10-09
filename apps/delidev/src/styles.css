@@ -1157,3 +1157,14 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-preference-notice { margin: 12px 16px; max-width: 680px; overflow-wrap: anywhere; }
 .sidebar-preference-notice button { min-height: 40px; }
 @media (max-width: 759px) { .sidebar-wide-toggle { display: none; } }
+
+/* Home groups remain shared disclosures, with a bounded flat navigation surface. */
+.sidebar-project-group > button.sidebar-project-row.disclosure-header.disclosure-header { border:0; border-radius:0; background:transparent; box-shadow:none; height:auto; min-height:32px; }
+.sidebar-project-group > button.sidebar-project-row.disclosure-header.disclosure-header:hover:not(:disabled) { background:var(--surface-hover); }
+.sidebar-project-group.has-project-menu > button.sidebar-project-row.disclosure-header.disclosure-header { padding-right:64px; }
+.sidebar-project-group.has-new-session:not(.has-project-menu) > button.sidebar-project-row.disclosure-header.disclosure-header { padding-right:36px; }
+.sidebar-project-group.has-project-menu > .sidebar-project-new-session { right:32px; }
+.sidebar-project-group.has-new-session:not(.has-project-menu) > .sidebar-project-new-session { right:3px; }
+.sidebar-project-more { position:absolute; top:3px; right:3px; display:grid; place-items:center; width:28px; height:28px; min-width:28px; min-height:28px; padding:0; border:0; background:transparent; color:var(--muted); }
+.sidebar-project-more:hover:not(:disabled),.sidebar-project-more[aria-expanded="true"] { background:var(--surface-hover); }
+.sidebar-project-more:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

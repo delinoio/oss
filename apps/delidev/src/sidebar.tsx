@@ -263,7 +263,7 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
 }) {
   const disclosureContentId1 = useId();
   useLocale();
-  return <section className={`sidebar-project-group${fallback ? "" : " has-new-session"}`} data-project-id={projectId}>
+  return <section className={`sidebar-project-group${fallback ? "" : " has-new-session has-project-menu"}`} data-project-id={projectId}>
     <DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span>
     </DisclosureButton>

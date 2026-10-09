@@ -8,6 +8,7 @@ import { copy } from "./localization";
 import { Problem } from "./ui";
 
 const Context = createContext<{ open: string; setOpen: (id: string) => void }>({ open: "", setOpen: () => undefined });
+export function useSidebarActionMenuOwner() { return useContext(Context); }
 export function useSessionActionMenuOpen() { return Boolean(useContext(Context).open); }
 export function SessionRowActionsProvider({ children, active }: { children: ReactNode; active: boolean }) {
   const [open, setOpen] = useState("");

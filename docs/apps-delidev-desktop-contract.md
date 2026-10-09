@@ -3307,7 +3307,9 @@ attachment-help overlays, file trees, Browser/Files panels and the Terminal dock
 keep their specialized controls. Modal launchers also keep their original modal
 semantics. QA-only and test/fixture markup is outside product migration coverage.
 
-Headers share a semantic subtle surface, 1px border, 8px corners and a decorative
+Issue #2107 gives only Home project groups, fallback groups and General Chat flat resting rows without permanent borders, surfaces, shadows or card corners. Keep shared compact chevrons, hover/focus and session hierarchy. Known projects have independent + then always-visible borderless … sibling targets. The manual top-layer menu contains only localized Project settings with a decorative glyph; duplicate labels retain original IDs. Menu opening/navigation/dismissal adds no resource/session reads, expansion or selection. Selecting settings closes the menu and focuses its surviving trigger before opening the existing original-ID validated editor; retain drafts, save/retry revisions and focus restoration, with the disclosure as fallback. Fallback and General Chat groups gain no menu authority. Reuse session-menu ownership, placement/clamping, drawer lifetime and keyboard/outside/Escape behavior. Top creation and non-Home disclosures retain their original styles.
+
+Other headers share a semantic subtle surface, 1px border, 8px corners and a decorative
 14px left chevron separated from wrapped titles by 8px. The closed
 `DisclosureDensity` enum selects Settings (40px minimum/14px type), Details
 (36px/13px) and Compact (32px/13px). Keep theme hover and visible focus, remove
