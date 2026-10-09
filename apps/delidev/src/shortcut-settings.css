@@ -4,7 +4,7 @@
 .settings-shortcuts .settings-category-heading { flex: 0 0 auto; }
 .settings-shortcuts .settings-panels { flex: 1; min-height: 0; display: flex; }
 .shortcut-settings { min-width: 0; max-width: 1040px; width: 100%; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 16px; }
-.shortcut-catalog { min-height: 80px; flex: 1; overflow-y: auto; scrollbar-gutter: stable; border: 1px solid var(--border); border-radius: 8px; container: shortcut-catalog / inline-size; }
+.shortcut-catalog { min-height: 0; flex: 1; overflow-y: auto; scrollbar-gutter: stable; border: 1px solid var(--border); border-radius: 8px; container: shortcut-catalog / inline-size; }
 .shortcut-catalog > section { margin: 0; }
 .shortcut-catalog h2 { min-height: 40px; display: flex; align-items: center; padding: 8px 16px; margin: 0; background: var(--surface-muted); font-size: 14px; line-height: 20px; }
 .shortcut-settings-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items: center; gap: 16px; min-height: 56px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
