@@ -67,4 +67,16 @@ func TestCLIPricingRevisionMissingRatesAndHistoricalRetry(t *testing.T) {
 	if code, _ := cliRun(t, root, []string{"usage", "pricing", "set", "--provider-revision", "1", "--provider-id", provider, "--native-id", "fixture", "--revision", "2", "--policy-revision", "2"}, `{"currency":"USD","source":"Fixture rates","as_of":"2026-09-25","input_mode":"uniform-input","output_per_million":"1e-9"}`); code == 0 {
 		t.Fatal("exponential price accepted")
 	}
+	// Mode changes retain all three independently read revisions and the exact receipt.
+	mode := []string{"usage", "pricing", "mode", "--mode", "manual", "--provider-revision", "1", "--provider-id", provider, "--native-id", "fixture", "--revision", "2", "--policy-revision", "2", "--request-id", string(domain.NewID())}
+	selected := run(mode, "")
+	current := selected["current"].(map[string]any)
+	if current["provider_revision"] != "1" || current["pricing"].(map[string]any)["id"] != second["id"] || current["policy"].(map[string]any)["revision"] != "3" || selected["request_id"] != mode[len(mode)-1] {
+		t.Fatal("mode lost original price, policy, provider revision or receipt", selected)
+	}
+	modeReplay := run(mode, "")
+	if modeReplay["replayed"] != true || modeReplay["request_id"] != selected["request_id"] || modeReplay["current"].(map[string]any)["policy"].(map[string]any)["revision"] != "3" {
+		t.Fatal("mode retry changed the original receipt", modeReplay)
+	}
+
 }
