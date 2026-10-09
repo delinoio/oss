@@ -1,5 +1,4 @@
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
-import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { ownedMessage } from "./localization";
 import { copy, useLocale } from "./localization";
@@ -99,7 +98,6 @@ export function NotificationSettings({ active, showCategoryIntro = true, onWorkf
     {value?.situations ? <><div className="notification-row"><span>{copy("notification-settings.situations.quotaRecovery")}</span><div><span>{copy("notification-settings.situations.perAccount")}</span>{openSubscriptions ? <SettingsActionButton icon={SettingsActionIcon.Edit} type="button" onClick={openSubscriptions}>{copy("notification-settings.situations.subscriptions")}</SettingsActionButton> : null}</div></div><p className="notification-future">{copy("notification-settings.situations.future")}</p></> : null}
     {draft ? <SettingsTaskDialog title={copy("notification-settings.editNotificationPreferences_b2aceb")} size={SettingsDialogSize.Form} close={finishEdit}><NotificationPreferencesEditor initial={draft} active={active} ids={`${ids}-editor`} form={editorForm} firstCheckbox={firstCheckbox} finishEdit={finishEdit} /></SettingsTaskDialog> : null}
     <aside className="notification-inbox-guidance"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16l2 12v4H2v-4L4 4Zm-2 12h6l2 3h4l2-3h6" /></svg><div><p>{copy("notification-settings.inboxRequestsStayAvailableEvenWhen_09c08f")}</p><p>{copy("notification-settings.openingANotificationNeverMarksAn_4f219c")}</p></div></aside>
-    <Disclosure density={DisclosureDensity.Settings} className="notification-delivery"><DisclosureSummary data-settings-search-target="notification-delivery">{copy("notification-settings.aboutNotificationDelivery_e8b4e9")}</DisclosureSummary><p>{copy("notification-settings.aSubmittedNotificationDoesNotProve_0edca6")}</p><p>{copy("notification-settings.readingAnInboxItemNeverAnswers_3d1331")}</p></Disclosure>
   </section>;
 }
 
