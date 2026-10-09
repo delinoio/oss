@@ -1,3 +1,4 @@
+import { QuitConnectionProvider, useQuitConnection } from "./quit-confirmation";
 import { createDesktopFetch } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
 import { OAuthNativeProvider, type OAuthNativeControl } from "./account-oauth";
@@ -63,6 +64,7 @@ function LocalDesktop() {
     return () => { canceled = true; clearTimeout(timer); };
   }, []);
   const [transport, setTransport] = useState<Transport>();
+  useQuitConnection(transport, connectionVerified && status?.state === LocalServerState.Ready);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState(isTauri());
   const connecting = useRef(false);
@@ -215,6 +217,7 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
   const [connectionTarget, setConnectionTarget] = useState<HTMLDivElement | null>(null);
   const [transport, setTransport] = useState<Transport>();
   const [error, setError] = useState<unknown>();
+  useQuitConnection(transport, Boolean(transport) && !error);
   const [busy, setBusy] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const previous = useRef<NativeConnection>(undefined);
@@ -274,7 +277,7 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
   </>;
 
 }
-export function Desktop() {
+function DesktopContent() {
   useLocale();
   const [context, setContext] = useState<{ ready: boolean; profile?: SavedConnection; error?: unknown }>({ ready: !isTauri() });
   const read = async () => {
@@ -296,3 +299,5 @@ export function Desktop() {
   if (!context.ready) return <main className="connect-page"><h1>{copy("desktop.delidev_44fcad")}</h1><p>{copy("desktop.readingThisWindowSServerIdentity_9fc24f")}</p><SavedConnectionProblem error={context.error} />{context.error ? <button onClick={() => void read()}>{copy("desktop.retryWindowContext_6efa5e")}</button> : null}</main>;
   return context.profile ? <SavedDesktop profile={context.profile} /> : <LocalDesktop />;
 }
+
+export function Desktop() { return <QuitConnectionProvider><DesktopContent/></QuitConnectionProvider>; }
