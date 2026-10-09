@@ -35,7 +35,7 @@ func TestBudgetRPCIncompleteEvidenceExactRetryAndAcceptedWork(t *testing.T) {
 		t.Fatal("budget canceled accepted work")
 	}
 	priceClient := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
-	if _, err = priceClient.SetModelPricing(ctx, ownerRequest(f.service.Identity, &pb.SetModelPricingRequest{Mutation: &pb.Mutation{Id: string(f.input.Configuration.ModelID), RequestId: string(domain.NewID())}, ExpectedModelRevision: 1, Basis: publicPrice("USD")})); err != nil {
+	if _, err = priceClient.SetTokenPricing(ctx, ownerRequest(f.service.Identity, &pb.SetTokenPricingRequest{Model: wireModelKey(f.input.Configuration.ModelID), RequestId: string(domain.NewID()), ExpectedProviderRevision: 1, Basis: publicPrice("USD")})); err != nil {
 		t.Fatal(err)
 	}
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
