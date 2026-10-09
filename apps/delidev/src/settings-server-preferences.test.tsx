@@ -517,7 +517,7 @@ it("assigns all policy groups to Project defaults and only Network to Server pre
   expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
   const policyReads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length;
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  expect(screen.getByRole("button", { name: "Network settings" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Network settings" }).closest(".settings-content")?.classList.contains("settings-server-preferences")).toBe(true);
   expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByLabelText("Default account routing")).toBeNull();
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Discard changes" })).toBeNull();
