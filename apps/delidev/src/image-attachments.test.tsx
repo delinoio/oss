@@ -51,6 +51,8 @@ it("keeps compact guidance local, preserves Escape focus and retains inline reco
  fireEvent.keyDown(plus,{key:"Escape"});
  expect(screen.queryByRole("tooltip")).toBeNull();expect(document.activeElement).toBe(plus);
  fireEvent.pointerEnter(plus.parentElement!);expect(screen.getByRole("tooltip")).toBeTruthy();
+ const textarea=screen.getByRole("textbox",{name:"Retained input"});act(()=>textarea.focus());
+ fireEvent.keyDown(textarea,{key:"Escape"});expect(screen.queryByRole("tooltip")).toBeNull();expect(document.activeElement).toBe(textarea);
  expect(draft.controller.add).not.toHaveBeenCalled();
  expect(screen.getByRole("img",{name:"Image 1"})).toBeTruthy();
  expect(screen.getByText("Checking the selected image route…")).toBeTruthy();
