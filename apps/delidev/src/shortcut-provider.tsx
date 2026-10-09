@@ -9,28 +9,56 @@ import "./shortcuts.css";
 import { useShortcutPreferences } from "./shortcut-preference-controller";
 import { fixedNativeShortcutCatalog, customizationBindings, effectiveShortcutDefinitions } from "./shortcut-preferences";
 
-interface Controller { store: ShortcutStore; platform: ShortcutPlatform; openHelp: () => void }
+enum HelpLifetime { Held = "held", Button = "button" }
+interface HeldKey { code: string; key: string }
+interface Controller { store: ShortcutStore; platform: ShortcutPlatform; openHelp: () => void; holdHelp: (event: KeyboardEvent) => void }
 const Context = createContext<Controller | undefined>(undefined);
 export function ShortcutProvider({ children }: { children: ReactNode }) {
   const { snapshot } = useShortcutPreferences();
   const [store] = useState(() => new ShortcutStore());
   useLayoutEffect(() => store.setResolver(definitions => effectiveShortcutDefinitions(definitions, snapshot.overrides)), [store, snapshot.overrides]);
   const [platform] = useState(shortcutPlatform);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpLifetime, setHelpLifetime] = useState<HelpLifetime | null>(null);
+  const lifetime = useRef<HelpLifetime | null>(null), held = useRef<HeldKey | null>(null);
+  const closeHelp = useCallback(() => { lifetime.current = null; setHelpLifetime(null); }, []);
   const helpDispatch = useRef<ShortcutHelpDispatch | undefined>(undefined);
-  const openHelp = useCallback(() => { if (!shortcutModalVisible()) setHelpOpen(true); }, []);
-  const [controller] = useState(() => ({ store, platform, openHelp }));
+  const openHelp = useCallback(() => { if (!shortcutModalVisible()) { lifetime.current = HelpLifetime.Button; setHelpLifetime(HelpLifetime.Button); } }, []);
+  const holdHelp = useCallback((event: KeyboardEvent) => {
+    if (held.current || lifetime.current || shortcutModalVisible()) return;
+    held.current = { code: event.code && event.code !== "Unidentified" ? event.code : "", key: event.key.toLowerCase() };
+    lifetime.current = HelpLifetime.Held;
+    setHelpLifetime(HelpLifetime.Held);
+  }, []);
+  const [controller] = useState(() => ({ store, platform, openHelp, holdHelp }));
   useLayoutEffect(() => {
     const handle = (event: KeyboardEvent) => { dispatchShortcut(event, store.getSnapshot(), store.surface, platform, false, helpDispatch.current); };
+    const release = (event: KeyboardEvent) => {
+      const origin = held.current;
+      if (!origin || (origin.code ? event.code !== origin.code : event.key.toLowerCase() !== origin.key)) return;
+      held.current = null;
+      if (lifetime.current === HelpLifetime.Held) closeHelp();
+    };
+    const abandon = () => { held.current = null; if (lifetime.current === HelpLifetime.Held) closeHelp(); };
+    const visibility = () => { if (document.visibilityState === "hidden") abandon(); };
     document.addEventListener("keydown", handle);
-    return () => document.removeEventListener("keydown", handle);
-  }, [store, platform]);
-  return <Context.Provider value={controller}>{children}{helpOpen ? <ShortcutHelp store={store} platform={platform} dispatch={helpDispatch} close={() => setHelpOpen(false)} /> : null}</Context.Provider>;
+    document.addEventListener("keyup", release, true);
+    window.addEventListener("blur", abandon);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      document.removeEventListener("keydown", handle);
+      document.removeEventListener("keyup", release, true);
+      window.removeEventListener("blur", abandon);
+      document.removeEventListener("visibilitychange", visibility);
+      held.current = null;
+    };
+  }, [store, platform, closeHelp]);
+  return <Context.Provider value={controller}>{children}{helpLifetime ? <ShortcutHelp store={store} platform={platform} dispatch={helpDispatch} close={closeHelp} /> : null}</Context.Provider>;
 }
 export function useShortcutSurface(surface: Surface) {
   const controller = useContext(Context);
   useLayoutEffect(() => { controller?.store.setSurface(surface); }, [controller, surface]);
 }
+export function useHeldShortcutHelp() { return useContext(Context)?.holdHelp ?? (() => undefined); }
 export function useShortcutHelp() { return useContext(Context)?.openHelp ?? (() => undefined); }
 export function useGlobalShortcutAria(id: keyof typeof globalShortcutBindings) {
   const controller = useContext(Context);

@@ -3,14 +3,15 @@ import { StrictMode, useRef } from "react";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { i18n } from "./localization";
-import { ShortcutProvider, useShortcutHelp, useShortcutSurface, useShortcuts } from "./shortcut-provider";
+import { ShortcutProvider, useShortcutHelp, useHeldShortcutHelp, useShortcutSurface, useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput, ShortcutScope } from "./shortcuts";
+import { ShortcutPreferenceProvider, type ShortcutPreferenceBridge } from "./shortcut-preference-controller";
 import { Surface } from "./surface";
 
 function Consumer({ surface = Surface.Sessions, enabled = false, run = () => {}, opener = true }: { surface?: Surface; enabled?: boolean; run?: () => void; opener?: boolean }) {
-  useShortcutSurface(surface); const openHelp = useShortcutHelp(), input = useRef<HTMLInputElement>(null);
+  useShortcutSurface(surface); const openHelp = useShortcutHelp(), holdHelp = useHeldShortcutHelp(), input = useRef<HTMLInputElement>(null);
   useShortcuts([
-    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: [{ key: "?" }], run: openHelp },
+    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: [{ key: "?" }], helpKeydown: holdHelp },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: input, input: ShortcutInput.Target, enabled, unavailableReason: "shortcuts.messageRequired", run },
   ]);
   return <main id="main" tabIndex={-1}>{opener ? <button onClick={openHelp}>Help opener</button> : null}<input ref={input} aria-label="Message" /></main>;
@@ -77,10 +78,10 @@ it("checks all registered input actions before a local form handler can execute"
 
 function HelpActions({ surface = Surface.Sessions, enabled = true, conflict = false, run }: { surface?: Surface; enabled?: boolean; conflict?: boolean; run: () => void }) {
   useShortcutSurface(surface);
-  const input = useRef<HTMLInputElement>(null), openHelp = useShortcutHelp();
+  const input = useRef<HTMLInputElement>(null), openHelp = useShortcutHelp(), holdHelp = useHeldShortcutHelp();
   const focusId = surface === Surface.Search ? ShortcutId.SearchFocus : surface === Surface.NewSession ? ShortcutId.NewSessionFocus : ShortcutId.SessionFocus;
   useShortcuts([
-    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: [{ key: "?" }], run: openHelp },
+    { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: [{ key: "?" }], helpKeydown: holdHelp },
     { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: [{ key: "n", primary: true, shift: true }], input: ShortcutInput.Allow, run },
     { id: focusId, scope: surface, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], enabled, input: ShortcutInput.Allow, run: () => { run(); input.current?.focus(); } },
     { id: ShortcutId.SessionSend, scope: surface, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }, { key: "Enter" }, { key: "Enter", shift: true }], target: input, input: ShortcutInput.Target, run },
@@ -131,4 +132,66 @@ it("preserves help for excluded events, repeated help and background input actio
 
 it("lists native window bindings as read-only help without adding dispatch actions",()=>{
  const run=vi.fn();render(<ShortcutProvider><Consumer enabled run={run}/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Help opener"}));const dialog=screen.getByRole("dialog");expect(within(dialog).getByText("New Window")).toBeTruthy();expect(within(dialog).getByText("Close Window")).toBeTruthy();expect(run).not.toHaveBeenCalled();
+});
+
+
+it.each(["Slash", "IntlRo", "", "Unidentified"])("retires only the original held key (%s)", code => {
+  const show = vi.spyOn(HTMLDialogElement.prototype, "showModal");
+  render(<ShortcutProvider><Consumer /></ShortcutProvider>);
+  const opener = screen.getByRole("button", { name: "Help opener" }); opener.focus();
+  fireEvent.keyDown(opener, { key: "?", code, shiftKey: code === "Slash" });
+  const dialog = screen.getByRole("dialog");
+  fireEvent.keyDown(dialog, { key: "?", code, repeat: true });
+  fireEvent.keyUp(dialog, { key: "Shift", code: "ShiftLeft" }); fireEvent.keyUp(dialog, { key: "a", code: "KeyA" });
+  expect(screen.getByRole("dialog")).toBe(dialog); expect(show).toHaveBeenCalledTimes(1);
+  expect(fireEvent.keyUp(dialog, { key: code === "Slash" ? "/" : "?", code })).toBe(true);
+  expect(screen.queryByRole("dialog")).toBeNull(); expect(document.activeElement).toBe(opener);
+});
+it.each(["blur", "hidden"])("retires held Help on %s without reopening on return", cause => {
+  render(<ShortcutProvider><Consumer /></ShortcutProvider>);
+  const opener = screen.getByRole("button", { name: "Help opener" }); fireEvent.keyDown(opener, { key: "?", code: "Slash" });
+  if (cause === "blur") fireEvent(window, new Event("blur"));
+  else { vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden"); fireEvent(document, new Event("visibilitychange")); }
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent(window, new Event("focus")); fireEvent(document, new Event("visibilitychange"));
+  fireEvent.keyDown(opener, { key: "?", code: "Slash", repeat: true }); expect(screen.queryByRole("dialog")).toBeNull();
+});
+it.each(["Escape", "Close", "action"])("early %s dismissal blocks the same press and release preserves destination focus", kind => {
+  const run = vi.fn(); render(<ShortcutProvider><HelpActions run={run} /></ShortcutProvider>);
+  const opener = screen.getByRole("button", { name: "Help opener" }); opener.focus(); fireEvent.keyDown(opener, { key: "?", code: "Slash" });
+  const close = screen.getByRole("button", { name: "Close keyboard shortcuts" });
+  if (kind === "Escape") fireEvent.keyDown(close, { key: "Escape" });
+  else if (kind === "Close") fireEvent.click(close);
+  else fireEvent.keyDown(close, { key: "i", ctrlKey: true });
+  expect(screen.queryByRole("dialog")).toBeNull(); const destination = screen.getByRole("textbox"); destination.focus();
+  fireEvent.keyDown(opener, { key: "?", code: "Slash" }); fireEvent.keyDown(opener, { key: "?", code: "Slash", repeat: true }); expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyUp(document, { key: "/", code: "Slash" }); expect(document.activeElement).toBe(destination); expect(run).toHaveBeenCalledTimes(kind === "action" ? 1 : 0);
+  fireEvent.keyDown(opener, { key: "?", code: "Slash" }); expect(screen.getByRole("dialog")).toBeTruthy();
+});
+it("keeps button Help persistent through keyboard release, blur and hiding", () => {
+  render(<ShortcutProvider><Consumer /></ShortcutProvider>); fireEvent.click(screen.getByRole("button", { name: "Help opener" })); const dialog = screen.getByRole("dialog");
+  fireEvent.keyDown(dialog, { key: "?", code: "Slash" }); fireEvent.keyUp(dialog, { key: "/", code: "Slash" }); fireEvent(window, new Event("blur"));
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden"); fireEvent(document, new Event("visibilitychange")); expect(screen.getByRole("dialog")).toBe(dialog);
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: "Escape" }); expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("holds the committed custom Help chord and preserves it through a preference update", async () => {
+  let changed: (value: unknown) => void = () => {};
+  const bridge: ShortcutPreferenceBridge = { read: async () => ({ revision: 1, problem: null, overrides: { help: { state: "binding", chord: { key: "j", shift: false } } } }), update: vi.fn(), subscribe: async listener => { changed = listener; return () => {}; } };
+  render(<ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><Consumer /></ShortcutProvider></ShortcutPreferenceProvider>);
+  await act(async () => {});
+  const opener = screen.getByRole("button", { name: "Help opener" });
+  fireEvent.keyDown(opener, { key: "?", code: "Slash" }); expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyDown(opener, { key: "j", code: "KeyJ", ctrlKey: true }); const dialog = screen.getByRole("dialog");
+  act(() => changed({ revision: 2, problem: null, overrides: { help: { state: "disabled" } } })); expect(screen.getByRole("dialog")).toBe(dialog);
+  fireEvent.keyUp(dialog, { key: "Control", code: "ControlLeft" }); expect(screen.getByRole("dialog")).toBe(dialog);
+  fireEvent.keyUp(dialog, { key: "j", code: "KeyJ" }); expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyDown(opener, { key: "j", code: "KeyJ", ctrlKey: true }); expect(screen.queryByRole("dialog")).toBeNull();
+});
+it("connection replacement disposes held ownership and its release listeners", () => {
+  const view = render(<StrictMode><ShortcutProvider key="old"><Consumer /></ShortcutProvider></StrictMode>);
+  fireEvent.keyDown(screen.getByRole("button", { name: "Help opener" }), { key: "?", code: "Slash" }); expect(screen.getByRole("dialog")).toBeTruthy();
+  view.rerender(<StrictMode><ShortcutProvider key="new"><Consumer /></ShortcutProvider></StrictMode>); expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.keyUp(document, { key: "/", code: "Slash" }); fireEvent.keyDown(screen.getByRole("button", { name: "Help opener" }), { key: "?", code: "IntlRo" }); expect(screen.getByRole("dialog")).toBeTruthy();
+  view.unmount(); fireEvent.keyUp(document, { key: "?", code: "IntlRo" }); fireEvent.keyDown(document.body, { key: "?" }); expect(screen.queryByRole("dialog")).toBeNull();
 });

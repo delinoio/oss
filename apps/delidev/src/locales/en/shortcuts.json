@@ -18,7 +18,7 @@
   "shortcuts.or": "or",
   "shortcuts.empty": "No screen-specific shortcuts are registered.",
   "shortcuts.typingHint": "While typing, ? is entered as text. Sending shortcuts require focus in the message input.",
-  "shortcuts.closeHint": "Press Esc to close",
+  "shortcuts.closeHint": "Hold the Help shortcut to show this dialog; release it to close. Clicking the Help button keeps it open. Press Esc to close",
   "shortcuts.unavailable": "Currently unavailable.",
   "shortcuts.pending": "Wait for the current operation or inspect its uncertain result.",
   "shortcuts.updateServer": "The server must support automatic session titles.",

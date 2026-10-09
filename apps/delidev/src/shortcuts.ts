@@ -25,6 +25,7 @@ export interface ShortcutDefinition {
   target?: RefObject<HTMLElement | null>;
   execution?: ShortcutExecution;
   run?: () => void;
+  helpKeydown?: (event: KeyboardEvent) => void;
 }
 
 export function shortcutPlatform(): ShortcutPlatform {
@@ -79,11 +80,12 @@ export function dispatchShortcut(event: KeyboardEvent, definitions: readonly Sho
   if (item.execution === ShortcutExecution.Native) return false;
   // A disabled matching action cannot fall through to a broader action or submit.
   event.preventDefault();
-  if (item.enabled !== false && item.run) {
+  if (item.enabled !== false && (item.run || (item.id === ShortcutId.Help && item.helpKeydown))) {
     // Help remains the current modal for its own shortcut and rejected actions.
     // Closing before the callback releases the native inert/focus boundary.
     if (fromHelp && item.id !== ShortcutId.Help) help!.beforeRun();
-    item.run();
+    if (item.id === ShortcutId.Help && item.helpKeydown) item.helpKeydown(event);
+    else item.run?.();
   }
   return true;
 }

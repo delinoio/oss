@@ -114,6 +114,7 @@ it.each(["en", "ko"])("omits global Search guidance from %s shortcut help on Ses
     expect(dialog.textContent).not.toContain(locale === "en" ? "Open search" : "검색 열기");
     expect([...dialog.querySelectorAll("kbd")].map(node => node.textContent)).not.toContain("K");
     fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.keyUp(document, { key: "?" });
   }
 });
 
