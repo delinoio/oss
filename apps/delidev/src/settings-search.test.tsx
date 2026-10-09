@@ -6,11 +6,11 @@ import { i18n } from "./localization";
 import { SettingsCategory } from "./settings-category";
 import { matchSettings, SettingsSearch, SettingsSearchFocus, SettingsSearchTarget, type SettingsSearchRequest } from "./settings-search";
 afterEach(async()=>{await i18n.changeLanguage("en");});
-const categories=[{category:SettingsCategory.Appearance,label:"Appearance",help:"Saved on this computer."},{category:SettingsCategory.GitWorkflow,label:"Git",help:"Worktree and pull request preferences."}];
+const categories=[{category:SettingsCategory.Appearance,label:"Appearance",help:"Saved on this computer."},{category:SettingsCategory.ProjectDefaults,label:"Project defaults",help:"Worktree and pull request preferences."}];
 it("matches only current-language bundled metadata using all case-insensitive NFC whitespace tokens in stable page order",async()=>{
  expect(matchSettings("   \t",categories)).toEqual([]);
- expect(matchSettings(" GIT\nAUTOMATIC  fetch",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.AutomaticFetch]);
- expect(matchSettings("git strategy",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.Session,SettingsSearchTarget.Conflict]);
+ expect(matchSettings(" project\nAUTOMATIC  fetch",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.AutomaticFetch]);
+ expect(matchSettings("project strategy",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.Session,SettingsSearchTarget.Conflict]);
  expect(matchSettings("system language immediately",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.Language]);
  expect(matchSettings("computer timezone",categories).map(row=>row.target)).toEqual([SettingsSearchTarget.DateFormat]);
  expect(matchSettings("customer-private-name",categories)).toEqual([]);
@@ -29,9 +29,9 @@ it("retains query and input focus on language updates, clears to the input and r
  fireEvent.change(input,{target:{value:''}});expect((input as HTMLInputElement).value).toBe('');expect(document.activeElement).toBe(input);
 });
 function FocusFixture({request,pending=false,present=false}:{request?:SettingsSearchRequest;pending?:boolean;present?:boolean}){
- const root=useRef<HTMLDivElement>(null);return <><SettingsSearchFocus request={request} category={SettingsCategory.GitWorkflow} root={root}/><div ref={root}><h1>Git</h1><input aria-label="User focus"/><span data-settings-search-pending={pending?'true':undefined}/>{present?<details className="server-remediation-details"><summary>Details</summary><label data-settings-search-target="remediation-attempts">Attempts<input defaultValue="7"/></label></details>:null}</div></>;
+ const root=useRef<HTMLDivElement>(null);return <><SettingsSearchFocus request={request} category={SettingsCategory.ProjectDefaults} root={root}/><div ref={root}><h1>Git</h1><input aria-label="User focus"/><span data-settings-search-pending={pending?'true':undefined}/>{present?<details className="server-remediation-details"><summary>Details</summary><label data-settings-search-target="remediation-attempts">Attempts<input defaultValue="7"/></label></details>:null}</div></>;
 }
-const request={category:SettingsCategory.GitWorkflow,target:SettingsSearchTarget.Attempts,generation:'first'};
+const request={category:SettingsCategory.ProjectDefaults,target:SettingsSearchTarget.Attempts,generation:'first'};
 it("waits for ordinary reads then reveals only Git presentation details and focuses once without changing values",async()=>{
  const view=render(<FocusFixture request={request} pending/>);expect(screen.queryByText('This setting is unavailable here.')).toBeNull();
  view.rerender(<FocusFixture request={request} present/>);await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('remediation-attempts'));
