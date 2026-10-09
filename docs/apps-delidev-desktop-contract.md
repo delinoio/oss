@@ -1446,6 +1446,13 @@ Complete paths and the full repository ID wrap without truncation. The source
 label never exposes configured or inspected raw URLs. Registered folders are
 saved associations, not online-state or Local execution proof.
 
+Adjacent repository card border boxes have 16px vertical spacing within each
+payload page and across page boundaries. Keep the outer list gap and a scoped
+one-column grid with the same gap on each measurable payload wrapper. Page
+measurements include the internal gaps; eviction placeholders and restoration
+retain the original scroll anchor and connected focused action. Do not flatten
+wrappers or add card margins that double spacing across pages.
+
 The badge distinguishes missing GitHub configuration, configured metadata and
 unsupported resource formats. Configured metadata does not establish token
 health, repository access or execution readiness. The existing explicit access

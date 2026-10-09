@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser evidence. No native account, credential or mutation exists.
+import { create } from "@bufbuild/protobuf";
+import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { RepositoryRow } from "./repository-list";
+import { encode } from "./documents";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
@@ -39,6 +43,34 @@ function Fixture() {
   </main>;
 }
 
+
+// Real cards and payload owners with synthetic reads; no repository operation runs.
+function RepositoryFixture() {
+  const root = useRef<HTMLDivElement>(null);
+  const reads = useRef(0);
+  const [payloads] = useState(() => Array.from({ length: 5 }, (_, index) => Array.from({ length: 3 }, (_, offset) => create(ResourceSchema, {
+      id: newRequestId(), kind: EntityKind.REPOSITORY, revision: 1n,
+      schemaVersion: index === 4 && offset === 2 ? 99 : 1,
+      documentJson: encode({ name: `Repository ${index}-${offset} ${"complete-name-".repeat(6)}`, checkouts: [{ machine_id: newRequestId(), path: `/fixture/${"long-path/".repeat(15)}` }] }),
+    }))));
+  const reader = useCallback(async (token: string) => {
+    reads.current++;
+    const index = Number(token || 0), payload = payloads[index]!;
+    return { rows: payload.map(row => ({ id: row.id, revision: row.revision })), payload, nextPageToken: index < 4 ? String(index + 1) : "" };
+  }, [payloads]);
+  const query = usePaginationChain("repository-spacing-layout", true, reader, false);
+  return <><main className="settings-content settings-repositories" style={{ padding: 16, width: "100%", minWidth: 0 }}>
+    <button onClick={query.reload}>Fixture Load</button>
+    <button disabled={!query.nextPageToken || Boolean(query.loading)} onClick={query.append}>Fixture Next</button>
+    <input aria-label="Fixture composer" />
+    <output data-repository-state>{JSON.stringify({ reads: reads.current, pages: query.pages.map(page => ({ token: page.token, height: page.height })), payloads: query.payloadPages.map(page => page.token) })}</output>
+    <div ref={root} data-repository-scroll style={{ height: 360, overflow: "auto", containerType: "inline-size", containerName: "settings-body" }}>
+      <div className="repository-list"><ScrollPayloadWindow query={query} root={root} active identity={row => row.id} revision={row => row.revision}>{payload => payload.map(row => <RepositoryRow key={row.id} row={row} edit={() => {}} remove={() => {}} />)}</ScrollPayloadWindow></div>
+    </div>
+  </main><section className="settings-content settings-projects"><div className="repository-list"><div data-payload-page="other"><article>Other category</article><article>Unchanged spacing</article></div></div></section>
+  </>;
+}
+
 function OverlayFixture() {
  const owner=useRef<HTMLDialogElement>(null),nested=useRef<HTMLDialogElement>(null), [selected,setSelected]=useState("off-page");
  const kind=args.get("surface")??"ordinary", many=args.get("many")==="1";
@@ -52,4 +84,4 @@ function OverlayFixture() {
  if(kind==="dialog") return <dialog ref={owner} data-overlay-parent style={{width:Math.max(100,window.innerWidth/(args.get("zoom")==="2"?2:1)-24),height:Math.max(100,window.innerHeight/(args.get("zoom")==="2"?2:1)-24),padding:8}}><dialog ref={nested} className="settings-task-dialog" style={{width:Math.min(600,window.innerWidth/(args.get("zoom")==="2"?2:1)-32),maxHeight:Math.max(100,window.innerHeight/(args.get("zoom")==="2"?2:1)-48)}}><header className="settings-task-header" data-fixed-header>Fixture nested task</header><div className="settings-task-body" data-overlay-owner style={{height:300,overflow:"auto"}}><div style={{height:190}}/>{controls}<div style={{height:190}}/></div><footer className="settings-task-footer" data-fixed-footer><button onClick={()=>nested.current?.close()}>Fixture close task</button></footer></dialog></dialog>;
  return <main className={kind==="sidebar"?"sidebar-pane":""} data-overlay-owner style={{width:kind==="sidebar"?240:"100%",maxWidth:600,padding:12,minWidth:0,margin:"auto",height:kind==="sidebar"?"85dvh":"auto",overflow:kind==="sidebar"?"auto":"visible"}}>{controls}<div style={{height:40}}/></main>;
 }
-createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient()}>{args.get("overlay")==="1"?<OverlayFixture/>:<Fixture/>}</QueryClientProvider>);
+createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient()}>{args.get("repositories")==="1"?<RepositoryFixture/>:args.get("overlay")==="1"?<OverlayFixture/>:<Fixture/>}</QueryClientProvider>);
