@@ -731,27 +731,33 @@ func TestHostSupervisorIdleAndBusyDeadlines(t *testing.T) {
 			defer root.Close()
 			process := HostProcess{PID: 77, Start: "worker-77", Group: 77}
 			worker := &fixtureHostWorker{process: process, done: make(chan int, 1), members: []HostProcess{process}}
-			startupDeadline := time.Now().Add(1100 * time.Millisecond)
+			// Bootstrap preparation and the observed job deadline are independent.
+			bootstrapDeadline := time.Now().Add(time.Minute)
+			jobDeadline := time.Now().Add(1100 * time.Millisecond)
 			observed := make(chan struct{}, 1)
 			worker.deadline = func(_ HostBootstrap, previous time.Time) time.Time {
-				if !time.Now().Before(startupDeadline) {
+				if !time.Now().Before(jobDeadline) {
 					select {
 					case observed <- struct{}{}:
 					default:
 					}
 					if busy {
-						return startupDeadline
+						return jobDeadline
 					}
 				}
 				return previous
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			finished := make(chan int, 1)
+			finished := make(chan struct{})
 			status := HostExecutionStatus{ID: d.ID, Token: d.Token, Supervisor: HostProcess{PID: 66, Start: "supervisor-66", Group: 66}}
 			go func() {
-				finished <- superviseHost(ctx, root, HostBootstrap{Directory: d, Deadline: startupDeadline}, status, worker)
+				defer close(finished)
+				// Model scheduling delay before the one-second startup observation.
+				time.Sleep(200 * time.Millisecond)
+				superviseHost(ctx, root, HostBootstrap{Directory: d, Deadline: bootstrapDeadline}, status, worker)
 			}()
+			defer func() { cancel(); <-finished }()
 			select {
 			case <-observed:
 			case <-ctx.Done():
@@ -853,7 +859,7 @@ func TestHostSupervisorMockedExitTimeoutAndCancellation(t *testing.T) {
 			defer root.Close()
 			process := HostProcess{PID: 77, Start: "worker-77", Group: 77}
 			worker := &fixtureHostWorker{process: process, done: make(chan int, 1), members: []HostProcess{process}}
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			deadline := time.Now().Add(time.Minute)
 			switch scenario {
@@ -867,13 +873,21 @@ func TestHostSupervisorMockedExitTimeoutAndCancellation(t *testing.T) {
 			case "timeout":
 				deadline = time.Now().Add(20 * time.Millisecond)
 			case "normal exit":
-				go func() {
-					time.Sleep(1100 * time.Millisecond)
-					worker.mu.Lock()
-					worker.members = nil
-					worker.mu.Unlock()
-					worker.done <- 0
-				}()
+				// Deadline is first called only after Running is durably published.
+				// Release completion at that observed boundary, never by an
+				// elapsed-time guess that can race bootstrap preparation.
+				completed := false
+				worker.deadline = func(_ HostBootstrap, previous time.Time) time.Time {
+					if !completed {
+						completed = true
+						worker.mu.Lock()
+						worker.members = nil
+						worker.mu.Unlock()
+						worker.done <- 0
+					}
+					return previous
+				}
+				time.Sleep(200 * time.Millisecond)
 			}
 			status := HostExecutionStatus{ID: d.ID, Token: d.Token, Supervisor: HostProcess{PID: 66, Start: "supervisor-66", Group: 66}}
 			superviseHost(ctx, root, HostBootstrap{Directory: d, Deadline: deadline}, status, worker)

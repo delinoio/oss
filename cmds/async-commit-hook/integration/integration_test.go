@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -242,44 +243,108 @@ func TestOfficialSDKStdioToolsAndNoDaemon(t *testing.T) {
 	call("wait", map[string]any{"run_id": rerun.RunID, "timeout_seconds": 10})
 }
 
-func TestConcurrentDaemonStartConverges(t *testing.T) {
-	config, repo := setup(t, "daemon")
-	type outcome struct {
-		data []byte
-		err  error
+func daemonStartAttempt(ctx context.Context, config string) startupOutcome {
+	cmd := exec.CommandContext(ctx, binary, "daemon", "start", "--config", config, "--json")
+	cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
+	// JSON stdout and human stderr are separate CLI contracts. Never classify
+	// combined output as JSON or parse a diagnostic line as retry authority.
+	var diagnostics bytes.Buffer
+	cmd.Stderr = &diagnostics
+	data, err := cmd.Output()
+	result := startupOutcome{data: data, diagnostics: diagnostics.Bytes(), err: err, exit: -1}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		result.exit = exit.ExitCode()
 	}
-	done := make(chan outcome, 6)
+	return result
+}
+
+func TestConcurrentDaemonStartConverges(t *testing.T) {
+	for _, held := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unblocked", true: "held admission"}[held], func(t *testing.T) {
+			config, repo := setup(t, "daemon")
+			var lock *core.Lock
+			if held {
+				var err error
+				lock, err = core.TryLock(filepath.Join(filepath.Dir(config), "home", ".config", "async-commit-hook", "control", "lifecycle.lock"))
+				if err != nil || lock == nil {
+					t.Fatalf("hold lifecycle admission: %v", err)
+				}
+				defer func() {
+					if lock != nil {
+						lock.Close()
+					}
+				}()
+			}
+			done := make(chan startupOutcome, 6)
+			busy := make(chan struct{}, 6)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			for i := 0; i < 6; i++ {
+				go func() {
+					done <- retryDaemonStart(ctx, func(ctx context.Context) startupOutcome {
+						result := daemonStartAttempt(ctx, config)
+						if lifecycleBusy(result) {
+							select {
+							case busy <- struct{}{}:
+							default:
+							}
+						}
+						return result
+					})
+				}()
+			}
+			if held {
+				// Release the original handle only after a caller proves the documented
+				// bounded contention result, rather than guessing process startup timing.
+				select {
+				case <-busy:
+					lock.Close()
+					lock = nil
+				case <-ctx.Done():
+					t.Error("no closed lifecycle contention observed", ctx.Err())
+				}
+			}
+			// Join every original caller before failing or fixture cleanup begins.
+			for i := 0; i < 6; i++ {
+				result := <-done
+				if result.err != nil {
+					t.Errorf("competing startup: %s %s %v", result.data, result.diagnostics, result.err)
+				}
+			}
+			response, exit := invoke(t, config, repo, "daemon", "status")
+			if exit != 0 {
+				t.Fatalf("status %+v", response)
+			}
+			b, _ := json.Marshal(response.Result)
+			var components []core.Component
+			json.Unmarshal(b, &components)
+			owners := 0
+			for _, c := range components {
+				if c.Kind == "daemon" {
+					owners++
+				}
+			}
+			if owners != 1 {
+				t.Fatalf("got %d daemon owners: %s", owners, b)
+			}
+		})
+	}
+}
+
+func TestDaemonStartRetryHeldAdmissionDeadline(t *testing.T) {
+	config, _ := setup(t, "daemon")
+	lock, err := core.TryLock(filepath.Join(filepath.Dir(config), "home", ".config", "async-commit-hook", "control", "lifecycle.lock"))
+	if err != nil || lock == nil {
+		t.Fatalf("hold lifecycle admission: %v", err)
+	}
+	// Release before setup's daemon cleanup runs, even if an assertion fails.
+	defer lock.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	for i := 0; i < 6; i++ {
-		go func() {
-			cmd := exec.CommandContext(ctx, binary, "daemon", "start", "--config", config, "--json")
-			cmd.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(config), "home"))
-			b, err := cmd.CombinedOutput()
-			done <- outcome{b, err}
-		}()
-	}
-	for i := 0; i < 6; i++ {
-		r := <-done
-		if r.err != nil {
-			t.Fatalf("competing startup: %s %v", r.data, r.err)
-		}
-	}
-	response, exit := invoke(t, config, repo, "daemon", "status")
-	if exit != 0 {
-		t.Fatalf("status %+v", response)
-	}
-	b, _ := json.Marshal(response.Result)
-	var components []core.Component
-	json.Unmarshal(b, &components)
-	owners := 0
-	for _, c := range components {
-		if c.Kind == "daemon" {
-			owners++
-		}
-	}
-	if owners != 1 {
-		t.Fatalf("got %d daemon owners: %s", owners, b)
+	result := retryDaemonStart(ctx, func(ctx context.Context) startupOutcome { return daemonStartAttempt(ctx, config) })
+	if !errors.Is(result.err, context.DeadlineExceeded) || !strings.Contains(string(result.data), "lifecycle-busy") {
+		t.Fatalf("lost bounded contention: %s %v", result.data, result.err)
 	}
 }
 
