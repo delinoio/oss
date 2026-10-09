@@ -461,6 +461,15 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		} else if !quotaAccountReady(a) || state.Pending != nil || observed.Outcome != "" || observed.ConsumeUncertain || state.Lease.Action != domain.SubscriptionExecute {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
+		if observed.Quota != nil && len(observed.Quota.PaidCredits) > 0 {
+			_, machine, err := activeMachine(tx, input.Machine)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.SubscriptionPaidCreditsV1) {
+				return nil, domain.Fail(domain.Unsupported, "Paid-credit observations require an updated original Worker.", "")
+			}
+		}
 		beforeQuota := a
 		beforeState := *a.Subscription
 		beforeQuota.Subscription = &beforeState
