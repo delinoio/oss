@@ -192,8 +192,10 @@ it("consumes explicit New Project and Repositories entry while another category 
 
 it("refreshes only the active category metadata through the shared Settings header", async () => {
   const repository = resource(EntityKind.REPOSITORY, { name: "Initial repository", remote_url: "https://example.org/repository" });
-  const model = resource(EntityKind.MODEL, { name: "Initial model", native_id: "initial-model" });
-  const worker = resource(EntityKind.AGENT, { name: "Refresh Worker", harness: "codex", model_id: model.id, accounts: [{ id: newRequestId(), weight: 1 }] });
+  const providerId = newRequestId(), accountId = newRequestId();
+  const model = resource(EntityKind.MODEL, { name: "Retired registry entry", native_id: "retired-model" });
+  const worker = resource(EntityKind.AGENT, { name: "Refresh Worker", harness: "codex", routes: [{ model: { provider_id: providerId, native_id: "initial-model" }, accounts: [{ id: accountId, weight: 1 }] }] });
+  worker.schemaVersion = 4;
   const row = project("Refresh project");
   row.documentJson = encode({ name: "Refresh project", repositories: [repository.id], primary_repository: repository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
   const value = fixture([row, repository, worker, model]); openProjects(value);
@@ -206,10 +208,11 @@ it("refreshes only the active category metadata through the shared Settings head
   expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   await screen.findByText("initial-model");
-  const modelReads = value.get.mock.calls.filter(([id]) => id === model.id).length;
-  model.revision += 1n; model.documentJson = encode({ name: "Updated model", native_id: "updated-model" });
+  const workerReads = value.list.mock.calls.filter(([kind]) => kind === EntityKind.AGENT).length;
+  worker.revision += 1n; worker.documentJson = encode({ name: "Refresh Worker", harness: "codex", routes: [{ model: { provider_id: providerId, native_id: "updated-model" }, accounts: [{ id: accountId, weight: 1 }] }] });
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByText("updated-model");
-  expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(modelReads + 1);
+  expect(value.list.mock.calls.filter(([kind]) => kind === EntityKind.AGENT)).toHaveLength(workerReads + 1);
+  expect(value.get.mock.calls.filter(([id]) => id === model.id)).toHaveLength(0);
   expect(value.get.mock.calls.filter(([id]) => id === repository.id)).toHaveLength(repositoryReads + 1);
 });

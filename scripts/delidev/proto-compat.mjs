@@ -1,113 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 export const layout = JSON.parse(readFileSync(new URL('./proto-layout.json', import.meta.url), 'utf8'));
 
-// Compatibility facades are generated after Buf. They contain no declarations
-// and can be removed only when the historical public import paths are retired.
-export function generateCompatibility() {
+// Protocol 2 retires only the original aggregate import/descriptor facades.
+// Canonical service modules and immutable wire ownership stay independent.
+export function retireCompatibility() {
   const directory = resolve(root, 'packages/delidev-api-client/src/gen/delidev/v1');
-  const target = resolve(directory, 'delidev_pb.ts');
-  const marker = '// @generated DeliDev compatibility re-exports';
-  const original = readFileSync(target, 'utf8').split(marker)[0].trimEnd().replace('const legacyBase:', 'export const file_delidev_v1_delidev:');
-  // The relocation map describes historical declarations only. New service files
-  // must join both aggregate views through the compatibility schema's imports.
-  const descriptors = JSON.parse(execFileSync(process.execPath, [
-    resolve(root, 'node_modules/@bufbuild/buf/bin/buf'), 'build',
-    '--as-file-descriptor-set', '--exclude-source-info', '--output', '-#format=json',
-  ], { cwd: root, encoding: 'utf8' }));
-  const legacy = descriptors.file.find(file => file.name === layout.legacyFile);
-  if (!legacy) throw new Error('Missing DeliDev compatibility schema');
-  const files = [...new Set((legacy.publicDependency ?? []).map(index => {
-    const path = legacy.dependency[index];
-    const imported = descriptors.file.find(file => file.name === path);
-    if (!imported || imported.package !== legacy.package || !path.startsWith('delidev/v1/')) {
-      throw new Error('Invalid DeliDev compatibility public import');
-    }
-    return basename(path, '.proto');
-  }))].sort();
-  const order = Object.keys(layout.declarations);
-  const modules = files.map(file => `file_delidev_v1_${file}`);
-  // Aggregate at runtime so adding to one service does not rewrite a central
-  // descriptor blob. Reuse canonical declaration objects for registry identity.
-  const facade = `${original.replace('export const file_delidev_v1_delidev:', 'const legacyBase:')}
-
-${marker}
-${files.map(file => `import { file_delidev_v1_${file} } from "./${file}_pb.js";`).join('\n')}
-const ownedFiles = [${modules.join(', ')}];
-const declarationOrder = new Map<string, number>(${JSON.stringify(order)}.map((name, index) => [name, index]));
-const ordered = <T extends { name: string }>(items: T[]): T[] => items.sort((a, b) => (declarationOrder.get(a.name) ?? Number.MAX_SAFE_INTEGER) - (declarationOrder.get(b.name) ?? Number.MAX_SAFE_INTEGER) || a.name.localeCompare(b.name));
-const messages = ordered(ownedFiles.flatMap(file => file.messages));
-const enums = ordered(ownedFiles.flatMap(file => file.enums));
-const services = ordered(ownedFiles.flatMap(file => file.services));
-const extensions = ownedFiles.flatMap(file => file.extensions);
-const dependencies = [...new Map(ownedFiles.flatMap(file => file.dependencies).filter(file => !ownedFiles.includes(file)).map(file => [file.name, file])).values()];
-/** Legacy aggregate reflection view; declarations retain their service-file ownership. */
-export const file_delidev_v1_delidev: GenFile = {
-  ...legacyBase, messages, enums, services, extensions, dependencies,
-  proto: { ...legacyBase.proto,
-    messageType: messages.map(value => value.proto), enumType: enums.map(value => value.proto),
-    service: services.map(value => value.proto), extension: extensions.map(value => value.proto),
-    dependency: dependencies.map(file => file.proto.name), publicDependency: [], weakDependency: [],
-  },
-};
-${files.map(file => `export * from "./${file}_pb.js";`).join('\n')}
-`;
-  writeFileSync(target, facade);
-  generateGoCompatibility(files, order);
-  for (const filename of readdirSync(directory).filter(file => file.endsWith('_connectquery.ts') && !file.startsWith('delidev-'))) {
-    const name = filename.slice(filename.indexOf('-') + 1, -16);
-    writeFileSync(resolve(directory, `delidev-${name}_connectquery.ts`), `// @generated DeliDev compatibility facade; do not edit.\nexport * from "./${filename.slice(0, -3)}.js";\n`);
+  for (const filename of readdirSync(directory)) {
+    if (filename === 'delidev_pb.ts' || /^delidev-.*_connectquery\.ts$/.test(filename)) rmSync(resolve(directory, filename), { force: true });
   }
-}
-
-// The public Go descriptor variable also remains an aggregate view. Construct
-// it without registering duplicate symbols in the process-global registry.
-function generateGoCompatibility(files, order) {
-  const source = `// Code generated by scripts/delidev/proto-compat.mjs. DO NOT EDIT.
-// SPDX-License-Identifier: Apache-2.0
-package delidevv1
-import (
-  "sort"
-  "google.golang.org/protobuf/reflect/protodesc"
-  "google.golang.org/protobuf/reflect/protoreflect"
-  "google.golang.org/protobuf/reflect/protoregistry"
-)
-func init() {
-  file_delidev_v1_delidev_proto_init()
-  original := protodesc.ToFileDescriptorProto(File_delidev_v1_delidev_proto)
-  files := []protoreflect.FileDescriptor{${files.map(file => `File_delidev_v1_${file}_proto`).join(', ')}}
-  owned := map[string]bool{}
-  for _, file := range files { owned[file.Path()] = true }
-  dependencies := map[string]bool{}
-  original.Dependency = nil
-  original.PublicDependency = nil
-  original.WeakDependency = nil
-  for _, file := range files {
-    descriptor := protodesc.ToFileDescriptorProto(file)
-    original.MessageType = append(original.MessageType, descriptor.MessageType...)
-    original.EnumType = append(original.EnumType, descriptor.EnumType...)
-    original.Service = append(original.Service, descriptor.Service...)
-    original.Extension = append(original.Extension, descriptor.Extension...)
-    for _, dependency := range descriptor.Dependency { if !owned[dependency] { dependencies[dependency] = true } }
-  }
-  for dependency := range dependencies { original.Dependency = append(original.Dependency, dependency) }
-  sort.Strings(original.Dependency)
-  order := map[string]int{${order.map((name, index) => `${JSON.stringify(name)}: ${index + 1}`).join(', ')}}
-  less := func(a, b string) bool { x, y := order[a], order[b]; if x == 0 { x = len(order)+1 }; if y == 0 { y = len(order)+1 }; if x != y { return x < y }; return a < b }
-  sort.SliceStable(original.MessageType, func(i, j int) bool { return less(original.MessageType[i].GetName(), original.MessageType[j].GetName()) })
-  sort.SliceStable(original.EnumType, func(i, j int) bool { return less(original.EnumType[i].GetName(), original.EnumType[j].GetName()) })
-  sort.SliceStable(original.Service, func(i, j int) bool { return less(original.Service[i].GetName(), original.Service[j].GetName()) })
-  aggregate, err := protodesc.NewFile(original, protoregistry.GlobalFiles)
-  if err != nil { panic("invalid generated DeliDev compatibility descriptor: " + err.Error()) }
-  File_delidev_v1_delidev_proto = aggregate
-}
-`;
-  writeFileSync(resolve(root, 'protos/gen/go/delidev/v1/zz_delidev_compat.go'), execFileSync('gofmt', { input: source, encoding: 'utf8' }));
+  for (const filename of ['delidev.pb.go', 'zz_delidev_compat.go']) rmSync(resolve(root, 'protos/gen/go/delidev/v1', filename), { force: true });
 }
 
 // Only explicitly inventoried declarations can move. Their descriptor contents,
@@ -171,4 +78,4 @@ export function relocateBaseline(input, mapping = layout) {
   return result;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) generateCompatibility();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) retireCompatibility();

@@ -47,7 +47,7 @@ func TestStorageStaleReportAcknowledgesOnlyCompletedOriginalRecovery(t *testing.
 		t.Fatal(err)
 	}
 	f.instance = domain.NewID()
-	if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
+	if _, err := f.worker.AttachWorker(context.Background(), ownerRequest(f.workerIdentity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.machine), InstanceId: string(f.instance), Version: rpc.Version})); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, report)); err == nil {

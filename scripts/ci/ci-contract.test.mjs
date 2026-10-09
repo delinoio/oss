@@ -836,6 +836,29 @@ test("DeliDev desktop phases partition all tests and preserve uncached executabl
 
 });
 
+test("DeliDev QA rebuilds wait for all same-checkout output readers", () => {
+  for (const [entry, readers] of [
+    ["ci:checks", ["typecheck", "build:frontend", "ci:release"]],
+    ["ci:check", ["typecheck", "build:frontend", "ci:release", "test:unit", "test:integration"]],
+  ]) {
+    const graph = jobTaskGraph({ steps: [{ run: `node scripts/ci/run-affected.mjs delidev-desktop ${entry}` }] });
+    const qa = `delidev-desktop#${entry === "ci:checks" ? "ci:qa" : "test:qa"}`;
+    assert.ok(graph.has(qa), "the selected QA owner is retained");
+    const reaches = (id, target, seen = new Set()) => {
+      if (id === target) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const workspace = id.split("#")[0];
+      return (graph.get(id)?.task.dependsOn ?? []).some(dependency => {
+        if (dependency.startsWith("^")) return false;
+        return reaches(dependency.includes("#") ? dependency : `${workspace}#${dependency}`, target, seen);
+      });
+    };
+    for (const reader of readers) assert.ok(reaches(qa, `delidev-desktop#${reader}`), `${qa} must follow ${reader} before its nested client rebuild`);
+    assert.equal(graph.get(qa).task.cache, false, "actual QA and its joined child lifetimes stay uncached");
+  }
+});
+
 test("PR Ubuntu shards reuse the main all cache and Windows alone restores the workspace fallback", () => {
   const inputs = step(workflow.jobs["go-test"], "ci-go").with;
   for (const event of Object.values(Event)) {

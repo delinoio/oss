@@ -23,7 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion = 31
+const SchemaVersion = 32
 const applicationID = 0x444c4456
 const MaxPage = 200
 
@@ -34,6 +34,7 @@ const MaxPage = 200
 const maxCompactionJobEntityBytes = domain.MaxCompactionJobBytes
 
 type Store struct {
+	automaticPrice      func(*Tx, domain.ModelIdentity) error
 	db                  *sql.DB
 	root                string
 	lock                *security.Lock
@@ -85,16 +86,15 @@ type Result struct {
 }
 
 type Tx struct {
-	// Only migration 16 reads pre-service immutable pricing while rebuilding its
-	// original budget table. Normal transactions require the current layout.
-	historicalPricingV1 bool
-	tx                  *sql.Tx
-	ctx                 context.Context
-	requestID           domain.ID
-	now                 time.Time
-	touched             map[domain.ID]bool
-	queueTouched        map[domain.ID]bool
-	readOnly            bool
+	automaticPrice func(*Tx, domain.ModelIdentity) error
+	resolvingPrice bool
+	tx             *sql.Tx
+	ctx            context.Context
+	requestID      domain.ID
+	now            time.Time
+	touched        map[domain.ID]bool
+	queueTouched   map[domain.ID]bool
+	readOnly       bool
 }
 
 // ObservationTime is the UTC clock captured for this original transaction.
@@ -201,8 +201,8 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		if err != nil {
 			return fail(err)
 		}
-		if _, err = tx.ExecContext(ctx, schema); err == nil {
-			err = applyMigrations(ctx, tx, 1)
+		if _, err = tx.ExecContext(ctx, currentSchema); err == nil {
+			err = seedCurrentProviders(ctx, tx)
 		}
 		if err == nil {
 			err = tx.Commit()
@@ -214,7 +214,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		}
 	}
 	if !created {
-		if err := migrate(ctx, db, root); err != nil {
+		if err := checkCurrentSchemaVersion(ctx, db); err != nil {
 			return fail(err)
 		}
 	}
@@ -260,7 +260,7 @@ func inspect(ctx context.Context, db *sql.DB, newlyCreated bool) error {
 	if appID != applicationID {
 		return domain.Fail(domain.RecoveryRequired, "This is not a recognized DeliDev database.", "Preserve the original and restore a validated DeliDev backup.")
 	}
-	if version < 1 || version > SchemaVersion {
+	if version != SchemaVersion {
 		return domain.Fail(domain.RecoveryRequired, "The stored schema requires a compatible DeliDev version.", "Use the matching server version; never reset or downgrade the database.")
 	}
 	// Unmerged accounting and diagnostics branches reused schema 25. A version
@@ -455,7 +455,7 @@ func (s *Store) Mutate(ctx context.Context, id domain.ID, operation string, inpu
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Result{}, storageError(err)
 	}
-	t := &Tx{tx: tx, ctx: ctx, requestID: id, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
+	t := &Tx{automaticPrice: s.automaticPrice, tx: tx, ctx: ctx, requestID: id, now: time.Now().UTC().Truncate(time.Millisecond), touched: map[domain.ID]bool{}}
 	out, err := apply(t)
 	if err != nil {
 		return Result{}, storageError(err)
@@ -519,7 +519,12 @@ func storageError(err error) error {
 	return &domain.Error{Code: domain.Internal, Message: "State storage failed.", Guidance: "Check disk health and the correlated diagnostic; preserve the data scope.", Cause: cause}
 }
 
-func (t *Tx) Get(kind domain.Kind, id domain.ID) (Record, error) { return get(t.ctx, t.tx, kind, id) }
+func (t *Tx) Get(kind domain.Kind, id domain.ID) (Record, error) {
+	if kind == domain.ModelKind {
+		return inlineModelRecord(id)
+	}
+	return get(t.ctx, t.tx, kind, id)
+}
 func (s *Store) Get(ctx context.Context, kind domain.Kind, id domain.ID) (Record, error) {
 	s.gate.RLock()
 	defer s.gate.RUnlock()
@@ -566,6 +571,9 @@ func scan(row scanner) (Record, error) {
 }
 
 func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, projectID domain.ID, value any) (Record, error) {
+	if kind == domain.ModelKind {
+		return Record{}, domain.Fail(domain.Unsupported, "Saved Models are retired.", "Save an exact inline model in its Agent Worker source route.")
+	}
 	if t.readOnly {
 		return Record{}, domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate state.", "Use a product mutation.")
 	}
@@ -737,6 +745,9 @@ func (t *Tx) event(r Record, action Action) error {
 	return storageError(err)
 }
 func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
+	if kind == domain.ModelKind {
+		return retiredModelsError()
+	}
 	if t.readOnly {
 		return domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate state.", "Use a product mutation.")
 	}
@@ -793,17 +804,7 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 			return domain.Fail(domain.RecoveryRequired, "The terminal still owns native resources.", "Close and join the original terminal before deleting its record.")
 		}
 	}
-	if kind == domain.ModelKind {
-		model, err := Decode[domain.Model](r)
-		if err != nil {
-			return err
-		}
-		if model.ProviderID != "" {
-			if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
-				return storageError(err)
-			}
-		}
-	}
+
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {
 		return storageError(err)
 	}
@@ -813,6 +814,14 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 	if kind == domain.JobKind {
 		if err := t.deleteWorkerNativeRoute(id); err != nil {
 			return err
+		}
+	}
+	if kind == domain.ProviderKind {
+		// Preserve the original non-secret source metadata for read-only pricing
+		// and history. Live Get never consults this retired record, so deletion
+		// cannot restore configuration, refresh or execution authority.
+		if _, err := t.tx.ExecContext(t.ctx, "INSERT INTO retired_configurations("+recordColumns+") VALUES(?,?,?,?,?,?,?,?)", r.ID, r.Kind, r.Revision, r.SessionID, r.ProjectID, r.Data, r.CreatedAt.UnixMilli(), r.UpdatedAt.UnixMilli()); err != nil {
+			return storageError(err)
 		}
 	}
 	var membership queueMembership
@@ -1230,7 +1239,7 @@ func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
 // The schema declaration is kept literal for review; this check prevents the
 // SQLite application marker from drifting away from its reader.
 func init() {
-	if !strings.Contains(schema, fmt.Sprintf("PRAGMA application_id=%d;", applicationID)) {
+	if !strings.Contains(currentSchema, fmt.Sprintf("PRAGMA application_id=%d;", applicationID)) {
 		panic("DeliDev SQLite application ID mismatch")
 	}
 }
@@ -1290,4 +1299,12 @@ func (s *Store) BindIdentity(ctx context.Context, id domain.ID) error {
 		return domain.Fail(domain.RecoveryRequired, "The database and owner identity disagree.", "Restore the matching owner credential and database backup; do not replace either implicitly.")
 	}
 	return nil
+}
+
+// SetAutomaticPricing installs the server-owned, memory-only validated snapshot
+// resolver before serving. It performs no network or account/native operation.
+func (s *Store) SetAutomaticPricing(resolve func(*Tx, domain.ModelIdentity) error) {
+	s.gate.Lock()
+	defer s.gate.Unlock()
+	s.automaticPrice = resolve
 }

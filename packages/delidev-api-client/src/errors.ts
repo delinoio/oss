@@ -1,5 +1,5 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import { ErrorDetailSchema } from "./gen/delidev/v1/delidev_pb.js";
+import { ErrorDetailSchema } from "./gen/delidev/v1/worker_pb.js";
 import { isEntityId } from "./validation.js";
 
 export enum FailureCode {

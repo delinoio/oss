@@ -28,6 +28,7 @@ func TestFastDiagnosticValidationRequiresOriginalCodexNativeSource(t *testing.T)
 	fast := "fast"
 	id := NewID()
 	record := RequestDiagnostic{ID: id, SessionID: NewID(), ExecutionID: NewID(), AccountID: NewID(), ConnectionID: NewID(), ProviderID: NewID(), ModelID: NewID(), Source: DiagnosticNativeInput, Operation: DiagnosticInput, State: DiagnosticInProgress, Purpose: ConversationUsage, Harness: Codex, InputID: NewID(), NativeRequestID: string(id), NativeThreadID: string(NewID()), ObservedAt: time.Now().UTC(), RequestedServiceTier: &fast, EffectiveServiceTier: &fast}
+	record.ModelID = (ModelIdentity{ProviderID: record.ProviderID, NativeID: "fixture"}).Key()
 	if err := record.Validate(); err != nil {
 		t.Fatal("original native Fast rejected", err)
 	}

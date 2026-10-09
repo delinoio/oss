@@ -10,7 +10,7 @@ func grokSettingsFixture(t *testing.T) ExecutionConfiguration {
 	t.Helper()
 	a := Agent{Name: "Grok fixture", Harness: GrokBuild, ModelID: NewID(), Options: AgentOptions{Permission: PermissionDefault}}
 	m := Model{Name: "Fixture", NativeID: "original-model", ProviderID: NewID(), Harnesses: []Harness{GrokBuild}, MetadataSource: UserDeclared}
-	c, err := ResolveExecutionConfiguration(NewID(), 1, a, 1, m, Priority, nil)
+	c, err := resolveInlineFixture(NewID(), 1, a, 1, m, Priority, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

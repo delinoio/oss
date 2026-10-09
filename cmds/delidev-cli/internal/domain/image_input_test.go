@@ -150,7 +150,7 @@ func TestImageModelDeclarationKeepsOmittedTextConfigurationCompatible(t *testing
 	agent := Agent{Name: "Fixture", Harness: Codex, ModelID: NewID(), Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Routing: &route, Options: AgentOptions{Permission: PermissionReadOnly}}
 	model := Model{Name: "Fixture", NativeID: "fixture", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}
 	id := NewID()
-	text, err := ResolveExecutionConfiguration(id, 1, agent, 1, model, RoundRobin, nil)
+	text, err := resolveInlineFixture(id, 1, agent, 1, model, RoundRobin, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestImageModelDeclarationKeepsOmittedTextConfigurationCompatible(t *testing
 		t.Fatal("text-only omitted profile changed")
 	}
 	model.InputModalities = []string{"text", "image"}
-	images, err := ResolveExecutionConfiguration(id, 1, agent, 1, model, RoundRobin, nil)
+	images, err := resolveInlineFixture(id, 1, agent, 1, model, RoundRobin, nil)
 	if err != nil || !images.ImageInputDeclared || images.Validate() != nil {
 		t.Fatal(images, err)
 	}

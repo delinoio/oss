@@ -6,6 +6,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
+import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { RepositoryRow } from "./repository-list";
 import { AccountConnection } from "./account-connection";
@@ -15,7 +16,7 @@ import { encode, type Document } from "./documents";
 import { chooseScrollOption, scrollChoiceValue } from "./test-scroll-picker";
 import { NotificationProvider } from "./toast-notifications";
 
-function resource(kind: EntityKind, value: Document, revision = 1n) { return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
+function resource(kind: EntityKind, value: Document, revision = 1n) { if (kind === EntityKind.AGENT && !Object.hasOwn(value, "model_id") && !Object.hasOwn(value, "routes")) value = { ...value, routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-native" }, accounts: [{ id: newRequestId(), weight: 1 }] }] }; return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
 function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } | Promise<{ entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }>; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
@@ -25,7 +26,7 @@ function fixture(resources: Resource[], options: { readResource?: (id: string) =
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getDoctor: options.doctor ?? vi.fn(() => { throw new Error("Doctor is not requested by Settings"); }), getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1] }); } });
+    router.service(SystemService, { getDoctor: options.doctor ?? vi.fn(() => { throw new Error("Doctor is not requested by Settings"); }), getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ protocolVersion: 2, capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }); } });
     router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => options.readResource?.(request.id) ?? ({ resource: resources.find((row) => row.id === request.id) }) });
@@ -173,7 +174,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name} · ${agent.id}` }));
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
-  expect(screen.getByRole("heading", { name: "Harness" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
@@ -229,33 +230,36 @@ it("uses service identity without Provider reads when editing native account pre
 });
 
 
-it("keeps model-search cursors out of provider inventory requests", async () => {
-  const provider = resource(EntityKind.PROVIDER, { name: "API provider", enabled: true });
-  const firstModel = resource(EntityKind.MODEL, { name: "First model", provider_id: provider.id });
-  const secondModel = resource(EntityKind.MODEL, { name: "Second model", provider_id: provider.id });
-  const providerEntry = create(ProviderInventoryEntrySchema, { presetId: ProviderPresetId.UNSPECIFIED, providerId: provider.id, displayName: "API provider", enabled: true, totalAccounts: 0n, connectedAccounts: 0n, accountCountsAvailable: true, provider });
-  const inventoryTokens: string[] = [];
-  const searchTokens: string[] = [];
-  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER];
-  const value = fixture([provider], {
+it("keeps account continuation cursors out of provider inventory requests", async () => {
+  const provider = resource(EntityKind.PROVIDER, { name: "API provider", enabled: true, protocol: "openai-responses", authentication: "keyless", endpoint: "https://fixture.test/v1" });
+  const account = (alias: string) => resource(EntityKind.ACCOUNT, { alias, provider_id: provider.id, type: "api", enabled: true, health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } });
+  const first = account("First account"), second = account("Second account");
+  const providerEntry = create(ProviderInventoryEntrySchema, { providerId: provider.id, displayName: "API provider", enabled: true, provider });
+  const inventoryTokens: string[] = [], accountTokens: string[] = [];
+  const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
+  const value = fixture([provider, first, second], {
     providerEntries: [providerEntry],
-    readProviderInventory: (pageToken) => {
+    readProviderInventory: pageToken => {
       inventoryTokens.push(pageToken);
       if (pageToken) throw new ConnectError("Provider inventory received another query's cursor", Code.InvalidArgument);
       return { entries: [providerEntry], capabilities };
     },
-    readModelSearch: (pageToken) => {
-      searchTokens.push(pageToken);
-      return pageToken ? { models: [secondModel], providers: [provider] } : { models: [firstModel], providers: [provider], nextPageToken: "model-page-2" };
+    readResources: (kind, pageToken) => {
+      if (kind !== EntityKind.ACCOUNT) return { resources: [] };
+      accountTokens.push(pageToken);
+      return pageToken ? { resources: [second] } : { resources: [first], nextPageToken: "account-page-2" };
     },
   });
-  render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} active saved={() => {}} cancel={() => {}} />));
-  fireEvent.click(await screen.findByRole("combobox", { name: "Model" }));
-  await screen.findByRole("option", { name: "First model" });
-  fireEvent.click(screen.getByRole("button", { name: "Load more Model" }));
-  await screen.findByRole("option", { name: "Second model" });
-  expect(searchTokens).toEqual(["", "model-page-2"]);
-  expect(inventoryTokens.every((pageToken) => pageToken === "")).toBe(true);
+  render(value.view(<AgentWorkerWizard active saved={() => {}} cancel={() => {}} />));
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Account source 1" }), `api:${provider.id}`);
+  await screen.findByRole("checkbox", { name: /First account/ });
+  fireEvent.click(screen.getByRole("button", { name: /Load more.*account/i }));
+  await screen.findByRole("checkbox", { name: /Second account/ });
+  expect(accountTokens).toEqual(["", "account-page-2"]);
+  expect(inventoryTokens.every(pageToken => pageToken === "")).toBe(true);
+  expect(value.list.mock.calls.every(([request]) => request.filter?.kind !== EntityKind.MODEL)).toBe(true);
+  expect(value.save).not.toHaveBeenCalled();
 });
 
 it("shows the complete grouped navigation once and keeps its selected category in sync", async () => {
@@ -412,6 +416,7 @@ it("keeps exact retries within an opening and discards its provider draft on clo
   const create = await screen.findByRole("button", { name: "Custom provider" });
   await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(create);
+  expect(screen.queryByRole("checkbox", { name: "Discover models automatically for connected entries" })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "My local provider" } });
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "OpenAI Responses" }).matches(":disabled")).toBe(false));
   fireEvent.click(screen.getByRole("checkbox", { name: "OpenAI Responses" }));
@@ -622,7 +627,7 @@ it("edits global routing preferences without rewriting unrelated policy or creat
 
 it("retains incompatible permission selections across harness changes until explicit clearing", async () => {
   const model = resource(EntityKind.MODEL, { name: "Fixture model" });
-  const original = { name: "Original agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "workspace-write", approval_policy: "on-request", future_option: "retained" } };
+  const original = { name: "Original agent", harness: "codex", routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-native" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "workspace-write", approval_policy: "on-request", future_option: "retained" } };
   const agent = resource(EntityKind.AGENT, original, 3n);
   const value = fixture([agent, model]);
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
@@ -646,7 +651,7 @@ it("retains incompatible permission selections across harness changes until expl
 
 it("shows unsupported stored Claude modes without replacing the retained draft", async () => {
   const model = resource(EntityKind.MODEL, { name: "Fixture model" });
-  const agent = resource(EntityKind.AGENT, { name: "Future agent", harness: "claude-code", model_id: model.id, options: { permission: "default", claude_permission: "future-mode" } });
+  const agent = resource(EntityKind.AGENT, { name: "Future agent", harness: "claude-code", routes: [{ model: { subscription_service: "claude", native_id: "fixture-native" }, accounts: [{ id: newRequestId(), weight: 1 }] }], options: { permission: "default", claude_permission: "future-mode" } });
   const value = fixture([agent, model]);
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />));
   const selector = screen.getByRole("combobox", { name: "Claude permission mode" });
@@ -1066,40 +1071,41 @@ it("does not treat a pending or failed subscription support read as proved unsup
   expect(value.connect).not.toHaveBeenCalled(); expect(value.disconnect).not.toHaveBeenCalled();
 });
 
-it.each(["cancel", "close", "done"])("retains a failed first model through %s and ordinary inventory refresh until explicit Refresh settings", async exit => {
+it.each(["cancel", "close", "done"])("retains original inline model identities through %s and a failed inventory refresh", async exit => {
   const log = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const model = resource(EntityKind.MODEL, { name: "Original configured model", native_id: "explicit-refresh-native" });
-  const first = resource(EntityKind.AGENT, { name: "First retained Worker", harness: "codex", model_id: model.id });
-  const second = resource(EntityKind.AGENT, { name: "Second retained Worker", harness: "codex", model_id: model.id });
-  let visible = [first, second], modelAvailable = false, failedInventory = false;
-  const modelReads = vi.fn(async () => { if (!modelAvailable) throw new ConnectError("Synthetic model denied", Code.PermissionDenied); return { resource: model }; });
-  const value = fixture([first, second, model], {
-    readResource: id => id === model.id ? modelReads() : { resource: visible.find(row => row.id === id) },
-    readResources: kind => { if (kind === EntityKind.AGENT && failedInventory) throw new ConnectError("Synthetic inventory refresh failure", Code.Unavailable); return { resources: kind === EntityKind.AGENT ? visible : [] }; },
+  const providerId = newRequestId(), accountId = newRequestId();
+  const route = (nativeId: string) => [{ model: { provider_id: providerId, native_id: nativeId }, accounts: [{ id: accountId, weight: 1 }] }];
+  const first = resource(EntityKind.AGENT, { name: "First retained Worker", harness: "codex", routes: route("original-inline-native") });
+  const second = resource(EntityKind.AGENT, { name: "Second retained Worker", harness: "codex", routes: route("original-inline-native") });
+  let visible = [first, second], failedInventory = false;
+  const modelReads = vi.fn(() => { throw new ConnectError("Retired registry must not be read", Code.PermissionDenied); });
+  const value = fixture([first, second], {
+    readResource: id => ({ resource: visible.find(row => row.id === id) }),
+    readResources: kind => { if (kind === EntityKind.MODEL) return modelReads(); if (kind === EntityKind.AGENT && failedInventory) throw new ConnectError("Synthetic inventory refresh failure", Code.Unavailable); return { resources: kind === EntityKind.AGENT ? visible : [] }; },
   });
   value.remove.mockImplementation(async () => { visible = [second]; return {}; });
   render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  await screen.findAllByText("Model unavailable"); expect(modelReads).toHaveBeenCalledTimes(1);
-  modelAvailable = true;
+  await screen.findAllByText("original-inline-native"); expect(modelReads).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: `Delete First retained Worker · ${first.id}` }));
   if (exit === "done") fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
   else {
-    failedInventory = true;
     if (exit === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
     else fireEvent.click(screen.getByRole("button", { name: "Close Delete configuration" }));
   }
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await screen.findByRole("heading", { name: "Second retained Worker" });
   if (exit === "done") expect(value.remove).toHaveBeenCalledTimes(1);
-  else {
-    await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
-    await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
-  }
-  expect(modelReads).toHaveBeenCalledTimes(1); expect(screen.getAllByText("Model unavailable").length).toBeGreaterThan(0);
+  else expect(value.remove).not.toHaveBeenCalled();
+  visible = visible.map(row => create(ResourceSchema, { ...row, revision: row.revision + 1n, documentJson: encode({ ...JSON.parse(new TextDecoder().decode(row.documentJson)), routes: route("explicit-refresh-native") }) }));
+  failedInventory = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+  expect(screen.getAllByText("original-inline-native").length).toBeGreaterThan(0);
+  expect(screen.queryByText("explicit-refresh-native")).toBeNull(); expect(modelReads).not.toHaveBeenCalled();
   failedInventory = false;
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findAllByText("explicit-refresh-native"); expect(modelReads).toHaveBeenCalledTimes(2);
-  expect(screen.queryByText("Model unavailable")).toBeNull(); log.mockRestore();
+  await screen.findAllByText("explicit-refresh-native"); expect(modelReads).not.toHaveBeenCalled();
+  expect(screen.queryByText("original-inline-native")).toBeNull(); log.mockRestore();
 });
 
 it("retains Connection controls without mounting or reading Settings Doctor", async () => {

@@ -326,16 +326,16 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 }
 func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb.SaveConfigurationRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use schema version 1 for API configuration or version 2 for subscription identity, a UUID-v7 request ID and the current expected revision."), correlation)
+	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 && req.Msg.SchemaVersion != 4 {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use the current resource schema, a UUID-v7 request ID and the original expected revision."), correlation)
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	expectedSchema := rpc.ResourceSchemaVersion(kind, req.Msg.DocumentJson)
-	if req.Msg.SchemaVersion != expectedSchema && !(kind == domain.AgentKind && req.Msg.SchemaVersion == 2 && expectedSchema != 3) {
-		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 2 for service accounts/native models and schema 1 for API configuration. Update older clients before configuring subscriptions."), correlation)
+	if req.Msg.SchemaVersion != expectedSchema {
+		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Configuration schema does not match its identity family.", "Use schema 4 for inline Worker routes and the current schema for the selected resource."), correlation)
 	}
 	if kind == domain.AccountKind || kind == domain.ProviderKind {
 		unlock, err := s.lockAccounts(ctx)
@@ -371,6 +371,9 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		return nil, rpc.Error(domain.Fail(domain.NotFound, "The accepted entity was subsequently deleted.", "The original request cannot recreate it; use a new request ID for new work."), correlation)
 	}
 	if kind == domain.ProviderKind {
+		if !result.Replayed {
+			s.cancelEndpointChecks(record.ID, true)
+		}
 		current, err := s.Store.Get(ctx, domain.ProviderKind, record.ID)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
@@ -387,6 +390,9 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		}
 	}
 	if kind == domain.AccountKind {
+		if !result.Replayed {
+			s.cancelEndpointChecks(record.ID, false)
+		}
 		current, err := s.Store.Get(ctx, domain.AccountKind, record.ID)
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
@@ -443,33 +449,10 @@ func (s *Service) PreviewRouting(ctx context.Context, req *connect.Request[pb.Pr
 }
 
 func (s *Service) CreateBackup(ctx context.Context, req *connect.Request[pb.CreateBackupRequest]) (*connect.Response[pb.CreateBackupResponse], error) {
-	correlation := req.Header().Get(rpc.CorrelationHeader)
 	if err := s.authorizeBackups(ctx); err != nil {
-		return nil, rpc.Error(err, correlation)
+		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	// Persist the operation identity before filesystem work. Retries reuse the
-	// same backup path and validate a completed file instead of creating another.
-	receipt, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "backup.create", struct{}{}, func(*store.Tx) (any, error) {
-		return struct {
-			ID domain.ID `json:"id"`
-		}{domain.NewID()}, nil
-	})
-	if err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	var accepted struct {
-		ID domain.ID `json:"id"`
-	}
-	if err := domain.Decode(receipt.Data, &accepted); err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	id, err := s.Store.BackupID(ctx, accepted.ID)
-	if err != nil {
-		return nil, rpc.Error(err, correlation)
-	}
-	response := connect.NewResponse(&pb.CreateBackupResponse{Id: string(id), RequestId: req.Msg.RequestId, Replayed: receipt.Replayed})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
+	return nil, rpc.Error(domain.Fail(domain.Unsupported, "Synchronous backup creation is retired.", "Use RequestBackup and retain the original creation job."), req.Header().Get(rpc.CorrelationHeader))
 }
 
 type configurationDeletePhase string

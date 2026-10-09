@@ -1231,6 +1231,250 @@ func (x *ListKnownSubscriptionModelsResponse) GetSource() KnownSubscriptionModel
 	return KnownSubscriptionModelCatalogSource_KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_UNSPECIFIED
 }
 
+type EndpointModel struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	NativeId         string                 `protobuf:"bytes,1,opt,name=native_id,json=nativeId,proto3" json:"native_id,omitempty"`
+	DisplayName      string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	ContextLimit     *uint64                `protobuf:"varint,3,opt,name=context_limit,json=contextLimit,proto3,oneof" json:"context_limit,omitempty"`
+	InputModalities  []string               `protobuf:"bytes,4,rep,name=input_modalities,json=inputModalities,proto3" json:"input_modalities,omitempty"`
+	OutputModalities []string               `protobuf:"bytes,5,rep,name=output_modalities,json=outputModalities,proto3" json:"output_modalities,omitempty"`
+	Tools            *bool                  `protobuf:"varint,6,opt,name=tools,proto3,oneof" json:"tools,omitempty"`
+	Reasoning        *bool                  `protobuf:"varint,7,opt,name=reasoning,proto3,oneof" json:"reasoning,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *EndpointModel) Reset() {
+	*x = EndpointModel{}
+	mi := &file_delidev_v1_provider_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndpointModel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndpointModel) ProtoMessage() {}
+
+func (x *EndpointModel) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_provider_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndpointModel.ProtoReflect.Descriptor instead.
+func (*EndpointModel) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_provider_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *EndpointModel) GetNativeId() string {
+	if x != nil {
+		return x.NativeId
+	}
+	return ""
+}
+
+func (x *EndpointModel) GetDisplayName() string {
+	if x != nil {
+		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *EndpointModel) GetContextLimit() uint64 {
+	if x != nil && x.ContextLimit != nil {
+		return *x.ContextLimit
+	}
+	return 0
+}
+
+func (x *EndpointModel) GetInputModalities() []string {
+	if x != nil {
+		return x.InputModalities
+	}
+	return nil
+}
+
+func (x *EndpointModel) GetOutputModalities() []string {
+	if x != nil {
+		return x.OutputModalities
+	}
+	return nil
+}
+
+func (x *EndpointModel) GetTools() bool {
+	if x != nil && x.Tools != nil {
+		return *x.Tools
+	}
+	return false
+}
+
+func (x *EndpointModel) GetReasoning() bool {
+	if x != nil && x.Reasoning != nil {
+		return *x.Reasoning
+	}
+	return false
+}
+
+type ListEndpointModelsRequest struct {
+	state                    protoimpl.MessageState `protogen:"open.v1"`
+	AccountId                string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	ExpectedAccountRevision  uint64                 `protobuf:"varint,2,opt,name=expected_account_revision,json=expectedAccountRevision,proto3" json:"expected_account_revision,omitempty"`
+	ExpectedProviderRevision uint64                 `protobuf:"varint,3,opt,name=expected_provider_revision,json=expectedProviderRevision,proto3" json:"expected_provider_revision,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *ListEndpointModelsRequest) Reset() {
+	*x = ListEndpointModelsRequest{}
+	mi := &file_delidev_v1_provider_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEndpointModelsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEndpointModelsRequest) ProtoMessage() {}
+
+func (x *ListEndpointModelsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_provider_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEndpointModelsRequest.ProtoReflect.Descriptor instead.
+func (*ListEndpointModelsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_provider_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListEndpointModelsRequest) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *ListEndpointModelsRequest) GetExpectedAccountRevision() uint64 {
+	if x != nil {
+		return x.ExpectedAccountRevision
+	}
+	return 0
+}
+
+func (x *ListEndpointModelsRequest) GetExpectedProviderRevision() uint64 {
+	if x != nil {
+		return x.ExpectedProviderRevision
+	}
+	return 0
+}
+
+type ListEndpointModelsResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AccountId        string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	AccountRevision  uint64                 `protobuf:"varint,2,opt,name=account_revision,json=accountRevision,proto3" json:"account_revision,omitempty"`
+	ProviderId       string                 `protobuf:"bytes,3,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	ProviderRevision uint64                 `protobuf:"varint,4,opt,name=provider_revision,json=providerRevision,proto3" json:"provider_revision,omitempty"`
+	ConnectionId     string                 `protobuf:"bytes,5,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	ObservedAtUnixMs int64                  `protobuf:"varint,6,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	Models           []*EndpointModel       `protobuf:"bytes,7,rep,name=models,proto3" json:"models,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ListEndpointModelsResponse) Reset() {
+	*x = ListEndpointModelsResponse{}
+	mi := &file_delidev_v1_provider_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEndpointModelsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEndpointModelsResponse) ProtoMessage() {}
+
+func (x *ListEndpointModelsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_provider_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEndpointModelsResponse.ProtoReflect.Descriptor instead.
+func (*ListEndpointModelsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_provider_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListEndpointModelsResponse) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *ListEndpointModelsResponse) GetAccountRevision() uint64 {
+	if x != nil {
+		return x.AccountRevision
+	}
+	return 0
+}
+
+func (x *ListEndpointModelsResponse) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *ListEndpointModelsResponse) GetProviderRevision() uint64 {
+	if x != nil {
+		return x.ProviderRevision
+	}
+	return 0
+}
+
+func (x *ListEndpointModelsResponse) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+func (x *ListEndpointModelsResponse) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *ListEndpointModelsResponse) GetModels() []*EndpointModel {
+	if x != nil {
+		return x.Models
+	}
+	return nil
+}
+
 var File_delidev_v1_provider_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_provider_proto_rawDesc = "" +
@@ -1306,7 +1550,34 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"\x0fcatalog_version\x18\x03 \x01(\tR\x0ecatalogVersion\x12\x1d\n" +
 	"\n" +
 	"updated_at\x18\x04 \x01(\tR\tupdatedAt\x12G\n" +
-	"\x06source\x18\x05 \x01(\x0e2/.delidev.v1.KnownSubscriptionModelCatalogSourceR\x06source*\x91\n" +
+	"\x06source\x18\x05 \x01(\x0e2/.delidev.v1.KnownSubscriptionModelCatalogSourceR\x06source\"\xb9\x02\n" +
+	"\rEndpointModel\x12\x1b\n" +
+	"\tnative_id\x18\x01 \x01(\tR\bnativeId\x12!\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12(\n" +
+	"\rcontext_limit\x18\x03 \x01(\x04H\x00R\fcontextLimit\x88\x01\x01\x12)\n" +
+	"\x10input_modalities\x18\x04 \x03(\tR\x0finputModalities\x12+\n" +
+	"\x11output_modalities\x18\x05 \x03(\tR\x10outputModalities\x12\x19\n" +
+	"\x05tools\x18\x06 \x01(\bH\x01R\x05tools\x88\x01\x01\x12!\n" +
+	"\treasoning\x18\a \x01(\bH\x02R\treasoning\x88\x01\x01B\x10\n" +
+	"\x0e_context_limitB\b\n" +
+	"\x06_toolsB\f\n" +
+	"\n" +
+	"_reasoning\"\xb4\x01\n" +
+	"\x19ListEndpointModelsRequest\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12:\n" +
+	"\x19expected_account_revision\x18\x02 \x01(\x04R\x17expectedAccountRevision\x12<\n" +
+	"\x1aexpected_provider_revision\x18\x03 \x01(\x04R\x18expectedProviderRevision\"\xbb\x02\n" +
+	"\x1aListEndpointModelsResponse\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12)\n" +
+	"\x10account_revision\x18\x02 \x01(\x04R\x0faccountRevision\x12\x1f\n" +
+	"\vprovider_id\x18\x03 \x01(\tR\n" +
+	"providerId\x12+\n" +
+	"\x11provider_revision\x18\x04 \x01(\x04R\x10providerRevision\x12#\n" +
+	"\rconnection_id\x18\x05 \x01(\tR\fconnectionId\x12-\n" +
+	"\x13observed_at_unix_ms\x18\x06 \x01(\x03R\x10observedAtUnixMs\x121\n" +
+	"\x06models\x18\a \x03(\v2\x19.delidev.v1.EndpointModelR\x06models*\x91\n" +
 	"\n" +
 	"\x10ProviderPresetId\x12\"\n" +
 	"\x1ePROVIDER_PRESET_ID_UNSPECIFIED\x10\x00\x12(\n" +
@@ -1367,8 +1638,9 @@ const file_delidev_v1_provider_proto_rawDesc = "" +
 	"3KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_UNSPECIFIED\x10\x00\x123\n" +
 	"/KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_BUNDLED\x10\x01\x121\n" +
 	"-KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_CACHE\x10\x02\x122\n" +
-	".KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_ONLINE\x10\x032\xe6\x04\n" +
-	"\x0fProviderService\x12f\n" +
+	".KNOWN_SUBSCRIPTION_MODEL_CATALOG_SOURCE_ONLINE\x10\x032\xcb\x05\n" +
+	"\x0fProviderService\x12c\n" +
+	"\x12ListEndpointModels\x12%.delidev.v1.ListEndpointModelsRequest\x1a&.delidev.v1.ListEndpointModelsResponse\x12f\n" +
 	"\x13ListProviderPresets\x12&.delidev.v1.ListProviderPresetsRequest\x1a'.delidev.v1.ListProviderPresetsResponse\x12l\n" +
 	"\x15ListProviderInventory\x12(.delidev.v1.ListProviderInventoryRequest\x1a).delidev.v1.ListProviderInventoryResponse\x12W\n" +
 	"\x0eDiscoverModels\x12!.delidev.v1.DiscoverModelsRequest\x1a\".delidev.v1.DiscoverModelsResponse\x12~\n" +
@@ -1389,7 +1661,7 @@ func file_delidev_v1_provider_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_provider_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_delidev_v1_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_delidev_v1_provider_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_delidev_v1_provider_proto_goTypes = []any{
 	(ProviderPresetId)(0),                       // 0: delidev.v1.ProviderPresetId
 	(ProviderInventoryCapability)(0),            // 1: delidev.v1.ProviderInventoryCapability
@@ -1409,45 +1681,51 @@ var file_delidev_v1_provider_proto_goTypes = []any{
 	(*KnownSubscriptionModel)(nil),              // 15: delidev.v1.KnownSubscriptionModel
 	(*ListKnownSubscriptionModelsRequest)(nil),  // 16: delidev.v1.ListKnownSubscriptionModelsRequest
 	(*ListKnownSubscriptionModelsResponse)(nil), // 17: delidev.v1.ListKnownSubscriptionModelsResponse
-	(*Resource)(nil),                            // 18: delidev.v1.Resource
-	(*ProviderApiFormat)(nil),                   // 19: delidev.v1.ProviderApiFormat
-	(*Mutation)(nil),                            // 20: delidev.v1.Mutation
-	(SubscriptionServiceIdentity)(0),            // 21: delidev.v1.SubscriptionServiceIdentity
+	(*EndpointModel)(nil),                       // 18: delidev.v1.EndpointModel
+	(*ListEndpointModelsRequest)(nil),           // 19: delidev.v1.ListEndpointModelsRequest
+	(*ListEndpointModelsResponse)(nil),          // 20: delidev.v1.ListEndpointModelsResponse
+	(*Resource)(nil),                            // 21: delidev.v1.Resource
+	(*ProviderApiFormat)(nil),                   // 22: delidev.v1.ProviderApiFormat
+	(*Mutation)(nil),                            // 23: delidev.v1.Mutation
+	(SubscriptionServiceIdentity)(0),            // 24: delidev.v1.SubscriptionServiceIdentity
 }
 var file_delidev_v1_provider_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.ProviderInventoryEntry.preset_id:type_name -> delidev.v1.ProviderPresetId
-	18, // 1: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
+	21, // 1: delidev.v1.ProviderInventoryEntry.provider:type_name -> delidev.v1.Resource
 	2,  // 2: delidev.v1.ProviderInventoryEntry.connection_method:type_name -> delidev.v1.ProviderConnectionMethod
-	19, // 3: delidev.v1.ProviderInventoryEntry.api_formats:type_name -> delidev.v1.ProviderApiFormat
+	22, // 3: delidev.v1.ProviderInventoryEntry.api_formats:type_name -> delidev.v1.ProviderApiFormat
 	5,  // 4: delidev.v1.ListProviderInventoryResponse.entries:type_name -> delidev.v1.ProviderInventoryEntry
 	1,  // 5: delidev.v1.ListProviderInventoryResponse.capabilities:type_name -> delidev.v1.ProviderInventoryCapability
-	20, // 6: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
-	18, // 7: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
-	21, // 8: delidev.v1.SearchModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	18, // 9: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
-	18, // 10: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
-	18, // 11: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
-	21, // 12: delidev.v1.ListKnownSubscriptionModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
-	21, // 13: delidev.v1.ListKnownSubscriptionModelsResponse.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	23, // 6: delidev.v1.DiscoverModelsRequest.mutation:type_name -> delidev.v1.Mutation
+	21, // 7: delidev.v1.DiscoverModelsResponse.account:type_name -> delidev.v1.Resource
+	24, // 8: delidev.v1.SearchModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	21, // 9: delidev.v1.SearchModelsResponse.models:type_name -> delidev.v1.Resource
+	21, // 10: delidev.v1.SearchModelsResponse.providers:type_name -> delidev.v1.Resource
+	21, // 11: delidev.v1.ResolveModelResponse.model:type_name -> delidev.v1.Resource
+	24, // 12: delidev.v1.ListKnownSubscriptionModelsRequest.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	24, // 13: delidev.v1.ListKnownSubscriptionModelsResponse.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
 	15, // 14: delidev.v1.ListKnownSubscriptionModelsResponse.models:type_name -> delidev.v1.KnownSubscriptionModel
 	3,  // 15: delidev.v1.ListKnownSubscriptionModelsResponse.source:type_name -> delidev.v1.KnownSubscriptionModelCatalogSource
-	7,  // 16: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
-	4,  // 17: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
-	9,  // 18: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
-	16, // 19: delidev.v1.ProviderService.ListKnownSubscriptionModels:input_type -> delidev.v1.ListKnownSubscriptionModelsRequest
-	11, // 20: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
-	13, // 21: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
-	8,  // 22: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
-	6,  // 23: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
-	10, // 24: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
-	17, // 25: delidev.v1.ProviderService.ListKnownSubscriptionModels:output_type -> delidev.v1.ListKnownSubscriptionModelsResponse
-	12, // 26: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
-	14, // 27: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	18, // 16: delidev.v1.ListEndpointModelsResponse.models:type_name -> delidev.v1.EndpointModel
+	19, // 17: delidev.v1.ProviderService.ListEndpointModels:input_type -> delidev.v1.ListEndpointModelsRequest
+	7,  // 18: delidev.v1.ProviderService.ListProviderPresets:input_type -> delidev.v1.ListProviderPresetsRequest
+	4,  // 19: delidev.v1.ProviderService.ListProviderInventory:input_type -> delidev.v1.ListProviderInventoryRequest
+	9,  // 20: delidev.v1.ProviderService.DiscoverModels:input_type -> delidev.v1.DiscoverModelsRequest
+	16, // 21: delidev.v1.ProviderService.ListKnownSubscriptionModels:input_type -> delidev.v1.ListKnownSubscriptionModelsRequest
+	11, // 22: delidev.v1.ProviderService.SearchModels:input_type -> delidev.v1.SearchModelsRequest
+	13, // 23: delidev.v1.ProviderService.ResolveModel:input_type -> delidev.v1.ResolveModelRequest
+	20, // 24: delidev.v1.ProviderService.ListEndpointModels:output_type -> delidev.v1.ListEndpointModelsResponse
+	8,  // 25: delidev.v1.ProviderService.ListProviderPresets:output_type -> delidev.v1.ListProviderPresetsResponse
+	6,  // 26: delidev.v1.ProviderService.ListProviderInventory:output_type -> delidev.v1.ListProviderInventoryResponse
+	10, // 27: delidev.v1.ProviderService.DiscoverModels:output_type -> delidev.v1.DiscoverModelsResponse
+	17, // 28: delidev.v1.ProviderService.ListKnownSubscriptionModels:output_type -> delidev.v1.ListKnownSubscriptionModelsResponse
+	12, // 29: delidev.v1.ProviderService.SearchModels:output_type -> delidev.v1.SearchModelsResponse
+	14, // 30: delidev.v1.ProviderService.ResolveModel:output_type -> delidev.v1.ResolveModelResponse
+	24, // [24:31] is the sub-list for method output_type
+	17, // [17:24] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_provider_proto_init() }
@@ -1456,13 +1734,14 @@ func file_delidev_v1_provider_proto_init() {
 		return
 	}
 	file_delidev_v1_common_proto_init()
+	file_delidev_v1_provider_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_provider_proto_rawDesc), len(file_delidev_v1_provider_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

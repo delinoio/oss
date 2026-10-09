@@ -10,7 +10,7 @@
   "api-verification.discoveryDisabled": "모델 검색이 비활성화되었습니다",
   "api-verification.modelsFailed": "모델 새로 고침에 실패했거나 지원되지 않습니다",
   "api-verification.modelsEmpty": "새로 고침에서 모델을 찾지 못했습니다",
-  "api-verification.modelsSynced": "모델 동기화 완료",
+  "api-verification.modelsSynced": "Endpoint 모델 힌트 수신",
   "api-verification.modelsAwaiting": "이 연결의 모델을 아직 새로 고치지 않았습니다",
   "api-verification.count": " · 모델 {{v0}}개",
   "api-verification.checked": "마지막 확인 {{v0}}",

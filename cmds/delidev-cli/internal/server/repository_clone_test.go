@@ -26,7 +26,7 @@ func TestRepositoryCloneAcceptReplayAndServerRegistration(t *testing.T) {
 	worker, paired := pairedWorker(t, ctx, Endpoint{URL: f.url}, f.service.Identity)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.url)
 	instance := string(domain.NewID())
-	_, err := client.AttachWorker(ctx, ownerRequest(worker, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1}}))
+	_, err := client.AttachWorker(ctx, ownerRequest(worker, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1}}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -48,7 +48,7 @@ func TestSubscriptionServiceIdentityIsIndependentAndClosed(t *testing.T) {
 			permission = PermissionReadOnly
 		}
 		agent := Agent{Name: "Native", Harness: service.Harness(), ModelID: NewID(), Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Options: AgentOptions{Permission: permission}}
-		c, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, m, Priority, nil)
+		c, err := resolveInlineFixture(NewID(), 1, agent, 1, m, Priority, nil)
 		if err != nil || c.ProviderID != "" || c.SubscriptionService != service || !c.Subscription {
 			t.Fatal("snapshot lost native identity", err)
 		}
@@ -56,7 +56,7 @@ func TestSubscriptionServiceIdentityIsIndependentAndClosed(t *testing.T) {
 			t.Fatal("managed snapshot invalid")
 		}
 		agent.ReconfigurationRequired = true
-		if _, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, m, Priority, nil); SafeError(err).Code != RecoveryRequired {
+		if _, err := resolveInlineFixture(NewID(), 1, agent, 1, m, Priority, nil); SafeError(err).Code != RecoveryRequired {
 			t.Fatal("retired Agent obtained snapshot")
 		}
 	}

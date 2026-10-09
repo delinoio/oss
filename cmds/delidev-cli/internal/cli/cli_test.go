@@ -106,11 +106,11 @@ func TestVersionedCLIMutationRevisionAndMissingInput(t *testing.T) {
 		t.Fatal("unknown preset accepted")
 	}
 	code, value = cliRun(t, root, []string{"model", "search", "--limit", "201"}, "")
-	if code != 2 {
-		t.Fatal("oversized model page accepted")
+	if code == 0 || value["error"].(map[string]any)["code"] != "unsupported" {
+		t.Fatal("retired model search gained authority")
 	}
 	code, value = cliRun(t, root, []string{"model", "resolve"}, "")
-	if code != 2 || value["error"].(map[string]any)["code"] != "missing_input" {
-		t.Fatal("missing model selector accepted")
+	if code == 0 || value["error"].(map[string]any)["code"] != "unsupported" {
+		t.Fatal("retired model resolve gained authority")
 	}
 }

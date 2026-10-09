@@ -71,7 +71,7 @@ func (s *Service) ReportExecutionStartup(ctx context.Context, req *connect.Reque
 			return nil, executionDenied()
 		}
 		_, machine, err := activeMachine(tx, identity.Machine)
-		if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) {
+		if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.ExecutionStartupV1) || !slices.Contains(machine.WorkerCapabilities, domain.InlineModelExecutionV1) {
 			return nil, executionDenied()
 		}
 		if session.Startup == nil || session.Startup.JobID != r.ID {

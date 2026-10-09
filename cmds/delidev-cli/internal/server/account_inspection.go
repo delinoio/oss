@@ -52,6 +52,18 @@ func (s *Service) cancelCatalogChecks(provider domain.ID) {
 	}
 }
 
+// Account gate must be held. Optional endpoint reads are cancelled whenever
+// their source changes; this does not alter explicit credential validation.
+func (s *Service) cancelEndpointChecks(id domain.ID, provider bool) {
+	for accountID, checks := range s.accountChecks {
+		for _, check := range checks {
+			if check.operation == endpointListing && ((!provider && accountID == id) || (provider && check.providerID == id)) {
+				check.cancel()
+			}
+		}
+	}
+}
+
 // Account gate must be held. Provider disablement cancels only automatic
 // validation; discovery disablement retains its separate catalog-only boundary.
 func (s *Service) cancelAutomaticChecks(id domain.ID, provider bool) {

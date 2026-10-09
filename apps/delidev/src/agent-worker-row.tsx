@@ -7,7 +7,7 @@ import { document, items, object, resourceName, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
 import { Harness } from "./configuration-fields";
 import { workerHarnessNames } from "./worker-harness-picker";
-import { ModelSummaryState, useAgentModels } from "./agent-worker-models";
+
 import { HarnessMark, knownHarness as projectedHarness } from "./harness-mark";
 import "./agent-worker-row.css";
 
@@ -15,15 +15,14 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
   useLocale();
   const data = document(row), supported = supportsResourceSchema(row);
   const [expanded, expand] = useState(false), region = useId();
-  const routes = supported ? row.schemaVersion === 3 ? items(data.routes).map(object) : [data] : [];
-  const modelIDs = routes.map(route => text(route.model_id));
+  const routes = supported ? items(data.routes).map(object) : [];
+  const modelIDs = routes.map(route => text(object(route.model).native_id));
   const accountCount = (index: number) => {
     const accounts = routes[index]?.accounts;
     return <span className="agent-route-account-count">{Array.isArray(accounts) ? copy("agent-worker-row.accountCount", { count: accounts.length }) : copy("agent-worker-row.accountCountUnavailable")}</span>;
   };
-  const metadata = useAgentModels(expanded ? modelIDs : modelIDs.slice(0, 1));
   const harness = text(data.harness), knownHarness = Object.hasOwn(workerHarnessNames, harness);
-  const model = (id: string) => { const value = metadata(id); return <>{value.state === ModelSummaryState.Ready ? <><code className="agent-model-native">{value.nativeID}</code>{value.name !== value.nativeID ? <span className="agent-model-name">{value.name}</span> : null}</> : <span role={value.state === ModelSummaryState.Loading ? "status" : undefined}>{copy(value.state === ModelSummaryState.Loading ? "agent-worker-row.loadingModel" : "agent-worker-row.unavailableModel")}</span>}</>; };
+  const model = (index: number) => { const metadata=object(routes[index]?.model); const id=text(metadata.native_id);const name=text(metadata.name);return <><code className="agent-model-native">{id}</code>{name && name!==id?<span className="agent-model-name">{name}</span>:null}</>; };
   let name = resourceName(row);
   // Unsupported schemas stay non-actionable. Only bounded inert name text is
   // projected within the Agent name's 256-byte UTF-8 limit for identifying the
@@ -44,8 +43,8 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       <div className="settings-agent-text">
       <div className="settings-agent-heading"><h3>{name}</h3>{supported && harness ? <span>{knownHarness ? workerHarnessNames[harness as Harness] : harness}</span> : null}</div>
       {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
-      {supported ? <div className="agent-model-summary"><span>{copy("agent-worker-row.configuredModel")}</span>{model(modelIDs[0] ?? "")}{accountCount(0)}{modelIDs.length > 1 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" aria-expanded={expanded} aria-controls={region} onClick={() => expand(value => !value)}>{copy("agent-worker-row.moreModels", { count: modelIDs.length - 1 })}</DisclosureButton> : null}</div> : null}
-      {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(id)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
+      {supported ? <div className="agent-model-summary"><span>{copy("agent-worker-row.configuredModel")}</span>{model(0)}{accountCount(0)}{modelIDs.length > 1 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" aria-expanded={expanded} aria-controls={region} onClick={() => expand(value => !value)}>{copy("agent-worker-row.moreModels", { count: modelIDs.length - 1 })}</DisclosureButton> : null}</div> : null}
+      {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(index)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
       {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
       <small>{row.id}</small>

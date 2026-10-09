@@ -17,7 +17,7 @@ func nativeTotals(v domain.NativeAccountingTotals) *pb.NativeAccountingTotals {
 	return w
 }
 func nativeGroup(v domain.NativeAccountingGroup) *pb.NativeAccountingGroup {
-	return &pb.NativeAccountingGroup{SessionId: string(v.SessionID), ProjectId: string(v.ProjectID), AccountId: string(v.AccountID), ProviderId: string(v.ProviderID), ModelId: string(v.ModelID), Totals: nativeTotals(v.Totals)}
+	return &pb.NativeAccountingGroup{SessionId: string(v.SessionID), ProjectId: string(v.ProjectID), AccountId: string(v.AccountID), ProviderId: string(v.ProviderID), Model: wireModelKey(v.ModelID), Totals: nativeTotals(v.Totals)}
 }
 func nativeEstimateMeasure(v domain.NativeEstimateMeasure) *pb.NativeEstimateMeasure {
 	return &pb.NativeEstimateMeasure{KnownAmount: v.KnownAmount, KnownTokens: v.KnownTokens, PricedUnits: v.PricedUnits, MissingUsageUnits: v.MissingUsageUnits, MissingPriceUnits: v.MissingPriceUnits, NotApplicableUnits: v.NotApplicableUnits}

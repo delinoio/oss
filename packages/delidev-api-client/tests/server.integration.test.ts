@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { fixtureBinary } from "../../../scripts/ci/fixture-binary.mjs";
-import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/gen/delidev/v1/delidev_pb.js";
+import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/index.js";
 import { createDeliDevTransport } from "../src/transport.js";
 import { clientFailure, FailureCode } from "../src/errors.js";
 import { ConnectionState, SyncKind, synchronizeResources } from "../src/synchronization.js";
@@ -32,15 +32,21 @@ beforeAll(async () => {
   const until = Date.now() + 15000;
   while (Date.now() < until) {
     if (server.exitCode !== null) throw new Error("The isolated Go server failed to start.");
+    let protocolVersion: number;
     try {
       origin = JSON.parse(await readFile(join(data, "server.json"), "utf8")).url;
       // Test-owned temporary credentials only; never read the user's scope.
       token = JSON.parse(await readFile(join(data, "owner.json"), "utf8")).token;
       transport = createDeliDevTransport({ origin, getToken: () => token });
       const status = await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
-      expect(status.protocolVersion).toBe(1);
-      return;
-    } catch { await pause(); }
+      protocolVersion = status.protocolVersion;
+    } catch {
+      await pause();
+      continue;
+    }
+    // A reached server with an incompatible protocol is not transient startup.
+    expect(protocolVersion).toBe(2);
+    return;
   }
   throw new Error("The isolated Go server did not become ready.");
 }, 150000);
