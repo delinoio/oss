@@ -285,3 +285,14 @@
 .session-information .session-context > header { padding: 0; border: 0; }
 
 .revert-prompt { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40dvh; overflow: auto; min-width: 0; }
+
+.skill-completion li[aria-disabled="true"] { color: var(--muted); cursor: default; background: transparent; }
+.skill-completion-status { color: var(--muted); font-size: 12px; }
+.skill-textarea { position: relative; min-width: 0; }
+.skill-textarea[data-skill-overlay] textarea { color: transparent; caret-color: var(--text); }
+.skill-text-overlay { position: absolute; pointer-events: none; overflow: hidden; color: var(--text); }
+.skill-text-overlay > div { box-sizing: border-box; white-space: pre-wrap; overflow-wrap: break-word; }
+.skill-token-unavailable { color: var(--muted); }
+
+.new-session-composer .skill-textarea { flex: 1; display: flex; }
+.skill-textarea textarea { display: block; }

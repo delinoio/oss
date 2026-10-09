@@ -6,14 +6,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SessionService, SessionQuery, SkillService, SkillProvenance, newRequestId } from "@delinoio/delidev-api-client";
-import { skillToken, editedBindings, useSkillCompletion } from "./skill-completion";
+import { skillToken, skillRanges, editedBindings, useSkillCompletion } from "./skill-completion";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(), agent = newRequestId(), inventory = newRequestId(), worker = newRequestId();
 const entries = ["add-issue", "add-note"].map(name => ({ name, description: `${name} fixture`, provenance: SkillProvenance.USER, selection: { $typeName: "delidev.v1.SkillSelection" as const, inventoryId: inventory, workerDeviceId: worker, skillId: newRequestId(), contentRevision: "a".repeat(64) } }));
-function Composer({ runner = machine, locked = false, send }: { runner?: string; locked?: boolean; send: (value: unknown) => void }) {
- const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked});
- return <><fieldset disabled={locked}><textarea aria-label="Message" ref={textarea} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>{skills.list}{skills.warning}</fieldset><button disabled={skills.blocked} onClick={()=>send({value,skills:skills.selections})}>Send</button></>;
+function Composer({ runner = machine, locked = false, enabled = true, retainTransportContext = false, send }: { runner?: string; locked?: boolean; enabled?: boolean; retainTransportContext?: boolean; send: (value: unknown) => void }) {
+ const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked,enabled,retainTransportContext});
+ return <><fieldset disabled={locked}>{skills.wrap(<textarea aria-label="Message" ref={textarea} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}{skills.list}{skills.warning}</fieldset><button disabled={skills.blocked} onClick={()=>send({value,skills:skills.selections})}>Send</button></>;
 }
 function fixture() {const send=vi.fn(),read=vi.fn(async()=>({skills:entries}));const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));const client=new QueryClient();const view=(runner=machine,locked=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} locked={locked} send={send}/></QueryClientProvider></TransportProvider>;return{send,read,view};}
 it("finds whitespace-delimited caret tokens without consuming surrounding Unicode",()=>{expect(skillToken("한글\n$add-iss trailing",11)).toEqual({start:3,end:11,prefix:"add-iss"});expect(skillToken("email$add",9)).toBeUndefined();});
@@ -88,4 +88,95 @@ it.each([1, 2])("scrolls only the completion container at scale %s and retains t
  fireEvent.keyDown(input, { key: "ArrowDown" }); expect(container.scrollTop).toBe(40); expect(document.activeElement).toBe(input);
  expect(input.getAttribute("aria-activedescendant")).toBe(rows[1]!.id);
  fireEvent.keyDown(input, { key: "ArrowUp" }); expect(container.scrollTop).toBe(0); expect(document.activeElement).toBe(input); expect(f.send).not.toHaveBeenCalled();
+});
+
+
+it("colors exact complete tokens after a successful read without binding text and suppresses overlays during IME", async () => {
+ const f = fixture(); const view = render(f.view()); const input = screen.getByRole("textbox");
+ const draft = "한글\n$add-issue $removed-skill $removed-skill";
+ fireEvent.change(input, { target: { value: draft, selectionStart: draft.length } });
+ await waitFor(() => expect(view.container.querySelectorAll(".skill-token-unavailable")).toHaveLength(2));
+ expect([...view.container.querySelectorAll(".skill-token-unavailable")].map(node => node.textContent)).toEqual(["$removed-skill", "$removed-skill"]);
+ expect(screen.getByRole("textbox", { description: "2 skill tokens are unavailable in this scope." })).toBe(input);
+ fireEvent.keyDown(input, { key: "Escape" }); expect(screen.queryByRole("listbox")).toBeNull();
+ expect(view.container.querySelectorAll(".skill-token-unavailable")).toHaveLength(2);
+ fireEvent.click(screen.getByText("Send")); expect(f.send).toHaveBeenLastCalledWith({ value: draft, skills: [] });
+ fireEvent.compositionStart(input); expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+ fireEvent.compositionEnd(input); await waitFor(() => expect(view.container.querySelectorAll(".skill-token-unavailable")).toHaveLength(2));
+ fireEvent.change(input, { target: { value: "$ad", selectionStart: 3 } }); await screen.findAllByRole("option"); expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+ expect(skillRanges("$ email$bad $bad$other\n$valid $valid")).toEqual([{start:23,end:29,prefix:"valid"},{start:30,end:36,prefix:"valid"}]);
+});
+it("retains only displayed missing rows, skips disabled rows, and discards them on dismissal", async () => {
+ let current = entries; const send = vi.fn(); const client = new QueryClient();
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => ({ skills: current }) }));
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={send}/></QueryClientProvider></TransportProvider>);
+ const input = screen.getByRole("textbox"); fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } }); await screen.findAllByRole("option");
+ current = [entries[1]!]; await client.invalidateQueries();
+ const removed = await screen.findByRole("option", { name: /add-issue.*Unavailable/ }); expect(removed.getAttribute("aria-disabled")).toBe("true");
+ fireEvent.click(removed); expect(input).toHaveProperty("value", "$add"); fireEvent.keyDown(input, { key: "ArrowDown" }); expect(input.getAttribute("aria-activedescendant")).not.toBe(removed.id);
+ fireEvent.keyDown(input, { key: "Tab" }); expect(input).toHaveProperty("value", "$add-note"); expect(send).not.toHaveBeenCalled();
+ fireEvent.change(input, { target: { value: "$add", selectionStart: 4 } }); await screen.findByRole("option", { name: /add-note/ }); expect(screen.queryByRole("option", { name: /add-issue/ })).toBeNull();
+ fireEvent.keyDown(input, { key: "Escape" }); fireEvent.select(input, { target: { selectionStart: 4 } }); expect(screen.queryByRole("listbox")).toBeNull();
+});
+it("fences late previous-Runner inventory and leaves pending, failed and unsupported reads unknown", async () => {
+ let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; }); const next = newRequestId(); const client = new QueryClient();
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async request => { if (request.machineId === machine) { await pending; return { skills: entries }; } throw new Error("Private inventory failure"); } }));
+ const tree = (runner: string) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+ const view = render(tree(machine)); const input = screen.getByRole("textbox"); fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } });
+ await screen.findByText("Loading skills…"); expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+ view.rerender(tree(next)); await screen.findByText("Skills are unavailable. Your message is unchanged."); release(); await new Promise(resolve => setTimeout(resolve, 0));
+ expect(view.container.querySelector(".skill-text-overlay")).toBeNull(); expect(screen.queryByRole("option")).toBeNull(); expect(view.container.textContent).not.toContain("Private inventory failure");
+});
+
+it("disabled-only retained rows never accept mouse, Enter or Tab; restored entries bind their fresh selection", async () => {
+ let current = [entries[0]!]; const send = vi.fn(); const client = new QueryClient();
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => ({ skills: current }) }));
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={send}/></QueryClientProvider></TransportProvider>);
+ const input = screen.getByRole("textbox"); fireEvent.change(input, { target: { value: "$a", selectionStart: 2 } }); await screen.findByRole("option");
+ current = []; await client.invalidateQueries(); const removed = await screen.findByRole("option", { name: /Unavailable/ });
+ fireEvent.click(removed); fireEvent.keyDown(input, { key: "Enter" }); fireEvent.keyDown(input, { key: "Tab" }); fireEvent.keyDown(input, { key: "ArrowDown" });
+ expect(input).toHaveProperty("value", "$a"); expect(input.getAttribute("aria-activedescendant")).toBeNull(); expect(send).not.toHaveBeenCalled();
+ const fresh = { ...entries[0]!, selection: { ...entries[0]!.selection, inventoryId: newRequestId(), contentRevision: "b".repeat(64) } };
+ current = [fresh]; await client.invalidateQueries(); await waitFor(() => expect(screen.getByRole("option").getAttribute("aria-disabled")).toBeNull());
+ fireEvent.keyDown(input, { key: "Enter" }); fireEvent.click(screen.getByText("Send")); expect(send).toHaveBeenLastCalledWith({ value: "$add-issue", skills: [fresh.selection] });
+});
+it("observes history-like tokens while dismissed, and does not claim absence from incomplete inventory", async () => {
+ let current = [entries[0]!, { ...entries[1]!, selection: { ...entries[1]!.selection, inventoryId: newRequestId() } }]; const client = new QueryClient();
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => ({ skills: current }) }));
+ const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+ const input = screen.getByRole("textbox"); fireEvent.change(input, { target: { value: "$removed", selectionStart: 8 } }); await screen.findByText("Skills are unavailable. Your message is unchanged.");
+ expect(view.container.querySelector(".skill-text-overlay")).toBeNull(); fireEvent.keyDown(input, { key: "Escape" }); current = [entries[0]!]; await client.invalidateQueries();
+ await waitFor(() => expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$removed")); expect(screen.queryByRole("listbox")).toBeNull();
+});
+
+it("leaves unsupported inventory unknown without reads and fences replacement transports even when binding context is retained", async () => {
+ let release!: () => void; const pending = new Promise<void>(resolve => { release=resolve; }); const oldRead = vi.fn(async () => { await pending; return { skills: [...entries, {...entries[0]!,name:"missing",selection:{...entries[0]!.selection,skillId:newRequestId()}}] }; });
+ const oldTransport = createRouterTransport(router => router.service(SkillService, { listSkills: oldRead }));
+ const freshTransport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => ({ skills: entries }) }));
+ const client = new QueryClient(); const tree = (transport: typeof oldTransport, enabled=true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Composer enabled={enabled} retainTransportContext send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+ const view=render(tree(oldTransport,false)); const input=screen.getByRole("textbox"); fireEvent.change(input,{target:{value:"$missing",selectionStart:8}}); await screen.findByText("Update the server and Runner Device to use skills."); expect(oldRead).not.toHaveBeenCalled(); expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+ view.rerender(tree(oldTransport)); await waitFor(()=>expect(oldRead).toHaveBeenCalledOnce());
+ view.rerender(tree(freshTransport)); await waitFor(()=>expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$missing"));
+ // The old request has a different inventory that would falsely make this name available.
+ release(); await new Promise(resolve=>setTimeout(resolve,0));
+ expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$missing");
+});
+
+function RecalledSkillComposer() {
+ const [value,change]=useState("$add-issue"), textarea=useRef<HTMLTextAreaElement>(null);
+ const skills=useSkillCompletion({value,change,textarea,machineId:machine,agentId:agent,initialBindings:[{start:0,end:10,token:"$add-issue",selection:entries[0]!.selection,stale:false}]});
+ return <>{skills.wrap(<textarea aria-label="Recall fixture" ref={textarea} value={value} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} {...skills.attributes}/>)}{skills.list}<button onClick={()=>skills.replaceUnbound("$add-issue $removed-skill",0)}>Recall missing text</button><output data-recalled-selections>{skills.selections.length}</output></>;
+}
+it("restores missing history-like tokens as exact text with no candidates or binding authority",async()=>{
+ const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:entries})}));
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><RecalledSkillComposer/></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getByText("Recall missing text")); await waitFor(()=>expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$removed-skill"));
+ expect(screen.getByRole("textbox")).toHaveProperty("value","$add-issue $removed-skill"); expect(view.container.querySelector("[data-recalled-selections]")?.textContent).toBe("0"); expect(screen.queryByRole("listbox")).toBeNull();
+});
+it("prioritizes a complete live inventory at the retention bound instead of carrying displaced rows",async()=>{
+ let current=entries;const client=new QueryClient();const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:current})}));
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+ const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$",selectionStart:1}});await screen.findAllByRole("option");
+ current=Array.from({length:256},(_,index)=>({...entries[0]!,name:`live-${index}`,selection:{...entries[0]!.selection,skillId:newRequestId()}})); await client.invalidateQueries();
+ await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(256));expect(screen.queryByText("add-issue",{selector:"strong"})).toBeNull();expect(screen.queryByRole("option",{name:/Unavailable/})).toBeNull();
 });

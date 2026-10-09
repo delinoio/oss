@@ -2970,6 +2970,26 @@ Session startup and preparation failures expose a supported recovery action besi
 
 ### Explicit skill completion
 
+Skill availability has three presentation states: available, unavailable and unknown.
+Only a complete successful authenticated inventory for the current transport,
+Runner, Agent, project and session can confirm absence. Loading, failures,
+unsupported capability and unresolved scope remain unknown; late old-scope results
+cannot publish. Observe complete whitespace-delimited tokens even with the panel
+dismissed through the existing query owner, without polling or locked reads.
+Names match exactly; a valid caret completion prefix and a bare `$` remain ordinary.
+Confirmed absent token ranges use semantic muted text in a noninteractive aligned
+overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
+caret, undo and IME; suppress the overlay during composition. Localized accessible
+status describes affected tokens without exposing prompt content in logs.
+An open panel can retain previously displayed disappeared rows until dismissal or
+scope change. Bound retention to 256 entries with live entries taking priority.
+Unavailable rows retain original names, descriptions and provenance, show localized
+status and are disabled for mouse, Enter and Tab; arrows skip them. Restored live
+entries use fresh inventory selections. Neither presentation nor Prompt history
+creates, restores or repairs opaque binding authority. All four placements share
+these rules and existing stale-binding, pending and uncertain request guards.
+
+
 The three first-message/follow-up composer surfaces share one `$` completion
 controller. Original pending or uncertain composer locks suppress completion
 reads and choices while preserving the exact draft and selected bindings. Every
