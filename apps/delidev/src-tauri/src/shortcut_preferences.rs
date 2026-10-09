@@ -73,7 +73,6 @@ fn chord_valid(chord: &ShortcutChord) -> bool {
             chord.key.as_str(),
             "q" | "h"
                 | "m"
-                | "t"
                 | "k"
                 | "n"
                 | "w"
@@ -366,13 +365,38 @@ mod tests {
             ShortcutAction::NewSessionSend,
             ShortcutAction::SearchFocus,
         ] {
-            for key in ["q", "h", "m", "t", "w"] {
+            for key in ["q", "h", "m", "n", "w"] {
                 assert!(!valid(&BTreeMap::from([(action, binding(key, false))])));
                 assert!(chord_valid(&ShortcutChord {
                     key: key.into(),
                     shift: true
                 }));
             }
+        }
+    }
+    #[test]
+    fn retired_new_window_chord_is_editable_and_persists_without_admitting_n() {
+        for action in [
+            ShortcutAction::Help,
+            ShortcutAction::NewSession,
+            ShortcutAction::SessionFocus,
+            ShortcutAction::SessionSend,
+            ShortcutAction::NewSessionFocus,
+            ShortcutAction::NewSessionSend,
+            ShortcutAction::SearchFocus,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let store = ShortcutStore::new(Some(dir.path().into()));
+            let initial = store.read();
+            let overrides = BTreeMap::from([(action, binding("t", false))]);
+            let saved = store.update(overrides.clone(), initial.revision);
+            assert_eq!(saved.problem, None);
+            assert_eq!(saved.overrides, overrides);
+            assert_eq!(
+                ShortcutStore::new(Some(dir.path().into())).read().overrides,
+                overrides
+            );
+            assert!(!valid(&BTreeMap::from([(action, binding("n", false))])));
         }
     }
     #[test]

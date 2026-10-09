@@ -91,3 +91,16 @@ it("late duplicate retirement cannot clear or mark a newer capture uncertain",as
  const end=vi.spyOn(shortcutCapture,"end").mockResolvedValue(undefined).mockImplementationOnce(()=>new Promise((_,reject)=>rejectOld=reject)).mockImplementationOnce(()=>new Promise(resolve=>finishLatest=resolve));
  try{const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});fireEvent.click(opener);await screen.findByText(/Press Command on macOS/);fireEvent.click(screen.getByRole("button",{name:"Cancel capture"}));fireEvent.click(screen.getByRole("button",{name:"Cancel capture"}));await act(async()=>finishLatest());fireEvent.click(opener);await screen.findByText(/Press Command on macOS/);await act(async()=>rejectOld(Error("Old lost ACK")));expect(screen.getByText(/Press Command on macOS/)).toBeTruthy();expect(screen.queryByText(/Capture could not be confirmed/)).toBeNull();}finally{begin.mockRestore();end.mockRestore();}
 });
+
+it("shows fixed New Window N and permits saving former T without changing native N or New session defaults",async()=>{
+ const f=fixture(),run=vi.fn();render(<Owner bridge={f.bridge} run={run}/>);await screen.findByText("Current saved shortcuts");
+ expect(screen.getByText("New Window").closest("div")?.querySelector("dd")?.textContent).toBe("Ctrl + N");
+ const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});fireEvent.click(opener);await screen.findByText(/Press Command on macOS/);
+ fireEvent.keyDown(opener,{key:"n",ctrlKey:true});await screen.findByRole("alert");expect(screen.queryByText("Unsaved changes")).toBeNull();expect(run).not.toHaveBeenCalled();
+ fireEvent.keyDown(opener,{key:"t",ctrlKey:true});await screen.findByText("Unsaved changes");await waitFor(()=>expect(screen.queryByRole("button",{name:"Cancel capture"})).toBeNull());
+ fireEvent.click(screen.getByRole("button",{name:"Save changes"}));await waitFor(()=>expect(screen.getByRole("button",{name:"Ordinary action"}).getAttribute("aria-keyshortcuts")).toBe("Control+T"));
+ expect(f.state().overrides[ShortcutId.NewSession]).toEqual({state:ShortcutOverrideState.Binding,chord:{key:"t",shift:false}});
+ fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"t",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
+ fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"n",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
+ expect(screen.getByText("New Window").closest("div")?.querySelector("dd")?.textContent).toBe("Ctrl + N");
+});

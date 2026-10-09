@@ -159,9 +159,9 @@ optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
 override. An absent override selects the original default. Native newline,
 Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
-primary+N, primary+T (the current native New Window binding), primary+W,
+primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. No palette, window action or tab action is added.
+chords cannot be assigned. The former New Window primary+T chord is editable; no T alias remains. No palette, window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an
