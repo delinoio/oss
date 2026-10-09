@@ -1357,8 +1357,11 @@ alive. This preference is shared by every live local/saved-server window and loa
 by newly opened windows, independent of selected server or connectivity.
 
 Native owns bounded, strictly validated `appearance.json` in `app_config_dir()`,
-using `{ "version": 1, "theme": "system" | "light" | "dark" }`. It contains no
-server identifier, secret or user content and stays outside server configuration,
+using version 2 with the complete mode and preference snapshot, bounded to 256 KiB.
+Valid version-1 mode documents retain compatibility defaults and upgrade only on
+a successful explicit user change. It contains no
+server identifier, secret or conversation content. Custom names and colors are
+device preference metadata. It stays outside server configuration,
 pairing, backups and configuration transfer. The narrow `read_appearance` and
 `update_appearance` commands authorize the trusted `main` or registered `server-*`
 document using the existing URL/binding checks; no generic path/filesystem or
@@ -1389,11 +1392,57 @@ Import / Export treatments. A static OS media-query fallback covers initial pain
 before IPC. The fixed light color descriptions in presentation sections describe their light
 baseline; issue #1238 extends them through semantic dark equivalents. Preserve all
 layout/content/state semantics, selected/disabled/hover/focus states, strict CSP,
-native geometry and decorations. No transparency, blur, custom theme, font/accent
-customization, feature flag, database migration or server-synchronized preference
-is introduced. Record component/build and temporary storage evidence separately
+native geometry and decorations. Issue #2025 extends application colors and
+text/layout preferences through the device-owned boundary below. Transparency,
+blur, external fonts/assets, feature flags, database migrations and server
+synchronization remain outside this preference. Record component/build and temporary storage evidence separately
 from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard containment
 and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
+#### Device styling and custom themes (issue #2025)
+
+Appearance uses five flat sections: Theme, Composer, Status, Display and Images.
+Language and Date format retain their existing ownership. Ordinary selections
+save automatically. Theme mode retains System/Light/Dark, with independent light
+and dark palette references for Default, Titanium, Nord, Dracula and Solarized.
+Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
+identities, with names of at most 80 Unicode scalar values. Bundled themes are
+immutable; duplication creates a separate editable identity.
+
+A custom editor owns its name and complete light/dark opaque semantic color maps.
+Its synthetic preview contains no conversation content. Save and import require
+explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
+with name and complete light/dark token maps, and always creates a new identity.
+Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
+adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
+Validated tokens use an application-owned constructed CSS stylesheet without raw
+CSS injection or a CSP exception. Export captures one committed custom theme.
+Deletion requires confirmation and atomically returns all selected references to
+Default. Cancel discards only the editor/import draft. Concurrent revisions keep
+dirty drafts visible and block save until explicit discard/reload.
+
+Composer and Display retain Regular/Compact layouts and explicit 12/14/16/18px
+text choices. Default text size preserves the original per-component size;
+Original disclosure defaults preserve each component’s original expansion. Explicit
+Expanded/Collapsed overrides apply only to newly mounted supported content. Changes preserve mounted drafts, focus, attachments and business
+request identities. Session Default/Minimal presentation and accent controls
+preserve all approval/error/recovery controls and Session information. Token/time
+visibility changes only already validated observations; omitted observations
+remain unavailable. Color-vision assistance adds non-color state cues. Animation
+Off disables application motion; system reduced-motion preference always wins.
+Tool, reasoning and compaction-history defaults initialize newly mounted
+supported disclosures without replacing explicit choices on mounted content.
+Markdown, Mermaid, SVG and automatic table charts retain enabled preferences but
+remain visibly unavailable until their independently owned renderers exist.
+
+Inline images Off retains an explicit labeled reveal action. Fit preserves the
+bounded existing presentation; Original uses a bounded scrollable viewport.
+Styling cannot change original authenticated Worker bytes, retained-image digest
+validation, immutable attachments or independent cleanup. Preferences remain
+native-owned across trusted windows and restart, outside server backups/portable
+transfer. Complete snapshots share original revision, atomic persistence and
+uncertain-save recovery. Product/browser/native validation retains the repository
+policy; report actual performed evidence separately from skipped acceptance.
+
 #### Runner Devices flat list presentation
 Issue #1244 scopes the approved proposal B to Runner Devices list mode (`execution-workers`). Within shared content padding, left-align one fluid column capped at 1040 CSS pixels. Order the category title/scope/Refresh settings, local Worker, Saved runner devices inventory and existing pages. Use flat white sections with thin `#D8DEE8` dividers, 16px adjacent gaps and 24px section gaps. Keep the system font, 26px semibold category title, 16px section headings, 14px body, 12px full UUID, `#202632` text, `#5B6577` secondary text, `#2563D8` primary/focus and 40px minimum controls with 8px corners and AA control boundaries. At >=1100px retain 32px padding and title-aligned Refresh; below 1100px retain 24px padding and stack header/row actions below metadata. Below 760px use the shared navigation drawer and retain existing vertical padding with 16px horizontal padding. Long names, help, UUIDs, buttons and focus indicators must reflow at 960×640 and 200% zoom. Machine detail uses the shared child-workflow body rules; native geometry remains unchanged; issue #1236 owns the shared application shell and category navigation.
 

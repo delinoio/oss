@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useAppearance, useAppearancePreferences } from "./appearance";
+import { DisclosureDefault } from "./appearance-preferences";
 import { Children, createContext, useContext, useId, useLayoutEffect, useRef, useState, type ComponentPropsWithRef, type Ref, type ReactNode } from "react";
 import "./disclosure.css";
 
@@ -17,7 +19,13 @@ function Chevron() { return <svg className="disclosure-chevron" aria-hidden="tru
 function HeaderContent({ children }: { children: ReactNode }) { return <><Chevron />{children}</>; }
 
 /** Native DOM is intentional: pagination, validation and explicit reveal use it. */
-export function Disclosure({ ref, density, className = "", onToggle, children, ...props }: ComponentPropsWithRef<"details"> & { density?: DisclosureDensity }) {
+export function Disclosure({ ref, density, className = "", onToggle, children, appearanceKind, ...props }: ComponentPropsWithRef<"details"> & { density?: DisclosureDensity; appearanceKind?: "tool_disclosure"|"reasoning_disclosure"|"compaction_disclosure" }) {
+  const appearance=useAppearance();
+  const preferences=useAppearancePreferences();
+  const awaitingInitial=useRef(appearance.snapshot.problem!==null && appearance.snapshot.preferences===undefined);
+  const manuallyChosen=useRef(false);
+  const defaultOpen=useRef(appearanceKind && preferences[appearanceKind]!==DisclosureDefault.Original ? preferences[appearanceKind]===DisclosureDefault.Expanded : props.open);
+  if (appearanceKind) props.open=defaultOpen.current;
   const inheritedDensity = useContext(Density);
   const node = useRef<HTMLDetailsElement>(null);
   useLayoutEffect(() => {
@@ -35,8 +43,15 @@ export function Disclosure({ ref, density, className = "", onToggle, children, .
   const generatedId = useId(), id = props.id ?? generatedId, contentId = `${generatedId}-content`, triggerId = `${generatedId}-trigger`;
   const [summary, ...content] = Children.toArray(children);
   const [expanded, setExpanded] = useState(Boolean(props.open));
+  useLayoutEffect(()=>{
+    if(!appearanceKind || !awaitingInitial.current || appearance.snapshot.problem || !appearance.snapshot.preferences)return;
+    awaitingInitial.current=false;
+    if(manuallyChosen.current || preferences[appearanceKind]===DisclosureDefault.Original || !node.current)return;
+    defaultOpen.current=preferences[appearanceKind]===DisclosureDefault.Expanded;
+    node.current.open=defaultOpen.current;setExpanded(node.current.open);
+  },[appearance.snapshot,appearanceKind]);
   useLayoutEffect(() => { if (props.open === false) restoreFocus(node.current, node.current?.querySelector("summary") ?? null); if (node.current) setExpanded(node.current.open); }, [props.open]);
-  return <NativeDisclosure.Provider value={{ contentId, triggerId, expanded }}><details {...props} id={id} ref={value => { node.current = value; assign(ref, value); }} className={`disclosure ${className}`} data-disclosure-density={density ?? inheritedDensity} onToggle={event => { setExpanded(event.currentTarget.open); if (!event.currentTarget.open) restoreFocus(event.currentTarget, event.currentTarget.querySelector("summary")); onToggle?.(event); }}>{summary}<div id={contentId} className="disclosure-native-content">{content}</div></details></NativeDisclosure.Provider>;
+  return <NativeDisclosure.Provider value={{ contentId, triggerId, expanded }}><details {...props} onClickCapture={event=>{if(event.target instanceof Element && event.target.closest("summary")===node.current?.querySelector("summary"))manuallyChosen.current=true;props.onClickCapture?.(event);}} id={id} ref={value => { node.current = value; assign(ref, value); }} className={`disclosure ${className}`} data-disclosure-density={density ?? inheritedDensity} onToggle={event => { setExpanded(event.currentTarget.open); if (!event.currentTarget.open) restoreFocus(event.currentTarget, event.currentTarget.querySelector("summary")); onToggle?.(event); }}>{summary}<div id={contentId} className="disclosure-native-content">{content}</div></details></NativeDisclosure.Provider>;
 }
 export function DisclosureSummary({ children, className = "", onClick, ...props }: ComponentPropsWithRef<"summary">) {
   const owner = useContext(NativeDisclosure);

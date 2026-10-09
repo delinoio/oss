@@ -7,6 +7,8 @@ import { AttachmentService, newRequestId } from "@delinoio/delidev-api-client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RetainedImages, imageEntryHandlers } from "./image-attachments";
 import { imageDigest } from "./image-input";
+import * as appearance from "./appearance";
+import { defaultPreferences } from "./appearance-preferences";
 const bytes = new Uint8Array([1,2,3]);
 beforeEach(() => { vi.stubGlobal("crypto",webcrypto); const BaseURL=URL; vi.stubGlobal("URL",class extends BaseURL { static createObjectURL=vi.fn(()=>"blob:verified"); static revokeObjectURL=vi.fn(); }); vi.spyOn(console,"warn").mockImplementation(()=>{}); });
 afterEach(()=>vi.unstubAllGlobals());
@@ -95,4 +97,21 @@ it("retains tooltip hover/focus, disabled gates and inactive disposal", async ()
   mounted.rerender(view(false,disabled,available,busy));expect(screen.queryByRole("tooltip")).toBeNull();
  }
  mounted.unmount();expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+
+it("hides draft and retained image bytes until explicit reveal when inline images are off",async()=>{
+ vi.spyOn(appearance,"useAppearancePreferences").mockReturnValue({...defaultPreferences(),inline_images:false});
+ const { ImageAttachmentInput }=await import("./image-attachments");
+ const remove=vi.fn();
+ const draft={images:[{key:"original",preview:"blob:draft",ready:false}],busy:false,cleanupPending:0,controller:{remove,retryCleanup:vi.fn(),add:vi.fn()}} as unknown as Parameters<typeof ImageAttachmentInput>[0]["draft"];
+ const draftView=render(<ImageAttachmentInput draft={draft} disabled={false} available routeReady routeLoading={false} machineId="original"/>);
+ expect(screen.queryByRole("img")).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Reveal image 1"}));
+ expect(screen.getByRole("img",{name:"Image 1"}).getAttribute("src")).toBe("blob:draft");expect(remove).not.toHaveBeenCalled();draftView.unmount();
+ const read=vi.fn(async()=>({data:bytes,sha256:await imageDigest(bytes),complete:true}));
+ const transport=createRouterTransport(router=>router.service(AttachmentService,{readAttachment:read}));
+ const value=[{id:newRequestId(),machine_id:newRequestId(),media_type:"image/png",byte_length:bytes.length,sha256:await imageDigest(bytes)}];
+ render(<TransportProvider transport={transport}><RetainedImages value={value} sessionId={newRequestId()}/></TransportProvider>);
+ expect(read).not.toHaveBeenCalled();expect(screen.queryByRole("img")).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Reveal image 1"}));
+ await screen.findByRole("img",{name:"Image 1"});expect(read).toHaveBeenCalledOnce();
 });

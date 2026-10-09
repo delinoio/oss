@@ -39,7 +39,7 @@ export function NativeUsageObservation({ value }: { value: Record<string, unknow
   }
   return <>
     <p><LocalizedText id="native-usage.source_590a7b" components={{ s0: <>{value.source === Source.Step ? copy("native-usage.completedNativeStep_81d2fc") : copy("native-usage.finalizedAssistantMessage_15531a")}</> }} /></p>
-    <dl>{counterLabels().map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{counts[key] as string}</dd></div>)}
+    <dl>{counterLabels().map(([key, label]) => <div key={key} data-token-observation><dt>{label}</dt><dd>{counts[key] as string}</dd></div>)}
       <dt>{copy("native-usage.reportedTotal_30b27c")}</dt><dd>{counts.total == null ? copy("native-usage.unavailable_ca1844") : counts.total as string}</dd>
       <dt>{copy("native-usage.nativeEstimateCurrencyUnspecified_62f71a")}</dt><dd>{estimate}</dd>
     </dl>

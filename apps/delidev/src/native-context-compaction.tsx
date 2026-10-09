@@ -11,9 +11,9 @@ export function validNativeContextCompaction(progress: unknown): boolean {
 
 export function NativeContextCompaction({ progress, state }: { progress: unknown; state: string }) {
   useLocale();
-  if (state !== "complete" || !validNativeContextCompaction(progress)) return <Disclosure><DisclosureSummary>{copy("native-context-compaction.contextCompactionUnavailable_368e82")}</DisclosureSummary><p>{copy("native-context-compaction.theRetainedContextObservationIsUnavailable_e3e304")}</p></Disclosure>;
+  if (state !== "complete" || !validNativeContextCompaction(progress)) return <Disclosure appearanceKind="compaction_disclosure"><DisclosureSummary>{copy("native-context-compaction.contextCompactionUnavailable_368e82")}</DisclosureSummary><p>{copy("native-context-compaction.theRetainedContextObservationIsUnavailable_e3e304")}</p></Disclosure>;
   const c = object(object(progress).compaction);
-  return <Disclosure open><DisclosureSummary><LocalizedText id="native-context-compaction.contextCompactionAutomatic_e2d9be" components={{ s0: <>{c.stage === "started" ? copy("native-context-compaction.started_ecbc89") : copy("native-context-compaction.completed_22a970")}</> }} /></DisclosureSummary>
+  return <Disclosure open appearanceKind="compaction_disclosure"><DisclosureSummary><LocalizedText id="native-context-compaction.contextCompactionAutomatic_e2d9be" components={{ s0: <>{c.stage === "started" ? copy("native-context-compaction.started_ecbc89") : copy("native-context-compaction.completed_22a970")}</> }} /></DisclosureSummary>
     <p><LocalizedText id="native-context-compaction.isCompactingItsWorkingContextThe_3d6bfb" components={{ s0: <>{c.harness === "opencode" ? copy("native-context-compaction.opencode_3af0e5") : copy("native-context-compaction.codex_616efb")}</> }} /></p>
     <dl><dt>{copy("native-context-compaction.currentContextTokens_77a977")}</dt><dd>{copy("native-context-compaction.notReported_adadfa")}</dd><dt>{copy("native-context-compaction.originalContextReference_ad006e")}</dt><dd>{c.native_item_id as string}</dd></dl>
   </Disclosure>;

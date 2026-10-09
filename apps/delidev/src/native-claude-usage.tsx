@@ -49,7 +49,7 @@ function ProviderCounts({ value }: { value: unknown }) {
   useLocale();
   if (value == null) return <><p>{copy("native-claude-usage.mainLoopUsageUnavailable_8890bb")}</p><p>{copy("native-claude-usage.evidenceHelp")}</p></>;
   const p = object(value);
-  return <><dl>{labels().map(([key, name]) => <div key={key}><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><Disclosure><DisclosureSummary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</DisclosureSummary><pre>{JSON.stringify(p, null, 2)}</pre></Disclosure></>;
+  return <><dl>{labels().map(([key, name]) => <div key={key} data-token-observation><dt>{name}</dt><dd>{p[key] == null ? copy("native-claude-usage.unavailable_ca1844") : p[key] as string}</dd></div>)}</dl><Disclosure><DisclosureSummary>{copy("native-claude-usage.nativeUsageDetails_c90c8b")}</DisclosureSummary><pre>{JSON.stringify(p, null, 2)}</pre></Disclosure></>;
 }
 
 export function NativeClaudeProviderUsage({ value }: { value: unknown }) {

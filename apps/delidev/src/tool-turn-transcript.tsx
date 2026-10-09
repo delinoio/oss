@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useAppearancePreferences } from "./appearance";
+import { DisclosureDefault } from "./appearance-preferences";
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureDensity, DisclosureSummary } from "./disclosure";
@@ -10,6 +12,8 @@ import "./tool-turn-transcript.css";
 
 interface Choices { groups: Map<string, boolean>; entries: Map<string, boolean>; details: Map<string, boolean[]> }
 function ToolEntry({ active, row, payload, token, query, choices, changed, render }: { active: boolean; row: ConversationProjection; payload?: Resource; token?: string; query: PayloadWindowQuery<ConversationProjection, Resource>; choices: Choices; changed: () => void; render: (row: Resource) => ReactNode }) {
+  const preferences=useAppearancePreferences();
+  if(!choices.entries.has(row.id))choices.entries.set(row.id,preferences.tool_disclosure===DisclosureDefault.Expanded);
   const node = useRef<HTMLDivElement>(null), open = choices.entries.get(row.id) ?? false;
   const hasPayload = Boolean(payload);
   useLayoutEffect(() => {
@@ -32,6 +36,7 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
  * Full resources stay in the caller's original three-page window/live tail. */
 export function ToolTurnTranscript({ sessionId, active = true, query, live, removed, arrivals, root, render }: { sessionId: string; active?: boolean; query: PayloadWindowQuery<ConversationProjection, Resource> & { nextPageToken: string }; live: ReadonlyMap<string, Resource>; removed: ReadonlySet<string>; arrivals: readonly string[]; root: RefObject<HTMLElement | null>; render: (row: Resource) => ReactNode }) {
   useLocale();
+  const preferences=useAppearancePreferences();
   const [choices] = useState<Choices>(() => ({ groups: new Map(), entries: new Map(), details: new Map() }));
   const [, update] = useState(0), changed = () => update(value => value + 1);
   const payloads = new Map<string, Resource>(), tokens = new Map<string, string>();
@@ -60,6 +65,7 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     const entries = groups.get(projection.tool.owner)!;
     if (entries[0].id !== projection.id) return null;
     const owner = projection.tool.owner;
+    if(!choices.groups.has(owner))choices.groups.set(owner,preferences.tool_disclosure===DisclosureDefault.Expanded);
     return <Disclosure key={owner} className="tool-turn" density={DisclosureDensity.Compact} open={choices.groups.get(owner) ?? false} onToggle={event => { choices.groups.set(owner, event.currentTarget.open); changed(); }}><DisclosureSummary>{copy("session.toolCalls")}</DisclosureSummary><p className="tool-turn-coverage">{copy("session.reachedTools")}</p><ol>{entries.map(row => <ToolEntry key={row.id} active={active} row={row} payload={payloads.get(row.id)} token={tokens.get(row.id)} query={query} choices={choices} changed={changed} render={render} />)}</ol></Disclosure>;
   };
   const byId = new Map(projections.map(row => [row.id, row]));

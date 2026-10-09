@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useAppearancePreferences } from "./appearance";
 import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@connectrpc/connect";
@@ -60,6 +61,10 @@ function AttachmentGuidance({ children, id }: { children: ReactNode; id: string 
     {open ? createPortal(<div ref={tooltip} className="composer-attachment-tooltip" role="tooltip" onPointerEnter={enter} onPointerLeave={leave} style={position}>{copy("image-input.help")}</div>, document.body) : null}
   </span>;
 }
+function DraftImagePresentation({url,number}:{url:string;number:number}) {
+  const preferences=useAppearancePreferences();const [revealed,setRevealed]=useState(false);
+  return preferences.inline_images||revealed?<span className="image-draft-viewport"><img src={url} alt={copy("image-input.image",{number})}/></span>:<button className="image-draft-reveal" type="button" onClick={()=>setRevealed(true)}>{copy("appearance.v2.revealImage")} {number}</button>;
+}
 export function ImageAttachmentInput({ draft, disabled, available, routeReady, routeLoading, machineId, compact = false, active = true, children, controls, creationToolbar }: { creationToolbar?: (attach: ReactNode) => ReactNode; compact?: boolean; active?: boolean; children?: ReactNode; controls?: ReactNode; draft: ReturnType<typeof useImageDraft>; disabled: boolean; available: boolean; routeReady: boolean; routeLoading: boolean; machineId: string }) {
   useLocale();
   const input = useRef<HTMLInputElement>(null);
@@ -68,7 +73,7 @@ export function ImageAttachmentInput({ draft, disabled, available, routeReady, r
   return <section className={compact ? "image-attachments image-attachments-compact" : "image-attachments"} aria-label={copy("image-input.heading")}>
     <input ref={input} className="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple tabIndex={-1} aria-label={copy("image-input.select")} disabled={disabled || draft.busy || !available} onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void draft.controller.add(files); }} />
     {!compact && !creationToolbar ? attach : null}
-    {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><img src={image.preview} alt={copy("image-input.image", { number: index + 1 })} /><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
+    {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><DraftImagePresentation url={image.preview} number={index+1}/><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
     {children}
     {creationToolbar ? creationToolbar(attach) : compact ? <div className="composer-toolbar">{active ? <AttachmentGuidance id={guidanceId}>{attach}</AttachmentGuidance> : attach}{controls}</div> : <small>{copy("image-input.help")}</small>}
     {!available ? <p role="status">{copy("image-input.update")}</p> : draft.images.length && !routeReady ? <p role="status">{copy(routeLoading ? "image-input.checkingRoute" : "image-input.unsupported")}</p> : null}
@@ -78,6 +83,9 @@ export function ImageAttachmentInput({ draft, disabled, available, routeReady, r
   </section>;
 }
 function RetainedImage({ sessionId, reference, number, active }: { sessionId: string; reference: ImageAttachment; number: number; active: boolean }) {
+  const preferences=useAppearancePreferences();
+  const [revealed,setRevealed]=useState(false);
+  const visible=preferences.inline_images||revealed;
   const transport = useTransport();
   const element = useRef<HTMLLIElement>(null);
   const [nearViewport, setNearViewport] = useState(typeof IntersectionObserver === "undefined");
@@ -91,7 +99,7 @@ function RetainedImage({ sessionId, reference, number, active }: { sessionId: st
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ url?: string; failed?: boolean }>({});
   useEffect(() => {
-    if (!active || !nearViewport) { setState({}); return; }
+    if (!active || !nearViewport || !visible) { setState({}); return; }
     const client = createClient(AttachmentService, transport), controller = new AbortController();
     let url: string | undefined;
     setState({});
@@ -110,8 +118,8 @@ function RetainedImage({ sessionId, reference, number, active }: { sessionId: st
       setState({ url });
     })().catch(error => { if (!controller.signal.aborted) { console.warn("delidev.image_input.readback_failed", { phase: "readback", classification: clientFailure(error).code }); setState({ failed: true }); } });
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [attempt, active, nearViewport, transport, sessionId, reference.id, reference.byteLength, reference.mediaType, reference.sha256]);
-  return <li ref={element}>{state.url ? <img src={state.url} alt={copy("image-input.image", { number })} /> : <p role="status">{copy(state.failed ? "image-input.readFailed" : "image-input.loading")}</p>}{state.failed ? <button type="button" disabled={!active} onClick={() => setAttempt(value => value + 1)}>{copy("image-input.retryRead")}</button> : null}</li>;
+  }, [attempt, active, nearViewport, visible, transport, sessionId, reference.id, reference.byteLength, reference.mediaType, reference.sha256]);
+  return <li ref={element}>{!visible?<button type="button" disabled={!active} onClick={()=>setRevealed(true)}>{copy("appearance.v2.revealImage")} {number}</button>:state.url ? <img src={state.url} alt={copy("image-input.image", { number })} /> : <p role="status">{copy(state.failed ? "image-input.readFailed" : "image-input.loading")}</p>}{state.failed ? <button type="button" disabled={!active} onClick={() => setAttempt(value => value + 1)}>{copy("image-input.retryRead")}</button> : null}</li>;
 }
 export function RetainedImages({ value, sessionId, active = true }: { value: unknown; sessionId: string; active?: boolean }) {
   useLocale();

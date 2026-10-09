@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use delidev_desktop::{
     NativeFailure,
-    appearance::{AppearanceSnapshot, AppearanceStore, Theme},
+    appearance::{AppearanceSnapshot, AppearanceStore, Preferences, Theme},
 };
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_runtime_cef::CefRuntime;
@@ -48,6 +48,7 @@ pub async fn update_appearance(
     windows: tauri::State<'_, Arc<ProductWindows>>,
     store: tauri::State<'_, Arc<AppearanceStore>>,
     theme: Theme,
+    preferences: Preferences,
     expected_revision: u32,
 ) -> Result<AppearanceSnapshot, NativeFailure> {
     let response_window = window.clone();
@@ -57,7 +58,7 @@ pub async fn update_appearance(
         let store = Arc::clone(store.inner());
         let windows = Arc::clone(windows.inner());
         tauri::async_runtime::spawn_blocking(move || {
-            let snapshot = store.update(theme, expected_revision);
+            let snapshot = store.update_preferences(theme, preferences, expected_revision);
             if snapshot.problem.is_none() {
                 super::tray_host::refresh(&app);
                 // Only committed changes are broadcast. Native URL

@@ -18,7 +18,7 @@ it("matches only current-language bundled metadata using all case-insensitive NF
  await i18n.changeLanguage("ko");
  expect(matchSettings("theme",categories)).toEqual([]);
  const rows=matchSettings("테마".normalize("NFD"),[{category:SettingsCategory.Appearance,label:"모양",help:"이 컴퓨터에 저장됩니다."}]);
- expect(rows.map(row=>row.target)).toEqual([SettingsSearchTarget.Theme]);
+ expect(rows.map(row=>row.target)).toEqual([SettingsSearchTarget.AppearancePalettes,SettingsSearchTarget.Theme]);
 });
 it("retains query and input focus on language updates, clears to the input and rejects IME activation",async()=>{
  const select=vi.fn();render(<SettingsSearch categories={categories} select={select}/>);

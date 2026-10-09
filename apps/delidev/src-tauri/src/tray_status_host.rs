@@ -7,7 +7,7 @@ use std::sync::{
 
 use delidev_desktop::{
     NativeFailure,
-    appearance::{AppearanceStore, Theme},
+    appearance::{AppearanceStore, PaletteColors, Theme},
     date_format::{DateFormatPreference, DateFormatStore},
     language::{LanguageStore, SupportedLanguage},
     tray_status::{Area, Target, place},
@@ -33,6 +33,7 @@ pub struct Snapshot {
     pub more: bool,
     pub recent: Option<String>,
     pub theme: Theme,
+    pub colors: PaletteColors,
     pub language: SupportedLanguage,
     pub date_format: DateFormatPreference,
 }
@@ -130,12 +131,17 @@ pub async fn read_tray_status(
 ) -> Result<Snapshot, NativeFailure> {
     admitted(&window, &instance)?;
     let (windows, more, recent) = super::tray_host::panel_snapshot(&app)?;
+    let appearance = app.state::<Arc<AppearanceStore>>().current();
     let result = Snapshot {
         instance: instance.clone(),
         windows,
         more,
         recent,
-        theme: app.state::<Arc<AppearanceStore>>().current().theme,
+        theme: appearance.theme,
+        colors: appearance
+            .preferences
+            .palette_colors()
+            .map_err(|_| NativeFailure::StorageUnavailable)?,
         language: app
             .state::<Arc<LanguageStore>>()
             .current()
