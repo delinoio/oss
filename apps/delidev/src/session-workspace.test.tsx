@@ -30,7 +30,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const releases = new Map<string, () => void>();
   const terminalHeld = new Map(terminals.map(row => [row.id, new Promise<void>(resolve => { releases.set(row.id, resolve); })]));
   const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
-  const terminalControl = vi.fn(), terminalCreate = vi.fn(), terminalWatches = vi.fn();
+  const terminalControl = vi.fn(), terminalCreate = vi.fn((request: { preferredTerminalId?: string }) => ({ terminal: terminals.find(row => row.id === request.preferredTerminalId) ?? terminal })), terminalWatches = vi.fn();
   const retained = new Map([[id, session]]);
   const events: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] = [];
   let wake = () => {};
@@ -378,12 +378,12 @@ it("last verified terminal exit restores the actual Session conversation, focus 
   expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
   // Observing the final exit is read-only. A subsequent toolbar gesture owns
   // fresh atomic admission and must ignore the stale running history row.
-  expect(f.terminalCreate).not.toHaveBeenCalled();
+  expect(f.terminalCreate).toHaveBeenCalledOnce();
   const replacement = create(ResourceSchema, { ...f.terminals[0]!, id: newRequestId() });
   f.terminalCreate.mockReturnValue({ terminal: replacement });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-  await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledOnce());
-  expect(f.terminalCreate.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, mutation: { id: f.session.id, expectedRevision: 7n } });
+  await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledTimes(2));
+  expect(f.terminalCreate.mock.calls[1]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, mutation: { id: f.session.id, expectedRevision: 7n } });
   await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(replacement.id));
   expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
  } finally { view.unmount(); f.releaseTerminal(); f.client.clear(); }
@@ -418,7 +418,7 @@ it("verified terminal removal skips intervening Files and selects the original l
   await act(async () => f.releaseTerminal(0));
   await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(1));
   expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
-  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).toHaveBeenCalledTimes(2);
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
 });
 
@@ -429,15 +429,15 @@ it.each([false, true])("retains initial terminal toolbar intent until session lo
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true, gate);
   const view = render(f.view());
   try {
-    const toolbar = screen.getByRole("button", { name: "Terminals" });
+    const openTerminal = () => { fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" })); };
     expect(screen.queryByRole("heading", { name: "Original session" })).toBeNull();
-    fireEvent.click(toolbar); fireEvent.click(toolbar);
+    openTerminal(); openTerminal();
     expect(f.terminalWatches).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
     if (departed) fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
     await act(async () => release());
     await screen.findByRole("heading", { name: "Original session" });
     if (departed) { expect(f.terminalWatches).not.toHaveBeenCalled(); expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true"); }
     else { await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id)); expect(f.terminalWatches).toHaveBeenCalledOnce(); }
-    expect(f.terminalCreate).not.toHaveBeenCalled(); expect(f.terminalControl).not.toHaveBeenCalled();
+    expect(f.terminalCreate).toHaveBeenCalledTimes(departed ? 0 : 1); expect(f.terminalControl).not.toHaveBeenCalled();
   } finally { view.unmount(); release(); f.releaseTerminal(); f.client.clear(); }
 });
