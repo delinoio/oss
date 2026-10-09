@@ -57,5 +57,21 @@
   "schedule-creation.extra.9cd18d06fde1": "Enter a valid time in HH:mm.",
   "schedule-creation.sentence.6caab2b232d7": "{{v0}} at {{v1}} · {{v2}}",
   "schedule-creation.sentence.2a3f85460313": "Custom cron · {{v0}}",
-  "schedule-creation.weeklyOn": "Weekly on {{day}}"
+  "schedule-creation.weeklyOn": "Weekly on {{day}}",
+  "schedule-creation.review": "Review",
+  "schedule-creation.progress": "Schedule creation steps",
+  "schedule-creation.edit": "Edit",
+  "schedule-creation.editTask": "Edit task",
+  "schedule-creation.editExecution": "Edit execution",
+  "schedule-creation.editRepeat": "Edit repeat",
+  "schedule-creation.reviewConfiguration": "Review shows configured selections, not execution readiness.",
+  "schedule-creation.correctStep": "Correct the required or invalid fields before continuing.",
+  "schedule-creation.stepCount": "Step {{current}} of {{total}}",
+  "schedule-creation.next": "Next",
+  "schedule-creation.back": "Back",
+  "schedule-creation.stepStatus": "{{label}} · {{status}}",
+  "schedule-creation.completed": "Completed",
+  "schedule-creation.current": "Current",
+  "schedule-creation.future": "Upcoming",
+  "schedule-creation.repeat": "Repeat"
 }
