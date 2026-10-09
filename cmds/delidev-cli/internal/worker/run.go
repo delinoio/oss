@@ -314,6 +314,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00native-image-generation-v1"
 			}
 			config.paidCredits = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1)
+			if config.paidCredits {
+				profile += "\x00subscription-paid-credits-v1"
+			}
 			config.nativeClaudeInstallation = nil
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
