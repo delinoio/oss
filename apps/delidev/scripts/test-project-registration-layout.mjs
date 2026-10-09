@@ -55,7 +55,7 @@ try {
     await controls.evaluateAll(nodes=>{ const available=nodes.filter(node=>node.tabIndex>=0&&!node.matches(":disabled")&&!node.closest("[hidden],[inert]")&&node.getClientRects().length);available.at(-1).focus(); });
     await page.keyboard.press("Tab");assert(await child.locator(".settings-task-close").evaluate(node=>node===document.activeElement));await page.keyboard.press("Shift+Tab");assert(await controls.evaluateAll(nodes=>{const available=nodes.filter(node=>node.tabIndex>=0&&!node.matches(":disabled")&&!node.closest("[hidden],[inert]")&&node.getClientRects().length);return available.at(-1)===document.activeElement;}));
     await page.keyboard.press("Escape");await child.waitFor({state:"hidden"});assert(await add.evaluate(node=>node===document.activeElement));assert.equal(await parent.getByRole("searchbox").inputValue(),"draft filter");
-    await add.click();await child.getByRole("textbox",{name:language==="ko"?"Git URL":"Git URL",exact:true}).fill("https://github.com/delinoio/registered.git");
+    await add.click();await child.getByRole("textbox",{name:l("repository-registration.inline.cd01c2ef6a"),exact:true}).fill("https://github.com/delinoio/registered.git");
     await child.getByRole("button",{name:l("project-creation.addRepository"),exact:true}).click();await child.waitFor({state:"hidden"});
     await parent.locator(".project-repository-grip").first().waitFor();assert.equal(await page.locator("html").getAttribute("data-fixture-registration-count"),"1");assert.equal(await page.locator("html").getAttribute("data-fixture-project-save-count"),null);
     assert.equal(await parent.getByRole("searchbox").inputValue(),"draft filter");cases++;
