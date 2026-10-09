@@ -719,6 +719,7 @@ workspace, imports authentication or general native configuration, or runs
 inference. Private enable/disable metadata affects eligibility only. Inventories
 bind the original actor, paired Worker device/instance, Agent revision and session
 or creation project. Late, unsupported, malformed and oversized reads fail closed.
+Prepared-session inventory uses one nested workspace observation deadline across all roots, bounded by the earlier of the original deadline and now plus fifteen seconds. Package enumeration, selected-package preparation and cleanup retain the original thirty-second operation envelope; the workspace observer and skill admission guards remain unchanged.
 
 Inventory has at most 256 entries and a 256 KiB response. Selection has at most
 16 distinct packages. A package has at most 1,024 regular resources, 1 MiB of
