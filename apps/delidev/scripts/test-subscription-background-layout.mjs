@@ -73,7 +73,7 @@ try {
     await opener.click();
     await page.getByRole("button", { name: "Account details", exact: true }).click();
     await page.getByRole("button", { name: "Close Account details", exact: true }).click();
-    await page.locator(".subscription-advanced summary").click();
+    assert.equal(await page.locator(".subscription-advanced").count(), 0);
     for (const action of ["Delete account", "Edit preferences"]) for (const dismissal of ["X", "Escape"]) {
       await opener.click();
       const taskAction = page.getByRole("button", { name: action, exact: true });
@@ -94,9 +94,9 @@ try {
       assert(await page.locator(".subscription-provider-cards").isVisible(), "The service choices disappeared behind the modal");
       const state = await inventory.evaluate(node => {
         const background = node.closest("fieldset"), dialog = document.querySelector(".settings-task-dialog[open]");
-        return { height: node.getBoundingClientRect().height, scroll: document.querySelector("main").scrollTop, hidden: Boolean(node.closest("[hidden]")), disabled: background.disabled, inert: background.inert, ariaHidden: background.getAttribute("aria-hidden"), modalOutside: !background.contains(dialog), details: Boolean(node.querySelector(".subscription-details")), advanced: document.querySelector(".subscription-advanced").open };
+        return { height: node.getBoundingClientRect().height, scroll: document.querySelector("main").scrollTop, hidden: Boolean(node.closest("[hidden]")), disabled: background.disabled, inert: background.inert, ariaHidden: background.getAttribute("aria-hidden"), modalOutside: !background.contains(dialog), details: Boolean(node.querySelector(".subscription-details")), advanced: document.querySelectorAll(".subscription-advanced").length };
       });
-      assert(!state.hidden && state.disabled && state.inert && state.ariaHidden === "true" && state.modalOutside && !state.details && state.advanced, JSON.stringify(state));
+      assert(!state.hidden && state.disabled && state.inert && state.ariaHidden === "true" && state.modalOutside && !state.details && state.advanced === 0, JSON.stringify(state));
       assert.equal(state.height, before.height, "Opening the task changed the list layout");
       assert.equal(state.scroll, before.scroll, "Opening the task moved the background scroll position");
       assert(await opener.isDisabled(), "The background allows a replacement operation");
@@ -118,7 +118,7 @@ try {
       assert.equal(await page.locator("dialog:modal").count(),0,"Final dismissal removes native dimming");
       assert(await original.evaluate(node => node.isConnected && node === document.querySelector(".subscription-row")), "Dismissal replaced the inventory controller");
       assert.equal(await inventory.locator(".subscription-details").count(), 0, "Details returned to inline presentation");
-      assert(await page.locator(".subscription-advanced").evaluate(node => node.open), "Dismissal lost the Advanced disclosure");
+      assert.equal(await page.locator(".subscription-advanced").count(), 0, "Dismissal restored removed Advanced settings");
       await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "More actions for ChatGPT fixture");
       assert.equal(await page.locator("main").evaluate(node => node.scrollTop), before.scroll, "Dismissal moved the background scroll position");
       assert(await opener.isEnabled(), "Idle dismissal kept the inventory locked");

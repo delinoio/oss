@@ -3,7 +3,15 @@
   "command-menu.navigate": "Navigate",
   "command-menu.create": "Create",
   "command-menu.help": "Help",
-  "command-menu.search": "Search commands",
+  "command-menu.search": "Search commands and sessions",
   "command-menu.empty": "No commands found.",
-  "command-menu.close": "Close command menu"
+  "command-menu.close": "Close command menu",
+  "command-menu.commands": "Commands",
+  "command-menu.projectLoading": "Project loading…",
+  "command-menu.projectUnavailable": "Project unavailable",
+  "command-menu.loading": "Searching sessions… Results are incomplete.",
+  "command-menu.partial": "Session search is incomplete. Reached results remain available.",
+  "command-menu.reload": "Reload",
+  "command-menu.retry": "Retry",
+  "command-menu.noSessions": "No matching sessions."
 }

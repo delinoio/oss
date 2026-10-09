@@ -289,7 +289,7 @@ Automatic application never closes the drawer or changes focus. Reset cancels pe
 
 ## Desktop presentation
 
-The desktop contract owns the trend-first layout and compact row disclosures. All original response grouping, ordering, counters, identities, interval evidence and historical estimates remain accessible. Charts use the server-provided ranking and Other without renderer aggregation. This presentation changes no accounting, filtering, authorization, polling, RPC or native ownership.
+The desktop contract owns the topmost Overview / Usage history / Model prices navigation under issue #2137. Overview presents independent tool summaries and source-specific daily trends; Usage history retains the trend-first response layout and compact row disclosures. Model prices owns current manual rates and the staged editor independently of the applied historical range. Original model links preserve provider/service identity, and deleted or changed identities retain read-only historical evidence. Automatic controls require a separately implemented server capability. All original response grouping, ordering, counters, identities, interval evidence and historical estimates remain accessible. Charts use the server-provided ranking and Other without renderer aggregation. This presentation changes no accounting, filtering, authorization, polling, RPC or native ownership.
 
 ## Latest native-reported Codex context snapshot
 
