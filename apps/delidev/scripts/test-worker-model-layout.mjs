@@ -27,6 +27,7 @@ try {
         region.innerHTML = state === "closed" ? "" : `<ul role="listbox">${Array.from({ length: rows }, (_, index) => `<li role="option"><strong>OpenAI: GPT-5.6 Luna ${index}</strong><small>${"long-native-id-".repeat(8)}${index}</small></li>`).join("")}<li role="option">Use exact ID</li><li role="presentation"><button>Load more</button></li></ul><p role="status">${state === "loading" ? status : state === "failed" ? status.repeat(8) : state === "empty" ? "No matching models" : "Catalog result"}</p>`;
       }, { state, status });
       const current = await snapshot();
+      assert(await page.locator(".worker-model-results").first().evaluate(element => getComputedStyle(element).overflowY === "auto" && element.scrollWidth <= element.clientWidth + 1), `${state} result overflow`);
       for (const key of ["dialog", "footer"]) for (const field of ["x", "y", "width", "height"]) assert(Math.abs(current[key][field] - baseline[key][field]) <= 1, `${state} ${key}.${field}`);
       for (const key of ["inputs", "reload"]) current[key].forEach((rect, index) => Object.keys(rect).forEach(field => assert(Math.abs(rect[field] - baseline[key][index][field]) <= 1, `${state} ${key}${index}.${field}`)));
       assert.deepEqual(current.heights, routed ? [280, 280] : [280]); assert.equal(current.bodyScroll, baseline.bodyScroll); checks++;
