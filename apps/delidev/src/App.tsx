@@ -1,3 +1,4 @@
+import { CommandMenu, applicationCommands } from "./command-menu";
 import { SessionSubmissionsProvider } from "./session-submissions";
 import { ImageDraftProvider } from "./image-drafts";
 import { RunnerRemediationProvider } from "./runner-remediation";
@@ -31,7 +32,7 @@ import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
 import { Sidebar } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
-import { SettingsEntryDestination } from "./settings";
+import { SettingsEntryDestination, type SettingsNavigationEntry } from "./settings";
 import { SidebarOutletProvider } from "./sidebar-context";
 import { PullRequests } from "./pull-requests";
 import { SessionForkProvider } from "./session-fork";
@@ -47,6 +48,8 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   useShortcutSurface(surface);
   const openHelp = useShortcutHelp();
   const holdHelp = useHeldShortcutHelp();
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const toggleCommandMenu = () => setCommandMenuOpen(value => !value);
   const pendingFocusDestination = useRef<Surface>(undefined);
   const main = useRef<HTMLElement>(null);
   const contextOpener = useRef<HTMLButtonElement>(null);
@@ -59,7 +62,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const [newSessionProjectBlocked, setNewSessionProjectBlocked] = useState(false);
   const [newGeneralChatActivation, setNewGeneralChatActivation] = useState(0);
   const [usageEntry, setUsageEntry] = useState<UsageEntry>();
-  const [settingsEntry, setSettingsEntry] = useState<SettingsEntryDestination>();
+  const [settingsEntry, setSettingsEntry] = useState<SettingsNavigationEntry>();
   const [projectCreation, setProjectCreation] = useState<{ id: string; activation: number }>();
   type SessionDraft = { prompt: string; bindings: SkillTokenBinding[] };
   const [draftState, setDraftState] = useState<{ drafts: ReadonlyMap<string, SessionDraft>; error?: string }>({ drafts: new Map() });
@@ -95,7 +98,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     setDrawerOpen(false);
     setSurface(next);
   };
-  const openSettings = (destination?: SettingsEntryDestination) => {
+  const openSettings = (destination?: SettingsNavigationEntry) => {
     setProjectCreation(undefined);
     // Selecting the active rail item keeps the current visit and deferred entry.
     if (surface !== Surface.Settings || destination) {
@@ -133,6 +136,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     pendingFocusDestination.current = destination;
   };
   useShortcuts([
+    { id: ShortcutId.CommandMenu, scope: ShortcutScope.Global, label: "command-menu.title", bindings: globalShortcutBindings[ShortcutId.CommandMenu], input: ShortcutInput.Allow, run: toggleCommandMenu },
     { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], helpKeydown: holdHelp },
     { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: globalShortcutBindings[ShortcutId.NewSession], input: ShortcutInput.Allow, run: startNewSession },
   ]);
@@ -146,7 +150,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     const target = compact ? contextOpener.current : main.current;
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
-  return <LocalConnectionPresentationProvider target={connectionTarget} inline={!connectionReady} onRequest={onConnectionHelp}><RunnerRemediationProvider active authority={pairingAuthority}><RunnerPreferenceProvider readLocalWorker={readLocalWorker} scope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined}><SessionControlProvider><SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen} openDrawer={() => setDrawerOpen(true)}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} /><main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  return <LocalConnectionPresentationProvider target={connectionTarget} inline={!connectionReady} onRequest={onConnectionHelp}><RunnerRemediationProvider active authority={pairingAuthority}><RunnerPreferenceProvider readLocalWorker={readLocalWorker} scope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined}><SessionControlProvider><SessionForkProvider openSession={open} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen} openDrawer={() => setDrawerOpen(true)}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar openCommandMenu={toggleCommandMenu} connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={selected} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} />{commandMenuOpen ? <CommandMenu close={() => setCommandMenuOpen(false)} commands={applicationCommands({ navigate, navigateHeader, openSettings, newSession: startNewSession, newGeneralChat: startNewGeneralChat, newProject: openNewProject, help: openHelp })} /> : null}<main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     {[...drafts.keys()].map(id => <SessionDraftSettlement key={id} id={id} clear={() => { saveDraft(id, "", []); }} />)}
     {projectCreation ? <ProjectCreationDialog key={projectCreation.id} activation={projectCreation.activation} close={closeProjectCreation} fallbackFocus={projectFallbackFocus} /> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{selected ? <SessionView key={selected} active={surface === Surface.Sessions} id={selected} draft={drafts.get(selected)?.prompt ?? ""} initialSkills={drafts.get(selected)?.bindings} setDraft={(value, bindings) => saveDraft(selected, value, bindings)} changeSkills={bindings => { saveDraft(selected, undefined, bindings); }} openRunnerSettings={() => openSettings(SettingsEntryDestination.RunnerDevices)} /> : <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Problem error={status.error} actions={<button type="button" disabled={status.isFetching || !connectionReady} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /></section>}</div>

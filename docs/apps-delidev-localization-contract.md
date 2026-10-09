@@ -254,3 +254,7 @@ revisions unchanged on locale changes. Re-render labels without resetting the
 editor draft, capture opener, effective bindings or business request owners.
 Browser-only persistence remains visibly unavailable. Follow the desktop
 device-local shortcut preference contract; no captured content enters logs.
+
+## Command menu
+
+Issue #1957 adds Command menu / 명령 메뉴, localized groups, input hint, Close and no-results guidance. Reuse current-language navigation, creation and shared Settings labels/help/breadcrumbs. NFC normalization supports Korean composed/decomposed input; never add cross-language aliases or dynamic resource content. Locale changes retain the palette query/input focus and update matches. The fixed primary+K action shares the typed Help/ARIA catalog and remains outside editable shortcut preferences.

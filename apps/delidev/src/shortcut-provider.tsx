@@ -4,14 +4,14 @@ import { createPortal, flushSync } from "react-dom";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { DialogSurface } from "./ui";
 import { Surface } from "./surface";
-import { ShortcutId, ShortcutScope, ShortcutStore, availableShortcutTarget, bindingAria, bindingKeys, dispatchShortcut, globalShortcutBindings, shortcutModalVisible, shortcutPlatform, type ShortcutDefinition, type ShortcutHelpDispatch, type ShortcutPlatform } from "./shortcuts";
+import { ShortcutId, ShortcutScope, ShortcutStore, availableShortcutTarget, bindingAria, bindingKeys, bindingMatches, dispatchShortcut, globalShortcutBindings, shortcutModalVisible, shortcutPlatform, type ShortcutDefinition, type ShortcutHelpDispatch, type ShortcutPlatform } from "./shortcuts";
 import "./shortcuts.css";
 import { useShortcutPreferences } from "./shortcut-preference-controller";
 import { fixedNativeShortcutCatalog, customizationBindings, effectiveShortcutDefinitions } from "./shortcut-preferences";
 
 enum HelpLifetime { Held = "held", Button = "button" }
 interface HeldKey { code: string; key: string }
-interface Controller { store: ShortcutStore; platform: ShortcutPlatform; openHelp: () => void; holdHelp: (event: KeyboardEvent) => void }
+interface Controller { store: ShortcutStore; platform: ShortcutPlatform; openHelp: () => void; holdHelp: (event: KeyboardEvent) => void; menu: MutableRefObject<HTMLDialogElement | undefined> }
 const Context = createContext<Controller | undefined>(undefined);
 export function ShortcutProvider({ children }: { children: ReactNode }) {
   const { snapshot } = useShortcutPreferences();
@@ -21,6 +21,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
   const [helpLifetime, setHelpLifetime] = useState<HelpLifetime | null>(null);
   const lifetime = useRef<HelpLifetime | null>(null), held = useRef<HeldKey | null>(null);
   const closeHelp = useCallback(() => { lifetime.current = null; setHelpLifetime(null); }, []);
+  const menu = useRef<HTMLDialogElement | undefined>(undefined);
   const helpDispatch = useRef<ShortcutHelpDispatch | undefined>(undefined);
   const openHelp = useCallback(() => { if (!shortcutModalVisible()) { lifetime.current = HelpLifetime.Button; setHelpLifetime(HelpLifetime.Button); } }, []);
   const holdHelp = useCallback((event: KeyboardEvent) => {
@@ -29,9 +30,9 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
     lifetime.current = HelpLifetime.Held;
     setHelpLifetime(HelpLifetime.Held);
   }, []);
-  const [controller] = useState(() => ({ store, platform, openHelp, holdHelp }));
+  const [controller] = useState(() => ({ store, platform, openHelp, holdHelp, menu }));
   useLayoutEffect(() => {
-    const handle = (event: KeyboardEvent) => { dispatchShortcut(event, store.getSnapshot(), store.surface, platform, false, helpDispatch.current); };
+    const handle = (event: KeyboardEvent) => { dispatchShortcut(event, store.getSnapshot(), store.surface, platform, false, helpDispatch.current, menu.current); };
     const release = (event: KeyboardEvent) => {
       const origin = held.current;
       if (!origin || (origin.code ? event.code !== origin.code : event.key.toLowerCase() !== origin.key)) return;
@@ -59,6 +60,16 @@ export function useShortcutSurface(surface: Surface) {
   useLayoutEffect(() => { controller?.store.setSurface(surface); }, [controller, surface]);
 }
 export function useHeldShortcutHelp() { return useContext(Context)?.holdHelp ?? (() => undefined); }
+// cmdk uses Control+K as an internal arrow alias. Route only the fixed palette
+// chord through this same owner before cmdk can mark that event handled.
+export function useCommandMenuKeyDown() {
+ const controller = useContext(Context);
+ return (event: ReactKeyboardEvent<HTMLElement>) => {
+  if (!controller || !globalShortcutBindings[ShortcutId.CommandMenu].some(binding => bindingMatches(event.nativeEvent,binding,controller.platform))) return;
+  if (dispatchShortcut(event.nativeEvent,controller.store.getSnapshot(),controller.store.surface,controller.platform,false,undefined,controller.menu.current)) event.stopPropagation();
+ };
+}
+export function useCommandMenuOwner() { return useContext(Context)?.menu; }
 export function useShortcutHelp() { return useContext(Context)?.openHelp ?? (() => undefined); }
 export function useGlobalShortcutAria(id: keyof typeof globalShortcutBindings) {
   const controller = useContext(Context);

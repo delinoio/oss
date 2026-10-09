@@ -1,0 +1,9 @@
+{
+  "command-menu.title": "Command menu",
+  "command-menu.navigate": "Navigate",
+  "command-menu.create": "Create",
+  "command-menu.help": "Help",
+  "command-menu.search": "Search commands",
+  "command-menu.empty": "No commands found.",
+  "command-menu.close": "Close command menu"
+}

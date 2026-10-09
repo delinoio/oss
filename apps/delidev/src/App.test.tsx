@@ -73,8 +73,10 @@ it("Search input shortcut opens the compact drawer and refocuses retained drafts
   await waitFor(() => expect(document.activeElement).toBe(query)); expect((query as HTMLInputElement).value).toBe("Retained compact query");
 });
 
-it.each(["MacIntel", "Win32", "Linux x86_64"])("leaves primary+K native on %s without Search navigation or mutation", async platform => {
+it.each(["MacIntel", "Win32", "Linux x86_64"])("opens and dismisses the fixed palette on %s without Search navigation, writes or draft loss", async platform => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  // jsdom has no native layout observer; host-browser fixtures verify geometry.
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   const value = fixture();
   render(<App transport={value.transport} />);
   await screen.findByRole("button", { name: "New session" });
@@ -83,14 +85,20 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])("leaves primary+K native on %s wi
   const drawer = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
   const drawerOpen = drawer.open;
   main.focus();
-  expect(fireEvent.keyDown(main, chord)).toBe(true);
+  expect(fireEvent.keyDown(main, chord)).toBe(false);
+  const menu = screen.getByRole("dialog", { name: "Command menu" });
+  expect(document.activeElement).toBe(within(menu).getByRole("combobox"));
+  fireEvent.keyDown(document.activeElement!, chord);
+  expect(screen.queryByRole("dialog", { name: "Command menu" })).toBeNull();
   expect(document.activeElement).toBe(main);
   expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   const input = await screen.findByRole("textbox", { name: "First message" });
   fireEvent.change(input, { target: { value: "Retained draft" } });
   input.focus();
-  expect(fireEvent.keyDown(input, chord)).toBe(true);
+  expect(fireEvent.keyDown(input, chord)).toBe(false);
+  expect(document.activeElement).toBe(within(screen.getByRole("dialog", { name: "Command menu" })).getByRole("combobox"));
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   expect(document.activeElement).toBe(input);
   expect((input as HTMLTextAreaElement).value).toBe("Retained draft");
   expect(screen.queryByRole("textbox", { name: "Search conversations" })).toBeNull();
@@ -100,7 +108,7 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])("leaves primary+K native on %s wi
   expect(screen.getByRole("button", { name: "Search" }).hasAttribute("aria-keyshortcuts")).toBe(false);
 });
 
-it.each(["en", "ko"])("omits global Search guidance from %s shortcut help on Sessions, New session and Search", async locale => {
+it.each(["en", "ko"])("shows fixed command menu guidance while omitting global Search guidance in %s help", async locale => {
   await act(() => i18n.changeLanguage(locale));
   render(<App transport={fixture().transport} />);
   const newSession = locale === "en" ? "New session" : "새 세션";
@@ -112,7 +120,8 @@ it.each(["en", "ko"])("omits global Search guidance from %s shortcut help on Ses
     const dialog = document.querySelector<HTMLDialogElement>(".shortcut-help")!;
     expect(dialog.open).toBe(true);
     expect(dialog.textContent).not.toContain(locale === "en" ? "Open search" : "검색 열기");
-    expect([...dialog.querySelectorAll("kbd")].map(node => node.textContent)).not.toContain("K");
+    expect([...dialog.querySelectorAll("kbd")].map(node => node.textContent)).toContain("K");
+    expect(dialog.textContent).toContain(locale === "en" ? "Command menu" : "명령 메뉴");
     fireEvent.keyDown(dialog, { key: "Escape" });
     fireEvent.keyUp(document, { key: "?" });
   }

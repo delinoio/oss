@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
+import { globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
 import { Surface } from "./surface";
 import type { MessageKey } from "./localization";
 
@@ -20,6 +20,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.SearchFocus, label: "shortcuts.focusSearch", group: ShortcutGroup.Search, scopes: [Surface.Search], priority: 1, input: ShortcutInput.Allow, defaults: [{ key: "i", primary: true }] },
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
+  { id: ShortcutId.CommandMenu, label: "command-menu.title", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.CommandMenu] },
   { target: ShortcutTargetContext.SessionMessage, id: ShortcutId.SessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter" }] },
   { target: ShortcutTargetContext.CreationMessage, id: ShortcutId.NewSessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Creation, scopes: [Surface.NewSession, Surface.NewGeneralChat], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
   { target: ShortcutTargetContext.Search, id: ShortcutId.SearchSubmit, label: "shortcuts.searchSubmit", group: ShortcutGroup.Search, scopes: [Surface.Search], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter" }] },
