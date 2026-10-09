@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
-  SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
+  ModelIdentitySchema, SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
   RequestDiagnosticSource as Source, RequestDiagnosticState as State, RequestDiagnosticOperation as Operation,
   ListRequestDiagnosticsResponseSchema,
 } from "@delinoio/delidev-api-client";
@@ -114,7 +114,7 @@ it("preserves standard-only requested capacity independently from the effective 
 });
 
 it("keeps native subscription service attribution independent from API providers", () => {
-  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), providerId: "", subscriptionService: SubscriptionServiceIdentity.CHATGPT, model: { providerId:"", nativeId:"exact-original-native",subscriptionService:SubscriptionServiceIdentity.CHATGPT }, source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId() });
+  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), providerId: "", subscriptionService: SubscriptionServiceIdentity.CHATGPT, model: create(ModelIdentitySchema, { providerId:"", nativeId:"exact-original-native",subscriptionService:SubscriptionServiceIdentity.CHATGPT }), source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId() });
   row.nativeRequestId = row.id;
   expect(validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [row] }), f.session, "").records[0].providerId).toBe("");
   for (const wrong of [{ providerId: newRequestId() }, { subscriptionService: SubscriptionServiceIdentity.CLAUDE }, { subscriptionService: 99 as SubscriptionServiceIdentity }, { source: Source.PROXY_HTTP }]) {

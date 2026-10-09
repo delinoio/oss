@@ -3,7 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { AccountingUnitKind, UsageTotalsSchema, EstimateTotalsSchema, EntityKind, GetUsageSummaryResponseSchema, InboxService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageAccountingProfile, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, TokenPricingMode } from "@delinoio/delidev-api-client";
+import { ModelIdentitySchema, AccountingUnitKind, UsageTotalsSchema, EstimateTotalsSchema, EntityKind, GetUsageSummaryResponseSchema, InboxService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, UsageAccountingProfile, UsageCostState, UsageCoverage, UsageService, UsageTimeGranularity, TokenPricingMode } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { encode } from "./documents";
@@ -29,7 +29,7 @@ const data = create(GetUsageSummaryResponseSchema, {
   estimates: { currencies: empty ? [] : [{ currency: "USD", knownAmount: "0.002", partialResponses: 1 }, { currency: "EUR", knownAmount: "0", completeResponses: 1 }], unpricedResponses: empty ? 0 : 1 },
 });
 if (!empty) {
-  const duplicate = create(GetUsageSummaryResponseSchema, {groups:[{...data.groups[0], model: { nativeId: "0195c9c0-7b13-7000-8000-000000000006", providerId: ids.provider }, totals:create(UsageTotalsSchema,{responses:1,input:{knownTotal:"0",measuredResponses:1},output:{knownTotal:"0",measuredResponses:1},total:{knownTotal:"0",measuredResponses:1},cachedInput:{unavailableResponses:1},cacheWriteInput:{unavailableResponses:1},reasoningOutput:{unavailableResponses:1}}), estimates:create(EstimateTotalsSchema,{unpricedResponses:1})}]}).groups[0];
+  const duplicate = create(GetUsageSummaryResponseSchema, {groups:[{...data.groups[0], model: create(ModelIdentitySchema, { nativeId: "0195c9c0-7b13-7000-8000-000000000006", providerId: ids.provider }), totals:create(UsageTotalsSchema,{responses:1,input:{knownTotal:"0",measuredResponses:1},output:{knownTotal:"0",measuredResponses:1},total:{knownTotal:"0",measuredResponses:1},cachedInput:{unavailableResponses:1},cacheWriteInput:{unavailableResponses:1},reasoningOutput:{unavailableResponses:1}}), estimates:create(EstimateTotalsSchema,{unpricedResponses:1})}]}).groups[0];
   data.groups.push(duplicate);
   if (data.totals) { data.totals.responses=2; for (const key of ["input","output","total"] as const) data.totals[key]!.measuredResponses=2; for (const key of ["cachedInput","cacheWriteInput","reasoningOutput"] as const) data.totals[key]!.unavailableResponses=2; }
   if (data.analytics) { data.analytics.days[0].totals=data.totals; data.analytics.models.push({...data.analytics.models[0],model: duplicate.model,totals:duplicate.totals}); }
