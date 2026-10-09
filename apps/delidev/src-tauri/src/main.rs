@@ -8,6 +8,8 @@ mod date_format_host;
 mod notification_host;
 mod oauth_host;
 mod session_creation_preferences_host;
+mod shortcut_capture_host;
+mod shortcut_preferences_host;
 mod tray_host;
 mod tray_status_host;
 mod updater_host;
@@ -51,6 +53,7 @@ use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
     update_runner_device_preferences, update_session_creation_preferences,
 };
+use shortcut_preferences_host::{read_shortcut_preferences, update_shortcut_preferences};
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
@@ -1736,69 +1739,81 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&browser))
         .manage(Arc::new(ProductWindows::default()))
         .manage(Arc::new(window_host::WindowActions::default()))
+        .manage(Arc::new(shortcut_capture_host::CaptureHost::default()))
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
         .manage(Arc::clone(&oauth))
         .manage(Arc::clone(&connector))
         .manage(Arc::clone(&supervision))
         .manage(Arc::new(tray_status_host::PanelHost::default()))
-        .invoke_handler(tauri::generate_handler![
-            tray_status_host::watch_tray_status,
-            tray_status_host::read_tray_status,
-            tray_status_host::activate_tray_status,
-            tray_status_host::dismiss_tray_status,
-            account_oauth_native,
-            desktop_credential_access,
-            choose_repository_folder,
-            read_appearance,
-            read_date_format,
-            update_date_format,
-            read_runner_device_preferences,
-            update_runner_device_preferences,
-            read_session_creation_preferences,
-            update_session_creation_preferences,
-            update_appearance,
-            read_language,
-            update_language,
-            open_browser,
-            control_browser,
-            browser_state,
-            open_github,
-            open_provider_guidance,
-            connect_local,
-            launch_local,
-            retry_local,
-            inspect_local_registration,
-            recover_local_registration,
-            local_server_status,
-            local_worker_proof,
-            local_worker_control,
-            worker_network_control,
-            desktop_update_context,
-            desktop_update_native,
-            connection_context,
-            saved_connections,
-            removed_connections,
-            remove_connection,
-            retained_worker_control,
-            pair_connection,
-            retry_connection,
-            rename_connection,
-            open_connection,
-            connect_saved,
-            saved_worker_proof,
-            saved_worker_control,
-            show_connection_manager,
-            begin_tray,
-            publish_tray,
-            read_tray_action,
-            acknowledge_tray_action,
-            begin_notifications,
-            end_notifications,
-            notification_permission,
-            request_notification_permission,
-            present_notification
-        ])
+        .invoke_handler({
+            let ordinary: fn(tauri::ipc::Invoke<CefRuntime>) -> bool = tauri::generate_handler![
+                tray_status_host::watch_tray_status,
+                tray_status_host::read_tray_status,
+                tray_status_host::activate_tray_status,
+                tray_status_host::dismiss_tray_status,
+                account_oauth_native,
+                desktop_credential_access,
+                choose_repository_folder,
+                read_appearance,
+                read_shortcut_preferences,
+                update_shortcut_preferences,
+                read_date_format,
+                update_date_format,
+                read_runner_device_preferences,
+                update_runner_device_preferences,
+                read_session_creation_preferences,
+                update_session_creation_preferences,
+                update_appearance,
+                read_language,
+                update_language,
+                open_browser,
+                control_browser,
+                browser_state,
+                open_github,
+                open_provider_guidance,
+                connect_local,
+                launch_local,
+                retry_local,
+                inspect_local_registration,
+                recover_local_registration,
+                local_server_status,
+                local_worker_proof,
+                local_worker_control,
+                worker_network_control,
+                desktop_update_context,
+                desktop_update_native,
+                connection_context,
+                saved_connections,
+                removed_connections,
+                remove_connection,
+                retained_worker_control,
+                pair_connection,
+                retry_connection,
+                rename_connection,
+                open_connection,
+                connect_saved,
+                saved_worker_proof,
+                saved_worker_control,
+                show_connection_manager,
+                begin_tray,
+                publish_tray,
+                read_tray_action,
+                acknowledge_tray_action,
+                begin_notifications,
+                end_notifications,
+                notification_permission,
+                request_notification_permission,
+                present_notification
+            ];
+            move |invoke: tauri::ipc::Invoke<CefRuntime>| {
+                if invoke.message.command() == "shortcut_capture_native" {
+                    shortcut_capture_host::dispatch(invoke)
+                } else {
+                    ordinary(invoke)
+                }
+            }
+        })
         .on_window_event(|window, event| {
             if window.label() == tray_status_host::LABEL {
                 match event {
@@ -1814,6 +1829,20 @@ fn run() -> Result<(), NativeFailure> {
                         .destroyed(),
                     _ => {}
                 }
+                return;
+            }
+            let capture = window.state::<Arc<shortcut_capture_host::CaptureHost>>();
+            if matches!(event, WindowEvent::Focused(false)) {
+                capture.departure(window.app_handle(), window.label(), false);
+            } else if matches!(event, WindowEvent::Destroyed) {
+                capture.window_disposed(window.app_handle(), window.label());
+            } else if matches!(event, WindowEvent::Focused(true)) {
+                capture.departure(window.app_handle(), window.label(), true);
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && capture.close_requested(window.label())
+            {
+                api.prevent_close();
                 return;
             }
             let windows = window.state::<Arc<ProductWindows>>();
@@ -1902,6 +1931,9 @@ fn run() -> Result<(), NativeFailure> {
             app.manage(Arc::new(
                 delidev_desktop::date_format::DateFormatStore::new(config_dir.clone()),
             ));
+            app.manage(Arc::new(
+                delidev_desktop::shortcut_preferences::ShortcutStore::new(config_dir.clone()),
+            ));
             let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
             let initial = language.read();
             delidev_desktop::language::activate(initial.resolved_language);
@@ -1951,6 +1983,9 @@ fn run() -> Result<(), NativeFailure> {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
             _app.state::<Arc<tray_status_host::PanelHost>>()
                 .request_stop(_app);
+            let _ = _app
+                .state::<Arc<shortcut_capture_host::CaptureHost>>()
+                .release(_app);
             _app.state::<Arc<window_host::WindowActions>>().stop();
             if let Ok(mut registry) = _app.state::<Arc<ProductWindows>>().registry.lock() {
                 registry.stop();

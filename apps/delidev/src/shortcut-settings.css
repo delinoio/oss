@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.shortcut-settings { min-width: 0; max-width: 1040px; }
+.shortcut-settings > section { margin-block: 24px; }
+.shortcut-settings h2 { font-size: 16px; line-height: 24px; }
+.shortcut-settings-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.shortcut-settings-row > div { min-width: 0; }
+.shortcut-settings h3 { font-size: 14px; line-height: 20px; margin: 0; }
+.shortcut-settings-row p { margin: 4px 0; overflow-wrap: anywhere; }
+.shortcut-settings small { color: var(--muted); }
+.shortcut-settings .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.shortcut-settings button { min-height: 40px; border-radius: 8px; }
+.shortcut-settings dl > div { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-block: 8px; }
+.shortcut-settings dd { margin: 0; }
