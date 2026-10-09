@@ -49,3 +49,7 @@ it('projects the original builtin name and latest active native status without r
 it.each([['opencode-read','read'],['opencode-shell','bash'],['opencode-todo','todowrite']])('preserves the closed %s adapter original native name %s',(kind,name)=>{
  expect(conversationProjection(row(tool(kind)),sessionId).tool?.name).toBe(name);
 });
+
+it('retains expanded tool state while denying exact-page restoration in an inactive pane',()=>{
+ const q=query([[row(tool('command'))]]),p=props({...q,payloadPages:[]});const view=render(<ToolTurnTranscript {...p} active={false}/>);const group=view.container.querySelector<HTMLDetailsElement>('.tool-turn')!;expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expand(entry);const restore=entry.querySelector<HTMLButtonElement>('button')!;expect(restore.disabled).toBe(true);fireEvent.click(restore);expect(q.restore).not.toHaveBeenCalled();view.rerender(<ToolTurnTranscript {...p} active/>);expect(group.open).toBe(true);expect(entry.open).toBe(true);fireEvent.click(restore);expect(q.restore).toHaveBeenCalledExactlyOnceWith('');
+});

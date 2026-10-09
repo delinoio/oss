@@ -9,7 +9,7 @@ import { conversationProjection, type ConversationProjection } from "./tool-turn
 import "./tool-turn-transcript.css";
 
 interface Choices { groups: Map<string, boolean>; entries: Map<string, boolean>; details: Map<string, boolean[]> }
-function ToolEntry({ row, payload, token, query, choices, changed, render }: { row: ConversationProjection; payload?: Resource; token?: string; query: PayloadWindowQuery<ConversationProjection, Resource>; choices: Choices; changed: () => void; render: (row: Resource) => ReactNode }) {
+function ToolEntry({ active, row, payload, token, query, choices, changed, render }: { active: boolean; row: ConversationProjection; payload?: Resource; token?: string; query: PayloadWindowQuery<ConversationProjection, Resource>; choices: Choices; changed: () => void; render: (row: Resource) => ReactNode }) {
   const node = useRef<HTMLDivElement>(null), open = choices.entries.get(row.id) ?? false;
   const hasPayload = Boolean(payload);
   useLayoutEffect(() => {
@@ -24,7 +24,7 @@ function ToolEntry({ row, payload, token, query, choices, changed, render }: { r
   }, [hasPayload, choices, row.id]);
   return <li onFocusCapture={event => { event.stopPropagation(); query.protect?.(token); }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}><Disclosure density={DisclosureDensity.Compact} open={open} onToggle={event => { choices.entries.set(row.id, event.currentTarget.open); changed(); }}>
     <DisclosureSummary><span>{row.tool?.name || copy("session.tool_7c9bbe")}</span><small>{statusLabel(row.tool?.state ?? "")}</small></DisclosureSummary>
-    {payload ? <div className="tool-entry-payload" ref={node}>{render(payload)}</div> : <button type="button" disabled={Boolean(query.loading || query.error)} onClick={() => { if (token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
+    {payload ? <div className="tool-entry-payload" ref={node}>{render(payload)}</div> : <button type="button" disabled={!active || Boolean(query.loading || query.error)} onClick={() => { if (active && token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
   </Disclosure></li>;
 }
 
@@ -60,7 +60,7 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     const entries = groups.get(projection.tool.owner)!;
     if (entries[0].id !== projection.id) return null;
     const owner = projection.tool.owner;
-    return <Disclosure key={owner} className="tool-turn" density={DisclosureDensity.Compact} open={choices.groups.get(owner) ?? false} onToggle={event => { choices.groups.set(owner, event.currentTarget.open); changed(); }}><DisclosureSummary>{copy("session.toolCalls")}</DisclosureSummary><p className="tool-turn-coverage">{copy("session.reachedTools")}</p><ol>{entries.map(row => <ToolEntry key={row.id} row={row} payload={payloads.get(row.id)} token={tokens.get(row.id)} query={query} choices={choices} changed={changed} render={render} />)}</ol></Disclosure>;
+    return <Disclosure key={owner} className="tool-turn" density={DisclosureDensity.Compact} open={choices.groups.get(owner) ?? false} onToggle={event => { choices.groups.set(owner, event.currentTarget.open); changed(); }}><DisclosureSummary>{copy("session.toolCalls")}</DisclosureSummary><p className="tool-turn-coverage">{copy("session.reachedTools")}</p><ol>{entries.map(row => <ToolEntry key={row.id} active={active} row={row} payload={payloads.get(row.id)} token={tokens.get(row.id)} query={query} choices={choices} changed={changed} render={render} />)}</ol></Disclosure>;
   };
   const byId = new Map(projections.map(row => [row.id, row]));
   const presented = (row: ConversationProjection) => {
