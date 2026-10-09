@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.tool-turn { min-width: 0; }
+.tool-turn > .disclosure-native-content > ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tool-turn li { min-width: 0; }
+.tool-turn .disclosure-header { overflow-wrap: anywhere; }
+.tool-turn .disclosure-header small { color: var(--muted); margin-left: auto; }
+.tool-turn-coverage { color: var(--muted); font-size: 0.875rem; }
+.tool-entry-payload [data-tool-primary] { border: 0; background: transparent; }
+.tool-entry-payload [data-tool-primary] > summary { display: none; }
+.tool-entry-payload pre { white-space: pre-wrap; overflow-wrap: anywhere; }

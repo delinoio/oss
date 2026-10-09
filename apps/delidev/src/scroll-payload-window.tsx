@@ -15,9 +15,9 @@ export interface PayloadWindowQuery<Row extends PaginationRow, Payload> {
   protect?: (token?: string) => void;
 }
 
-function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query, root, active, children }: {
+function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query, root, active, children, projected }: {
   page: PaginationPage<Row>; payload?: Payload[]; query: PayloadWindowQuery<Row, Payload>;
-  root: RefObject<HTMLElement | null>; active: boolean; children: (payload: Payload[], rows: Row[]) => ReactNode;
+  root: RefObject<HTMLElement | null>; active: boolean; projected?: (rows: Row[]) => ReactNode; children: (payload: Payload[], rows: Row[]) => ReactNode;
 }) {
   useLocale();
   const element = useRef<HTMLDivElement>(null);
@@ -50,16 +50,18 @@ function PayloadPage<Row extends PaginationRow, Payload>({ page, payload, query,
     return () => { observer?.disconnect(); container.removeEventListener("scroll", check); document.removeEventListener("visibilitychange", check); };
   }, [active, page.token, page.height, payload, query.loading, query.error, query.restore, query.measure, root]);
   return <div ref={element} style={payload ? undefined : { minHeight: page.height ?? 48 }} data-payload-page={page.token} onFocusCapture={() => query.protect?.(page.token)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}>
-    {payload ? children(payload, page.rows) : <SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</SettingsActionButton>}
+    {projected ? <>{projected(page.rows)}{!payload ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</SettingsActionButton> : null}</> : payload ? children(payload, page.rows) : <SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={!active || Boolean(query.loading) || Boolean(query.error)} onClick={() => query.restore(page.token)}>{copy("pagination.restore")}</SettingsActionButton>}
   </div>;
 }
 
 /** Retains measured placeholders for reached pages whose full payload expired
  * from the three-page window. Render callbacks receive authoritative payloads
  * only for restored ranges; adapters keep mutations separate from projections. */
-export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({ query, root, active, children, identity, revision }: {
+export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({ query, root, active, children, identity, revision, projected }: {
   query: PayloadWindowQuery<Row, Payload>; root: RefObject<HTMLElement | null>; active: boolean;
   children: (payload: Payload[], rows: Row[]) => ReactNode;
+  /** Render retained display projections through both payload states without remounting their owner. */
+  projected?: (rows: Row[]) => ReactNode;
   identity?: (payload: Payload) => string; revision?: (payload: Payload) => bigint;
 }) {
   // Capture focus before React mounts newly restored forms. Their existing
@@ -87,6 +89,6 @@ export function ScrollPayloadWindow<Row extends PaginationRow, Payload>({ query,
     const rows = page.rows.filter((row, index, values) => owners.get(row.id) === page.token && values.findIndex(candidate => candidate.id === row.id) === index);
     const original = query.payloadPages.find(value => value.token === page.token)?.payload;
     const payload = original && identity ? rows.flatMap(row => { const value = newest.get(row.id); return value ? [value] : []; }) : original;
-    return <PayloadPage key={page.token} page={{ ...page, rows }} payload={payload} query={query} root={root} active={active}>{children}</PayloadPage>;
+    return <PayloadPage key={page.token} page={{ ...page, rows }} payload={payload} query={query} root={root} active={active} projected={projected}>{children}</PayloadPage>;
   });
 }

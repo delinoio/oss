@@ -115,5 +115,7 @@
   "session.submissionUncertain": "Confirmation unavailable",
   "session.submissionRejected": "Rejected",
   "session.submissionRemoved": "Removed",
-  "session.harnessUnavailable": "Harness unavailable"
+  "session.harnessUnavailable": "Harness unavailable",
+  "session.toolCalls": "Tool calls",
+  "session.reachedTools": "This list contains reached records only. Use the conversation history controls to reach more records."
 }

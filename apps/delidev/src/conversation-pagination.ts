@@ -1,5 +1,6 @@
 import { useSessionActive } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
+import { conversationProjection } from "./tool-turn-projection";
 import { useCallback } from "react";
 import { ConnectError, Code } from "@connectrpc/connect";
 import { EntityKind, ResourceQuery, SessionQuery, type Resource } from "@delinoio/delidev-api-client";
@@ -13,7 +14,7 @@ export function validateConversationPage(rows: readonly Resource[], kind: Entity
   }
 }
 
-/** Pagination retains only identities/revisions outside its three payload pages.
+/** Pagination retains identities/revisions and bounded tool owner/display projections outside its three payload pages.
  * Generated query caches are request-local and never retain evicted documents. */
 export function useConversationPages(kind: EntityKind, sessionId: string, active = true, pageSize = 50, validate?: (rows: Resource[]) => void, interval?: number) {
   const surfaceActive=useSessionActive();
@@ -24,7 +25,7 @@ export function useConversationPages(kind: EntityKind, sessionId: string, active
     if (rows.length > pageSize) throw new ConnectError("The conversation page exceeds its requested bound.", Code.DataLoss);
     validateConversationPage(rows, kind, sessionId);
     validate?.(rows);
-    return { rows: rows.map(({ id, revision }) => ({ id, revision })), payload: rows, nextPageToken };
+    return { rows: rows.map(row => kind === EntityKind.MESSAGE ? conversationProjection(row, sessionId) : { id: row.id, revision: row.revision }), payload: rows, nextPageToken };
   }, [kind, sessionId, pageSize, validate]);
   const resources = useCallback((response: { resources: Resource[]; nextPageToken: string }) => project(response.resources, response.nextPageToken), [project]);
   const inputs = useCallback((response: { inputs: Resource[]; nextPageToken: string }) => project(response.inputs, response.nextPageToken), [project]);
