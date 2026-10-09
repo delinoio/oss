@@ -354,11 +354,9 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 	var latest []byte
 	cleanup, success := false, false
 	nativeStarted := false
-	var nativeErr error
 	version, phase := "", domain.CodexRuntime
 	var native serverSubscriptionNative
-	var vault accountSecrets
-	vault, nativeErr = s.secrets()
+	_, old, nativeErr := s.serverSubscriptionCredentials(ctx, id, original.Generation)
 	if nativeErr != nil && operation.Action == domain.SubscriptionLogin && original.Generation == "" {
 		// No opener or native write ran. Verify the narrower pre-native absence
 		// proof before allowing a checkpoint, even if the vault must be retried
@@ -374,10 +372,6 @@ func (s *Service) runServerSubscription(parent context.Context, id domain.ID) {
 		} else {
 			nativeErr = domain.CodexRecoveryFailure(version, domain.CodexCleanup, nativeErr, err)
 		}
-	}
-	var old []byte
-	if nativeErr == nil && original.Generation != "" {
-		old, nativeErr = vault.Get(ctx, credentials.Ref{Owner: id, ID: original.Generation, Purpose: credentials.AccountLogin})
 	}
 	if nativeErr == nil {
 		opener := s.subscriptionOpen
@@ -781,4 +775,20 @@ func codexDiagnosticMessage(d *domain.CodexDiagnostic) *pb.CodexDiagnostic {
 		domain.CodexCleanup:    pb.CodexDiagnosticPhase_CODEX_DIAGNOSTIC_PHASE_CLEANUP,
 	}
 	return &pb.CodexDiagnostic{DetectedVersion: d.DetectedVersion, MinimumVersion: d.MinimumVersion, Phase: phases[d.Phase], Code: string(d.Code), Message: d.Message, Guidance: d.Guidance, CorrelationId: d.CorrelationID}
+}
+
+// Initialize the one shared vault and read only the original generation under
+// the protected account gate. Native sessions must run after this gate releases.
+func (s *Service) serverSubscriptionCredentials(ctx context.Context, account, generation domain.ID) (accountSecrets, []byte, error) {
+	unlock, err := s.lockAccounts(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer unlock()
+	vault, err := s.secrets()
+	if err != nil || generation == "" {
+		return vault, nil, err
+	}
+	old, err := vault.Get(ctx, credentials.Ref{Owner: account, ID: generation, Purpose: credentials.AccountLogin})
+	return vault, old, err
 }
