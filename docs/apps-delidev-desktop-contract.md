@@ -948,6 +948,23 @@ never closes the Worker-owned process. Reopening an original ID beyond the
 bounded inventory page uses an exact authenticated resource read before attachment.
 Presentation Close is separate from the explicit original process Close action.
 
+Original authenticated inventory or stream resources dismiss a terminal only
+when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
+Connection-memory revision fences and original-ID tombstones prevent stale
+history restoration or reopening from reviving dismissed tabs. Pending or
+uncertain original controls retain their recovery presentation. An inactive exit
+preserves selection/focus; a selected exit chooses its nearest remaining left
+terminal, then the first remaining terminal. Shared content tabs use their
+original opened-terminal order, skipping intervening nonterminal tools. If no
+other terminal content tab exists, selection uses the remaining inventory
+neighbor without creating a shell. The retained standalone dock uses inventory
+order. The final automatic dismissal uses
+the Session-owned presentation close and focus path, retaining mounted
+conversation/composer/Info. An explicitly opened empty inventory remains available
+for creation. EOF, errors, missing resources and malformed/unsupported observations
+never prove exit. Dismissal sends no process Close, deletion or replacement creation.
+
+
 Authenticated generated operations follow the
 [terminal contract](cmds-delidev-terminals-contract.md). Only advertised support
 enables history reads/refresh/selection; capability errors remain distinct from

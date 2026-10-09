@@ -1,3 +1,6 @@
+import { create } from "@bufbuild/protobuf";
+import { EntityKind, ResourceSchema } from "@delinoio/delidev-api-client";
+import { encode } from "./documents";
 import {describe,it,expect} from "vitest";
 import {SessionTabsStore,SessionTabKind,sessionTabKey} from "./session-tabs";
 import {Comparison} from "./session-diff-model";
@@ -8,3 +11,35 @@ describe("connection session tab descriptors",()=>{
  it("scopes order to session/connection and retains original Sidechat parent",()=>{const s=new SessionTabsStore();s.open("parent",{kind:SessionTabKind.Sidechat,id:"child",name:"Child"});expect(s.parent("child")).toBe("parent");expect(s.snapshot("other").tabs).toHaveLength(1);expect(new SessionTabsStore().snapshot("parent").tabs).toHaveLength(1);});
 });
 it("retains Sidechat parent and safe descriptor after presentation close",()=>{const store=new SessionTabsStore();const child={kind:SessionTabKind.Sidechat as const,id:"child",name:"Original child"};store.open("parent",child);store.close("parent",sessionTabKey(child));expect(store.parent("child")).toBe("parent");expect(store.sidechats("parent")).toEqual([child]);store.open("parent",child);expect(store.snapshot("parent").tabs).toHaveLength(2);});
+
+
+it("dismisses the selected terminal toward its nearest left terminal across other content tabs", () => {
+ const store = new SessionTabsStore();
+ store.open("session", { kind: SessionTabKind.Terminal, id: "one" });
+ store.open("session", { kind: SessionTabKind.Files });
+ store.open("session", { kind: SessionTabKind.Terminal, id: "two" });
+ store.open("session", { kind: SessionTabKind.Terminal, id: "three" });
+ store.select("session", sessionTabKey({ kind: SessionTabKind.Terminal, id: "two" }));
+ store.dismissTerminal("session", "two", "three");
+ expect(store.snapshot("session").selected).toBe(sessionTabKey({ kind: SessionTabKind.Terminal, id: "one" }));
+ store.dismissTerminal("session", "one");
+ expect(store.snapshot("session").selected).toBe(sessionTabKey({ kind: SessionTabKind.Terminal, id: "three" }));
+});
+it("keeps inactive terminal dismissal selection and uses inventory only without another opened terminal", () => {
+ const store = new SessionTabsStore();
+ store.open("session", { kind: SessionTabKind.Terminal, id: "one" });
+ store.open("session", { kind: SessionTabKind.Files });
+ store.dismissTerminal("session", "one", "unopened");
+ expect(store.snapshot("session").selected).toBe(SessionTabKind.Files);
+ expect(store.snapshot("session").tabs.some(tab => tab.kind === SessionTabKind.Terminal)).toBe(false);
+ store.open("session", { kind: SessionTabKind.Terminal, id: "one" });
+ store.dismissTerminal("session", "one", "remaining");
+ expect(store.snapshot("session").selected).toBe(sessionTabKey({ kind: SessionTabKind.Terminal, id: "remaining" }));
+});
+
+it("late original creation receipts cannot reopen a dismissed content tab", () => {
+ const store = new SessionTabsStore();
+ store.terminalPresentation("session").observe("session", create(ResourceSchema, { id: "original", sessionId: "session", kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 5n, documentJson: encode({ state: "exited", cleanup_verified: true }) }));
+ store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
+ expect(store.snapshot("session").tabs).toHaveLength(1); expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
+});

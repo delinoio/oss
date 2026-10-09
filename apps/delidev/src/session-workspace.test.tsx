@@ -6,19 +6,31 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, newRequestId } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
+import { SessionTabsProvider } from "./session-tabs";
 import { SessionView } from "./session";
 
-function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => []) {
+vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement) => {
+ const field = document.createElement("textarea"); host.append(field);
+ return { write: async () => {}, enabled: () => {}, focus: () => field.focus(), dispose: () => host.replaceChildren() };
+} }));
+
+function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({
     name: "Original session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "blocked", recovery: "none",
     ...extra,
     ...(problem ? { problem: { code: "unsupported", message: "Original installation evidence", guidance: "Original verification guidance" } } : {}),
   }) });
+  const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: id, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "running" }) });
+  const terminals = [terminal, ...Array.from({ length: Math.max(0, Number(terminalMode) - 1) }, () => create(ResourceSchema, { ...terminal, id: newRequestId() }))];
+  const releases = new Map<string, () => void>();
+  const terminalHeld = new Map(terminals.map(row => [row.id, new Promise<void>(resolve => { releases.set(row.id, resolve); })]));
+  const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
+  const terminalControl = vi.fn(), terminalCreate = vi.fn(), terminalWatches = vi.fn();
   const retained = new Map([[id, session]]);
   const events: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] = [];
   let wake = () => {};
@@ -34,12 +46,18 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const budget = vi.fn(() => ({ view: create(SessionBudgetViewSchema, { session, state, ...(state === BudgetState.THRESHOLD_REACHED ? { budget: { currency: "USD", threshold: "1" } } : {}) }) }));
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
   const transport = createRouterTransport(router => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
+    router.service(TerminalService, { controlTerminal: terminalControl, createTerminal: terminalCreate, watchTerminalOutput: async function* (request, context) {
+      terminalWatches(request.terminalId);
+      const terminal = terminals.find(row => row.id === request.terminalId)!;
+      yield { epoch: "fixture-epoch", sequence: 0n, terminal, heartbeat: true };
+      await terminalHeld.get(terminal.id); if (!context.signal.aborted) yield { epoch: "fixture-epoch", sequence: 0n, terminal: create(ResourceSchema, { ...terminal, revision: 2n, documentJson: encode({ state: "exited", cleanup_verified: true }) }), heartbeat: true };
+    } });
     router.service(SessionService, { listQueue: () => ({ inputs: queueInputs(id) }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
       getResource: request => ({ resource: retained.get(request.id) }),
-      listResources: list,
+      listResources: request => terminalMode && request.filter?.kind === EntityKind.TERMINAL ? { resources: terminals } : list(request),
       async *watchEvents(_request, context) {
         while (!context.signal.aborted) {
           while (events.length && !context.signal.aborted) yield events.shift()!;
@@ -53,8 +71,8 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionView id={id} draft={value} setDraft={draft} active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, enqueue, rename, control, recover, budget, draft, list, publish };
+  const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  return { session, client, view, enqueue, rename, control, recover, budget, draft, list, publish, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -337,4 +355,62 @@ it("projects accepted live preparation, claim and response transitions without r
   act(() => { f.publish({ ...assistant, revision: 2n, documentJson: encode({ execution_id: execution, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-assistant", role: "assistant", state: "streaming", text: "", first_sequence: 4, last_sequence: 4 }) }); update(13n, { ...accepted, execution: { ...native, last_sequence: 4 } }); }); expect(container.querySelector(".session-progress")).toBeNull();
   act(() => update(8n, { preparation: { job_id: preparation, state: "pending" } })); expect(container.querySelector(".session-progress")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer); expect(composer).toHaveProperty("value", "Original ongoing draft"); expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
+});
+
+
+it("last verified terminal exit restores the actual Session conversation, focus and mounted authoring", async () => {
+ const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+ const view = render(f.view());
+ try {
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  const info = screen.getByRole("complementary", { name: "Session information" });
+  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+  await waitFor(() => expect(document.querySelector(".terminal-view")).not.toBeNull());
+  expect(composer.closest("[inert]")).not.toBeNull();
+  await act(async () => f.releaseTerminal());
+  await waitFor(() => expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true"));
+  expect(screen.queryByRole("tab", { name: "Terminals" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(composer).toHaveProperty("value", "Original draft"); expect(composer.closest("[inert]")).toBeNull();
+  expect(screen.getByRole("complementary", { name: "Session information" })).toBe(info);
+  expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  await screen.findByText("No session terminals. Create one explicitly with +.");
+  expect(screen.getByRole("button", { name: "Create terminal" })).toHaveProperty("disabled", false);
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+ } finally { view.unmount(); f.releaseTerminal(); f.client.clear(); }
+});
+
+
+it("verified terminal removal skips intervening Files and selects the original left terminal tab", async () => {
+ const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], 3);
+ const view = render(f.view());
+ try {
+  await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id));
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(await screen.findByRole("button", { name: /Terminal 2/ }));
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id));
+  fireEvent.click(await screen.findByRole("button", { name: /Terminal 3/ }));
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id));
+  const terminalTabs = screen.getAllByRole("tab", { name: /^Terminals ·/ });
+  expect(terminalTabs).toHaveLength(3);
+  const beforeSelection = f.terminalWatches.mock.calls.length; fireEvent.click(terminalTabs[1]!);
+  await waitFor(() => expect(f.terminalWatches.mock.calls.length).toBeGreaterThan(beforeSelection));
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id));
+  await act(async () => f.releaseTerminal(1));
+  await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(2));
+  const remaining = screen.getAllByRole("tab", { name: /^Terminals ·/ });
+  expect(remaining[0]).toBe(terminalTabs[0]); expect(remaining[0]!.getAttribute("aria-selected")).toBe("true");
+  await waitFor(() => expect(document.activeElement === remaining[0] || !!document.querySelector(".terminal-view")?.contains(document.activeElement)).toBe(true));
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id));
+  await act(async () => f.releaseTerminal(0));
+  await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(1));
+  expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
+ } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
 });
