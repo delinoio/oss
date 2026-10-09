@@ -303,7 +303,7 @@
 .context-capacity { height:6px; background:var(--surface-muted); border-radius:3px; overflow:hidden; }
 .context-capacity > div { height:100%; background:var(--accent); }
 .session-name-dialog { width:480px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); padding:24px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text); box-shadow:0 8px 32px var(--shadow-soft); overflow:auto; }
-.session-name-dialog::backdrop { background:rgb(0 0 0 / 12%); }
+.session-name-dialog::backdrop { background:var(--backdrop); }
 .session-name-dialog > header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .session-name-dialog h2 { font-size:20px; }
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
