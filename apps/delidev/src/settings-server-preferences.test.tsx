@@ -548,3 +548,24 @@ it("shows all four schema-2 policy groups only in Project defaults", async () =>
  expect(screen.queryByText("Remediation details")).toBeNull();
  expect(value.save).not.toHaveBeenCalled();
 });
+
+
+it.each([
+  { capabilities: [], planMode: false, automaticApproval: false },
+  { capabilities: [SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1], planMode: false, automaticApproval: true },
+  { capabilities: [SystemCapability.SESSION_DEFAULTS_V1], planMode: true, automaticApproval: false },
+  { capabilities: [SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1, SystemCapability.SESSION_DEFAULTS_V1], planMode: true, automaticApproval: true },
+])("shows the Plan approval group only with supported controls ($capabilities)", async ({ capabilities, planMode, automaticApproval }) => {
+  const row = resource(EntityKind.SETTINGS, known);
+  const value = fixture([row], undefined, capabilities);
+  render(value.view(<Settings />));
+  choosePreferences();
+  await screen.findByRole("form");
+  await screen.findByLabelText("Default account routing");
+  expect(Boolean(screen.queryByRole("heading", { name: "Plan approval" }))).toBe(planMode || automaticApproval);
+  expect(Boolean(screen.queryByRole("checkbox", { name: "Start new sessions in Plan Mode" }))).toBe(planMode);
+  expect(Boolean(screen.queryByRole("checkbox", { name: "Automatically approve native plans" }))).toBe(automaticApproval);
+  expect(automaticFetch()).toBeTruthy();
+  expect(details().open).toBe(false);
+  expect(value.save).not.toHaveBeenCalled();
+});

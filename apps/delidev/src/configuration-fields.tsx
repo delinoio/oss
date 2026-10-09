@@ -257,7 +257,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   const reviewerStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.AGENT });
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
   if (kind === EntityKind.SETTINGS) return <>
- {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <h3>{copy("configuration-fields.planApprovalHeading")}</h3> : null}
+ {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults && (supportsProjectBehavior || supportsSessionDefaults) ? <h3>{copy("configuration-fields.planApprovalHeading")}</h3> : null}
  {supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <section data-settings-search-target="plan-mode-default"><Check label={copy("configuration-fields.planModeDefault")} value={data.plan_mode_default} change={field("plan_mode_default")} /></section> : null}
 
  {supportsProjectBehavior ? <section data-settings-search-target="automatic-plan-approval"><Check label={copy("configuration-fields.automaticPlanApproval")} value={data.automatic_plan_approval} change={field("automatic_plan_approval")} /><p>{copy("configuration-fields.planApprovalHelp")}</p></section> : null}
