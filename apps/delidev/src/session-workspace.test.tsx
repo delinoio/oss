@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, SystemCapability, TerminalService, TerminalCreationMode, newRequestId } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
@@ -49,7 +49,8 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
     router.service(TerminalService, { controlTerminal: terminalControl, createTerminal: terminalCreate, watchTerminalOutput: async function* (request, context) {
       terminalWatches(request.terminalId);
-      const terminal = terminals.find(row => row.id === request.terminalId)!;
+      const terminal = terminals.find(row => row.id === request.terminalId);
+      if (!terminal) return;
       yield { epoch: "fixture-epoch", sequence: 0n, terminal, heartbeat: true };
       await terminalHeld.get(terminal.id); if (!context.signal.aborted) yield { epoch: "fixture-epoch", sequence: 0n, terminal: create(ResourceSchema, { ...terminal, revision: 2n, documentJson: encode({ state: "exited", cleanup_verified: true }) }), heartbeat: true };
     } });
@@ -375,10 +376,16 @@ it("last verified terminal exit restores the actual Session conversation, focus 
   expect(composer).toHaveProperty("value", "Original draft"); expect(composer.closest("[inert]")).toBeNull();
   expect(screen.getByRole("complementary", { name: "Session information" })).toBe(info);
   expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
+  // Observing the final exit is read-only. A subsequent toolbar gesture owns
+  // fresh atomic admission and must ignore the stale running history row.
+  expect(f.terminalCreate).not.toHaveBeenCalled();
+  const replacement = create(ResourceSchema, { ...f.terminals[0]!, id: newRequestId() });
+  f.terminalCreate.mockReturnValue({ terminal: replacement });
   fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
-  await screen.findByText("No session terminals. Create one explicitly with +.");
-  expect(screen.getByRole("button", { name: "Create terminal" })).toHaveProperty("disabled", false);
-  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
+  await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledOnce());
+  expect(f.terminalCreate.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, mutation: { id: f.session.id, expectedRevision: 7n } });
+  await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(replacement.id));
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
  } finally { view.unmount(); f.releaseTerminal(); f.client.clear(); }
 });
 
