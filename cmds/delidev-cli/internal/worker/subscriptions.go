@@ -27,6 +27,7 @@ import (
 )
 
 type managedSubscriptionLease struct {
+	paidCredits bool
 	logger      *slog.Logger
 	client      delidevv1connect.SubscriptionServiceClient
 	credential  Credential
@@ -136,7 +137,7 @@ func takeManagedSubscription(ctx context.Context, config Config, client delidevv
 		clear(response.Msg.Bundle)
 		return nil, &managedExecutionUncertain{subscription.Invalid()}
 	}
-	return &managedSubscriptionLease{logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
+	return &managedSubscriptionLease{paidCredits: config.paidCredits, logger: config.Logger, client: client, credential: credential, instance: instance, account: account, response: response.Msg, finishID: claim.Finish, journalPath: journalPath, journal: claim}, nil
 }
 
 func (l *managedSubscriptionLease) finish(bundle []byte, cleanup, refresh, success bool) error {

@@ -259,3 +259,4 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
   allocation in the owning complete feature and regenerate tool-owned bindings
   and facades. No notification authority, content disclosure or migration is
   implied by this aggregate capability.
+- ChatGPT/Codex paid-credit observations (#2124) use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.
