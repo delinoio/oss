@@ -387,3 +387,9 @@ Issue #2061 adds authenticated same-question Sidechat retry with System 57 / Wor
 
 ### Situation-specific notifications (#2055)
 The Inbox, storage, subscription, Schedule and desktop contracts jointly own granular client choices, durable future-only operational claims and the trusted native original-connection observer under System 58. Preserve legacy preferences/receipts, real migration 32 ownership, original-source eligibility, separate quota recovery consent and explicit OS permission. EN/KO Settings/search and fresh original-target navigation are part of this boundary. Automated checks do not establish installed native/account/platform acceptance.
+
+Conversation Revert (#2045) is owned by the existing compaction/context, sessions,
+harness, usage, protocol and desktop contracts. It composes one exact original
+mutation with independent native replacement-history/cleanup proof, unsent
+prompt editing, immutable previous history/usage and original account/Worker
+ownership. System 62 / Worker 36 activate no filesystem rewind or migration.

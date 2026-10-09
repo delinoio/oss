@@ -26,6 +26,7 @@ const SupportedVersion = domain.CodexProtocolVersion
 type Config struct {
 	ManagedForkHistory bool
 	OrdinaryTools      executionenv.Ordinary `json:"-"`
+	RevertHistory      bool                  `json:"-"`
 
 	SkillsRoot       string
 	ImageRoot        string
@@ -66,6 +67,7 @@ type Client struct {
 	pendingEvent       *nativewire.Event
 	api                *apiBinding
 	managedHome        string
+	revertHistory      bool
 }
 
 type ProtocolMode string
@@ -209,6 +211,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if domain.ValidNativeVersionMetadata(observedVersion) {
 		config.Version = observedVersion
 	}
+	// Revert uses the closed response and cursor profile verified for this
+	// actual initialized process. General startup eligibility does not imply
+	// support for a context mutation or its replacement history shape.
+	if config.RevertHistory && config.Version != "0.162.0" {
+		return nil, incompatible()
+	}
 	platform, family := runtime.GOOS, "unix"
 	if platform == "darwin" {
 		platform = "macos"
@@ -244,7 +252,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

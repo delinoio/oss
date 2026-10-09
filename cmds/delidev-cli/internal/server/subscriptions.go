@@ -537,7 +537,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				forkRevision = jr.Revision
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
-				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || compact.Version != 2 {
+				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || (compact.Version != 2 && compact.Version != 4) {
 					return nil, subscriptionDenied()
 				}
 				sr, session, err := sessionRecord(tx, jr.SessionID)

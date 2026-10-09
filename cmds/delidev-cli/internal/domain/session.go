@@ -250,6 +250,8 @@ type Session struct {
 	SidechatRetries       []SidechatRetry         `json:"sidechat_retries,omitempty"`
 	SidechatCurrentAnswer ID                      `json:"sidechat_current_answer,omitempty"`
 	SidechatActiveRetry   ID                      `json:"sidechat_active_retry,omitempty"`
+	ContextRevision       uint64                  `json:"context_revision,omitempty"`
+	Revert                *SessionRevertState     `json:"revert,omitempty"`
 	NativeExecutionRootID ID                      `json:"native_execution_root_id,omitempty"`
 	Startup               *ExecutionStartupRecord `json:"startup,omitempty"`
 	LastCompactionJobID   ID                      `json:"last_compaction_job_id,omitempty"`

@@ -93,7 +93,18 @@ func (s *Service) sessionResult(ctx context.Context, result store.Result) (*pb.S
 			if err != nil {
 				return err
 			}
-			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || change.ExecutionJob == nil || job.ParentID != domain.ID(change.ExecutionJob.Id) || (value.Execution != nil && job.ParentID != value.Execution.JobID) {
+			expectedParent := domain.ID("")
+			if change.ExecutionJob != nil {
+				expectedParent = domain.ID(change.ExecutionJob.Id)
+			}
+			if value.CompactionJobID != "" {
+				var original domain.ExecutionRecoveryRequest
+				if domain.Decode(job.Input, &original) != nil || original.Validate() != nil || original.Revert == nil || original.JobID != value.CompactionJobID {
+					return domain.ExecutionRecoveryUncertain()
+				}
+				expectedParent = value.CompactionJobID
+			}
+			if recovery.SessionID != refs.SessionID || job.Type != domain.RecoverExecutionJob || expectedParent == "" || job.ParentID != expectedParent || (value.CompactionJobID == "" && value.Execution != nil && job.ParentID != value.Execution.JobID) {
 				return domain.ExecutionRecoveryUncertain()
 			}
 			change.ExecutionRecoveryJob = rpc.Resource(recovery)

@@ -179,7 +179,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err := tx.RequireCodexSubagentModel(input.Configuration, account); err != nil {
 		return empty, executionDenied()
 	}
-	scope := apiproxy.Scope{ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ReviewerNativeModel: input.Configuration.ReviewerNativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
+	scope := apiproxy.Scope{ContextRevision: input.ContextRevision, ExecutionID: grant.ExecutionID, SessionID: input.SessionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, NativeModel: input.Configuration.NativeModel, ReviewerNativeModel: input.Configuration.ReviewerNativeModel, ChildModel: input.Configuration.SubagentModel, Harness: input.Configuration.Harness, Provider: provider, Operations: operations}
 	if keySubscription && session.Execution != nil && session.Execution.ExecutionID == grant.ExecutionID {
 		scope.OpenCodeSession = session.Execution.NativeThreadID
 	}
@@ -396,7 +396,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 					}
 					version = sourceJob.Startup.Ready.NativeVersion
 				}
-				record := domain.ResponseUsageRecord{SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
+				record := domain.ResponseUsageRecord{ContextRevision: scope.ContextRevision, SessionID: scope.SessionID, ProjectID: jr.ProjectID, ExecutionID: scope.ExecutionID, AccountID: scope.AccountID, ConnectionID: scope.ConnectionID, ProviderID: scope.ProviderID, ModelID: scope.ModelID, Harness: domain.Codex, Version: version, ThreadID: string(input.Completion.NativeThreadID), CompactionSourceTurn: scope.CompactionSourceTurn, Sequence: 1, Usage: usage}
 				id, replayed, err := tx.PutResponseUsage(request, record)
 				return struct {
 					ID       domain.ID

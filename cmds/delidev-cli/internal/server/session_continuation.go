@@ -65,6 +65,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	// has no input yet. The Worker rechecks native history before the later send.
 	account, connection := session.ContinuationAccount()
 	candidate := continuationAssignment(session, assignment, completion, assignmentDigest, intent, account, connection)
+	candidate.ContextRevision = session.ContextRevision
 	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
 		candidate.Continuation.Compaction = session.Compaction
 	}
@@ -102,6 +103,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if ir.SessionID != sr.ID || next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || next.Sequence <= queued.Sequence || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
 		return store.Record{}, continuationConflict()
 	}
+	input.ContextRevision = session.ContextRevision
 	input.InputID, input.Input = ir.ID, domain.SessionInput{Prompt: next.Prompt, Mode: next.Mode, Skills: next.Skills, Attachments: next.Attachments}
 	if input.Configuration.Harness == domain.OpenCode {
 		if _, err := input.Configuration.OpenCodePrimaryForInput(input.Input.Mode); err != nil {

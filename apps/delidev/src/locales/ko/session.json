@@ -122,5 +122,14 @@
   "session.submittedUserMessage": "제출한 사용자 메시지",
   "session.imageView": "이미지 보기",
   "session.imageViewUnsupported": "이 이미지 보기 관찰 기록을 사용할 수 없습니다.",
-  "session.imageViewPreviewUnavailable": "미리보기를 사용할 수 없습니다. 이 네이티브 관찰 기록은 이미지 바이트를 보관하거나 현재 파일에 대한 접근 권한을 부여하지 않습니다."
+  "session.imageViewPreviewUnavailable": "미리보기를 사용할 수 없습니다. 이 네이티브 관찰 기록은 이미지 바이트를 보관하거나 현재 파일에 대한 접근 권한을 부여하지 않습니다.",
+  "session.revertAndEdit": "되돌리고 편집",
+  "session.revertConfirmation": "이 턴 이전으로 네이티브 대화를 되돌리고 프롬프트를 미전송 초안으로 복원할까요? 이 턴과 이후 턴은 작업 문맥에서 제외됩니다. 파일은 변경되지 않습니다. 기존 기록, 사용량, Fork 및 Sidechat은 유지됩니다.",
+  "session.revertDraftWarning": "원래 작업이 검증되면 현재 초안이 교체됩니다.",
+  "session.revertPending": "원래 되돌리기 작업과 검증된 기록을 기다리고 있습니다. 메시지는 전송되지 않았습니다.",
+  "session.revertDraftChanged": "대화가 되돌려졌습니다. 편집한 초안은 유지됩니다. 준비되면 이전 프롬프트를 복원하세요.",
+  "session.restoreRevertedPrompt": "이전 프롬프트 복원",
+  "session.retrySameRevert": "동일한 되돌리기 요청 재시도",
+  "session.revertHistoricalAttachments": "이전 이미지와 스킬 선택은 기록에 유지됩니다. 새 입력에서는 다시 선택하세요. 복원된 프롬프트는 전송되지 않았습니다.",
+  "session.previousContext": "이전 문맥"
 }

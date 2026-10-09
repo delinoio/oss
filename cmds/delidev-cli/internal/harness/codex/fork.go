@@ -85,7 +85,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 }
 
 func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {
-	return wire.ID == checkpoint.ThreadID && wire.SessionID == checkpoint.SessionID && wire.ParentThreadID == nil && wire.summary().History == LegacyHistory && (wire.Status.Type == ThreadIdle || wire.Status.Type == ThreadNotLoaded) && (wire.CanAcceptDirectInput == nil || *wire.CanAcceptDirectInput) && nativePathEqual(wire.Cwd, checkpoint.Effective.Cwd) && wire.ModelProvider == checkpoint.Effective.Provider && (len(wire.Extra) == 0 || string(wire.Extra) == "null")
+	return wire.ID == checkpoint.ThreadID && wire.SessionID == checkpoint.SessionID && wire.ParentThreadID == nil && (wire.summary().History == LegacyHistory || checkpoint.PaginatedHistory && wire.summary().History == PaginatedHistory) && (wire.Status.Type == ThreadIdle || wire.Status.Type == ThreadNotLoaded) && (wire.CanAcceptDirectInput == nil || *wire.CanAcceptDirectInput) && nativePathEqual(wire.Cwd, checkpoint.Effective.Cwd) && wire.ModelProvider == checkpoint.Effective.Provider && (len(wire.Extra) == 0 || string(wire.Extra) == "null")
 }
 
 func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID) error {
@@ -294,7 +294,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		}
 		return result, c.problem
 	}
-	thread, effective, err := decodeBoundThread(response.Result, settings, "", forkThread, c.version)
+	thread, effective, err := decodeBoundThreadProfile(response.Result, settings, "", forkThread, c.version, c.revertHistory)
 	result.Thread, result.Effective = thread, effective
 	if thread != nil {
 		c.thread = thread.ID

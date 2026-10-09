@@ -52,15 +52,17 @@ func (p ForkHistoryCheckpoint) matches(turns []json.RawMessage) bool {
 }
 
 type ContinuationCheckpoint struct {
-	ForkHistory *ForkHistoryCheckpoint         `json:",omitempty"`
-	Context     *ContinuationContextCheckpoint `json:",omitempty"`
-	ThreadID    domain.ID
-	SessionID   domain.ID
-	TurnID      domain.ID
-	Status      TurnStatus
-	Mode        domain.SessionMode
-	Inputs      []HistoricalInput
-	Effective   EffectiveSettings
+	PaginatedHistory bool                           `json:",omitempty"`
+	ContextRevision  uint64                         `json:",omitempty"`
+	Context          *ContinuationContextCheckpoint `json:",omitempty"`
+	ThreadID         domain.ID
+	SessionID        domain.ID
+	TurnID           domain.ID
+	Status           TurnStatus
+	Mode             domain.SessionMode
+	Inputs           []HistoricalInput
+	Effective        EffectiveSettings
+	ForkHistory      *ForkHistoryCheckpoint `json:",omitempty"`
 }
 
 func continuationUncertain() *domain.Error {

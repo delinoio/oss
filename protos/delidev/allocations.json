@@ -10091,6 +10091,76 @@
       "member": "schedule_offline",
       "number": 12,
       "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_SESSION_REVERT_V1",
+      "number": 62
+    },
+    {
+      "issue": 2045,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1",
+      "number": 36
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionRequest",
+      "member": "message_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionRequest",
+      "member": "before_turn_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionRequest",
+      "member": "expected_context_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2045,
+      "kind": "message",
+      "declaration": "RevertSessionResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -10217,6 +10287,15 @@
       "method": "GetSidechatQuestionRetry",
       "input": "GetSidechatQuestionRetryRequest",
       "output": "GetSidechatQuestionRetryResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2045,
+      "service": "SessionService",
+      "method": "RevertSession",
+      "input": "RevertSessionRequest",
+      "output": "RevertSessionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

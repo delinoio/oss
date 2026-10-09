@@ -411,3 +411,49 @@ client decoding preserves exact decimal strings above JavaScript's safe integer
 range, source/status enums and original provenance; old absent-field replies
 remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
+
+## Conversation Revert and edit — issue #2045
+
+Revert is a separate owner/client operation under System 62 and Worker 36. Its
+closed version-4 context action shares the existing durable context-job storage,
+workspace lease, account lease and independent cleanup fences. It is not a
+compaction, conversation input, rollback or filesystem rewind. Other context-job
+versions retain their original rules. No migration is required.
+
+Acceptance freezes the original root session, current context revision, exact
+complete user message, accepted original input and native turn, completed source
+assignment/account/Worker and original configuration. Refuse inherited turns,
+removed context targets, active input/Steer, unsettled responses/tools/subagents,
+queued inputs, pending Fork ownership or missing cleanup. Freeze one actor-bound
+mutation receipt. A replay cannot change its target, prompt or generation.
+
+The original resolved native process resumes the same private history with its
+original settings. The closed 0.162.0 response profile uses `thread/revert` with
+`beforeTurnId`, excluding that turn and later turns. `thread/rollback` is absent.
+Persist the exact intent and complete expected retained prefix before sending
+once. Require original non-ephemeral idle root metadata, required nullable
+backwards cursors, descending full-item pagination from the returned anchor, and
+an independent current ascending hydration. Both must equal the frozen prefix,
+including settled command/file changes. Bound cursors, distinct turns/items,
+128 turns and 4 MiB; empty history is valid only under the explicit Revert proof.
+Unknown, partial or changed evidence retains quarantine. Allocation and version
+metadata alone do not establish actual native support.
+
+A Revert checkpoint binds its exact context revision and independent native
+rollout/history proof. A replacement verifies this proof before accepting a new
+input, including reverting before the first turn. Previous execution outcomes,
+messages, usage, independent Forks and Sidechat snapshots are immutable. Only
+subsequent new executions/messages/response usage use the advanced context
+revision. A new Fork or compaction requires a completed execution in that current
+context; a historical removed turn is not a fresh source boundary.
+
+Uncertain acknowledgment blocks new input. Explicit original execution recovery
+may observe only the exact original Revert intent, original claim/journal,
+registration/send claims, joined original process/workspace cleanup, and proved
+protected-account Finish/no-live-lease state. A private cleanup receipt cannot
+replace those independent checks. Recovery resumes an observation process with
+no execution grant or materialized credentials, compares the entire retained
+prefix, joins that observer and publishes only the original action checkpoint.
+It never sends Revert again, changes targets or retries native input. Missing
+intent, mismatched history, changed ownership or cleanup uncertainty remains
+quarantined. Ordinary context jobs keep their existing recovery restrictions.

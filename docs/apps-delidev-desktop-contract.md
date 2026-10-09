@@ -3376,3 +3376,24 @@ Present original native `view_image` observations in the existing collapsed tool
 Notifications Settings renders saved, read-only choices under Requests, Execution, Connections and Operations. The twelve controls follow the approved 1,040-pixel body, 24-pixel group spacing, 16-pixel rows and 40-pixel actions. Edit retains the existing 720-pixel explicit Save/Cancel dialog, revision conflict and exact uncertain retry behavior, visit disposal and focus handoffs. Small screens stack through the shared 600-pixel breakpoint. EN/KO labels and Settings search targets cover each choice. Account quota recovery is a separate Managed per account row with an AI Subscription action. Missing granular support shows an explicit compatibility state.
 
 Follow the situation notification source, cache, deduplication and joined observer boundaries in `cmds-delidev-inbox-contract.md` and `cmds-delidev-storage-contract.md`. Native copy is fixed and localized with opaque activation targets. Operational activation freshly resolves original resources, and retained Schedule occurrence details are read-only. Connection events use the closed Connection & diagnostics destination. Permission remains explicit; notification observers never request it automatically. Automated fixtures/builds and native OS/account/platform acceptance remain separate.
+
+## Conversation Revert and edit — issue #2045
+
+Show one **Revert and edit** action on eligible original complete user turns.
+Require server and original Runner capability plus a settled original root,
+current target membership and cleanup. The confirmation explains exclusion of
+this and later turns from working context, unchanged files, preserved prior
+history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
+Preserve the exact source revision, context revision and retained mutation
+request; stale sources and uncertain outcomes cannot submit new input.
+
+Verified completion restores the original prompt text as an unsent draft and
+focuses the active composer. Preserve a draft edited during the operation or
+while the view was inactive; offer explicit restoration of the retained prompt
+instead of overwriting it. Reopening the conversation can restore that same
+verified prompt without a new native mutation. Original image/skill metadata
+stays in historical input records; fresh selection/staging owns later input.
+Never reuse accepted attachment claims, automatically submit text, reset files
+or change historical execution attribution. Earlier-context rows remain visible
+with a context cue. Dialog focus/keyboard ownership, hidden-pane guards, bounded
+prompt wrapping and 200% reflow retain their normal desktop contracts.

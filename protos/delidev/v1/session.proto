@@ -19,6 +19,7 @@ service SessionService {
   rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
   rpc GetSessionDeletion(GetSessionDeletionRequest) returns (GetSessionDeletionResponse);
   rpc CompactSession(CompactSessionRequest) returns (CompactSessionResponse);
+  rpc RevertSession(RevertSessionRequest) returns (RevertSessionResponse);
   rpc GetSessionContext(GetSessionContextRequest) returns (GetSessionContextResponse);
   rpc LinkSessionPullRequest(LinkSessionPullRequestRequest) returns (LinkSessionPullRequestResponse);
   rpc UnlinkSessionPullRequest(UnlinkSessionPullRequestRequest) returns (UnlinkSessionPullRequestResponse);
@@ -544,4 +545,17 @@ message GetSidechatQuestionRetryRequest {
 }
 message GetSidechatQuestionRetryResponse {
   bytes document_json = 1;
+}
+
+// Changes original native context only; the retained prompt remains unsent.
+message RevertSessionRequest {
+  Mutation mutation = 1;
+  string message_id = 2;
+  string before_turn_id = 3;
+  uint64 expected_context_revision = 4;
+}
+message RevertSessionResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
 }

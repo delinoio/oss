@@ -1020,3 +1020,15 @@ Issue #2061 owns System `SIDECHAT_QUESTION_RETRY_V1 = 57`, Worker `SIDECHAT_QUES
 
 ## Situation notifications (#2055)
 System 58 advertises complete granular per-client preferences and typed operational Inbox/candidate projection. Closed wire additions are recorded in `protos/delidev/allocations.json`: separate question/approval and operational kinds, complete twelve-value situation preferences, opt-in preference initialization, opaque machine/occurrence references, and an exclusive optional-bool changes shape with an original expected revision for exact partial CLI retries. Existing combined booleans and omission bytes preserve legacy receipt compatibility. A granular generation rejects destructive legacy writes. No Worker capability, RPC or database migration is allocated. Follow the Inbox and storage contracts for initialization/checkpoint and claim authority; declarations alone grant no native acceptance.
+
+## Conversation Revert allocation — issue #2045
+
+The owning complete feature records System `CODEX_SESSION_REVERT_V1 = 62`,
+Worker `CODEX_SESSION_REVERT_V1 = 36`, the complete `SessionService.RevertSession`
+RPC and its request/response declarations in `protos/delidev/allocations.json`.
+Request fields freeze mutation 1, message_id 2, before_turn_id 3 and
+expected_context_revision 4. Response fields retain job 1, request_id 2 and
+replayed 3. Preserve all existing numbers and regenerate bindings. Reuse the
+closed context-job version 4 and exact observation-only recovery version 2; no
+new job kind or database migration is allocated. Capabilities grant only the
+implemented product operation, never native/account/platform acceptance.

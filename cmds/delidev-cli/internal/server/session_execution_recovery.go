@@ -38,6 +38,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 			return nil, err
 		}
 		if sr.Revision != identity.Revision || session.InitialExecution == nil || session.ExecutionSelection().ID != execution || (session.Recovery != domain.NeedsRecovery && session.Recovery != domain.Reconciling) || session.Archive == domain.Archived {
+			s.logger.WarnContext(ctx, "session_execution_recovery_rejected", "session_id", sr.ID, "phase", "session-boundary", "revision_matches", sr.Revision == identity.Revision, "has_initial_execution", session.InitialExecution != nil, "execution_matches", session.ExecutionSelection().ID == execution, "recovery", session.Recovery, "archive", session.Archive)
 			return nil, domain.ExecutionRecoveryUncertain()
 		}
 		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
@@ -56,7 +57,11 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 			if err != nil {
 				return nil, err
 			}
-			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != original.ID || (session.Execution != nil && job.ParentID != session.Execution.JobID) {
+			expectedParent := original.ID
+			if session.CompactionJobID != "" {
+				expectedParent = session.CompactionJobID
+			}
+			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != expectedParent || (session.CompactionJobID == "" && session.Execution != nil && job.ParentID != session.Execution.JobID) {
 				return nil, domain.ExecutionRecoveryUncertain()
 			}
 			if job.State == domain.JobQueued || job.State == domain.JobClaimed {
@@ -74,11 +79,13 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 		}
 		recoveryID := domain.NewID()
 		if _, err := tx.PutJob(recoveryID, 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.RecoverExecutionJob, State: domain.JobQueued, MachineID: session.MachineID, ParentID: input.JobID, Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
+			s.logger.WarnContext(ctx, "recovery_job_write_failed", "error", err)
 			return nil, err
 		}
 		session.ExecutionRecoveryJobID = recoveryID
 		session.Recovery, session.Dispatch, session.NextExecutionIntent = domain.Reconciling, domain.DispatchPaused, ""
 		if _, err := tx.Put(sr.Kind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+			s.logger.WarnContext(ctx, "recovery_session_write_failed", "error", err)
 			return nil, err
 		}
 		return sessionReceipt{SessionID: sr.ID}, nil
@@ -88,6 +95,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 	}
 	change, err := s.sessionResult(ctx, result)
 	if err != nil {
+		s.logger.WarnContext(ctx, "recovery_result_failed", "error", err)
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "session_execution_recovery_accepted", "session_id", meta.Id, "execution_id", execution, "replayed", result.Replayed, "correlation_id", correlation)
@@ -104,7 +112,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	// A separate manual action owns its checkpoint and workspace until cleanup
 	// is proved. Original conversation recovery cannot release that ownership.
 	if session.CompactionJobID != "" {
-		return result, domain.ExecutionRecoveryUncertain()
+		return revertRecoveryRequest(tx, serverID, sr, session)
 	}
 	if session.Execution == nil {
 		return prStartupRecoveryRequest(tx, serverID, sr, session)
@@ -177,7 +185,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 		history = input.Fork.RuntimeID
 	}
 	result = domain.ExecutionRecoveryRequest{ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer,
-		Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
+		ContextRevision: input.ContextRevision, Version: 1, ServerID: serverID, DeviceID: grant.DeviceID, InstanceID: claim.InstanceID, JobID: original.ID, SessionID: sr.ID, MachineID: session.MachineID,
 		AssignmentRevision: assigned.Revision, AssignmentDigest: continuationDigest(assigned.Data), AssignmentInputDigest: continuationDigest(claim.Input), ConfigurationDigest: input.ConfigurationDigest,
 		AccountID: input.AccountID, ConnectionID: input.ConnectionID, HistoryExecutionID: history, InputMode: input.Input.Mode, PromptDigest: domain.BindSessionInput(input.InputID, input.Input).PromptDigest, AcceptedInputs: progress.AcceptedInputs, Preparation: input.Preparation, Manifest: input.Manifest,
 		Completion: domain.ExecutionCompletion{Version: 1, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: domain.NativeIdentity(progress.NativeThreadID), NativeTurnID: domain.NativeIdentity(progress.NativeTurnID), LastSequence: progress.LastSequence, Outcome: progress.Outcome, CleanupVerified: true},
@@ -284,6 +292,9 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 		var expected domain.ExecutionRecoveryRequest
 		if domain.Decode(job.Input, &expected) == nil && expected.Startup != nil {
 			return finishPRStartupRecovery(tx, record, job)
+		}
+		if expected.Revert != nil {
+			return finishRevertRecovery(tx, record, job, expected)
 		}
 		var evidence domain.ExecutionRecoveryEvidence
 		if err := domain.Decode(job.Output, &evidence); err != nil {

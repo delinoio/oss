@@ -283,3 +283,5 @@
 .session-information pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .session-information button:not(.disclosure-header) { min-height: 36px; font-size: 13px; }
 .session-information .session-context > header { padding: 0; border: 0; }
+
+.revert-prompt { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40dvh; overflow: auto; min-width: 0; }

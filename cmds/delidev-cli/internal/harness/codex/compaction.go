@@ -43,6 +43,7 @@ type CompactionRecord struct {
 // digests remain attached to their original source turn across repeated actions.
 // Paths and native bytes must never enter RPC, product logs or public results.
 type CompactedCheckpoint struct {
+	Revert        *RevertedContext       `json:"revert,omitempty"`
 	Version       uint32                 `json:"version"`
 	Source        ContinuationCheckpoint `json:"source"`
 	Records       []CompactionRecord     `json:"records"`
@@ -270,7 +271,7 @@ func (c *Client) RetainCompactedCheckpoint(ctx context.Context) (diagnosticResul
 // may append native settings metadata; afterward, independent complete history
 // verification proves context without pretending that metadata is a new input.
 func VerifyCompactionRollout(ctx context.Context, home string, p CompactedCheckpoint) error {
-	if p.Version != 1 || p.Source.validate(ContinueAfterSuccess) != nil || len(p.Records) == 0 || len(p.Records) > maxForkTurns {
+	if !(p.Version == 1 && p.Revert == nil || p.Version == 2 && p.Revert != nil && p.Revert.validate() == nil && len(p.Records) == 0) || (p.Revert != nil && p.Source.validate(ResumeAfterTerminal) != nil || p.Revert == nil && p.Source.validate(ContinueAfterSuccess) != nil) || p.Revert == nil && len(p.Records) == 0 || len(p.Records) > maxForkTurns {
 		return compactionUncertain()
 	}
 	digest, err := forkRolloutDigest(ctx, home, p.RolloutPath)
@@ -281,6 +282,9 @@ func VerifyCompactionRollout(ctx context.Context, home string, p CompactedCheckp
 }
 
 func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain.ID, p CompactedCheckpoint) (diagnosticResult Turn, returned error) {
+	if p.Revert != nil {
+		return c.verifyRevertedContinuation(ctx, request, p)
+	}
 	defer c.recordFailure(ctx, domain.CodexHistory, &returned)
 	if request.Validate() != nil || p.Source.validate(ContinueAfterSuccess) != nil {
 		return Turn{}, compactionUncertain()
@@ -382,8 +386,10 @@ func (c *Client) verifyCompactedHistoryLocked(source ContinuationCheckpoint, p C
 }
 
 func (c *Client) compactionTurnsLocked(ctx context.Context) ([]json.RawMessage, error) {
-	var turns []json.RawMessage
-	var cursor *string
+	return c.contextTurnsLocked(ctx, "asc", nil, false)
+}
+func (c *Client) contextTurnsLocked(ctx context.Context, direction string, cursor *string, empty bool) ([]json.RawMessage, error) {
+	turns := []json.RawMessage{}
 	seen := map[string]bool{}
 	size := 0
 	for {
@@ -393,7 +399,7 @@ func (c *Client) compactionTurnsLocked(ctx context.Context) ([]json.RawMessage, 
 			Direction string    `json:"sortDirection"`
 			View      string    `json:"itemsView"`
 			Cursor    *string   `json:"cursor,omitempty"`
-		}{c.thread, 50, "asc", "full", cursor})
+		}{c.thread, 50, direction, "full", cursor})
 		var page struct {
 			Data []json.RawMessage `json:"data"`
 			Next *string           `json:"nextCursor"`
@@ -451,8 +457,11 @@ func (c *Client) compactionTurnsLocked(ctx context.Context) ([]json.RawMessage, 
 		seen["cursor:"+*page.Next] = true
 		cursor = page.Next
 	}
-	if len(turns) == 0 {
+	if len(turns) == 0 && !empty {
 		return nil, compactionUncertain()
+	}
+	if direction == "desc" {
+		slices.Reverse(turns)
 	}
 	return turns, nil
 }

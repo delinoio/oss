@@ -35,6 +35,7 @@ const (
 // Scope is an immutable server-resolved dispatch binding, never client input.
 // Credential generation and revocation belong to the execution/account owner.
 type Scope struct {
+	ContextRevision      uint64
 	CompactionSourceTurn domain.NativeIdentity
 	OpenCodeSession      string
 	SubscriptionService  domain.SubscriptionService
