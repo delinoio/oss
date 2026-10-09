@@ -28,7 +28,7 @@ func codexTerminalStatusFixture(t *testing.T) (*CodexEventPublisher, *openCodeBi
 }
 
 func TestCodexPassiveMetadataDoesNotPublishOrCompleteInput(t *testing.T) {
-	for _, kind := range []codex.MetadataKind{codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved} {
+	for _, kind := range []codex.MetadataKind{codex.AutoReviewReplayChecked, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved} {
 		for _, foreign := range []bool{false, true} {
 			c, rpc := codexTerminalStatusFixture(t)
 			before := len(rpc.events)
