@@ -31,3 +31,8 @@ for (const lock of ["inactive", "pending", "fieldset", "hidden", "disposed"]) it
  if (lock === "inactive") result.rerender(view(false, false)); else if (lock === "pending") result.rerender(view(true, true)); else if (lock === "disposed") result.unmount(); else if (lock === "fieldset") (result.container.querySelector("fieldset") as HTMLFieldSetElement).disabled = true; else result.container.querySelector("fieldset")!.hidden = true;
  fireEvent.click(option); expect(change).not.toHaveBeenCalled();
 });
+
+it("shows the native default for an omitted legacy permission without creating a value", () => {
+ const change = vi.fn(); render(<AgentPermissions harness={Harness.Codex} options={{ future: "keep" }} change={change} active disabled={false}/>);
+ const trigger = screen.getByRole("combobox"); expect(trigger.textContent).toBe("default"); expect(trigger.dataset.value).toBe(""); expect(change).not.toHaveBeenCalled();
+});

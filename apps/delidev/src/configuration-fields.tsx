@@ -91,7 +91,7 @@ function PermissionChoice({ label, value, choices, change, active, disabled }: {
   const selected = text(value);
   const retainedLabel = copy("configuration-fields.unsupportedPermissionSelection", { value: selected });
   const options = [...(selected && !choices.includes(selected) ? [{ id: selected, label: retainedLabel }] : []), ...choices.map(id => ({ id, label: id }))];
-  return <div ref={owner}><ScrollPicker label={label} value={selected} selectedLabel={selected} options={options} query={localPermissionChoices} active={active} disabled={disabled} change={value => {
+  return <div ref={owner}><ScrollPicker label={label} value={selected} selectedLabel={selected || choices[0]} options={options} query={localPermissionChoices} active={active} disabled={disabled} change={value => {
     const current = admission.current, trigger = owner.current?.querySelector("button[role=combobox]");
     // A retained popup callback must also honor a native ancestor fieldset lock
     // before MutationObserver positioning gets a chance to retire the popup.
