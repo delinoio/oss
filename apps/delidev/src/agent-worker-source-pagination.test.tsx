@@ -11,9 +11,9 @@ import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 
 function fixture() {
-  const resource = (kind: EntityKind, data: Record<string, unknown>) => create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(data) });
-  const provider = resource(EntityKind.PROVIDER, { name: "Fixture API", protocol: "openai-responses", endpoint: "https://api.example.test/v1", enabled: true, authentication: "keyless", discovery: true });
-  const account = resource(EntityKind.ACCOUNT, { alias: "Fixture account", type: "api", provider_id: provider.id, health: "ready", enabled: true, connection: { authentication: "keyless" } });
+  const resource = (kind: EntityKind, data: Record<string, unknown>) => create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: [EntityKind.PROVIDER, EntityKind.ACCOUNT].includes(kind) ? 3 : 1, documentJson: encode(data) });
+  const provider = resource(EntityKind.PROVIDER, { name: "Fixture API", api_formats: [{ protocol: "openai-responses", endpoint: "https://api.example.test/v1", authentication: "keyless" }], enabled: true, discovery: true });
+  const account = resource(EntityKind.ACCOUNT, { alias: "Fixture account", type: "api", provider_id: provider.id, api_protocol: "openai-responses", health: "ready", enabled: true, connection: { authentication: "keyless" } });
   const models = Array.from({ length: 5 }, (_, index) => resource(EntityKind.MODEL, { name: `Fixture model ${index}`, native_id: `fixture-${index}`, provider_id: provider.id, hidden: false, harnesses: [] }));
   const search = vi.fn(async (_request:unknown) => ({accountId:account.id,accountRevision:account.revision,providerId:provider.id,providerRevision:provider.revision,connectionId:"",models:models.map((_row,index)=>({nativeId:`fixture-${index}`,displayName:`Fixture model ${index}`,inputModalities:["text"]}))}));
   const get = vi.fn(async (request: { id: string }) => ({ resource: [provider, account, ...models].find(row => row.id === request.id) }));
@@ -44,6 +44,8 @@ async function modelStep(value: ReturnType<typeof fixture>) {
   await waitFor(() => expect(screen.getByRole("button", { name: "Next" }).matches(":disabled")).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   const input = await screen.findByRole("combobox", { name: "Model for Fixture API" });
+  expect(value.search).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh models from endpoint" }));
   fireEvent.focus(input); await screen.findByRole("option", { name: /Fixture model 0/ });
   return input as HTMLInputElement;
 }
