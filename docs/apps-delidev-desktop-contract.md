@@ -401,6 +401,26 @@ order, unsupported retained values and harness-specific guidance/clearing.
 Propagate visible owner activity and mutation admission locks, and reject late
 selection after native fieldset disabling, hiding or disposal.
 
+Agent Worker ResourceChoice selectors retain only the optional known top-level
+Harness enum alongside their existing ID/revision/name/health projections. All
+shared Agent pickers show a decorative 16px local mark with an 8px text gap in
+options and selected triggers; other resource pickers retain their presentation.
+The selected decoration comes only from its existing exact accepted Resource or
+validated resolvedChoice, including off-page selections, never another row's
+metadata. Placeholders, unknown/missing harnesses and unavailable/unsupported
+selected resources keep an aligned empty 16px slot. Unsupported inventory pages
+retain their original rejection and read recovery. Optional ScrollPicker
+presentation slots preserve string labels, IDs, keyboard/focus behavior and
+selection callbacks. Marks are hidden from accessibility and grant no execution,
+account or routing eligibility. The narrow shared harness renderer/stylesheet
+reuses unchanged local licensed assets and resolved light/dark/System variants;
+Settings retains its existing 32px gutter and 8px gap, and wizard/history sizes
+stay unchanged. Asset failures leave readable names, reserved spacing and
+controls without retrying business operations or loading external assets.
+Automated built-fixture checks decode every mark and compare original asset
+bytes in both languages, themes and compact/effective-200% layouts. These checks
+remain separate from installed-native or account acceptance.
+
 Shared ScrollPicker choices use a native manual popover in the original DOM
 owner. Only the label and trigger participate in ordinary form layout. Position
 the mounted listbox against its trigger within the visible viewport and original

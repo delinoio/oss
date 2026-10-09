@@ -5,3 +5,9 @@
 .scroll-picker-popup > button { display: block; width: 100%; min-height: 40px; border: 0; border-radius: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .scroll-picker-popup > button[data-highlighted="true"], .scroll-picker-popup > button[aria-selected="true"] { background: var(--selected-background); color: var(--selected-text); }
 .scroll-picker-popup .sidebar-continuation { padding: 8px; }
+
+/* Optional decorative slots preserve textual labels and original targets. */
+.scroll-picker-content { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.scroll-picker-content > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.scroll-picker-decoration { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
+.scroll-picker-decoration .worker-harness-mark { width: 16px; height: 16px; flex-basis: 16px; margin: 0; }

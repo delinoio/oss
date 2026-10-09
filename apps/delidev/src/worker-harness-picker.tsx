@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useId } from "react";
+import { HarnessMark } from "./harness-mark";
 import { Harness } from "./configuration-fields";
 import { copy, useLocale } from "./localization";
 
@@ -30,7 +31,7 @@ export function WorkerHarnessPicker({ value, disabled, change, confirm }: { valu
           event.preventDefault(); change(harnesses[next]!);
           event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-harness="${harnesses[next]}"]`)?.focus();
         }}>
-          <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" />
+          <HarnessMark harness={harness} />
           <span className="worker-harness-indicator" aria-hidden="true">{selected ? <svg viewBox="0 0 16 16" width="16" height="16"><path d="m3.5 8 3 3 6-6" /></svg> : null}</span>
           <strong className="worker-harness-name">{workerHarnessNames[harness]}</strong>
           <small id={`${id}-${harness}-origin`}>{harness === Harness.OpenCode ? copy("agent-worker-wizard.openSource") : origins[harness]}</small>

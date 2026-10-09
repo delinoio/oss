@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.worker-harness-mark { display: block; flex: 0 0 48px; width: 48px; height: 48px; margin-bottom: 16px; background-position: center; background-size: contain; background-repeat: no-repeat; }
+.worker-harness-mark-codex { background-image: url("../public/harness-marks/codex.webp"); }
+.worker-harness-mark-claude-code { background-image: url("../public/harness-marks/claude-code.png"); }
+.worker-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-light.svg"); }
+.worker-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-light.svg"); }
+:root[data-theme="dark"] .worker-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+:root[data-theme="dark"] .worker-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
+/* Match the semantic theme's OS fallback before native appearance is available.
+   Once data-theme exists, only the resolved device preference selects a variant. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .worker-harness-mark-opencode { background-image: url("../public/harness-marks/opencode-dark.svg"); }
+  :root:not([data-theme]) .worker-harness-mark-grok-build { background-image: url("../public/harness-marks/grok-dark.svg"); }
+}

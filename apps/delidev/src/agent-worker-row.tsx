@@ -8,7 +8,7 @@ import { copy, LocalizedText, useLocale } from "./localization";
 import { Harness } from "./configuration-fields";
 import { workerHarnessNames } from "./worker-harness-picker";
 import { ModelSummaryState, useAgentModels } from "./agent-worker-models";
-import "./agent-worker-wizard.css";
+import { HarnessMark, knownHarness as projectedHarness } from "./harness-mark";
 import "./agent-worker-row.css";
 
 export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
@@ -40,7 +40,7 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
   }
   return <article className="settings-agent-row">
     <div className="settings-agent-details">
-      <div className="settings-agent-mark" aria-hidden="true">{supported && knownHarness ? <span className={`worker-harness-mark worker-harness-mark-${harness}`} aria-hidden="true" /> : null}</div>
+      <div className="settings-agent-mark" aria-hidden="true"><HarnessMark harness={supported ? projectedHarness(data.harness) : undefined} /></div>
       <div className="settings-agent-text">
       <div className="settings-agent-heading"><h3>{name}</h3>{supported && harness ? <span>{knownHarness ? workerHarnessNames[harness as Harness] : harness}</span> : null}</div>
       {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
