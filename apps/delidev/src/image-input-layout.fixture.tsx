@@ -26,11 +26,12 @@ let revision = 1;
 const bridge = { read: async () => ({ revision, scope, pair: { agent_id: agent.id, machine_id: machine.id }, problem: null }), update: async () => ({ revision: ++revision, scope, pair: { agent_id: agent.id, machine_id: machine.id }, problem: null }) };
 const uploads = new Map<string, AttachmentUpload>(), begins = new Map<string, string>(), bytes = new Map<string, Uint8Array>();
 const events: object[] = [];
+const reads: object[] = [];
 const fixtureMarker = "__imageInputFixture";
-Object.assign(window, { [fixtureMarker]: true, imageFixture: { events, bytes, appearance: async (language: string, theme: string) => { document.documentElement.dataset.theme = theme; await i18n.changeLanguage(language); } } });
+Object.assign(window, { [fixtureMarker]: true, imageFixture: { events, reads, bytes, appearance: async (language: string, theme: string) => { document.documentElement.dataset.theme = theme; await i18n.changeLanguage(language); } } });
 const transport = createRouterTransport(router => {
  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, SystemCapability.IMAGE_INPUTS_V1] }) });
- router.service(ResourceService, { getResource: request => ({ resource: [agent,machine].find(value => value.id === request.id && value.kind === request.kind) }), listResources: request => ({ resources: request.filter?.kind === EntityKind.AGENT ? [agent] : request.filter?.kind === EntityKind.MACHINE ? [machine] : [] }) });
+ router.service(ResourceService, { getResource: request => { reads.push({kind:"get",id:request.id}); return { resource: [agent,machine].find(value => value.id === request.id && value.kind === request.kind) }; }, listResources: request => { reads.push({kind:"list",kindFilter:request.filter?.kind}); return { resources: request.filter?.kind === EntityKind.AGENT ? [agent] : request.filter?.kind === EntityKind.MACHINE ? [machine] : [] }; } });
  router.service(AttachmentService, {
   beginUpload: request => {
    const prior = begins.get(request.requestId); if (prior) return { upload: uploads.get(prior) };
@@ -56,6 +57,6 @@ const transport = createRouterTransport(router => {
 });
 function Fixture() {
  const [kind,setKind]=useState(NewSessionKind.Session),[visible,setVisible]=useState(true),[accepted,setAccepted]=useState(0);
- return <main style={{maxWidth:900,margin:"auto",padding:8,minWidth:0}}><button onClick={()=>setKind(value=>value===NewSessionKind.Session?NewSessionKind.GeneralChat:NewSessionKind.Session)}>Fixture switch composer</button><button onClick={()=>setVisible(value=>!value)}>Fixture navigate</button><output data-accepted>{accepted}</output>{visible ? <NewSession key={kind} kind={kind} active ownsActivation activation={1} back={()=>{}} openSettings={()=>{}} open={()=>{}} created={()=>setAccepted(value=>value+1)} preferenceBridge={bridge} preferenceScope={scope} /> : <p>Fixture other view</p>}</main>;
+ return <main style={{maxWidth:900,margin:"auto",padding:8,minWidth:0}}><button onClick={()=>setKind(value=>value===NewSessionKind.Session?NewSessionKind.GeneralChat:NewSessionKind.Session)}>Fixture switch composer</button><button onClick={()=>setVisible(value=>!value)}>Fixture navigate</button><output data-accepted>{accepted}</output><NewSession key={kind} kind={kind} active={visible} ownsActivation activation={1} back={()=>{}} openSettings={()=>{}} open={()=>{}} created={()=>setAccepted(value=>value+1)} preferenceBridge={bridge} preferenceScope={scope} />{!visible ? <p>Fixture other view</p> : null}</main>;
 }
 createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><MutationIntents><ImageDraftProvider><Fixture /></ImageDraftProvider></MutationIntents></QueryClientProvider></TransportProvider>);

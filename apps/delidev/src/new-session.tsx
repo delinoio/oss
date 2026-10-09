@@ -302,7 +302,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               autoComplete="off"
             />
             {skills.list}{skills.warning}{promptHistory.feedback}
-            <ImageAttachmentInput draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} creationToolbar={attach => <div className="new-session-toolbar">
+            <ImageAttachmentInput active={active} draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} creationToolbar={attach => <div className="new-session-toolbar">
               <div className="new-session-selectors">
                 {attach}
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />

@@ -23,5 +23,11 @@
   "image-input.steerUnavailable": "Steer is unavailable for image inputs. Queue delivery keeps the original images.",
   "image-input.textLimit": "The message exceeds 256 KiB. Keep the original draft and shorten the text.",
   "image-input.retryRead": "Retry loading image",
-  "image-input.helpLabel": "Attachment help"
+  "image-input.helpLabel": "Attachment help",
+  "image-input.creation-heading": "Image attachments",
+  "image-input.creation-formats": "Still PNG, JPEG or WebP only.",
+  "image-input.creation-limits": "Up to 8 images per message, 10 MiB each, 40 MiB total.",
+  "image-input.creation-pixels": "Up to 40 million pixels per image.",
+  "image-input.creation-requires": "Requires a Codex Agent Worker with an image-capable model and a Runner Device that supports image inputs.",
+  "image-input.creation-unsupported": "Claude Code, OpenCode and Grok Build image inputs are not supported in DeliDev."
 }

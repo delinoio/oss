@@ -24,3 +24,5 @@
 .image-draft-viewport { display: block; min-width: 0; max-width: 100%; }
 :root[data-image-size="original"] .image-draft-viewport { max-height: 240px; overflow: auto; }
 :root[data-image-size="original"] .image-draft-viewport img { width: auto; height: auto; max-width: none; max-height: none; }
+
+.composer-attachment-tooltip p { margin: 8px 0 0; }

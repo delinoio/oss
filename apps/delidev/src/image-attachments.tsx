@@ -19,7 +19,7 @@ export function imageEntryHandlers(draft: ReturnType<typeof useImageDraft>, disa
   };
 }
 // The portal escapes the composer's bounded scrollport without moving its contents.
-function AttachmentGuidance({ children, id }: { children: ReactNode; id: string }) {
+function AttachmentGuidance({ children, id, creation = false }: { children: ReactNode | ((shown: boolean) => ReactNode); id: string; creation?: boolean }) {
   const trigger = useRef<HTMLSpanElement>(null), tooltip = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [hover, setHover] = useState(false), [focus, setFocus] = useState(false), [dismissed, setDismissed] = useState(false);
@@ -36,10 +36,10 @@ function AttachmentGuidance({ children, id }: { children: ReactNode; id: string 
       const rect = trigger.current?.getBoundingClientRect(); if (!rect) return;
       const zoom = Number.parseFloat(getComputedStyle(document.body).zoom) || 1;
       const width = Math.min(320 * zoom, Math.max(0, window.innerWidth - 16));
-      const height = tooltip.current?.getBoundingClientRect().height ?? 64;
+      const height = creation && tooltip.current ? (tooltip.current.scrollHeight + 2) * zoom : tooltip.current?.getBoundingClientRect().height ?? 64;
       const above = Math.max(0, rect.top - 16);
       const below = Math.max(0, window.innerHeight - rect.bottom - 16);
-      const useAbove = above >= Math.min(height, 100) || above >= below;
+      const useAbove = above >= (creation ? height : Math.min(height, 100)) || above >= below;
       const maxHeight = useAbove ? above : below;
       setPosition({ width: width / zoom, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) / zoom, top: (useAbove ? Math.max(8, rect.top - 8 - Math.min(height, maxHeight)) : rect.bottom + 8) / zoom, maxHeight: maxHeight / zoom });
     };
@@ -47,7 +47,7 @@ function AttachmentGuidance({ children, id }: { children: ReactNode; id: string 
     if (tooltip.current) observer?.observe(tooltip.current);
     place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
     return () => { observer?.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
-  }, [open]);
+  }, [open, creation]);
   useEffect(() => {
     if (!open) return;
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(true); } };
@@ -55,10 +55,10 @@ function AttachmentGuidance({ children, id }: { children: ReactNode; id: string 
     return () => document.removeEventListener("keydown", escape, true);
   }, [open]);
   return <span ref={trigger} className="composer-attach-trigger" onPointerEnter={enterTrigger} onPointerLeave={leave} onFocus={() => { if (!focus) setDismissed(false); setFocus(true); }} onBlur={() => setFocus(false)}>
-    {children}
-    {/* Keep the description associated even when its visual presentation is dismissed. */}
-    <span id={id} className="attachment-description">{copy("image-input.help")}</span>
-    {open ? createPortal(<div ref={tooltip} className="composer-attachment-tooltip" role="tooltip" onPointerEnter={enter} onPointerLeave={leave} style={position}>{copy("image-input.help")}</div>, document.body) : null}
+    {typeof children === "function" ? children(open) : children}
+    {/* Existing-session help retains its persistent accessible description. */}
+    {!creation ? <span id={id} className="attachment-description">{copy("image-input.help")}</span> : null}
+    {open ? createPortal(<div ref={tooltip} id={creation ? id : undefined} className="composer-attachment-tooltip" role="tooltip" onPointerEnter={enter} onPointerLeave={leave} style={position}>{creation ? <><strong>{copy("image-input.creation-heading")}</strong>{(["formats", "limits", "pixels", "requires", "unsupported"] as const).map(key => <p key={key}>{copy(`image-input.creation-${key}`)}</p>)}</> : copy("image-input.help")}</div>, document.body) : null}
   </span>;
 }
 function DraftImagePresentation({url,number}:{url:string;number:number}) {
@@ -69,13 +69,14 @@ export function ImageAttachmentInput({ draft, disabled, available, routeReady, r
   useLocale();
   const input = useRef<HTMLInputElement>(null);
   const guidanceId = useId();
-  const attach = <button className={creationToolbar ? "new-session-attach" : compact ? "composer-attach" : undefined} type="button" aria-label={copy("image-input.attach")} title={compact ? undefined : copy("image-input.attach")} aria-describedby={compact ? guidanceId : undefined} disabled={disabled || draft.busy || !available} onClick={() => input.current?.click()}>{compact || creationToolbar ? <span aria-hidden="true">+</span> : copy("image-input.attach")}</button>;
+  const attachment = (shown = false) => <button className={creationToolbar ? "new-session-attach" : compact ? "composer-attach" : undefined} type="button" aria-label={copy("image-input.attach")} title={compact || creationToolbar ? undefined : copy("image-input.attach")} aria-describedby={creationToolbar ? shown ? guidanceId : undefined : compact ? guidanceId : undefined} disabled={disabled || draft.busy || !available} onClick={() => input.current?.click()}>{compact || creationToolbar ? <span aria-hidden="true">+</span> : copy("image-input.attach")}</button>;
+  const attach = attachment();
   return <section className={compact ? "image-attachments image-attachments-compact" : "image-attachments"} aria-label={copy("image-input.heading")}>
     <input ref={input} className="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple tabIndex={-1} aria-label={copy("image-input.select")} disabled={disabled || draft.busy || !available} onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void draft.controller.add(files); }} />
     {!compact && !creationToolbar ? attach : null}
     {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><DraftImagePresentation url={image.preview} number={index+1}/><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
     {children}
-    {creationToolbar ? creationToolbar(attach) : compact ? <div className="composer-toolbar">{active ? <AttachmentGuidance id={guidanceId}>{attach}</AttachmentGuidance> : attach}{controls}</div> : <small>{copy("image-input.help")}</small>}
+    {creationToolbar ? creationToolbar(active ? <AttachmentGuidance creation id={guidanceId}>{attachment}</AttachmentGuidance> : attach) : compact ? <div className="composer-toolbar">{active ? <AttachmentGuidance id={guidanceId}>{attach}</AttachmentGuidance> : attach}{controls}</div> : <small>{copy("image-input.help")}</small>}
     {!available ? <p role="status">{copy("image-input.update")}</p> : draft.images.length && !routeReady ? <p role="status">{copy(routeLoading ? "image-input.checkingRoute" : "image-input.unsupported")}</p> : null}
     {draft.busy ? <p role="status">{copy("image-input.processing")}</p> : null}
     {draft.error ? <p role="alert">{copy(problemKeys[draft.error])}</p> : null}

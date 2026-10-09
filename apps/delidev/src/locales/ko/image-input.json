@@ -23,5 +23,11 @@
   "image-input.steerUnavailable": "이미지 입력에는 Steer를 사용할 수 없습니다. 대기열 전송은 원래 이미지를 유지합니다.",
   "image-input.textLimit": "메시지가 256 KiB를 초과합니다. 원래 초안을 유지하고 텍스트를 줄이세요.",
   "image-input.retryRead": "이미지 불러오기 재시도",
-  "image-input.helpLabel": "첨부 도움말"
+  "image-input.helpLabel": "첨부 도움말",
+  "image-input.creation-heading": "이미지 첨부",
+  "image-input.creation-formats": "정지 PNG, JPEG 또는 WebP만 지원합니다.",
+  "image-input.creation-limits": "메시지당 최대 8개, 이미지당 10 MiB, 총 40 MiB.",
+  "image-input.creation-pixels": "이미지당 최대 4천만 픽셀.",
+  "image-input.creation-requires": "이미지 입력을 지원하는 모델을 사용하는 Codex Agent Worker와 이미지 입력을 지원하는 Runner Device가 필요합니다.",
+  "image-input.creation-unsupported": "DeliDev에서는 Claude Code, OpenCode, Grok Build의 이미지 입력을 지원하지 않습니다."
 }

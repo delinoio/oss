@@ -3208,13 +3208,26 @@ rereads proof; pending/uncertain creation retains exact original retries.
 
 New session and New general chat place one 40px icon-only plus attachment button
 immediately before Agent Worker, aligned with selector inputs at 8px spacing.
-Keep its localized Attach images accessible name/tooltip, non-submit semantics,
+Keep its localized Attach images accessible name, non-submit semantics,
 original picker gates, semantic colors, 8px corners and focus treatment. Omit
 permanent image-format/limits guidance and do not add a creation attachment help
 button. Preserve route/processing status, validation errors, independent cleanup,
 ordered previews/removal and original file/paste/drop admission and byte limits.
 Agent Worker, Runs on, Plan Mode, Options and submission locks/retries retain
 their original behavior. Narrow/zoom layouts wrap without replacing draft owners.
+Creation attachment guidance (issue #2062) opens only on plus hover or focus.
+Use one noninteractive role=tooltip with aria-describedby while shown, replacing
+this surface's native title. Show the exact English/Korean creation catalog copy:
+still PNG/JPEG/WebP, eight images per message, 10 MiB each, 40 MiB combined,
+40 million pixels each, supported Codex Agent Worker/model/Runner requirements
+and unsupported Claude Code/OpenCode/Grok Build image inputs. Static requirements
+never claim selection eligibility or enable reads, probes, uploads or mutations.
+Preserve hover across the trigger/content gap and focus; Escape dismisses without
+moving focus until fresh hover/focus entry. Disposal closes guidance. A disabled
+plus has a noninteractive pointer wrapper with no added tab stop. Use semantic
+theme tokens, wrapped text and measured viewport collision handling above the
+trigger, flipping below when necessary without toolbar displacement.
+
 Existing-session compact attachment help/layout stays unchanged. No RPC, native
 behavior, capability, migration or logging of image/prompt content is added.
 
