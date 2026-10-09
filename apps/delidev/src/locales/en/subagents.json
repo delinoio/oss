@@ -31,5 +31,6 @@
   "subagents.refreshSubagents_1ffca1": "Refresh subagents",
   "subagents.firstChildPage_6cf629": "First child page",
   "subagents.nextChildPage_a95c32": "Next child page",
-  "subagents.extra.ca1844969742": "Unavailable"
+  "subagents.extra.ca1844969742": "Unavailable",
+  "subagents.checkingCapability": "Checking child observation availability…"
 }

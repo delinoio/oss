@@ -275,3 +275,13 @@
 .browser-pages { display:flex; min-width:0; overflow-x:auto; gap:4px; }
 .browser-pages > div { display:flex; flex:none; min-width:0; max-width:240px; }
 .browser-pages > div > button:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Info has one primary disclosure per domain; child owners stay mounted. */
+.session-information { font-size: 13px; }
+.session-information .session-status-values { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px 12px; margin: 12px 0; }
+.session-status-values dt { color: var(--muted); font-size: 12px; }
+.session-status-values dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.session-status-values dd p { margin: 6px 0 0; }
+.session-information pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.session-information button:not(.disclosure-header) { min-height: 36px; font-size: 13px; }
+.session-information .session-context > header { padding: 0; border: 0; }

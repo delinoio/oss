@@ -3,14 +3,21 @@ import { Disclosure, DisclosureSummary } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { createPortal } from "react-dom";
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource, type SessionChange } from "@delinoio/delidev-api-client";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { TrackedJob } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+
+import { sessionTitlePresentation } from "./session-title";
+
+function statusValue(value: unknown) {
+  if (value == null || value === "") return copy("session-tools.notReported");
+  return typeof value === "string" ? statusLabel(value) : copy("session-tools.unavailable");
+}
 
 enum RecoveryAction { Prepare = "prepare", InspectWorkspace = "inspect-workspace", CleanupWorkspace = "cleanup-workspace", Execution = "execution" }
 function RetainedJob({ id, title }: { id: string; title: string }) {
@@ -19,7 +26,7 @@ function RetainedJob({ id, title }: { id: string; title: string }) {
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id });
   return <section><h4>{title}</h4><Problem error={result.error} />{result.data?.resource ? <TrackedJob initial={result.data.resource} active={active} /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>;
 }
-export function SessionTools({ resource, changed, initiallyOpen = false, target, launcherTarget, openRecovery }: { resource: Resource; changed: (resource: Resource) => void; initiallyOpen?: boolean; target?: HTMLElement | null; launcherTarget?: HTMLElement | null; openRecovery?: (opener: HTMLButtonElement) => void }) {
+export function SessionTools({ resource, changed, initiallyOpen = false, children, target, launcherTarget, openRecovery }: { resource: Resource; changed: (resource: Resource) => void; initiallyOpen?: boolean; children?: ReactNode; target?: HTMLElement | null; launcherTarget?: HTMLElement | null; openRecovery?: (opener: HTMLButtonElement) => void }) {
   useLocale();
   const [host] = useState(() => globalThis.document.createElement("div"));
   useLayoutEffect(() => {
@@ -28,6 +35,7 @@ export function SessionTools({ resource, changed, initiallyOpen = false, target,
     return () => { host.remove(); };
   }, [host, target]);
   const data = document(resource), preparation = object(data.preparation), execution = object(data.execution);
+  const title = sessionTitlePresentation(data);
   const initial = object(data.initial_execution);
   const sidechat = Boolean(object(data.fork).sidechat_parent_snapshot);
   const executionId = text(execution.execution_id) || (data.execution == null && data.current_execution == null && data.workspace === "worktree" ? text(initial.id) : "");
@@ -50,7 +58,16 @@ export function SessionTools({ resource, changed, initiallyOpen = false, target,
     else void workspace.send({ mutation, cleanup: confirm.action === RecoveryAction.CleanupWorkspace });
   };
   const recoveryActions = <div className="actions">{!sidechat && data.archive === "active" && ["failed", "canceled"].includes(text(preparation.state)) && data.recovery === "none" ? <button disabled={blocked} onClick={event => { request(RecoveryAction.Prepare); openRecovery?.(event.currentTarget); }}>{copy("session-tools.prepareWorkspaceAgain_3a819b")}</button> : null}{!sidechat && data.archive !== "archived" && preparation.state === "uncertain" ? <><button disabled={blocked} onClick={event => { request(RecoveryAction.InspectWorkspace); openRecovery?.(event.currentTarget); }}>{copy("session-tools.inspectOriginalWorkspaceRecovery_b53ede")}</button><button disabled={blocked} onClick={event => { request(RecoveryAction.CleanupWorkspace); openRecovery?.(event.currentTarget); }}>{copy("session-tools.cleanIncompletePreparation_bc39ad")}</button></> : null}{data.archive !== "archived" && data.recovery === "required" && executionId ? <button disabled={blocked} onClick={event => { request(RecoveryAction.Execution); openRecovery?.(event.currentTarget); }}>{copy("session-tools.reconcileOriginalExecution_71e689")}</button> : null}</div>;
-  const body = <Disclosure className="session-tools" open={initiallyOpen}><DisclosureSummary>{initiallyOpen ? copy("session.statusAndRecovery") : copy("session-tools.sessionDetailsAndRecovery_8025d7")}</DisclosureSummary><p><LocalizedText id="session-tools.session_f705f3" components={{ s0: <>{resource.id}</> }} /></p><p><LocalizedText id="session-tools.workspacePreparationRecoveryDispatch_aeed5c" components={{ s0: <>{statusLabel(text(preparation.state)) || copy("session-tools.extra.6051f94ab1ce")}</>, s1: <>{statusLabel(text(data.recovery))}</>, s2: <>{statusLabel(text(data.dispatch))}</> }} /></p><button disabled={blocked} onClick={() => setName({ value: resourceName(resource), revision: resource.revision })}>{copy("session-tools.renameSession_2cad07")}</button>
+  const body = <Disclosure className="session-tools" open={initiallyOpen}><DisclosureSummary>{initiallyOpen ? copy("session.statusAndRecovery") : copy("session-tools.sessionDetailsAndRecovery_8025d7")}</DisclosureSummary><dl className="session-status-values">
+      <dt>{copy("session-tools.sessionId")}</dt><dd>{resource.id}</dd>
+      <dt>{copy("session-tools.workspace")}</dt><dd>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")}</dd>
+      <dt>{copy("session-tools.result")}</dt><dd>{statusValue(data.outcome)}</dd>
+      <dt>{copy("session-tools.dispatch")}</dt><dd>{statusValue(data.dispatch)}</dd>
+      <dt>{copy("session-tools.archive")}</dt><dd>{statusValue(data.archive)}</dd>
+      <dt>{copy("session-tools.preparation")}</dt><dd>{statusValue(preparation.state)}</dd>
+      <dt>{copy("session-tools.recovery")}</dt><dd>{statusValue(data.recovery)}</dd>
+      {title ? <><dt>{copy("session-tools.automaticTitle")}</dt><dd>{title.label}{title.detail ? <p>{title.detail}</p> : null}</dd></> : null}
+    </dl>{children}<button disabled={blocked} onClick={() => setName({ value: resourceName(resource), revision: resource.revision })}>{copy("session-tools.renameSession_2cad07")}</button>
     {name ? <form onSubmit={(event) => { event.preventDefault(); if (blocked || name.revision !== resource.revision) return; void rename.send({ mutation: { id: resource.id, expectedRevision: name.revision, requestId: newRequestId() }, name: name.value }); }}><label>{copy("session-tools.sessionName_136a71")}<input required maxLength={256} value={name.value} disabled={blocked} onChange={(event) => setName({ ...name, value: event.target.value })} /></label>{name.revision !== resource.revision ? <p role="alert">{copy("session-tools.thisSessionChangedWhileEditingThe_e72d40")}</p> : null}<button disabled={blocked || name.revision !== resource.revision}>{copy("session-tools.saveSessionName_354602")}</button><button type="button" disabled={blocked} onClick={() => setName(undefined)}>{copy("session-tools.cancelRename_3fe542")}</button></form> : null}
     {launcherTarget ? null : recoveryActions}
 

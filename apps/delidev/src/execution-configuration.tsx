@@ -73,8 +73,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
   const templates = items(configuration.templates);
   const accounts = items(configuration.accounts);
   const ready = Boolean(text(initial.id) && text(configuration.agent_id) && text(configuration.native_model));
-  return <Disclosure className="execution-configuration">
-    <DisclosureSummary>{copy("execution-configuration.executionConfigurationAndInstructions_2a7935")}</DisclosureSummary>
+  return <div className="execution-configuration">
     {resource.schemaVersion !== 1 ? <p>{copy("execution-configuration.thisSessionDocumentVersionIsNot_9413f8")}</p> : !ready ? <p>{data.initial_execution == null ? copy("execution-configuration.noAcceptedExecutionConfigurationIsAvailable_17c6b2") : copy("execution-configuration.theSavedExecutionConfigurationIsIncomplete_2c32e0")}</p> : <>
       <section aria-label={copy("execution-configuration.savedExecutionConfiguration_2d8ee9")}>
         <h3>{copy("execution-configuration.savedConfiguration_d194b3")}</h3>
@@ -111,5 +110,5 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({ res
         {Array.isArray(configuration.templates) ? <ol aria-label={copy("execution-configuration.appliedInstructionTemplateOrder_be0ff4")}>{templates.map((value, index) => { const template = object(value); return <li key={index}><Disclosure><DisclosureSummary><LocalizedText id="execution-configuration.templateRevision_10577b" components={{ s0: <>{index + 1}</>, s1: <>{text(template.id) || copy("execution-configuration.extra.ccd130d59f4b")}</>, s2: <>{integer(template.revision)}</> }} /></DisclosureSummary>{typeof template.contents === "string" ? <pre>{template.contents}</pre> : <p>{copy("execution-configuration.savedTemplateTextIsUnavailable_95e25e")}</p>}</Disclosure></li>; })}</ol> : <p>{copy("execution-configuration.appliedTemplateOrderIsUnavailable_02e090")}</p>}
       </section>
     </>}
-  </Disclosure>;
+  </div>;
 });

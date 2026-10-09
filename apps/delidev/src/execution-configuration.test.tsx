@@ -33,7 +33,7 @@ it("keeps selected Grok context provenance separate from native context observat
   const value = fixture("grok-build");
   const data = { ...value.data, initial_execution: { ...value.data.initial_execution, configuration: { ...value.configuration, grok_context: { tokens: 48000, source: "user-declared" } } }, execution: { ...value.data.execution, observed: { model: "original-model", grok_mode: "default", grok_context_tokens: 48000 } } };
   const view = render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   const saved = screen.getByRole("region", { name: "Saved execution configuration" });
   const native = screen.getByRole("region", { name: "Native execution observations" });
   expect(detail(saved, "Saved Grok context window")).toBe("48000");
@@ -52,7 +52,7 @@ it("keeps selected Grok context provenance separate from native context observat
 it("shows the immutable ordered instructions as inert read-only text without native prompts", () => {
   const value = fixture();
   const { container } = render(<ExecutionConfiguration resource={value.resource} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   const combined = screen.getByLabelText("Combined applied instructions");
   expect(combined.textContent).toBe(value.configuration.instructions);
   expect(container.querySelector("script")).toBeNull();
@@ -77,7 +77,7 @@ it("distinguishes missing native values from requested settings and empty native
   const value = fixture();
   value.data.execution.observed.effort = "";
   render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(value.data) }} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   const native = screen.getByRole("region", { name: "Native execution observations" });
   expect(detail(native, "Observed reasoning effort")).toBe("Empty native value");
   expect(detail(native, "Observed service tier")).toBe("Unavailable");
@@ -89,7 +89,7 @@ it("distinguishes missing native values from requested settings and empty native
 it("preserves first-execution choices while separately identifying retained prior observations", () => {
   const value = fixture();
   const view = render(<ExecutionConfiguration resource={value.resource} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   const next = { ...value.data, current_execution: { id: newRequestId(), input_id: newRequestId(), account_id: newRequestId() } };
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, revision: 10n, documentJson: encode(next) }} />);
   expect(screen.getByText(/retained observations belong to an earlier execution/)).toBeTruthy();
@@ -111,7 +111,7 @@ it.each([
   const value = fixture(harness);
   const data = { ...value.data, execution: { ...value.data.execution, observed: { model: "original-model", effort: null, service_tier: null, permission: "default", approval_policy: "", [key]: selection } } };
   render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   const native = screen.getByRole("region", { name: "Native execution observations" });
   expect(detail(native, label)).toBe("plan");
   expect(within(native).queryByText("Observed sandbox")).toBeNull();
@@ -121,7 +121,7 @@ it.each([
 it("keeps unavailable snapshots, unknown options and imprecise revisions explicit", () => {
   const value = fixture();
   const view = render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode({}) }} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();
   const data = { ...value.data, initial_execution: { ...value.data.initial_execution, configuration: { ...value.configuration, agent_revision: Number.MAX_SAFE_INTEGER + 1, options: { ...value.configuration.options, future_native_setting: "private unknown data" } } }, execution: { observed: { model: "unbound-model" } } };
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
@@ -140,7 +140,7 @@ it("preserves initial Claude settings and earlier-execution ownership across sti
   const turn = newRequestId();
   const data = { ...value.data, current_execution: { id: newRequestId(), input_id: newRequestId() }, execution: { ...value.data.execution, native_turn_id: turn, observed: { ...value.data.execution.observed, claude_permission: "plan" }, claude_progress: { native_turn_id: turn, latest_status_id: newRequestId(), permission: "default", permission_changed: true } } };
   const view = render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(data) }} />);
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
   const native = screen.getByRole("region", { name: "Native execution observations" });
   expect(detail(native, "Observed Claude permission")).toBe("plan");
   expect(detail(native, "Latest reported Claude permission")).toBe("default");
@@ -159,7 +159,7 @@ it("preserves initial Claude settings and earlier-execution ownership across sti
 it("shows the original Fast execution tier independently of later Worker defaults and absent native evidence", () => {
  const value = fixture();value.configuration.options.service_tier = "fast";
  render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(value.data) }}/>);
- fireEvent.click(screen.getByText("Execution configuration and instructions"));
+ expect(screen.queryByText("Execution configuration and instructions")).toBeNull();
  const saved = screen.getByRole("region",{name:"Saved execution configuration"});expect(detail(saved,"Requested service tier")).toBe("fast");
  value.configuration.options.service_tier = "";
  expect(detail(saved,"Requested service tier")).toBe("fast");
