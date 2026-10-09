@@ -180,4 +180,6 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Issue #2018 generated-image export follows the desktop and image-input contracts: authenticated original Worker bytes, a bounded image-only native Save operation, original window/connection receipts, atomic create-new publication and uncertainty observation. Exported user copies have independent ownership; do not relax CEF downloads/navigation or inherit transcript-export scope.
 
+- Waiting input movement (#2142) follows the sessions, storage, protocol and desktop contracts. Preserve System 75, original actor/revision/generation receipts, private dispatch order with unchanged public acceptance sequence, every claim's effective head and exact uint64/bigint generation. Freeze explicit Fork image sets at admission and retain original Worker byte/deletion ownership; legacy jobs retain their verified cutoff. No Worker allocation, public rank or migration.
+
 - ChatGPT/Codex paid-credit observations (#2124) use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.

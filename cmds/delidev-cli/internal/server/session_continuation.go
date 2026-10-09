@@ -92,15 +92,10 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if err != nil {
 		return store.Record{}, err
 	}
-	prior, err := tx.Get(domain.QueueKind, assignment.InputID)
-	if err != nil {
-		return store.Record{}, err
-	}
-	queued, err := store.Decode[domain.QueuedInput](prior)
-	if err != nil {
-		return store.Record{}, err
-	}
-	if ir.SessionID != sr.ID || next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || next.Sequence <= queued.Sequence || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
+	// The private waiting order is authoritative after a move. Acceptance
+	// sequences remain immutable and may precede the completed input's sequence.
+	// checkedContinuationPredecessor already proved that original accepted input.
+	if ir.SessionID != sr.ID || ir.ID == assignment.InputID || next.Delivery != domain.InputQueued || next.ExecutionID != "" || next.NativeRequestID != "" || session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(next.Prompt)) {
 		return store.Record{}, continuationConflict()
 	}
 	input.ContextRevision = session.ContextRevision
