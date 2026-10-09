@@ -131,5 +131,6 @@
   "session.restoreRevertedPrompt": "이전 프롬프트 복원",
   "session.retrySameRevert": "동일한 되돌리기 요청 재시도",
   "session.revertHistoricalAttachments": "이전 이미지와 스킬 선택은 기록에 유지됩니다. 새 입력에서는 다시 선택하세요. 복원된 프롬프트는 전송되지 않았습니다.",
-  "session.previousContext": "이전 문맥"
+  "session.previousContext": "이전 문맥",
+  "session.startupImageInput": "이미지 초안을 유지하고 이미지를 명시적으로 지원하는 Agent Worker와 Runner Device를 선택하거나 텍스트만 보내세요."
 }

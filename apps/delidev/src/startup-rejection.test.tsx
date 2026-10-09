@@ -3,7 +3,7 @@ import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { encode } from "./documents";
-import { RejectedInput, StartupRejection, startupRejection } from "./startup-rejection";
+import { RejectedInput, StartupRejection, startupRejection, isImageStartupRejectedInput } from "./startup-rejection";
 
 function fixture() {
   const id = newRequestId(), execution = newRequestId(), input = newRequestId(), machine = newRequestId(), account = newRequestId(), connection = newRequestId(), hash = "a".repeat(64);
@@ -51,4 +51,15 @@ it("does not borrow another queued input's rejection", () => {
   const f = fixture();
   render(<RejectedInput session={f.session} resource={create(ResourceSchema, { ...f.queued, id: newRequestId() })} />);
   expect(screen.getByText(/could not be verified/)).toBeTruthy();
+});
+
+it("presents only the exact original rejected image input without claiming recovery", () => {
+ const f=fixture(), job=newRequestId(), execution=f.data.initial_execution.id;
+ const data={...f.data, initial_execution:f.data.initial_execution, startup:{job_id:job,execution_id:execution,failure:{state:2,phase:5,harness:"codex",problem_code:"unsupported",correlation_id:job,input_delivery:1,cleanup:1,failure_kind:1}}};
+ const session=create(ResourceSchema,{...f.session,documentJson:encode(data)});
+ expect(isImageStartupRejectedInput(f.queued,session)).toBe(true);
+ for (const resource of [create(ResourceSchema,{...f.queued,id:newRequestId()}),create(ResourceSchema,{...f.queued,sessionId:newRequestId()}),create(ResourceSchema,{...f.queued,documentJson:encode({delivery:"accepted",execution_id:execution})})]) expect(isImageStartupRejectedInput(resource,session)).toBe(false);
+ render(<RejectedInput session={session} resource={f.queued}/>);
+ expect(screen.getByText(/Keep the image draft/)).toBeTruthy();
+ expect(screen.queryByRole("button")).toBeNull();
 });

@@ -10161,6 +10161,32 @@
       "member": "replayed",
       "number": 3,
       "newDeclaration": true
+    },
+    {
+      "issue": 2048,
+      "declaration": "ExecutionStartupObservation",
+      "kind": "message",
+      "member": "failure_kind",
+      "number": 11,
+      "status": "implemented"
+    },
+    {
+      "issue": 2048,
+      "declaration": "ExecutionStartupFailureKind",
+      "kind": "enum",
+      "member": "EXECUTION_STARTUP_FAILURE_KIND_UNSPECIFIED",
+      "number": 0,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2048,
+      "declaration": "ExecutionStartupFailureKind",
+      "kind": "enum",
+      "member": "EXECUTION_STARTUP_FAILURE_KIND_IMAGE_INPUT_REJECTED",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

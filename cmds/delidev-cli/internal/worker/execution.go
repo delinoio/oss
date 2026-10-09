@@ -466,6 +466,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
 	if err != nil {
+		if proofErr := config.startup.captureImageRejection(turn); proofErr != nil {
+			if config.startup != nil {
+				config.startup.firstFailure = err
+			}
+			return nil, proofErr
+		}
 		return nil, err
 	}
 	if err := mapper.AcceptInput(ctx, turn); err != nil {

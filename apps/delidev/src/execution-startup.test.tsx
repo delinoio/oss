@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { expect, it, vi } from "vitest";
-import { canRetryExecutionStartup, executionStartupFailure, ExecutionStartupDetails } from "./execution-startup";
+import { canRetryExecutionStartup, executionStartupFailure, ExecutionStartupDetails, startupCorrection } from "./execution-startup";
 import type { Document } from "./documents";
 
 function fixture(): Document {
@@ -41,4 +41,19 @@ it("copies only validated debugging metadata without another check", async () =>
   await waitFor(() => expect(screen.getByRole("status").textContent).toContain("copied"));
   expect(JSON.parse(writeText.mock.calls[0][0])).toEqual({ phase: 1, harness: "codex", native_version: "0.150.9", problem_code: "not_found", correlation_id: failure.correlation_id, input_delivery: 1, cleanup: 1 });
   expect(screen.queryByRole("button", { name: /inspect|check|retry/i })).toBeNull();
+});
+
+it("offers image guidance only for closed settled image provenance", () => {
+ const value = fixture(), failure = (value.startup as Document).failure as Document;
+ Object.assign(failure, { phase: 5, problem_code: "unsupported", failure_kind: 1 });
+ expect(executionStartupFailure(value)).toBe(failure);
+ expect(canRetryExecutionStartup(value)).toBe(true);
+ expect(startupCorrection(failure)).toContain("image");
+ for (const change of [{failure_kind: 2}, {failure_kind: "1"}, {phase: 4}, {harness: "claude"}, {problem_code: "unavailable"}, {state: 3}, {cleanup: 2}, {input_delivery: 2}]) {
+  const changed = {...failure, ...change};
+  expect(executionStartupFailure({...value, startup: {...value.startup as Document, failure: changed}})).toBeUndefined();
+ }
+ delete failure.failure_kind;
+ expect(executionStartupFailure(value)).toBe(failure);
+ expect(startupCorrection(failure)).not.toContain("image");
 });

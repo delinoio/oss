@@ -131,5 +131,6 @@
   "session.restoreRevertedPrompt": "Restore earlier prompt",
   "session.retrySameRevert": "Retry the same Revert request",
   "session.revertHistoricalAttachments": "Earlier images and skill selections remain in history. Select them again for a new input; the restored prompt has not been submitted.",
-  "session.previousContext": "Earlier context"
+  "session.previousContext": "Earlier context",
+  "session.startupImageInput": "Keep the image draft and choose an Agent Worker and Runner Device that explicitly support images, or send text only."
 }

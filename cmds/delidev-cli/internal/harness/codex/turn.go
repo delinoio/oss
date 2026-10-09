@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -40,9 +41,10 @@ const (
 )
 
 type TurnResult struct {
-	RequestID domain.ID
-	InputID   domain.ID
-	TurnID    domain.ID
+	imageRejection *imageRejectionProof
+	RequestID      domain.ID
+	InputID        domain.ID
+	TurnID         domain.ID
 }
 
 type turnOperation struct {
@@ -267,6 +269,10 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	}
 	nativeParts, err := c.nativeImageParts(ctx, input)
 	if err != nil {
+		var rejected *imageBeforeSendError
+		if len(input.Attachments) > 0 && errors.As(err, &rejected) {
+			result.imageRejection = &imageRejectionProof{request: requestID, input: inputID, digest: input.InputDigest()}
+		}
 		return result, err
 	}
 	params := startTurnParams{ThreadID: c.thread, Input: append(nativeParts, selected...), ClientInputID: inputID, Model: s.Model, Effort: s.Effort, Cwd: s.Cwd, ApprovalPolicy: s.ApprovalPolicy, ApprovalsReviewer: s.ApprovalsReviewer, Sandbox: s.Sandbox, ServiceTier: s.ServiceTier, Collaboration: collaborationMode{Mode: mode, Settings: collaborationSettings{Model: s.Model, Effort: s.Effort}}}

@@ -43,7 +43,15 @@ const (
 	StartupCleanupUncertain  ExecutionStartupCleanup       = 2
 )
 
+type ExecutionStartupFailureKind uint32
+
+const (
+	StartupFailureUnspecified ExecutionStartupFailureKind = 0
+	StartupImageInputRejected ExecutionStartupFailureKind = 1
+)
+
 type ExecutionStartupObservation struct {
+	FailureKind      ExecutionStartupFailureKind   `json:"failure_kind,omitempty"`
 	State            ExecutionStartupState         `json:"state"`
 	Phase            ExecutionStartupPhase         `json:"phase"`
 	Harness          Harness                       `json:"harness"`
@@ -71,6 +79,10 @@ func ValidNativeVersionMetadata(v string) bool {
 }
 
 func (o ExecutionStartupObservation) Validate() error {
+	if o.FailureKind != StartupFailureUnspecified && (o.FailureKind != StartupImageInputRejected || o.State != StartupFailed || o.Phase != StartupInput || o.Harness != Codex || o.ProblemCode != Unsupported || o.InputDelivery != StartupNotSent || o.Cleanup != StartupCleanupConfirmed) {
+		return StartupRejectionUncertain()
+	}
+
 	if o.CorrelationID.Validate() != nil || o.Phase < StartupResolve || o.Phase > StartupCleanupPhase || o.InputDelivery < StartupNotSent || o.InputDelivery > StartupDeliveryUncertain || ProtocolFor(o.Harness) == "" || o.NativeVersion != "" && !ValidNativeVersionMetadata(o.NativeVersion) || o.ExecutableSHA256 != "" && !lowerDigest(o.ExecutableSHA256) || o.Protocol != "" && o.Protocol != ProtocolFor(o.Harness) {
 		return StartupRejectionUncertain()
 	}

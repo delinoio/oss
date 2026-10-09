@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -44,5 +45,24 @@ func TestExecutionStartupFailureSeparatesDeliveryAndCleanup(t *testing.T) {
 	base.State = StartupReady
 	if base.Validate() == nil {
 		t.Fatal("failure facts granted readiness")
+	}
+}
+
+func TestImageStartupFailureKindRequiresSettledOriginalInput(t *testing.T) {
+	base := ExecutionStartupObservation{State: StartupFailed, Phase: StartupInput, Harness: Codex, ProblemCode: Unsupported, CorrelationID: NewID(), InputDelivery: StartupNotSent, Cleanup: StartupCleanupConfirmed, FailureKind: StartupImageInputRejected}
+	if base.Validate() != nil {
+		t.Fatal("valid provenance rejected")
+	}
+	for _, change := range []func(*ExecutionStartupObservation){func(o *ExecutionStartupObservation) { o.FailureKind = 2 }, func(o *ExecutionStartupObservation) { o.State = StartupUncertain }, func(o *ExecutionStartupObservation) { o.Phase = StartupSettings }, func(o *ExecutionStartupObservation) { o.Harness = ClaudeCode }, func(o *ExecutionStartupObservation) { o.ProblemCode = Unavailable }, func(o *ExecutionStartupObservation) { o.InputDelivery = StartupClaimed }, func(o *ExecutionStartupObservation) { o.Cleanup = StartupCleanupUncertain }} {
+		o := base
+		change(&o)
+		if o.Validate() == nil {
+			t.Fatal("mixed provenance accepted")
+		}
+	}
+	base.FailureKind = 0
+	raw, err := json.Marshal(base)
+	if err != nil || strings.Contains(string(raw), "failure_kind") {
+		t.Fatal("legacy observation acquired a new field", err)
 	}
 }

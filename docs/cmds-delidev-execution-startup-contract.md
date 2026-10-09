@@ -214,3 +214,11 @@ The conversation presents the original closed startup classification, safe cause
 - [Desktop](apps-delidev-desktop-contract.md)
 - [Diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Repository defaults](repository-defaults.md)
+
+## Positive image rejection before input — issue #2048
+
+ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureKind enum: zero UNSPECIFIED is omitted, and IMAGE_INPUT_REJECTED is one. This optional classification adds no capability or migration and preserves legacy observation bytes and generic behavior. A generic Unsupported error does not prove image provenance. Only the original Codex image-preparation branch before turn/start may issue an opaque proof bound to the original request, input and complete ordered input digest. Successful sends, turn transport failures, acknowledgments and attachment-resolution failures carry no such proof.
+
+The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
+
+The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies image support requirements, preserves visible original rejected input/images and never substitutes attachments or starts another send.

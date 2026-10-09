@@ -409,6 +409,11 @@ message ExecutionStartupObservation {
   string correlation_id = 8;
   ExecutionStartupInputDelivery input_delivery = 9;
   ExecutionStartupCleanup cleanup = 10;
+  ExecutionStartupFailureKind failure_kind = 11;
+}
+enum ExecutionStartupFailureKind {
+  EXECUTION_STARTUP_FAILURE_KIND_UNSPECIFIED = 0;
+  EXECUTION_STARTUP_FAILURE_KIND_IMAGE_INPUT_REJECTED = 1;
 }
 enum ExecutionStartupState {
   EXECUTION_STARTUP_STATE_UNSPECIFIED = 0;

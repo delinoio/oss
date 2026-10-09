@@ -9,7 +9,7 @@ enum InputDelivery { NotSent = 1, Claimed = 2, Acknowledged = 3, Uncertain = 4 }
 enum Cleanup { Confirmed = 1, Uncertain = 2 }
 const protocols = { codex: "codex-app-server-v2", "claude-code": "claude-stream-json", opencode: "opencode-http", "grok-build": "grok-acp" };
 const codes = new Set(["not_found", "permission_denied", "unsupported", "invalid_argument", "unavailable", "canceled", "conflict", "recovery_required", "resource_exhausted", "provider_disabled"]);
-const fields = new Set(["state", "phase", "harness", "native_version", "executable_sha256", "protocol", "problem_code", "correlation_id", "input_delivery", "cleanup"]);
+const fields = new Set(["state", "phase", "harness", "native_version", "executable_sha256", "protocol", "problem_code", "correlation_id", "input_delivery", "cleanup", "failure_kind"]);
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
 
 export function executionStartupFailure(session: Document): Document | undefined {
@@ -22,6 +22,7 @@ export function executionStartupFailure(session: Document): Document | undefined
   if (value.executable_sha256 !== undefined && (typeof value.executable_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(value.executable_sha256))) return;
   if (value.protocol !== undefined && value.protocol !== protocols[value.harness as keyof typeof protocols]) return;
   if (value.state === StartupState.Failed && (value.input_delivery !== InputDelivery.NotSent || value.cleanup !== Cleanup.Confirmed)) return;
+  if (value.failure_kind !== undefined && value.failure_kind !== 0 && (value.failure_kind !== 1 || value.state !== StartupState.Failed || value.phase !== 5 || value.harness !== "codex" || value.problem_code !== "unsupported" || value.input_delivery !== InputDelivery.NotSent || value.cleanup !== Cleanup.Confirmed)) return;
   return value;
 }
 
@@ -31,6 +32,7 @@ export function canRetryExecutionStartup(session: Document): boolean {
 }
 
 export function startupCorrection(failure: Document): string {
+  if (failure.failure_kind === 1) return copy("session.startupImageInput");
   switch (failure.problem_code) {
     case "not_found": return copy("session.startupInstall");
     case "permission_denied": return copy("session.startupPermissions");

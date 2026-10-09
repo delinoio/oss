@@ -13,12 +13,15 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
-func directStartupFixture(t *testing.T) *authorityFixture {
+func directStartupFixture(t *testing.T, configure ...func(*domain.ExecutionJobInput)) *authorityFixture {
 	t.Helper()
 	f := newConfiguredAuthorityFixture(t, "http://127.0.0.1:1", func(i *domain.ExecutionJobInput) {
 		i.Version = 4
 		i.Startup = &domain.ExecutionStartupSelection{Harness: domain.Codex}
 		i.Installation = domain.Installation{}
+		if len(configure) > 0 {
+			configure[0](i)
+		}
 	}, false)
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.direct-startup", nil, func(tx *store.Tx) (any, error) {
 		mr, machine, err := activeMachine(tx, f.input.MachineID)
@@ -39,6 +42,8 @@ func directStartupFixture(t *testing.T) *authorityFixture {
 			return nil, err
 		}
 		q.Delivery = domain.InputClaimed
+		q.Skills = f.input.Input.Skills
+		q.Attachments = f.input.Input.Attachments
 		if _, err = tx.Put(domain.QueueKind, ir.ID, ir.Revision, ir.SessionID, "", q); err != nil {
 			return nil, err
 		}
@@ -264,5 +269,148 @@ func TestDirectStartupExplicitRetryRetainsOriginalSelectionAndReceipt(t *testing
 	old, decodeErr := store.Decode[domain.Job](retained)
 	if err != nil || decodeErr != nil || old.State != domain.JobFailed || string(old.Input) != string(job.Input) || old.Startup == nil || old.Startup.Failure == nil {
 		t.Fatal("failed attempt was rewritten")
+	}
+}
+
+func TestImageRejectionReportBindsOriginalClaimAndReadyProcess(t *testing.T) {
+	for _, scenario := range []string{"valid", "text", "no-thread", "changed-input", "changed-process", "acknowledged"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := directStartupFixture(t, func(i *domain.ExecutionJobInput) {
+				if scenario != "text" {
+					i.Configuration.ImageInputDeclared = true
+					i.ConfigurationDigest, _ = i.Configuration.Digest()
+					i.Input.Attachments = []domain.ImageAttachment{{ID: domain.NewID(), MachineID: i.MachineID, MediaType: domain.ImagePNG, ByteLength: 1, SHA256: strings.Repeat("a", 64)}}
+				}
+			})
+			f.registerGrant(t)
+			ready := domain.ExecutionStartupObservation{State: domain.StartupReady, Phase: domain.StartupSettings, Harness: domain.Codex, NativeVersion: "0.150.9", ExecutableSHA256: strings.Repeat("a", 64), Protocol: domain.CodexAppServer, CorrelationID: f.job, InputDelivery: domain.StartupNotSent}
+			if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, ready)); err != nil {
+				t.Fatal(err)
+			}
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.image-prewire", nil, func(tx *store.Tx) (any, error) {
+				sr, session, err := sessionRecord(tx, f.input.SessionID)
+				if err != nil {
+					return nil, err
+				}
+				if scenario != "no-thread" {
+					session.Execution = &domain.ExecutionProgress{JobID: f.job, InputID: f.input.InputID, ExecutionID: f.input.ExecutionID, NativeThreadID: string(domain.NewID())}
+				}
+				if scenario == "acknowledged" {
+					session.Execution.NativeTurnID = string(domain.NewID())
+				}
+				if scenario == "changed-input" {
+					qr, err := tx.Get(domain.QueueKind, f.input.InputID)
+					if err != nil {
+						return nil, err
+					}
+					q, err := store.Decode[domain.QueuedInput](qr)
+					if err != nil {
+						return nil, err
+					}
+					q.Prompt += " changed"
+					if _, err = tx.Put(domain.QueueKind, qr.ID, qr.Revision, qr.SessionID, "", q); err != nil {
+						return nil, err
+					}
+				}
+				return tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, "", session)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rejected := ready
+			rejected.State = domain.StartupFailed
+			rejected.Phase = domain.StartupInput
+			rejected.ProblemCode = domain.Unsupported
+			rejected.Cleanup = domain.StartupCleanupConfirmed
+			rejected.FailureKind = domain.StartupImageInputRejected
+			if scenario == "changed-process" {
+				rejected.ExecutableSHA256 = strings.Repeat("b", 64)
+			}
+			request := startupRequest(f, rejected)
+			first, err := f.client.ReportExecutionStartup(context.Background(), request)
+			if scenario != "valid" {
+				if err == nil {
+					t.Fatal("foreign or mixed image report accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := f.client.ReportExecutionStartup(context.Background(), request)
+			if err != nil || !second.Msg.Replayed || first.Msg.Observation.FailureKind != second.Msg.Observation.FailureKind {
+				t.Fatal("original image receipt changed", err)
+			}
+			err = f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+				jr, err := tx.Get(domain.JobKind, f.job)
+				if err != nil {
+					return err
+				}
+				if jr.Revision != 1 {
+					t.Fatal("report changed original assignment")
+				}
+				_, session, err := sessionRecord(tx, f.input.SessionID)
+				if err != nil {
+					return err
+				}
+				if session.Problem == nil || session.Problem.Message != domain.UnsupportedImageInput().Message {
+					t.Fatal("typed image guidance lost")
+				}
+				qr, err := tx.Get(domain.QueueKind, f.input.InputID)
+				if err != nil {
+					return err
+				}
+				q, err := store.Decode[domain.QueuedInput](qr)
+				if err != nil {
+					return err
+				}
+				if !queuedSessionInput(q).Equal(f.input.Input) {
+					t.Fatal("original draft or images changed")
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.settle-image", nil, func(tx *store.Tx) (any, error) {
+				r, err := tx.Get(domain.JobKind, f.job)
+				if err != nil {
+					return nil, err
+				}
+				j, err := store.Decode[domain.Job](r)
+				if err != nil {
+					return nil, err
+				}
+				return finishNativeExecution(tx, r, j, r.Revision, nil, domain.UnsupportedImageInput())
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = f.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+				_, session, err := sessionRecord(tx, f.input.SessionID)
+				if err != nil {
+					return err
+				}
+				if session.ActiveExecutionID != "" || session.PendingInputs != 0 || session.PendingInputBytes != 0 || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.Execution != nil {
+					t.Fatal("positive image rejection did not settle without recovery")
+				}
+				r, err := tx.Get(domain.QueueKind, f.input.InputID)
+				if err != nil {
+					return err
+				}
+				q, err := store.Decode[domain.QueuedInput](r)
+				if err != nil {
+					return err
+				}
+				if q.Delivery != domain.InputRejected || !queuedSessionInput(q).Equal(f.input.Input) {
+					t.Fatal("original image draft lost in settlement")
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+		})
 	}
 }
