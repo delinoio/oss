@@ -36,7 +36,7 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
     if (!Object.keys(tool).length) return projection;
     const observations = Array.isArray(tool.states) ? tool.states : [];
     const latest = object(object(observations.at(-1)).snapshot);
-    name = started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : nativeNames[label(started.kind)] || label(started.kind);
+    name = started.kind === "image-view" ? "view_image" : started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : nativeNames[label(started.kind)] || label(started.kind);
     state = label(completed.status) || (latest.kind === started.kind ? label(latest.status) : "") || label(started.status) || state;
   }
   projection.tool = { owner: JSON.stringify([sessionId, d.execution_id, d.native_thread_id, d.native_turn_id]), name, state };

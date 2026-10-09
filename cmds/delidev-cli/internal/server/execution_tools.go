@@ -3,12 +3,23 @@ package server
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
 	update := event.Tool
 	if update == nil {
 		return executionEventConflict()
+	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.ImageViewTool {
+		machineRow, err := tx.Get(domain.MachineKind, input.MachineID)
+		if err != nil {
+			return err
+		}
+		machine, err := store.Decode[domain.Machine](machineRow)
+		if err != nil || input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || update.Snapshot.ImageView == nil || update.Snapshot.ImageView.ReferenceID != update.ID || workspace.ValidateImageViewReference(input, machine.OS, *update.Snapshot.ImageView) != nil {
+			return executionEventConflict()
+		}
 	}
 	var value domain.ExecutionMessage
 	var revision uint64
@@ -91,6 +102,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 						return executionEventConflict()
 					}
 				}
+			}
+			if tool.Started.Kind == domain.ImageViewTool && (tool.Started.ImageView == nil || update.Snapshot.ImageView == nil || *tool.Started.ImageView != *update.Snapshot.ImageView) {
+				return executionEventConflict()
 			}
 			tool.Completed = update.Snapshot
 			value.State = domain.MessageComplete

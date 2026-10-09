@@ -15,8 +15,9 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
-	CommandTool ToolKind = "command-execution"
-	PatchTool   ToolKind = "file-change"
+	CommandTool   ToolKind = "command-execution"
+	PatchTool     ToolKind = "file-change"
+	ImageViewTool ToolKind = "image-view"
 
 	ToolRunning   ToolStatus = "inProgress"
 	ToolCompleted ToolStatus = "completed"
@@ -71,11 +72,12 @@ type FileChange struct {
 // work or imply that an entire turn succeeded. Native aggregate output may be
 // truncated independently from streamed deltas, so retain both observations.
 type Tool struct {
-	ID      string
-	Kind    ToolKind
-	Status  ToolStatus
-	Command *CommandExecution
-	Changes []FileChange
+	ID        string
+	Kind      ToolKind
+	Status    ToolStatus
+	Command   *CommandExecution
+	Changes   []FileChange
+	ImagePath string
 }
 
 type ToolInput struct {
@@ -188,6 +190,20 @@ func decodeTool(raw json.RawMessage, kind string, completed bool) (*Tool, error)
 			command.Actions = append(command.Actions, action)
 		}
 		result.ID, result.Kind, result.Status, result.Command = item.ID, CommandTool, item.Status, command
+	case "imageView":
+		var item struct {
+			Type string  `json:"type"`
+			ID   string  `json:"id"`
+			Path *string `json:"path"`
+		}
+		if domain.Decode(raw, &item) != nil || item.Type != kind || item.Path == nil || domain.Text(*item.Path, "native image location", 4096, true) != nil {
+			return nil, incompatible()
+		}
+		result.ID, result.Kind, result.ImagePath = item.ID, ImageViewTool, *item.Path
+		result.Status = ToolRunning
+		if completed {
+			result.Status = ToolCompleted
+		}
 	case "fileChange":
 		var item struct {
 			Type    string            `json:"type"`

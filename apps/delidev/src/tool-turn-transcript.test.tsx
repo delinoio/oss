@@ -46,7 +46,7 @@ it('projects the original builtin name and latest active native status without r
  const projected=conversationProjection(record,sessionId);expect(projected.tool?.name).toBe('webfetch');expect(projected.tool?.state).toBe('running');expect(JSON.stringify(projected,(_,v)=>typeof v==='bigint'?String(v):v)).not.toContain('DO NOT RETAIN');
 });
 
-it.each([['opencode-read','read'],['opencode-shell','bash'],['opencode-todo','todowrite']])('preserves the closed %s adapter original native name %s',(kind,name)=>{
+it.each([['image-view','view_image'],['opencode-read','read'],['opencode-shell','bash'],['opencode-todo','todowrite']])('preserves the closed %s adapter original native name %s',(kind,name)=>{
  expect(conversationProjection(row(tool(kind)),sessionId).tool?.name).toBe(name);
 });
 

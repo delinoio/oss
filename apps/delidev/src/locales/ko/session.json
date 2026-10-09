@@ -119,5 +119,8 @@
   "session.toolCalls": "도구 호출",
   "session.reachedTools": "이 목록에는 불러온 기록만 포함됩니다. 대화 기록 컨트롤을 사용하여 더 많은 기록을 불러오세요.",
   "session.userMessage": "사용자 메시지",
-  "session.submittedUserMessage": "제출한 사용자 메시지"
+  "session.submittedUserMessage": "제출한 사용자 메시지",
+  "session.imageView": "이미지 보기",
+  "session.imageViewUnsupported": "이 이미지 보기 관찰 기록을 사용할 수 없습니다.",
+  "session.imageViewPreviewUnavailable": "미리보기를 사용할 수 없습니다. 이 네이티브 관찰 기록은 이미지 바이트를 보관하거나 현재 파일에 대한 접근 권한을 부여하지 않습니다."
 }
