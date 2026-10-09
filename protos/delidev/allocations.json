@@ -2643,6 +2643,15 @@
         "refresh_confirmed": 8,
         "succeeded": 9
       }
+    },
+    "CreateTerminalRequest": {
+      "kind": "message",
+      "members": {
+        "mutation": 1,
+        "shell_override": 2,
+        "rows": 3,
+        "columns": 4
+      }
     }
   },
   "reservations": [
