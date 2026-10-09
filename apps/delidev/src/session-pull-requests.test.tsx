@@ -15,8 +15,8 @@ function PrimaryPRSection({ session }: { session: Resource }) {
  const [visible,setVisible]=useState(true);
  return <><button type="button" aria-expanded={visible} onClick={()=>setVisible(!visible)}>PR associations</button><div hidden={!visible}><SessionPullRequests session={session} visible={visible}/></div></>;
 }
-function openAssociations() { const header=screen.getByRole("button",{name:"PR associations",exact:true}); if(header.getAttribute("aria-expanded")==="false")fireEvent.click(header); expect(screen.queryByRole("button",{name:"Show PR associations"})).toBeNull(); }
-function closeAssociations() { fireEvent.click(screen.getByRole("button",{name:"PR associations",exact:true})); }
+function openAssociations() { const header=screen.getByRole("button",{name:"PR associations"}); if(header.getAttribute("aria-expanded")==="false")fireEvent.click(header); expect(screen.queryByRole("button",{name:"Show PR associations"})).toBeNull(); }
+function closeAssociations() { fireEvent.click(screen.getByRole("button",{name:"PR associations"})); }
 
 function fixture() {
   const sessionId = newRequestId(), projectId = newRequestId(), repositoryId = newRequestId();
