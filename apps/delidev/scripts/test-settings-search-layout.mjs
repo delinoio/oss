@@ -38,6 +38,25 @@ try {
     const drawer=page.locator('.sidebar-context-trigger');
     const open=async()=>{if(width<760 && !(await page.getByRole('searchbox').isVisible()))await drawer.click();};
     await open(); const input=page.getByRole('searchbox'); await input.waitFor();
+    const fieldGeometry = await input.evaluate(node => {
+      const header = node.closest('.settings-search-header'), category = node.closest('.settings-search').querySelector('[data-settings-category]');
+      const field = node.getBoundingClientRect(), available = header.getBoundingClientRect(), row = category.getBoundingClientRect();
+      return { left: field.left, right: field.right, headerLeft: available.left, headerRight: available.right, rowLeft: row.left, rowRight: row.right };
+    });
+    for (const [fieldEdge, expectedEdge] of [[fieldGeometry.left, fieldGeometry.headerLeft], [fieldGeometry.right, fieldGeometry.headerRight], [fieldGeometry.left, fieldGeometry.rowLeft], [fieldGeometry.right, fieldGeometry.rowRight]]) assert(Math.abs(fieldEdge - expectedEdge) <= 1, 'Search fills the sidebar content width');
+    for (const availableWidth of [260, 190]) {
+      const measured = await input.evaluate((node, width) => {
+        const header = node.closest('.settings-search-header'), original = header.style.width;
+        header.style.width = `${width}px`;
+        const bounds = node.getBoundingClientRect(), available = header.getBoundingClientRect(), overflow = header.scrollWidth > header.clientWidth;
+        header.style.width = original;
+        return { width: bounds.width, left: bounds.left, right: bounds.right, availableLeft: available.left, availableRight: available.right, overflow };
+      }, availableWidth);
+      assert(Math.abs(measured.width - availableWidth) <= 1, `Search fills ${availableWidth}px`);
+      assert(Math.abs(measured.left - measured.availableLeft) <= 1 && Math.abs(measured.right - measured.availableRight) <= 1);
+      assert.equal(measured.overflow, false, 'Narrow search remains contained');
+    }
+
     assert.equal(await page.locator('[data-settings-category]').count(),19);
     const originalCategories=await page.locator('[data-settings-category]').evaluateAll(nodes=>nodes.map(node=>node.dataset.settingsCategory));
     assert.equal(await input.getAttribute('placeholder'),language==='en'?'Search Settings':'설정 검색');
