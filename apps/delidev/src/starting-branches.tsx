@@ -129,7 +129,7 @@ function StartingBranch({project,repositoryId,machineId,starting,change,active,s
      }
      if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}if(event.key==="Tab")close();
     }}/>
-    <span className="branch-validation" id={`${id}-error`} role={problem?"alert":undefined}>{problem}</span>
+    <span className="branch-validation" hidden={open || !problem} id={`${id}-error`} role={problem?"alert":undefined}>{problem}</span>
     {open?<div ref={popup} popover="manual" className="starting-branch-popup" onKeyDown={event=>{
       if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();input.current?.focus();}
       if(event.key==="Tab")close();

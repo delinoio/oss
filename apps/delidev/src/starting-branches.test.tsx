@@ -116,3 +116,15 @@ it.each(["\u00a0", "\u0085", "\u1680", "\u2000\u200a", "\u2028\u2029", "\u202f",
  expect(validStartingBranch(name)).toBe(false);expect(change).not.toHaveBeenCalled();expect(input.getAttribute("aria-invalid")).toBe("true");expect(validity).toHaveBeenLastCalledWith(false);
 });
 it("preserves nonempty branch spelling instead of trimming Unicode whitespace",()=>{expect(validStartingBranch("\u00a0topic\u00a0")).toBe(true);});
+
+
+it.each(["Escape", "Tab", "outside"])("keeps invalid-draft guidance visible after %s dismissal", async dismissal => {
+ const f=fixture(),change=vi.fn(),validity=vi.fn();render(f.view([],change,false,f.project,validity));
+ const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);await screen.findByText(/Branch discovery is unavailable/);
+ fireEvent.change(input,{target:{value:"bad..branch"}});
+ if(dismissal==="outside")fireEvent.pointerDown(document.body);else fireEvent.keyDown(input,{key:dismissal});
+ expect(input.getAttribute("aria-expanded")).toBe("false");expect(input.getAttribute("aria-invalid")).toBe("true");expect((input as HTMLInputElement).value).toBe("bad..branch");
+ expect(screen.getByRole("alert").hidden).toBe(false);expect(screen.getByRole("alert").id).toBe(input.getAttribute("aria-describedby"));
+ expect(change).not.toHaveBeenCalled();expect(validity).toHaveBeenLastCalledWith(false);
+ fireEvent.change(input,{target:{value:""}});fireEvent.keyDown(input,{key:"Escape"});expect(screen.queryByRole("alert")).toBeNull();
+});

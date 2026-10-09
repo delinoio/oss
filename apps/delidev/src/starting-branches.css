@@ -2,7 +2,8 @@
 .starting-branch-autocomplete { position:relative; min-width:0; }
 .starting-branch-autocomplete > label { display:block; margin:0 0 4px; padding:0; min-height:24px; line-height:24px; overflow-wrap:anywhere; }
 .starting-branch-autocomplete > input { box-sizing:border-box; width:100%; min-width:0; min-height:40px; border-radius:8px; }
-.branch-validation { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); }
+/* Retained errors remain visible after dismissal without moving the composer. */
+.branch-validation { position:absolute; top:100%; left:0; right:0; z-index:1200; margin-top:4px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:12px; overflow-wrap:anywhere; }
 .starting-branch-popup { position:fixed; inset:auto; z-index:1200; box-sizing:border-box; max-width:calc(100vw - 16px); max-height:280px; overflow:auto; overscroll-behavior:contain; margin:0; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); box-shadow:0 4px 16px var(--shadow-soft); overflow-wrap:anywhere; }
 .starting-branch-popup p { font-size:12px; margin:4px 0 8px; }
 .starting-branch-popup code { display:block; overflow-wrap:anywhere; }
