@@ -951,7 +951,10 @@ Presentation Close is separate from the explicit original process Close action.
 Authenticated generated operations follow the
 [terminal contract](cmds-delidev-terminals-contract.md). Only advertised support
 enables history reads/refresh/selection; capability errors remain distinct from
-missing support. Opening, tab selection and reattachment cannot create shells.
+missing support. Already-loaded background history Refresh does not insert a loading
+row or change the selected terminal geometry. Preserve Initial, Additional, Reload,
+Restore and error/retry guidance, unchanged polling, original output ownership and
+explicit user resize delivery. Opening, tab selection and reattachment cannot create shells.
 The compact dark header exposes explicit creation, retained-resource choices, Details and
 presentation Close. Details owns the future-creation shell override, Worker/shell/cwd, original
 state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
