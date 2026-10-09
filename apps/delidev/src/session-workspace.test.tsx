@@ -422,3 +422,11 @@ it("verified terminal removal skips intervening Files and selects the original l
   expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
 });
+
+ it("publishes the verified rename to the open header without a stream event", async () => {
+ const f=fixture(); f.rename.mockImplementationOnce(async (request: any)=>({change:{requestId:request.mutation.requestId,session:create(ResourceSchema,{...f.session,revision:8n,documentJson:encode({...readDocument(f.session),name:request.name})})}}));
+ render(f.view()); const heading=await screen.findByRole("heading",{name:"Original session"}); fireEvent.doubleClick(heading);
+ const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original session"));
+ fireEvent.change(input,{target:{value:"Receipt name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
+ await screen.findByRole("heading",{name:"Receipt name"});expect(screen.queryByRole("dialog")).toBeNull();
+});

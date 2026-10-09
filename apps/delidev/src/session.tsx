@@ -65,7 +65,7 @@ import {
   SyncKind, newRequestId, synchronizeResources, clientFailure, supportsResourceSchema, type ClientFailure, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationNotifications } from "./mutation";
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
@@ -352,8 +352,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const queue = useConversationPages(EntityKind.QUEUE, id, conversationActive && live.generation > 0);
   const interactions = useConversationPages(EntityKind.INTERACTION, id, conversationActive && live.generation > 0, 20);
   const [acknowledged, setAcknowledged] = useState<Resource>();
+  useRetainedMutationNotifications((key, _request, result) => {
+    if (key !== `session-name:${id}`) return;
+    const renamed = (result as { change?: { session?: Resource } }).change?.session;
+    if (renamed?.id === id) setAcknowledged(previous => !previous || renamed.revision > previous.revision ? renamed : previous);
+  });
   const observed = live.resources.get(id);
-  const original = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
+  const original = acknowledged && (!observed || acknowledged.revision > observed.revision) ? acknowledged : observed;
   const { resource: session, control, action } = useSessionControl(id, original, active && tabs.tab.kind!==SessionTabKind.Sidechat);
   const retryQuestion=useSidechatQuestionRetry(session,conversationActive);
   const historyHeights=useRef(new Map<string,number>());
