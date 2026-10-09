@@ -9,6 +9,7 @@ import { expect, it, vi } from "vitest";
 import { ConfigurationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor } from "./settings";
 import { ProjectCreation } from "./project-creation";
+import { SettingsActionScope } from "./settings-action";
 import { SettingsTasks, SettingsTaskDialog, SettingsDialogSize } from "./settings-task";
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
@@ -231,6 +232,7 @@ async function registerFromProject(url = "https://github.com/delinoio/new.git") 
 }
 it("registers and resolves the original confirmed repository without saving the project", async () => {
  const f = fixture([]); render(f.view()); await screen.findByText(/No registered repositories/);
+ expect(screen.getByRole("button",{name:"Add repository"}).hasAttribute("data-settings-action")).toBe(false);
  await registerFromProject(); await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull());
  await screen.findByRole("button", { name: /^Move repository 1:/ });
  expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
@@ -283,4 +285,13 @@ it.each(["missing","unsupported","older"])("retains the original confirmation fo
  f.list.mockImplementationOnce(async()=>({resources:outcome==="missing"?[repository("new")]:f.rows.map(row=>({...row,...(outcome==="unsupported"?{schemaVersion:99}:{revision:6n})}))}));
  await registerFromProject();await screen.findByRole("button",{name:"Retry repository read"});expect(screen.queryByRole("button",{name:/^Move repository/})).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Retry repository read"}));await screen.findByRole("button",{name:/^Move repository 1:/});expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
+});
+
+it("uses labeled scoped registration actions while preserving original opener and read-only retry",async()=>{
+ const f=fixture([]);render(f.view(<SettingsActionScope><ConfigurationEditor kind={EntityKind.PROJECT} active saved={()=>{}} cancel={()=>{}}/></SettingsActionScope>));await screen.findByText(/No registered repositories/);
+ const opener=screen.getByRole("button",{name:"Add repository"});expect(opener.getAttribute("data-settings-action")).toBe("add");expect(opener.getAttribute("data-settings-action-presentation")).toBe("label");
+ fireEvent.click(opener);const child=await screen.findByRole("dialog",{name:"Add repository"});fireEvent.click(within(child).getByRole("button",{name:"Close Add repository"}));await waitFor(()=>expect(document.activeElement).toBe(opener));
+ f.list.mockRejectedValueOnce(new ConnectError("Read unavailable",Code.Unavailable));await registerFromProject();
+ const retry=await screen.findByRole("button",{name:"Retry repository read"});expect(retry.getAttribute("data-settings-action")).toBe("retry");expect(retry.getAttribute("data-settings-action-presentation")).toBe("label");
+ expect(f.registrationSave).toHaveBeenCalledOnce();fireEvent.click(retry);await screen.findByRole("button",{name:/^Move repository 1:/});expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
 });
