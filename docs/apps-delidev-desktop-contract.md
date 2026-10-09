@@ -3529,6 +3529,8 @@ composer, inset 12px with a subtle semantic border, 12px radius and 4px gap.
 Rows have a 40px base height, 14px ellipsized prompt and 12px secondary actions:
 Steer, accessible Remove icon, and More with Edit. Edit exposes the complete
 original input and preserves its revision, UTF-8 bound, skills and images.
+More/Edit remains available for inspection during read-only, pending or
+uncertain states; Save and other mutations retain their original locks.
 Attachments and editors may grow rows; narrow rows wrap their actions. Keep
 Agent requests separate and the existing short-height scrolling budget.
 
