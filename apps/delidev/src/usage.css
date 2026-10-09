@@ -14,6 +14,7 @@
 .usage-page .usage-summary-breakdown { margin-top: 16px; }
 .usage-page .usage-detail { margin-block: 16px; min-width: 0; }
 .usage-page .usage-table { max-width: 100%; min-width: 0; overscroll-behavior: contain; }
+.usage-page .usage-detail > .usage-table { overscroll-behavior-y: auto; }
 .usage-page .usage-table th, .usage-page .usage-table td { padding: 12px; font-variant-numeric: tabular-nums; }
 .usage-page .usage-table th { font-size: .85rem; }
 .usage-page .usage-table td { font-size: .875rem; }

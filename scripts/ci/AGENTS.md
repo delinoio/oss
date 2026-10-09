@@ -27,3 +27,5 @@
 - Exact `AGENTS.md` files are policy metadata and do not seed affected Go selection. Resolved production/internal-test/external-test embeds remain authoritative; embedded deletions/moves and other unknown resources retain conservative fallbacks.
 
 - Go formatting inventory uses NUL-separated Git paths and passes literal arguments to the formatter. Preserve source bytes and Git, formatter, missing-scope and empty-inventory failures; cover quoted non-ASCII and newline names in the central contract fixtures.
+
+- Runner-owned DeliDev Go fixture preparation uses a five-minute cold-build watchdog, separate from fixture lifetimes, product deadlines and Go package watchdogs. Publish structured start/failure timing; share only the resulting executable path.
