@@ -114,13 +114,15 @@ const (
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
 	CodexQuotaBlockV1              WorkerCapability = "codex-quota-block-v1"
-	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
-	NativeSessionCompactionV1      WorkerCapability = "native-session-compaction-v1"
-	CodexSessionCompactionV1       WorkerCapability = "codex-session-compaction-v1"
-	OpenCodeGeneralChatForkV1      WorkerCapability = "opencode-general-chat-fork-v1"
-	OpenCodeSessionCompactionV1    WorkerCapability = "opencode-session-compaction-v1"
-	NetworkBootstrapV1             WorkerCapability = "network-bootstrap-v1"
-	CodexAPIProxyV1                WorkerCapability = "codex-api-proxy-v1"
+	SubscriptionPaidCreditsV1      WorkerCapability = "subscription-paid-credits-v1"
+
+	SubscriptionObservationsV1  WorkerCapability = "subscription-observations-v1"
+	NativeSessionCompactionV1   WorkerCapability = "native-session-compaction-v1"
+	CodexSessionCompactionV1    WorkerCapability = "codex-session-compaction-v1"
+	OpenCodeGeneralChatForkV1   WorkerCapability = "opencode-general-chat-fork-v1"
+	OpenCodeSessionCompactionV1 WorkerCapability = "opencode-session-compaction-v1"
+	NetworkBootstrapV1          WorkerCapability = "network-bootstrap-v1"
+	CodexAPIProxyV1             WorkerCapability = "codex-api-proxy-v1"
 )
 
 type JobState string

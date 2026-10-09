@@ -138,12 +138,13 @@ func (v SubscriptionResetCredits) Validate() error {
 }
 
 // The Worker projects only bounded quota metadata, never native bodies, display
-// names, credit titles, balances, provider account identity or credentials.
+// names, credit titles, unrelated billing text, provider identity or credentials.
 type SubscriptionQuotaObservation struct {
-	ObservedAt          time.Time                 `json:"observed_at"`
-	Windows             []SubscriptionQuotaWindow `json:"windows"`
-	SpendControlReached *bool                     `json:"spend_control_reached,omitempty"`
-	Credits             *SubscriptionResetCredits `json:"credits,omitempty"`
+	PaidCredits         []SubscriptionPaidCreditBucket `json:"paid_credits,omitempty"`
+	ObservedAt          time.Time                      `json:"observed_at"`
+	Windows             []SubscriptionQuotaWindow      `json:"windows"`
+	SpendControlReached *bool                          `json:"spend_control_reached,omitempty"`
+	Credits             *SubscriptionResetCredits      `json:"credits,omitempty"`
 }
 type SubscriptionObservationResult struct {
 	QuotaBlock       *SubscriptionQuotaBlock       `json:"quota_block,omitempty"`
@@ -160,6 +161,14 @@ func InvalidSubscriptionObservation() *Error {
 func (v SubscriptionQuotaObservation) Validate(now time.Time) error {
 	if v.ObservedAt.IsZero() || v.ObservedAt.After(now.Add(time.Second)) || now.Sub(v.ObservedAt) > time.Minute || len(v.Windows) > 64 {
 		return InvalidSubscriptionObservation()
+	}
+	if ValidatePaidCreditBuckets(v.PaidCredits) != nil {
+		return InvalidSubscriptionObservation()
+	}
+	for _, b := range v.PaidCredits {
+		if !b.ObservedAt.Equal(v.ObservedAt) {
+			return InvalidSubscriptionObservation()
+		}
 	}
 	seen := map[string]bool{}
 	for _, w := range v.Windows {
@@ -181,6 +190,12 @@ func ApplySubscriptionQuota(a *Account, v SubscriptionQuotaObservation, now time
 		return false, InvalidSubscriptionObservation()
 	}
 	state := a.Subscription
+	// Paid buckets own independent successful timestamps. An earlier rolling
+	// quota response can carry a newer bucket than a later sparse quota read;
+	// merge that evidence before guarding the aggregate quota snapshot.
+	if err := mergePaidCredits(state, v.PaidCredits); err != nil {
+		return false, err
+	}
 	if state.QuotaObservedAt != nil && v.ObservedAt.Before(*state.QuotaObservedAt) {
 		return false, nil
 	}

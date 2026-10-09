@@ -473,6 +473,16 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 			return nil, domain.InvalidSubscriptionObservation()
 		}
 		quotaPublication := input.Operation == "" || state.Observation != nil && state.Observation.Action == domain.SubscriptionQuota
+		if observed.Quota != nil && len(observed.Quota.PaidCredits) > 0 {
+			_, machine, err := activeMachine(tx, input.Machine)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.SubscriptionPaidCreditsV1) {
+				return nil, domain.Fail(domain.Unsupported, "Paid-credit observations require an updated original Worker.", "")
+			}
+		}
+
 		beforeQuota := a
 		beforeState := *a.Subscription
 		beforeQuota.Subscription = &beforeState

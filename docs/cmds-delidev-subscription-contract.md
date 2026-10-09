@@ -314,7 +314,7 @@ Only confirmed native/file cleanup releases an idle credential lease.
 Reset-credit inventory preserves the authoritative signed-64-bit count separately
 from a bounded detail list. Null details mean unavailable; an empty list is an
 observed empty list. Native credit IDs, reset type/status and grant/expiry times
-are metadata; native titles, descriptions, balances, account identities and token
+are metadata; native titles, descriptions, unrelated billing content, account identities and token
 reflection never enter resources, receipts, logs or history. The desktop requires
 explicit confirmation tied to the displayed account revision, connection,
 generation and inventory identity. The CLI requires `--confirm`, with either the
@@ -504,3 +504,10 @@ contract. Consumption outcomes and quota recovery remain separate.
 The approved Settings confirmation uses the existing task lifetime, retained
 mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
 accepted server processing. No consumption resumes a failed session automatically.
+## Paid-credit observations — issue #2124
+
+System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
+
+Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
+
+Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.

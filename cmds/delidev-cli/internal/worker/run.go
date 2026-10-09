@@ -30,6 +30,7 @@ import (
 )
 
 type Config struct {
+	paidCredits              bool
 	imageClient              delidevv1connect.AttachmentServiceClient
 	branchReportClient       delidevv1connect.WorkerServiceClient
 	startup                  *executionStartupAttempt
@@ -318,6 +319,10 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1) {
 				profile += "\x00native-image-generation-v1"
 			}
+			config.paidCredits = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1)
+			if config.paidCredits {
+				profile += "\x00subscription-paid-credits-v1"
+			}
 			config.nativeClaudeInstallation = nil
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1) {
 				probeCtx, stop := context.WithTimeout(ctx, 30*time.Second)
@@ -467,6 +472,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
 				if config.quotaBlockSupported {
 					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
+				}
+				if config.paidCredits {
+					capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1)
 				}
 			}
 			if claudeCapabilityExpected {
