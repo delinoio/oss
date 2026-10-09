@@ -67,7 +67,7 @@ fn chord_valid(chord: &ShortcutChord) -> bool {
     // Fixed product window/palette/tab reservations and native editing survive
     // overrides.
     if chord.shift {
-        chord.key != "z"
+        !matches!(chord.key.as_str(), "v" | "z")
     } else {
         !matches!(
             chord.key.as_str(),
@@ -364,6 +364,12 @@ mod tests {
             assert!(!valid(&BTreeMap::from([(
                 ShortcutAction::Help,
                 binding(key, false)
+            )])));
+        }
+        for key in ["v", "z"] {
+            assert!(!valid(&BTreeMap::from([(
+                ShortcutAction::Help,
+                binding(key, true)
             )])));
         }
         assert!(!valid(&BTreeMap::from([

@@ -19,6 +19,8 @@ it("rejects fixed product and editing reservations and closed-schema violations"
  for(const key of ["k","n","w","1","9","c","v","Escape","é","Tab"])expect(validShortcutChord({key,shift:false})).toBe(false);
  expect(()=>parseShortcutOverrides({unknown:{state:"disabled"}})).toThrow();expect(()=>parseShortcutOverrides({help:{state:"disabled",extra:true}})).toThrow();
  expect(validShortcutChord({key:"j",shift:true})).toBe(true);
+ expect(validShortcutChord({key:"v",shift:true})).toBe(false);
+ expect(validShortcutChord({key:"z",shift:true})).toBe(false);
 });
 it("capture requires the renderer primary and rejects unsafe input without matching actions",()=>{
  expect(captureShortcut(new KeyboardEvent("keydown",{key:"J",metaKey:true,shiftKey:true}),ShortcutPlatform.Mac)).toEqual({key:"j",shift:true});
