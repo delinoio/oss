@@ -1941,3 +1941,5 @@ These observations publish distinct metadata-only transcript progress, without a
 ## OpenCode Go subscriptions — issue #2097
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+Issues #2015/#2016 now compose the root native search/fetch decoder with ordered Worker publication and atomic server/transcript retention under the sessions contract. Native private encrypted/binary/history ownership and the exact original call/result comparison remain unchanged. The public projection does not activate code-execution families, programmatic caller ownership, synthesized child observations or server-tool native checkpoint/continuation support. Settled publication stays independent of the existing native replacement gate and cleanup.

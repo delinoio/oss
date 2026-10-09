@@ -10,5 +10,7 @@
   "native-claude-message.reasoning_4d3137": "추론 · <s0/>",
   "native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3": "하네스가 추론을 가렸습니다. <s0/>",
   "native-claude-message.nativeStopReason_e2e029": "네이티브 중지 이유: <s0/>",
-  "native-claude-message.nativeStopSequence_96951d": "네이티브 중지 순서"
+  "native-claude-message.nativeStopSequence_96951d": "네이티브 중지 순서",
+  "native-claude-message.nativeWebToolError": "네이티브 웹 도구 오류:",
+  "native-claude-message.nativeDocumentContentPrivate": "원본 문서 내용은 비공개로 유지됩니다."
 }

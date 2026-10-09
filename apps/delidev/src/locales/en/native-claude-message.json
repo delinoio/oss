@@ -10,5 +10,7 @@
   "native-claude-message.reasoning_4d3137": "Reasoning · <s0/>",
   "native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3": "Reasoning was redacted by the harness. <s0/>",
   "native-claude-message.nativeStopReason_e2e029": "Native stop reason: <s0/>",
-  "native-claude-message.nativeStopSequence_96951d": "Native stop sequence"
+  "native-claude-message.nativeStopSequence_96951d": "Native stop sequence",
+  "native-claude-message.nativeWebToolError": "Native web tool error:",
+  "native-claude-message.nativeDocumentContentPrivate": "The original document content remains private."
 }

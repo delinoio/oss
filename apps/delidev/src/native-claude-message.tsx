@@ -1,15 +1,16 @@
+import { ClaudeWebKind, NativeClaudeWeb, validClaudeWeb } from "./native-claude-web";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeClaudeCitations, validClaudeCitationHistory, claudeCitationHistoryBytes } from "./native-claude-citations";
 import { object, type Document } from "./documents";
 import { claudeToolReference, type ClaudeToolReference } from "./native-claude-tool";
 
-enum BlockKind { Tool = "tool_use", Text = "text", Thinking = "thinking", Redacted = "redacted_thinking" }
+enum BlockKind { WebCall = "server_tool_use", WebSearch = "web_search_tool_result", WebFetch = "web_fetch_tool_result", Tool = "tool_use", Text = "text", Thinking = "thinking", Redacted = "redacted_thinking" }
 enum BlockState { Streaming = "streaming", Completed = "completed", Stopped = "stopped", Interrupted = "interrupted" }
 enum MessageState { Streaming = "streaming", Complete = "complete" }
 const stopReasons = new Set(["end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal", "model_context_window_exceeded"]);
 const blockLabels = { get [BlockState.Streaming]() { return copy("native-claude-message.streaming_a951c5"); }, get [BlockState.Completed]() { return copy("native-claude-message.contentComplete_829c09"); }, get [BlockState.Stopped]() { return copy("native-claude-message.streamClosed_5eab18"); }, get [BlockState.Interrupted]() { return copy("native-claude-message.interruptedPartialResponse_637011"); } };
-type Block = { citations?: Document; tool?: ClaudeToolReference; index: number; kind: BlockKind; text: string; state: BlockState };
+type Block = { web?: Document; citations?: Document; tool?: ClaudeToolReference; index: number; kind: BlockKind; text: string; state: BlockState };
 
 function keys(value: Record<string, unknown>, expected: string[]) {
   return Object.keys(value).length === expected.length && expected.every((key) => Object.hasOwn(value, key));
@@ -25,9 +26,19 @@ function message(value: unknown, state: string): { blocks: Block[]; reason: stri
   if (!keys(data, ["model", "blocks", "stop_reason", "stop_sequence", ...(interrupted ? ["interruption"] : [])]) || !validText(data.model, 256) || !data.model || !Array.isArray(data.blocks) || data.blocks.length > 1024 || (state !== MessageState.Streaming && state !== MessageState.Complete) || (data.stop_reason !== null && (typeof data.stop_reason !== "string" || !stopReasons.has(data.stop_reason))) || (data.stop_sequence !== null && !validText(data.stop_sequence, 256 * 1024))) return undefined;
   const blocks: Block[] = [];
   let bytes = 0, citationBytes = 0;
+ const webCalls = new Map<string,{name:string;stopped:boolean}>(), webResults=new Set<string>();
   for (const [index, value] of data.blocks.entries()) {
     const entry = object(value), block = object(entry.block);
-    if (!keys(entry, ["index", "block", "state", ...(Object.hasOwn(entry,"citations")?["citations"]:[])]) || !keys(block, block.kind === BlockKind.Tool ? ["kind", "text", "tool"] : ["kind", "text"]) || entry.index !== index || !Object.values(BlockKind).includes(block.kind as BlockKind) || !Object.values(BlockState).includes(entry.state as BlockState) || !validText(block.text, 256 * 1024) || ((block.kind === BlockKind.Redacted || block.kind === BlockKind.Tool) && block.text !== "") || (block.kind === BlockKind.Tool && !claudeToolReference(block.tool)) || (interrupted ? entry.state !== BlockState.Interrupted || block.kind !== BlockKind.Text : entry.state === BlockState.Interrupted || (state === MessageState.Complete || index < data.blocks.length - 1) && entry.state !== BlockState.Stopped)) return undefined;
+ const web = Object.values(ClaudeWebKind).includes(block.kind as ClaudeWebKind);
+    if (!keys(entry, ["index", "block", "state", ...(Object.hasOwn(entry,"citations")?["citations"]:[])]) || !keys(block, web ? ["kind", "text", "web"] : block.kind === BlockKind.Tool ? ["kind", "text", "tool"] : ["kind", "text"]) || entry.index !== index || !Object.values(BlockKind).includes(block.kind as BlockKind) || !Object.values(BlockState).includes(entry.state as BlockState) || !validText(block.text, 256 * 1024) || ((web || block.kind === BlockKind.Redacted || block.kind === BlockKind.Tool) && block.text !== "") || (block.kind === BlockKind.Tool && !claudeToolReference(block.tool)) || (interrupted ? entry.state !== BlockState.Interrupted || block.kind !== BlockKind.Text : entry.state === BlockState.Interrupted || (state === MessageState.Complete || index < data.blocks.length - 1) && entry.state !== BlockState.Stopped)) return undefined;
+    if (web) {
+ if (!validClaudeWeb(block.web, String(block.kind))) return undefined;
+ const w=object(block.web), id=String(w.native_id);
+ if(block.kind===BlockKind.WebCall) {if(webCalls.has(id)) return undefined;webCalls.set(id,{name:String(w.name),stopped:entry.state===BlockState.Stopped});
+ if(entry.state!==BlockState.Streaming) {const call=object(w.call);try {const input=object(JSON.parse(String(call.input_delta || call.initial_input))),key=w.name==="web_search"?"query":"url";if(!keys(input,[key])||!validText(input[key],256*1024)||!input[key])return undefined;}catch{return undefined;} }
+ }else {const call=webCalls.get(id);if(!call||!call.stopped||call.name!==w.name||webResults.has(id))return undefined;webResults.add(id);}
+ bytes+=new TextEncoder().encode(JSON.stringify(w)).length;
+ }
     if (Object.hasOwn(entry,"citations")) {
       if (interrupted || block.kind !== BlockKind.Text || !validClaudeCitationHistory(entry.citations, String(entry.state))) return undefined;
       citationBytes += claudeCitationHistoryBytes(entry.citations);
@@ -35,8 +46,9 @@ function message(value: unknown, state: string): { blocks: Block[]; reason: stri
     }
     bytes += new TextEncoder().encode(block.text).length;
     if (bytes > 256 * 1024) return undefined;
-    blocks.push({ citations: entry.citations as Document | undefined, tool: claudeToolReference(block.tool), index, kind: block.kind as BlockKind, text: block.text, state: entry.state as BlockState });
+    blocks.push({ web: web ? block.web as Document : undefined, citations: entry.citations as Document | undefined, tool: claudeToolReference(block.tool), index, kind: block.kind as BlockKind, text: block.text, state: entry.state as BlockState });
   }
+  if(state===MessageState.Complete && [...webCalls.keys()].some(id=>!webResults.has(id)))return undefined;
   return { blocks, reason: data.stop_reason as string | null, sequence: data.stop_sequence as string | null };
 }
 
@@ -52,7 +64,7 @@ export function NativeClaudeMessage({ content, state }: { content: unknown; stat
   if (!retained) return <section aria-label={copy("native-claude-message.claudeMessageUnavailable_9efc2c")}><p>{copy("native-claude-message.theRetainedClaudeMessageIsUnavailable_453226")}</p></section>;
   return <section className="native-claude-message-content" aria-label={copy("native-claude-message.claudeMessageContent_fa712d")}>
     <ol>{retained.blocks.map((block) => <li key={block.index}>
-      {block.kind === BlockKind.Tool ? <p><LocalizedText id="native-claude-message.toolProposal_e8bdb5" components={{ s0: <>{block.tool!.name}</>, s1: <small>{blockLabels[block.state]}</small> }} /></p> : block.kind === BlockKind.Thinking ? <Disclosure appearanceKind="reasoning_disclosure"><DisclosureSummary><LocalizedText id="native-claude-message.reasoning_4d3137" components={{ s0: <>{blockLabels[block.state]}</> }} /></DisclosureSummary><pre>{block.text}</pre></Disclosure> : block.kind === BlockKind.Redacted ? <p><LocalizedText id="native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3" components={{ s0: <small>{blockLabels[block.state]}</small> }} /></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
+      {block.web ? <><NativeClaudeWeb value={block.web} kind={block.kind} /><small>{blockLabels[block.state]}</small></> : block.kind === BlockKind.Tool ? <p><LocalizedText id="native-claude-message.toolProposal_e8bdb5" components={{ s0: <>{block.tool!.name}</>, s1: <small>{blockLabels[block.state]}</small> }} /></p> : block.kind === BlockKind.Thinking ? <Disclosure appearanceKind="reasoning_disclosure"><DisclosureSummary><LocalizedText id="native-claude-message.reasoning_4d3137" components={{ s0: <>{blockLabels[block.state]}</> }} /></DisclosureSummary><pre>{block.text}</pre></Disclosure> : block.kind === BlockKind.Redacted ? <p><LocalizedText id="native-claude-message.reasoningWasRedactedByTheHarness_4aeaa3" components={{ s0: <small>{blockLabels[block.state]}</small> }} /></p> : <><pre>{block.text}</pre><small>{blockLabels[block.state]}</small></>}
       {block.citations ? <NativeClaudeCitations value={block.citations} /> : null}
     </li>)}</ol>
     {retained.reason !== null ? <p><LocalizedText id="native-claude-message.nativeStopReason_e2e029" components={{ s0: <>{retained.reason}</> }} /></p> : null}

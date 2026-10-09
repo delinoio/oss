@@ -1,6 +1,9 @@
 package domain
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"reflect"
+)
 
 type ClaudeMessageMutation string
 type ClaudeTextKind string
@@ -12,12 +15,16 @@ const (
 	ClaudeBlockAppend      ClaudeMessageMutation = "block-append"
 	ClaudeBlockCitation    ClaudeMessageMutation = "block-citation"
 	ClaudeBlockToolInput   ClaudeMessageMutation = "block-tool-input"
+	ClaudeBlockWebInput    ClaudeMessageMutation = "block-web-input"
 	ClaudeBlockComplete    ClaudeMessageMutation = "block-complete"
 	ClaudeBlockStop        ClaudeMessageMutation = "block-stop"
 	ClaudeMessageMetadata  ClaudeMessageMutation = "message-metadata"
 	ClaudeMessageStop      ClaudeMessageMutation = "message-stop"
 	ClaudeText             ClaudeTextKind        = "text"
 	ClaudeToolUse          ClaudeTextKind        = "tool_use"
+	ClaudeWebCall          ClaudeTextKind        = "server_tool_use"
+	ClaudeWebSearchResult  ClaudeTextKind        = "web_search_tool_result"
+	ClaudeWebFetchResult   ClaudeTextKind        = "web_fetch_tool_result"
 	ClaudeThinking         ClaudeTextKind        = "thinking"
 	ClaudeRedactedThinking ClaudeTextKind        = "redacted_thinking"
 	ClaudeBlockStreaming   ClaudeBlockState      = "streaming"
@@ -29,6 +36,7 @@ const (
 // Retain displayable text and ordered tool references here. Tool payloads live
 // separately; opaque thinking signatures and cache metadata stay private.
 type ClaudeTextBlock struct {
+	Web  *ClaudeWebBlock      `json:"web,omitempty"`
 	Tool *ClaudeToolReference `json:"tool,omitempty"`
 	Kind ClaudeTextKind       `json:"kind"`
 	Text string               `json:"text"`
@@ -36,6 +44,7 @@ type ClaudeTextBlock struct {
 
 func (b *ClaudeTextBlock) UnmarshalJSON(raw []byte) error {
 	var wire struct {
+		Web  *ClaudeWebBlock      `json:"web,omitempty"`
 		Tool *ClaudeToolReference `json:"tool,omitempty"`
 		Kind ClaudeTextKind       `json:"kind"`
 		Text *string              `json:"text"`
@@ -43,11 +52,17 @@ func (b *ClaudeTextBlock) UnmarshalJSON(raw []byte) error {
 	if Decode(raw, &wire) != nil || wire.Text == nil {
 		return invalidClaudeContent()
 	}
-	*b = ClaudeTextBlock{Kind: wire.Kind, Text: *wire.Text, Tool: wire.Tool}
+	*b = ClaudeTextBlock{Kind: wire.Kind, Text: *wire.Text, Tool: wire.Tool, Web: wire.Web}
 	return b.Validate()
 }
 
 func (b ClaudeTextBlock) Validate() error {
+	if b.Web != nil || b.Kind == ClaudeWebCall || b.Kind == ClaudeWebSearchResult || b.Kind == ClaudeWebFetchResult {
+		if b.Web == nil || b.Tool != nil || b.Text != "" || b.Web.Validate(b.Kind) != nil {
+			return invalidClaudeContent()
+		}
+		return nil
+	}
 	if b.Kind != ClaudeText && b.Kind != ClaudeThinking && b.Kind != ClaudeRedactedThinking && b.Kind != ClaudeToolUse || Text(b.Text, "native Claude block", MaxMessageText, false) != nil || (b.Kind == ClaudeRedactedThinking || b.Kind == ClaudeToolUse) && b.Text != "" || (b.Kind == ClaudeToolUse) != (b.Tool != nil) || b.Tool != nil && b.Tool.Validate() != nil {
 		return invalidClaudeContent()
 	}
@@ -114,9 +129,9 @@ func (u ClaudeMessageUpdate) Validate() error {
 		return invalidClaudeContent()
 	}
 	blockMutation := u.Mutation == ClaudeBlockStart || u.Mutation == ClaudeBlockComplete
-	indexed := blockMutation || u.Mutation == ClaudeBlockAppend || u.Mutation == ClaudeBlockStop || u.Mutation == ClaudeBlockToolInput || u.Mutation == ClaudeBlockCitation
+	indexed := blockMutation || u.Mutation == ClaudeBlockAppend || u.Mutation == ClaudeBlockStop || u.Mutation == ClaudeBlockToolInput || u.Mutation == ClaudeBlockCitation || u.Mutation == ClaudeBlockWebInput
 	metadata := u.Mutation == ClaudeMessageStart || u.Mutation == ClaudeMessageMetadata
-	if indexed != (u.Index != nil) || u.Index != nil && *u.Index >= 1024 || blockMutation != (u.Block != nil) || u.Block != nil && u.Block.Validate() != nil || (u.Mutation == ClaudeBlockAppend) != (u.Delta != nil) || u.Delta != nil && Text(*u.Delta, "native text delta", MaxMessageText, false) != nil || !metadata && (u.StopReason != nil || u.StopSequence != nil) {
+	if indexed != (u.Index != nil) || u.Index != nil && *u.Index >= 1024 || blockMutation != (u.Block != nil) || u.Block != nil && u.Block.Validate() != nil || (u.Mutation == ClaudeBlockAppend || u.Mutation == ClaudeBlockWebInput) != (u.Delta != nil) || u.Delta != nil && Text(*u.Delta, "native text delta", MaxMessageText, false) != nil || !metadata && (u.StopReason != nil || u.StopSequence != nil) {
 		return invalidClaudeContent()
 	}
 	if u.Citations != nil && (!blockMutation || u.Block.Kind != ClaudeText || u.Citations.Validate() != nil) || (u.Mutation == ClaudeBlockCitation) != (u.Citation != nil) || u.Citation != nil && u.Citation.Validate() != nil || u.CitationCompletion != "" && (u.Mutation != ClaudeBlockComplete || u.Block.Kind != ClaudeText || u.CitationCompletion != ClaudeCitationsMatched && u.CitationCompletion != ClaudeCitationsOmitted) {
@@ -144,7 +159,7 @@ func (u ClaudeMessageUpdate) Validate() error {
 		}
 	}
 	switch u.Mutation {
-	case ClaudeMessageStart, ClaudeBlockStart, ClaudeBlockAppend, ClaudeBlockCitation, ClaudeBlockToolInput, ClaudeBlockComplete, ClaudeBlockStop, ClaudeMessageMetadata, ClaudeMessageStop:
+	case ClaudeMessageStart, ClaudeBlockStart, ClaudeBlockWebInput, ClaudeBlockAppend, ClaudeBlockCitation, ClaudeBlockToolInput, ClaudeBlockComplete, ClaudeBlockStop, ClaudeMessageMetadata, ClaudeMessageStop:
 		return nil
 	}
 	return invalidClaudeContent()
@@ -178,6 +193,7 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 	next.Blocks = append([]ClaudeRetainedBlock{}, prior.Blocks...)
 	for i := range next.Blocks {
 		next.Blocks[i].Citations = cloneClaudeCitationHistory(prior.Blocks[i].Citations)
+		next.Blocks[i].Block.Web = cloneClaudeWeb(prior.Blocks[i].Block.Web)
 	}
 	next.StopReason, next.StopSequence = copyClaudeText(prior.StopReason), copyClaudeText(prior.StopSequence)
 	if u.Mutation == ClaudeMessageMetadata {
@@ -187,6 +203,9 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 			if b.State != ClaudeBlockStopped {
 				return conflict()
 			}
+		}
+		if validateClaudeWebHistory(next.Blocks, true) != nil {
+			return conflict()
 		}
 		state = MessageComplete
 	} else if u.Mutation == ClaudeBlockStart {
@@ -211,8 +230,18 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 				b.Citations = &ClaudeCitationHistory{Deltas: []ClaudeCitation{}}
 			}
 			b.Citations.Deltas = append(b.Citations.Deltas, cloneClaudeCitation(*u.Citation))
+		case ClaudeBlockWebInput:
+			if b.State != ClaudeBlockStreaming || b.Block.Kind != ClaudeWebCall || b.Block.Web == nil || b.Block.Web.Call == nil {
+				return conflict()
+			}
+			if b.Block.Web.Call.InputDelta == nil {
+				empty := ""
+				b.Block.Web.Call.InputDelta = &empty
+			}
+			delta := *b.Block.Web.Call.InputDelta + *u.Delta
+			b.Block.Web.Call.InputDelta = &delta
 		case ClaudeBlockAppend:
-			if b.State != ClaudeBlockStreaming || b.Block.Kind == ClaudeRedactedThinking || b.Block.Kind == ClaudeToolUse {
+			if b.State != ClaudeBlockStreaming || b.Block.Kind == ClaudeRedactedThinking || b.Block.Kind == ClaudeToolUse || b.Block.Web != nil {
 				return conflict()
 			}
 			b.Block.Text += *u.Delta
@@ -261,7 +290,17 @@ func ApplyClaudeContent(prior *ClaudeMessageContent, state MessageState, u Claud
 			copy := *b.Block.Tool
 			next.Blocks[index].Block.Tool = &copy
 		}
+		next.Blocks[index].Block.Web = cloneClaudeWeb(b.Block.Web)
 		retained += len(b.Block.Text)
+	}
+	if validateClaudeWebHistory(next.Blocks, false) != nil {
+		return conflict()
+	}
+	for _, block := range next.Blocks {
+		if block.Block.Web != nil {
+			raw, _ := json.Marshal(block.Block.Web)
+			retained += len(raw)
+		}
 	}
 	if retained > MaxMessageText || citationBytes > MaxMessageText {
 		return nil, "", Fail(ResourceExhausted, "Claude message content reached its retention limit.", "Preserve the original partial message and reconcile without truncation or native replay.")
@@ -278,7 +317,7 @@ func copyClaudeText(value *string) *string {
 }
 
 func equalClaudeBlock(a, b ClaudeTextBlock) bool {
-	if a.Kind != b.Kind || a.Text != b.Text || (a.Tool == nil) != (b.Tool == nil) {
+	if a.Kind != b.Kind || a.Text != b.Text || (a.Tool == nil) != (b.Tool == nil) || !reflect.DeepEqual(a.Web, b.Web) {
 		return false
 	}
 	return a.Tool == nil || *a.Tool == *b.Tool

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
@@ -51,6 +52,7 @@ type ClaudeContentPublisher struct {
 	childTools                 map[string]string
 	childProofs                map[string][]claude.HistoryMessageProof
 	citationHistoryUnsupported bool
+	webHistoryUnsupported      bool
 	tasks                      *domain.ClaudeTasksState
 	denial                     *domain.ClaudeDenialCompletion
 	stop                       *domain.ClaudeStopObservation
@@ -215,6 +217,21 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 				}
 			}
 			block, err := claudeDisplayBlock(original)
+			if err == nil && block.Kind == domain.ClaudeWebCall && native.Kind == claude.ContentCompleted && native.Index != nil && int(*native.Index) < len(prior.content.Blocks) {
+				retained := prior.content.Blocks[*native.Index].Block.Web
+				if retained == nil || retained.Call == nil || block.Web.NativeID != retained.NativeID || block.Web.Name != retained.Name {
+					return true, b.block()
+				}
+				input := retained.Call.InitialInput
+				if retained.Call.InputDelta != nil && *retained.Call.InputDelta != "" {
+					input = *retained.Call.InputDelta
+				}
+				var a, z any
+				if domain.Decode([]byte(input), &a) != nil || domain.Decode([]byte(block.Web.Call.InitialInput), &z) != nil || !reflect.DeepEqual(a, z) {
+					return true, b.block()
+				}
+				block.Web = retained
+			}
 			if err != nil {
 				return true, b.block()
 			}
@@ -241,6 +258,15 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 				return true, b.block()
 			}
 			u.Citation, u.Mutation = &citation, domain.ClaudeBlockCitation
+			break
+		}
+		if native.DeltaKind == claude.ToolInputDelta && block.Block.Kind == domain.ClaudeWebCall {
+			if native.Delta == nil || native.Block != nil {
+				return true, b.block()
+			}
+			delta := *native.Delta
+			u.Delta = &delta
+			u.Mutation = domain.ClaudeBlockWebInput
 			break
 		}
 		if native.DeltaKind == claude.ToolInputDelta {
@@ -284,6 +310,9 @@ func (c *ClaudeContentPublisher) PublishObservation(ctx context.Context, o claud
 }
 
 func claudeDisplayBlock(block *claude.NativeContentBlock) (domain.ClaudeTextBlock, error) {
+	if block != nil && (block.ServerTool != nil || block.ServerResult != nil) {
+		return claudeDisplayWeb(block)
+	}
 	if block == nil || block.Citations != nil || block.Media != nil || block.Tool != nil || block.ServerTool != nil || block.ServerResult != nil {
 		return domain.ClaudeTextBlock{}, publicationUncertain()
 	}
@@ -330,6 +359,12 @@ func (c *ClaudeContentPublisher) drain(ctx context.Context) error {
 
 func (c *ClaudeContentPublisher) commitHead() {
 	item := c.queue[0]
+	if u := item.event.ClaudeMessage; u != nil && u.Block != nil && u.Block.Web != nil {
+		c.webHistoryUnsupported = true
+		if u.Mutation == domain.ClaudeBlockComplete && c.binding.publisher.config.Logger != nil {
+			c.binding.publisher.config.Logger.Info("claude_web_tool_observed", "job_id", c.binding.journal.JobID, "sequence", item.event.Sequence, "kind", u.Block.Kind, "name", u.Block.Web.Name)
+		}
+	}
 	if u := item.event.ClaudeMessage; u != nil && u.Mutation == domain.ClaudeBlockComplete {
 		c.citationHistoryUnsupported = c.citationHistoryUnsupported || !item.next.content.Blocks[*u.Index].Citations.ContinuationCandidate()
 	}
