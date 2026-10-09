@@ -263,6 +263,8 @@ func openAPIStreamMode(ctx context.Context, config APIStreamConfig, resumed bool
 	if err := validateInitializeMode(response.Result, string(config.Permission), "ANTHROPIC_API_KEY", config.Subscription != nil); err != nil {
 		return nil, err
 	}
+	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
+	process.ObserveStartup(config.Process, domain.StartupSettings, domain.StartupProgressRunning)
 	phase = settingsPhase
 	applied, err := s.ReadAppliedSettings(bounded, domain.NewID(), config.Model, config.Effort)
 	if err != nil {

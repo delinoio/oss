@@ -280,6 +280,8 @@ func openAPI(ctx context.Context, config apiConfig) (api *apiConnection, returne
 	if response.ErrorCode != nil || validateInitializeResult(response.Result, prepared.Cwd, &profile) != nil {
 		return nil, incompatible()
 	}
+	process.ObserveStartup(prepared, domain.StartupInitialize, domain.StartupProgressCompleted)
+	process.ObserveStartup(prepared, domain.StartupSettings, domain.StartupProgressRunning)
 	var nativeMetadata initializeResult
 	_ = decode(response.Result, &nativeMetadata)
 	phase = authenticatePhase

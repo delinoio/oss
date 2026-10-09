@@ -157,7 +157,7 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
 	nativeConfig := opencode.APIExecutionConfig{OrdinaryTools: ordinaryTools,
-		Probe:     opencode.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
+		Probe:     opencode.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), Root: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
 		References: openCodeWorkspaceReferences(manifest),
 		Settings:   requested.Session, Instructions: requested.Instructions, Rejection: requested.Rejection,
