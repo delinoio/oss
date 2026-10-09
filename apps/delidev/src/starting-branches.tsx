@@ -91,20 +91,21 @@ function StartingBranch({project,repositoryId,machineId,starting,change,active,s
   useLayoutEffect(()=>{input.current?.setCustomValidity(problem);report(repositoryId,valid && !ime);return()=>report(repositoryId,true);},[repositoryId,valid,problem,ime,report]);
   const guarded=()=>active && !input.current?.matches(":disabled");
   const select=(name:string)=>{
-    if(!guarded() || name && (!validStartingBranch(name) || !managedRemote))return;
+    if(!guarded() || name && (!validStartingBranch(name) || !managedRemote))return false;
     const others=starting.filter(value=>object(value).repository_id!==repositoryId);
     const values=name ? [...others,{repository_id:repositoryId,reference:{type:"remote-branch",remote:managedRemote,name}}]:others;
     const ids=items(document(project).repositories).map(text);
     change(values.sort((a,b)=>ids.indexOf(text(object(a).repository_id))-ids.indexOf(text(object(b).repository_id))));
+    return true;
   };
   // A valid typed draft can arrive before repository metadata. Commit only after
   // the original exact repository supplies its configured managed-clone remote.
-  useEffect(()=>{if(typed && valid && !composing.current && active) { select(draft); setTyped(false); }},[typed,valid,managedRemote,active]);
+  useEffect(()=>{if(typed && valid && !composing.current && active) { if(select(draft))setTyped(false); }},[typed,valid,managedRemote,active]);
   useEffect(()=>{if(!active)setOpen(false);},[active]);
   const close=()=>{setOpen(false);setHighlight(-1);};
   const filtered=(inventory?.branches??[]).filter(name=>name.toLocaleLowerCase().includes(draft.toLocaleLowerCase()));
   const candidates=[{name:"",label:copy("new-session.savedStartingReference")},...filtered.map(name=>({name,label:name})),...(draft && validStartingBranch(draft) && !inventory?.branches.includes(draft)?[{name:draft,label:copy("new-session.useTypedBranch",{name:draft})}]:[])];
-  const choose=(name:string)=>{select(name);setDraft(name);setTyped(false);close();input.current?.focus();};
+  const choose=(name:string)=>{if(!select(name))return;setDraft(name);setTyped(false);close();input.current?.focus();};
   useLayoutEffect(()=>{if(!open || !popup.current || !input.current)return;
     const panel=popup.current;panel.showPopover?.();
     const position=()=>{const bounds=input.current!.getBoundingClientRect();const below=window.innerHeight-bounds.bottom-8,above=bounds.top-8;const useBelow=below>=Math.min(280,panel.scrollHeight)||below>=above;panel.style.width=`${Math.min(bounds.width,window.innerWidth-16)}px`;panel.style.maxHeight=`${Math.max(0,Math.min(280,useBelow?below:above))}px`;panel.style.left=`${Math.max(8,Math.min(bounds.left,window.innerWidth-panel.offsetWidth-8))}px`;panel.style.top=`${useBelow?bounds.bottom+4:Math.max(8,bounds.top-panel.offsetHeight-4)}px`;};

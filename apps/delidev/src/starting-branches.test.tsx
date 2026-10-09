@@ -3,7 +3,7 @@ import {create} from "@bufbuild/protobuf";
 import {createRouterTransport} from "@connectrpc/connect";
 import {TransportProvider} from "@connectrpc/connect-query";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
-import {fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {act,fireEvent,render,screen,waitFor} from "@testing-library/react";
 import {beforeEach,expect,it,vi} from "vitest";
 import {EntityKind,ResourceSchema,ResourceService,WorkerService,newRequestId,type Resource} from "@delinoio/delidev-api-client";
 import {encode} from "./documents";
@@ -87,4 +87,23 @@ it.each(["@", "-leading"])("blocks direct creation for server-rejected branch %s
  const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);await screen.findByText(/Branch discovery is unavailable/);
  fireEvent.change(input,{target:{value:name}});
  expect(input.getAttribute("aria-invalid")).toBe("true");expect(validity).toHaveBeenLastCalledWith(false);expect(change).not.toHaveBeenCalled();
+});
+
+
+it("retains the typed invalid draft when Enter cannot commit a disabled candidate", async () => {
+ const f=fixture(),change=vi.fn(),validity=vi.fn();let release!:()=>void;
+ const pending=new Promise<void>(resolve=>{release=resolve;});
+ const transport=createRouterTransport(router=>router.service(ResourceService,{getResource:async request=>{
+  if(request.id===f.repositories[0].id)await pending;
+  return {resource:[...f.repositories,f.machine].find(row=>row.id===request.id)};
+ }}));
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><StartingBranches project={f.project} machineId={f.machine.id} starting={[]} change={change} validity={validity} active supported={false}/></QueryClientProvider></TransportProvider>);
+ const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);fireEvent.change(input,{target:{value:"feature/new"}});
+ const candidate=screen.getByRole("option",{name:'Use "feature/new"'});expect((candidate as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.keyDown(input,{key:"ArrowDown"});fireEvent.keyDown(input,{key:"ArrowDown"});fireEvent.keyDown(input,{key:"Enter"});
+ expect(change).not.toHaveBeenCalled();expect((input as HTMLInputElement).value).toBe("feature/new");expect(input.getAttribute("aria-invalid")).toBe("true");expect(validity).toHaveBeenLastCalledWith(false);
+ await act(async()=>{release();});
+ await waitFor(()=>expect(change).toHaveBeenLastCalledWith([{repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"upstream",name:"feature/new"}}]));
+ expect(validity).toHaveBeenLastCalledWith(true);
 });
