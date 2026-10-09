@@ -46,3 +46,10 @@ it("loads at most eight project labels concurrently without blocking duplicate t
  fireEvent.change(screen.getByRole("combobox"),{target:{value:"Duplicate"}});await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(10));await waitFor(()=>expect(waits.size).toBe(8));const selected=document.querySelector('[data-selected="true"]')?.getAttribute("data-value");
  await act(async()=>waits.get(ids[0])!(create(ResourceSchema,{id:ids[0],kind:EntityKind.PROJECT,revision:1n,schemaVersion:1,documentJson:encode({name:"Current project"})})));await screen.findByText("Current project");expect(document.querySelector('[data-selected="true"]')?.getAttribute("data-value")).toBe(selected);await waitFor(()=>expect(waits.size).toBe(9));fireEvent.click(screen.getAllByRole("option")[0]);expect(opened).toHaveBeenCalledTimes(1);
 });
+
+it.each([{reload:false,label:"Retry"},{reload:true,label:"Reload"}])("keeps focused $label Enter separate from session selection",async ({reload})=>{
+ let fail=true;const selected=row("Match first");const {requests,opened}=mount(token=>{if(reload)return {sessions:[],nextPageToken:fail?"same":""};if(!token)return {sessions:[selected],nextPageToken:"next"};if(fail)throw new ConnectError("temporary",Code.Unavailable);return {sessions:[],nextPageToken:""};});
+ fireEvent.change(screen.getByRole("combobox"),{target:{value:"Match"}});const action=await screen.findByRole("button",{name:reload?"Reload":"Retry"});action.focus();const before=[...requests];expect(fireEvent.keyDown(action,{key:"Enter"})).toBe(true);expect(opened).not.toHaveBeenCalled();expect(requests).toEqual(before);expect(screen.getByRole("dialog")).toBeTruthy();
+ // Native button activation is a click; jsdom requires that second event.
+ fail=false;fireEvent.click(action);await waitFor(()=>expect(requests).toHaveLength(before.length+1));expect(requests.at(-1)).toBe(reload?"":"next");expect(opened).not.toHaveBeenCalled();expect(screen.getByRole("dialog")).toBeTruthy();
+});
