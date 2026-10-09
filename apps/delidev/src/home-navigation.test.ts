@@ -1,6 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { ErrorDetailSchema, FailureCode, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ErrorDetailSchema, FailureCode, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { expect, it, vi } from "vitest";
 import { HomeNavigation, NavigationChain, ReadStage, navigationRow, type NavigationReader } from "./home-navigation";
 import { encode } from "./documents";
@@ -159,4 +159,9 @@ it("accepts opaque cursor renewal while refreshing only the original range token
   expect(chain.getSnapshot().error).toBeUndefined();
   await chain.refresh(renewed);
   expect(renewed.mock.calls.map(([token]) => token)).toEqual(["", "accepted-next", "", "accepted-next"]);
+});
+
+it("retains only a valid original Sidechat parent hint and leaves independent Forks separate",()=>{
+ const parent=newRequestId(),child=newRequestId();const value=(fork:object)=>navigationRow(create(ResourceSchema,{id:child,kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({name:"Child",fork})}));
+ const sidechat=value({source_session_id:parent,sidechat_parent_snapshot:{configuration:{private:"not retained"}}});expect(sidechat.sidechatParent).toBe(parent);expect(JSON.stringify({...sidechat,revision:String(sidechat.revision)})).not.toContain("private");expect(value({source_session_id:parent,snapshot:{}}).sidechatParent).toBeUndefined();expect(value({source_session_id:child,sidechat_parent_snapshot:{configuration:{}}}).sidechatParent).toBeUndefined();expect(value({source_session_id:"foreign",sidechat_parent_snapshot:{configuration:{}}}).sidechatParent).toBeUndefined();
 });
