@@ -56,6 +56,7 @@ try {
       const header = document.querySelector(".session-header"), composer = document.querySelector(".composer"), controls = document.querySelector(".session-controls"), heading = document.querySelector(".session-heading");
       return { header: header.getBoundingClientRect().toJSON(), composer: composer.getBoundingClientRect().toJSON(), controls: controls.getBoundingClientRect().toJSON(), heading: heading.getBoundingClientRect().toJSON(), overflow: header.scrollWidth > header.clientWidth, buttons: [...controls.querySelectorAll("button")].map(button => button.getBoundingClientRect().height).filter(height => height > 0) };
     });
+    assert.equal(await page.locator(".session-toolbar").count(), 0); assert.equal(await page.locator(".session-navigation").count(), 1);
     assert.equal(geometry.overflow, false); assert(geometry.header.bottom <= geometry.composer.top); if (geometry.composer.bottom > height + 1) assert.equal(await page.locator(".session-conversation-region").evaluate(node => getComputedStyle(node).overflowY), "auto", "Short layouts retain the original bounded conversation scroll owner");
     assert(geometry.buttons.every(value => value >= 40));
     if (width <= 520) assert(geometry.controls.top >= geometry.heading.bottom);
