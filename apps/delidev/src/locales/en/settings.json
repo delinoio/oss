@@ -178,5 +178,12 @@
   "settings.search.clear": "Clear search",
   "settings.search.empty": "No settings match this search.",
   "settings.search.unavailable": "This setting is unavailable here.",
-  "settings.search.category": "Overview"
+  "settings.search.category": "Overview",
+  "settings.projectDefaultsDescription": "Default account routing, plan approval, Worktree fetch, and pull request remediation.",
+  "settings.projectDefaultsForm": "Project defaults form",
+  "settings.refreshingProjectDefaults": "Refreshing project defaults…",
+  "settings.savingProjectDefaults": "Saving project defaults…",
+  "settings.projectDefaultsSaveOutcomeUnknown": "Project defaults save outcome is unknown.",
+  "settings.unsavedProjectDefaults": "Unsaved project defaults",
+  "settings.networkPreferencesDescription": "Network settings for this server."
 }

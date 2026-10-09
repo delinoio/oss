@@ -10,7 +10,7 @@ import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 const app=resolve(dirname(fileURLToPath(import.meta.url)),".."), directory=await mkdtemp(join(tmpdir(),"delidev-actions-layout-"));
 const {chromium}=await import(process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE?pathToFileURL(resolve(process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE)).href:"playwright");
-const categories=["AI Subscription","AI API Keys","API Providers","Agent Workers","Instructions","Projects","Repositories","Git Profiles","Git","Runner Devices","Paired devices","Appearance","Server preferences","Connections","Notifications","Import / Export","Backups"];
+const categories=["AI Subscription","AI API Keys","API Providers","Agent Workers","Instructions","Projects","Repositories","Git Profiles","Runner Devices","Paired devices","Appearance","Server preferences","Connections","Notifications","Import / Export","Backups"];
 const translations=new Map();for(const file of await readdir(join(app,"src/locales/en"))){if(!file.endsWith('.json'))continue;const en=JSON.parse(await readFile(join(app,"src/locales/en",file))),ko=JSON.parse(await readFile(join(app,"src/locales/ko",file)));for(const[key,value]of Object.entries(en))if(!translations.has(value))translations.set(value,ko[key]);}
 let browser,server,categoryChecks=0,tooltipChecks=0,errors=[];
 try{

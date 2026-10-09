@@ -6,10 +6,11 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type SaveConfigurationRequest, type Resource } from "@delinoio/delidev-api-client";
+import { SystemService, SystemCapability, ConfigurationService, EntityKind, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, newRequestId, type ListResourcesRequest, type SaveConfigurationRequest, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor, ConfigurationEditorPresentation, Settings } from "./settings";
 import { newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { encode, type Document } from "./documents";
+import { SettingsCategory } from "./settings-category";
 import { MutationIntents } from "./mutation";
 
 // Settings renders all mounted categories under Strict Mode. Keep this fixture
@@ -21,7 +22,7 @@ type Page = { resources: Resource[]; nextPageToken?: string };
 function resource(kind: EntityKind, data: Document, revision = 8n) {
   return create(ResourceSchema, { kind, id: newRequestId(), schemaVersion: 1, revision, documentJson: encode(data) });
 }
-function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise<Page>) {
+function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise<Page>, capabilities: SystemCapability[] = []) {
   const list = vi.fn((request: ListResourcesRequest) => request.filter?.kind === EntityKind.SETTINGS && read
     ? read(request.filter.pageToken) : { resources: rows.filter(row => row.kind === request.filter?.kind) });
   const save = vi.fn(async (request: SaveConfigurationRequest) => {
@@ -32,6 +33,7 @@ function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise
   });
   const get = vi.fn((request: { id: string }): { resource?: Resource } | Promise<{ resource?: Resource }> => ({ resource: rows.find(row => row.id === request.id) }));
   const makeTransport = () => createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities }) });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(ConfigurationService, { saveConfiguration: save });
     router.service(ProviderService, { listProviderInventory: () => ({ entries: [], capabilities: [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER] }) });
@@ -41,8 +43,8 @@ function fixture(rows: Resource[] = [], read?: (token: string) => Page | Promise
   const view = (children: ReactNode, current: Transport = transport) => <StrictMode><TransportProvider transport={current}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
   return { list, save, get, client, transport, makeTransport, view };
 }
-function choosePreferences() { fireEvent.click(screen.getByRole("button", { name: "Server preferences" })); }
-function chooseGit() { fireEvent.click(screen.getByRole("button", { name: "Git" })); }
+function choosePreferences() { fireEvent.click(screen.getByRole("button", { name: "Project defaults" })); }
+function chooseGit() { fireEvent.click(screen.getByRole("button", { name: "Project defaults" })); }
 function automaticFetch() { return screen.getByLabelText("Allow automatic fetch before Worktree preparation") as HTMLInputElement; }
 function details() { return screen.getByText("Remediation details").closest("details")!; }
 
@@ -54,12 +56,12 @@ function routing() { return screen.getByLabelText("Default account routing") as 
 it.each([true, false])("opens the scoped Git form directly without writes, empty: %s", async empty => {
   const row = resource(EntityKind.SETTINGS, known), value = fixture(empty ? [] : [row]);
   render(value.view(<Settings />)); chooseGit();
-  const form = await screen.findByRole("form", { name: "Git workflow form" });
+  const form = await screen.findByRole("form", { name: "Project defaults form" });
   expect(automaticFetch().checked).toBe(empty);
   expect(screen.getAllByRole("checkbox")).toHaveLength(4); expect(details().open).toBe(false);
-  expect(screen.queryByLabelText("Default account routing")).toBeNull();
+  expect(screen.getByLabelText("Default account routing")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
-  for (const label of ["New Git workflow", "Edit Git workflow", "Delete Git workflow", "Cancel edit"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
+  for (const label of ["New Project defaults", "Edit Project defaults", "Delete Project defaults", "Cancel edit"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
   expect(screen.queryByText("Saved git workflow")).toBeNull(); expect(screen.queryByRole("dialog")).toBeNull();
   expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(true);
   fireEvent.click(automaticFetch()); expect(saveButton().disabled).toBe(false);
@@ -78,14 +80,14 @@ it.each(["empty-continuation", "singleton-continuation", "multiple", "unsupporte
   if (variant === "multiple") rows.push(resource(EntityKind.SETTINGS, known));
   if (variant === "unsupported") rows[0].schemaVersion = 2;
   const value = fixture(rows, () => ({ resources: rows, nextPageToken: variant.endsWith("continuation") ? "opaque-page-2" : "" }));
-  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("region", { name: "Git workflow unavailable" });
+  render(value.view(<Settings />)); chooseGit(); await screen.findByRole("region", { name: "Project defaults unavailable" });
   for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
   expect(screen.queryByRole("form")).toBeNull(); expect(value.save).not.toHaveBeenCalled();
   if (variant.endsWith("continuation")) {
     fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
     await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "opaque-page-2")).toBe(true));
     expect(screen.queryByRole("form")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   }
 });
 
@@ -98,12 +100,12 @@ it("retains a dirty Git draft and disclosure through failed refresh and reconnec
   });
   const view = render(value.view(<Settings />)); chooseGit(); const form = await screen.findByRole("form");
   fireEvent.click(automaticFetch()); details().open = true;
-  fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
+  fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
   expect(screen.getByRole("form")).toBe(form); expect(automaticFetch().checked).toBe(true); expect(details().open).toBe(true);
   expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(false);
   fail = false; view.rerender(value.view(<Settings />, value.makeTransport()));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await waitFor(() => expect(saveButton().disabled).toBe(false));
   expect(screen.getByRole("form")).toBe(form); expect(details().open).toBe(true); expect(value.save).not.toHaveBeenCalled();
 });
@@ -114,8 +116,8 @@ it("discards Git revision drift into the latest full document and preserves hidd
   fireEvent.click(automaticFetch());
   const latest = { ...known, default_routing: "fixed", retained_extension: { value: "keep" }, remediation: { ...known.remediation, attempt_limit: 11 } };
   rows[0] = { ...original, revision: 9n, documentJson: encode(latest) };
-  fireEvent.click(screen.getByRole("button", { name: "Refresh Git workflow" }));
-  await screen.findByText(/Git workflow changed elsewhere/);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+  await screen.findByText(/Project defaults changed elsewhere/);
   expect(automaticFetch().checked).toBe(true); expect(saveButton().disabled).toBe(true);
   fireEvent.click(discardButton()); expect(automaticFetch().checked).toBe(false);
   fireEvent.click(automaticFetch()); await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
@@ -145,7 +147,7 @@ it("blocks a fresh Git save after a typed revision rejection until explicit disc
   });
   render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
   fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
-  await screen.findByText(/Git workflow changed elsewhere/);
+  await screen.findByText(/Project defaults changed elsewhere/);
   expect(automaticFetch().checked).toBe(true); expect(saveButton().disabled).toBe(true);
   fireEvent.click(discardButton()); expect(automaticFetch().checked).toBe(false);
   fireEvent.click(automaticFetch()); await waitFor(() => expect(saveButton().disabled).toBe(false)); fireEvent.click(saveButton());
@@ -159,9 +161,9 @@ it("keeps the Git save result authoritative over an older pending read", async (
   let resolve!: (response: { resource: Resource }) => void;
   value.get.mockImplementation(request => request.id === original.id ? new Promise(done => { resolve = done; }) : { resource: undefined });
   render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={original} serverPreferenceSection={ServerPreferenceSection.GitWorkflow} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete: true, resource: original, fetching: false }} active saved={() => {}} cancel={() => {}} />));
-  const form = screen.getByRole("form", { name: "Git workflow form" });
+  const form = screen.getByRole("form", { name: "Project defaults form" });
   fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
-  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Unsaved project defaults")).toBeNull());
   resolve({ resource: original }); await waitFor(() => expect(value.client.isFetching()).toBe(0));
   expect(automaticFetch().checked).toBe(true); expect(screen.getByRole("form")).toBe(form);
   expect(screen.queryByText(/changed elsewhere/)).toBeNull();
@@ -174,9 +176,9 @@ it("disposes a Git draft and disclosure on category departure while preserving s
   const value = fixture([resource(EntityKind.SETTINGS, known)]);
   render(value.view(<Settings />)); chooseGit(); await screen.findByRole("form");
   fireEvent.click(automaticFetch()); details().open = true;
-  choosePreferences(); await screen.findByLabelText("Default account routing");
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
   expect(screen.queryByText("Remediation details")).toBeNull();
-  chooseGit(); await screen.findByRole("form", { name: "Git workflow form" });
+  chooseGit(); await screen.findByRole("form", { name: "Project defaults form" });
   expect(automaticFetch().checked).toBe(false); expect(details().open).toBe(false);
   expect(saveButton().disabled).toBe(true); expect(value.save).not.toHaveBeenCalled();
 });
@@ -186,22 +188,22 @@ it("shows an ordinary form only after a complete empty read without creating set
   const pending = new Promise<Page>(done => { resolve = done; });
   const value = fixture([], () => pending);
   render(value.view(<Settings />)); choosePreferences();
-  expect(screen.getByRole("status").textContent).toBe("Loading server preferences…");
+  expect(screen.getByRole("status").textContent).toBe("Loading project defaults…");
   expect(screen.queryByRole("form")).toBeNull();
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   resolve({ resources: [] });
-  const form = await screen.findByRole("form", { name: "Server preferences form" });
+  const form = await screen.findByRole("form", { name: "Project defaults form" });
   expect(routing().value).toBe("sequential-exhaustion");
-  expect(screen.queryByRole("checkbox")).toBeNull();
-  expect(screen.queryByText("Remediation details")).toBeNull();
+  expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+  expect(details().open).toBe(false);
   expect(saveButton().disabled).toBe(true); expect(discardButton().disabled).toBe(true);
   expect(screen.queryByText("No saved server preferences")).toBeNull();
   expect(screen.queryByRole("heading", { name: /New Server|Edit Server/ })).toBeNull();
   expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
-  expect(form.compareDocumentPosition(screen.getByRole("button", { name: "Network settings" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
   fireEvent.change(routing(), { target: { value: "priority" } });
   expect(saveButton().disabled).toBe(false); expect(discardButton().disabled).toBe(false);
-  expect(screen.getByText("Unsaved changes")).toBeTruthy();
+  expect(screen.getByText("Unsaved project defaults")).toBeTruthy();
   fireEvent.click(discardButton());
   expect(routing().value).toBe("sequential-exhaustion"); expect(saveButton().disabled).toBe(true);
   expect(screen.getByRole("form")).toBe(form); expect(value.save).not.toHaveBeenCalled();
@@ -220,7 +222,7 @@ it.each(["empty-continuation", "singleton-continuation", "multiple"])("does not 
   if (variant === "multiple") rows.push(resource(EntityKind.SETTINGS, known));
   const value = fixture(rows, () => ({ resources: rows, nextPageToken: variant === "multiple" ? "" : "opaque-page-2" }));
   render(value.view(<Settings />)); choosePreferences();
-  await screen.findByRole("region", { name: "Server preferences unavailable" });
+  await screen.findByRole("region", { name: "Project defaults unavailable" });
   for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
   expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
@@ -230,7 +232,7 @@ it("opens saved values directly with no New, Edit, summary or deletion workflow"
   const row = resource(EntityKind.SETTINGS, known), value = fixture([row]);
   render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
   expect(routing().value).toBe("priority");
-  expect(screen.queryByLabelText("Allow automatic fetch before Worktree preparation")).toBeNull();
+  expect(automaticFetch()).toBeTruthy();
   for (const label of ["New Server preferences", "Edit Server preferences", "Delete Server preferences"]) expect(screen.queryByRole("button", { name: label })).toBeNull();
   expect(screen.queryByText("Saved server preferences")).toBeNull(); expect(saveButton().disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
@@ -241,7 +243,7 @@ it.each(["future", "invalid-json", "missing-policy", "unknown-routing", "invalid
   if (variant === "future") row.schemaVersion = 2;
   if (variant === "invalid-json") row.documentJson = new Uint8Array([255]);
   const value = fixture([row]); render(value.view(<Settings />)); choosePreferences();
-  const unavailable = within(await screen.findByRole("region", { name: "Server preferences unavailable" }));
+  const unavailable = within(await screen.findByRole("region", { name: "Project defaults unavailable" }));
   expect(unavailable.getByText(row.id)).toBeTruthy(); expect(unavailable.getByRole("status").textContent).toContain("Policy values are unavailable.");
   expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByLabelText("Default account routing")).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
@@ -254,7 +256,7 @@ it.each([true, false])("preserves the mounted dirty form through refresh failure
   render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
   fireEvent.change(routing(), { target: { value: "fixed" } });
   fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findByText("Refreshing server preferences…"); expect(saveButton().disabled).toBe(true);
+  await screen.findByText("Refreshing project defaults…"); expect(saveButton().disabled).toBe(true);
   reject(new ConnectError("Refresh unavailable", Code.Unavailable));
   await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
   expect(screen.getByRole("form")).toBe(form); expect(routing().value).toBe("fixed");
@@ -269,7 +271,7 @@ it("adopts the first save and keeps the same form, disclosure and singleton for 
   details().open = true;
   fireEvent.click(automaticFetch()); fireEvent.click(saveButton());
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
-  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Unsaved project defaults")).toBeNull());
   expect(screen.getByRole("form")).toBe(form); expect(details().open).toBe(true); expect(saveButton().disabled).toBe(true);
   const first = (await value.save.mock.results[0].value).resource;
   fireEvent.click(screen.getByLabelText("Automatically fix required CI failures"));
@@ -288,7 +290,7 @@ it("retains a changed draft on external revision drift and discards into the lat
   fireEvent.change(routing(), { target: { value: "fixed" } });
   rows[0] = { ...original, revision: 9n, documentJson: encode({ ...known, default_routing: "round-robin", retained_extension: { value: "latest" } }) };
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findByText(/Server preferences changed elsewhere/);
+  await screen.findByText(/Project defaults changed elsewhere/);
   expect(routing().value).toBe("fixed"); expect(saveButton().disabled).toBe(true);
   fireEvent.click(discardButton()); expect(routing().value).toBe("round-robin");
   fireEvent.change(routing(), { target: { value: "reset-window" } });
@@ -326,7 +328,7 @@ it("keeps a save response authoritative when a previously started read returns a
   render(value.view(<ConfigurationEditor kind={EntityKind.SETTINGS} initial={original} presentation={ConfigurationEditorPresentation.InlineServerPreferences} preferencesObservation={{ complete: true, resource: original, fetching: false }} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(routing(), { target: { value: "fixed" } }); fireEvent.click(saveButton());
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
-  await waitFor(() => expect(screen.queryByText("Unsaved changes")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Unsaved project defaults")).toBeNull());
   resolve({ resource: original }); await waitFor(() => expect(value.client.isFetching()).toBe(0));
   expect(routing().value).toBe("fixed"); expect(screen.queryByText(/changed elsewhere/)).toBeNull();
   fireEvent.change(routing(), { target: { value: "reset-window" } }); expect(saveButton().disabled).toBe(false);
@@ -340,7 +342,7 @@ it("keeps a dirty initial draft when another client creates the singleton", asyn
   fireEvent.change(routing(), { target: { value: "fixed" } });
   const external = resource(EntityKind.SETTINGS, known); rows.push(external);
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findByText(/Server preferences changed elsewhere/);
+  await screen.findByText(/Project defaults changed elsewhere/);
   expect(routing().value).toBe("fixed"); expect(saveButton().disabled).toBe(true);
   fireEvent.click(discardButton()); expect(routing().value).toBe("priority");
   fireEvent.change(routing(), { target: { value: "remaining-quota" } });
@@ -354,7 +356,7 @@ it("blocks another save after a server revision rejection and reads the concurre
   value.save.mockImplementationOnce(async () => { rows.push(external); throw new ConnectError("Revision conflict", Code.Aborted); });
   render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
   fireEvent.change(routing(), { target: { value: "fixed" } }); fireEvent.click(saveButton());
-  await screen.findByText(/Server preferences changed elsewhere/);
+  await screen.findByText(/Project defaults changed elsewhere/);
   expect(saveButton().disabled).toBe(true); expect(routing().value).toBe("fixed");
   fireEvent.click(discardButton()); expect(routing().value).toBe("priority");
   fireEvent.change(routing(), { target: { value: "reset-window" } });
@@ -383,7 +385,7 @@ it("keeps a retained draft read-only when refresh finds unsupported settings", a
   render(value.view(<Settings />)); choosePreferences(); const form = await screen.findByRole("form");
   fireEvent.change(routing(), { target: { value: "fixed" } }); rows[0] = { ...original, schemaVersion: 2, revision: 9n };
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
-  await screen.findByRole("region", { name: "Server preferences unavailable" });
+  await screen.findByRole("region", { name: "Project defaults unavailable" });
   expect(screen.getByText(original.id)).toBeTruthy(); expect(screen.getByRole("form")).toBe(form);
   expect(routing().value).toBe("fixed"); expect(routing().matches(":disabled")).toBe(true); expect(saveButton().disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
@@ -449,7 +451,7 @@ it("preserves mounted disclosure values and resource cursors through collapse an
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.AGENT).at(-1)?.[0].filter?.pageToken).toBe("agent-page-2");
   const afterReconnect = value.list.mock.calls.length; details().open = false; details().open = true;
   expect(value.list.mock.calls.length).toBe(afterReconnect); expect(value.save).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Project defaults" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   expect(JSON.parse(new TextDecoder().decode((value.save.mock.calls[0][0] as { documentJson: Uint8Array }).documentJson)).remediation.reviewer_selectors[0].id).toBe("9007199254740993");
 });
@@ -461,7 +463,7 @@ it.each(["", "0", "reviewer"])("reveals and focuses a hidden invalid %s input be
   if (invalid === "reviewer") { fireEvent.click(screen.getByRole("button", { name: "Add reviewer selector" })); control = screen.getByLabelText("Selector 1 GitHub numeric ID"); }
   else { control = screen.getByLabelText("Consecutive automatic attempt limit"); fireEvent.change(control, { target: { value: invalid } }); }
   details().open = false;
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Project defaults" }));
   expect(details().open).toBe(true);
   await waitFor(() => expect(document.activeElement).toBe(control));
   expect(value.save).not.toHaveBeenCalled();
@@ -475,7 +477,7 @@ it("retains a draft after revision drift and blocks a fresh save", async () => {
   await value.client.invalidateQueries();
   await screen.findByText(/This entry changed elsewhere/);
   expect((screen.getByLabelText("Default account routing") as HTMLSelectElement).value).toBe("fixed");
-  expect((screen.getByRole("button", { name: "Save Server preferences" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Save Project defaults" }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
 });
 
@@ -505,4 +507,44 @@ it("ignores a late prior read after its Settings visit was replaced", async () =
   view.rerender(value.view(<Settings visible />)); choosePreferences(); await screen.findByRole("form");
   resolve({ resources: [resource(EntityKind.SETTINGS, known)] }); await waitFor(() => expect(value.client.isFetching()).toBe(0));
   expect(routing().value).toBe("sequential-exhaustion"); expect(value.save).not.toHaveBeenCalled();
+});
+
+it("assigns all policy groups to Project defaults and only Network to Server preferences", async () => {
+  const value = fixture([resource(EntityKind.SETTINGS, known)]);
+  render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form", { name: "Project defaults form" });
+  expect(screen.queryByRole("button", { name: "Git", exact: true })).toBeNull();
+  expect(routing()).toBeTruthy(); expect(automaticFetch()).toBeTruthy(); expect(details().open).toBe(false);
+  expect(screen.queryByRole("button", { name: "Network settings" })).toBeNull();
+  const policyReads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length;
+  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+  expect(screen.getByRole("button", { name: "Network settings" })).toBeTruthy();
+  expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByLabelText("Default account routing")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Discard changes" })).toBeNull();
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toHaveLength(policyReads);
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("redirects the retained Git destination to the sole policy editor", async () => {
+ const value = fixture([resource(EntityKind.SETTINGS, known)]);
+ render(value.view(<Settings entryDestination={{ category: SettingsCategory.GitWorkflow, generation: "legacy-git" }} />));
+ await screen.findByRole("form", { name: "Project defaults form" });
+ expect(screen.getByRole("heading", { level: 1, name: "Project defaults" })).toBeTruthy();
+ expect(screen.queryByRole("button", { name: "Git", exact: true })).toBeNull();
+ expect(routing()).toBeTruthy(); expect(automaticFetch()).toBeTruthy();
+ expect(value.save).not.toHaveBeenCalled();
+});
+
+it("shows all four schema-2 policy groups only in Project defaults", async () => {
+ const row = resource(EntityKind.SETTINGS, { ...known, automatic_plan_approval: false }); row.schemaVersion = 2;
+ const value = fixture([row], undefined, [SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1]);
+ render(value.view(<Settings />)); choosePreferences(); await screen.findByRole("form");
+ expect(await screen.findByRole("checkbox", { name: "Automatically approve native plans" })).toBeTruthy();
+ expect(screen.getByRole("heading", { name: "Plan approval" })).toBeTruthy();
+ expect(routing()).toBeTruthy(); expect(automaticFetch()).toBeTruthy(); expect(details().open).toBe(false);
+ fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
+ expect(screen.queryByRole("checkbox", { name: "Automatically approve native plans" })).toBeNull();
+ expect(screen.queryByLabelText("Default account routing")).toBeNull();
+ expect(screen.queryByText("Remediation details")).toBeNull();
+ expect(value.save).not.toHaveBeenCalled();
 });

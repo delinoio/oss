@@ -178,5 +178,12 @@
   "settings.search.clear": "검색 지우기",
   "settings.search.empty": "검색과 일치하는 설정이 없습니다.",
   "settings.search.unavailable": "여기에서는 이 설정을 사용할 수 없습니다.",
-  "settings.search.category": "개요"
+  "settings.search.category": "개요",
+  "settings.projectDefaultsDescription": "기본 계정 라우팅, 계획 승인, Worktree 가져오기 및 풀 리퀘스트 복구입니다.",
+  "settings.projectDefaultsForm": "프로젝트 기본값 양식",
+  "settings.refreshingProjectDefaults": "프로젝트 기본값 새로 고치는 중…",
+  "settings.savingProjectDefaults": "프로젝트 기본값 저장 중…",
+  "settings.projectDefaultsSaveOutcomeUnknown": "프로젝트 기본값 저장 결과를 알 수 없습니다.",
+  "settings.unsavedProjectDefaults": "저장되지 않은 프로젝트 기본값",
+  "settings.networkPreferencesDescription": "이 서버의 네트워크 설정입니다."
 }

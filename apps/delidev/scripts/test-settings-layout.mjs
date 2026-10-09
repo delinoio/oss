@@ -48,7 +48,7 @@ const screenshotPath = screenshot ? await ensureOutsideCheckout(screenshot) : nu
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
-const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Keyboard shortcuts", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
+const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Runner Devices", "Paired devices", "Appearance", "Keyboard shortcuts", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const wizardAccountsOnly = process.env.DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
@@ -202,9 +202,9 @@ try {
     hiddenChoicesChecked++;
   };
   const checkGit = async () => {
-    const form = page.getByRole("form", { name: "Git workflow form", exact: true }); await form.waitFor();
+    const form = page.getByRole("form", { name: l("Project defaults form"), exact: true }); await form.waitFor();
     assert.equal(await form.getByRole("checkbox").count(), 4);
-    assert.equal(await page.getByLabel(l("Default account routing"), { exact: true }).count(), 0);
+    assert.equal(await page.getByLabel(l("Default account routing"), { exact: true }).count(), 1);
     assert.equal(await page.getByRole("button", { name: l("Network settings"), exact: true }).count(), 0);
     assert.equal(await page.getByRole("button", { name: new RegExp(`^(${l("New Git workflow")}|${l("Edit Git workflow")}|${l("Delete Git workflow")})$`) }).count(), 0);
     assert.equal(await page.getByRole("dialog").count(), 0);
@@ -561,16 +561,21 @@ try {
       }
     }
     if (!populated) {
-      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Git", null], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
+      for (const [category, action] of [["Agent Workers", "New Agent Worker"], ["Projects", "New Project"], ["Instructions", "New Instructions"], ["Repositories", "Add repository"], ["Server preferences", null], ["Project defaults", null], ["Git Profiles", "New GitHub profile"], ["Notifications", "Edit notification preferences"], ["AI API Keys", "Add AI API key"]]) {
         await select(category); if (action) await page.getByRole("button", { name: l(action), exact: true }).click();
-        if (category === "Server preferences" || category === "Git") {
-          const form = page.getByRole("form", { name: category === "Git" ? "Git workflow form" : "Server preferences form", exact: true }); await form.waitFor();
+        if (category === "Project defaults") {
+          const form = page.getByRole("form", { name: l("Project defaults form"), exact: true }); await form.waitFor();
           assert(await form.evaluate(node => [...node.querySelectorAll("textarea")].filter(control => control.getClientRects().length).every(control => ["pre", "pre-wrap", "break-spaces"].includes(getComputedStyle(control).whiteSpace))), `${category} multiline form controls preserve whitespace`);
           assert(await form.evaluate(node => node.getBoundingClientRect().width <= 720.5), `${category} form cap`);
           assert.equal(await page.locator(".settings-content h1:visible").count(), 1);
           assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} form overflow`);
           assert(await page.getByRole("button", { name: l("Save changes"), exact: true }).isDisabled());
           formsChecked++;
+          continue;
+        }
+        if (category === "Server preferences") {
+          assert.equal(await page.getByRole("form").count(), 0);
+          assert.equal(await page.getByRole("button", { name: l("Network settings"), exact: true }).count(), 1);
           continue;
         }
         if (category === "Repositories") {
@@ -632,7 +637,7 @@ try {
     for (const [width,height] of viewports) {
     await page.setViewportSize({ width: width / 2, height: height / 2 });
     await page.goto(`${origin}/?theme=dark&language=${language}`); await page.getByRole("button", { name: l("Settings"), exact: true }).click();
-    for (const category of categories) { await select(category); if (category === "Git") await checkGit(); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
+    for (const category of categories) { await select(category); if (category === "Project defaults") await checkGit(); assert(await page.locator(".settings-content").evaluate(node => node.scrollWidth <= node.clientWidth), `${category} effective 200% ${width}`); checked++; }
     await select("Agent Workers"); await page.getByRole("button", { name: l("New Agent Worker"), exact: true }).click();
     await checkWizard(); await page.locator(".settings-task-close").click();
     }

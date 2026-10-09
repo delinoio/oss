@@ -602,12 +602,12 @@ it("edits global routing preferences without rewriting unrelated policy or creat
   const value = fixture([preferences]);
   value.save.mockRejectedValueOnce(new ConnectError("lost response", Code.Unavailable));
   render(value.view(<Settings />));
-  fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  await screen.findByRole("form", { name: "Server preferences form" });
+  fireEvent.click(screen.getByRole("button", { name: "Project defaults" }));
+  await screen.findByRole("form", { name: "Project defaults form" });
   expect(screen.queryByRole("button", { name: "New Server preferences" })).toBeNull();
   expect(screen.queryByRole("button", { name: /Delete Server preferences/ })).toBeNull();
   fireEvent.change(screen.getByLabelText("Default account routing"), { target: { value: "priority" } });
-  expect(screen.queryByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeNull();
+  expect(screen.getByRole("checkbox", { name: "Allow automatic fetch before Worktree preparation" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same configuration" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
@@ -993,18 +993,18 @@ it("keeps the routing dialog and its read when the Settings language changes", a
   expect(value.preview).toHaveBeenCalledTimes(1);
 });
 
-it("keeps the containing Settings inventory active while inline Network settings is open", async () => {
+it("does not read policy inventory while inline Network settings is open", async () => {
   const preferences = resource(EntityKind.SETTINGS, { default_routing: "priority", automatic_fetch: true, notifications: false, remediation: { ci_failure: true, review_feedback: false, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 9, agent_id: newRequestId(), machine_id: newRequestId() } });
   const value = fixture([preferences]); render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Server preferences" }));
-  const form = await screen.findByRole("form", { name: "Server preferences form" });
+  expect(screen.queryByRole("form")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Network settings" }).getAttribute("aria-expanded")).toBe("true"));
   expect(screen.queryByRole("dialog", { name: "Server network" })).toBeNull();
   const reads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length;
   await act(async () => { await value.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
-  await waitFor(() => expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS).length).toBeGreaterThan(reads));
-  expect(form.isConnected).toBe(true); expect(value.save).not.toHaveBeenCalled();
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.SETTINGS)).toHaveLength(reads);
+  expect(screen.queryByRole("form")).toBeNull(); expect(value.save).not.toHaveBeenCalled();
 });
 
 

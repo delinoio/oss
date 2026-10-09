@@ -44,7 +44,7 @@ it.each([false, true])("preserves legacy saves and negotiates schema 2 when supp
  const { MutationIntents } = await import("./mutation");
  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationEditor kind={EntityKind.SETTINGS} initial={initial} active saved={() => {}} cancel={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
  if (supported) fireEvent.click(await screen.findByRole("checkbox", { name: "Automatically approve native plans" }));
- fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+ fireEvent.click(screen.getByRole("button", { name: "Save Project defaults" }));
  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
  const request = save.mock.calls[0][0];
  const document = JSON.parse(new TextDecoder().decode(request.documentJson));
