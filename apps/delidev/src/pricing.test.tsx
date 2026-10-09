@@ -14,7 +14,7 @@ function fixture(initial = false, subscription = false) {
  let pricing:PricingVersion|undefined=initial?version():undefined;let providerRevision=subscription?0n:1n;let policyRevision=0n;let mode=TokenPricingMode.AUTOMATIC;
  const read=vi.fn(()=>({pricing,providerRevision,policy:{model,mode,revision:policyRevision},reference:{state:"current",checkedAtUnixMs:0n,costsJson:new Uint8Array()}}));
  const write=vi.fn((request:SetTokenPricingRequest)=>{pricing=create(PricingVersionSchema,{...version((request.expectedRevision??0n)+1n),basis:request.basis});policyRevision++;mode=TokenPricingMode.MANUAL;return Promise.resolve({pricing,policy:{model,mode,revision:policyRevision},requestId:request.requestId});});
- const switchMode=vi.fn((request:SetTokenPricingModeRequest)=>{mode=request.mode;policyRevision++;return {requestId:request.requestId,current:read()};});
+ const switchMode=vi.fn(async(request:SetTokenPricingModeRequest)=>{mode=request.mode;policyRevision++;return {requestId:request.requestId,current:read()};});
  const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
  const transport=createRouterTransport(router=>router.service(UsageService,{getTokenPricing:read,setTokenPricing:write,setTokenPricingMode:switchMode,refreshTokenPrices:()=>({})}));
  const view=(active=true)=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ModelPricing model={model} active={active} close={()=>{}} /></MutationIntents></QueryClientProvider></TransportProvider>;
@@ -34,3 +34,17 @@ it("retains an uncertain exact request and stale draft across hidden visits",asy
 it("rejects imprecise decimal syntax before sending",async()=>{const f=fixture(true);render(f.view());await waitFor(()=>expect(screen.getByRole("button",{name:"Edit token pricing"})).toHaveProperty("disabled", false));fireEvent.click(screen.getByRole("button",{name:"Edit token pricing"}));fireEvent.change(screen.getByLabelText("Input rate per million"),{target:{value:"1e-9"}});fireEvent.click(screen.getByRole("button",{name:"Save pricing version"}));await screen.findByText(/Use nonnegative decimal rates/);expect(f.write).not.toHaveBeenCalled();});
 it("allows an explicit Automatic switch without a matching reference",async()=>{const f=fixture(false,true);render(f.view());await waitFor(()=>expect(screen.getByRole("combobox",{name:"Pricing mode"})).toHaveProperty("disabled", false));fireEvent.change(screen.getByRole("combobox",{name:"Pricing mode"}),{target:{value:TokenPricingMode.MANUAL}});await waitFor(()=>expect(f.switchMode).toHaveBeenCalledTimes(1));expect(f.switchMode.mock.calls[0][0]).toMatchObject({model:f.model,expectedProviderRevision:0n,expectedPolicyRevision:0n,expectedRevision:0n});expect(screen.getByText(/Subscription models use API-equivalent/)).toBeTruthy();});
 it("keeps deleted API sources read-only",async()=>{const f=fixture(true);f.setProviderRevision(0n);render(f.view());await screen.findByRole("combobox",{name:"Pricing mode"});expect(screen.getByRole("button",{name:"Edit token pricing"})).toHaveProperty("disabled", true);expect(screen.getByRole("combobox",{name:"Pricing mode"})).toHaveProperty("disabled", true);});
+
+it("retains the reviewed active revision during uncertain mode retries",async()=>{
+ const f=fixture(true);const view=render(f.view());
+ await waitFor(()=>expect(screen.getByRole("combobox",{name:"Pricing mode"})).toHaveProperty("disabled",false));
+ f.switchMode.mockRejectedValueOnce(new ConnectError("Lost mode acceptance",Code.Unavailable));
+ fireEvent.change(screen.getByRole("combobox",{name:"Pricing mode"}),{target:{value:TokenPricingMode.MANUAL}});
+ await screen.findByRole("button",{name:"Retry the same pricing mode"});
+ const original=f.switchMode.mock.calls[0][0];
+ expect(original).toMatchObject({model:f.model,expectedRevision:1n,expectedPolicyRevision:0n,expectedProviderRevision:1n});
+ f.setPricing(f.version(2n));await f.refresh();view.rerender(f.view(false));view.rerender(f.view());
+ fireEvent.click(screen.getByRole("button",{name:"Retry the same pricing mode"}));
+ await waitFor(()=>expect(f.switchMode).toHaveBeenCalledTimes(2));
+ expect(f.switchMode.mock.calls[1][0]).toEqual(original);
+});

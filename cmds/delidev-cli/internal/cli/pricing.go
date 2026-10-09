@@ -35,8 +35,10 @@ func pricingCommand(ctx context.Context, c client, o options, args []string, inp
 		f.Uint64Var(&providerRevision, "provider-revision", 0, "original current provider revision; zero for subscriptions")
 		f.Uint64Var(&policyRevision, "policy-revision", 0, "current pricing policy revision")
 	}
-	if args[0] == "set" {
+	if args[0] == "set" || args[0] == "mode" {
 		f.Uint64Var(&revision, "revision", 0, "current price revision, zero initially")
+	}
+	if args[0] == "set" {
 		f.StringVar(&path, "input", "-", "pricing JSON file, or - for stdin")
 	}
 	if args[0] == "mode" {
