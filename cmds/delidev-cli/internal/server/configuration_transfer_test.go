@@ -29,6 +29,8 @@ func transferEntry(kind domain.Kind, value any) domain.ConfigurationEntry {
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &fields)
 		delete(fields, "automatic_plan_approval")
+		delete(fields, "plan_mode_default")
+		delete(fields, "branch_prefix")
 		raw, _ = json.Marshal(fields)
 	}
 	return domain.ConfigurationEntry{ID: domain.NewID(), Kind: kind, Document: raw}

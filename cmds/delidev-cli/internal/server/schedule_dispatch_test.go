@@ -48,7 +48,7 @@ func newScheduleDispatchFixture(t *testing.T, overlap domain.ScheduleOverlap, lo
 			{domain.ProviderKind, provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth}},
 			{domain.ModelKind, model, domain.Model{Name: "Fixture", NativeID: "fixture", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}},
 			{domain.AgentKind, f.agent, domain.Agent{Name: "Fixture", ModelID: model, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
-			{domain.MachineKind, f.machine, domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.ExecutionStartupV1}, Name: "Fixture", OS: "linux", Architecture: "arm64"}},
+			{domain.MachineKind, f.machine, domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.ExecutionStartupV1, domain.BranchPrefixInstructionsV1}, Name: "Fixture", OS: "linux", Architecture: "arm64"}},
 			{domain.DeviceKind, f.device, domain.Device{Name: "Fixture", Type: domain.WorkerDevice, MachineID: f.machine, PairedAt: f.now.Add(-time.Hour)}},
 			{domain.RepositoryKind, f.repository, domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: f.machine, Path: filepath.Join(t.TempDir(), "checkout")}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
 			{domain.ProjectKind, f.project, domain.Project{Name: "Fixture", Repositories: []domain.ID{f.repository}, PrimaryRepository: f.repository}},

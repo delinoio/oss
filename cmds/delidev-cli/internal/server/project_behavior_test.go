@@ -20,8 +20,10 @@ func TestProjectBehaviorLegacyWritesCannotEraseSettings(t *testing.T) {
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(raw, &fields)
 	delete(fields, "automatic_plan_approval")
+	delete(fields, "plan_mode_default")
+	delete(fields, "branch_prefix")
 	legacy, _ := json.Marshal(fields)
-	if rpc.ResourceSchemaVersion(domain.SettingsKind, legacy) != 1 || rpc.ResourceSchemaVersion(domain.SettingsKind, raw) != 2 {
+	if rpc.ResourceSchemaVersion(domain.SettingsKind, legacy) != 1 || rpc.ResourceSchemaVersion(domain.SettingsKind, raw) != 3 {
 		t.Fatal("document schema misidentified")
 	}
 	_, err := SaveConfiguration(context.Background(), s.Store, ConfigurationMutation{RequestID: domain.NewID(), ID: id, ExpectedRevision: 1, Kind: domain.SettingsKind, Document: legacy})
@@ -43,11 +45,16 @@ func TestProjectBehaviorPortableVersion5AndLegacyImports(t *testing.T) {
 			v := domain.DefaultSettings()
 			v.AutomaticPlanApproval = true
 			raw, _ := json.Marshal(v)
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(raw, &fields)
+			delete(fields, "plan_mode_default")
+			delete(fields, "branch_prefix")
+			raw, _ = json.Marshal(fields)
 			selection.Bundle.Entries = append(selection.Bundle.Entries, domain.ConfigurationEntry{ID: domain.NewID(), Kind: domain.SettingsKind, Document: raw})
 		}
 		preview := transferPreview(t, s, selection)
 		var value domain.ConfigurationImportPreview
-		if domain.Decode(preview, &value) != nil || value.Plan.Version != 5 {
+		if domain.Decode(preview, &value) != nil || value.Plan.Version != domain.ConfigurationBundleVersion {
 			t.Fatal("portable version was not upgraded")
 		}
 		if version == 5 {

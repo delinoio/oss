@@ -73,5 +73,7 @@
   "new-session.chooseBranchWorker": "Choose Runs on to read remote branches.",
   "new-session.branchUnsupported": "Branch discovery is unavailable. Use the saved or manual starting reference.",
   "new-session.noBranches": "The remote has no branches.",
-  "new-session.branchLookupFailed": "Remote branches could not be read. Use the saved or manual starting reference."
+  "new-session.branchLookupFailed": "Remote branches could not be read. Use the saved or manual starting reference.",
+  "new-session.planDefaultUnavailable": "Plan Mode defaults are loading or unavailable. Retry the settings read, or choose Plan Mode explicitly.",
+  "new-session.retryPlanDefaults": "Retry Plan Mode defaults"
 }

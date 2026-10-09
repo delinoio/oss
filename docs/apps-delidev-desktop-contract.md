@@ -344,15 +344,15 @@ New session project/Git options and session budget editing retain their existing
 presentation. Browser geometry evidence remains separate from native acceptance.
 New session, New general chat and the existing session message composer show a
 native **Plan Mode** checkbox (**계획 모드** in Korean) in their existing toolbars.
-Fresh controls are unchecked. Checked maps to `Mode.Plan`; unchecked maps to
+Legacy fresh controls are unchecked. Capability-56 creation controls resolve server/project Plan defaults until an explicit checkbox edit; existing-session composition keeps its original defaults. Checked maps to `Mode.Plan`; unchecked maps to
 `Mode.Execute`, preserving the serialized `plan`/`execute` values. Label clicks
 and Space toggle the control without submission. Keep visible keyboard focus,
 semantic theme colors, existing wrapping and reachable selectors/Options/send
 controls at 1100px, 520px, 960×640 and effective 200% reflow. Preserve creation's
 touched marker and inherited fieldset lock, the existing session's pending and
 uncertain lock, independent mounted drafts and connection identity resets.
-Navigation, language and project shortcut changes retain their original mode
-state. Explicit uncertain retries use the original request identity and mode.
+Navigation and language changes retain their original mode state. Project changes
+recalculate automatic capability-56 creation defaults while explicit mode choices remain retained. Explicit uncertain retries use the original request identity and mode.
 Schedule and local-review mode controls keep their current presentation. This
 change grants no new execution, protocol, account or native authority.
 
@@ -3263,3 +3263,7 @@ Only a succeeded original save/clone job with validated repository UUID and posi
 Failed/incomplete refresh, unsupported/missing exact identity or selection capacity retains the project draft and confirmed identity with an explicit read-only retry. It never repeats registration or rolls back the saved repository. Failed/uncertain original registration retains its existing exact-request retry while open; closing sends no cancellation or replay. English/Korean copy, semantic themes, 40px controls, wrapping and shared body scrolling remain authoritative. Automated component/browser geometry is separate from owner-assigned packaged CEF/native keyboard, actual zoom and platform acceptance. No RPC, protocol allocation, migration, dependency, native implementation or new telemetry is added.
 
 The New Project registration entry and confirmed-catalog read retry use labeled shared Settings action helpers in Settings. Home retains ordinary native button presentation outside the Settings action scope, with the same original callbacks, refs, admission and read-only retry ownership.
+
+## New-session defaults and branch prefix declarations
+
+Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.

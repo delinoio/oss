@@ -75,6 +75,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const [localDefaultID, setLocalDefaultID] = useState("");
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState(Mode.Execute);
+ const [manualMode, setManualMode] = useState(false);
   const [starting, setStarting] = useState<unknown[]>([]);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsContentId = useId();
@@ -109,6 +110,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     images.controller.accepted(request.requestId, request.attachments.map(image => image.id));
     endHistoryCycle.current();
     setPrompt("");
+ setManualMode(false);
     skills.clearAccepted();
     setCreatedElsewhere(undefined);
     created();
@@ -203,7 +205,17 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const promptHistory = useProjectPromptHistory({ projectId: generalChat ? "" : project, enabled: status.data?.capabilities.includes(SystemCapability.PROJECT_PROMPT_HISTORY_V1) ?? false, active, blocked, textarea: firstMessage, replace: (value, caret) => { historyEditing.current = true; try { skills.replaceUnbound(value, caret); } finally { historyEditing.current = false; } } });
   endHistoryCycle.current = promptHistory.onEdit;
   const imageRoute = useImageRoute(machine, agent, active, images.images.length > 0);
-  const canCreate = active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
+  const supportsDefaults = status.data?.capabilities.includes(SystemCapability.SESSION_DEFAULTS_V1) ?? false;
+ const defaultSettings = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: active && supportsDefaults, retry: false });
+ const defaultRows = defaultSettings.data?.resources;
+ const defaultRow = defaultRows?.[0];
+ const globalDefaultValid = !defaultSettings.isFetching && !defaultSettings.error && defaultRows !== undefined && defaultRows.length <= 1 && !defaultSettings.data?.nextPageToken && (!defaultRow || defaultRow.kind === EntityKind.SETTINGS && defaultRow.revision > 0n && supportsResourceSchema(defaultRow) && (document(defaultRow).plan_mode_default === undefined || typeof document(defaultRow).plan_mode_default === "boolean"));
+ const selectedForMode = !project || generalChat || !selectedProject.isFetching && !selectedProject.error && selectedProject.data?.resource?.id === project && selectedProject.data.resource.kind === EntityKind.PROJECT && supportsResourceSchema(selectedProject.data.resource);
+ const overrideMode = generalChat || !project ? "inherit" : text(object(document(selectedProject.data?.resource).settings).plan_mode_default) || "inherit";
+ const modeReady = manualMode || !supportsDefaults || globalDefaultValid && selectedForMode && ["inherit", "enabled", "disabled"].includes(overrideMode);
+ const effectiveMode = manualMode || blocked ? mode : supportsDefaults && globalDefaultValid && selectedForMode ? (overrideMode === "enabled" || overrideMode === "inherit" && document(defaultRow).plan_mode_default === true ? Mode.Plan : Mode.Execute) : mode;
+ useEffect(() => { if (!blocked && !manualMode && modeReady) setMode(effectiveMode); }, [blocked, manualMode, modeReady, effectiveMode]);
+ const canCreate = modeReady && active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -226,12 +238,13 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       project_id: selectedProjectId || undefined,
       workspace: workspaceType,
       starting: selectedProjectId && workspaceType === Workspace.Worktree ? starting : undefined,
-      mode,
+      mode: effectiveMode,
       source: "MANUAL",
     };
     const proof = workspaceType === Workspace.Local ? await local.load(machine) : undefined;
     if (workspaceType === Workspace.Local && !proof) return;
     touched.current = true;
+    setMode(effectiveMode);
     submittedActivation.current = navigation.current.activation;
     const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
     let attachments;
@@ -294,7 +307,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
                 {attach}
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />
                 <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required resolvedChoice={machineChoice} change={editMachine} />
-                <label className="new-session-mode plan-mode"><input type="checkbox" checked={mode === Mode.Plan} onChange={(event) => { touched.current = true; setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
+                <label className="new-session-mode plan-mode"><input type="checkbox" checked={effectiveMode === Mode.Plan} onChange={(event) => { touched.current = true; setManualMode(true); setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
+ {!modeReady ? <div><p role="status">{copy("new-session.planDefaultUnavailable")}</p><button type="button" disabled={blocked || defaultSettings.isFetching || selectedProject.isFetching} onClick={() => { void defaultSettings.refetch(); if (project && !generalChat) void selectedProject.refetch(); }}>{copy("new-session.retryPlanDefaults")}</button></div> : null}
               </div>
               <div className="new-session-submit-row">
                 <DisclosureButton density={DisclosureDensity.Settings} type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} aria-controls={optionsContentId} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</DisclosureButton>

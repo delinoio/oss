@@ -323,6 +323,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
 		}
+		if bundle.Version < 6 && (entry.Kind == domain.ProjectKind || entry.Kind == domain.SettingsKind) && rpc.ResourceSchemaVersion(entry.Kind, entry.Document) == 3 {
+			return plan, domain.Fail(domain.Unsupported, "Session defaults require portable version 6.", "Export the complete current configuration.")
+		}
 		if bundle.Version < 5 && (entry.Kind == domain.ProjectKind || entry.Kind == domain.SettingsKind) {
 			var fields map[string]json.RawMessage
 			if json.Unmarshal(entry.Document, &fields) != nil {

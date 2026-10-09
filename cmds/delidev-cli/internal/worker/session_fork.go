@@ -243,7 +243,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codexExecutionProvider(assignment.Configuration.Subscription), Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: assignment.Configuration.Instructions, Options: assignment.Configuration.Options}
+	instructions, err := assignment.Configuration.NativeInstructions(assignment.Input.Mode)
+	if err != nil {
+		return nil, err
+	}
+	settings := codex.ThreadSettings{Model: assignment.Configuration.NativeModel, Provider: codexExecutionProvider(assignment.Configuration.Subscription), Effort: assignment.Configuration.Effort, Cwd: childManifest.PrimaryPath, WorkspaceRoots: nativeWorkspaceRoots(childManifest), Instructions: instructions, Options: assignment.Configuration.Options}
 	// Pin native defaults to the original effective observations. Configuration
 	// itself remains byte-identical; observed defaults cannot become new choices.
 	settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)

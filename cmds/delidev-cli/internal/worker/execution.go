@@ -219,7 +219,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if prGit != nil {
 		env = prGit.Environment(env)
 	}
-	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codexExecutionProvider(input.Configuration.Subscription), Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: input.Configuration.Instructions, Options: input.Configuration.Options}
+	instructions, err := input.Configuration.NativeInstructions(input.Input.Mode)
+	if err != nil {
+		return nil, err
+	}
+	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codexExecutionProvider(input.Configuration.Subscription), Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
 	if input.Fork != nil {
 		settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)

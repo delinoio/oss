@@ -150,12 +150,14 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		return empty, domain.Fail(domain.Unavailable, "The execution machine is disabled.", "Enable and revalidate its native execution readiness.")
 	}
 	var project *domain.Project
+	var projectRecord Record
 	if session.ProjectID != "" {
-		_, value, err := decodeEntity[domain.Project](t, domain.ProjectKind, session.ProjectID)
+		record, value, err := decodeEntity[domain.Project](t, domain.ProjectKind, session.ProjectID)
 		if err != nil {
 			return empty, err
 		}
 		project = &value
+		projectRecord = record
 	}
 	policy, err := t.DefaultRoutingPolicy()
 	if err != nil {
@@ -186,6 +188,14 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	agent, model := preview.Agent, preview.Model
 	configuration, err := domain.ResolveExecutionConfiguration(ar.ID, ar.Revision, agent, preview.ModelRevision, model, preview.Route.Policy, templates)
 	if err != nil {
+		return empty, err
+	}
+	settingsRecord, settings, err := t.SessionDefaultSettings()
+	if err != nil {
+		return empty, err
+	}
+	configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: 1, Prefix: project.EffectiveBranchPrefix(settings.EffectiveBranchPrefix()), SettingsID: settingsRecord.ID, SettingsRevision: settingsRecord.Revision, ProjectID: projectRecord.ID, ProjectRevision: projectRecord.Revision}
+	if err := configuration.Validate(); err != nil {
 		return empty, err
 	}
 	var provider domain.Provider

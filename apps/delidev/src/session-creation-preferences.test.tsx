@@ -14,18 +14,20 @@ import { MutationIntents } from "./mutation";
 import { parseCreationPreferences, CreationPreferenceProblem, type CreationPreferencePair, type CreationPreferenceSnapshot } from "./session-creation-preferences";
 
 function resource(kind: EntityKind, name: string, extra = {}): Resource { return create(ResourceSchema, { kind, id:newRequestId(), revision:1n, schemaVersion:1, documentJson:encode({name,...extra}) }); }
-function fixture(initial = true, includeRemembered = false) {
+function fixture(initial = true, includeRemembered = false, defaults?: { global: boolean; fail?: boolean; project?: "enabled" | "disabled" | "inherit" }) {
  const agent=resource(EntityKind.AGENT,"Remembered agent"), machine=resource(EntityKind.MACHINE,"Disconnected runner",{disabled:false});
  const otherAgent=resource(EntityKind.AGENT,"Manual agent"), otherMachine=resource(EntityKind.MACHINE,"Manual runner");
  const projects=[resource(EntityKind.PROJECT,"Allowed project",{repositories:[],agents:{configured:true,ids:[agent.id]}}),resource(EntityKind.PROJECT,"Forbidden project",{repositories:[],agents:{configured:true,ids:[otherAgent.id]}}),resource(EntityKind.PROJECT,"Empty restriction",{repositories:[],agents:{configured:true,ids:[]}})];
+ const defaultSettings = create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SETTINGS,revision:1n,schemaVersion:3,documentJson:encode({automatic_plan_approval:false,plan_mode_default:defaults?.global ?? false,branch_prefix:"delidev/"})});
+ if(defaults) for(const row of projects) { row.schemaVersion=3;row.documentJson=encode({...JSON.parse(new TextDecoder().decode(row.documentJson)),settings:{plan_mode_default:defaults.project??"inherit"}}); }
  const scope={server_id:newRequestId(),device_id:newRequestId()};let revision=1;
  const memory=new Map<NewSessionKind,CreationPreferencePair>();if(initial)memory.set(NewSessionKind.Session,{agent_id:agent.id,machine_id:machine.id});
  const bridge={read:vi.fn(async(kind:NewSessionKind):Promise<unknown>=>({revision,scope,pair:memory.get(kind)??null,problem:null})),update:vi.fn(async(kind:NewSessionKind,pair:CreationPreferencePair,expected:number):Promise<unknown>=>{expect(expected).toBe(revision);memory.set(kind,pair);return {revision:++revision,scope,pair,problem:null};})};
  const get=vi.fn((request:{kind:EntityKind;id:string})=>({resource:[agent,machine,otherAgent,otherMachine,...projects].find(row=>row.id===request.id&&row.kind===request.kind)}));
  const createSession=vi.fn(async(_request:CreateSessionRequest)=>({change:{session:resource(EntityKind.SESSION,"Accepted")}}));
  const transport=createRouterTransport(router=>{
-  router.service(ResourceService,{getResource:get,listResources:request=>({resources:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})});
-  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.AUTOMATIC_TITLES_V1]})});router.service(SessionService,{createSession});
+  router.service(ResourceService,{getResource:get,listResources:request=>{ if(request.filter?.kind===EntityKind.SETTINGS && defaults?.fail) throw new ConnectError("defaults unavailable",Code.Unavailable);return ({resources:request.filter?.kind===EntityKind.SETTINGS && defaults?[defaultSettings]:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})}});
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.AUTOMATIC_TITLES_V1,...(defaults?[SystemCapability.SESSION_DEFAULTS_V1]:[])]})});router.service(SessionService,{createSession});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=(kind=NewSessionKind.Session, readLocalWorker?: () => Promise<{machineId:string;token:string}>)=><StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NewSession kind={kind} active ownsActivation activation={1} back={()=>{}} openSettings={()=>{}} open={()=>{}} created={()=>{}} preferenceBridge={bridge} preferenceScope={scope} readLocalWorker={readLocalWorker}/></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
@@ -172,4 +174,30 @@ it("retains the full 256 KiB UTF-8 first-message budget and preserves the draft 
  fireEvent.change(input,{target:{value:accepted+"한"}}); expect(input).toHaveProperty("value",accepted); await screen.findByRole("alert");
  fireEvent.change(input,{target:{value:"a".repeat(300)}}); await submitCreation(); await waitFor(()=>expect(value.createSession).toHaveBeenCalledOnce());
  expect(JSON.parse(new TextDecoder().decode(value.createSession.mock.calls[0][0].documentJson)).prompt).toBe("a".repeat(300));
+});
+
+it("resolves global Plan defaults and retains an explicit mode across project changes",async()=>{
+ const f=fixture(true,false,{global:true,project:"disabled"});render(f.view());
+ const plan=screen.getByRole("checkbox",{name:"Plan Mode"}) as HTMLInputElement;
+ await waitFor(()=>expect(plan.checked).toBe(true));
+ fireEvent.click(plan);expect(plan.checked).toBe(false);
+ await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);
+ await waitFor(()=>expect(plan.checked).toBe(false));
+ await f.client.invalidateQueries();expect(plan.checked).toBe(false);
+});
+it("follows project override until an explicit mode choice",async()=>{
+ const f=fixture(true,false,{global:true,project:"disabled"});render(f.view());
+ const plan=screen.getByRole("checkbox",{name:"Plan Mode"}) as HTMLInputElement;
+ await waitFor(()=>expect(plan.checked).toBe(true));
+ await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);
+ await waitFor(()=>expect(plan.checked).toBe(false));
+});
+it("does not submit a provisional default after a failed settings read",async()=>{
+ const f=fixture(true,false,{global:true,fail:true});render(f.view());
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Synthetic input"}});
+ const create=screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement;
+ expect(create.disabled).toBe(true);expect(f.createSession).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("checkbox",{name:"Plan Mode"}));
+ await waitFor(()=>expect(create.disabled).toBe(false));
 });

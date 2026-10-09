@@ -163,6 +163,9 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	}
 	var empty domain.Installation
 	c := input.Configuration
+	if c.BranchPrefix != nil && !slices.Contains(machine.WorkerCapabilities, domain.BranchPrefixInstructionsV1) {
+		return empty, domain.Fail(domain.Unsupported, "This Runner Device cannot preserve branch prefix instructions.", "Update and reconnect the original Runner Device before execution.")
+	}
 	if err := c.ValidateNativeOptions(); err != nil {
 		return empty, err
 	}

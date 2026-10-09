@@ -140,7 +140,11 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return nil, err
 		}
 	}
-	settings := codex.ThreadSettings{Model: i.Assignment.Configuration.NativeModel, Provider: codexExecutionProvider(i.Assignment.Configuration.Subscription), Effort: i.Assignment.Configuration.Effort, Cwd: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), Instructions: i.Assignment.Configuration.Instructions, Options: i.Assignment.Configuration.Options}
+	instructions, err := i.Assignment.Configuration.NativeInstructions(i.Assignment.Input.Mode)
+	if err != nil {
+		return nil, err
+	}
+	settings := codex.ThreadSettings{Model: i.Assignment.Configuration.NativeModel, Provider: codexExecutionProvider(i.Assignment.Configuration.Subscription), Effort: i.Assignment.Configuration.Effort, Cwd: lease.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), Instructions: instructions, Options: i.Assignment.Configuration.Options}
 	if codex.ValidateThreadSettings(settings) != nil {
 		return nil, domain.CompactionUncertain()
 	}

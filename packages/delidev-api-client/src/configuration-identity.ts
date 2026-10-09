@@ -46,9 +46,12 @@ export function supportsResourceSchema(resource: Resource): boolean {
 // Version 2 is accepted only for its owning identity family. This does not grant
 // mutation, native readiness or interpretation of a retired original document.
 function supportsDocumentSchema(resource: Resource, value: ResourceDocument): boolean {
-  if (resource.schemaVersion === 1) return !(resource.kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || resource.kind === EntityKind.SETTINGS && Object.hasOwn(value, "automatic_plan_approval") || resource.kind === EntityKind.ACCOUNT && Object.hasOwn(value, "api_protocol") || resource.kind === EntityKind.PROVIDER && Object.hasOwn(value, "api_formats") || resource.kind === EntityKind.AGENT && Object.hasOwn(value, "routes"));
-  if (resource.schemaVersion === 2 && [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind)) return resource.kind === EntityKind.PROJECT ? object(value.settings) : typeof value.automatic_plan_approval === "boolean";
+  if (resource.schemaVersion === 1) return !(resource.kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || resource.kind === EntityKind.SETTINGS && (Object.hasOwn(value, "automatic_plan_approval") || Object.hasOwn(value, "plan_mode_default") || Object.hasOwn(value, "branch_prefix")) || resource.kind === EntityKind.ACCOUNT && Object.hasOwn(value, "api_protocol") || resource.kind === EntityKind.PROVIDER && Object.hasOwn(value, "api_formats") || resource.kind === EntityKind.AGENT && Object.hasOwn(value, "routes"));
+  if (resource.schemaVersion === 2 && [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind) && configurationSchemaVersion(resource.kind, value) === 3) return false;
+ if (resource.schemaVersion === 2 && [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind)) return resource.kind === EntityKind.PROJECT ? object(value.settings) : typeof value.automatic_plan_approval === "boolean";
   if (resource.schemaVersion === 3) {
+ if (resource.kind === EntityKind.PROJECT) return object(value.settings) && ["inherit", "enabled", "disabled"].includes(value.settings.plan_mode_default as string) && (!Object.hasOwn(value.settings, "branch_prefix") || typeof value.settings.branch_prefix === "string");
+ if (resource.kind === EntityKind.SETTINGS) return typeof value.plan_mode_default === "boolean" && typeof value.branch_prefix === "string" && typeof value.automatic_plan_approval === "boolean";
     if (resource.kind === EntityKind.ACCOUNT) return value.type === "api" && Boolean(apiFormat(value.api_protocol)) && typeof value.provider_id === "string" && !Object.hasOwn(value, "subscription_service") && !Object.hasOwn(value, "subscription");
     if (resource.kind === EntityKind.PROVIDER) return Array.isArray(value.api_formats) && value.api_formats.length > 0 && value.api_formats.length <= 3 && value.api_formats.every(profile => Boolean(apiFormatProfile(profile))) && new Set(value.api_formats.map(profile => (profile as Record<string, unknown>).protocol)).size === value.api_formats.length;
     return resource.kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0 && value.routes.length <= 1000 &&
@@ -66,6 +69,7 @@ function supportsDocumentSchema(resource: Resource, value: ResourceDocument): bo
     Array.isArray(value.harnesses) && value.harnesses.length === 1 && value.harnesses[0] === subscriptionServiceHarnesses[service];
 }
 export function configurationSchemaVersion(kind: EntityKind, value: Record<string, unknown>): number {
+ if (kind === EntityKind.SETTINGS && (Object.hasOwn(value, "plan_mode_default") || Object.hasOwn(value, "branch_prefix")) || kind === EntityKind.PROJECT && object(value.settings) && (Object.hasOwn(value.settings, "plan_mode_default") || Object.hasOwn(value.settings, "branch_prefix"))) return 3;
   if (kind === EntityKind.PROJECT && Object.hasOwn(value, "settings") || kind === EntityKind.SETTINGS && Object.hasOwn(value, "automatic_plan_approval")) return 2;
   if (kind === EntityKind.ACCOUNT && value.type === "api" && apiFormat(value.api_protocol) || kind === EntityKind.PROVIDER && Array.isArray(value.api_formats) && value.api_formats.length > 0) return 3;
   if (kind === EntityKind.AGENT && Array.isArray(value.routes) && value.routes.length > 0) return 3;
