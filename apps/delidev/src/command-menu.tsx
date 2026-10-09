@@ -2,7 +2,7 @@
 import "./command-menu.css";
 import { Command, defaultFilter } from "cmdk";
 import { createPortal, flushSync } from "react-dom";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { newRequestId } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
 import { DialogSurface } from "./ui";
@@ -10,6 +10,8 @@ import { availableShortcutTarget } from "./shortcuts";
 import { useCommandMenuOwner, useCommandMenuKeyDown } from "./shortcut-provider";
 import { Surface } from "./surface";
 import { settingsCategories, settingsGroups, type SettingsNavigationEntry } from "./settings";
+import { CommandSessionReader, type CommandSessionState } from "./command-menu-sessions";
+import { CommandGlyph, CommandIcon, commandGlyph, sessionGlyph } from "./command-menu-glyph";
 import { settingsSearchTargets } from "./settings-search";
 
 export enum CommandGroup { Navigate = "navigate", Create = "create", Settings = "settings", Help = "help" }
@@ -32,10 +34,19 @@ export function applicationCommands(actions: CommandActions): MenuCommand[] {
  ];
 }
 const groupNames = { [CommandGroup.Navigate]: "command-menu.navigate", [CommandGroup.Create]: "command-menu.create", [CommandGroup.Settings]: "sidebar.settings_74a883", [CommandGroup.Help]: "command-menu.help" } as const;
-export function CommandMenu({commands,close}:{commands:readonly MenuCommand[];close:()=>void}) {
+export function CommandMenu({commands,close,openSession}:{commands:readonly MenuCommand[];close:()=>void;openSession?:(id:string,parent?:string,name?:string)=>void}) {
  const locale = useLocale();
  const routeKey = useCommandMenuKeyDown();
  const [query,setQuery]=useState(""),[selection,setSelection]=useState("");
+ const [started,setStarted]=useState(false),[sessions,setSessions]=useState<CommandSessionState>();
+ const search=query.trim().normalize("NFC");
+ const ranked = <T,>(values:readonly T[], label:(value:T)=>string, keywords?:(value:T)=>string[]) => values.map((value,index)=>({value,index,score:defaultFilter(label(value).normalize("NFC"),search,keywords?.(value).map(term=>term.normalize("NFC")))})).filter(item=>item.score>0).sort((a,b)=>b.score-a.score||a.index-b.index).map(item=>item.value);
+ const matches=search?ranked(commands,item=>item.label,item=>item.help?[item.help]:[]):commands;
+ const sessionMatches=search&&sessions?ranked(sessions.rows,item=>item.title):[];
+ const values=[...matches.filter(item=>item.enabled!==false).map(item=>item.value),...sessionMatches.map(item=>`session:${item.id}`)];
+ const previousQuery=useRef(search);
+ useEffect(()=>{if(search&&openSession)setStarted(true);},[search,openSession]);
+ useLayoutEffect(()=>{if(previousQuery.current!==search||!values.includes(selection))setSelection(values[0]??"");previousQuery.current=search;},[search,values.join("\n"),selection]);
  const id=useId(),dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null),composing=useRef(false),actionDismissal=useRef(false),owner=useCommandMenuOwner();
  useLayoutEffect(()=>{
   const opener=document.activeElement instanceof HTMLElement?document.activeElement:null,node=dialog.current!;
@@ -59,14 +70,18 @@ export function CommandMenu({commands,close}:{commands:readonly MenuCommand[];cl
    if(first&&last&&(!event.currentTarget.contains(document.activeElement)||(event.shiftKey?document.activeElement===first:document.activeElement===last))){event.preventDefault();(event.shiftKey?last:first).focus();}
   }
  }}>
-  <header><h2 id={`${id}-title`}>{copy("command-menu.title")}</h2><button type="button" aria-label={copy("command-menu.close")} onClick={close}>{copy("ui.close_7d9eb7")}</button></header>
-  <Command loop shouldFilter={Boolean(query.trim())} label={copy("command-menu.title")} value={selection} onValueChange={setSelection} filter={(value,search)=>{
-   const item=commands.find(command=>command.value===value);return item?defaultFilter(item.label.normalize("NFC"),search.normalize("NFC"),item.help?[item.help.normalize("NFC")]:[]):0;
-  }}>
-   <Command.Input ref={input} value={query} onValueChange={setQuery} aria-label={copy("command-menu.search")} placeholder={copy("command-menu.search")} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} />
-   {/* cmdk 1.1.1 caches metadata by value and reorders DOM nodes. Refresh only
-       result rows on locale/empty transitions; retain input/query/focus. */}
-   <Command.List><Command.Empty>{copy("command-menu.empty")}</Command.Empty>{Object.values(CommandGroup).map(group=><Command.Group key={`${group}:${locale}:${query.trim() ? "search" : "all"}`} heading={copy(groupNames[group])}>{commands.filter(command=>command.group===group).map(command=><Command.Item key={command.value} value={command.value} keywords={[command.label,command.help??""]} disabled={command.enabled===false} onSelect={()=>activate(command)}><span>{command.label}</span>{command.enabled===false?<small>{command.reason??copy("shortcuts.unavailable")}</small>:null}</Command.Item>)}</Command.Group>)}</Command.List>
+  <h2 className="command-menu-title" id={`${id}-title`}>{copy("command-menu.title")}</h2>
+  {started&&openSession?<CommandSessionReader publish={setSessions}/>:null}
+  <Command loop shouldFilter={false} label={copy("command-menu.title")} value={selection} onValueChange={setSelection}>
+   <div className="command-menu-search"><CommandIcon glyph={CommandGlyph.Search}/><Command.Input ref={input} value={query} onValueChange={setQuery} aria-label={copy("command-menu.search")} placeholder={copy("command-menu.search")} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}}/><button type="button" aria-label={copy("command-menu.close")} onClick={close}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+   <Command.List>
+    {!matches.length&&!sessionMatches.length?<p>{copy("command-menu.empty")}</p>:null}
+    {(search?["commands"]:Object.values(CommandGroup)).map(group=><Command.Group key={`${group}:${locale}`} heading={copy(group==="commands"?"command-menu.commands":groupNames[group as CommandGroup])}>{matches.filter(command=>search||command.group===group).map(command=><Command.Item key={command.value} value={command.value} disabled={command.enabled===false} onSelect={()=>activate(command)}><CommandIcon glyph={commandGlyph(command.value)}/><span>{command.label}{command.enabled===false?<small>{command.reason??copy("shortcuts.unavailable")}</small>:null}</span></Command.Item>)}</Command.Group>)}
+    {search&&openSession?<Command.Group heading={copy("sidebar.sessions_6fa3cb")}>
+     {sessionMatches.map(row=><Command.Item key={row.id} value={`session:${row.id}`} onSelect={()=>activate({value:`session:${row.id}`,group:CommandGroup.Navigate,label:row.title,run:()=>openSession(row.id,row.sidechatParent,row.title)})}><CommandIcon glyph={sessionGlyph(row.conversationKind)}/><span>{row.title}{row.projectId?<small>{sessions?.projects.has(row.projectId)?sessions.projects.get(row.projectId)||copy(sessions.projects.get(row.projectId)===undefined?"command-menu.projectLoading":"command-menu.projectUnavailable"):copy("command-menu.projectLoading")}</small>:null}</span></Command.Item>)}
+     <div className="command-menu-status" role="status">{sessions?.failed?<>{copy("command-menu.partial")} <button type="button" onClick={sessions.reloadRequired?sessions.reload:sessions.retry}>{copy(sessions.reloadRequired?"command-menu.reload":"command-menu.retry")}</button></>:sessions?.complete?!sessionMatches.length?copy("command-menu.noSessions"):null:copy("command-menu.loading")}</div>
+    </Command.Group>:null}
+   </Command.List>
   </Command>
  </DialogSurface>,document.body);
 }
