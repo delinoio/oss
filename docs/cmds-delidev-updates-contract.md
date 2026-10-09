@@ -26,6 +26,19 @@ Desktop controls remain in Connection & diagnostics. Native chooses the main or 
 
 Linux mount correlation retains the 1 MiB mountinfo inventory limit. Split records before decoding their mount-point and source fields. Decode the kernel's space, tab, newline, backslash and source `#` octal escapes exactly once; reject incomplete, non-octal and unsupported escapes. Both decoded paths must match the original APPDIR/APPIMAGE in the same record. Absolute-path, executable-under-APPDIR, regular-file and non-symlink-ancestor checks remain required. Parser fixtures do not establish installed Linux package acceptance.
 
+Each accepted desktop installation has a native-owned joined task independent
+of its renderer. It retains the original operation, server, revision, saved scope,
+generation and actual native result. Losing the original window or epoch after
+the durable begin and before an installer effect records Failed without invoking
+the installer. After an effect begins, retain Installed, Failed or Uncertain as
+observed; do not infer rollback. Quit fences fresh work and cancels installation,
+then joins the installer and its offline outcome settlement outside the UI loop
+before sidecar shutdown. Only the retained accepted token may bypass ordinary
+connector contention and Quit admission for a bounded original-journal write.
+A lost reply retries the same phase; it never invokes installation or creates a
+generation. Failed persistence retains original retry/inspection ownership and
+logs uncertainty without claiming terminal publication.
+
 ## Storage
 
 Private bounded candidates retain the original signed manifest and downloaded digest. UUID-v7 receipts bind original actor, server, target, component and revision. Dedicated Worker generation binaries preserve the previous working binary and existing device/workspace scope. A replacement does not modify a shared CLI/server executable. Unknown installation outcomes retain recovery state and cannot claim rollback.

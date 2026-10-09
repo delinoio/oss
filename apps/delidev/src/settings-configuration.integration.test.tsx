@@ -47,6 +47,12 @@ it("configures a real Go server through the settings forms and explicitly valida
   change("Entry name", "Owned keyless account");
   await screen.findByText("OpenAI Responses", { selector: "output" });
   expect(screen.queryByRole("combobox", { name: "API format" })).toBeNull();
+  // Automatic validation is independent of model discovery. Keep this entry
+  // off until the explicit validation settles so maintenance cannot race it.
+  fireEvent.click(screen.getByText("Advanced preferences", { selector: "summary" }));
+  const enabled = screen.getByRole("checkbox", { name: "Enable this entry" });
+  await waitFor(() => expect(enabled.matches(":disabled")).toBe(false));
+  fireEvent.click(enabled);
   const connect = screen.getByRole("button", { name: "Add and connect" });
   await waitFor(() => expect((connect as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(connect);
@@ -58,6 +64,20 @@ it("configures a real Go server through the settings forms and explicitly valida
   fireEvent.click(screen.getByRole("button", { name: "Validate connection" }));
   await screen.findByText("Health: ready · Credential connected");
   fireEvent.click(screen.getByRole("button", { name: "Close Manage connection" }));
+  fireEvent.click(await screen.findByRole("button", { name: "More actions for Owned keyless account" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit preferences" }));
+  const editor = await screen.findByRole("dialog");
+  const enableValidated = await within(editor).findByRole("checkbox", { name: "Enable this entry" });
+  await waitFor(() => expect(enableValidated.matches(":disabled")).toBe(false));
+  expect((enableValidated as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(enableValidated);
+  const saveAccount = await within(editor).findByRole("button", { name: "Save changes" });
+  await waitFor(() => expect(saveAccount.matches(":disabled")).toBe(false));
+  fireEvent.click(saveAccount);
+  await waitFor(() => expect(editor.isConnected).toBe(false));
+  const accounts = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } });
+  expect(accounts.resources).toHaveLength(1);
+  expect(document(accounts.resources[0])).toMatchObject({ enabled: true, health: "ready" });
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   fireEvent.click(screen.getByRole("button", { name: "New Agent Worker" }));
   const next = async () => {

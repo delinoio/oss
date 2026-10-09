@@ -1906,6 +1906,9 @@ fn run() -> Result<(), NativeFailure> {
     let exiting_notifications = Arc::clone(&notifications);
     browser.start(app.handle().clone());
     let exiting_browser = Arc::clone(&browser);
+    let exiting_updates = Arc::clone(app.state::<Arc<UpdateHost>>().inner());
+    let returning_updates = Arc::clone(&exiting_updates);
+    let returning_connector = Arc::clone(&connector);
     let window_actions = Arc::clone(app.state::<Arc<window_host::WindowActions>>().inner());
     let quit_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let quit_task = Arc::new(Mutex::new(None));
@@ -1924,6 +1927,7 @@ fn run() -> Result<(), NativeFailure> {
                 // Fence fresh starts synchronously. Browser discovery keeps its
                 // separate observer until its final bounded read pass joins.
                 exiting_supervision.request_stop();
+                exiting_updates.request_stop();
                 worker_supervision.request_stop();
                 exiting.request_stop();
                 let host = Arc::clone(&exiting_supervision);
@@ -1934,12 +1938,14 @@ fn run() -> Result<(), NativeFailure> {
                 let notifications = Arc::clone(&exiting_notifications);
                 let oauth = Arc::clone(&oauth);
                 let windows = Arc::clone(&exiting_window_actions);
+                let updates = Arc::clone(&exiting_updates);
                 let complete = Arc::clone(&quit_done);
                 let app = _app.clone();
                 *quit_task.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(std::thread::spawn(move || {
                         oauth.stop();
                         windows.join();
+                        updates.join(&sidecar);
                         host.stop();
                         workers.stop();
                         browser.stop();
@@ -1986,6 +1992,7 @@ fn run() -> Result<(), NativeFailure> {
         let _ = task.join();
     }
     supervision.stop();
+    returning_updates.join(&returning_connector);
     returning_oauth.stop();
     browser.stop();
     notifications.stop();
