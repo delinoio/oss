@@ -103,7 +103,7 @@ func pricingCommand(ctx context.Context, c client, o options, args []string, inp
 		} else {
 			return nil, domain.Fail(domain.InvalidArgument, "Invalid pricing mode.", "Choose automatic or manual.")
 		}
-		result, err := c.usage.SetTokenPricingMode(ctx, request(c, &pb.SetTokenPricingModeRequest{Model: model, Mode: mode, ExpectedProviderRevision: providerRevision, ExpectedPolicyRevision: policyRevision, RequestId: string(o.requestID)}))
+		result, err := c.usage.SetTokenPricingMode(ctx, request(c, &pb.SetTokenPricingModeRequest{Model: model, Mode: mode, ExpectedRevision: revision, ExpectedProviderRevision: providerRevision, ExpectedPolicyRevision: policyRevision, RequestId: string(o.requestID)}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}

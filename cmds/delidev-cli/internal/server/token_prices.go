@@ -291,6 +291,17 @@ func (s *Service) mutateTokenPrice(ctx context.Context, id domain.ID, identity t
 		if revision != identity.ProviderRevision {
 			return nil, domain.Fail(domain.Conflict, "The original provider configuration changed.", "Reload this source without discarding the staged price.")
 		}
+		current, e := tx.RetainedActivePricing(identity.Model.Key())
+		if e != nil {
+			return nil, e
+		}
+		priceRevision := uint64(0)
+		if current != nil {
+			priceRevision = current.Revision
+		}
+		if priceRevision != identity.PriceRevision {
+			return nil, domain.Fail(domain.Conflict, "The original active price changed.", "Read the current price before changing its mode or staged basis.")
+		}
 		_, e = tx.SetPricingPolicy(identity.Model, identity.Mode, identity.PolicyRevision)
 		if e != nil {
 			return nil, e
@@ -358,7 +369,7 @@ func (s *Service) SetTokenPricingMode(ctx context.Context, req *connect.Request[
 	if mode != domain.AutomaticPricing && mode != domain.ManualPricing {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Choose Automatic or Manual pricing.", "Read the current policy before changing its mode."), correlation)
 	}
-	result, e := s.mutateTokenPrice(ctx, domain.ID(req.Msg.RequestId), tokenPriceMutation{Actor: actor, Model: m, Mode: mode, PolicyRevision: req.Msg.ExpectedPolicyRevision, ProviderRevision: req.Msg.ExpectedProviderRevision})
+	result, e := s.mutateTokenPrice(ctx, domain.ID(req.Msg.RequestId), tokenPriceMutation{Actor: actor, Model: m, Mode: mode, PolicyRevision: req.Msg.ExpectedPolicyRevision, ProviderRevision: req.Msg.ExpectedProviderRevision, PriceRevision: req.Msg.ExpectedRevision})
 	if e != nil {
 		return nil, rpc.Error(e, correlation)
 	}

@@ -380,6 +380,7 @@ message SetTokenPricingModeRequest {
   uint64 expected_policy_revision = 3;
   string request_id = 4;
   uint64 expected_provider_revision = 5;
+  uint64 expected_revision = 6;
 }
 message SetTokenPricingModeResponse {
   GetTokenPricingResponse current = 1;

@@ -437,3 +437,63 @@ func TestRetiredProviderPricesRemainReadOnlyAcrossRefresh(t *testing.T) {
 		}
 	}
 }
+
+func TestPricingModeRejectsUnseenAutomaticVersionBeforePolicyMutation(t *testing.T) {
+	root := t.TempDir()
+	if e := os.Chmod(root, 0700); e != nil {
+		t.Fatal(e)
+	}
+	db, e := store.Open(context.Background(), root)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	s := &Service{Store: db}
+	actor := domain.Principal{Type: domain.OwnerDevice}
+	ctx := domain.WithPrincipal(context.Background(), actor)
+	m := domain.ModelIdentity{SubscriptionService: domain.SubscriptionClaude, NativeID: "original-mode-price"}
+	rate := "1"
+	basis := domain.TokenPricing{Currency: "USD", Source: tokenprices.URL, AsOf: "2026-10-09", InputMode: domain.UniformInputPrice, InputPerMillion: &rate}
+	snapshot := tokenprices.Snapshot{Checked: time.Now(), Catalog: tokenprices.Catalog{Digest: strings.Repeat("a", 64), References: map[string]tokenprices.Reference{"anthropic\x00original-mode-price": {Provider: "anthropic", Model: m.NativeID, Basis: &basis}}}}
+	publish := func() {
+		t.Helper()
+		if e := s.publishTokenPrices(ctx, snapshot); e != nil {
+			t.Fatal(e)
+		}
+	}
+	// Establish a discoverable identity without advancing its Automatic policy.
+	_, e = db.Mutate(ctx, domain.NewID(), "fixture.mode-price", nil, func(tx *store.Tx) (any, error) { return nil, s.applyReference(tx, m, snapshot) })
+	if e != nil {
+		t.Fatal(e)
+	}
+	rate = "2"
+	snapshot.Catalog.Digest = strings.Repeat("b", 64)
+	publish()
+	request := tokenPriceMutation{Actor: actor, Model: m, Mode: domain.ManualPricing, PriceRevision: 1}
+	if _, e = s.mutateTokenPrice(ctx, domain.NewID(), request); domain.SafeError(e).Code != domain.Conflict {
+		t.Fatal("unseen price was frozen", e)
+	}
+	if e = db.Read(ctx, func(tx *store.Tx) error {
+		policy, e := tx.PricingPolicy(m)
+		if e != nil || policy.Mode != domain.AutomaticPricing || policy.Revision != 0 {
+			t.Fatal("rejected edit changed policy", policy, e)
+		}
+		price, e := tx.RetainedActivePricing(m.Key())
+		if e != nil || price == nil || price.Revision != 2 {
+			t.Fatal("rejected edit changed active price", price, e)
+		}
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
+	request.PriceRevision = 2
+	id := domain.NewID()
+	first, e := s.mutateTokenPrice(ctx, id, request)
+	if e != nil {
+		t.Fatal(e)
+	}
+	replay, e := s.mutateTokenPrice(ctx, id, request)
+	if e != nil || !replay.Replayed || string(first.Data) != string(replay.Data) {
+		t.Fatal("mode retry changed original receipt", replay, e)
+	}
+}

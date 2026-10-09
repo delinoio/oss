@@ -3289,6 +3289,7 @@ type SetTokenPricingModeRequest struct {
 	ExpectedPolicyRevision   uint64                 `protobuf:"varint,3,opt,name=expected_policy_revision,json=expectedPolicyRevision,proto3" json:"expected_policy_revision,omitempty"`
 	RequestId                string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	ExpectedProviderRevision uint64                 `protobuf:"varint,5,opt,name=expected_provider_revision,json=expectedProviderRevision,proto3" json:"expected_provider_revision,omitempty"`
+	ExpectedRevision         uint64                 `protobuf:"varint,6,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -3354,6 +3355,13 @@ func (x *SetTokenPricingModeRequest) GetRequestId() string {
 func (x *SetTokenPricingModeRequest) GetExpectedProviderRevision() uint64 {
 	if x != nil {
 		return x.ExpectedProviderRevision
+	}
+	return 0
+}
+
+func (x *SetTokenPricingModeRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
 	}
 	return 0
 }
@@ -3939,14 +3947,15 @@ const file_delidev_v1_usage_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x126\n" +
-	"\x06policy\x18\x04 \x01(\v2\x1e.delidev.v1.TokenPricingPolicyR\x06policy\"\x96\x02\n" +
+	"\x06policy\x18\x04 \x01(\v2\x1e.delidev.v1.TokenPricingPolicyR\x06policy\"\xc3\x02\n" +
 	"\x1aSetTokenPricingModeRequest\x12/\n" +
 	"\x05model\x18\x01 \x01(\v2\x19.delidev.v1.ModelIdentityR\x05model\x120\n" +
 	"\x04mode\x18\x02 \x01(\x0e2\x1c.delidev.v1.TokenPricingModeR\x04mode\x128\n" +
 	"\x18expected_policy_revision\x18\x03 \x01(\x04R\x16expectedPolicyRevision\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x04 \x01(\tR\trequestId\x12<\n" +
-	"\x1aexpected_provider_revision\x18\x05 \x01(\x04R\x18expectedProviderRevision\"\x97\x01\n" +
+	"\x1aexpected_provider_revision\x18\x05 \x01(\x04R\x18expectedProviderRevision\x12+\n" +
+	"\x11expected_revision\x18\x06 \x01(\x04R\x10expectedRevision\"\x97\x01\n" +
 	"\x1bSetTokenPricingModeResponse\x12=\n" +
 	"\acurrent\x18\x01 \x01(\v2#.delidev.v1.GetTokenPricingResponseR\acurrent\x12\x1d\n" +
 	"\n" +

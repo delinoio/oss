@@ -350,3 +350,5 @@ A fresh subscription lifecycle Take may return Canceled with exact cause `subscr
 - Token price collection uses the explicit server outbound route, bounded joined requests, private cache and original actor authorization. Automatic/Manual policy and current price compare-and-save share a transaction. Request replay returns the original accepted policy and immutable price. Log stable codes/counts and original request UUIDs without raw upstream/model keys, credentials or native content.
 
 - Current protocol-2 backup creation retains only durable RequestBackup jobs and joined publication. Retired synchronous CreateBackup preserves original authorization refusals and returns Unsupported without receipts, files or fallback. Its declaration retains immutable numeric provenance; current restore/inventory fixtures publish the original durable job explicitly. Follow the storage/reset contracts.
+
+- Token pricing mode changes check the original displayed active price revision together with original policy/provider revisions before changing policy. Automatic refresh does not advance policy revisions; it cannot silently replace the reviewed Manual freeze basis.

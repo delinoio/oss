@@ -392,3 +392,5 @@ SiliconFlow/CN and Tencent TokenHub use their exact preset IDs. Gemini maps to
 remain unmapped even if a later upstream namespace shares their spelling.
 Endpoint or API-profile edits remove managed mapping eligibility. No name,
 URL resemblance or native-ID alias establishes a match.
+
+Mode changes retain and check the original displayed active price revision (zero only when unavailable), together with the policy and provider revisions. A concurrent automatic publication conflicts before any policy mutation, so Manual cannot freeze an unseen rate. Exact uncertain retries retain all three original revisions.
