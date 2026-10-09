@@ -10,12 +10,13 @@ import { encode } from "./documents";
 const native = vi.hoisted(() => ({ callbacks: new Set<() => void>(), pending: null as { id: string; destination: string; inbox_id?: string } | null, calls: [] as string[] }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true, invoke: async (name: string, args?: { id: string }) => {
   native.calls.push(name);
+  if (name === "read_sidebar_preference") return { revision: 1, sidebar_preference: "expanded", problem: null };
   if (name === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
   if (name === "begin_tray") return "scope";
   if (name === "read_tray_action") return native.pending;
   if (name === "acknowledge_tray_action" && native.pending?.id === args?.id) native.pending = null;
 } }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: async (_event: string, callback: () => void) => { native.callbacks.add(callback); return () => native.callbacks.delete(callback); } }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: async (event: string, callback: () => void) => { if (event !== "tray-activate") return () => {}; native.callbacks.add(callback); return () => native.callbacks.delete(callback); } }));
 
 it("opens the native-selected view without sending work or losing the session draft", async () => {
   const id = newRequestId();

@@ -1,3 +1,4 @@
+import { SidebarPreference, SidebarPreferenceBoundary, SidebarPreferenceNotice, useSidebarPreference, useWideSidebar } from "./sidebar-preference";
 import { CommandMenu, applicationCommands } from "./command-menu";
 import { resourceName } from "./documents";
 import { SessionTabsProvider, useSessionTabsStore, useSessionTabs, SessionTabKind } from "./session-tabs";
@@ -10,7 +11,7 @@ import { LocalizedText, copy, useLocale } from "./localization";
 import type { UsageEntry } from "./usage-entry";
 import type { ServerPresentation } from "./server-presentation";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { type Transport } from "@connectrpc/connect";
 import { TransportProvider, useQuery } from "@connectrpc/connect-query";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -34,7 +35,7 @@ import { TrayPresentation } from "./tray-presentation";
 import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
-import { Sidebar } from "./sidebar";
+import { Sidebar, Icon } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import { SettingsEntryDestination, type SettingsNavigationEntry } from "./settings";
 import { SidebarOutletProvider } from "./sidebar-context";
@@ -59,6 +60,15 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const contextOpener = useRef<HTMLButtonElement>(null);
   const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarPreference = useSidebarPreference();
+  const wideSidebar = useWideSidebar();
+  const sidebarCollapsed = sidebarPreference.snapshot.sidebar_preference === SidebarPreference.Collapsed;
+  const sidebarPaneVisible = wideSidebar ? !sidebarCollapsed : drawerOpen;
+  const sidebarToggle = useRef<HTMLButtonElement>(null);
+  const sidebarPaneId = useId();
+  const toggleSidebar = () => sidebarPreference.select(sidebarCollapsed ? SidebarPreference.Expanded : SidebarPreference.Collapsed);
+  const openSidebar = () => wideSidebar ? sidebarPreference.select(SidebarPreference.Expanded) : setDrawerOpen(true);
+
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] = useState(0);
   const [visited, setVisited] = useState<readonly string[]>([]);
@@ -153,7 +163,8 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  useShortcuts([
+  const sidebarShortcuts = useShortcuts([
+    { id: ShortcutId.ToggleSidebar, scope: ShortcutScope.Global, label: "sidebar-preference.toggle", bindings: globalShortcutBindings[ShortcutId.ToggleSidebar], input: ShortcutInput.Allow, active: wideSidebar, enabled: !sidebarPreference.operation && !sidebarPreference.snapshot.problem, run: toggleSidebar },
     { id: ShortcutId.CommandMenu, scope: ShortcutScope.Global, label: "command-menu.title", bindings: globalShortcutBindings[ShortcutId.CommandMenu], input: ShortcutInput.Allow, run: toggleCommandMenu },
     { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], helpKeydown: holdHelp },
     { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: globalShortcutBindings[ShortcutId.NewSession], input: ShortcutInput.Allow, run: startNewSession },
@@ -168,7 +179,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     const target = compact ? contextOpener.current : main.current;
     if (target && !target.closest("[hidden], [inert]")) target.focus({ preventScroll: true });
   }, [surface, drawerOpen, settingsEntry]);
-  return <LocalConnectionPresentationProvider target={connectionTarget} inline={!connectionReady} onRequest={onConnectionHelp}><RunnerRemediationProvider active authority={pairingAuthority}><RunnerPreferenceProvider readLocalWorker={readLocalWorker} scope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined}><SessionControlProvider><SessionForkProvider openSession={open} openSidechat={(parent, child) => { tabs.open(parent, {kind:SessionTabKind.Sidechat,id:child.id,name:resourceName(child)}); open(parent); }} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen} openDrawer={() => setDrawerOpen(true)}><div className="app"><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar openCommandMenu={toggleCommandMenu} connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={sidebarSession} selectedSessionActivation={sessionNavigationActivation} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} />{commandMenuOpen ? <CommandMenu close={() => setCommandMenuOpen(false)} commands={applicationCommands({ navigate, navigateHeader, openSettings, newSession: startNewSession, newGeneralChat: startNewGeneralChat, newProject: openNewProject, help: openHelp })} /> : null}<main ref={main} id="main" tabIndex={-1}><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
+  return <LocalConnectionPresentationProvider target={connectionTarget} inline={!connectionReady} onRequest={onConnectionHelp}><RunnerRemediationProvider active authority={pairingAuthority}><RunnerPreferenceProvider readLocalWorker={readLocalWorker} scope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined}><SessionControlProvider><SessionForkProvider openSession={open} openSidechat={(parent, child) => { tabs.open(parent, {kind:SessionTabKind.Sidechat,id:child.id,name:resourceName(child)}); open(parent); }} readLocalWorker={readLocalWorker}><SessionStorageProvider><SidebarOutletProvider target={sidebarTarget} closeDrawer={() => setDrawerOpen(false)} drawerOpen={drawerOpen} paneVisible={sidebarPaneVisible} openDrawer={openSidebar}><div className={`app${wideSidebar && sidebarCollapsed ? " sidebar-collapsed" : ""}`}><a className="skip" href="#main">{copy("App.skipToContent_ac576a")}</a><Sidebar collapsed={sidebarCollapsed} paneId={sidebarPaneId} toggleRef={sidebarToggle} compactFocusRef={contextOpener} openCommandMenu={toggleCommandMenu} connectionReady={connectionReady} serverPresentation={serverPresentation} surface={surface} selectedSessionId={sidebarSession} selectedSessionActivation={sessionNavigationActivation} navigate={navigate} navigateHeader={navigateHeader} openSession={open} newSession={startNewSession} newGeneralChat={startNewGeneralChat} newProject={openNewProject} projectSelectionBlocked={newSessionProjectBlocked} openSettings={openSettings} setContextTarget={setSidebarTarget} drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen} />{commandMenuOpen ? <CommandMenu close={() => setCommandMenuOpen(false)} commands={applicationCommands({ navigate, navigateHeader, openSettings, newSession: startNewSession, newGeneralChat: startNewGeneralChat, newProject: openNewProject, help: openHelp })} /> : null}<main ref={main} id="main" tabIndex={-1}><button ref={sidebarToggle} type="button" className="sidebar-wide-toggle" aria-label={copy(sidebarCollapsed ? "sidebar-preference.expand" : "sidebar-preference.collapse")} title={copy(sidebarCollapsed ? "sidebar-preference.expand" : "sidebar-preference.collapse")} aria-expanded={!sidebarCollapsed} aria-controls={sidebarPaneId} aria-keyshortcuts={sidebarShortcuts.aria(ShortcutId.ToggleSidebar)} aria-disabled={Boolean(sidebarPreference.operation || sidebarPreference.snapshot.problem)} onClick={toggleSidebar}><Icon name="sidebar-toggle" /></button><SidebarPreferenceNotice /><button ref={contextOpener} type="button" className="sidebar-context-trigger" aria-haspopup="dialog" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}><LocalizedText id="App.open_a007d6" components={{ s0: <>{surfaceName}</> }} /></button><TrayPresentation navigate={navigateTray} /><NotificationPresentation />{draftState.error ? <p role="alert">{draftState.error}</p> : null}
     {[...drafts.keys()].map(id => <SessionDraftSettlement key={id} id={id} clear={() => { saveDraft(id, "", []); }} />)}
     {projectCreation ? <ProjectCreationDialog registrationAdapters={{ readLocalWorker, controlLocalWorker, chooseFolder: chooseRepositoryFolder }} key={projectCreation.id} activation={projectCreation.activation} close={closeProjectCreation} fallbackFocus={projectFallbackFocus} /> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{visited.map(id => <div key={id} hidden={id !== selected} inert={id !== selected}><SessionView active={surface === Surface.Sessions && id === selected} id={id} draft={drafts.get(id)?.prompt ?? ""} initialSkills={drafts.get(id)?.bindings} setDraft={(value, bindings) => saveDraft(id, value, bindings)} changeSkills={bindings => { saveDraft(id, undefined, bindings); }} openRunnerSettings={() => openSettings(SettingsEntryDestination.RunnerDevices)} /></div>)}{!selected ? <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Problem error={status.error} actions={<button type="button" disabled={status.isFetching || !connectionReady} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /></section> : null}</div>
@@ -195,7 +206,7 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider>;
+  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
 }
 
 // The connection owns submitted drafts even while another Session is mounted.

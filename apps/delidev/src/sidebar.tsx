@@ -40,6 +40,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
   useLocale();
   const common = { "aria-hidden": true as const, className: `sidebar-icon ${className}`, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (name) {
+    case "sidebar-toggle": return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>;
     case "sessions": return <svg {...common}><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M9 20v-6h6v6"/></svg>;
     case "pull-requests": return <svg {...common}><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v10a4 4 0 0 0 4 4M18 16V8a4 4 0 0 0-4-4h-2"/><path d="m12 2-2 2 2 2"/></svg>;
     case "usage": return <svg {...common}><path d="M4 20V12M10 20V5M16 20v-9M22 20V8"/></svg>;
@@ -273,13 +274,13 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
+export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  collapsed?: boolean; paneId?: string; toggleRef?: RefObject<HTMLButtonElement | null>; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
   useLocale();
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(() => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches);
   const drawer = useRef<HTMLDialogElement>(null);
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -300,14 +301,14 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, selectedS
   const newProjectPointerInside = useRef(false);
   const newProjectFocused = useRef(false);
   const sessionNavigation = surface === Surface.Sessions || surface === Surface.NewSession || surface === Surface.NewGeneralChat;
-  const active = sessionNavigation && homeActive && visible && (!compact || drawerOpen);
+  const active = sessionNavigation && homeActive && visible && (compact ? drawerOpen : !collapsed);
   useEffect(() => {
-    if (sessionNavigation) return;
+    if (sessionNavigation && active) return;
     // The Home tooltip is portaled outside its hidden source controls.
     newProjectPointerInside.current = false;
     newProjectFocused.current = false;
     setNewProjectTooltip(undefined);
-  }, [sessionNavigation]);
+  }, [sessionNavigation, active]);
   const projects = useNavigationQuery(home.catalog, HomeScope.Catalog, "", false, active);
   const sessions = useNavigationQuery(home.global, HomeScope.Sessions, "", includeArchived, active);
   useEffect(() => {
@@ -337,6 +338,13 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, selectedS
   useLayoutEffect(() => {
     const element = drawer.current;
     if (!element) return;
+    const hidden = compact ? !drawerOpen : collapsed;
+    if (hidden && element.contains(document.activeElement)) {
+      (compact ? compactFocusRef : toggleRef)?.current?.focus({ preventScroll: true });
+    }
+    element.hidden = hidden;
+    element.inert = hidden;
+    element.setAttribute("aria-hidden", String(hidden));
     if (compact) {
       if (drawerOpen) {
         if (element.open && !modalDrawer.current) element.close();
@@ -353,13 +361,14 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, selectedS
       const wasModal = modalDrawer.current;
       if (wasModal && element.open) element.close();
       modalDrawer.current = false;
-      element.setAttribute("open", "");
+      if (collapsed) element.removeAttribute("open");
+      else element.setAttribute("open", "");
       if (wasModal) {
         setDrawerOpen(false);
-        requestAnimationFrame(() => (drawer.current?.querySelector<HTMLElement>("[aria-current='page']") ?? rail.current?.querySelector<HTMLElement>("[aria-current='page']"))?.focus());
+        requestAnimationFrame(() => (collapsed ? toggleRef?.current : drawer.current?.querySelector<HTMLElement>("[aria-current='page']") ?? rail.current?.querySelector<HTMLElement>("[aria-current='page']"))?.focus());
       }
     }
-  }, [compact, drawerOpen, setDrawerOpen]);
+  }, [compact, drawerOpen, collapsed, setDrawerOpen, toggleRef, compactFocusRef]);
   useLayoutEffect(() => {
     const container = list.current;
     const target = sessionNavigation ? Surface.Sessions : surface;
@@ -457,7 +466,7 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, selectedS
       <button type="button" className="sidebar-rail-button" aria-label={copy("shortcuts.title")} aria-keyshortcuts={helpAria} aria-haspopup="dialog" onClick={openShortcutHelp}><Icon name="help" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("shortcuts.title")}</span></button>
       <SidebarButton label={copy("sidebar.settings_74a883")} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
-    <dialog ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? copy("sidebar.delidevNavigation_a550af") : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
+    <dialog id={paneId} ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? copy("sidebar.delidevNavigation_a550af") : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
     <div className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}>
       <header className="sidebar-header">
         <h1>{copy("sidebar.delidev_44fcad")}</h1>

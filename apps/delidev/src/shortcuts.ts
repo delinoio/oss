@@ -4,11 +4,12 @@ import type { MessageKey } from "./localization";
 import { Surface } from "./surface";
 
 export enum ShortcutScope { Global = "global" }
-export enum ShortcutId { CommandMenu = "command-menu", SessionTab1 = "session-tab-1", SessionTab2 = "session-tab-2", SessionTab3 = "session-tab-3", SessionTab4 = "session-tab-4", SessionTab5 = "session-tab-5", SessionTab6 = "session-tab-6", SessionTab7 = "session-tab-7", SessionTab8 = "session-tab-8", SessionTab9 = "session-tab-9", Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
+export enum ShortcutId { ToggleSidebar = "toggle-sidebar", CommandMenu = "command-menu", SessionTab1 = "session-tab-1", SessionTab2 = "session-tab-2", SessionTab3 = "session-tab-3", SessionTab4 = "session-tab-4", SessionTab5 = "session-tab-5", SessionTab6 = "session-tab-6", SessionTab7 = "session-tab-7", SessionTab8 = "session-tab-8", SessionTab9 = "session-tab-9", Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
 export enum ShortcutInput { Ignore = "ignore", Allow = "allow", Target = "target" }
 export enum ShortcutExecution { Action = "action", Native = "native" }
 export enum ShortcutPlatform { Mac = "mac", Other = "other" }
 export const globalShortcutBindings = {
+  [ShortcutId.ToggleSidebar]: [{ key: "b", primary: true }],
   [ShortcutId.CommandMenu]: [{ key: "k", primary: true }],
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],

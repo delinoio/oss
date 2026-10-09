@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "device-sidebar"
+description = "Read or select the computer-local sidebar state; no server configuration or arbitrary paths."
+commands.allow = ["read_sidebar_preference", "update_sidebar_preference"]

@@ -10,6 +10,7 @@ mod oauth_host;
 mod session_creation_preferences_host;
 mod shortcut_capture_host;
 mod shortcut_preferences_host;
+mod sidebar_preference_host;
 mod tray_host;
 mod tray_status_host;
 mod updater_host;
@@ -54,6 +55,7 @@ use session_creation_preferences_host::{
     update_runner_device_preferences, update_session_creation_preferences,
 };
 use shortcut_preferences_host::{read_shortcut_preferences, update_shortcut_preferences};
+use sidebar_preference_host::{read_sidebar_preference, update_sidebar_preference};
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
 use delidev_desktop::{
@@ -1779,6 +1781,8 @@ fn run() -> Result<(), NativeFailure> {
                 read_appearance,
                 read_shortcut_preferences,
                 update_shortcut_preferences,
+                read_sidebar_preference,
+                update_sidebar_preference,
                 read_date_format,
                 update_date_format,
                 read_runner_device_preferences,
@@ -1955,6 +1959,9 @@ fn run() -> Result<(), NativeFailure> {
             ));
             app.manage(Arc::new(
                 delidev_desktop::shortcut_preferences::ShortcutStore::new(config_dir.clone()),
+            ));
+            app.manage(Arc::new(
+                delidev_desktop::sidebar_preference::SidebarStore::new(config_dir.clone()),
             ));
             let language = Arc::new(delidev_desktop::language::LanguageStore::new(config_dir));
             let initial = language.read();

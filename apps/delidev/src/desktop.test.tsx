@@ -49,6 +49,7 @@ function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
     if (command === "connection_context") return profile;
     if (command === "connect_saved") return connection;
     if (command === "show_connection_manager") return;
+    if (command === "read_sidebar_preference") return { revision: 1, sidebar_preference: "expanded", problem: null };
     if (command === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
     if (command === "begin_tray" || command === "begin_notifications") return "fixture-presentation";
     if (command === "publish_tray" || command === "read_tray_action" || command === "end_notifications") return;
@@ -63,7 +64,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   expect(await screen.findByText("Remote fixture · Connected")).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledWith(expect.objectContaining({ origin: value.profile.endpoint }));
   expect(value.status).toHaveBeenCalled();
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications", "read_sidebar_preference"].includes(command))).toBe(true);
   expect(JSON.stringify(bridge.invoke.mock.calls)).not.toContain(value.connection.token);
   expect(screen.queryByText(value.connection.token)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));

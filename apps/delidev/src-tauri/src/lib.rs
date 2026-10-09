@@ -25,6 +25,7 @@ pub mod oauth;
 pub mod provider_guidance;
 pub mod quota_countdown;
 pub mod session_creation_preferences;
+pub mod sidebar_preference;
 pub mod tray_status;
 
 pub mod session_tab_shortcuts;

@@ -1,3 +1,4 @@
+import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -156,8 +157,10 @@ export function Schedules({ active, open, readLocalWorker,notificationOccurrence
   }, [historyExpanded, active, locked]);
   const request = useCallback((token: string) => ({ projectId, pageSize: 50, pageToken: token, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }), [projectId, filter]);
   const reader = useConnectPaginationReader(ScheduleQuery.listSchedules, request, schedulePage);
-  const result = usePaginationChain(JSON.stringify([projectId, filter]), active && !locked, reader);
-  usePaginationRefresh(ScheduleQuery.listSchedules, request(""), active && !locked, result.refresh);
+  const paneVisible = useSidebarPaneVisible();
+  const navigationActive = active && paneVisible;
+  const result = usePaginationChain(JSON.stringify([projectId, filter]), navigationActive && !locked, reader);
+  usePaginationRefresh(ScheduleQuery.listSchedules, request(""), navigationActive && !locked, result.refresh);
   const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); setHistory(""); closeDrawer(); };
   const newSchedule = () => { if (locked) return; setSelected(undefined); setHistory(""); setEditing({ key: newRequestId() }); closeDrawer(); };
   const openHistory = (event: FormEvent) => { event.preventDefault(); if (locked || !historyDraft.trim()) return; setSelected(undefined); setHistory(historyDraft.trim()); closeDrawer(); };
