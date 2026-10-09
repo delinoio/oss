@@ -29,8 +29,8 @@ export function WaitingQueue({ sessionId, session, active, revision, drafts, sav
  },[sessionId]);
  const reader=useConnectPaginationReader(SessionQuery.listWaitingQueue,request,project);
  const query=usePaginationChain<WaitingRow,Resource>(`waiting:${sessionId}`,active,reader);
- const pendingFocus=useRef<string>();
- const pendingDown=useRef<{id:string;revision:bigint;generation:bigint}>();
+ const pendingFocus=useRef<string | undefined>(undefined);
+ const pendingDown=useRef<{id:string;revision:bigint;generation:bigint} | undefined>(undefined);
  const accepted=useCallback(()=>{setAnnouncement(copy("queue.moved"));query.reload();refreshHistory();},[query.reload,refreshHistory]);
  // Session scope owns the original request even after row eviction or removal.
  const move=useRetainedMutation(`move-waiting:${sessionId}`,SessionQuery.moveQueuedInput,accepted,(result,request)=>result.change?.requestId===request.mutation?.requestId && result.change.session?.id===request.sessionId && typeof result.currentQueueGeneration==="bigint");
