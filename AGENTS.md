@@ -624,4 +624,6 @@ Release automation baseline:
 
 - DeliDev Activity retirement follows `docs/cmds-delidev-activity-contract.md`: remove desktop/CLI/live projections while retaining authenticated Unsupported protocol compatibility, legacy validators and dependent session/backup cleanup. Preserve canonical PR/native/cleanup/push evidence and independent observations.
 
+- Waiting input movement (#2142) follows the sessions, storage, protocol and desktop contracts. Preserve System 75, original actor/revision/generation receipts, private dispatch order with unchanged public acceptance sequence, every claim's effective head and exact uint64/bigint generation. Freeze explicit Fork image sets at admission and retain original Worker byte/deletion ownership; legacy jobs retain their verified cutoff. No Worker allocation, public rank or migration.
+
 - ChatGPT/Codex paid-credit observations (#2124) use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.
