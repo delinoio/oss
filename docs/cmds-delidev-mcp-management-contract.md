@@ -33,6 +33,8 @@ reports one exact command result. Original machine, Worker device, instance,
 primary-stream generation and actor must agree before forwarding and acceptance.
 An auxiliary reconnect never resubmits a command. Requests and replies are
 bounded at 128 KiB and 256 KiB; the Worker catalog has at most 128 definitions.
+Save admission caps current public definition metadata at 192 KiB so individually
+valid records cannot make the complete inventory unreadable.
 
 Every mutation has an actor-bound immutable request digest and receipt. Server
 coordination stores only safe metadata, references and sanitized request digests,

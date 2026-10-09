@@ -21,6 +21,8 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type Operation string
@@ -353,6 +355,9 @@ func (m *Manager) Mutate(ctx context.Context, r Request) (Result, error) {
 		}
 		def := *r.Definition
 		def.Revision = r.Revision + 1
+		if !m.inventoryFits(r.ServerID, def) {
+			return result, domain.Fail(domain.ResourceExhausted, "The MCP inventory exceeds its response bound.", "Reduce non-secret arguments and metadata before saving another definition.")
+		}
 		g := generation{Entry: Entry{Definition: def, Authentication: Required}}
 		if exists {
 			g.Secret = s.Generations[s.Current].Secret
@@ -457,6 +462,21 @@ func (m *Manager) Mutate(ctx context.Context, r Request) (Result, error) {
 	}
 	return result, nil
 }
+
+// Bound current public metadata before admitting a save. Otherwise several
+// individually valid definitions could make the entire catalog unreadable.
+func (m *Manager) inventoryFits(id domain.ID, definition domain.MCPDefinition) bool {
+	result := &pb.ListMcpServersResponse{}
+	for key, source := range m.state.Servers {
+		if key == id || source.Retired || source.Deleting != nil {
+			continue
+		}
+		result.Servers = append(result.Servers, EntryToWire(source.Generations[source.Current].Entry, m.state.ServerID, m.state.DeviceID))
+	}
+	result.Servers = append(result.Servers, EntryToWire(Entry{Definition: definition, Authentication: Required}, m.state.ServerID, m.state.DeviceID))
+	return proto.Size(result) <= 192<<10
+}
+
 func sameNames(a, b domain.MCPDefinition) bool {
 	aa, _ := json.Marshal([]any{a.EnvironmentNames, a.HeaderNames})
 	bb, _ := json.Marshal([]any{b.EnvironmentNames, b.HeaderNames})
