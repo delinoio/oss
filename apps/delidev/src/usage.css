@@ -20,7 +20,6 @@
 .usage-page .usage-trends, .usage-page .usage-definitions, .usage-page .usage-accounting-source { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .usage-page summary { min-height: 40px; padding-block: 8px; cursor: pointer; overflow-wrap: anywhere; }
 .usage-page .usage-accounting-source > details { margin: 0; padding: 0; border: 0; border-radius: 8px; }
-.usage-page .usage-accounting-source > details > summary { display: list-item; }
 .usage-source-heading { font-weight: 650; }
 .usage-accounting-source > details > summary span { margin-inline-end: 16px; }
 .usage-source-empty-warning { margin: 8px 0 0; color: var(--muted); font-size: .875rem; }

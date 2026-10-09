@@ -16,3 +16,5 @@
 [data-disclosure-content]:not([hidden]):not([class]) { display: contents; }
 
 .disclosure-header .sidebar-project-title { white-space: normal; overflow: visible; text-overflow: clip; }
+
+.disclosure > .disclosure-native-content { display: contents; }

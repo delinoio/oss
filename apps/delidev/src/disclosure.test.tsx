@@ -11,7 +11,7 @@ describe("shared inline disclosures", () => {
     expect(ref.current).toBeInstanceOf(HTMLDetailsElement);
     expect(trigger.current?.tagName).toBe("SUMMARY");
     expect(ref.current?.open).toBe(false);
-    expect(trigger.current?.getAttribute("aria-controls")).toBe(ref.current?.id);
+    expect(trigger.current?.getAttribute("aria-controls")).toBe(ref.current?.querySelector(".disclosure-native-content")?.id);
     ref.current!.open = true;
     await waitFor(() => expect(trigger.current?.getAttribute("aria-expanded")).toBe("true"));
     expect(toggle).toHaveBeenCalledTimes(1);
@@ -67,4 +67,12 @@ it("restores focused mounted content during an owner-driven collapse", () => {
   render(<Owner />); screen.getByLabelText("Owner draft").focus();
   fireEvent.click(screen.getByRole("button", { name: "Owner close" }));
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Owner details" }));
+});
+
+it("restores native descendant focus before attribute-based closes", () => {
+  const owner = createRef<HTMLDetailsElement>();
+  render(<Disclosure ref={owner} open><DisclosureSummary>Attribute details</DisclosureSummary><input aria-label="Attribute draft" /></Disclosure>);
+  const field = screen.getByLabelText("Attribute draft"), trigger = owner.current!.querySelector("summary");
+  field.focus(); owner.current!.removeAttribute("open"); expect(document.activeElement).toBe(trigger);
+  owner.current!.setAttribute("open", ""); field.focus(); owner.current!.toggleAttribute("open", false); expect(document.activeElement).toBe(trigger);
 });

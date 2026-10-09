@@ -1,8 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .network-disclosure-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .settings-content.settings-server-preferences[aria-label] .settings-content-column .network-disclosure-header > button { border-color: transparent; padding-inline: 0; background: transparent; text-align: left; font-size: 16px; line-height: 24px; font-weight: 600; min-height: 40px; }
-.network-disclosure-header > button::before { content: "▸"; margin-right: 12px; }
-.network-disclosure-header > button[aria-expanded=true]::before { content: "▾"; }
 .network-inline, .network-workspace { min-width: 0; }
 .network-workspace { display: flex; flex-direction: column; gap: 24px; padding-top: 24px; }
 .network-workspace p, .network-workspace h3, .network-workspace h4 { margin: 0; overflow-wrap: anywhere; }
