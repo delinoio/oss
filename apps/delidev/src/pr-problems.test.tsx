@@ -29,7 +29,7 @@ function fixture() {
   const proofGet = vi.fn(async () => ({ resource: undefined as Resource | undefined }));
   const transport = createRouterTransport(router => { router.service(IntegrationService, { listPullRequestProblems: list, dismissPullRequestProblem: dismiss, refreshPullRequestProblems: collect }); router.service(ResourceService, { getResource: proofGet }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = (toggle = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRWorkflowProvider>{toggle ? <OpenPRProblemHistory selection={selection} /> : <PRProblemHistory selection={selection} />}</PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (toggle = false, routineRefresh = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRWorkflowProvider>{toggle ? <OpenPRProblemHistory selection={selection} routineRefresh={routineRefresh} /> : <PRProblemHistory selection={selection} routineRefresh={routineRefresh} />}</PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
   return { selection, row, set, body, list, dismiss, collect, proofGet, client, view };
 }
 it("retains original approved feedback and dismisses only its exact local version", async () => {
@@ -161,4 +161,17 @@ it("retains an original conflict transition while showing current unknown mergea
   expect(screen.getByText(conflict.transition_id)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Dismiss this content version" })).toBeTruthy();
   expect(readPRProblem(create(ResourceSchema, { ...row, documentJson: encode({ ...value, conflict: { ...conflict, observation: { ...f.body.observation, head_sha: "d".repeat(40) } } }) }), f.set, f.selection)).toBeUndefined();
+});
+
+
+it("hides nested routine history refreshes in Info and keeps original failed-read retry", async () => {
+ const f = fixture(); f.list.mockRejectedValueOnce(new ConnectError("Original history unavailable", Code.Unavailable));
+ render(f.view(true, false));
+ fireEvent.click(screen.getByRole("button", { name: "Show retained PR problems" }));
+ await screen.findByRole("button", { name: "Retry" });
+ expect(screen.queryByRole("button", { name: "Refresh retained history" })).toBeNull();
+ expect(screen.queryByRole("button", { name: "Refresh remediation history" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+ await screen.findByText("<script>original approved feedback</script>");
+ expect(f.list).toHaveBeenCalledTimes(2); expect(f.collect).not.toHaveBeenCalled();
 });

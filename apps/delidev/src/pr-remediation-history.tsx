@@ -17,9 +17,9 @@ import { readRemediationAttempt, readRemediationChain } from "./pr-remediation-m
 import { Problem } from "./ui";
 import { prAllowanceKey, prSelectionKey, usePRWorkflow } from "./pr-workflow";
 
-type Props = { selection: PRProblemSelection; validateSet: (row: Resource) => boolean };
+type Props = { selection: PRProblemSelection; validateSet: (row: Resource) => boolean; routineRefresh?: boolean };
 
-export function PRRemediationHistory({ selection, validateSet }: Props) {
+export function PRRemediationHistory({ selection, validateSet, routineRefresh = true }: Props) {
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const binding = useRef<string | undefined>(undefined);
@@ -54,7 +54,7 @@ export function PRRemediationHistory({ selection, validateSet }: Props) {
   const stale = confirmation && (confirmation.id !== set?.id || confirmation.revision !== set.revision || !canResume);
   return <section ref={bindRoot} aria-label={copy("pr-remediation-history.prRemediationHistory_932012")}><h4>{copy("pr-remediation-history.prRemediationHistory_932012")}</h4>
     <p>{copy("pr-remediation-history.attemptsRemainRecordedAcrossSessionsAnd_bf906c")}</p>
-    <button disabled={history.isFetching} onClick={refresh}>{copy("pr-remediation-history.refreshRemediationHistory_512d6b")}</button>
+    {routineRefresh ? <button disabled={history.isFetching} onClick={refresh}>{copy("pr-remediation-history.refreshRemediationHistory_512d6b")}</button> : null}
     <Problem error={history.error || resume.error} />
     {resume.uncertain ? <button disabled={resume.busy} onClick={resume.retry}>{copy("pr-remediation-history.retryOriginalAllowanceResumption_991985")}</button> : null}
     {history.isPending ? <p role="status">{copy("pr-remediation-history.readingRemediationAttempts_2d6438")}</p> : !valid ? <p role="alert">{copy("pr-remediation-history.thisRemediationPageDoesNotMatch_b7c6c3")}</p> : <>

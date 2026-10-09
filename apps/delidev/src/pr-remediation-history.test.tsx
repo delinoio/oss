@@ -25,7 +25,7 @@ function fixture() {
   const resume = vi.fn(async (request: { mutation?: { requestId: string } }) => ({ problemSet: set, requestId: request.mutation?.requestId }));
   const transport = createRouterTransport(router => { router.service(IntegrationService, { listPullRequestRemediationAttempts: history, resumePullRequestRemediation: resume }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const view = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRWorkflowProvider><PRRemediationHistory selection={selection} validateSet={row => Boolean(readPRProblemSet(row, selection))} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (routineRefresh = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><PRWorkflowProvider><PRRemediationHistory selection={selection} routineRefresh={routineRefresh} validateSet={row => Boolean(readPRProblemSet(row, selection))} /></PRWorkflowProvider></MutationIntents></QueryClientProvider></TransportProvider>;
   return { view, history, resume, set, attempts, value, resource, replaceSet: (next: Resource) => { set = next; } };
 }
 
@@ -76,4 +76,14 @@ it("validates the exact optional automatic source link revision without rounding
   expect(readRemediationAttempt(f.resource(f.attempts[0].id, linked), f.set)?.automatic_link_revision).toBe("9007199254740993");
   for (const revision of [9007199254740992, "0", "01", "9223372036854775808", undefined]) expect(readRemediationAttempt(f.resource(f.attempts[0].id, { ...linked, automatic_link_revision: revision }), f.set)).toBeUndefined();
   expect(readRemediationAttempt(f.resource(f.attempts[0].id, { ...linked, mode: "manual" }), f.set)).toBeUndefined();
+});
+
+
+it("hides Info routine remediation refresh while keeping failed-read and allowance actions", async () => {
+ const f = fixture(); f.history.mockRejectedValueOnce(new ConnectError("Original remediation unavailable", Code.Unavailable));
+ render(f.view(false)); await screen.findByRole("button", { name: "Retry" });
+ expect(screen.queryByRole("button", { name: "Refresh remediation history" })).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+ await screen.findByRole("button", { name: "Resume automatic attempt allowance" });
+ expect(f.history).toHaveBeenCalledTimes(2); expect(f.resume).not.toHaveBeenCalled();
 });
