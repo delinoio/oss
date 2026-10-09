@@ -948,6 +948,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					a.ConfirmedExhausted = false
 					state.Generation = ""
 					state.IdentityCommitment = ""
+					state.PaidCredits = nil
 					state.ResetCredits = nil
 					state.QuotaObservedAt = nil
 					state.QuotaState = domain.ObservationUnknown

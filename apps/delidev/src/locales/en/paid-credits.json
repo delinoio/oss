@@ -1,0 +1,12 @@
+{
+  "paid-credits.title": "Paid credits",
+  "paid-credits.loading": "Loading paid-credit support…",
+  "paid-credits.unsupported": "Unavailable. Update the server and original Runner Device.",
+  "paid-credits.unknown": "Balance unknown",
+  "paid-credits.unlimited": "Unlimited credits",
+  "paid-credits.value": "{{balance}} credits",
+  "paid-credits.count": "{{count}} credit balances",
+  "paid-credits.failed": "Refresh failed; retained observation",
+  "paid-credits.stale": "Stale observation",
+  "paid-credits.observed": "Observed"
+}

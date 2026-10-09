@@ -28,12 +28,8 @@ type nativeQuotaSnapshot struct {
 	LimitName       *string            `json:"limitName"`
 	Primary         *nativeQuotaWindow `json:"primary"`
 	Secondary       *nativeQuotaWindow `json:"secondary"`
-	Credits         *struct {
-		HasCredits bool    `json:"hasCredits"`
-		Unlimited  bool    `json:"unlimited"`
-		Balance    *string `json:"balance"`
-	} `json:"credits"`
-	Individual *struct {
+	Credits         *nativePaidCredits `json:"credits"`
+	Individual      *struct {
 		Limit     string `json:"limit"`
 		Used      string `json:"used"`
 		Remaining int32  `json:"remainingPercent"`
@@ -43,6 +39,30 @@ type nativeQuotaSnapshot struct {
 	Plan         *string `json:"planType"`
 	ReachedType  *string `json:"rateLimitReachedType"`
 }
+
+// An omitted balance is a sparse read, not a new null-balance observation.
+type nativePaidCredits struct {
+	HasCredits     *bool   `json:"hasCredits"`
+	Unlimited      *bool   `json:"unlimited"`
+	Balance        *string `json:"balance"`
+	BalancePresent bool    `json:"-"`
+}
+
+func (v *nativePaidCredits) UnmarshalJSON(raw []byte) error {
+	type wire nativePaidCredits
+	var value wire
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	_, value.BalancePresent = fields["balance"]
+	*v = nativePaidCredits(value)
+	return nil
+}
+
 type nativeResetCredit struct {
 	ID          string  `json:"id"`
 	ResetType   string  `json:"resetType"`
@@ -140,6 +160,9 @@ func projectQuota(value nativeQuotaRead, observation domain.ID, now time.Time) (
 		snapshot := buckets[key]
 		if !domain.ValidSubscriptionOpaqueID(key) || len(key) > 110 || snapshot.LimitID != nil && *snapshot.LimitID != key {
 			return result, domain.InvalidSubscriptionObservation()
+		}
+		if c := snapshot.Credits; c != nil && c.BalancePresent {
+			result.PaidCredits = append(result.PaidCredits, domain.SubscriptionPaidCreditBucket{ID: key, HasCredits: c.HasCredits, Unlimited: c.Unlimited, Balance: c.Balance, ObservedAt: now})
 		}
 		for _, slot := range []struct {
 			name   string
@@ -263,6 +286,11 @@ func quotaIdentifierReflects(value domain.SubscriptionQuotaObservation, protecte
 			}
 		}
 		if window.ID == protected || id == protected {
+			return true
+		}
+	}
+	for _, b := range value.PaidCredits {
+		if b.ID == protected || b.Balance != nil && *b.Balance == protected {
 			return true
 		}
 	}

@@ -1,3 +1,4 @@
+import { PaidCredits, PaidCreditState, type PaidCreditBucket } from "./subscription-paid-credits";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
@@ -33,6 +34,7 @@ export interface SubscriptionOperation {
 }
 
 export interface SubscriptionAccountRow {
+ paidCredits?:readonly PaidCreditBucket[];paidCreditState?:PaidCreditState;
   id: string;
   revision?: bigint;
   alias: string;
@@ -162,7 +164,7 @@ export function SubscriptionRow({ account, now, unavailable, actionsBlocked = fa
   return <article className="subscription-row" aria-label={account.alias}>
     <div className="subscription-row-main">
       <div className="subscription-identity"><ProviderMark brand={account.brand} /><div><h3>{account.alias}</h3><p>{account.providerName}{account.maskedIdentity ? copy("subscription-settings.message_2fa20b", { v0: account.maskedIdentity }) : ""}</p><span className="subscription-connection" data-state={account.connection}>{connectionLabels[account.connection]}</span>{["expired", "revoked", "failed"].includes(account.health) ? <span className="subscription-health"> · {account.health === "expired" ? copy("subscription-settings.authenticationExpired_032edd") : account.health === "revoked" ? copy("subscription-settings.authenticationRevoked_e049fb") : copy("subscription-settings.accountFailed_d5a3c3")}</span> : null}</div></div>
-      <div className="subscription-quota-grid">{account.brand !== SubscriptionBrand.OpenCodeGo && account.windows.length ? account.windows.slice(0, 2).map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} now={now} active={active} />) : <p className="subscription-no-quota">{copy(account.brand === SubscriptionBrand.OpenCodeGo ? "opencode-go.quotaUnavailable" : "subscription-settings.noQuotaObservation_d9e3af")}</p>}</div>
+      <div className="subscription-quota-grid">{account.brand===SubscriptionBrand.ChatGPT?<PaidCredits buckets={account.paidCredits} state={account.paidCreditState??PaidCreditState.Unknown} compact active={active} now={now}/>:null}{account.brand !== SubscriptionBrand.OpenCodeGo && account.windows.length ? account.windows.slice(0, 2).map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} now={now} active={active} />) : <p className="subscription-no-quota">{copy(account.brand === SubscriptionBrand.OpenCodeGo ? "opencode-go.quotaUnavailable" : "subscription-settings.noQuotaObservation_d9e3af")}</p>}</div>
       <div className="subscription-row-actions">
         {account.brand !== SubscriptionBrand.OpenCodeGo ? <SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} targetId={account.id} type="button" disabled={!canRefresh} title={!account.refresh ? unavailable : undefined} aria-label={copy("subscription-settings.refresh_525a40", { v0: account.alias })} onClick={account.refresh}>{copy("subscription-settings.refresh_0e9161")}</SettingsActionButton> : null}
         {account.connect ? <SettingsActionButton icon={SettingsActionIcon.Connect} type="button" disabled={blocked} aria-label={account.brand === SubscriptionBrand.OpenCodeGo ? copy("opencode-go.manageFor", { account: account.alias }) : copy("subscription-settings.manageLoginFor_e2d832", { v0: account.alias })} onClick={account.connect}>{account.brand === SubscriptionBrand.OpenCodeGo ? copy("opencode-go.manageConnection") : account.connection === SubscriptionConnectionState.Disconnected ? copy("subscription-settings.logIn_c18984") : copy("subscription-settings.manageLogin_4b4e31")}</SettingsActionButton> : null}

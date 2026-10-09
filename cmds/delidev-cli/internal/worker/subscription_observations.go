@@ -84,6 +84,9 @@ func (l *managedSubscriptionLease) observe(ctx context.Context, native *codex.Cl
 	if readErr != nil {
 		result.QuotaError = domain.SafeError(readErr).Code
 	} else {
+		if !l.paidCredits {
+			observed.PaidCredits = nil
+		}
 		result.Quota = &observed
 	}
 	raw, _ := json.Marshal(result)
@@ -101,6 +104,9 @@ func (l *managedSubscriptionLease) observe(ctx context.Context, native *codex.Cl
 func (l *managedSubscriptionLease) publishRollingQuota(ctx context.Context, observed domain.SubscriptionQuotaObservation) {
 	bounded, stop := context.WithTimeout(ctx, 3*time.Second)
 	defer stop()
+	if !l.paidCredits {
+		observed.PaidCredits = nil
+	}
 	raw, _ := json.Marshal(domain.SubscriptionObservationResult{Quota: &observed})
 	_, err := l.client.PublishSubscriptionObservation(bounded, authenticated(l.credential, &pb.PublishSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), GenerationId: l.response.GenerationId, ObservationJson: raw}))
 	if err != nil && l.logger != nil {

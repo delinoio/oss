@@ -644,6 +644,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 				st.Generation = ""
 				st.IdentityCommitment = ""
 				st.OwnerMachineID = ""
+				st.PaidCredits = nil
 				st.ResetCredits = nil
 				st.QuotaObservedAt = nil
 				st.QuotaState = domain.ObservationUnknown

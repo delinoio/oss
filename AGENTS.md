@@ -623,3 +623,5 @@ Release automation baseline:
 - Issue #2048 positive pre-send image rejection follows the image-input and direct startup contracts. Optional startup field 11 and closed failure enum 0/1 require original adapter, durable Worker assignment/input/request, exact server queue/ready process/native thread and independent cleanup proof. Preserve legacy omission, original rejected images and uncertainty; no capability, RPC or migration is added.
 
 - DeliDev Activity retirement follows `docs/cmds-delidev-activity-contract.md`: remove desktop/CLI/live projections while retaining authenticated Unsupported protocol compatibility, legacy validators and dependent session/backup cleanup. Preserve canonical PR/native/cleanup/push evidence and independent observations.
+
+- ChatGPT/Codex paid-credit observations (#2124) use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.
