@@ -85,6 +85,7 @@ func newProxyFixture(t *testing.T, protocol domain.APIProtocol, operations []Ope
 		auth = domain.APIKeyAuth
 	}
 	f.authority = &fixtureAuthority{scope: Scope{ExecutionID: domain.NewID(), SessionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), NativeModel: "fixed-model", Provider: domain.Provider{Name: "Fixture", Endpoint: f.upstream.URL + "/provider", Protocol: protocol, Authentication: auth}, Operations: operations}, ctx: ctx, cancel: cancel}
+	f.authority.scope.ModelID = (domain.ModelIdentity{ProviderID: f.authority.scope.ProviderID, NativeID: f.authority.scope.NativeModel}).Key()
 	f.server = httptest.NewServer(New(f.authority, slog.New(slog.NewJSONHandler(f.logs, nil))))
 	t.Cleanup(func() { cancel(); f.server.Close(); f.upstream.Close() })
 	return f
