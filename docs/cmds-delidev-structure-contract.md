@@ -478,3 +478,7 @@ recovery storage through closed versioned variants, without a migration.
 Preserve original native history/account/Worker ownership, independent cleanup,
 immutable historical contexts and separate Fork/Sidechat lifetimes under the
 [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).
+
+## Waiting queue order allocation closure
+
+Issue #2142 records System 75 `WAITING_QUEUE_ORDER_V1`, complete owner/client movement and waiting-list declarations, generated bindings, private ordering metadata and Fork image snapshots in its owning feature PR. Preserve existing allocations and legacy queue/assignment shapes. No Worker allocation or SQLite migration is required. Sessions, storage, protocol and desktop contracts jointly own this feature; declarations and fixtures grant no native/account/platform acceptance.

@@ -51,6 +51,9 @@ message GetStatusResponse {
 
 enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  // Owner/client waiting input movement and generation-bound pagination.
+  SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1 = 75;
+
   SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1 = 53;
   SYSTEM_CAPABILITY_CODEX_APPROVAL_REVIEW_V1 = 55;
 

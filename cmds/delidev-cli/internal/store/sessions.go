@@ -119,14 +119,14 @@ func (tx *Tx) OldestQueuedInput(session domain.ID) (Record, error) {
 	if err := session.Validate(); err != nil {
 		return Record{}, err
 	}
-	rows, _, err := tx.sessionPage(1, "SELECT "+recordColumns+" FROM entities WHERE kind='queue' AND session_id=? AND json_extract(body,'$.delivery')='queued' ORDER BY json_extract(body,'$.sequence') LIMIT 1", session)
+	_, ids, err := tx.waitingOrder(session)
 	if err != nil {
 		return Record{}, err
 	}
-	if len(rows) == 0 {
+	if len(ids) == 0 {
 		return Record{}, domain.Fail(domain.MissingInput, "The session has no queued input.", "Enqueue an input before requesting execution.")
 	}
-	return rows[0], nil
+	return tx.Get(domain.QueueKind, ids[0])
 }
 
 // Completion recovery must not hide an uncertain Steer merely because its

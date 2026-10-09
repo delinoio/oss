@@ -221,6 +221,10 @@ func (t *Tx) InheritForkImages(input domain.ForkJobInput) error {
 	if err != nil {
 		return err
 	}
+	return t.inheritForkImageUploads(input, values)
+}
+
+func (t *Tx) inheritForkImageUploads(input domain.ForkJobInput, values []domain.ImageUpload) error {
 	for _, v := range values {
 		if slices.Contains(v.Owners, input.ChildSessionID) {
 			continue
@@ -284,7 +288,7 @@ func (t *Tx) ImageAttachmentReadable(session domain.ID, ref domain.ImageAttachme
 	if err != nil || job.State != domain.JobSucceeded || jobRow.SessionID != s.Fork.SourceSessionID || job.MachineID != s.MachineID || job.AssignedDeviceID != s.Fork.WorkerDeviceID || hex.EncodeToString(digest[:]) != s.Fork.JobInputDigest || job.Type != domain.ForkSessionJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.RuntimeID != s.Fork.RuntimeID || input.Purpose != domain.SidechatFork || input.ChildSessionID != session || input.SourceSessionID != s.Fork.SourceSessionID || input.Completion.ExecutionID != s.Fork.SourceExecutionID || input.Completion.NativeTurnID != s.Fork.SourceTurnID {
 		return domain.InvalidImageInput()
 	}
-	values, err := t.forkImageUploads(input)
+	values, err := t.frozenForkImageUploads(s.Fork.JobID, input)
 	if err != nil {
 		return err
 	}

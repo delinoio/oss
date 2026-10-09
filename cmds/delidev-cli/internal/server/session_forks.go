@@ -247,6 +247,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			return nil, err
 		}
 		jobID := domain.NewID()
+		if err := tx.FreezeForkImages(jobID, input, raw); err != nil {
+			return nil, err
+		}
 		_, err = tx.PutJob(jobID, 0, r.ID, r.ProjectID, domain.Job{Type: domain.ForkSessionJob, State: domain.JobQueued, MachineID: session.MachineID, Input: raw, AcceptedAt: time.Now().UTC()})
 		return forkReceipt{jobID}, err
 	})
@@ -432,7 +435,7 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		}
 		return tx.PutJob(r.ID, revision, r.SessionID, r.ProjectID, job)
 	}
-	if err := tx.InheritForkImages(input); err != nil {
+	if err := tx.InheritForkImagesForJob(r.ID, input); err != nil {
 		return nil, err
 	}
 	// Publish the preparation, child and successful original job together. No

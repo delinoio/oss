@@ -1,9 +1,6 @@
 package store
 
 import (
-	"database/sql"
-	"errors"
-
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
@@ -76,13 +73,12 @@ func (t *Tx) ClaimInitialExecution(sessionID domain.ID, sessionRevision uint64, 
 	if err := (domain.SessionInput{Prompt: input.Prompt, Mode: input.Mode, Attachments: input.Attachments}).Validate(); err != nil {
 		return empty, err
 	}
-	var head domain.ID
-	err = t.tx.QueryRowContext(t.ctx, "SELECT id FROM entities WHERE kind='queue' AND session_id=? AND json_extract(body,'$.delivery')='queued' ORDER BY json_extract(body,'$.sequence') LIMIT 1", sessionID).Scan(&head)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return empty, storageError(err)
+	head, err := t.OldestQueuedInput(sessionID)
+	if err != nil {
+		return empty, err
 	}
-	if head != inputID {
-		return empty, domain.Fail(domain.Conflict, "An earlier input must be dispatched first.", "Keep the transaction-assigned queue order.")
+	if head.ID != inputID {
+		return empty, domain.Fail(domain.Conflict, "The waiting input order changed.", "Read the current dispatch order.")
 	}
 	if session.PendingInputs == 0 || session.PendingInputBytes < uint64(len(input.Prompt)) {
 		return empty, domain.Fail(domain.RecoveryRequired, "Pending input accounting is inconsistent.", "Reconcile retained input ownership before dispatch.")

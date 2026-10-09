@@ -572,6 +572,10 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=?", queueOrderPrefix+string(v.SessionID)); err != nil {
+		return storageError(err)
+	}
+
 	if err := t.purgeSessionImages(v); err != nil {
 		return err
 	}
@@ -630,7 +634,10 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 		return e
 	}
 	_, e = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO tombstones(id,kind,created_at) VALUES(?,?,?)", v.SessionID, domain.SessionKind, t.now.UnixMilli())
-	return storageError(e)
+	if e != nil {
+		return storageError(e)
+	}
+	return t.retireForkImageSnapshots(v.SessionID)
 }
 func (t *Tx) deleteSessionRecord(r Record) error {
 	if r.Kind == domain.JobKind {

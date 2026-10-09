@@ -34,6 +34,8 @@ service SessionService {
   rpc EditQueuedInput(EditQueuedInputRequest) returns (EditQueuedInputResponse);
   rpc RemoveQueuedInput(RemoveQueuedInputRequest) returns (RemoveQueuedInputResponse);
   rpc ListQueue(ListQueueRequest) returns (ListQueueResponse);
+  rpc MoveQueuedInput(MoveQueuedInputRequest) returns (MoveQueuedInputResponse);
+  rpc ListWaitingQueue(ListWaitingQueueRequest) returns (ListWaitingQueueResponse);
   rpc ControlSession(ControlSessionRequest) returns (ControlSessionResponse);
   rpc RenameSession(RenameSessionRequest) returns (RenameSessionResponse);
   rpc PrepareSessionWorkspace(PrepareSessionWorkspaceRequest) returns (PrepareSessionWorkspaceResponse);
@@ -558,4 +560,28 @@ message RevertSessionResponse {
   Resource job = 1;
   string request_id = 2;
   bool replayed = 3;
+}
+
+// Private dispatch order is independent of public acceptance history.
+message MoveQueuedInputRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  optional uint64 expected_queue_generation = 3;
+  string before_input_id = 4;
+  uint64 before_input_revision = 5;
+}
+message MoveQueuedInputResponse {
+  SessionChange change = 1;
+  uint64 current_queue_generation = 2;
+}
+message ListWaitingQueueRequest {
+  string session_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+message ListWaitingQueueResponse {
+  repeated Resource inputs = 1;
+  string next_page_token = 2;
+  uint64 current_queue_generation = 3;
+  uint32 waiting_count = 4;
 }

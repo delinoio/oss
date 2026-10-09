@@ -17,5 +17,10 @@
   "queue.uncertainOriginal": "원래 입력 작업의 승인 여부가 불확실합니다.",
   "queue.more": "입력 작업 더 보기",
   "queue.waitingInputs": "대기 중인 입력",
-  "queue.steer": "조정"
+  "queue.steer": "조정",
+  "queue.drag": "대기 입력 이동",
+  "queue.moveUp": "위로 이동",
+  "queue.moveDown": "아래로 이동",
+  "queue.retryMove": "동일한 이동 다시 시도",
+  "queue.moved": "대기 입력을 이동했습니다."
 }

@@ -10201,6 +10201,140 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
       "number": 35
+    },
+    {
+      "issue": 2142,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_WAITING_QUEUE_ORDER_V1",
+      "number": 75,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "expected_queue_generation",
+      "number": 3,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "before_input_id",
+      "number": 4,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputRequest",
+      "member": "before_input_revision",
+      "number": 5,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputResponse",
+      "member": "change",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "MoveQueuedInputResponse",
+      "member": "current_queue_generation",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueRequest",
+      "member": "page_size",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueRequest",
+      "member": "page_token",
+      "number": 3,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "inputs",
+      "number": 1,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "next_page_token",
+      "number": 2,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "current_queue_generation",
+      "number": 3,
+      "newDeclaration": true,
+      "status": "implemented"
+    },
+    {
+      "issue": 2142,
+      "kind": "message",
+      "declaration": "ListWaitingQueueResponse",
+      "member": "waiting_count",
+      "number": 4,
+      "newDeclaration": true,
+      "status": "implemented"
     }
   ],
   "rpcReservations": [
@@ -10336,6 +10470,24 @@
       "method": "RevertSession",
       "input": "RevertSessionRequest",
       "output": "RevertSessionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2142,
+      "service": "SessionService",
+      "method": "MoveQueuedInput",
+      "input": "MoveQueuedInputRequest",
+      "output": "MoveQueuedInputResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2142,
+      "service": "SessionService",
+      "method": "ListWaitingQueue",
+      "input": "ListWaitingQueueRequest",
+      "output": "ListWaitingQueueResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

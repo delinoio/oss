@@ -316,3 +316,8 @@
   .queue-compact-actions { margin-left: auto; }
 }
 @media (max-height: 720px) { .session-input-tray > .queue-compact-list, .session-input-tray > .queue-read-state { flex-basis: 100%; } }
+
+.queue-drag-handle { flex: 0 0 24px; cursor: grab; padding: 4px; color: var(--muted); touch-action: none; }
+.queue-drag-handle:disabled { cursor: default; }
+.queue-insertion { border-top: 2px solid var(--accent); }
+.queue-drop-end { min-height: 8px; }
