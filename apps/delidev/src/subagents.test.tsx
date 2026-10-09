@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { EntityKind, newRequestId } from "@delinoio/delidev-api-client";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ResourceService, SystemService, SystemCapability } from "@delinoio/delidev-api-client";
-import { Subagents, SubagentRows } from "./subagents";
+import { Subagents, SubagentRows, retainSubagentLabels } from "./subagents";
+import { validateSubagentPage } from "./subagent-record";
 import { document, encode, object } from "./documents";
 import { openCodeSubagentFixture, subagentFixture } from "./subagent-test-fixture";
 
@@ -126,8 +127,51 @@ test("keeps a failed child read halted across native revisions until explicit re
   mounted.rerender(view("2"));
   expect(tokens).toEqual([""]);
   expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh subagents" }));
+  fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
   await screen.findByText("No native child observations are available.");
   expect(tokens).toEqual(["", ""]);
   client.clear();
+});
+
+
+test("retains friendly identity and parent labels through the full native bound and later executions", () => {
+  const session = newRequestId(), children = Array.from({ length: 1024 }, () => subagentFixture(session));
+  const first = document(children[0]), parentId = String(object(first.observation).native_id);
+  for (const row of children) { const record = document(row); record.execution_id = first.execution_id; record.root_id = first.root_id; row.documentJson = encode(record); }
+  const last = document(children[1023]); object(last.observation).parent_id = parentId; children[1023].documentJson = encode(last);
+  const labels = new Map<string, number>();
+  for (let start = 0; start < children.length; start += 50) retainSubagentLabels(labels, validateSubagentPage(children.slice(start, start + 50), session)!);
+  const later = subagentFixture(session), laterRecord = document(later);
+  object(laterRecord.observation).native_id = object(last.observation).native_id; later.documentJson = encode(laterRecord);
+  retainSubagentLabels(labels, validateSubagentPage([later], session)!);
+  render(<><SubagentRows rows={[children[1023]]} sessionId={session} technical={false} labels={labels} /><SubagentRows rows={[later]} sessionId={session} technical={false} labels={labels} /></>);
+  expect(screen.getByText("Subagent 1024")).toBeTruthy(); expect(screen.getByText("Subagent 1025")).toBeTruthy(); expect(screen.getByText("Subagent 1")).toBeTruthy();
+  expect(screen.queryByText("Subagent —")).toBeNull();
+  retainSubagentLabels(labels, validateSubagentPage([children[1023]], session)!);
+  expect(labels.get(`${first.execution_id}:${object(last.observation).native_id}`)).toBe(1024);
+});
+
+
+test("keeps child conversation presentation in Info and portals only source metadata to Diagnostics", async () => {
+  const session = newRequestId(), child = subagentFixture(session), record = document(child);
+  const output = object(object(record.observation).output); output.text = "Original child conversation content"; output.blocks = [{ kind: "text", text: "Original child output block" }]; child.documentJson = encode(record);
+  const target = globalThis.document.createElement("div"); globalThis.document.body.append(target);
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBAGENT_OBSERVATION_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [child] }) });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const mounted = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><Subagents sessionId={session} revision="1" diagnosticsTarget={target} /></TransportProvider></QueryClientProvider>);
+  await screen.findByText("Original child conversation content");
+  expect(within(mounted.container).getByText("Original child output block")).toBeTruthy();
+  expect(within(mounted.container).getByText("Observed: observed-model")).toBeTruthy();
+  const diagnostics = within(target);
+  expect(diagnostics.getByText(new RegExp(String(record.execution_id)))).toBeTruthy();
+  expect(diagnostics.getByText(String(object(record.observation).native_id))).toBeTruthy();
+  expect(diagnostics.queryByText("Original child conversation content")).toBeNull();
+  expect(diagnostics.queryByText("Original child output block")).toBeNull();
+  expect(diagnostics.queryByText("Observed: observed-model")).toBeNull();
+  expect(diagnostics.queryByRole("columnheader", { name: "Status" })).toBeNull();
+  expect(diagnostics.queryByRole("columnheader", { name: "Usage observation" })).toBeNull();
+  mounted.unmount(); target.remove(); client.clear();
 });
