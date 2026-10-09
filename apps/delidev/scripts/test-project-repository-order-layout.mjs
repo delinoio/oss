@@ -49,6 +49,7 @@ try {
     await page.getByRole("button", { name: l("Projects"), exact: true }).click();
     const row = page.locator('.project-metadata-row').first(); await row.waitFor();
     await row.locator('button').filter({ hasText: l('Edit') }).click();
+    await page.getByRole("tab", { name: language === "ko" ? "저장소" : "Repositories", exact: true }).click();
     const dialog = page.locator('.settings-task-dialog').filter({ has: page.locator('.project-repository-order') });
     const list = dialog.locator('.project-repository-order'), grips = list.locator('.project-repository-grip');
     await grips.last().waitFor();
