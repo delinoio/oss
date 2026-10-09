@@ -30,9 +30,8 @@ it("saves and inspects a real immutable model price through desktop settings and
   const model = await save(EntityKind.MODEL, { name: "Pricing model", provider_id: provider.id, native_id: "pricing-fixture", harnesses: ["codex"], manual: true, metadata_source: "user-declared" });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Usage active open={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  await choose(screen.getByRole("combobox", { name: "Model" }), "Pricing model");
-  fireEvent.click(screen.getByRole("button", { name: "Model details and token pricing" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Token pricing" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Model prices" }));
+  await choose(screen.getByRole("combobox", { name: "Pricing model" }), "Pricing model");
   await screen.findByText(/No pricing basis has been configured/);
   await waitFor(() => expect((screen.getByRole("button", { name: "Edit token pricing" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Edit token pricing" }));

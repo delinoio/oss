@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,13 +18,15 @@ const macTauriConfig = JSON.parse(readFileSync(fileURLToPath(new URL("../src-tau
 const macInfoPlist = readFileSync(fileURLToPath(new URL("../src-tauri/Info.desktop.plist", import.meta.url)), "utf8");
 const koreanInfoPlist = readFileSync(fileURLToPath(new URL("../src-tauri/infoplist/ko.lproj/InfoPlist.strings", import.meta.url)), "utf8");
 
-async function waitForStatus(statusPath) {
-  const deadline = Date.now() + 10_000;
+async function waitForStatus(statusPath, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
       return JSON.parse(readFileSync(statusPath, "utf8"));
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      // The child creates its file before a direct synchronous write finishes.
+      // Another process can observe empty or partial JSON during publication.
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) {
         throw error;
       }
     }
@@ -32,6 +34,63 @@ async function waitForStatus(statusPath) {
   }
   throw new Error("timed out waiting for the process-tree child status");
 }
+
+
+test("readiness JSON waits for complete publication", async (t) => {
+  for (const initial of ["", '{"pid":']) {
+    await t.test(`partial ${JSON.stringify(initial)}`, async () => {
+      const directory = mkdtempSync(join(tmpdir(), "devhud-readiness-"));
+      const statusPath = join(directory, "status.json");
+      const expected = { pid: 123, port: 456 };
+      writeFileSync(statusPath, initial);
+      const publication = setTimeout(() => writeFileSync(statusPath, JSON.stringify(expected)), 50);
+      try {
+        assert.deepEqual(await waitForStatus(statusPath), expected);
+      } finally {
+        clearTimeout(publication);
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("readiness JSON returns complete data unchanged", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "devhud-readiness-"));
+  try {
+    const statusPath = join(directory, "status.json");
+    const expected = { pid: 123, port: 456 };
+    writeFileSync(statusPath, JSON.stringify(expected));
+    assert.deepEqual(await waitForStatus(statusPath), expected);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("readiness JSON remains bounded for missing and malformed documents", async (t) => {
+  for (const initial of [null, "", '{"pid":']) {
+    await t.test(`never ready ${JSON.stringify(initial)}`, async () => {
+      const directory = mkdtempSync(join(tmpdir(), "devhud-readiness-"));
+      try {
+        const statusPath = join(directory, "status.json");
+        if (initial !== null) writeFileSync(statusPath, initial);
+        // Shorten only this helper regression's bound; process-tree callers
+        // retain the original ten-second deadline and 25 ms polling interval.
+        await assert.rejects(waitForStatus(statusPath, 50), /timed out waiting for the process-tree child status/u);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test("readiness JSON propagates non-transient filesystem errors", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "devhud-readiness-"));
+  try {
+    await assert.rejects(waitForStatus(directory), (error) => error.code === "EISDIR");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 function listenOnPort(port) {
   return new Promise((resolve, reject) => {
