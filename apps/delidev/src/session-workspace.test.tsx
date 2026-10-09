@@ -85,7 +85,7 @@ it("retains composer, mode and staged information edits through tool switches an
   fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
   const name = screen.getByRole("textbox", { name: "Session name" });
   fireEvent.change(name, { target: { value: "Staged name" } });
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
   expect(composer.isConnected).toBe(true);
   expect(composer.closest("[hidden]")).not.toBeNull();
   screen.getByRole("heading", { name: "Session information" }).focus();
@@ -139,7 +139,7 @@ it("observes reached budgets in persistent Info and reveals the budget without c
   await waitFor(() => expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true));
   expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
   fireEvent.click(screen.getByRole("button", { name: "Show details" }));
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   const info = screen.getByRole("complementary", { name: "Session information" });
   expect(within(info).getByText("Usage and budget").closest("details")).toHaveProperty("open", true);
@@ -213,7 +213,7 @@ it("shows original uncertain startup recovery beside the conversation with one c
   expect(screen.getByRole("complementary", { name: "Session information" })).toHaveProperty("hidden", false);
   expect(screen.getByRole("button", { name: "Resume" })).toHaveProperty("disabled", true);
   expect(f.recover).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", {name:"Reconcile original execution"}));
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
   expect(f.recover).not.toHaveBeenCalled();
@@ -246,14 +246,14 @@ it("keeps malformed startup evidence visible and does not grant retry", async ()
 
 it("keeps Info independent of all tabs with one active content region and retained authoring", async()=>{
  const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});const info=screen.getByRole("complementary",{name:"Session information"});
- for(const name of ["Files","Diff","Terminals","Browser","Diagnostics"]){fireEvent.click(screen.getByRole("button",{name}));expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");expect(screen.getAllByRole("tabpanel")).toHaveLength(1);expect(info).toHaveProperty("hidden",false);expect(composer.isConnected).toBe(true);expect(composer.closest("[hidden]")).not.toBeNull();info.focus();fireEvent.keyDown(info,{key:"Escape"});expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");}
+ for(const name of ["Files","Diff","Terminals","Browser","Diagnostics"]){fireEvent.click(screen.getByRole("button", { name: "Open tool" }));fireEvent.click(screen.getByRole("menuitem",{name}));expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");expect(screen.getAllByRole("tabpanel")).toHaveLength(1);expect(info).toHaveProperty("hidden",false);expect(composer.isConnected).toBe(true);expect(composer.closest("[hidden]")).not.toBeNull();info.focus();fireEvent.keyDown(info,{key:"Escape"});expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");}
  fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
 });
 it("replaces dock/split coexistence with exact selection and presentation-only close",async()=>{
- const f=fixture();render(f.view());await screen.findByRole("heading",{name:"Original session"});fireEvent.click(screen.getByRole("button",{name:"Browser"}));fireEvent.click(screen.getByRole("button",{name:"Terminals"}));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");expect(screen.queryByRole("region",{name:"Session browser"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Close Browser tab"}));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"Close Terminals tab"}));expect(screen.getByRole("tab",{name:"Conversation"}).getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(screen.getByRole("tab",{name:"Conversation"}));expect(f.control).not.toHaveBeenCalled();
+ const f=fixture();render(f.view());await screen.findByRole("heading",{name:"Original session"});fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");expect(screen.queryByRole("region",{name:"Session browser"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Close Browser tab"}));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"Close Terminals tab"}));expect(screen.getByRole("tab",{name:"Conversation"}).getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(screen.getByRole("tab",{name:"Conversation"}));expect(f.control).not.toHaveBeenCalled();
 });
 it.each([580,120])("keeps retained composer isolated from terminal pane at body height %s",async height=>{
- const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("button",{name:"Terminals"}));expect(composer.isConnected).toBe(true);expect(composer.closest("[inert]")).not.toBeNull();expect(screen.queryByRole("button",{name:"Maximize terminal dock"})).toBeNull();expect(screen.getAllByRole("tabpanel")).toHaveLength(1);fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(composer).toHaveProperty("value","Original draft");expect(height).toBeGreaterThan(0);expect(f.control).not.toHaveBeenCalled();
+ const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));expect(composer.isConnected).toBe(true);expect(composer.closest("[inert]")).not.toBeNull();expect(screen.queryByRole("button",{name:"Maximize terminal dock"})).toBeNull();expect(screen.getAllByRole("tabpanel")).toHaveLength(1);fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(composer).toHaveProperty("value","Original draft");expect(height).toBeGreaterThan(0);expect(f.control).not.toHaveBeenCalled();
 });
 
 it.each([false, true])("shows only waiting queue inputs while retaining accepted history (mixed=%s)", async mixed => {
@@ -272,7 +272,7 @@ it.each([false, true])("shows only waiting queue inputs while retaining accepted
 
 it("keeps exactly five workspace tools and no Info action in either locale", async () => {
   const f = fixture(); render(f.view()); await screen.findByRole("heading", { name: "Original session" });
-  const toolbar = document.querySelector(".session-toolbar-actions")!;
+  const toolbar = document.querySelector(".session-tool-menu")!;
   expect([...toolbar.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
   expect(screen.queryByRole("button", { name: "Info" })).toBeNull();
   const info = screen.getByRole("complementary", { name: "Session information" });
@@ -307,7 +307,7 @@ it("retains primary section choices and editor/input identities across tools and
  const execution=[...info.querySelectorAll<HTMLDetailsElement>(".session-information-section")].find(node=>node.querySelector(".execution-configuration"))!;
  const projection=info.querySelector(".execution-configuration");
  await act(async()=>{execution.open=false;fireEvent(execution,new Event("toggle"));});
- fireEvent.click(screen.getByRole("button",{name:"Files"}));expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
+ fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
  await act(async()=>{await i18n.changeLanguage("ko");});expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
  await act(async()=>{await i18n.changeLanguage("en");});fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);
  expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
@@ -364,7 +364,7 @@ it("last verified terminal exit restores the actual Session conversation, focus 
  try {
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const info = screen.getByRole("complementary", { name: "Session information" });
-  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
   fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
   await waitFor(() => expect(document.querySelector(".terminal-view")).not.toBeNull());
   expect(composer.closest("[inert]")).not.toBeNull();
@@ -375,7 +375,7 @@ it("last verified terminal exit restores the actual Session conversation, focus 
   expect(composer).toHaveProperty("value", "Original draft"); expect(composer.closest("[inert]")).toBeNull();
   expect(screen.getByRole("complementary", { name: "Session information" })).toBe(info);
   expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
-  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
   await screen.findByText("No session terminals. Create one explicitly with +.");
   expect(screen.getByRole("button", { name: "Create terminal" })).toHaveProperty("disabled", false);
   expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
@@ -388,11 +388,11 @@ it("verified terminal removal skips intervening Files and selects the original l
  const view = render(f.view());
  try {
   await screen.findByRole("textbox", { name: "Message" });
-  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
   fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id));
-  fireEvent.click(screen.getByRole("button", { name: "Files" }));
-  fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
   fireEvent.click(await screen.findByRole("button", { name: /Terminal 2/ }));
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id));
   fireEvent.click(await screen.findByRole("button", { name: /Terminal 3/ }));
