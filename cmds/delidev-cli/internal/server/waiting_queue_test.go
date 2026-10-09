@@ -111,3 +111,37 @@ func TestWaitingQueueForkExplicitEmptySnapshotNeverAdoptsLaterImages(t *testing.
 		t.Fatal(err)
 	}
 }
+
+func TestWaitingQueueMovedOrderContinuesPastEarlierAcceptanceSequence(t *testing.T) {
+	f := newContinuationFixture(t, domain.ExecutionSucceeded)
+	first := f.enqueue(t, "Earlier accepted input", domain.ExecuteMode)
+	second := f.enqueue(t, "Later accepted input", domain.PlanMode)
+	client := sessionClient(f.accountFixture)
+	ctx := context.Background()
+	listed, err := client.ListWaitingQueue(ctx, ownerRequest(f.identity, &pb.ListWaitingQueueRequest{SessionId: f.change.Session.Id}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := listed.Msg.CurrentQueueGeneration
+	_, err = client.MoveQueuedInput(ctx, ownerRequest(f.identity, &pb.MoveQueuedInputRequest{Mutation: acctMutation(second, domain.NewID()), SessionId: f.change.Session.Id, ExpectedQueueGeneration: &generation, BeforeInputId: first.Id, BeforeInputRevision: first.Revision}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
+		t.Fatal(err)
+	}
+	f.claim(t)
+	if f.input.InputID != domain.ID(second.Id) || f.input.Input.Mode != domain.PlanMode {
+		t.Fatal("dispatch ignored moved waiting head")
+	}
+	predecessor := f.input.ExecutionID
+	f.grant(t)
+	f.complete(t, domain.ExecutionSucceeded)
+	if err := f.service.dispatchExecution(ctx, f.refresh(t)); err != nil {
+		t.Fatal("earlier acceptance sequence blocked continuation", err)
+	}
+	f.claim(t)
+	if f.input.InputID != domain.ID(first.Id) || f.input.Continuation.Previous.ExecutionID != predecessor {
+		t.Fatal("continuation lost reordered input or exact predecessor")
+	}
+}
