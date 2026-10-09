@@ -1,3 +1,4 @@
+import { useSidebarPaneVisible } from "./sidebar-context";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { ScrollContinuation } from "./scroll-continuation";
 import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
@@ -115,7 +116,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
   const [navigation, setNavigation] = useState<PullRequestNavigation>();
   const closeDrawer = useCloseSidebarDrawer();
-  const repositories = useGitHubCatalog(EntityKind.REPOSITORY, active);
+  const navigationActive = active && useSidebarPaneVisible();
+  const repositories = useGitHubCatalog(EntityKind.REPOSITORY, navigationActive);
   const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) });
   const selected = selectedQuery.data?.resource;
   const config = document(selected);

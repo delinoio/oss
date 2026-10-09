@@ -1,3 +1,4 @@
+import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
@@ -62,23 +63,24 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
   const requestedFocus = useRef(false);
   const closeDrawer = useCloseSidebarDrawer();
   const drawerOpen = useSidebarDrawerOpen();
+  const paneVisible = useSidebarPaneVisible();
   const openDrawer = useOpenSidebarDrawer();
   const request = useCallback((token: string) => ({ ...(query ?? emptySearch), pageSize: 30, pageToken: token }), [query]);
   const reader = useConnectPaginationReader(SearchQuery.searchConversations, request, searchPage);
   const result = usePaginationChain(JSON.stringify(query), active && Boolean(query?.query.trim()), reader);
   usePaginationRefresh(SearchQuery.searchConversations, request(""), active && Boolean(query?.query.trim()), result.refresh);
   useEffect(() => {
-    if (requestedFocus.current && drawerOpen) { requestedFocus.current = false; searchInput.current?.focus(); }
-  }, [drawerOpen]);
+    if (requestedFocus.current && paneVisible) { requestedFocus.current = false; searchInput.current?.focus(); }
+  }, [drawerOpen, paneVisible]);
   useEffect(() => {
-    if (!active || focusedOnce.current) return;
+    if (!active || !paneVisible || focusedOnce.current) return;
     if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) return;
     const frame = window.requestAnimationFrame(() => { searchInput.current?.focus(); focusedOnce.current = true; });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, drawerOpen]);
+  }, [active, drawerOpen, paneVisible]);
   const shortcuts = useShortcuts([
     { id: ShortcutId.SearchFocus, scope: Surface.Search, active, label: "shortcuts.focusSearch", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, run: () => {
-      if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) { requestedFocus.current = true; openDrawer(); }
+      if (!paneVisible) { requestedFocus.current = true; openDrawer(); }
       else searchInput.current?.focus();
     } },
     { id: ShortcutId.SearchSubmit, scope: Surface.Search, active, label: "shortcuts.searchSubmit", bindings: [{ key: "Enter" }], target: searchInput, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: Boolean(draft.query.trim()), unavailableReason: "shortcuts.searchRequired" },

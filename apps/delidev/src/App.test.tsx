@@ -1,3 +1,4 @@
+import { SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { sessionInputReceipt } from "./test-session-input";
 import { chooseScrollOption, scrollChoiceValue, waitScrollChoices } from "./test-scroll-picker";
 import { i18n } from "./localization";
@@ -1493,3 +1494,35 @@ it("rechecks the original welcome status failure without creating or controlling
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry current read" })).toBeNull());
   expect(value.creates).not.toHaveBeenCalled(); expect(value.controls).not.toHaveBeenCalled();
 });
+
+it("wide sidebar collapse retains composer selection and mounted navigation while moving only hidden focus", async () => {
+  viewport(); const value = fixture(); render(<SidebarProvider bridge={memorySidebarBridge()}><App transport={value.transport} /></SidebarProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  const draft = await screen.findByRole("textbox", { name: "First message" }) as HTMLTextAreaElement;
+  fireEvent.change(draft, { target: { value: "original draft" } }); act(() => { draft.focus(); draft.setSelectionRange(2, 7); });
+  const pane = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  const initialPane = pane, initialOutlet = pane.querySelector(".sidebar-surface-outlet");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-disabled")).toBe("false"));
+  fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
+  await screen.findByRole("button", { name: "Expand sidebar" });
+  expect(pane.hidden).toBe(true); expect(pane.inert).toBe(true); expect(document.activeElement).toBe(draft);
+  expect([draft.selectionStart, draft.selectionEnd, draft.value]).toEqual([2, 7, "original draft"]);
+  fireEvent.keyDown(draft, { key: "b", ctrlKey: true }); await screen.findByRole("button", { name: "Collapse sidebar" });
+  expect(document.querySelector(".sidebar-pane-dialog")).toBe(initialPane); expect(pane.querySelector(".sidebar-surface-outlet")).toBe(initialOutlet);
+  expect(pane.hidden).toBe(false); expect(document.activeElement).toBe(draft);
+  const source = pane.querySelector<HTMLButtonElement>("button")!; act(() => source.focus());
+  fireEvent.keyDown(source, { key: "b", ctrlKey: true }); const toggle = await screen.findByRole("button", { name: "Expand sidebar" });
+  expect(document.activeElement).toBe(toggle); expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+it("compact navigation never changes the retained wide collapse choice or dispatches its shortcut", async () => {
+  const resize = viewport(); const value = fixture(); render(<SidebarProvider bridge={memorySidebarBridge()}><App transport={value.transport} /></SidebarProvider>);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-disabled")).toBe("false"));
+  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" })); await screen.findByRole("button", { name: "Expand sidebar" });
+  act(() => resize(true)); fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  const opener = document.querySelector<HTMLButtonElement>(".sidebar-context-trigger")!; fireEvent.click(opener);
+  expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.open).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
+  act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+  expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);

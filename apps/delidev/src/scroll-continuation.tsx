@@ -1,3 +1,4 @@
+import { useSidebarActivity } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
@@ -27,6 +28,7 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
   showErrors?: boolean;
   showInitial?: boolean;
 }) {
+  active = active && useSidebarActivity();
   useLocale();
   const anchor = useRef<HTMLDivElement>(null);
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");

@@ -395,3 +395,4 @@ mutation with independent native replacement-history/cleanup proof, unsent
 prompt editing, immutable previous history/usage and original account/Worker
 ownership. System 62 / Worker 36 activate no filesystem rewind or migration.
 - Positive pre-send image rejection follows the image-input/direct startup contracts: optional startup field 11 and closed failure enum 0/1 require original adapter/Worker/queue/process proof plus independent cleanup. Preserve original image input and uncertainty; add no capability or migration.
+- Persistent sidebar collapse is computer-local under the desktop contract (#2053). Its native enum/revision document and product-window publication remain independent of Appearance, connections, server configuration and exported/backed-up data; compact drawer actions do not change the wide preference.

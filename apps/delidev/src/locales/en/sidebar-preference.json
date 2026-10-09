@@ -1,0 +1,14 @@
+{
+  "sidebar-preference.title": "Sidebar",
+  "sidebar-preference.toggle": "Toggle sidebar",
+  "sidebar-preference.collapse": "Collapse sidebar",
+  "sidebar-preference.expand": "Expand sidebar",
+  "sidebar-preference.reload": "Reload sidebar preference",
+  "sidebar-preference.unavailable": "Sidebar preference storage is unavailable. Reload in a trusted product window.",
+  "sidebar-preference.readFailed": "The saved sidebar preference could not be read. Reload before trying again.",
+  "sidebar-preference.invalidDocument": "The saved sidebar preference is invalid. The original file remains unchanged. Reload before trying again.",
+  "sidebar-preference.unsupportedVersion": "The sidebar preference uses an unsupported version. The original file remains unchanged.",
+  "sidebar-preference.writeFailed": "The sidebar preference could not be saved. The committed layout remains active. Reload before trying again.",
+  "sidebar-preference.outcomeUnknown": "The save outcome is unknown. Reload sidebar preference before making another change.",
+  "sidebar-preference.changed": "Sidebar preference changed elsewhere. Reload before choosing again."
+}

@@ -73,6 +73,7 @@ fn chord_valid(chord: &ShortcutChord) -> bool {
             chord.key.as_str(),
             "q" | "h"
                 | "m"
+                | "b"
                 | "k"
                 | "n"
                 | "w"
@@ -440,7 +441,7 @@ mod tests {
     }
     #[test]
     fn reserved_chords_and_overlapping_actions_are_rejected() {
-        for key in ["k", "n", "w", "1", "9", "c", "Escape", "é"] {
+        for key in ["b", "k", "n", "w", "1", "9", "c", "Escape", "é"] {
             assert!(!valid(&BTreeMap::from([(
                 ShortcutAction::Help,
                 binding(key, false)

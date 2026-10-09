@@ -1,0 +1,14 @@
+{
+  "sidebar-preference.title": "사이드바",
+  "sidebar-preference.toggle": "사이드바 접기 또는 펼치기",
+  "sidebar-preference.collapse": "사이드바 접기",
+  "sidebar-preference.expand": "사이드바 펼치기",
+  "sidebar-preference.reload": "사이드바 설정 다시 읽기",
+  "sidebar-preference.unavailable": "사이드바 설정 저장소를 사용할 수 없습니다. 신뢰할 수 있는 앱 창에서 다시 읽으세요.",
+  "sidebar-preference.readFailed": "저장된 사이드바 설정을 읽지 못했습니다. 다시 시도하기 전에 다시 읽으세요.",
+  "sidebar-preference.invalidDocument": "저장된 사이드바 설정이 올바르지 않습니다. 원본 파일은 변경되지 않았습니다. 다시 시도하기 전에 다시 읽으세요.",
+  "sidebar-preference.unsupportedVersion": "사이드바 설정의 버전을 지원하지 않습니다. 원본 파일은 변경되지 않았습니다.",
+  "sidebar-preference.writeFailed": "사이드바 설정을 저장하지 못했습니다. 저장된 레이아웃을 유지합니다. 다시 시도하기 전에 다시 읽으세요.",
+  "sidebar-preference.outcomeUnknown": "저장 결과를 확인할 수 없습니다. 다시 변경하기 전에 사이드바 설정을 다시 읽으세요.",
+  "sidebar-preference.changed": "다른 창에서 사이드바 설정이 변경되었습니다. 다시 선택하기 전에 다시 읽으세요."
+}

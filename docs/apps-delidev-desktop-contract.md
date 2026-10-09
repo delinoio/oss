@@ -3426,3 +3426,58 @@ prompt wrapping and 200% reflow retain their normal desktop contracts.
 The Time range fieldset offers equal-width 24 hours, 7 days and 30 days buttons with native keyboard behavior and an explicit pressed state. Each selection captures one clock instant and applies an exact BigInt half-open UTC interval atomically through the existing filter owner. Preserve the pinned display timezone and every non-date draft filter, replace both date drafts, clear errors and cancel obsolete date validation. The original endpoints retain milliseconds and later DST-fold instants across subsequent non-date selections.
 
 Refresh reads the captured interval again; choosing the same preset captures a new interval. Manual date edits immediately clear the indicator while retaining the last valid selection during the existing 300ms validation delay. Reset and newly consumed Usage entries clear the indicator; Reset retains server-relative default bounds. Navigation preserves mounted drafts and active-only reads. The localized helper says the rolling range ends when selected. Keep semantic selected/focus styling, wrapping controls, independent filter scrolling and the fixed Reset footer. No polling, new wire fields, aggregation or native/account authority is added.
+## Persistent context-pane collapse (issue #2053)
+
+At widths of at least 760px, the 40px icon button at the beginning of the main
+shell and logical primary+B toggle only the context pane. The 52px rail and its
+navigation/subscription actions remain available. Collapse releases the pane's
+288px (256px through 1100px) grid track. The localized button shares typed
+shortcut/help/ARIA declarations and controls the original mounted pane. It has
+visible focus and `aria-expanded`; it remains available across page changes.
+
+Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
+pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
+and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does not
+hide its CSS flex layout. Suspend Home navigation polling, hover timers,
+sidebar selectors, repository/schedule navigation refresh and continuation through
+existing activity gates. Main content observation keeps its independent owner.
+Before hiding a focused pane descendant, focus the persistent toggle. Preserve
+composer focus/caret/selection otherwise; expansion never steals focus.
+
+Below 760px retain the purpose-named compact opener and modal drawer. Hide the
+wide toggle and deactivate primary+B. Drawer opening/closing never saves the
+wide preference. On return to wide layout, reapply the committed choice, retire
+any modal drawer and use a visible toggle/rail fallback for focus. Search initial
+focus cannot target a hidden pane; explicit Search focus may request the original
+pane opening and waits for visible committed presentation.
+
+`sidebar_preference.json` is an independent computer-local, bounded 4096-byte
+version-1 document containing only the Expanded/Collapsed enum and its document
+version. Missing storage defaults to Expanded. Keep this file outside server
+configuration, pairing, exports and backups, without IDs, credentials or content.
+`SidebarProvider` lives above Desktop connection and Settings lifetimes; isolated
+non-native fixtures use in-memory state only. Appearance and other preferences
+retain independent files, revisions and semantics.
+
+`read_sidebar_preference` and `update_sidebar_preference` use the closed
+`device-sidebar` permission only for existing main/local-* and saved server-*
+product capabilities. Native admission captures/rechecks original authority,
+performs locked storage work off the UI thread, checks the expected process
+revision and atomically replaces only valid current storage. Publish ordered
+`sidebar-preference-changed` snapshots only to authorized product windows;
+external, tray and child views have no storage/event authority. Invalid, linked,
+oversized and newer documents remain unchanged. Failure retains committed layout;
+uncertain writes are never automatically replayed. A persistent localized notice
+and explicit Reload sidebar preference action inspect before further saves.
+Renderer response/events are monotonic, contradictory snapshots are rejected and
+pending/failed/uncertain writes remain fenced. Logs contain only stable operations,
+revision and outcome classifications. No business RPC, protocol allocation,
+migration, feature flag, dependency or OS-global keyboard bridge is added.
+
+Primary+B works in ordinary editable inputs and consumes an accepted press once.
+Preserve handled/repeated/composing/AltGraph/extra-modifier, hidden/inert,
+terminal-passthrough and modal exclusions, including compact navigation. The owned
+help dialog retains existing eligible action dismissal. B is a fixed product
+reservation in device shortcut validation, not an additional editable override.
+Automated fixtures/builds do not establish installed CEF/platform persistence or
+native account acceptance.

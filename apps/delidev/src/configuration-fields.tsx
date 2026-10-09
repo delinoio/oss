@@ -1,4 +1,5 @@
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
+import { useSidebarActivity } from "./sidebar-context";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { readableServerPreferences } from "./server-preferences";
@@ -136,6 +137,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 // Selectors accumulate bounded display projections. Exact resources are read
 // only for the retained selection and a deliberate selection callback.
 export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice, selectionResetToken = 0 }: { selectionResetToken?: number; label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
+  active = active && useSidebarActivity();
   useLocale();
   // The retained diagnostic owner still fences consuming effects for this exact Runner.
   const inspectRunner = useRunnerRemediation({ active });
