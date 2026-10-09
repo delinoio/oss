@@ -9,7 +9,6 @@
   "subscription-rail.connected": "Connected",
   "subscription-rail.disabled": "Connected · Disabled",
   "subscription-rail.readFailed": "Current reads are unavailable. Previous saved values are shown.",
-  "subscription-rail.explanation": "The badge shows the most restrictive fresh blocking window. Expired resets do not prove recovery.",
   "subscription-rail.window": "Window {{index}}",
   "subscription-rail.stale": "Stale observation",
   "subscription-rail.observed": "Observed",
@@ -18,9 +17,9 @@
   "subscription-rail.unknown": "No current quota evidence",
   "subscription-rail.observation": "Observed: {{time}}",
   "subscription-rail.reset": "Resets: {{time}}",
-  "subscription-rail.identity": "Account identity",
   "subscription-rail.manage": "Manage subscriptions",
   "subscription-rail.authentication": "Authentication expired. Reconnect to read subscriptions.",
   "subscription-rail.incomplete": "A complete fresh blocking quota observation is unavailable.",
-  "subscription-rail.denied": "Permission denied. Check the selected connection."
+  "subscription-rail.denied": "Permission denied. Check the selected connection.",
+  "subscription-rail.remainingLabel": "remaining"
 }

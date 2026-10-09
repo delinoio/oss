@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampText, TimestampMode } from "./timestamp-display";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -10,7 +9,7 @@ import { subscriptionCatalog } from "./subscription-catalog";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
-import { freshWindow, railAccount, remainingBadge, type RailAccount } from "./subscription-rail-data";
+import { freshWindow, railAccount, remainingBadge, type RailAccount, type RailWindow } from "./subscription-rail-data";
 import "./subscription-rail.css";
 import { Failure, InlineRemediation } from "./ui";
 import { LocalConnectionHelp } from "./local-connection-presentation";
@@ -70,9 +69,20 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
     const place = () => { const bounds = opener.getBoundingClientRect(); element.style.left = `${Math.max(4, Math.min(bounds.right + 8, window.innerWidth - element.offsetWidth - 4))}px`; element.style.top = `${Math.max(4, Math.min(bounds.top, window.innerHeight - element.offsetHeight - 4))}px`; };
     if (typeof element.showPopover === "function") element.showPopover();
     place(); element.focus();
-    const dismiss = (event: PointerEvent) => { if (!element.contains(event.target as Node) && !opener.contains(event.target as Node)) close(); };
+    // Saved replacements can change window count or wrapping without a resize.
+    // Re-clamp presentation only; this observer owns no reads or native actions.
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(place) : undefined;
+    observer?.observe(element);
+    const dismiss = (event: PointerEvent) => {
+      if (element.contains(event.target as Node) || opener.contains(event.target as Node)) return;
+      // A background pointer's default focus step would clear the restored
+      // opener after close. Preserve ordinary focus/clicks on outside controls.
+      const target = event.target instanceof Element ? event.target : undefined;
+      if (!target?.closest("button, input, select, textarea, a[href], [tabindex], [contenteditable=true]")) event.preventDefault();
+      close();
+    };
     window.addEventListener("resize", place); document.addEventListener("pointerdown", dismiss);
-    return () => { window.removeEventListener("resize", place); document.removeEventListener("pointerdown", dismiss); };
+    return () => { observer?.disconnect(); window.removeEventListener("resize", place); document.removeEventListener("pointerdown", dismiss); };
   }, [selection, close]);
   const accounts = enabled && !authenticationLost && capable && !status.error ? query.rows.filter(row => row.connected) : [];
   const unavailable = !allowed || Boolean(query.error) || unconfirmedRead;
@@ -93,18 +103,34 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
       {limited ? <p role="status">{copy("subscription-rail.limit")}</p> : null}
       {limited ? <button type="button" className="subscription-rail-reload" onClick={query.reload} disabled={!allowed || Boolean(query.loading)}>{copy("pagination.reload")}</button> : null}
     </div>
-    {selection && account ? createPortal(<div ref={popup} popover="manual" role="dialog" aria-label={`${brand(account).name} · ${account.alias}`} tabIndex={-1} className="subscription-rail-popover" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}>
-      <header><strong>{brand(account).name} · {account.alias}</strong><button type="button" onClick={close} aria-label={copy("subscription-rail.close")}>×</button></header>
-      <p>{copy(account.disabled ? "subscription-rail.disabled" : "subscription-rail.connected")}</p>
+    {selection && account ? createPortal(<div ref={popup} popover="manual" role="dialog" aria-label={`${brand(account).name} · ${account.alias}`} tabIndex={-1} className="subscription-rail-popover subscription-account-popover" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } }}>
+      <header><img src={brand(account).mark} alt="" width="24" height="24" /><strong>{brand(account).name}</strong><button type="button" onClick={close} aria-label={copy("subscription-rail.close")}>×</button></header>
+      <p className="subscription-account-alias">{account.alias}</p>
+      <p className="subscription-account-state">{copy(account.disabled ? "subscription-rail.disabled" : "subscription-rail.connected")}</p>
       {unavailable ? <p role="status">{copy("subscription-rail.readFailed")}</p> : null}
-      <p>{copy("subscription-rail.explanation")}</p>
       {!unavailable && remainingBadge(account.windows, now) === undefined ? <p>{copy("subscription-rail.incomplete")}</p> : null}
-      {account.windows.length ? account.windows.map((window, index) => <section key={`${window.id}:${index}`}><strong>{window.id || copy("subscription-rail.window", { index: index + 1 })}</strong><p>{window.valid !== false && Number.isFinite(Date.parse(window.observedAt)) && Date.parse(window.observedAt) <= now && window.state !== "unknown" && window.state !== "unsupported" && typeof window.blocking === "boolean" && typeof window.remaining === "number" && Number.isFinite(window.remaining) && window.remaining >= 0 && window.remaining <= 1 ? copy("subscription-rail.remaining", { percent: Math.round(window.remaining * 100) }) : copy("subscription-rail.unavailable")}</p><p>{copy(window.valid === false || typeof window.blocking !== "boolean" ? "subscription-rail.unknown" : !freshWindow(window, now) && window.state === "observed" ? "subscription-rail.stale" : window.state === "observed" ? "subscription-rail.observed" : window.state === "failed" ? "subscription-rail.failed" : window.state === "unsupported" ? "subscription-rail.unsupportedQuota" : "subscription-rail.unknown")}</p><small>{<TimestampText id="subscription-rail.observation" values={{ time: <Timestamp value={window.observedAt} fallback="—" /> }} />}<br />{<Timestamp value={window.resetAt} fallback="—" mode={TimestampMode.QuotaCountdown} expired={timestamp => <TimestampText id="subscription-rail.reset" values={{ time: timestamp }} />} />}</small></section>) : <p>{copy("subscription-rail.unknown")}</p>}
-      <button type="button" disabled={!allowed || Boolean(query.loading)} onClick={query.refresh}>{copy("account-connection.inline.railRecheck")}</button>
-      <Disclosure><DisclosureSummary>{copy("subscription-rail.identity")}</DisclosureSummary><p>{account.id}</p></Disclosure>
-      <button type="button" onClick={() => { close(); manage(); }}>{copy("subscription-rail.manage")}</button>
+      {account.windows.length ? account.windows.map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} index={index} now={now} unavailable={unavailable} />) : <p>{copy("subscription-rail.unknown")}</p>}
+      <div className="subscription-account-actions">
+        <button type="button" disabled={!allowed || Boolean(query.loading)} onClick={query.refresh}>{copy("account-connection.inline.railRecheck")}</button>
+        <button type="button" onClick={() => { close(); manage(); }}>{copy("subscription-rail.manage")}</button>
+      </div>
     </div>, document.body) : null}
   </div>;
+}
+
+/** Presentation only: preserve the original individual-value eligibility rules.
+ * Historical saved values stay labelled stale/failed and never restore a badge. */
+function QuotaWindow({ window, index, now, unavailable }: { window: RailWindow; index: number; now: number; unavailable: boolean }) {
+  const percent = window.valid !== false && Number.isFinite(Date.parse(window.observedAt)) && Date.parse(window.observedAt) <= now && window.state !== "unknown" && window.state !== "unsupported" && typeof window.blocking === "boolean" && typeof window.remaining === "number" && Number.isFinite(window.remaining) && window.remaining >= 0 && window.remaining <= 1 ? Math.round(window.remaining * 100) : undefined;
+  const current = !unavailable && freshWindow(window, now);
+  const state = window.valid === false || typeof window.blocking !== "boolean" ? "subscription-rail.unknown" : !current && window.state === "observed" ? "subscription-rail.stale" : window.state === "observed" ? "subscription-rail.observed" : window.state === "failed" ? "subscription-rail.failed" : window.state === "unsupported" ? "subscription-rail.unsupportedQuota" : "subscription-rail.unknown";
+  return <section className={`subscription-quota-window${current ? "" : " subscription-quota-historical"}`}>
+    <p className="subscription-quota-id">{window.id || copy("subscription-rail.window", { index: index + 1 })}</p>
+    <p className="subscription-quota-value">{percent === undefined ? copy("subscription-rail.unavailable") : <><strong>{percent}%</strong><span>{copy("subscription-rail.remainingLabel")}</span></>}</p>
+    {percent !== undefined ? <div className="subscription-quota-bar" aria-hidden="true"><span style={{ width: `${percent}%` }} /></div> : null}
+    <div className="subscription-quota-timing"><Timestamp value={window.resetAt} fallback="—" mode={TimestampMode.QuotaCountdown} expired={timestamp => <TimestampText id="subscription-rail.reset" values={{ time: timestamp }} />} /></div>
+    <p className="subscription-quota-observation">{copy(state)} · <Timestamp value={window.observedAt} fallback="—" /></p>
+  </section>;
 }
 
 /** A compact rail trigger keeps local explanation/actions out of navigation. */
