@@ -29,7 +29,7 @@ export function startupOperations(resource: Resource | undefined, phase: Session
  const workspace = p.workspace == null ? [] : attempt(p.workspace, preparation.job_id);
  const native = p.native == null ? [] : attempt(p.native, active.job_id ?? (object(d.startup).execution_id === execution.id ? object(d.startup).job_id : undefined) ?? object(p.native).job_id, execution.id);
  if (!workspace || !native) return;
- 
+
  function aggregate(steps: Step[], kind: "workspace_operation" | "native_phase"): StartupOperationRow[] {
   const latest = Math.max(0,...steps.map(s => s.sequence ?? 0));
   // First appearance is the server-derived plan order, not enum numbering.
