@@ -9,17 +9,17 @@ import { expect, it, vi } from "vitest";
 import { AccountService, ConfigurationService, SystemService, SystemCapability, ResourceSchema, EntityKind, newRequestId } from "@delinoio/delidev-api-client";
 import { SettingsLifetime } from "./settings-lifetime";
 import { MutationIntents } from "./mutation";
-import { OpenCodeGoAccount } from "./opencode-go-account";
+import { OpenCodeGoAccount, OpenCodeGoManagement } from "./opencode-go-account";
 import { document, encode } from "./documents";
 
-function fixture(supported = true) {
+function fixture(supported = true, management = false) {
  let current = create(ResourceSchema, {id:newRequestId(),kind:EntityKind.ACCOUNT,schemaVersion:2,revision:1n,documentJson:encode({alias:"OpenCode Go",type:"subscription",subscription_service:"opencode_go"})});
  const save=vi.fn(async request=> { current=create(ResourceSchema,{...current,documentJson:request.documentJson});return {requestId:request.mutation.requestId,resource:current}; });
  const connect=vi.fn(async request=> {current=create(ResourceSchema,{...current,revision:2n,documentJson:encode({...document(current),connection:{id:request.mutation.requestId},health:"ready"})});return {requestId:request.mutation.requestId,account:current};});
  const read=vi.fn(async ()=>({account:current}));const close=vi.fn();
  const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:supported?[SystemCapability.OPENCODE_GO_SUBSCRIPTIONS_V1]:[]})});router.service(ConfigurationService,{saveConfiguration:save});router.service(AccountService,{connectAccount:connect,getAccountStatus:read});});
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
- function Body(){const [visible,setVisible]=useState(true);return <><button onClick={()=>setVisible(true)}>Show original</button><OpenCodeGoAccount active visible={visible} changed={()=>{}} close={()=>{close();setVisible(false);}}/></>;}
+ function Body(){const [visible,setVisible]=useState(true);return <><button onClick={()=>setVisible(true)}>Show original</button>{management ? <OpenCodeGoManagement initial={current} active visible={visible} close={()=>{close();setVisible(false);}}/> : <OpenCodeGoAccount active visible={visible} changed={()=>{}} close={()=>{close();setVisible(false);}}/>}</>;}
  const view=<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SettingsLifetime>{()=> <Body/>}</SettingsLifetime></MutationIntents></QueryClientProvider></TransportProvider>;
  return {view,save,connect,read,close};
 }
@@ -42,3 +42,10 @@ it("retains an uncertain original create across dismissal without a replacement 
  fireEvent.click(await screen.findByRole("button",{name:"Retry the original request"}));await waitFor(()=>expect(f.connect).toHaveBeenCalledTimes(1));expect(f.save.mock.calls[1][0].mutation.requestId).toBe(originalID);expect(f.save).toHaveBeenCalledTimes(2);
 });
 it("disables connection on an older server without submitting a key",async()=>{const f=fixture(false);render(f.view);await screen.findByText("This server does not support OpenCode Go connections.");expect((screen.getByRole("button",{name:"Connect account"}) as HTMLButtonElement).disabled).toBe(true);expect(f.save).not.toHaveBeenCalled();expect(f.connect).not.toHaveBeenCalled();});
+
+it("retains dismissal on failed management reads without granting account authority",async()=>{
+ const f=fixture(true,true);f.read.mockImplementation(async()=>{throw new ConnectError("Fixture denied",Code.PermissionDenied);});render(f.view);
+ const dialog=await screen.findByRole("dialog",{name:"Manage OpenCode Go connection"});
+ await screen.findByRole("alert");fireEvent.click(screen.getByRole("button",{name:"Close Manage OpenCode Go connection"}));
+ expect(f.close).toHaveBeenCalledTimes(1);expect(f.connect).not.toHaveBeenCalled();expect(f.save).not.toHaveBeenCalled();
+});

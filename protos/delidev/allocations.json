@@ -9636,6 +9636,27 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
       "number": 30
+    },
+    {
+      "issue": 2097,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
+      "number": 54
+    },
+    {
+      "issue": 2097,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
+      "number": 28
+    },
+    {
+      "issue": 2097,
+      "kind": "enum",
+      "declaration": "SubscriptionServiceIdentity",
+      "member": "SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO",
+      "number": 4
     }
   ],
   "rpcReservations": [

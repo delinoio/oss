@@ -74,5 +74,6 @@ export function OpenCodeGoManagement({ initial, active, close, visible, complete
   const query = useQuery(AccountQuery.getAccountStatus, { id: initial.id }, { enabled: active });
   const resource = query.data?.account;
   const verified = serviceAccount(resource, initial.id, SubscriptionServiceId.OpenCodeGo, initial.revision);
-  return verified ? <OpenCodeGoAccount initial={resource} visible={visible} completed={completed} active={active} changed={() => void query.refetch()} close={close} /> : <><p role="status">{copy("subscription-settings.loadingSubscriptions_d98d84")}</p><Problem error={query.error} /></>;
+  const waiting = <><p role="status">{copy("subscription-settings.loadingSubscriptions_d98d84")}</p><Problem error={query.error} /></>;
+  return verified ? <OpenCodeGoAccount initial={resource} visible={visible} completed={completed} active={active} changed={() => void query.refetch()} close={close} /> : visible === false ? null : visible === undefined ? waiting : <SettingsTaskDialog title={copy("opencode-go.manageTitle")} size={SettingsDialogSize.Wide} close={close}>{waiting}</SettingsTaskDialog>;
 }
