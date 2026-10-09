@@ -148,5 +148,6 @@
   "usage.priceDetails": "Price details",
   "usage.noHistoricalPrice": "No retained price evidence is available for this identity.",
   "usage.futurePricesOnly": "New prices apply to future usage. Historical estimates keep their original prices.",
-  "usage.originalPriceIdentity": "Original model identity"
+  "usage.originalPriceIdentity": "Original model identity",
+  "usage.missingEstimate": "No retained price estimate."
 }

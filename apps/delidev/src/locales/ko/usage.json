@@ -148,5 +148,6 @@
   "usage.priceDetails": "단가 상세",
   "usage.noHistoricalPrice": "이 식별자의 저장된 단가 근거가 없습니다.",
   "usage.futurePricesOnly": "새 단가는 향후 사용량에 적용됩니다. 과거 예상 비용은 원래 단가를 유지합니다.",
-  "usage.originalPriceIdentity": "원래 모델 식별자"
+  "usage.originalPriceIdentity": "원래 모델 식별자",
+  "usage.missingEstimate": "저장된 예상 비용 없음."
 }
