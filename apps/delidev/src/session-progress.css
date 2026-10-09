@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.session-progress { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 160px; padding: 24px 16px; color: var(--text-secondary); overflow-wrap: anywhere; text-align: center; }
+.session-progress.is-compact { flex-direction: row; justify-content: flex-start; min-height: 0; padding: 12px 16px; text-align: start; }
+.session-progress-spinner { width: 20px; height: 20px; flex: 0 0 20px; border: 2px solid var(--border); border-top-color: var(--text-secondary); border-radius: 50%; animation: session-progress-spin 1s linear infinite; }
+@keyframes session-progress-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .session-progress-spinner { animation: none; } }

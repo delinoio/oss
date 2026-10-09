@@ -1,0 +1,6 @@
+{
+  "session-progress.preparing": "Preparing workspace",
+  "session-progress.queued": "Waiting to start",
+  "session-progress.starting": "Starting agent",
+  "session-progress.response": "Waiting for response"
+}

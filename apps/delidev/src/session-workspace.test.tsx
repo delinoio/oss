@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { BudgetState, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { BudgetState, EventAction, WatchEventsResponseSchema, EntityKind, ResourceSchema, ResourceService, SessionBudgetViewSchema, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
@@ -19,6 +19,14 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     ...extra,
     ...(problem ? { problem: { code: "unsupported", message: "Original installation evidence", guidance: "Original verification guidance" } } : {}),
   }) });
+  const retained = new Map([[id, session]]);
+  const events: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] = [];
+  let wake = () => {};
+  const publish = (resource: typeof session) => {
+    retained.set(resource.id, resource);
+    events.push(create(WatchEventsResponseSchema, { cursor: `fixture-${newRequestId()}`, id: newRequestId(), entityId: resource.id, kind: resource.kind, sessionId: id, revision: resource.revision, action: EventAction.UPDATED, time: new Date().toISOString() }));
+    wake();
+  };
   const enqueue = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session,request));
   const rename = vi.fn(async () => ({ change: { session } }));
   const recover = vi.fn(async (_request: unknown) => ({ change: { session } }));
@@ -30,16 +38,23 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     router.service(SessionService, { listQueue: () => ({ inputs: queueInputs(id) }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
+      getResource: request => ({ resource: retained.get(request.id) }),
       listResources: list,
       async *watchEvents(_request, context) {
-        if (!context.signal.aborted) await new Promise<void>(resolve => context.signal.addEventListener("abort", () => resolve(), { once: true }));
+        while (!context.signal.aborted) {
+          while (events.length && !context.signal.aborted) yield events.shift()!;
+          if (!context.signal.aborted) await new Promise<void>(resolve => {
+            const done = () => { context.signal.removeEventListener("abort", done); resolve(); };
+            wake = done; context.signal.addEventListener("abort", done, { once: true });
+          });
+        }
       },
     });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
-  const view = (value = "Original draft") => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionView id={id} draft={value} setDraft={draft} /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { session, client, view, enqueue, rename, control, recover, budget, draft, list };
+  const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionView id={id} draft={value} setDraft={draft} active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  return { session, client, view, enqueue, rename, control, recover, budget, draft, list, publish };
 }
 
 it("retains composer, mode and staged information edits through tool switches and language changes", async () => {
@@ -278,4 +293,48 @@ it("retains primary section choices and editor/input identities across tools and
  await act(async()=>{await i18n.changeLanguage("ko");});expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
  await act(async()=>{await i18n.changeLanguage("en");});fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);
  expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it.each(["worktree", "general-chat"])("presents current response waiting in %s without replaying execution or losing the composer", async workspace => {
+  const execution = newRequestId(), input = newRequestId(), job = newRequestId();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, { workspace, archive: "active", recovery: "none", dispatch: "claimed", outcome: "running", pending_inputs: 0, preparation: { job_id: newRequestId(), state: "ready" }, active_execution_id: execution, initial_execution: { id: execution, input_id: input }, execution: { job_id: job, execution_id: execution, input_id: input, last_sequence: 3, native_thread_id: "original-thread", native_turn_id: "original-turn", outcome: "running", waiting: { approval: false, user_input: false }, accepted_inputs: [{ input_id: input, prompt_digest: "a".repeat(64) }] } });
+  render(f.view("Original retained draft"));
+  await screen.findByText("Waiting for response");
+  expect(screen.queryByText("No conversation yet")).toBeNull();
+  const composer = screen.getByRole("textbox", { name: "Message" }); expect(composer).toHaveProperty("value", "Original retained draft");
+  await act(() => i18n.changeLanguage("ko")); await screen.findByText("응답 대기 중"); expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
+  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
+  await act(() => i18n.changeLanguage("en"));
+});
+it("retains compact response waiting after the original native user message appears", async () => {
+  const execution = newRequestId(), input = newRequestId(), job = newRequestId();
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, { outcome: "running", dispatch: "claimed", pending_inputs: 0, preparation: { job_id: newRequestId(), state: "ready" }, active_execution_id: execution, initial_execution: { id: execution, input_id: input }, execution: { job_id: job, execution_id: execution, input_id: input, native_thread_id: "thread", native_turn_id: "turn", last_sequence: 3, outcome: "running", waiting: { approval: false, user_input: false }, accepted_inputs: [{ input_id: input, prompt_digest: "a".repeat(64) }] } });
+  const user = create(ResourceSchema, { id: newRequestId(), sessionId: f.session.id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ execution_id: execution, input_id: input, native_thread_id: "thread", native_turn_id: "turn", native_id: "native-user", role: "user", state: "complete", text: "Original native prompt", first_sequence: 3, last_sequence: 3 }) });
+  f.list.mockImplementation(async request => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? [user] : [], nextPageToken: "" }));
+  const { container } = render(f.view("Retained draft")); await screen.findByText("Waiting for response"); expect(screen.getByText("Original native prompt")).toBeTruthy();
+  expect(container.querySelector(".session-progress.is-compact")).toBeTruthy(); expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("value", "Retained draft"); expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it("projects accepted live preparation, claim and response transitions without remounting or sending", async () => {
+  const execution = newRequestId(), input = newRequestId(), job = newRequestId(), preparation = newRequestId();
+  const initial = { outcome: "not-started", archive: "active", recovery: "none", dispatch: "ready", pending_inputs: 1, preparation: { job_id: preparation, state: "pending" } };
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, initial);
+  const { container, rerender } = render(f.view("Original ongoing draft"));
+  await screen.findByText("Preparing workspace"); const composer = screen.getByRole("textbox", { name: "Message" });
+  const update = (revision: bigint, data: object) => f.publish({ ...f.session, revision, documentJson: encode({ ...readDocument(f.session), ...initial, ...data }) });
+  const queued = create(ResourceSchema, { id: input, sessionId: f.session.id, kind: EntityKind.QUEUE, revision: 1n, schemaVersion: 1, documentJson: encode({ delivery: "queued", prompt: "Original queued input", mode: "execute", sequence: 1, content_revision: 1 }) });
+  act(() => { f.publish(queued); update(8n, { preparation: { job_id: preparation, state: "ready" } }); }); await screen.findByText("Waiting to start");
+  const selection = { active_execution_id: execution, initial_execution: { id: execution, input_id: input }, preparation: { job_id: preparation, state: "ready" }, dispatch: "claimed" };
+  act(() => update(9n, selection)); await screen.findByText("Starting agent");
+  const native = { job_id: job, execution_id: execution, input_id: input, native_thread_id: "original-thread", native_turn_id: "original-turn", last_sequence: 2, outcome: "running", waiting: { approval: false, user_input: false }, accepted_inputs: [{ input_id: input, prompt_digest: "a".repeat(64) }] };
+  const accepted = { ...selection, outcome: "running", pending_inputs: 0, execution: native };
+  act(() => { f.publish({ ...queued, revision: 2n, documentJson: encode({ delivery: "accepted", execution_id: execution }) }); update(10n, accepted); }); await screen.findByText("Waiting for response");
+  rerender(f.view("Original ongoing draft", false)); expect(container.querySelector(".session-progress")).toBeNull(); rerender(f.view("Original ongoing draft")); await screen.findByText("Waiting for response");
+  const user = create(ResourceSchema, { id: newRequestId(), sessionId: f.session.id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ execution_id: execution, input_id: input, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-user", role: "user", state: "complete", text: "Published initial input", first_sequence: 3, last_sequence: 3 }) });
+  act(() => { update(11n, { ...accepted, execution: { ...native, last_sequence: 3 } }); f.publish(user); }); await screen.findByText("Published initial input"); await screen.findByText("Waiting for response"); expect(container.querySelector(".session-progress.is-compact")).toBeTruthy();
+  const assistant = { ...user, id: newRequestId(), documentJson: encode({ execution_id: execution, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-assistant", role: "assistant", state: "streaming", text: "First visible response", first_sequence: 4, last_sequence: 4 }) };
+  act(() => { update(12n, { ...accepted, execution: { ...native, last_sequence: 4 } }); f.publish(assistant); }); await screen.findByText("First visible response"); await waitFor(() => expect(container.querySelector(".session-progress")).toBeNull());
+  act(() => { f.publish({ ...assistant, revision: 2n, documentJson: encode({ execution_id: execution, native_thread_id: "original-thread", native_turn_id: "original-turn", native_id: "native-assistant", role: "assistant", state: "streaming", text: "", first_sequence: 4, last_sequence: 4 }) }); update(13n, { ...accepted, execution: { ...native, last_sequence: 4 } }); }); expect(container.querySelector(".session-progress")).toBeNull();
+  act(() => update(8n, { preparation: { job_id: preparation, state: "pending" } })); expect(container.querySelector(".session-progress")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer); expect(composer).toHaveProperty("value", "Original ongoing draft"); expect(f.enqueue).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled(); expect(f.recover).not.toHaveBeenCalled();
 });
