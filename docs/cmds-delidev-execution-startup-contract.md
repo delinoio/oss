@@ -109,6 +109,10 @@ Show an immediate session-owned failure summary with a concrete corrective actio
 Optional details expose phase, observed version, stable code, original log/
 correlation reference, input delivery and independent cleanup classification.
 Copy only validated metadata; opening or copying details performs no inspection.
+Failure guidance describes delivery and cleanup independently. Acknowledged input
+and confirmed original cleanup must not be described as uncertain. Preserve safe
+cause-specific correction alongside original-execution recovery guidance. These
+settled observations do not prove the execution outcome or grant resend authority.
 
 Retry is explicit and available only after positive input-not-sent and original
 cleanup proof. The existing revision-checked Resume lane creates a distinct

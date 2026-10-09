@@ -154,8 +154,25 @@ func startupFailureProblem(o domain.ExecutionStartupObservation) *domain.Error {
 	case domain.Unavailable:
 		message, guidance = "The agent failed to start or timed out.", "Check the selected Runner Device and its original log reference."
 	}
-	if o.InputDelivery != domain.StartupNotSent || o.Cleanup != domain.StartupCleanupConfirmed {
-		guidance = "Recover the original execution before sending input again; delivery or cleanup is uncertain."
+	if o.State == domain.StartupUncertain || o.InputDelivery != domain.StartupNotSent || o.Cleanup != domain.StartupCleanupConfirmed {
+		// Acknowledgement and original cleanup are independent observations,
+		// not proof of a settled execution outcome or permission to resend.
+		delivery := "Input delivery is uncertain."
+		switch o.InputDelivery {
+		case domain.StartupAcknowledged:
+			delivery = "Input delivery was acknowledged."
+		case domain.StartupNotSent:
+			delivery = "Input was not sent."
+		}
+		cleanup := "Original cleanup is uncertain."
+		if o.Cleanup == domain.StartupCleanupConfirmed {
+			cleanup = "Original cleanup was confirmed."
+		}
+		correction := ""
+		if o.InputDelivery == domain.StartupAcknowledged && o.Cleanup == domain.StartupCleanupConfirmed {
+			correction = guidance + " "
+		}
+		guidance = correction + delivery + " " + cleanup + " Recover the original execution before continuing. Do not send the original input again."
 	}
 	return domain.Fail(o.ProblemCode, message, guidance)
 }

@@ -41,6 +41,14 @@ export function startupCorrection(failure: Document): string {
   }
 }
 
+// Delivery and cleanup are independent facts. Presentation cannot grant retry.
+export function startupRecoveryGuidance(failure: Document): string {
+  const delivery = failure.input_delivery === InputDelivery.Acknowledged ? copy("session.startupDeliveryAcknowledged") : failure.input_delivery === InputDelivery.NotSent ? copy("session.startupDeliveryNotSent") : copy("session.startupDeliveryUncertain");
+  const cleanup = failure.cleanup === Cleanup.Confirmed ? copy("session.startupCleanupConfirmed") : copy("session.startupCleanupUncertain");
+  const correction = failure.input_delivery === InputDelivery.Acknowledged && failure.cleanup === Cleanup.Confirmed ? `${startupCorrection(failure)} ` : "";
+  return `${correction}${delivery} ${cleanup} ${copy("session.startupRecoverOriginal")}`;
+}
+
 export function ExecutionStartupDetails({ failure }: { failure: Document }) {
   useLocale();
   const alive = useRef(false);
@@ -58,7 +66,7 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
       <dt>{copy("session.startupReference")}</dt><dd>{text(failure.correlation_id)}</dd>
       <dt>{copy("session.startupInputDelivery")}</dt><dd>{delivery[Number(failure.input_delivery)]}</dd>
       <dt>{copy("session.startupCleanup")}</dt><dd>{failure.cleanup === Cleanup.Confirmed ? copy("session.startupConfirmed") : copy("session.startupUnknown")}</dd></dl>
-    <p>{failure.state === StartupState.Failed ? copy("session.startupManualSteps") : copy("session.startupRecover")}</p>
+    <p>{failure.state === StartupState.Failed ? copy("session.startupManualSteps") : startupRecoveryGuidance(failure)}</p>
     <button type="button" onClick={() => { setCopied(false); setCopyFailed(false); if (!navigator.clipboard) { setCopyFailed(true); return; } void navigator.clipboard.writeText(JSON.stringify(metadata, null, 2)).then(() => { if (alive.current) setCopied(true); }, () => { if (alive.current) setCopyFailed(true); }); }}>{copy("session.startupCopy")}</button>
     {copied ? <p role="status">{copy("session.startupCopied")}</p> : null}{copyFailed ? <p role="status">{copy("session.startupCopyFailed")}</p> : null}
   </Disclosure>;

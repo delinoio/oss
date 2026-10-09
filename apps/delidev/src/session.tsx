@@ -23,7 +23,7 @@ import { initialInteractionDraft, interactionRequestIdentity, type InboxInteract
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
-import { executionStartupFailure, canRetryExecutionStartup, startupCorrection, ExecutionStartupDetails } from "./execution-startup";
+import { executionStartupFailure, canRetryExecutionStartup, startupCorrection, startupRecoveryGuidance, ExecutionStartupDetails } from "./execution-startup";
 
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
@@ -532,7 +532,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     <SessionActivityProvider active={conversationActive}><div className="session-body" hidden={!conversationActive} inert={!conversationActive}>
       <div className="session-notices">
         {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
-        {startupFailure ? <SessionNotice><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : copy("session.startupRecover")}</span><ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} />{startupFailure.state === 2 ? <p>{copy("session.startupManualSteps")}</p> : null}</SessionNotice> : Object.keys(object(object(data.startup).failure)).length ? <p role="alert">{copy("session.startupInvalidEvidence")}</p> : null}
+        {startupFailure ? <SessionNotice><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : startupRecoveryGuidance(startupFailure)}</span><ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} />{startupFailure.state === 2 ? <p>{copy("session.startupManualSteps")}</p> : null}</SessionNotice> : Object.keys(object(object(data.startup).failure)).length ? <p role="alert">{copy("session.startupInvalidEvidence")}</p> : null}
         {text(problem.message) && !startupFailure ? <SessionNotice details={opener => showInfo(opener)}><strong>{text(data.dispatch) === "blocked" ? copy("session.executionBlocked") : copy("session.attentionRequired")}</strong><span>{failureSummary(text(problem.code) || text(problem.problem_code))}</span></SessionNotice> : null}
         {recovering ? <SessionNotice details={opener => showInfo(opener)}><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></SessionNotice> : null}
         {session && Object.hasOwn(data, "startup_rejection") ? <StartupRejection session={session} /> : null}
