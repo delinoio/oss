@@ -98,7 +98,7 @@ export function ShortcutSettings() {
     <p role="status">{copy(operation===ShortcutPreferenceOperation.Saving?"shortcut-settings.saving":operation===ShortcutPreferenceOperation.Reading?"shortcut-settings.reading":dirty?"shortcut-settings.unsaved":"shortcut-settings.saved")}</p>
     </div>
     <div className="actions shortcut-settings-footer"><SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={locked||Boolean(capturing)} onClick={()=>setDraft({})}>{copy("shortcut-settings.restoreAll")}</SettingsActionButton>
-      <SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={Boolean(operation)||Boolean(capturing)||!dirty&&!conflict} onClick={()=>{setDraft(snapshot.overrides);setBaseline(snapshot);setSaved(false);}}>{copy("shortcut-settings.discard")}</SettingsActionButton>
-      <SettingsActionButton icon={SettingsActionIcon.Save} type="button" className="primary" disabled={locked||Boolean(capturing)||!dirty||Boolean(conflicts.length)} onClick={()=>{const original=structuredClone(draft);void save(original,baseline.revision).then(success=>{if(mounted.current&&success)setSaved(true);});}}>{copy("shortcut-settings.save")}</SettingsActionButton></div>
+      <div className="actions shortcut-settings-commit-actions"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={Boolean(operation)||Boolean(capturing)||!dirty&&!conflict} onClick={()=>{setDraft(snapshot.overrides);setBaseline(snapshot);setSaved(false);}}>{copy("shortcut-settings.discard")}</SettingsActionButton>
+      <SettingsActionButton icon={SettingsActionIcon.Save} type="button" className="primary" disabled={locked||Boolean(capturing)||!dirty||Boolean(conflicts.length)} onClick={()=>{const original=structuredClone(draft);void save(original,baseline.revision).then(success=>{if(mounted.current&&success)setSaved(true);});}}>{copy("shortcut-settings.save")}</SettingsActionButton></div></div>
   </section>;
 }

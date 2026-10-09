@@ -113,6 +113,10 @@ it("keeps the complete compact catalog separate from status and labeled final ac
  const actions=catalog.querySelectorAll('.shortcut-settings-row button');expect(actions).toHaveLength(21);
  for(const action of actions)expect(action.getAttribute('data-settings-action-presentation')).toBe('icon');
  expect(catalog.contains(screen.getByRole('button',{name:'Save changes'}))).toBe(false);
+ const save=screen.getByRole('button',{name:'Save changes'}),discard=screen.getByRole('button',{name:'Discard changes'}),restore=screen.getByRole('button',{name:'Restore all defaults'});
+ expect(save.parentElement).toBe(discard.parentElement);
+ expect(save.parentElement?.contains(restore)).toBe(false);
+ expect(save.parentElement?.textContent).toBe('Discard changesSave changes');
  expect(catalog.contains(screen.getByText('Current saved shortcuts'))).toBe(false);
  expect(screen.queryByText('Saved on this computer.')).toBeNull();
  const capture=screen.getByRole('button',{name:'Capture shortcut for New session'});

@@ -21,7 +21,8 @@
 .shortcut-catalog > section > p { margin: 8px 16px; }
 .shortcut-operation-guidance, .shortcut-settings-footer { flex: 0 0 auto; }
 .shortcut-operation-guidance:empty { display: none; }
-.shortcut-settings-footer > button:first-child { margin-right: auto; }
+.shortcut-settings-footer { justify-content: space-between; }
+.shortcut-settings-commit-actions { min-width: 0; margin-left: auto; justify-content: flex-end; }
 @container shortcut-catalog (max-width: 639px) {
  .shortcut-settings-row { grid-template-columns: minmax(0,1fr); gap: 8px; }
  .shortcut-catalog dl > div { grid-template-columns: minmax(0,1fr); gap: 4px; }
