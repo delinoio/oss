@@ -172,6 +172,11 @@ func TestPortableConfigurationFormatsVersionFour(t *testing.T) {
 	for _, version := range []uint32{1, 2, 3, 4} {
 		selection := transferSelection()
 		selection.Bundle.Version = version
+		if version != 4 {
+			s, _ := newDoctorFixture(t)
+			assertRejectedPortableVersion(t, s, selection)
+			continue
+		}
 		// Preserve the historical provider tuple for old bundles while using a
 		// format that was already compatible with this fixture's Codex Worker.
 		for i := range selection.Bundle.Entries {

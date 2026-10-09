@@ -31,10 +31,10 @@ func TestSessionDefaultsRejectDestructiveSchema2Write(t *testing.T) {
 		t.Fatal("rejected save changed state")
 	}
 }
-func TestSessionDefaultsPortable6RetainsExplicitEmpty(t *testing.T) {
+func TestSessionDefaultsPortable4RetainsExplicitEmpty(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	selection := transferSelection()
-	selection.Bundle.Version = 6
+	selection.Bundle.Version = domain.ConfigurationBundleVersion
 	v := domain.DefaultSettings()
 	empty := ""
 	v.BranchPrefix = &empty
@@ -44,8 +44,8 @@ func TestSessionDefaultsPortable6RetainsExplicitEmpty(t *testing.T) {
 	selection.Bundle.Entries = append(selection.Bundle.Entries, domain.ConfigurationEntry{ID: id, Kind: domain.SettingsKind, Document: raw})
 	preview := transferPreview(t, s, selection)
 	var result domain.ConfigurationImportPreview
-	if domain.Decode(preview, &result) != nil || result.Plan.Version != 6 {
-		t.Fatal("portable6 preview missing")
+	if domain.Decode(preview, &result) != nil || result.Plan.Version != domain.ConfigurationBundleVersion {
+		t.Fatal("portable4 preview missing")
 	}
 	transferApply(t, s, preview, domain.NewID())
 	for _, change := range result.Plan.Changes {

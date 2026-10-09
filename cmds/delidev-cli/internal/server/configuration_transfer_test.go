@@ -630,7 +630,7 @@ func TestConfigurationTransferRealConnectRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	var bundle domain.ConfigurationBundle
-	if err = domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || len(bundle.Entries) != 37 {
+	if err = domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || len(bundle.Entries) != 36 {
 		t.Fatal("wire export", err)
 	}
 }
@@ -739,5 +739,30 @@ func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 	}
 	if imported.Routes[1].Model.ProviderID == provider.ID || imported.Routes[1].Model.NativeID != "fallback" || imported.Routes[1].Accounts[0].ID == account.ID || imported.Routes[1].Accounts[0].Weight != 7 {
 		t.Fatal("route references/order were not remapped")
+	}
+}
+
+// Reset protocol 2 accepts only its current portable version. A rejected input
+// cannot create configuration, receipts or watcher notifications.
+func assertRejectedPortableVersion(t *testing.T, s *Service, selection domain.ConfigurationImportSelection) {
+	t.Helper()
+	before, err := s.ExportConfiguration(transferOwner(), connect.NewRequest(&pb.ExportConfigurationRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := s.Store.Changed()
+	raw, _ := json.Marshal(selection)
+	_, err = s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+	if connect.CodeOf(err) != connect.CodeUnimplemented {
+		t.Fatal("retired portable version accepted", selection.Bundle.Version, err)
+	}
+	after, err := s.ExportConfiguration(transferOwner(), connect.NewRequest(&pb.ExportConfigurationRequest{}))
+	if err != nil || !bytes.Equal(before.Msg.DocumentJson, after.Msg.DocumentJson) {
+		t.Fatal("rejected portable input changed configuration", err)
+	}
+	select {
+	case <-changed:
+		t.Fatal("rejected portable input mutated storage")
+	default:
 	}
 }
