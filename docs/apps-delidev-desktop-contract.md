@@ -866,32 +866,23 @@ connected original ancestors containing the returned tree may receive them.
 
 ### Session terminals
 
-The session's Terminals tool is the sole bottom dock: it spans the Session
-content width beneath conversation, composer and Info, excluding the app
-sidebar. Other tools retain their existing right pane/compact drawer geometry
-and their single-visible-tool rule. The independent Terminal dock can coexist
-with the selected tool, including Browser. Each Hide/Escape restores its own
-opener; terminal screen Escape remains native input. Conversation, composer and Info stay mounted.
-At a content width of at least 900px and body height of at least 600px, the initial
-dock is 40 percent high; pointer and keyboard separator resizing clamps to 200px
-through 70 percent. Smaller initial bodies maximize the dock. Explicit Restore,
-Maximize and Hide retain presentation state in the open Session lifetime. A
-maximized dock occludes the retained upper region with inert/aria-hidden and
-clipped hidden presentation; controllers and drafts stay mounted. Its original
-native Browser visibility observer must Hide the retained child through its
-existing exact cleanup ownership before presenting again. Restore returns the
-upper geometry and prior available focus without registering or executing anew.
-When Restore leaves less than200px above the dock, that retained upper region
-scrolls its intrinsic conversation/composer and Info rows; the compact Info
-track keeps its max-content height and existing bounded internal scroll cap, controls stay reachable
-without overlapping the dock, and native Browser bounds keep ancestor clipping.
+The Terminals tool opens the terminal inventory in the shared session tab workspace.
+Each explicit creation or retained-resource selection opens/selects the tab keyed
+by the original terminal ID. The active terminal occupies the complete content
+region beside persistent Info; the former independent bottom dock and its
+resize/Maximize/Restore presentation are superseded. Conversation authoring and
+original terminal mutation controllers remain mounted. Departure disposes only
+the output/input attachment, discards unsent bytes with its original notice and
+never closes the Worker-owned process. Reopening an original ID beyond the
+bounded inventory page uses an exact authenticated resource read before attachment.
+Presentation Close is separate from the explicit original process Close action.
 
 Authenticated generated operations follow the
 [terminal contract](cmds-delidev-terminals-contract.md). Only advertised support
 enables history reads/refresh/selection; capability errors remain distinct from
 missing support. Opening, tab selection and reattachment cannot create shells.
-The compact dark header exposes explicit creation, terminal tabs, Details and
-Hide. Details owns the future-creation shell override, Worker/shell/cwd, original
+The compact dark header exposes explicit creation, retained-resource choices, Details and
+presentation Close. Details owns the future-creation shell override, Worker/shell/cwd, original
 state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
@@ -1817,46 +1808,64 @@ short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
 A full-width tool strip exposes exactly Diff, Files, Terminals, Browser and
-Diagnostics in that order. There is no toolbar Info action. Info remains a
-persistent inspector, independent of the five initially closed, mutually exclusive
-temporary tools. Original Show details, recovery and budget entry points focus
-the original heading/section without dismissing the card or another tool. At 900px available session width
-or more, reserve a 360px right rail including 20px horizontal padding, separated
-from the conversation by 24px. Place the 320px card at the upper right, with 20px
-corners, a semantic thin border, subtle shadow and 16px internal padding. Cap its
-height to the available body and scroll excess content inside it. The card ends
-after its content; no full-height separator or rail background is present.
+Diagnostics in that order. It opens singleton tool-entry tabs. An accessible
+horizontal tablist sits above exactly one active content region. Conversation is
+pinned first, initially selected and cannot be closed or moved. Files and Diff
+open typed content tabs keyed by session/repository/path and, for comparisons,
+comparison kind. Terminals use the original terminal ID; Browser pages use the
+original profile/page ID; Sidechats use the original child session ID. Observation
+revisions do not change identity. Reopening an existing descriptor selects it;
+new descriptors append. Closing an inactive descriptor preserves selection;
+closing the selected descriptor selects its left neighbor, with Conversation as
+the fallback. Close moves focus before hiding the original region.
 
-Below 900px, reflow the same Info DOM above the conversation into a scrolling
-band capped at the smaller of 240px and 25% of workspace height. Notices,
-transcript, request tray and composer remain in the conversation region without
-intersecting Info. Temporary panels are bounded within that region, excluding
-Info, request tray and composer at compact widths. Their existing 400px pane is
-reserved only at 900px available conversation width; compact panels overlay
-notices and transcript. Close/Escape closes only the temporary tool and restores
-its original opener. Info focus and notice-detail actions reveal/focus the
-original section without closing the temporary tool or issuing business actions.
+The authenticated connection owns tab order/selection and safe descriptors in
+memory only. Same-identity navigation retains visited Session controllers,
+conversation/Sidechat drafts, skill bindings, images, Plan Mode, scroll and Info
+editors. Connection replacement or app restart resets presentation state. Hidden
+retained views are inert and suspend observation reads. File/patch panes unmount,
+cancel publication and discard bytes through their original read owners. Accepted
+or uncertain mutations retain original connection-owned request/controller identity;
+selection, closure and reopening never create a resource or retry a mutation.
 
-Preserve the complete Info inspector, initially expanded status/recovery and
-initially collapsed other disclosures, staged editors, budget gates, query and
-controller identities, confirmations and original receipts. CSS reflow retains
-the same DOM, composer, drafts and Plan Mode. Tool labels wrap at narrow widths
-and effective zoom. Browser cleanup and independent terminal lifetime retain
-their original authority. This presentation adds no RPC, protocol allocation,
-database migration or native authority. Fixtures remain separate from packaged
-CEF, native/account and platform acceptance.
+Info remains persistent beside the active pane, with the original section focus,
+recovery and budget controls. At 900px available session width reserve its 360px
+right rail; below 900px reflow the same Info DOM into the bounded scrolling band
+above content. Each active resource occupies the remaining full-width region,
+without a Browser split, compact tool overlay or independent terminal dock.
+Conversation retains its own transcript, request/queue tray and pinned composer.
+Tool labels and tabs remain reachable by scrolling at narrow/effective 200% layouts.
 
-Browser has the only wider split exception. Measure its 960px threshold against
-the conversation region excluding the persistent Info rail. Reserve an 8px
-splitter and default Browser to 55% of the remaining width, clamped to 480px and
-the width leaving 360px conversation. Pointer/keyboard resizing and Expand/Restore
-retain bounded per-session state in the connection owner outside the Browser
-mount. Below 960px retain the compact 400px overlay and remembered wide state.
-Follow the browser contract for exact accessible controls, initial opening card,
-complete explanation dialog, horizontal URL-based tabs, compact navigation and
-remaining-height viewport. Existing original native clipping/modal hide/cleanup,
-account selection, Session revisions and explicit registration/retry authority
-remain unchanged. Synthetic fixtures do not establish native/account acceptance.
+Browser keeps its mounted original account/profile controller and releases its
+native child through exact Hide cleanup when a page becomes inactive. Failed or
+uncertain Hide prevents replacement; reactivation restores existing native pages
+without registration or page creation. The Browser entry lists retained pages and
+explicit New page; only a selected page presents native content. An explicit picker
+resource action restores its presentation after previous cleanup, sends that
+original action once and retains failures without automatic mutation retry.
+Profile explanation, address/navigation, explicit resource Close, 16-page gate,
+original revision/account checks and uncertain registration retry remain unchanged.
+
+Each Sidechat is a child conversation tab inside its original parent. Its own
+Info, actions, findings, enqueue and original read-only restrictions bind that
+child ID. Closed presentations retain child authoring/controller state; retained
+child navigation returns to the parent and selects/reopens that child. Independent
+Forks keep their separate session and deletion ownership.
+
+Primary+1 through Primary+9 select exact present positions and reserve those
+bindings from editable preferences. Tab ARIA and help use the shared matcher;
+input/terminal routes reject modal, IME, repeat and extra modifiers. External CEF
+uses only the closed numeric selection event, with original profile/view/generation,
+window/session/connection admission and native shortcut-capture fences. This is a
+local presentation interface. Windowed CEF cannot use its OSR-only composition
+callback as evidence. macOS admits only the original child NSView subtree's
+current native NSTextInputClient responder with supported `hasMarkedText` false;
+foreign, missing or unknown responders deny forwarding. Windows/Linux native
+forwarding remains denied until equivalent original-view composition proof exists.
+This unresolved implementation boundary is separate from platform acceptance.
+The interface grants no page IPC, business RPC, schema,
+protocol allocation, resource creation, native execution or database migration.
+Fixtures and builds remain separate from actual installed CEF/account/platform acceptance.
 
 Conversation transcript presentation distinguishes recognized roles without
 changing content authority. Generic user messages and validated Grok user roots

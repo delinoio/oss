@@ -1,3 +1,6 @@
+import { listen } from "@tauri-apps/api/event";
+import { useSessionTabsStore, SessionTabKind } from "./session-tabs";
+import { shortcutModalVisible } from "./shortcuts";
 // SPDX-License-Identifier: Apache-2.0
 import { copy, useLocale, ownedMessage, useProductMessage } from "./localization";
 import { useEffect, useRef, useState } from "react";
@@ -29,21 +32,22 @@ function browserState(value: BrowserState): BrowserState {
   if (ids.size ? !ids.has(value.tabs.selected) : value.tabs.selected !== "") throw new Error("Local browser state is unavailable.");
   return value;
 }
+interface TabbedBrowser { active?:boolean; selectedPage?: {profile:string;id:string;title:string;label?:string}; openPage?: (page:{profile:string;id:string;title:string;label?:string})=>void }
 export interface BrowserLayoutControls { wide: boolean; expanded: boolean; toggleExpanded: () => void }
 function BrowserHeader({ close, layout }: { close: () => void; layout?: BrowserLayoutControls }) {
   const [information, setInformation] = useState(false);
-  return <><header className="browser-header"><h3>{copy("session-browser.browser_d31de1")}</h3><small>{copy("session-browser.accountProfile")}</small><div className="browser-header-actions"><button type="button" aria-label={copy("session-browser.information")} onClick={() => setInformation(true)}>ⓘ</button><button type="button" disabled={!layout?.wide} onClick={layout?.toggleExpanded}>{copy(layout?.expanded ? "session-browser.restore" : "session-browser.expand")}</button><button type="button" onClick={close} aria-label={copy("session-browser.closeBrowser_dd3303")}>×</button></div></header>{information ? <Modal title={copy("session-browser.information")} close={() => setInformation(false)} className="browser-information" focusClose><p>{copy("session-browser.sharedWithThisAccountSSessions_361a18")}</p><p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p></Modal> : null}</>;
+  return <><header className="browser-header"><h3>{copy("session-browser.browser_d31de1")}</h3><small>{copy("session-browser.accountProfile")}</small><div className="browser-header-actions"><button type="button" aria-label={copy("session-browser.information")} onClick={() => setInformation(true)}>ⓘ</button>{layout ? <button type="button" disabled={!layout.wide} onClick={layout.toggleExpanded}>{copy(layout.expanded ? "session-browser.restore" : "session-browser.expand")}</button> : null}<button type="button" onClick={close} aria-label={copy("session-browser.closeBrowser_dd3303")}>×</button></div></header>{information ? <Modal title={copy("session-browser.information")} close={() => setInformation(false)} className="browser-information" focusClose><p>{copy("session-browser.sharedWithThisAccountSSessions_361a18")}</p><p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p></Modal> : null}</>;
 }
 export function browserTabTitle(address: string): string {
   try { const url = new URL(address); return `${url.host}${url.pathname === "/" ? "" : url.pathname}`; } catch { return address; }
 }
-export function SessionBrowser({ session, accountId, close, layout }: { session: Resource; accountId: string; close: () => void; layout?: BrowserLayoutControls }) {
+export function SessionBrowser({ session, accountId, close, layout, active=true, selectedPage, openPage }: { session: Resource; accountId: string; close: () => void; layout?: BrowserLayoutControls } & TabbedBrowser) {
   useLocale();
   const available = useBrowserHost();
   if (!available) return <section className="session-browser" aria-label={copy("session-browser.sessionBrowser_47d746")}><div className="browser-chrome"><BrowserHeader close={close} layout={layout} /><p>{copy("session-browser.cefBrowserProfilesRequireTheSupported_c9b9e8")}</p></div></section>;
-  return <NativeSessionBrowser session={session} accountId={accountId} close={close} layout={layout} />;
+  return <NativeSessionBrowser session={session} accountId={accountId} close={close} layout={layout} active={active} selectedPage={selectedPage} openPage={openPage} />;
 }
-function NativeSessionBrowser({ session, accountId, close, layout }: { session: Resource; accountId: string; close: () => void; layout?: BrowserLayoutControls }) {
+function NativeSessionBrowser({ session, accountId, close, layout, active=true, selectedPage, openPage }: { session: Resource; accountId: string; close: () => void; layout?: BrowserLayoutControls } & TabbedBrowser) {
   useLocale();
   const [address, setAddress] = useState("");
   const [profileId, setProfileId] = useState<string>();
@@ -51,11 +55,18 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
   const [failure, setFailure] = useProductMessage();
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [presenting, setPresenting] = useState(false);
+  const pendingAction = useRef<{action:BrowserAction;tabId?:string}|undefined>(undefined);
+  const needsPresentation = useRef(true);
+  needsPresentation.current = !openPage || Boolean(selectedPage && (!state || state.tabs.tabs.some(tab=>tab.id===selectedPage.id))) || !state || presenting;
   const viewport = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const presentation = useRef("");
-  const capabilities = useQuery(BrowserQuery.getBrowserCapabilities, {}, {retry:false});
+  const shortcutAdmission=useRef("");
+  const tabsStore=useSessionTabsStore();
+  const activeRef=useRef(active);activeRef.current=active;
+  const capabilities = useQuery(BrowserQuery.getBrowserCapabilities, {}, {retry:false,enabled:active});
   const supported = capabilities.data?.capabilities.includes(BrowserCapability.PROTECTED_DEVICE_PROFILE_V1) === true;
   const registration = useRetainedMutation(`browser-register:${session.id}:${accountId}`, BrowserQuery.registerBrowserProfile, (response) => {
     try { setProfileId(browserProfile(response.profile, accountId)); setFailure(undefined); } catch { setFailure(ownedMessage("session-browser.extra.5092c54369dd")); }
@@ -67,7 +78,7 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
     let lastBounds = "", queued = false, failed = false, ownedViewId = "";
     let hiding = false, hideRequired = false, hideRetry: number | undefined;
     const node = viewport.current;
-    const visible = () => node.isConnected && !node.closest("[hidden], [inert]") && !Array.from(documentGlobal().querySelectorAll('dialog[open]:not([role="region"]), [role="dialog"]:not(dialog)')).some((dialog) => {
+    const visible = () => activeRef.current && needsPresentation.current && node.isConnected && !node.closest("[hidden], [inert]") && !Array.from(documentGlobal().querySelectorAll('dialog[open]:not([role="region"]), [role="dialog"]:not(dialog)')).some((dialog) => {
       // The responsive sidebar retains a closed dialog, and its wide layout is
       // an open nonmodal region. Only a visible dialog should cover the child.
       const style = getComputedStyle(dialog), rect = dialog.getBoundingClientRect();
@@ -117,8 +128,26 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
           opened = true; lastBounds = geometry;
           if (disposed || presentation.current !== viewId) { await hide(); return; }
           if (!visible()) { await hide(); return; }
-          setState(result);
-        } catch { failed = true; if (!disposed) setFailure(ownedMessage("session-browser.extra.08759b664829")); }
+          const pending = pendingAction.current;
+          pendingAction.current = undefined;
+          if (pending) {
+            // A picker action restores the original presentation only after its
+            // previous Hide settled. Send the explicit resource action once;
+            // failure retains the original state and never creates a retry page.
+            try {
+              const changed = browserState(await invoke<BrowserState>("control_browser", {profileId,viewId,action:pending.action,url:address,tabId:pending.tabId}));
+              if (!disposed && presentation.current === viewId) {
+                setState(changed);
+                if (openPage && [BrowserAction.NewTab,BrowserAction.SelectTab].includes(pending.action)) {
+                  const tab=changed.tabs.tabs.find(value=>value.id===changed.tabs.selected);
+                  if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});
+                }
+              }
+            } catch { if (!disposed) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
+            finally { if (!disposed) {setBusy(false);setPresenting(false);} }
+          } else setState(result);
+          if(!pending && openPage && activeRef.current && tabsStore.snapshot(session.id).selected===SessionTabKind.Browser && result.tabs.selected) { const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url}); }
+        } catch { failed = true; pendingAction.current=undefined; if (!disposed) {setBusy(false);setPresenting(false);setFailure(ownedMessage("session-browser.extra.08759b664829"));} }
         finally { opening = false; if (queued) { queued = false; void update(); } }
       } else {
         if (geometry === lastBounds) return;
@@ -133,7 +162,7 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
     const observer = new ResizeObserver(() => void update()); observer.observe(node);
     const visibility = new MutationObserver(() => void update()); visibility.observe(documentGlobal().body, { subtree: true, attributes: true, attributeFilter: ["hidden", "inert", "open", "class"], childList: true });
     const timer = window.setInterval(() => {
-      if (!opened || disposed) return;
+      if (!opened || disposed || !visible()) return;
       void invoke<BrowserState>("browser_state", { profileId, viewId: presentation.current }).then((value) => { if (!disposed) setState(browserState(value)); }).catch(() => { if (!disposed) setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4")); });
     }, 1000);
     return () => { disposed = true; window.removeEventListener("scroll", move, true); window.removeEventListener("resize", move); observer.disconnect(); visibility.disconnect(); window.clearInterval(timer); void hide(); };
@@ -143,11 +172,15 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
   const control = async (action: BrowserAction, tabId?: string) => {
     if (!profileId || busy || state?.removal_pending) return;
     setBusy(true); setFailure(undefined);
-    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) setState(result); }
+    if (openPage && !presentation.current) { pendingAction.current={action,tabId};setPresenting(true);return; }
+    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) { setState(result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
     catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
-  const blocked = busy || registration.busy || registration.uncertain || state?.removal_pending;
+  useEffect(()=>{if(!presentation.current||!active||!selectedPage||selectedPage.profile!==profileId||!state||state.tabs.selected===selectedPage.id||!state.tabs.tabs.some(tab=>tab.id===selectedPage.id))return;void control(BrowserAction.SelectTab,selectedPage.id);},[active,selectedPage?.id,profileId,state?.tabs.selected]);
+  useEffect(()=>{if(!profileId||!openPage)return;let disposed=false;let unlisten:(()=>void)|undefined;void listen<{profile_id:string;view_id:string;position:number;token:string}>("session-tab-selection",event=>{if(!disposed&&activeRef.current&&event.payload.profile_id===profileId&&event.payload.view_id===presentation.current&&event.payload.token===shortcutAdmission.current&&!shortcutModalVisible()){document.getElementById(`session-tab-${session.id}-${event.payload.position-1}`)?.focus({preventScroll:true});tabsStore.position(session.id,event.payload.position);}}).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(()=>{if(!disposed)console.warn("delidev.browser_shortcuts",{stage:"listener",classification:"unavailable"});});return()=>{disposed=true;unlisten?.();};},[profileId,session.id,tabsStore]);
+  useEffect(()=>{if(!profileId||!openPage)return;let disposed=false;const update=()=>{const viewId=presentation.current;if(!viewId)return;const token=newRequestId();shortcutAdmission.current=token;void invoke("browser_tab_shortcuts",{profileId,viewId,token,count:active&&!shortcutModalVisible()?Math.min(9,tabsStore.snapshot(session.id).tabs.length):0}).catch(()=>{if(!disposed)console.warn("delidev.browser_shortcuts",{stage:"admission",classification:"unavailable"});});};update();const observer=new MutationObserver(update);observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:["open","hidden","inert"],childList:true});const stop=tabsStore.subscribe(update);const timer=window.setInterval(update,250);return()=>{disposed=true;shortcutAdmission.current="";window.clearInterval(timer);observer.disconnect();stop();const viewId=presentation.current;if(viewId)void invoke("browser_tab_shortcuts",{profileId,viewId,token:newRequestId(),count:0}).catch(()=>{});};},[active,profileId,state?.tabs.selected,tabsStore,session.id]);
+  const blocked = !active || busy || registration.busy || registration.uncertain || state?.removal_pending;
   const addressField = <label>{copy("session-browser.address_56ef8f")}<input ref={addressInput} value={address} maxLength={8192} onChange={event => setAddress(event.target.value)} placeholder="https://example.com/" /></label>;
   return <section className={`session-browser${profileId ? " browser-registered" : ""}`} aria-label={copy("session-browser.sessionBrowser_47d746")}>
     <div className="browser-chrome">
@@ -157,7 +190,7 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
       {failure ? <p role="alert">{failure}</p> : null}
       {state?.removal_pending ? <p role="alert">{copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}</p> : null}
       {profileId ? <>
-        <div className="browser-tab-bar"><ul aria-label={copy("session-browser.browserTabs_3e94f1")} className="browser-tabs">{state?.tabs.tabs.map((tab, index) => <li key={tab.id}><button disabled={blocked} aria-label={copy("session-browser.tabLabel", { number: index + 1, url: tab.url })} title={tab.url} aria-current={state.tabs.selected === tab.id ? "page" : undefined} onClick={() => void control(BrowserAction.SelectTab, tab.id)}>{browserTabTitle(tab.url)}</button><button disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560", { v0: index + 1 })} onClick={() => void control(BrowserAction.CloseTab, tab.id)}>×</button></li>)}</ul><button disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16} onClick={() => void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div>
+        {openPage ? <div className="browser-tab-bar"><div className="browser-pages" role="group" aria-label={copy("session-browser.browserTabs_3e94f1")}>{state?.tabs.tabs.map(tab=><div key={tab.id}><button disabled={blocked} title={tab.url} aria-label={tab.url} onClick={()=>{if(openPage)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});else void control(BrowserAction.SelectTab,tab.id);}}>{browserTabTitle(tab.url)}</button><button disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560",{v0:tab.url})} onClick={()=>void control(BrowserAction.CloseTab,tab.id)}>×</button></div>)}</div><button disabled={blocked||(state?.tabs.tabs.length??0)>=16} onClick={()=>void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div> : <div className="browser-tab-bar"><ul aria-label={copy("session-browser.browserTabs_3e94f1")} className="browser-tabs">{state?.tabs.tabs.map((tab, index) => <li key={tab.id}><button disabled={blocked} aria-label={copy("session-browser.tabLabel", { number: index + 1, url: tab.url })} title={tab.url} aria-current={state.tabs.selected === tab.id ? "page" : undefined} onClick={() => void control(BrowserAction.SelectTab, tab.id)}>{browserTabTitle(tab.url)}</button><button disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560", { v0: index + 1 })} onClick={() => void control(BrowserAction.CloseTab, tab.id)}>×</button></li>)}</ul><button disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16} onClick={() => void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div>}
         <form onSubmit={event => { event.preventDefault(); void control(BrowserAction.Navigate); }} className="browser-address">
           <button type="button" disabled={blocked} onClick={() => void control(BrowserAction.Back)} aria-label={copy("session-browser.back_76900f")}>←</button><button type="button" disabled={blocked} onClick={() => void control(BrowserAction.Forward)} aria-label={copy("session-browser.forward_f1c65e")}>→</button><button type="button" disabled={blocked} onClick={() => void control(BrowserAction.Reload)} aria-label={copy("session-browser.reload_bdc090")}>↻</button>
           {addressField}<button disabled={blocked}>{copy("session-browser.go_6cc851")}</button>
@@ -165,7 +198,7 @@ function NativeSessionBrowser({ session, accountId, close, layout }: { session: 
         </form>
       </> : null}
     </div>
-    {!profileId ? <div className="browser-opening"><div><h4>{copy("session-browser.openAccountBrowser_6ee5d1")}</h4><p>{copy("session-browser.localSummary")}</p><p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p>{addressField}<button disabled={blocked || !supported || !idPattern.test(accountId) || !validAddress(address)} onClick={() => void registration.send({ session: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, accountId })}>{copy("session-browser.openAccountBrowser_6ee5d1")}</button>{registration.uncertain ? <button disabled={registration.busy} onClick={registration.retry}>{copy("session-browser.retryTheSameRegistration_c86ef9")}</button> : null}<Problem error={registration.error} /></div></div> : <div ref={viewport} className="browser-viewport" aria-label={copy("session-browser.untrustedBrowserContent_9c54bc")} />}
+    {!profileId ? <div className="browser-opening"><div><h4>{copy("session-browser.openAccountBrowser_6ee5d1")}</h4><p>{copy("session-browser.localSummary")}</p><p>{copy("session-browser.enterAWebAddressThenOpen_60a48b")}</p>{addressField}<button disabled={blocked || !supported || !idPattern.test(accountId) || !validAddress(address)} onClick={() => void registration.send({ session: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, accountId })}>{copy("session-browser.openAccountBrowser_6ee5d1")}</button>{registration.uncertain ? <button disabled={registration.busy} onClick={registration.retry}>{copy("session-browser.retryTheSameRegistration_c86ef9")}</button> : null}<Problem error={registration.error} /></div></div> : <div ref={viewport} className="browser-viewport" hidden={!needsPresentation.current} aria-label={copy("session-browser.untrustedBrowserContent_9c54bc")} />}
   </section>;
 }
 // Keep DOM access distinct from the versioned resource-document decoder.

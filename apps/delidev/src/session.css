@@ -244,3 +244,34 @@
   .session-workspace .session-conversation-region { overflow-y: auto; }
   .session-workspace .session-conversation-region > .session-body { min-height: calc(var(--session-composer-cap, 50vh) + 96px); }
 }
+
+/* Session tabs supersede temporary panel, browser split and terminal dock geometry. */
+.session-tabbed { grid-template-rows: auto auto auto minmax(0,1fr); }
+.session-tabs { display:flex; overflow-x:auto; gap:4px; min-width:0; padding:4px 8px; border-bottom:1px solid var(--border-subtle); background:var(--surface); }
+.session-tab { display:flex; flex:none; min-width:0; max-width:320px; align-items:center; }
+.session-tab [role=tab] { min-height:40px; min-width:40px; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-radius:8px; }
+.session-tab [aria-selected=true] { background:var(--selected-background); color:var(--text); }
+.session-tab-close { width:40px; height:40px; flex:none; border-radius:8px; }
+.session-tabbed .session-upper-content { display:flex; min-width:0; min-height:0; }
+.session-tabbed .session-conversation-region { display:block; width:100%; min-width:0; min-height:0; overflow:hidden; }
+.session-tabbed .session-body { height:100%; }
+.session-tabbed .session-app-panel { position:static; width:100%; height:100%; max-width:none; max-height:none; grid-area:auto; box-shadow:none; border:none; overflow:auto; }
+.session-tabbed .session-app-panel[hidden], .session-tabbed .session-body[hidden], .session-sidechat-pane[hidden] { display:none; }
+.session-tabbed .terminal-dock { position:static; height:100%; min-height:0; max-height:none; }
+.session-sidechat-pane { height:100%; }
+.session-sidechat-pane .session-workspace { height:100%; }
+.session-container > div:not([hidden]) { height:100%; min-height:0; }
+.session-tabbed > .session-tabs { grid-area:3 / 1; }
+.session-tabbed > .session-content { grid-area:4 / 1; }
+.session-tabbed .session-upper-content { grid-area:2 / 1; }
+.session-tabbed .session-information[hidden] { display:none; }
+@container session-view (min-width:900px) { .session-tabbed .session-upper-content { grid-area:1 / 1; } }
+.session-tabbed:has(> .session-content .session-sidechat-pane:not([hidden])) > .session-content { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
+.session-tabbed:has(> .session-content .session-sidechat-pane:not([hidden])) > .session-content > .session-upper-content { grid-area:1 / 1; }
+.session-sidechat-pane .session-workspace { grid-template-rows:auto minmax(0,1fr); }
+.session-sidechat-pane .session-workspace > .session-content { grid-area:2 / 1; }
+
+.session-tabbed .session-controls[hidden] { display:none; }
+.browser-pages { display:flex; min-width:0; overflow-x:auto; gap:4px; }
+.browser-pages > div { display:flex; flex:none; min-width:0; max-width:240px; }
+.browser-pages > div > button:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

@@ -71,34 +71,27 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 for clients which actually completed native cleanup, not an automatic CLI action.
 `browser-storage prepare` only prepares the native client's private cache root.
 
-The session Browser button opens a workspace while retaining the conversation,
-unsent composer and request tray. Browser shares the temporary panel selection
-with Terminals, Files, Diff and Diagnostics, independently of persistent Info.
-At 960 CSS pixels of available conversation-region width, excluding the Info
-rail, Browser uses an 8px splitter. Default its width to 55% of the remaining
-space, clamped between 480px and the width leaving 360px for conversation.
-Pointer resizing and the focusable vertical separator adjust only presentation;
-Left/Right change the Browser width by 16px, Home selects minimum and End maximum.
-Expose the current width and bounds accessibly. Expand retains the previous split
-and selects maximum; Restore clamps that previous split to current bounds.
+The session Browser button opens its singleton entry in the shared session-tab
+workspace. Each retained page opens/selects a tab keyed by original profile/page
+ID; observation state never changes identity. The selected page occupies the
+complete active content region beside persistent Info. Conversation/drafts remain
+mounted and inert while inactive. The Browser entry itself is a retained-page
+picker with explicit New page, not an unselected native page. The former Browser
+split, compact overlay and Expand/Restore presentation are superseded.
 
-Retain split width/expansion as bounded per-session presentation metadata owned
-by the authenticated connection QueryClient, outside Browser controller mounts.
-Same-identity reconnect/tool switches and session re-entry retain it; replacement
-connection identities receive fresh state. No disk, RPC or browser-profile data
-owns this width. Below 960px use the existing overlay capped at 400px, excluding
-Info, request tray and composer; disable resizing/expansion and restore remembered
-wide state when space permits. CSS clamps geometry immediately during reflow,
-while the existing native controller observes only the clipped visible viewport.
-
-Use a compact header with a non-secret account-profile indicator, information,
-Expand/Restore and Close. Move the complete profile-sharing/local-data explanation
-into the shared keyboard-accessible native information dialog; existing modal
-hiding/focus restoration owns its lifetime. Before registration show the centered
-local-summary/address/explicit-opening card without an empty native viewport.
-After registration use horizontal scrolling URL-derived tabs with selected state,
-complete accessible URLs, per-tab Close and the original 16-tab New tab gate.
-Do not fetch titles or favicons. Back/Forward/Reload, labelled address and Go share
+The original account/profile manager remains mounted after presentation Close.
+Inactivity uses exact original Hide cleanup and retains failed/uncertain cleanup
+before any replacement. Reopen restores existing native pages without another
+registration or creation. Explicit picker actions restore the original presentation
+after cleanup and send the selected resource action once; failures do not create
+automatic retries. Profile explanation uses the original accessible Modal and
+native visibility boundary. Initial explicit registration retains the local-summary/
+address card and no empty viewport. Page labels derive only from retained URLs;
+no title/favicon discovery, URL logging, page scripts or generalized key bridge.
+The original 16-page gate and explicit resource Close remain separate from shared
+presentation Close. Numeric selection has only typed, original-owner fenced
+local presentation authority under the desktop shortcut contract.
+Back/Forward/Reload, labelled address and Go share
 a compact toolbar; explicit native-view Retry is in its accessible overflow.
 Keep original registration uncertainty/retry beside its owning problem. The
 viewport fills the remaining bounded height without a fixed 400px minimum;

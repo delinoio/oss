@@ -1,3 +1,4 @@
+import { useSessionActive, useSessionQuery as useQuery } from "./session-activity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationPages } from "./conversation-pagination";
@@ -5,7 +6,7 @@ import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+
 import { EntityKind, ResourceQuery, SystemCapability, SystemQuery, type Resource } from "@delinoio/delidev-api-client";
 import { items, object, text } from "./documents";
 import { Failure, Problem } from "./ui";
@@ -39,6 +40,7 @@ function ChildRows({ rows }: { rows: readonly SubagentRow[] }) {
 
 export function Subagents({ sessionId, revision }: { sessionId: string; revision: string }) {
   useLocale();
+  const active=useSessionActive();
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = status.data?.capabilities.includes(SystemCapability.SUBAGENT_OBSERVATION_V1) === true;
   const openCodeSupported = status.data?.capabilities.includes(SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1) === true;
@@ -48,7 +50,7 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
   const query = useConversationPages(EntityKind.SUBAGENT, sessionId, supported, 50, validate);
   // Native events invalidate only this read. No observation can issue a child
   // input, resume, interruption, retry, or mutation.
-  useEffect(() => { if (supported) void query.refresh(); }, [revision, supported, query.refresh]);
+  useEffect(() => { if (active && supported) void query.refresh(); }, [revision, supported, query.refresh, active]);
   const rows = useMemo(() => {
     if (!query.loaded) return undefined;
     // The accepted payload window can contain several independently bounded

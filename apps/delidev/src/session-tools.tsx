@@ -1,9 +1,10 @@
+import { useSessionQuery as useQuery, useSessionActive } from "./session-activity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { createPortal } from "react-dom";
 import { useLayoutEffect, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource, type SessionChange } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text } from "./documents";
@@ -14,8 +15,9 @@ import { Problem } from "./ui";
 enum RecoveryAction { Prepare = "prepare", InspectWorkspace = "inspect-workspace", CleanupWorkspace = "cleanup-workspace", Execution = "execution" }
 function RetainedJob({ id, title }: { id: string; title: string }) {
   useLocale();
+  const active = useSessionActive();
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id });
-  return <section><h4>{title}</h4><Problem error={result.error} />{result.data?.resource ? <TrackedJob initial={result.data.resource} active /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>;
+  return <section><h4>{title}</h4><Problem error={result.error} />{result.data?.resource ? <TrackedJob initial={result.data.resource} active={active} /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>;
 }
 export function SessionTools({ resource, changed, initiallyOpen = false, target, launcherTarget, openRecovery }: { resource: Resource; changed: (resource: Resource) => void; initiallyOpen?: boolean; target?: HTMLElement | null; launcherTarget?: HTMLElement | null; openRecovery?: (opener: HTMLButtonElement) => void }) {
   useLocale();

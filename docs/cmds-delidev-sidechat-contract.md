@@ -218,3 +218,12 @@ before input/Steer/compaction. Actual installed-native, real-account and platfor
 acceptance is owner-skipped for this batch and remains unperformed; local
 fixtures do not establish it. Record commands/revisions/results in PRs and CI,
 not repository evidence documents.
+
+## Session-tab presentation
+
+A retained Sidechat is presented inside its original parent workspace as a typed
+child-session tab. Its own conversation, Info, actions and findings keep the
+original child ID and read-only/native restrictions. Closing a presentation does
+not delete the child or its dependent ownership; retained drafts and controllers
+survive and sidebar reopening selects the child under its parent. Independent
+Fork lifetime and deletion ownership remain separate.

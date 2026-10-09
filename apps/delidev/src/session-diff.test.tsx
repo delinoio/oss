@@ -25,7 +25,7 @@ function fixture(worktree = true) {
     const [open, setOpen] = useState(true), [draft, setDraft] = useState("unsent input");
     return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{seed ? <SeedPendingDeletion /> : null}<label>Draft<input value={draft} onChange={(e) => setDraft(e.target.value)} /></label>{open ? <SessionDiff sessionId={sessionId} worktree={worktree} close={() => setOpen(false)} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>;
   }
-  return { View, primary, other, read, client, reply, deleteLocalReviewComment };
+  return { View, sessionId, transport, primary, other, read, client, reply, deleteLocalReviewComment };
 }
 
 it("compares the selected repository and creation commit with inert patch text", async () => {
@@ -119,4 +119,10 @@ it.each(["foreign", "mixed", "truncated", "revision", "untracked", "head", "extr
   render(<f.View />);
   await screen.findByRole("alert");
   expect(screen.queryByRole("region", { name: "Git comparison" })).toBeNull();
+});
+
+it("keeps the Diff entry byte-free and opens explicit repository/comparison/path identity",async()=>{
+ const f=fixture();const open=vi.fn();render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><SessionDiff sessionId={f.sessionId} worktree close={()=>{}} openComparison={open}/></MutationIntents></QueryClientProvider></TransportProvider>);
+ await screen.findByLabelText("Diff repository");expect(f.read.mock.calls.every(([request])=>JSON.parse(new TextDecoder().decode(request.queryJson)).operation==="roots")).toBe(true);
+ fireEvent.change(screen.getByLabelText("Relative diff path"),{target:{value:"src/file.ts"}});fireEvent.click(screen.getByRole("button",{name:"Compare path"}));expect(open).toHaveBeenLastCalledWith({repository:f.primary,comparison:"creation",path:"src/file.ts"});fireEvent.change(screen.getByLabelText("Diff repository"),{target:{value:f.other}});expect(open).toHaveBeenLastCalledWith({repository:f.other,comparison:"creation",path:"."});
 });

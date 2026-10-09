@@ -1,3 +1,4 @@
+import { useSessionActive, useSessionQuery as useQuery } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
 import { useId } from "react";
@@ -8,7 +9,7 @@ import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } 
 import { useStablePageRevisions, paginationError, invalidGitHubPage, resourceProjection, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { useCallback, useRef, useState } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+
 import { EntityKind, FailureCode, ResourceQuery, SessionQuery, newRequestId, type Resource, type UnlinkSessionPullRequestRequest } from "@delinoio/delidev-api-client";
 import { document, items, text, type Document } from "./documents";
 import { bounded, date, positive, uuid } from "./github-query-model";
@@ -29,6 +30,7 @@ function LinkForm({ sessionId, projectId, refreshed }: { sessionId: string; proj
   useLocale();
   const [repository, setRepository] = useState(""), [number, setNumber] = useState(""), [notice, setNotice] = useProductMessage("");
   const expected = useRef<{ requestId: string; repositoryId: string; number: string } | undefined>(undefined);
+  const active=useSessionActive();
   const project = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: projectId }, readOptions);
   const row = project.data?.resource;
   const candidates = items(document(row).repositories);
@@ -44,7 +46,7 @@ function LinkForm({ sessionId, projectId, refreshed }: { sessionId: string; proj
   const blocked = link.busy || link.uncertain;
   const ready = repositories.includes(repository) && uuid(configured.integration_id) && Boolean(text(configured.github_owner) && text(configured.github_name)) && !project.error && !selected.error && positive(number);
   return <form aria-label={copy("session-pull-requests.linkAPrToThisSession_8fefe2")} onSubmit={(event) => { event.preventDefault(); if (blocked || !ready) return; setNotice(""); const input = { requestId: newRequestId(), sessionId, repositoryId: repository, number }; expected.current = input; void link.send(input); }}>
-    <fieldset disabled={blocked}><ResourceChoice label={copy("session-pull-requests.prProjectRepository_8efefa")} kind={EntityKind.REPOSITORY} value={repository} change={setRepository} active={projectValid} disabled={blocked} allowed={repositories} />
+    <fieldset disabled={blocked}><ResourceChoice label={copy("session-pull-requests.prProjectRepository_8efefa")} kind={EntityKind.REPOSITORY} value={repository} change={setRepository} active={active && projectValid} disabled={blocked} allowed={repositories} />
       {repository ? <p>{text(configured.name)} · {text(configured.github_owner)}/{text(configured.github_name)}{!uuid(configured.integration_id) && !selected.isPending ? copy("session-pull-requests.selectAGithubProfileInRepository_e5f944") : ""}</p> : null}
       <label>{copy("session-pull-requests.prNumber_6f80da")}<input inputMode="numeric" maxLength={20} value={number} onChange={(e) => setNumber(e.target.value)} required /></label>
     </fieldset><p>{copy("session-pull-requests.theServerVerifiesThePrThrough_7d9700")}</p>
@@ -94,6 +96,7 @@ function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: D
 }
 
 function RetainedLinks({ session }: { session: Resource }) {
+  const active=useSessionActive();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const validateBoundary = useStablePageRevisions(session.id);
@@ -106,15 +109,15 @@ function RetainedLinks({ session }: { session: Resource }) {
   const reader = useConnectPaginationReader(ResourceQuery.listResources, request, project);
   const pending = useRetainedMutationIntents("session-pr:");
   const blocked = pending.some(intent => (intent.busy || intent.uncertain) && (intent.key === `session-pr:link:${session.id}` || intent.key.startsWith(`session-pr:unlink:${session.id}:`)));
-  const list = usePaginationChain(session.id, true, reader);
-  usePaginationRefresh(ResourceQuery.listResources, request(""), !blocked, list.refresh);
+  const list = usePaginationChain(session.id, active, reader);
+  usePaginationRefresh(ResourceQuery.listResources, request(""), active && !blocked, list.refresh);
   const refresh = list.error ? list.error.stalled || list.error.failure.code === FailureCode.CursorExpired ? list.reload : list.retry : list.refresh;
   return <section ref={bindRoot} aria-label={copy("session-pull-requests.sessionPrAssociations_1143d2")}><p>{copy("session-pull-requests.associationsRemainAfterArchiveOrProblem_909961")}</p>
     <button disabled={Boolean(list.loading)} onClick={refresh}>{copy("session-pull-requests.refreshPrAssociations_2e9a89")}</button><Problem error={paginationError(list.error?.failure)} />{list.error && list.loaded ? <p>{copy("session-pull-requests.previousAssociationsAreShownRefreshFailed_8dbbd3")}</p> : null}
     <PendingUnlinks sessionId={session.id} refreshed={refresh} />
-    <ScrollPayloadWindow query={list} root={root} active={!blocked}>{(rows, projections) => { const ids = visiblePageIds(list.pages, projections); return rows.filter(row => ids.has(row.id)).map(row => <LinkRow key={row.id} row={row} value={readSessionPR(row, session.id)!} sessionId={session.id} refreshed={refresh} />); }}</ScrollPayloadWindow>
+    <ScrollPayloadWindow query={list} root={root} active={active && !blocked}>{(rows, projections) => { const ids = visiblePageIds(list.pages, projections); return rows.filter(row => ids.has(row.id)).map(row => <LinkRow key={row.id} row={row} value={readSessionPR(row, session.id)!} sessionId={session.id} refreshed={refresh} />); }}</ScrollPayloadWindow>
     {list.loaded && !list.rows.length ? <p>{copy("session-pull-requests.noPrAssociationsOnThisPage_83305f")}</p> : null}
-    <ScrollContinuation query={list} root={root} active={!blocked} label={copy("session-pull-requests.sessionPrAssociations_1143d2")} />
+    <ScrollContinuation query={list} root={root} active={active && !blocked} label={copy("session-pull-requests.sessionPrAssociations_1143d2")} />
     {uuid(session.projectId) ? <LinkForm sessionId={session.id} projectId={session.projectId} refreshed={refresh} /> : <p>{copy("session-pull-requests.linkingAPrRequiresAProject_301f3d")}</p>}
   </section>;
 }

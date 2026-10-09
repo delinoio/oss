@@ -1,7 +1,8 @@
+import { useSessionQuery as useQuery } from "./session-activity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { NativeGrokUsage } from "./native-grok";
-import { useQuery } from "@connectrpc/connect-query";
+
 import { EntityKind, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
 import { Problem } from "./ui";

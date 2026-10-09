@@ -1,3 +1,4 @@
+import { useSessionActive } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback } from "react";
 import { ConnectError, Code } from "@connectrpc/connect";
@@ -15,6 +16,8 @@ export function validateConversationPage(rows: readonly Resource[], kind: Entity
 /** Pagination retains only identities/revisions outside its three payload pages.
  * Generated query caches are request-local and never retain evicted documents. */
 export function useConversationPages(kind: EntityKind, sessionId: string, active = true, pageSize = 50, validate?: (rows: Resource[]) => void, interval?: number) {
+  const surfaceActive=useSessionActive();
+  active = active && surfaceActive;
   const request = useCallback((token: string) => ({ filter: { kind, sessionId, pageSize, pageToken: token } }), [kind, sessionId, pageSize]);
   const queueRequest = useCallback((token: string) => ({ sessionId, pageSize, pageToken: token }), [sessionId, pageSize]);
   const project = useCallback((rows: Resource[], nextPageToken: string) => {

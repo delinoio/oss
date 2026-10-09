@@ -127,3 +127,5 @@ function ShortcutHelp({ store, platform, close, dispatch }: { store: ShortcutSto
     <footer><p>{copy("shortcuts.typingHint")}</p><p>{copy("shortcuts.closeHint")} <kbd>Esc</kbd></p></footer>
   </DialogSurface>, document.body);
 }
+
+export function useTerminalTabShortcuts() { const controller=useContext(Context);return (event:KeyboardEvent)=>event.type === "keydown" && controller ? dispatchShortcut(event, controller.store.getSnapshot().filter(item=>item.terminal), controller.store.surface,controller.platform):false; }

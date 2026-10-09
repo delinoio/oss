@@ -103,3 +103,12 @@ The desktop Diff panel authors whole-file or visible old/new-line comments, show
 Pending desktop deletion status and explicit retry belong to the displayed Session independently of the deleted comment row or review page. Preserve them through refresh, pagination and panel reopening using the connection-scoped registry. Retry sends only the original mutation, including its exact expected revision and request UUID; clear it only when the returned comment ID and request UUID both match. A missing current comment cannot settle the request, recreate its content or change historical submissions. Foreign Session intents remain isolated, and navigation cannot trigger automatic replay.
 
 `TestManualNativeCLILocalReview` is an explicit installed-Codex acceptance fixture using `DELIDEV_NATIVE_THREAD_EXECUTABLE`. It uses public CLI setup and real protocol discovery, two private Worktrees, independently read original line comments, grouped ordinary input, preserved native history and one native command that updates both selected files. It verifies the returned command result, exact original review prompt in the native transcript, joined cleanup, refreshed Worker diffs and receipt replay without another input or automatic comment resolution. Initial reviewed changes are fixture-authored; resulting changes are native-owned writes. The model responses come from a scripted loopback provider, so this evidence cannot establish hosted-account inference, another harness, another platform or UI execution of the same native scenario.
+
+## Session-tab presentation
+
+Files is the shared-tab explorer entry. Selecting a regular file opens/selects
+the exact repository/path descriptor; Diff controls open exact repository,
+comparison-kind and path descriptors. Revisions remain observations, not tab
+identity. Only active previews read bytes; departure cancels publication and
+discards content through the existing read owner. Presentation Close changes no
+workspace, repository, Worker or local-review mutation ownership.

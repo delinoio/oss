@@ -99,3 +99,8 @@ it("discards pending preview bytes on Back and retains prior preview only on fai
   expect(owner.getSnapshot().preview?.data?.text).toBe("accepted"); expect(owner.getSnapshot().preview?.error).toBeTruthy();
   owner.back(); expect(owner.getSnapshot().preview).toBeUndefined(); owner.dispose();
 });
+
+it("suspends original explorer reads while retaining only directory navigation metadata",async()=>{
+ const read=vi.fn(async(query:WorkspaceQuery)=>query.operation===FileOperation.Roots?roots:result({entries:[file("note.txt"),folder("a")]}));
+ const owner=await ready(read);owner.select("note.txt");const previous=owner.getSnapshot();const count=read.mock.calls.length;owner.suspend();owner.append(".");await new Promise(resolve=>setTimeout(resolve,0));expect(read.mock.calls).toHaveLength(count);expect(owner.getSnapshot().selected).toBe("note.txt");expect(owner.getSnapshot().preview).toBeUndefined();owner.start();await new Promise(resolve=>setTimeout(resolve,0));expect(read.mock.calls).toHaveLength(count);expect(owner.getSnapshot().repository).toBe(previous.repository);expect(owner.getSnapshot().directories.get(".")?.rows).toEqual(previous.directories.get(".")?.rows);owner.dispose();
+});

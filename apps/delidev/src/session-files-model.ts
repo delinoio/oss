@@ -55,7 +55,20 @@ export class FilesController {
     this.snapshot = { ...this.snapshot, ...update, directories: new Map([...this.directories].map(([path, directory]) => [path, directory.chain.getSnapshot()])) };
     for (const listener of this.listeners) listener();
   }
-  start() { this.active = true; void this.readRoots(); }
+  start() {
+    this.active = true;
+    if (!this.snapshot.roots) {void this.readRoots();return;}
+    for (const [path,directory] of this.directories) if(this.visible(path)) {
+      directory.chain.activate();
+      if(!directory.chain.getSnapshot().loaded) void directory.chain.refresh(this.reader(path));
+    }
+  }
+  suspend() {
+    this.active=false;this.generation++;this.refreshGeneration++;
+    this.rootsAbort?.abort();this.cancelPreview();
+    for(const directory of this.directories.values())directory.chain.suspend();
+    this.publish({rootsLoading:false,preview:undefined,refreshing:false});
+  }
   dispose() {
     this.active = false; this.generation++; this.refreshGeneration++;
     this.rootsAbort?.abort(); this.cancelPreview(); this.clearDirectories();
@@ -64,6 +77,7 @@ export class FilesController {
   private clearDirectories() { for (const directory of this.directories.values()) { directory.release(); directory.chain.reset(); } this.directories.clear(); }
   private cancelPreview() { this.previewGeneration++; this.previewAbort?.abort(); this.previewAbort = undefined; }
   async readRoots() {
+    if (!this.active) return;
     this.rootsAbort?.abort();
     const abort = this.rootsAbort = new AbortController(), generation = this.generation;
     this.publish({ rootsLoading: true, rootsError: undefined });

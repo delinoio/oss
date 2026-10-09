@@ -1,6 +1,8 @@
+import { SessionActivityProvider } from "./session-activity";
+import { SessionTabBar } from "./session-tab-bar";
+import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { SessionHarness } from "./session-harness";
-import { useSessionBrowserLayout } from "./session-browser-layout";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
 import { imageMime } from "./image-input";
@@ -25,7 +27,7 @@ import { Subagents } from "./subagents";
 import { NativeGrokTool } from "./native-grok-interactions";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
 import { SessionBrowser } from "./session-browser";
-import { SessionFiles } from "./session-files";
+import { SessionFiles, SessionFilePreview } from "./session-files";
 import { RequestDiagnostics } from "./request-diagnostics";
 import { SessionDiff } from "./session-diff";
 import { NativeBuiltin, NativeWorkspaceEvent } from "./native-builtin";
@@ -43,7 +45,7 @@ import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
-import { useCallback, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -56,7 +58,7 @@ import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
 import { Interaction } from "./interactions";
-import { SessionTerminals, TerminalDockPresentation } from "./session-terminals";
+import { SessionTerminals } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
 import { SidechatFindings } from "./sidechat";
 import { SessionTools } from "./session-tools";
@@ -66,7 +68,7 @@ import { PendingQueueInputs, QueuedInput, type QueuedInputDraft } from "./queue"
 import { StartupRejection } from "./startup-rejection";
 import { sessionTitlePresentation } from "./session-title";
 
-function useSessionStream(id: string) {
+function useSessionStream(id: string, active: boolean) {
   const transport = useTransport();
   const [resources, setResources] = useState<ReadonlyMap<string, Resource>>(new Map());
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
@@ -78,6 +80,7 @@ function useSessionStream(id: string) {
   const [generation, setGeneration] = useState(0);
   const [restart, setRestart] = useState(0);
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     const client = createClient(ResourceService, transport);
     const tombstones = new Set<string>();
@@ -124,7 +127,7 @@ function useSessionStream(id: string) {
     };
     void run().catch((reason) => { if (!controller.signal.aborted) { setError(clientFailure(reason)); setState(ConnectionState.Failed); } });
     return () => controller.abort();
-  }, [id, transport, restart]);
+  }, [id, transport, restart, active]);
   return { resources, removed, newMessageIds, newQueueIds, newInteractionIds, state, error, generation, retry: () => setRestart((value) => value + 1) };
 }
 
@@ -234,17 +237,23 @@ const submissionLabels = {
   [SubmissionPhase.Rejected]: "session.submissionRejected", [SubmissionPhase.Removed]: "session.submissionRemoved",
 } as const;
 
+const tabShortcutIds = [ShortcutId.SessionTab1, ShortcutId.SessionTab2, ShortcutId.SessionTab3,
+  ShortcutId.SessionTab4, ShortcutId.SessionTab5, ShortcutId.SessionTab6,
+  ShortcutId.SessionTab7, ShortcutId.SessionTab8, ShortcutId.SessionTab9] as const;
 enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics" }
 enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
 
-export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; openRunnerSettings?: () => void }) {
+export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true, embedded = false }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; embedded?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
-  const live = useSessionStream(id);
+  const tabs = useSessionTabs(id);
+  const conversationActive = active && (embedded || tabs.tab.kind === SessionTabKind.Conversation);
+  const live = useSessionStream(id, conversationActive);
   const submissions = useSessionSubmissions();
   const [submissionError, setSubmissionError] = useState<unknown>();
   const [revealSubmission, setRevealSubmission] = useState<string>();
   const submissionTransport = useTransport();
   useEffect(() => {
+    if (!conversationActive) return;
     const controller = new AbortController();
     const client = createClient(ResourceService, submissionTransport);
     const originals = submissions.store.snapshot().filter(row => row.sessionId === id && row.queueId && !row.native);
@@ -267,38 +276,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       }
     })();
     return () => controller.abort();
-  }, [id, submissionTransport, submissions.store]);
-  const [panel, setPanel] = useState(SessionPanel.Closed);
+  }, [id, conversationActive, submissionTransport, submissions.store]);
+  const panel = tabs.tab.kind === SessionTabKind.Conversation ? SessionPanel.Closed : tabs.tab.kind === SessionTabKind.Files ? SessionPanel.Files : tabs.tab.kind === SessionTabKind.Diff ? SessionPanel.Diff : tabs.tab.kind === SessionTabKind.Diagnostics ? SessionPanel.Diagnostics : tabs.tab.kind === SessionTabKind.Page || tabs.tab.kind === SessionTabKind.Browser ? SessionPanel.Browser : SessionPanel.Closed;
   const conversationRegion = useRef<HTMLDivElement>(null);
-  const [conversationWidth, setConversationWidth] = useState(0);
-  const browserLayout = useSessionBrowserLayout(id, conversationWidth);
-  useLayoutEffect(() => {
-    const node = conversationRegion.current;
-    if (!node) return;
-    const measure = () => setConversationWidth(node.clientWidth);
-    measure();
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure); observer?.observe(node);
-    window.addEventListener("resize", measure);
-    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
-  }, []);
-  const [terminalOpened, setTerminalOpened] = useState(false), [terminalVisible, setTerminalVisible] = useState(false);
-  const [dockPresentation, setDockPresentation] = useState(TerminalDockPresentation.Docked);
-  const upperContent = useRef<HTMLDivElement>(null), upperFocus = useRef<HTMLElement | null>(null);
-  const upperOccluded = terminalVisible && dockPresentation === TerminalDockPresentation.Maximized;
-  const reportDockPresentation = useCallback((value: TerminalDockPresentation) => {
-    const focused = window.document.activeElement;
-    if (value === TerminalDockPresentation.Maximized && focused instanceof HTMLElement && upperContent.current?.contains(focused)) {
-      upperFocus.current = focused;
-      upperContent.current.closest(".session-workspace")?.querySelector<HTMLButtonElement>("[data-terminal-restore]")?.focus();
-    }
-    setDockPresentation(value);
-  }, []);
-  useLayoutEffect(() => {
-    if (upperOccluded || !upperFocus.current) return;
-    const original = upperFocus.current; upperFocus.current = null;
-    // Hide preserves its Terminal opener; Restore alone returns prior upper focus.
-    if (terminalVisible && original.isConnected && !original.closest("[hidden], [inert]")) original.focus({ preventScroll: true });
-  }, [upperOccluded, terminalVisible]);
+  const upperContent = useRef<HTMLDivElement>(null);
+  const [filesOpened,setFilesOpened]=useState(false);
+  const [terminalOpened, setTerminalOpened] = useState(false);
+  const [browserOpened,setBrowserOpened]=useState(false);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
   const terminalsButton = useRef<HTMLButtonElement>(null);
@@ -306,7 +290,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const diffButton = useRef<HTMLButtonElement>(null);
   const diagnosticsButton = useRef<HTMLButtonElement>(null);
   const browserButton = useRef<HTMLButtonElement>(null);
-  const panelOpener = useRef<HTMLButtonElement | null>(null);
   const infoHeading = useRef<HTMLHeadingElement>(null);
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLDetailsElement>(null);
@@ -336,13 +319,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const transcriptRoot = useRef<HTMLDivElement>(null), requestsRoot = useRef<HTMLDivElement>(null), queueRoot = useRef<HTMLDivElement>(null);
   const [requestsOpen, setRequestsOpen] = useState(false), [queueOpen, setQueueOpen] = useState(false);
   const [mode, setMode] = useState(Mode.Execute);
-  const messages = useConversationPages(EntityKind.MESSAGE, id, live.generation > 0);
-  const queue = useConversationPages(EntityKind.QUEUE, id, live.generation > 0);
-  const interactions = useConversationPages(EntityKind.INTERACTION, id, live.generation > 0, 20);
+  const messages = useConversationPages(EntityKind.MESSAGE, id, conversationActive && live.generation > 0);
+  const queue = useConversationPages(EntityKind.QUEUE, id, conversationActive && live.generation > 0);
+  const interactions = useConversationPages(EntityKind.INTERACTION, id, conversationActive && live.generation > 0, 20);
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const observed = live.resources.get(id);
   const original = observed && acknowledged && acknowledged.revision > observed.revision ? acknowledged : observed;
-  const { resource: session, control, action } = useSessionControl(id, original);
+  const { resource: session, control, action } = useSessionControl(id, original, active && tabs.tab.kind!==SessionTabKind.Sidechat);
   const data = readDocument(session);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);
@@ -359,10 +342,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     // an append sequence, even when each Worker generates UUID-v7 values.
     return messageRows(messages.data?.resources ?? [], live.resources, live.removed, live.newMessageIds, id, !!messages.data && !messages.data.nextPageToken);
   }, [messages.data, live.resources, live.removed, live.newMessageIds, id]);
-  useEffect(() => { if (live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation]);
+  useEffect(() => { if (conversationActive && live.generation > 1) { void messages.refresh(); void queue.refresh(); void interactions.refresh(); } }, [live.generation, conversationActive]);
   const images = useImageDraft(`session:${id}`);
   const [imageTextLimit, setImageTextLimit] = useState(false);
-  const imageRoute = useImageRoute(text(data.machine_id), text(data.agent_id), active, images.images.length > 0, object(data.fork).sidechat_parent_snapshot ? "sidechat" : text(object(object(data.initial_execution).configuration).harness) || text(object(object(object(data.fork).snapshot).configuration).harness));
+  const imageRoute = useImageRoute(text(data.machine_id), text(data.agent_id), conversationActive, images.images.length > 0, object(data.fork).sidechat_parent_snapshot ? "sidechat" : text(object(object(data.initial_execution).configuration).harness) || text(object(object(object(data.fork).snapshot).configuration).harness));
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, (_result, request) => { images.controller.accepted(request.requestId, request.attachments.map(image => image.id)); setDraft(""); skills.clearAccepted(); void queue.refresh(); }, acknowledgeSessionSubmission);
   useEffect(() => { if (send.error && !send.uncertain && !send.busy) images.controller.operationId = undefined; }, [send.error, send.uncertain, send.busy, images.controller]);
   const locked = send.busy || send.uncertain || images.busy || submissions.store.preparing(id);
@@ -397,7 +380,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     window.addEventListener("resize", fit);
     return () => { observer?.disconnect(); workspace?.style.removeProperty("--session-composer-cap"); window.removeEventListener("resize", fit); };
   }, [session?.id]);
-  const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active, disabled: locked });
+  const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active: conversationActive, disabled: locked });
   const canSend = !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
   const enqueue = async () => {
     if (!canSend) return;
@@ -417,9 +400,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     void send.send({ requestId, sessionId: id, documentJson: original, skills: selections.length ? { selections } : undefined, attachments });
   };
   const shortcuts = useShortcuts([
-    { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
-    { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
-    { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter" }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: !locked, unavailableReason: "shortcuts.pending" },
+    ...(!embedded ? Array.from({length:9},(_,index)=>({id: tabShortcutIds[index]!,scope:Surface.Sessions,label:`shortcuts.tab${index+1}` as import("./localization").MessageKey,bindings:[{key:String(index+1),primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:index<tabs.tabs.length,run:()=>{document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});tabs.store.position(id,index+1);}})) : []),
+    { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
+    { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, active: conversationActive, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
+    { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter" }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending" },
   ]);
   // Stream arrivals have exact identities even when their JSON sequence exceeds
   // JavaScript's safe-integer range. Append only arrivals on the final page.
@@ -441,21 +425,23 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
     [SessionPanel.Diagnostics]: diagnosticsButton,
   };
-  const closePanel = () => {
-    setPanel(SessionPanel.Closed);
-    if (panel !== SessionPanel.Closed) {
-      const opener = panelOpener.current;
-      if (opener?.isConnected && !opener.closest("[hidden], [inert]")) opener.focus();
-      else panelButtons[panel].current?.focus();
-    }
+  const closeTab = (key:string) => {
+    const index=tabs.tabs.findIndex(tab=>sessionTabKey(tab)===key);
+    if(index<=0)return;
+    const target=tabs.selected===key?index-1:tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected);
+    document.getElementById(`session-tab-${id}-${target}`)?.focus({preventScroll:true});
+    tabs.store.close(id,key);
   };
-  const closeTerminal = () => { setTerminalVisible(false); terminalsButton.current?.focus(); };
+  const closePanel = () => closeTab(tabs.selected);
+  const closeTerminal = closePanel;
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
-    if (next === SessionPanel.Terminals) { if (terminalVisible) closeTerminal(); else { setTerminalOpened(true); setTerminalVisible(true); } }
-    else if (panel === next) closePanel();
-    else { panelOpener.current = panelButtons[next].current; setPanel(next); }
+    if(next===SessionPanel.Files)setFilesOpened(true);
+    if(next === SessionPanel.Terminals) setTerminalOpened(true);
+    if(next === SessionPanel.Browser) setBrowserOpened(true);
+    const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Terminals]:SessionTabKind.Terminals,[SessionPanel.Browser]:SessionTabKind.Browser,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
+    tabs.store.open(id, {kind:kinds[next]});
   };
-  // Revealing Info does not replace the temporary tool or its original opener.
+  // Revealing Info preserves the selected resource and its original controller.
   const showInfo = (_opener: HTMLButtonElement, target = InfoTarget.Status) => {
     setInfoReveal({ target });
   };
@@ -474,8 +460,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     { panel: SessionPanel.Browser, icon: SessionIconKind.Browser, label: copy("session.browser_d31de1") },
     { panel: SessionPanel.Diagnostics, icon: SessionIconKind.Diagnostics, label: copy("session.diagnostics_268f14") },
   ] as const;
-  return <section className={`session-workspace${terminalVisible ? " terminal-open" : ""}${panel === SessionPanel.Browser ? " browser-open" : ""}${panel !== SessionPanel.Closed ? " panel-open" : ""}`} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
-    if (event.key === "Escape" && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && (panel !== SessionPanel.Closed || terminalVisible) && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
+  return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
+    if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
       event.stopPropagation(); if (event.target instanceof Element && event.target.closest(".terminal-dock")) closeTerminal(); else if (panel !== SessionPanel.Closed) closePanel(); else closeTerminal();
     }
   }}>
@@ -485,7 +471,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <p>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")} · {statusLabel(text(data.outcome))} · {statusLabel(text(data.dispatch))} · {statusLabel(text(data.archive))}</p>
         {titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}
       </div>
-      <div className="session-controls">
+      <div className="session-controls" hidden={!embedded && tabs.tab.kind===SessionTabKind.Sidechat} inert={!embedded && tabs.tab.kind===SessionTabKind.Sidechat}>
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
         <button type="button" disabled={!session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
@@ -494,14 +480,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </SessionActions>
       </div>
     </header>
-    <div className="session-toolbar">
-      <strong>{copy("session.conversation_ccca18")}</strong>
-      <div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel === SessionPanel.Terminals && Boolean(object(data.fork).sidechat_parent_snapshot)} aria-expanded={tool.panel === SessionPanel.Terminals ? terminalVisible : panel === tool.panel} aria-controls={`${tool.panel}-${id}`} onClick={() => togglePanel(tool.panel)}><SessionIcon kind={tool.icon} />{tool.label}</button>)}</div>
-    </div>
+    {!embedded ? <><div className="session-toolbar"><div className="session-toolbar-actions" role="group" aria-label={copy("session.workspaceTools")}>{tools.map(tool => <button key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</div></div><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/></> : null}
     <div className="session-content">
-    <div ref={upperContent} className="session-upper-content" data-terminal-compact-restored={terminalVisible && dockPresentation === TerminalDockPresentation.CompactRestored || undefined} inert={upperOccluded} aria-hidden={upperOccluded || undefined}>
-    <div ref={conversationRegion} className="session-conversation-region" style={{ "--browser-width": `${browserLayout.width}px` } as React.CSSProperties}>
-    <div className="session-body">
+    <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
+    <div ref={conversationRegion} className="session-conversation-region">
+    <SessionActivityProvider active={conversationActive}><div className="session-body" hidden={!conversationActive} inert={!conversationActive}>
       <div className="session-notices">
         {live.error || live.state === ConnectionState.Failed ? <SessionNotice details={opener => showInfo(opener)}>{live.error ? failureSummary(live.error.code) : connectionLabel}</SessionNotice> : null}
         {startupFailure ? <SessionNotice><strong>{copy("session.startupFailed")}</strong><span>{startupFailure.state === 2 ? startupCorrection(startupFailure) : copy("session.startupRecover")}</span><ExecutionStartupDetails key={text(startupFailure.correlation_id)} failure={startupFailure} />{startupFailure.state === 2 ? <p>{copy("session.startupManualSteps")}</p> : null}</SessionNotice> : Object.keys(object(object(data.startup).failure)).length ? <p role="alert">{copy("session.startupInvalidEvidence")}</p> : null}
@@ -513,34 +496,34 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}><span>{copy("session.startupControlUncertain")}</span><button type="button" onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button></SessionNotice> : null}
         {submissionError ? <SessionNotice>{failureSummary(clientFailure(submissionError).code)}</SessionNotice> : null}
         {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
-      <RunnerTaskRemediation active={active} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
+      <RunnerTaskRemediation active={conversationActive} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
-      {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen target={infoToolsTarget} launcherTarget={inlineRecovery ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)} /> : null}
+      {session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)} /> : null}
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={true}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} active={active} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} active={active} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
-        <ScrollContinuation query={messages} root={transcriptRoot} active={live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={conversationActive}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
         {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedMessage")}>
           <header><strong>{copy("session.submittedUser")}</strong><small role="status">{copy(submissionLabels[row.observationUnavailable ? SubmissionPhase.Uncertain : row.phase])}</small></header>
           {row.prompt ? <pre>{row.prompt}</pre> : null}
-          {row.attachments.length ? <RetainedImages value={row.attachments.map(image => ({ id: image.id, machine_id: image.machineId, media_type: imageMime[image.mediaType], byte_length: Number(image.byteLength), sha256: image.sha256 }))} sessionId={id} active={active} /> : row.attachmentCount ? <p>{copy("session.submittedImages", { count: row.attachmentCount })}</p> : null}
+          {row.attachments.length ? <RetainedImages value={row.attachments.map(image => ({ id: image.id, machine_id: image.machineId, media_type: imageMime[image.mediaType], byte_length: Number(image.byteLength), sha256: image.sha256 }))} sessionId={id} active={conversationActive} /> : row.attachmentCount ? <p>{copy("session.submittedImages", { count: row.attachmentCount })}</p> : null}
         </article>)}
       </div>
       <div className="session-input-tray">
         <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
           <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
-            <ScrollContinuation query={interactions} root={requestsRoot} active={requestsOpen} label={copy("session.requestPages_d06a30")} />
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
+            <ScrollContinuation query={interactions} root={requestsRoot} active={conversationActive && requestsOpen} label={copy("session.requestPages_d06a30")} />
           </div>
         </Disclosure>
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         <Disclosure className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><DisclosureSummary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.length}</> }} />}</DisclosureSummary>
           <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={active && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
-            <ScrollContinuation query={queue} root={queueRoot} active={queueOpen} label={copy("session.queuePages_1acdd8")} />
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive && queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
+            <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && queueOpen} label={copy("session.queuePages_1acdd8")} />
           </div>
         </Disclosure>
       </div>
@@ -556,21 +539,17 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </ImageAttachmentInput>
         {send.uncertain ? <button className="composer-original-retry" type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
       </form>
-    {panel === SessionPanel.Browser && browserLayout.wide ? <div className="browser-splitter" role="separator" tabIndex={0} aria-label={copy("session-browser.splitter")} aria-orientation="vertical" aria-valuemin={browserLayout.minimum} aria-valuemax={browserLayout.maximum} aria-valuenow={browserLayout.width} onKeyDown={event => {
-      const width = event.key === "Home" ? browserLayout.minimum : event.key === "End" ? browserLayout.maximum : event.key === "ArrowLeft" ? browserLayout.width + 16 : event.key === "ArrowRight" ? browserLayout.width - 16 : undefined;
-      if (width !== undefined) { event.preventDefault(); browserLayout.resize(width); }
-    }} onPointerDown={event => { if (event.button === 0) { event.currentTarget.setPointerCapture(event.pointerId); event.currentTarget.focus(); } }} onPointerMove={event => {
-      if (!event.currentTarget.hasPointerCapture(event.pointerId) || !conversationRegion.current) return;
-      const node = conversationRegion.current, rect = node.getBoundingClientRect(), scale = rect.width / node.clientWidth;
-      browserLayout.resize((rect.right - event.clientX) / scale - 4);
-    }} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} /> : null}
-    {panel === SessionPanel.Files ? <div id={`files-${id}`} className="session-app-panel"><SessionFiles key={id} sessionId={id} close={closePanel} /></div>
-      : panel === SessionPanel.Diff ? <div id={`diff-${id}`} className="session-app-panel"><SessionDiff key={id} sessionId={id} worktree={data.workspace === Workspace.Worktree} close={closePanel} /></div>
-      : panel === SessionPanel.Diagnostics ? <div id={`diagnostics-${id}`} className="session-app-panel"><RequestDiagnostics key={id} sessionId={id} close={closePanel} /></div>
-      : panel === SessionPanel.Browser && session ? <div id={`browser-${id}`} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} layout={browserLayout} /></div> : null}
+    </div></SessionActivityProvider>
+    {active && tabs.tab.kind===SessionTabKind.File ? <div className="session-app-panel"><SessionFilePreview sessionId={id} repository={tabs.tab.repository} path={tabs.tab.path} close={closePanel}/></div> : null}
+    {active && (tabs.tab.kind===SessionTabKind.Diff || tabs.tab.kind===SessionTabKind.Comparison) ? <div className="session-app-panel"><SessionDiff sessionId={id} worktree={data.workspace===Workspace.Worktree} close={closePanel} selected={tabs.tab.kind===SessionTabKind.Comparison?tabs.tab:undefined} openComparison={value=>tabs.store.open(id,{kind:SessionTabKind.Comparison,...value})}/></div>:null}
+    {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path)=>tabs.store.open(id,{kind:SessionTabKind.File,repository,path})}/></div>:null}
+    {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><RequestDiagnostics sessionId={id} close={closePanel}/></div>:null}
+    {session && browserOpened ? <div hidden={!active||panel!==SessionPanel.Browser} inert={!active||panel!==SessionPanel.Browser} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/></div>:null}
+    {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})} active={active&&[SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)}/></div>:null}
+    {tabs.store.sidechats(id).map(tab=>tab.kind===SessionTabKind.Sidechat?<div key={tab.id} hidden={!active||tabs.selected!==sessionTabKey(tab)} inert={!active||tabs.selected!==sessionTabKey(tab)} className="session-sidechat-pane"><SidechatPane id={tab.id} active={active&&tabs.selected===sessionTabKey(tab)}/></div>:null)}
     </div>
     </div>
-    <aside ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
+    <aside hidden={tabs.tab.kind===SessionTabKind.Sidechat} ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
       <div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />
@@ -591,8 +570,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </> : null}
       </div>
     </aside>
+
     </div>
-    {terminalOpened && session ? <div id={`terminals-${id}`} hidden={!terminalVisible} className="session-terminal-slot"><SessionTerminals key={id} session={session} close={closeTerminal} active={active && terminalVisible} presentationChanged={reportDockPresentation} /></div> : null}
-    </div>
-  </section>;
+  </section></SessionActivityProvider>;
 }
+
+function SidechatPane({id,active}:{id:string;active:boolean}) { const[draft,setDraft]=useState("");const[bindings,setBindings]=useState<SkillTokenBinding[]>([]);return <SessionActivityProvider active={active}><SessionView id={id} active={active} embedded draft={draft} setDraft={(value,skills)=>{setDraft(value);if(skills)setBindings(skills);}} initialSkills={bindings} changeSkills={setBindings}/></SessionActivityProvider>; }

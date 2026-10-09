@@ -1,5 +1,6 @@
+import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useQuery } from "@connectrpc/connect-query";
+
 import { EntityKind, SessionContextCapability, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 import { JobState, OperationStatus } from "./jobs";
