@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
 	"sync"
@@ -116,10 +117,23 @@ func (l *managedSubscriptionLease) observe(ctx context.Context, native *codex.Cl
 	return nil
 }
 func (l *managedSubscriptionLease) publishQuotaBlock(ctx context.Context, registry *managedObservationRegistry, block domain.SubscriptionQuotaBlock) {
-	bounded, stop := context.WithTimeout(ctx, 5*time.Second)
-	defer stop()
 	raw, _ := json.Marshal(domain.SubscriptionObservationResult{QuotaBlock: &block})
-	published, err := l.client.PublishSubscriptionObservation(bounded, authenticated(l.credential, &pb.PublishSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), GenerationId: l.response.GenerationId, ObservationJson: raw}))
+	request := &pb.PublishSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), GenerationId: l.response.GenerationId, ObservationJson: raw}
+	// Receipt-only replay keeps the exact admission request while this original
+	// native owner remains joined. It cannot claim or resend a native credit.
+	var published *connect.Response[pb.PublishSubscriptionObservationResponse]
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		bounded, stop := context.WithTimeout(ctx, 5*time.Second)
+		published, err = l.client.PublishSubscriptionObservation(bounded, authenticated(l.credential, request))
+		stop()
+		if err == nil || ctx.Err() != nil || (connect.CodeOf(err) != connect.CodeUnavailable && connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
+			break
+		}
+		if attempt == 0 && l.logger != nil {
+			l.logger.InfoContext(ctx, "automatic_credit_marker_receipt_retry", "request_id", request.Mutation.RequestId, "execution_id", block.ExecutionID, "code", domain.SafeError(rpc.ClientError(err)).Code)
+		}
+	}
 	if err == nil && published.Msg.Account != nil {
 		var account domain.Account
 		if domain.Decode(published.Msg.Account.DocumentJson, &account) == nil && account.Subscription != nil {
