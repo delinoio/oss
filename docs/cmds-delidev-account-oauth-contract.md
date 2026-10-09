@@ -366,3 +366,5 @@ The common account card shows a selectable readonly user code only while waiting
 clears it after settlement/disposal, and observes the Go job with Status. Codes,
 authorization URLs and tokens never enter React Query caches. Success remains
 unverified and validation/model discovery require a separate user action.
+
+CLI completion reserves 35 seconds for the original 20-second exchange, independent bounded five-second settlement and typed response. Both its outer context and response-header limit use this budget; earlier caller cancellation wins. Code-free recovery retains its original request identity and cannot repeat exchange.
