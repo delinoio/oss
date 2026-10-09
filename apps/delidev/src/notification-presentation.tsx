@@ -30,6 +30,7 @@ export function NotificationPresentation() {
   useEffect(() => {
     if (!enabled) return;
     const value = new NotificationPump(service, { begin: () => invoke("begin_notifications"), end: (scope) => invoke("end_notifications", { scope }), present: (scope, notice) => invoke("present_notification", { scope, notice }) }, setFailed, () => { void candidates.refetch(); });
+    value.prepare();
     pump.current = value;
     return () => { value.close(); if (pump.current === value) pump.current = undefined; };
   }, [enabled, service, candidates.refetch]);

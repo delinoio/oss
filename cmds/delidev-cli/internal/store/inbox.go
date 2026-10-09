@@ -9,7 +9,7 @@ import (
 )
 
 func (t *Tx) InboxBySource(source domain.InboxSource, id domain.ID) (Record, error) {
-	if id.Validate() != nil || (source != domain.InteractionInbox && source != domain.ExecutionTerminalInbox && source != domain.SubscriptionRecoveryInbox) {
+	if id.Validate() != nil || (source != domain.InteractionInbox && source != domain.ExecutionTerminalInbox && source != domain.SubscriptionRecoveryInbox && source != domain.OperationalInbox) {
 		return Record{}, domain.Fail(domain.InvalidArgument, "Invalid inbox source.", "Use the retained interaction or execution identity.")
 	}
 	r, err := scan(t.tx.QueryRowContext(t.ctx, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')=? AND json_extract(body,'$.source_id')=?", source, id))
@@ -181,7 +181,7 @@ func (f InboxFilter) Validate() error {
 	if err := (Filter{Kind: domain.InboxKind, SessionID: f.SessionID, ProjectID: f.ProjectID, After: f.After, Limit: f.Limit}).validate(); err != nil {
 		return err
 	}
-	if f.Source != "" && f.Source != domain.InteractionInbox && f.Source != domain.ExecutionTerminalInbox && f.Source != domain.SubscriptionRecoveryInbox {
+	if f.Source != "" && f.Source != domain.InteractionInbox && f.Source != domain.ExecutionTerminalInbox && f.Source != domain.SubscriptionRecoveryInbox && f.Source != domain.OperationalInbox {
 		return domain.Fail(domain.InvalidArgument, "Unknown inbox source filter.", "Select interaction or execution-terminal, or omit the filter.")
 	}
 	if f.ReadState != "" && !f.ReadState.Valid() {
@@ -198,7 +198,7 @@ func (t *Tx) InboxPage(f InboxFilter) ([]Record, bool, uint64, error) {
 		return nil, false, 0, err
 	}
 	var epoch uint64
-	if err := t.tx.QueryRowContext(t.ctx, "SELECT COALESCE(MAX(sequence),0) FROM events WHERE kind='inbox'").Scan(&epoch); err != nil {
+	if err := t.tx.QueryRowContext(t.ctx, "SELECT MAX(COALESCE((SELECT MAX(sequence) FROM events WHERE kind='inbox'),0),COALESCE((SELECT CAST(value AS INTEGER) FROM metadata WHERE key='event_floor'),0))").Scan(&epoch); err != nil {
 		return nil, false, 0, storageError(err)
 	}
 	if f.After != "" && f.Epoch != epoch {

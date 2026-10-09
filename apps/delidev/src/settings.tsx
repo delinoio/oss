@@ -238,8 +238,8 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
   </>;
 }
 
-export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string };
-export enum SettingsEntryDestination { Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
+export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string; resourceId?: string; resourceKind?: EntityKind };
+export enum SettingsEntryDestination { ConnectionDiagnostics="connection-diagnostics", Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
 enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
 
 enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
@@ -303,14 +303,14 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 
 
 interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsNavigationEntry; destinationConsumed?: () => void }
-enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount }
-type SettingsCategoryEntry = { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
+enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount, NotificationTarget }
+type SettingsCategoryEntry = {kind:SettingsEntryKind.NotificationTarget;resourceId:string;resourceKind:EntityKind} | { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
 interface SettingsSelection { category: SettingsCategory; key: string; entry?: SettingsCategoryEntry }
 type NavigateSettings = (category: SettingsCategory, entry?: SettingsCategoryEntry) => void;
 
 function entrySelection(destination?: SettingsNavigationEntry): SettingsSelection {
-  if (typeof destination === "object") return { category: destination.category, key: newRequestId() };
-  return { category: destination === SettingsEntryDestination.GitProfiles ? SettingsCategory.Integrations : destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
+  if (typeof destination === "object") return { category: destination.category, key: newRequestId(),entry:destination.resourceId&&destination.resourceKind?{kind:SettingsEntryKind.NotificationTarget,resourceId:destination.resourceId,resourceKind:destination.resourceKind}:undefined };
+  return { category: destination === SettingsEntryDestination.ConnectionDiagnostics ? SettingsCategory.Diagnostics : destination === SettingsEntryDestination.GitProfiles ? SettingsCategory.Integrations : destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
 }
 
 export function Settings({ visible = true, ...props }: SettingsProps) {
@@ -378,11 +378,23 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const [deleting, setDeleting] = useState<Resource>();
   const [routing, setRouting] = useState<Resource>();
   const [account, setAccount] = useState<Resource>();
+  const notificationTarget=entry?.kind===SettingsEntryKind.NotificationTarget?entry:undefined;
+  const notificationResource=useQuery(ResourceQuery.getResource,{kind:notificationTarget?.resourceKind??EntityKind.UNSPECIFIED,id:notificationTarget?.resourceId??""},{enabled:visible&&Boolean(notificationTarget),retry:false});
+  const appliedNotification=useRef(false);
+  useEffect(()=>{
+    if(!visible||!notificationTarget||appliedNotification.current||notificationResource.error||notificationResource.isFetching)return;
+    const value=notificationResource.data?.resource;
+    if(value?.id!==notificationTarget.resourceId||value.kind!==notificationTarget.resourceKind)return;
+    appliedNotification.current=true;
+    if(value.kind===EntityKind.MACHINE&&selectedCategory===SettingsCategory.ExecutionWorkers)setMachine(value);
+    if(value.kind===EntityKind.ACCOUNT&&selectedCategory===SettingsCategory.SubscriptionAccounts)setAccount(value);
+  },[visible,notificationTarget,notificationResource.data,notificationResource.error,notificationResource.isFetching,selectedCategory]);
+
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });
 
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.AddAccount ? { key: newRequestId(), providerId: entry.providerId, provider: entry.provider, startOAuth: entry.startOAuth } : undefined);
-  const [apiProviderID, setApiProviderID] = useState(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.providerId : "");
-  const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary | undefined>(() => entry && entry.kind !== SettingsEntryKind.NewProject ? entry.provider : undefined);
+  const [apiProviderID, setApiProviderID] = useState(() => entry && entry.kind !== SettingsEntryKind.NewProject && entry.kind!==SettingsEntryKind.NotificationTarget ? entry.providerId : "");
+  const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary | undefined>(() => entry && entry.kind !== SettingsEntryKind.NewProject && entry.kind!==SettingsEntryKind.NotificationTarget ? entry.provider : undefined);
 
   const client = useQueryClient();
   const selected = settingsCategories[selectedCategory];
@@ -518,7 +530,8 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
-          {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} /></div> : null}
+          {notificationTarget&&notificationResource.error?<><Problem error={notificationResource.error}/><p role="status">{copy("inbox.operational.unavailable")}</p></>:null}
+          {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} openSubscriptions={()=>navigate(SettingsCategory.SubscriptionAccounts)} /></div> : null}
           {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
           {area === SettingsArea.Configuration ? <div>
             {controlLocalWorker && isRunnerDevices ? <div data-settings-search-target="local-worker"><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}

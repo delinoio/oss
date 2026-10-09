@@ -930,6 +930,7 @@ fn debian_sidecar(executable: &Path) -> Option<PathBuf> {
         .then(|| PathBuf::from("/usr/bin/delidev"))
 }
 
+pub mod notification_connection;
 pub mod notifications;
 pub mod presentation;
 #[cfg(test)]

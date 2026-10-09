@@ -351,6 +351,7 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		if !authorized {
 			code = domain.Canceled
 		}
+		beforeQuota := a
 		recovered := false
 		if code == "" {
 			// Projection can update an earlier window before rejecting a later
@@ -378,6 +379,11 @@ func (s *Service) finishServerQuota(ctx context.Context, id domain.ID, original 
 		o.ErrorCode = code
 		if _, err = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
+		}
+		if code == "" {
+			if err := tx.ObserveQuotaNotification(beforeQuota, a, id, original.ID, observed); err != nil {
+				return nil, err
+			}
 		}
 		if recovered {
 			_, err = tx.CreateSubscriptionRecoveryInbox(id, original.ID, original.ConnectionID, observed.ObservedAt)

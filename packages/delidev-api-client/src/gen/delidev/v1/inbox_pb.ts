@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/inbox.proto.
  */
 export const file_delidev_v1_inbox: GenFile = /*@__PURE__*/
-  fileDesc("ChZkZWxpZGV2L3YxL2luYm94LnByb3RvEgpkZWxpZGV2LnYxIqkBCglJbmJveFZpZXcSIwoFZW50cnkYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiUKB3Nlc3Npb24YAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEikKC2ludGVyYWN0aW9uGAMgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIlCgdhY2NvdW50GAQgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSIiChRHZXRJbmJveEVudHJ5UmVxdWVzdBIKCgJpZBgBIAEoCSI8ChVHZXRJbmJveEVudHJ5UmVzcG9uc2USIwoEdmlldxgBIAEoCzIVLmRlbGlkZXYudjEuSW5ib3hWaWV3IroBChBMaXN0SW5ib3hSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIuCgpyZWFkX3N0YXRlGAMgASgOMhouZGVsaWRldi52MS5JbmJveFJlYWRTdGF0ZRInCgZzb3VyY2UYBCABKA4yFy5kZWxpZGV2LnYxLkluYm94U291cmNlEhEKCXBhZ2Vfc2l6ZRgFIAEoDRISCgpwYWdlX3Rva2VuGAYgASgJIlQKEUxpc3RJbmJveFJlc3BvbnNlEiYKB2VudHJpZXMYASADKAsyFS5kZWxpZGV2LnYxLkluYm94VmlldxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkicgoYU2V0SW5ib3hSZWFkU3RhdGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIuCgpyZWFkX3N0YXRlGAIgASgOMhouZGVsaWRldi52MS5JbmJveFJlYWRTdGF0ZSJmChlTZXRJbmJveFJlYWRTdGF0ZVJlc3BvbnNlEiMKBHZpZXcYASABKAsyFS5kZWxpZGV2LnYxLkluYm94VmlldxISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIlQKF05vdGlmaWNhdGlvblByZWZlcmVuY2VzEhAKCHJldmlzaW9uGAEgASgEEhQKDGludGVyYWN0aW9ucxgCIAEoCBIRCgl0ZXJtaW5hbHMYAyABKAgifQoVTm90aWZpY2F0aW9uQ2FuZGlkYXRlEhAKCGluYm94X2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSKgoEa2luZBgDIAEoDjIcLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uS2luZBISCgphY2NvdW50X2lkGAQgASgJIowBChROb3RpZmljYXRpb25EZWxpdmVyeRI0CgljYW5kaWRhdGUYASABKAsyIS5kZWxpZGV2LnYxLk5vdGlmaWNhdGlvbkNhbmRpZGF0ZRIQCghjbGFpbV9pZBgCIAEoCRIsCgVzdGF0ZRgDIAEoDjIdLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uU3RhdGUiIwohR2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXF1ZXN0Il4KIkdldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVzcG9uc2USOAoLcHJlZmVyZW5jZXMYASABKAsyIy5kZWxpZGV2LnYxLk5vdGlmaWNhdGlvblByZWZlcmVuY2VzInEKIVNldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEjgKC3ByZWZlcmVuY2VzGAIgASgLMiMuZGVsaWRldi52MS5Ob3RpZmljYXRpb25QcmVmZXJlbmNlcyKEAQoiU2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXNwb25zZRI4CgtwcmVmZXJlbmNlcxgBIAEoCzIjLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uUHJlZmVyZW5jZXMSEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCIyCiFMaXN0Tm90aWZpY2F0aW9uQ2FuZGlkYXRlc1JlcXVlc3QSDQoFbGltaXQYASABKA0iaQoiTGlzdE5vdGlmaWNhdGlvbkNhbmRpZGF0ZXNSZXNwb25zZRI1CgpjYW5kaWRhdGVzGAEgAygLMiEuZGVsaWRldi52MS5Ob3RpZmljYXRpb25DYW5kaWRhdGUSDAoEbW9yZRgCIAEoCCJAChhDbGFpbU5vdGlmaWNhdGlvblJlcXVlc3QSEAoIaW5ib3hfaWQYASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCSKKAQoZQ2xhaW1Ob3RpZmljYXRpb25SZXNwb25zZRIyCghkZWxpdmVyeRgBIAEoCzIgLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uRGVsaXZlcnkSEwoLbWF5X3ByZXNlbnQYAiABKAgSEgoKcmVxdWVzdF9pZBgDIAEoCRIQCghyZXBsYXllZBgEIAEoCCIyCh5HZXROb3RpZmljYXRpb25EZWxpdmVyeVJlcXVlc3QSEAoIaW5ib3hfaWQYASABKAkiVQofR2V0Tm90aWZpY2F0aW9uRGVsaXZlcnlSZXNwb25zZRIyCghkZWxpdmVyeRgBIAEoCzIgLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uRGVsaXZlcnkigQEKGVJlcG9ydE5vdGlmaWNhdGlvblJlcXVlc3QSEAoIaW5ib3hfaWQYASABKAkSEAoIY2xhaW1faWQYAiABKAkSEgoKcmVxdWVzdF9pZBgDIAEoCRIsCgVzdGF0ZRgEIAEoDjIdLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uU3RhdGUidgoaUmVwb3J0Tm90aWZpY2F0aW9uUmVzcG9uc2USMgoIZGVsaXZlcnkYASABKAsyIC5kZWxpZGV2LnYxLk5vdGlmaWNhdGlvbkRlbGl2ZXJ5EhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgqagoOSW5ib3hSZWFkU3RhdGUSIAocSU5CT1hfUkVBRF9TVEFURV9VTlNQRUNJRklFRBAAEhsKF0lOQk9YX1JFQURfU1RBVEVfVU5SRUFEEAESGQoVSU5CT1hfUkVBRF9TVEFURV9SRUFEEAIqlgEKC0luYm94U291cmNlEhwKGElOQk9YX1NPVVJDRV9VTlNQRUNJRklFRBAAEhwKGElOQk9YX1NPVVJDRV9JTlRFUkFDVElPThABEiMKH0lOQk9YX1NPVVJDRV9FWEVDVVRJT05fVEVSTUlOQUwQAhImCiJJTkJPWF9TT1VSQ0VfU1VCU0NSSVBUSU9OX1JFQ09WRVJZEAMq3wEKEE5vdGlmaWNhdGlvbktpbmQSIQodTk9USUZJQ0FUSU9OX0tJTkRfVU5TUEVDSUZJRUQQABIdChlOT1RJRklDQVRJT05fS0lORF9SRVFVRVNUEAESHwobTk9USUZJQ0FUSU9OX0tJTkRfU1VDQ0VFREVEEAISHAoYTk9USUZJQ0FUSU9OX0tJTkRfRkFJTEVEEAMSHQoZTk9USUZJQ0FUSU9OX0tJTkRfU1RPUFBFRBAEEisKJ05PVElGSUNBVElPTl9LSU5EX1NVQlNDUklQVElPTl9SRUNPVkVSWRAFKtkBChFOb3RpZmljYXRpb25TdGF0ZRIiCh5OT1RJRklDQVRJT05fU1RBVEVfVU5TUEVDSUZJRUQQABIeChpOT1RJRklDQVRJT05fU1RBVEVfQ0xBSU1FRBABEiAKHE5PVElGSUNBVElPTl9TVEFURV9TVUJNSVRURUQQAhIdChlOT1RJRklDQVRJT05fU1RBVEVfREVOSUVEEAMSHQoZTk9USUZJQ0FUSU9OX1NUQVRFX0ZBSUxFRBAEEiAKHE5PVElGSUNBVElPTl9TVEFURV9VTkNFUlRBSU4QBTLCBwoMSW5ib3hTZXJ2aWNlElQKDUdldEluYm94RW50cnkSIC5kZWxpZGV2LnYxLkdldEluYm94RW50cnlSZXF1ZXN0GiEuZGVsaWRldi52MS5HZXRJbmJveEVudHJ5UmVzcG9uc2USSAoJTGlzdEluYm94EhwuZGVsaWRldi52MS5MaXN0SW5ib3hSZXF1ZXN0Gh0uZGVsaWRldi52MS5MaXN0SW5ib3hSZXNwb25zZRJgChFTZXRJbmJveFJlYWRTdGF0ZRIkLmRlbGlkZXYudjEuU2V0SW5ib3hSZWFkU3RhdGVSZXF1ZXN0GiUuZGVsaWRldi52MS5TZXRJbmJveFJlYWRTdGF0ZVJlc3BvbnNlEnsKGkdldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzEi0uZGVsaWRldi52MS5HZXROb3RpZmljYXRpb25QcmVmZXJlbmNlc1JlcXVlc3QaLi5kZWxpZGV2LnYxLkdldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVzcG9uc2USewoaU2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXMSLS5kZWxpZGV2LnYxLlNldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVxdWVzdBouLmRlbGlkZXYudjEuU2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXNwb25zZRJ7ChpMaXN0Tm90aWZpY2F0aW9uQ2FuZGlkYXRlcxItLmRlbGlkZXYudjEuTGlzdE5vdGlmaWNhdGlvbkNhbmRpZGF0ZXNSZXF1ZXN0Gi4uZGVsaWRldi52MS5MaXN0Tm90aWZpY2F0aW9uQ2FuZGlkYXRlc1Jlc3BvbnNlEmAKEUNsYWltTm90aWZpY2F0aW9uEiQuZGVsaWRldi52MS5DbGFpbU5vdGlmaWNhdGlvblJlcXVlc3QaJS5kZWxpZGV2LnYxLkNsYWltTm90aWZpY2F0aW9uUmVzcG9uc2UScgoXR2V0Tm90aWZpY2F0aW9uRGVsaXZlcnkSKi5kZWxpZGV2LnYxLkdldE5vdGlmaWNhdGlvbkRlbGl2ZXJ5UmVxdWVzdBorLmRlbGlkZXYudjEuR2V0Tm90aWZpY2F0aW9uRGVsaXZlcnlSZXNwb25zZRJjChJSZXBvcnROb3RpZmljYXRpb24SJS5kZWxpZGV2LnYxLlJlcG9ydE5vdGlmaWNhdGlvblJlcXVlc3QaJi5kZWxpZGV2LnYxLlJlcG9ydE5vdGlmaWNhdGlvblJlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_common]);
+  fileDesc("ChZkZWxpZGV2L3YxL2luYm94LnByb3RvEgpkZWxpZGV2LnYxIvoBCglJbmJveFZpZXcSIwoFZW50cnkYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiUKB3Nlc3Npb24YAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEikKC2ludGVyYWN0aW9uGAMgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIlCgdhY2NvdW50GAQgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIlCgdtYWNoaW5lGAUgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIoCgpvY2N1cnJlbmNlGAYgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSIiChRHZXRJbmJveEVudHJ5UmVxdWVzdBIKCgJpZBgBIAEoCSI8ChVHZXRJbmJveEVudHJ5UmVzcG9uc2USIwoEdmlldxgBIAEoCzIVLmRlbGlkZXYudjEuSW5ib3hWaWV3IroBChBMaXN0SW5ib3hSZXF1ZXN0EhIKCnNlc3Npb25faWQYASABKAkSEgoKcHJvamVjdF9pZBgCIAEoCRIuCgpyZWFkX3N0YXRlGAMgASgOMhouZGVsaWRldi52MS5JbmJveFJlYWRTdGF0ZRInCgZzb3VyY2UYBCABKA4yFy5kZWxpZGV2LnYxLkluYm94U291cmNlEhEKCXBhZ2Vfc2l6ZRgFIAEoDRISCgpwYWdlX3Rva2VuGAYgASgJIlQKEUxpc3RJbmJveFJlc3BvbnNlEiYKB2VudHJpZXMYASADKAsyFS5kZWxpZGV2LnYxLkluYm94VmlldxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkicgoYU2V0SW5ib3hSZWFkU3RhdGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIuCgpyZWFkX3N0YXRlGAIgASgOMhouZGVsaWRldi52MS5JbmJveFJlYWRTdGF0ZSJmChlTZXRJbmJveFJlYWRTdGF0ZVJlc3BvbnNlEiMKBHZpZXcYASABKAsyFS5kZWxpZGV2LnYxLkluYm94VmlldxISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIpYBChdOb3RpZmljYXRpb25QcmVmZXJlbmNlcxIQCghyZXZpc2lvbhgBIAEoBBIUCgxpbnRlcmFjdGlvbnMYAiABKAgSEQoJdGVybWluYWxzGAMgASgIEkAKCnNpdHVhdGlvbnMYBCABKAsyLC5kZWxpZGV2LnYxLlNpdHVhdGlvbk5vdGlmaWNhdGlvblByZWZlcmVuY2VzIrICCiBTaXR1YXRpb25Ob3RpZmljYXRpb25QcmVmZXJlbmNlcxIRCglxdWVzdGlvbnMYASABKAgSEQoJYXBwcm92YWxzGAIgASgIEhEKCXN1Y2NlZWRlZBgDIAEoCBIOCgZmYWlsZWQYBCABKAgSDwoHc3RvcHBlZBgFIAEoCBITCgtzZXJ2ZXJfbG9zdBgGIAEoCBIXCg9zZXJ2ZXJfcmVzdG9yZWQYByABKAgSGgoSd29ya2VyX3VuYXZhaWxhYmxlGAggASgIEhgKEHdvcmtlcl9hdmFpbGFibGUYCSABKAgSFwoPcXVvdGFfZXhoYXVzdGVkGAogASgIEh0KFXNjaGVkdWxlX3N0YXJ0X2ZhaWxlZBgLIAEoCBIYChBzY2hlZHVsZV9vZmZsaW5lGAwgASgIIqgBChVOb3RpZmljYXRpb25DYW5kaWRhdGUSEAoIaW5ib3hfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIqCgRraW5kGAMgASgOMhwuZGVsaWRldi52MS5Ob3RpZmljYXRpb25LaW5kEhIKCmFjY291bnRfaWQYBCABKAkSEgoKbWFjaGluZV9pZBgFIAEoCRIVCg1vY2N1cnJlbmNlX2lkGAYgASgJIowBChROb3RpZmljYXRpb25EZWxpdmVyeRI0CgljYW5kaWRhdGUYASABKAsyIS5kZWxpZGV2LnYxLk5vdGlmaWNhdGlvbkNhbmRpZGF0ZRIQCghjbGFpbV9pZBgCIAEoCRIsCgVzdGF0ZRgDIAEoDjIdLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uU3RhdGUiNwohR2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXF1ZXN0EhIKCnNpdHVhdGlvbnMYASABKAgiXgoiR2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXNwb25zZRI4CgtwcmVmZXJlbmNlcxgBIAEoCzIjLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uUHJlZmVyZW5jZXMicQohU2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSOAoLcHJlZmVyZW5jZXMYAiABKAsyIy5kZWxpZGV2LnYxLk5vdGlmaWNhdGlvblByZWZlcmVuY2VzIoQBCiJTZXROb3RpZmljYXRpb25QcmVmZXJlbmNlc1Jlc3BvbnNlEjgKC3ByZWZlcmVuY2VzGAEgASgLMiMuZGVsaWRldi52MS5Ob3RpZmljYXRpb25QcmVmZXJlbmNlcxISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIjIKIUxpc3ROb3RpZmljYXRpb25DYW5kaWRhdGVzUmVxdWVzdBINCgVsaW1pdBgBIAEoDSJpCiJMaXN0Tm90aWZpY2F0aW9uQ2FuZGlkYXRlc1Jlc3BvbnNlEjUKCmNhbmRpZGF0ZXMYASADKAsyIS5kZWxpZGV2LnYxLk5vdGlmaWNhdGlvbkNhbmRpZGF0ZRIMCgRtb3JlGAIgASgIIkAKGENsYWltTm90aWZpY2F0aW9uUmVxdWVzdBIQCghpbmJveF9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJIooBChlDbGFpbU5vdGlmaWNhdGlvblJlc3BvbnNlEjIKCGRlbGl2ZXJ5GAEgASgLMiAuZGVsaWRldi52MS5Ob3RpZmljYXRpb25EZWxpdmVyeRITCgttYXlfcHJlc2VudBgCIAEoCBISCgpyZXF1ZXN0X2lkGAMgASgJEhAKCHJlcGxheWVkGAQgASgIIjIKHkdldE5vdGlmaWNhdGlvbkRlbGl2ZXJ5UmVxdWVzdBIQCghpbmJveF9pZBgBIAEoCSJVCh9HZXROb3RpZmljYXRpb25EZWxpdmVyeVJlc3BvbnNlEjIKCGRlbGl2ZXJ5GAEgASgLMiAuZGVsaWRldi52MS5Ob3RpZmljYXRpb25EZWxpdmVyeSKBAQoZUmVwb3J0Tm90aWZpY2F0aW9uUmVxdWVzdBIQCghpbmJveF9pZBgBIAEoCRIQCghjbGFpbV9pZBgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJEiwKBXN0YXRlGAQgASgOMh0uZGVsaWRldi52MS5Ob3RpZmljYXRpb25TdGF0ZSJ2ChpSZXBvcnROb3RpZmljYXRpb25SZXNwb25zZRIyCghkZWxpdmVyeRgBIAEoCzIgLmRlbGlkZXYudjEuTm90aWZpY2F0aW9uRGVsaXZlcnkSEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCpqCg5JbmJveFJlYWRTdGF0ZRIgChxJTkJPWF9SRUFEX1NUQVRFX1VOU1BFQ0lGSUVEEAASGwoXSU5CT1hfUkVBRF9TVEFURV9VTlJFQUQQARIZChVJTkJPWF9SRUFEX1NUQVRFX1JFQUQQAiq0AQoLSW5ib3hTb3VyY2USHAoYSU5CT1hfU09VUkNFX1VOU1BFQ0lGSUVEEAASHAoYSU5CT1hfU09VUkNFX0lOVEVSQUNUSU9OEAESIwofSU5CT1hfU09VUkNFX0VYRUNVVElPTl9URVJNSU5BTBACEiYKIklOQk9YX1NPVVJDRV9TVUJTQ1JJUFRJT05fUkVDT1ZFUlkQAxIcChhJTkJPWF9TT1VSQ0VfT1BFUkFUSU9OQUwQBCqjBAoQTm90aWZpY2F0aW9uS2luZBIhCh1OT1RJRklDQVRJT05fS0lORF9VTlNQRUNJRklFRBAAEh0KGU5PVElGSUNBVElPTl9LSU5EX1JFUVVFU1QQARIfChtOT1RJRklDQVRJT05fS0lORF9TVUNDRUVERUQQAhIcChhOT1RJRklDQVRJT05fS0lORF9GQUlMRUQQAxIdChlOT1RJRklDQVRJT05fS0lORF9TVE9QUEVEEAQSKwonTk9USUZJQ0FUSU9OX0tJTkRfU1VCU0NSSVBUSU9OX1JFQ09WRVJZEAUSHgoaTk9USUZJQ0FUSU9OX0tJTkRfUVVFU1RJT04QBhIeChpOT1RJRklDQVRJT05fS0lORF9BUFBST1ZBTBAHEigKJE5PVElGSUNBVElPTl9LSU5EX1dPUktFUl9VTkFWQUlMQUJMRRAIEiYKIk5PVElGSUNBVElPTl9LSU5EX1dPUktFUl9BVkFJTEFCTEUQCRIlCiFOT1RJRklDQVRJT05fS0lORF9RVU9UQV9FWEhBVVNURUQQChIrCidOT1RJRklDQVRJT05fS0lORF9TQ0hFRFVMRV9TVEFSVF9GQUlMRUQQCxItCilOT1RJRklDQVRJT05fS0lORF9TQ0hFRFVMRV9TRVJWRVJfT0ZGTElORRAMEi0KKU5PVElGSUNBVElPTl9LSU5EX1NDSEVEVUxFX1dPUktFUl9PRkZMSU5FEA0q2QEKEU5vdGlmaWNhdGlvblN0YXRlEiIKHk5PVElGSUNBVElPTl9TVEFURV9VTlNQRUNJRklFRBAAEh4KGk5PVElGSUNBVElPTl9TVEFURV9DTEFJTUVEEAESIAocTk9USUZJQ0FUSU9OX1NUQVRFX1NVQk1JVFRFRBACEh0KGU5PVElGSUNBVElPTl9TVEFURV9ERU5JRUQQAxIdChlOT1RJRklDQVRJT05fU1RBVEVfRkFJTEVEEAQSIAocTk9USUZJQ0FUSU9OX1NUQVRFX1VOQ0VSVEFJThAFMsIHCgxJbmJveFNlcnZpY2USVAoNR2V0SW5ib3hFbnRyeRIgLmRlbGlkZXYudjEuR2V0SW5ib3hFbnRyeVJlcXVlc3QaIS5kZWxpZGV2LnYxLkdldEluYm94RW50cnlSZXNwb25zZRJICglMaXN0SW5ib3gSHC5kZWxpZGV2LnYxLkxpc3RJbmJveFJlcXVlc3QaHS5kZWxpZGV2LnYxLkxpc3RJbmJveFJlc3BvbnNlEmAKEVNldEluYm94UmVhZFN0YXRlEiQuZGVsaWRldi52MS5TZXRJbmJveFJlYWRTdGF0ZVJlcXVlc3QaJS5kZWxpZGV2LnYxLlNldEluYm94UmVhZFN0YXRlUmVzcG9uc2USewoaR2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXMSLS5kZWxpZGV2LnYxLkdldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVxdWVzdBouLmRlbGlkZXYudjEuR2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXNwb25zZRJ7ChpTZXROb3RpZmljYXRpb25QcmVmZXJlbmNlcxItLmRlbGlkZXYudjEuU2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXF1ZXN0Gi4uZGVsaWRldi52MS5TZXROb3RpZmljYXRpb25QcmVmZXJlbmNlc1Jlc3BvbnNlEnsKGkxpc3ROb3RpZmljYXRpb25DYW5kaWRhdGVzEi0uZGVsaWRldi52MS5MaXN0Tm90aWZpY2F0aW9uQ2FuZGlkYXRlc1JlcXVlc3QaLi5kZWxpZGV2LnYxLkxpc3ROb3RpZmljYXRpb25DYW5kaWRhdGVzUmVzcG9uc2USYAoRQ2xhaW1Ob3RpZmljYXRpb24SJC5kZWxpZGV2LnYxLkNsYWltTm90aWZpY2F0aW9uUmVxdWVzdBolLmRlbGlkZXYudjEuQ2xhaW1Ob3RpZmljYXRpb25SZXNwb25zZRJyChdHZXROb3RpZmljYXRpb25EZWxpdmVyeRIqLmRlbGlkZXYudjEuR2V0Tm90aWZpY2F0aW9uRGVsaXZlcnlSZXF1ZXN0GisuZGVsaWRldi52MS5HZXROb3RpZmljYXRpb25EZWxpdmVyeVJlc3BvbnNlEmMKElJlcG9ydE5vdGlmaWNhdGlvbhIlLmRlbGlkZXYudjEuUmVwb3J0Tm90aWZpY2F0aW9uUmVxdWVzdBomLmRlbGlkZXYudjEuUmVwb3J0Tm90aWZpY2F0aW9uUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.InboxView
@@ -39,6 +39,16 @@ export type InboxView = Message<"delidev.v1.InboxView"> & {
    * @generated from field: delidev.v1.Resource account = 4;
    */
   account?: Resource | undefined;
+
+  /**
+   * @generated from field: delidev.v1.Resource machine = 5;
+   */
+  machine?: Resource | undefined;
+
+  /**
+   * @generated from field: delidev.v1.Resource occurrence = 6;
+   */
+  occurrence?: Resource | undefined;
 };
 
 /**
@@ -217,6 +227,11 @@ export type NotificationPreferences = Message<"delidev.v1.NotificationPreference
    * @generated from field: bool terminals = 3;
    */
   terminals: boolean;
+
+  /**
+   * @generated from field: delidev.v1.SituationNotificationPreferences situations = 4;
+   */
+  situations?: SituationNotificationPreferences | undefined;
 };
 
 /**
@@ -225,6 +240,80 @@ export type NotificationPreferences = Message<"delidev.v1.NotificationPreference
  */
 export const NotificationPreferencesSchema: GenMessage<NotificationPreferences> = /*@__PURE__*/
   messageDesc(file_delidev_v1_inbox, 7);
+
+/**
+ * A complete acknowledged generation; omission denotes the legacy write shape.
+ *
+ * @generated from message delidev.v1.SituationNotificationPreferences
+ */
+export type SituationNotificationPreferences = Message<"delidev.v1.SituationNotificationPreferences"> & {
+  /**
+   * @generated from field: bool questions = 1;
+   */
+  questions: boolean;
+
+  /**
+   * @generated from field: bool approvals = 2;
+   */
+  approvals: boolean;
+
+  /**
+   * @generated from field: bool succeeded = 3;
+   */
+  succeeded: boolean;
+
+  /**
+   * @generated from field: bool failed = 4;
+   */
+  failed: boolean;
+
+  /**
+   * @generated from field: bool stopped = 5;
+   */
+  stopped: boolean;
+
+  /**
+   * @generated from field: bool server_lost = 6;
+   */
+  serverLost: boolean;
+
+  /**
+   * @generated from field: bool server_restored = 7;
+   */
+  serverRestored: boolean;
+
+  /**
+   * @generated from field: bool worker_unavailable = 8;
+   */
+  workerUnavailable: boolean;
+
+  /**
+   * @generated from field: bool worker_available = 9;
+   */
+  workerAvailable: boolean;
+
+  /**
+   * @generated from field: bool quota_exhausted = 10;
+   */
+  quotaExhausted: boolean;
+
+  /**
+   * @generated from field: bool schedule_start_failed = 11;
+   */
+  scheduleStartFailed: boolean;
+
+  /**
+   * @generated from field: bool schedule_offline = 12;
+   */
+  scheduleOffline: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.SituationNotificationPreferences.
+ * Use `create(SituationNotificationPreferencesSchema)` to create a new message.
+ */
+export const SituationNotificationPreferencesSchema: GenMessage<SituationNotificationPreferences> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_inbox, 8);
 
 /**
  * @generated from message delidev.v1.NotificationCandidate
@@ -249,6 +338,16 @@ export type NotificationCandidate = Message<"delidev.v1.NotificationCandidate"> 
    * @generated from field: string account_id = 4;
    */
   accountId: string;
+
+  /**
+   * @generated from field: string machine_id = 5;
+   */
+  machineId: string;
+
+  /**
+   * @generated from field: string occurrence_id = 6;
+   */
+  occurrenceId: string;
 };
 
 /**
@@ -256,7 +355,7 @@ export type NotificationCandidate = Message<"delidev.v1.NotificationCandidate"> 
  * Use `create(NotificationCandidateSchema)` to create a new message.
  */
 export const NotificationCandidateSchema: GenMessage<NotificationCandidate> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 8);
+  messageDesc(file_delidev_v1_inbox, 9);
 
 /**
  * @generated from message delidev.v1.NotificationDelivery
@@ -283,12 +382,18 @@ export type NotificationDelivery = Message<"delidev.v1.NotificationDelivery"> & 
  * Use `create(NotificationDeliverySchema)` to create a new message.
  */
 export const NotificationDeliverySchema: GenMessage<NotificationDelivery> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 9);
+  messageDesc(file_delidev_v1_inbox, 10);
 
 /**
  * @generated from message delidev.v1.GetNotificationPreferencesRequest
  */
 export type GetNotificationPreferencesRequest = Message<"delidev.v1.GetNotificationPreferencesRequest"> & {
+  /**
+   * Opt in to capability-58 initialization with future-only checkpoints.
+   *
+   * @generated from field: bool situations = 1;
+   */
+  situations: boolean;
 };
 
 /**
@@ -296,7 +401,7 @@ export type GetNotificationPreferencesRequest = Message<"delidev.v1.GetNotificat
  * Use `create(GetNotificationPreferencesRequestSchema)` to create a new message.
  */
 export const GetNotificationPreferencesRequestSchema: GenMessage<GetNotificationPreferencesRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 10);
+  messageDesc(file_delidev_v1_inbox, 11);
 
 /**
  * @generated from message delidev.v1.GetNotificationPreferencesResponse
@@ -313,7 +418,7 @@ export type GetNotificationPreferencesResponse = Message<"delidev.v1.GetNotifica
  * Use `create(GetNotificationPreferencesResponseSchema)` to create a new message.
  */
 export const GetNotificationPreferencesResponseSchema: GenMessage<GetNotificationPreferencesResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 11);
+  messageDesc(file_delidev_v1_inbox, 12);
 
 /**
  * @generated from message delidev.v1.SetNotificationPreferencesRequest
@@ -337,7 +442,7 @@ export type SetNotificationPreferencesRequest = Message<"delidev.v1.SetNotificat
  * Use `create(SetNotificationPreferencesRequestSchema)` to create a new message.
  */
 export const SetNotificationPreferencesRequestSchema: GenMessage<SetNotificationPreferencesRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 12);
+  messageDesc(file_delidev_v1_inbox, 13);
 
 /**
  * @generated from message delidev.v1.SetNotificationPreferencesResponse
@@ -364,7 +469,7 @@ export type SetNotificationPreferencesResponse = Message<"delidev.v1.SetNotifica
  * Use `create(SetNotificationPreferencesResponseSchema)` to create a new message.
  */
 export const SetNotificationPreferencesResponseSchema: GenMessage<SetNotificationPreferencesResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 13);
+  messageDesc(file_delidev_v1_inbox, 14);
 
 /**
  * @generated from message delidev.v1.ListNotificationCandidatesRequest
@@ -383,7 +488,7 @@ export type ListNotificationCandidatesRequest = Message<"delidev.v1.ListNotifica
  * Use `create(ListNotificationCandidatesRequestSchema)` to create a new message.
  */
 export const ListNotificationCandidatesRequestSchema: GenMessage<ListNotificationCandidatesRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 14);
+  messageDesc(file_delidev_v1_inbox, 15);
 
 /**
  * @generated from message delidev.v1.ListNotificationCandidatesResponse
@@ -405,7 +510,7 @@ export type ListNotificationCandidatesResponse = Message<"delidev.v1.ListNotific
  * Use `create(ListNotificationCandidatesResponseSchema)` to create a new message.
  */
 export const ListNotificationCandidatesResponseSchema: GenMessage<ListNotificationCandidatesResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 15);
+  messageDesc(file_delidev_v1_inbox, 16);
 
 /**
  * @generated from message delidev.v1.ClaimNotificationRequest
@@ -427,7 +532,7 @@ export type ClaimNotificationRequest = Message<"delidev.v1.ClaimNotificationRequ
  * Use `create(ClaimNotificationRequestSchema)` to create a new message.
  */
 export const ClaimNotificationRequestSchema: GenMessage<ClaimNotificationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 16);
+  messageDesc(file_delidev_v1_inbox, 17);
 
 /**
  * @generated from message delidev.v1.ClaimNotificationResponse
@@ -462,7 +567,7 @@ export type ClaimNotificationResponse = Message<"delidev.v1.ClaimNotificationRes
  * Use `create(ClaimNotificationResponseSchema)` to create a new message.
  */
 export const ClaimNotificationResponseSchema: GenMessage<ClaimNotificationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 17);
+  messageDesc(file_delidev_v1_inbox, 18);
 
 /**
  * @generated from message delidev.v1.GetNotificationDeliveryRequest
@@ -479,7 +584,7 @@ export type GetNotificationDeliveryRequest = Message<"delidev.v1.GetNotification
  * Use `create(GetNotificationDeliveryRequestSchema)` to create a new message.
  */
 export const GetNotificationDeliveryRequestSchema: GenMessage<GetNotificationDeliveryRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 18);
+  messageDesc(file_delidev_v1_inbox, 19);
 
 /**
  * @generated from message delidev.v1.GetNotificationDeliveryResponse
@@ -496,7 +601,7 @@ export type GetNotificationDeliveryResponse = Message<"delidev.v1.GetNotificatio
  * Use `create(GetNotificationDeliveryResponseSchema)` to create a new message.
  */
 export const GetNotificationDeliveryResponseSchema: GenMessage<GetNotificationDeliveryResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 19);
+  messageDesc(file_delidev_v1_inbox, 20);
 
 /**
  * @generated from message delidev.v1.ReportNotificationRequest
@@ -528,7 +633,7 @@ export type ReportNotificationRequest = Message<"delidev.v1.ReportNotificationRe
  * Use `create(ReportNotificationRequestSchema)` to create a new message.
  */
 export const ReportNotificationRequestSchema: GenMessage<ReportNotificationRequest> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 20);
+  messageDesc(file_delidev_v1_inbox, 21);
 
 /**
  * @generated from message delidev.v1.ReportNotificationResponse
@@ -555,7 +660,7 @@ export type ReportNotificationResponse = Message<"delidev.v1.ReportNotificationR
  * Use `create(ReportNotificationResponseSchema)` to create a new message.
  */
 export const ReportNotificationResponseSchema: GenMessage<ReportNotificationResponse> = /*@__PURE__*/
-  messageDesc(file_delidev_v1_inbox, 21);
+  messageDesc(file_delidev_v1_inbox, 22);
 
 /**
  * @generated from enum delidev.v1.InboxReadState
@@ -606,6 +711,11 @@ export enum InboxSource {
    * @generated from enum value: INBOX_SOURCE_SUBSCRIPTION_RECOVERY = 3;
    */
   SUBSCRIPTION_RECOVERY = 3,
+
+  /**
+   * @generated from enum value: INBOX_SOURCE_OPERATIONAL = 4;
+   */
+  OPERATIONAL = 4,
 }
 
 /**
@@ -650,6 +760,46 @@ export enum NotificationKind {
    * @generated from enum value: NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY = 5;
    */
   SUBSCRIPTION_RECOVERY = 5,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_QUESTION = 6;
+   */
+  QUESTION = 6,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_APPROVAL = 7;
+   */
+  APPROVAL = 7,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_WORKER_UNAVAILABLE = 8;
+   */
+  WORKER_UNAVAILABLE = 8,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_WORKER_AVAILABLE = 9;
+   */
+  WORKER_AVAILABLE = 9,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_QUOTA_EXHAUSTED = 10;
+   */
+  QUOTA_EXHAUSTED = 10,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_SCHEDULE_START_FAILED = 11;
+   */
+  SCHEDULE_START_FAILED = 11,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_SCHEDULE_SERVER_OFFLINE = 12;
+   */
+  SCHEDULE_SERVER_OFFLINE = 12,
+
+  /**
+   * @generated from enum value: NOTIFICATION_KIND_SCHEDULE_WORKER_OFFLINE = 13;
+   */
+  SCHEDULE_WORKER_OFFLINE = 13,
 }
 
 /**

@@ -976,6 +976,23 @@ fn activate(app: &AppHandle<CefRuntime>, id: &str) {
     let Some(action) = action else { return };
     navigate(app, action, None, None);
 }
+pub fn activate_connection_diagnostics(
+    app: &AppHandle<CefRuntime>,
+    label: String,
+    instance: Option<String>,
+    scope: String,
+) {
+    navigate(
+        app,
+        Activation {
+            label,
+            instance,
+            destination: TrayDestination::ConnectionDiagnostics,
+        },
+        None,
+        Some(scope),
+    );
+}
 pub fn activate_inbox(
     app: &AppHandle<CefRuntime>,
     label: String,

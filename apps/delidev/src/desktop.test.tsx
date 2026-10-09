@@ -50,8 +50,8 @@ function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
     if (command === "connect_saved") return connection;
     if (command === "show_connection_manager") return;
     if (command === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
-    if (command === "begin_tray") return "fixture-presentation";
-    if (command === "publish_tray" || command === "read_tray_action") return;
+    if (command === "begin_tray" || command === "begin_notifications") return "fixture-presentation";
+    if (command === "publish_tray" || command === "read_tray_action" || command === "end_notifications") return;
     throw new Error("Unexpected native authority");
   });
   return { profile, connection, status };
@@ -63,7 +63,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   expect(await screen.findByText("Remote fixture · Connected")).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledWith(expect.objectContaining({ origin: value.profile.endpoint }));
   expect(value.status).toHaveBeenCalled();
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications"].includes(command))).toBe(true);
   expect(JSON.stringify(bridge.invoke.mock.calls)).not.toContain(value.connection.token);
   expect(screen.queryByText(value.connection.token)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -262,8 +262,8 @@ it("rechecks an adopted local identity without startup and resets only changed-d
     if (command === "local_server_status") return { state: LocalServerState.Ready, attempts: 0, retry_ms: 0 };
     if (command === "launch_local") return { endpoint: "http://127.0.0.1:46310", runtime_generation: newRequestId(), runtime_key: "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk", server_id: server, device_id: device, token: "private-test-client-token" };
     if (command === "notification_permission") return { permission: "unavailable", problem: "os-unavailable" };
-    if (command === "begin_tray") return "fixture-presentation";
-    if (command === "publish_tray" || command === "read_tray_action") return;
+    if (command === "begin_tray" || command === "begin_notifications") return "fixture-presentation";
+    if (command === "publish_tray" || command === "read_tray_action" || command === "end_notifications") return;
     throw new Error("Unexpected native action");
   });
   const view = render(<Desktop />);

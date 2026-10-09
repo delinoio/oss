@@ -9773,6 +9773,214 @@
       "member": "document_json",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SITUATION_NOTIFICATIONS_V1",
+      "number": 58
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "InboxSource",
+      "member": "INBOX_SOURCE_OPERATIONAL",
+      "number": 4
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_QUESTION",
+      "number": 6
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_APPROVAL",
+      "number": 7
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_WORKER_UNAVAILABLE",
+      "number": 8
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_WORKER_AVAILABLE",
+      "number": 9
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_QUOTA_EXHAUSTED",
+      "number": 10
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_SCHEDULE_START_FAILED",
+      "number": 11
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_SCHEDULE_SERVER_OFFLINE",
+      "number": 12
+    },
+    {
+      "issue": 2055,
+      "kind": "enum",
+      "declaration": "NotificationKind",
+      "member": "NOTIFICATION_KIND_SCHEDULE_WORKER_OFFLINE",
+      "number": 13
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "InboxView",
+      "member": "machine",
+      "number": 5
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "InboxView",
+      "member": "occurrence",
+      "number": 6
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "NotificationPreferences",
+      "member": "situations",
+      "number": 4
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "NotificationCandidate",
+      "member": "machine_id",
+      "number": 5
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "NotificationCandidate",
+      "member": "occurrence_id",
+      "number": 6
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "GetNotificationPreferencesRequest",
+      "member": "situations",
+      "number": 1
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "questions",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "approvals",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "succeeded",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "failed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "stopped",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "server_lost",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "server_restored",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "worker_unavailable",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "worker_available",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "quota_exhausted",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "schedule_start_failed",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationPreferences",
+      "member": "schedule_offline",
+      "number": 12,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

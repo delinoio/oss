@@ -31,10 +31,17 @@ func (t *Tx) NotificationPreferences() (domain.NotificationPreferences, error) {
 		return v, err
 	}
 	err = t.tx.QueryRowContext(t.ctx, `SELECT revision,interactions,terminals FROM notification_preferences WHERE client_id=?`, client).Scan(&v.Revision, &v.Interactions, &v.Terminals)
-	if errors.Is(err, sql.ErrNoRows) {
-		return v, nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return v, storageError(err)
 	}
-	return v, storageError(err)
+	situation, err := t.situationPreferences(client, v.Revision)
+	if err != nil {
+		return v, err
+	}
+	if situation != nil {
+		v.Situations = &situation.Values
+	}
+	return v, nil
 }
 
 func (t *Tx) SetNotificationPreferences(value domain.NotificationPreferences) (domain.NotificationPreferences, error) {
@@ -48,7 +55,10 @@ func (t *Tx) SetNotificationPreferences(value domain.NotificationPreferences) (d
 	if value.Revision == 0 || value.Revision != current.Revision || value.Revision >= 1<<63-1 {
 		return current, notificationConflict()
 	}
-	if value == current {
+	if current.Situations != nil && value.Situations == nil {
+		return value, domain.Fail(domain.Unsupported, "This client cannot replace situation-specific preferences.", "Use a client supporting individual notification situations.")
+	}
+	if notificationEqual(value, current) {
 		return current, nil
 	}
 	client, err := t.notificationClient()
@@ -56,6 +66,9 @@ func (t *Tx) SetNotificationPreferences(value domain.NotificationPreferences) (d
 		return value, err
 	}
 	value.Revision++
+	if err := t.saveSituationNotifications(client, current, value); err != nil {
+		return value, err
+	}
 	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO notification_preferences(client_id,revision,interactions,terminals) VALUES(?,?,?,?) ON CONFLICT(client_id) DO UPDATE SET revision=excluded.revision,interactions=excluded.interactions,terminals=excluded.terminals`, client, value.Revision, value.Interactions, value.Terminals)
 	return value, storageError(err)
 }
@@ -69,6 +82,7 @@ FROM entities i LEFT JOIN entities a ON a.id=json_extract(i.body,'$.recovery.acc
 LEFT JOIN entities x ON x.id=json_extract(i.body,'$.source_id') AND x.kind='interaction'
 WHERE i.kind='inbox' AND (json_extract(s.body,'$.archive')='active' OR json_extract(i.body,'$.source')='subscription-recovery')
 AND NOT EXISTS(SELECT 1 FROM notification_deliveries d WHERE d.client_id=? AND d.inbox_id=i.id)
+AND NOT EXISTS(SELECT 1 FROM metadata m WHERE m.key='notification-delivery-v1:'||i.id||':'||?)
 AND ((? AND json_extract(i.body,'$.source')='interaction'
 AND x.session_id=i.session_id AND x.project_id=i.project_id
 AND json_extract(x.body,'$.closure')='open'
@@ -91,7 +105,14 @@ func (t *Tx) NotificationCandidates(limit int) ([]domain.NotificationCandidate, 
 	if err != nil {
 		return nil, false, err
 	}
-	rows, err := t.tx.QueryContext(t.ctx, notificationCandidatesSQL+` ORDER BY i.id LIMIT ?`, client, preferences.Interactions, preferences.Terminals, limit+1)
+	filter, extra := notificationSituationFilter(preferences)
+	interactions, terminals := preferences.Interactions, preferences.Terminals
+	if preferences.Situations != nil {
+		interactions, terminals = true, true
+	}
+	args := append([]any{client, client, interactions, terminals}, extra...)
+	args = append(args, limit+1)
+	rows, err := t.tx.QueryContext(t.ctx, notificationCandidatesSQL+filter+` ORDER BY i.id LIMIT ?`, args...)
 	if err != nil {
 		return nil, false, storageError(err)
 	}
@@ -105,11 +126,23 @@ func (t *Tx) NotificationCandidates(limit int) ([]domain.NotificationCandidate, 
 		if value.InboxID.Validate() != nil || (value.Kind == domain.SubscriptionRecoveryNotification && (value.AccountID.Validate() != nil || value.SessionID != "") || value.Kind != domain.SubscriptionRecoveryNotification && (value.SessionID.Validate() != nil || value.AccountID != "")) || !value.Kind.Valid() {
 			return nil, false, notificationConflict()
 		}
-		values = append(values, value)
+		value, eligible, err := t.exactNotificationCandidate(value, preferences)
+		if err != nil {
+			return nil, false, err
+		}
+		if eligible {
+			values = append(values, value)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, false, storageError(err)
 	}
+	rows.Close()
+	operational, err := t.operationalNotificationCandidates(client, preferences, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	values = append(values, operational...)
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
@@ -125,6 +158,9 @@ func (t *Tx) NotificationDelivery(inbox domain.ID) (domain.NotificationDelivery,
 	}
 	if err := inbox.Validate(); err != nil {
 		return value, err
+	}
+	if retained, exists, err := t.metadataNotificationDelivery(client, inbox); err != nil || exists {
+		return retained, err
 	}
 	err = t.tx.QueryRowContext(t.ctx, `SELECT d.inbox_id,i.session_id,d.kind,d.claim_id,d.state,COALESCE(json_extract(i.body,'$.recovery.account_id'),'') FROM notification_deliveries d JOIN entities i ON i.id=d.inbox_id AND i.kind='inbox' WHERE d.client_id=? AND d.inbox_id=?`, client, inbox).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.ClaimID, &value.State, &value.AccountID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -159,14 +195,54 @@ func (t *Tx) ClaimNotification(inbox, claim domain.ID) (domain.NotificationDeliv
 	if err != nil {
 		return value, false, err
 	}
-	err = t.tx.QueryRowContext(t.ctx, notificationCandidatesSQL+` AND i.id=?`, client, preferences.Interactions, preferences.Terminals, inbox).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.AccountID)
+	record, err := t.Get(domain.InboxKind, inbox)
+	if err != nil {
+		return value, false, err
+	}
+	entry, err := Decode[domain.InboxEntry](record)
+	if err != nil {
+		return value, false, err
+	}
+	if entry.Source == domain.OperationalInbox {
+		candidate, eligible, err := t.operationalNotificationCandidate(client, preferences, record)
+		if err != nil {
+			return value, false, err
+		}
+		if !eligible {
+			return value, false, notificationConflict()
+		}
+		value.NotificationCandidate = candidate
+	} else {
+		filter, extra := notificationSituationFilter(preferences)
+		interactions, terminals := preferences.Interactions, preferences.Terminals
+		if preferences.Situations != nil {
+			interactions, terminals = true, true
+		}
+		args := append([]any{client, client, interactions, terminals}, extra...)
+		args = append(args, inbox)
+		err = t.tx.QueryRowContext(t.ctx, notificationCandidatesSQL+filter+` AND i.id=?`, args...).Scan(&value.InboxID, &value.SessionID, &value.Kind, &value.AccountID)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, false, notificationConflict()
 	}
 	if err != nil {
 		return value, false, storageError(err)
 	}
+	if !value.Kind.Operational() {
+		candidate, eligible, err := t.exactNotificationCandidate(value.NotificationCandidate, preferences)
+		if err != nil {
+			return value, false, err
+		}
+		if !eligible {
+			return value, false, notificationConflict()
+		}
+		value.NotificationCandidate = candidate
+	}
 	value.ClaimID, value.State = claim, domain.NotificationClaimed
+	if value.Kind.Operational() || value.Kind == domain.QuestionNotification || value.Kind == domain.ApprovalNotification {
+		err := t.saveMetadataNotificationDelivery(client, value)
+		return value, err == nil, err
+	}
 	_, err = t.tx.ExecContext(t.ctx, `INSERT INTO notification_deliveries(client_id,inbox_id,claim_id,kind,state) VALUES(?,?,?,?,?)`, client, inbox, claim, value.Kind, value.State)
 	return value, err == nil, storageError(err)
 }
@@ -189,6 +265,10 @@ func (t *Tx) ReportNotification(inbox, claim domain.ID, state domain.Notificatio
 	client, err := t.notificationClient()
 	if err != nil {
 		return value, err
+	}
+	if value.Kind.Operational() || value.Kind == domain.QuestionNotification || value.Kind == domain.ApprovalNotification {
+		value.State = state
+		return value, t.saveMetadataNotificationDelivery(client, value)
 	}
 	_, err = t.tx.ExecContext(t.ctx, `UPDATE notification_deliveries SET state=? WHERE client_id=? AND inbox_id=? AND claim_id=?`, state, client, inbox, claim)
 	value.State = state

@@ -112,6 +112,16 @@ enum WidgetMessage: String {
     case resetMinutes
     case resetSoon
     case openStatus
+    case questionNotice
+    case approvalNotice
+    case workerUnavailableNotice
+    case workerAvailableNotice
+    case quotaExhaustedNotice
+    case scheduleStartFailedNotice
+    case scheduleServerOfflineNotice
+    case scheduleWorkerOfflineNotice
+    case serverLostNotice
+    case serverRestoredNotice
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -224,6 +234,16 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "resetMinutes": "Resets in {{minutes}} minutes",
         "resetSoon": "Resets soon",
         "openStatus": "Open status",
+        "questionNotice": "Question needs your answer",
+        "approvalNotice": "Approval requested",
+        "workerUnavailableNotice": "Worker unavailable",
+        "workerAvailableNotice": "Worker available again",
+        "quotaExhaustedNotice": "Account quota exhausted",
+        "scheduleStartFailedNotice": "Schedule start failed",
+        "scheduleServerOfflineNotice": "Schedule skipped: server offline",
+        "scheduleWorkerOfflineNotice": "Schedule skipped: Worker offline",
+        "serverLostNotice": "Server connection lost",
+        "serverRestoredNotice": "Server connection restored",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -335,6 +355,16 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "resetMinutes": "{{minutes}}분 뒤 리셋",
         "resetSoon": "곧 리셋",
         "openStatus": "상태 열기",
+        "questionNotice": "질문에 답변이 필요합니다",
+        "approvalNotice": "승인 요청",
+        "workerUnavailableNotice": "Worker 사용 불가",
+        "workerAvailableNotice": "Worker 사용 가능",
+        "quotaExhaustedNotice": "계정 할당량 소진",
+        "scheduleStartFailedNotice": "일정 시작 실패",
+        "scheduleServerOfflineNotice": "서버 오프라인으로 일정 건너뜀",
+        "scheduleWorkerOfflineNotice": "Worker 오프라인으로 일정 건너뜀",
+        "serverLostNotice": "서버 연결 끊김",
+        "serverRestoredNotice": "서버 연결 복구",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

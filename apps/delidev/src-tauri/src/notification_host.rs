@@ -11,7 +11,7 @@ use delidev_desktop::{
     NativeFailure, canonical_id,
     notifications::{self, Notice, Permission, PermissionProblem, PresentationResult, Readiness},
 };
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_runtime_cef::CefRuntime;
 use tokio::sync::oneshot;
 
@@ -22,12 +22,17 @@ const MAX_SEEN: usize = 10000;
 const LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
 #[derive(Clone, PartialEq, Eq)]
 struct Target {
+    connection: Option<String>,
     label: String,
     scope: String,
     instance: Option<String>,
 }
 struct Active {
     target: Target,
+    cancel: Option<oneshot::Sender<()>>,
+    task: tauri::async_runtime::JoinHandle<()>,
+}
+struct Observer {
     cancel: Option<oneshot::Sender<()>>,
     task: tauri::async_runtime::JoinHandle<()>,
 }
@@ -41,6 +46,8 @@ struct State {
     active: BTreeMap<String, Active>,
     seen: HashSet<String>,
     prompt: Option<Prompt>,
+    observers: BTreeMap<String, Observer>,
+    authorities: BTreeMap<String, super::WindowAuthority>,
 }
 #[derive(Default)]
 pub struct NotificationHost {
@@ -65,6 +72,9 @@ pub async fn begin_notifications(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     host: tauri::State<'_, Arc<NotificationHost>>,
+    app: AppHandle<CefRuntime>,
+    connector: tauri::State<'_, Arc<delidev_desktop::Connector>>,
+    supervision: tauri::State<'_, Arc<delidev_desktop::Supervision>>,
 ) -> Result<String, NativeFailure> {
     let response_window = window.clone();
     let original_authority = super::capture_authority(&response_window)?;
@@ -73,13 +83,42 @@ pub async fn begin_notifications(
         if host.stopping.load(Ordering::Acquire) {
             return Err(NativeFailure::Busy);
         }
+        let profile = if super::is_local(&window) {
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?.profile)
+        };
+        let connector = Arc::clone(connector.inner());
+        let original = if let Some(profile) = profile.clone() {
+            let native = Arc::clone(&connector);
+            tauri::async_runtime::spawn_blocking(move || native.connect_saved(&profile))
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??
+        } else {
+            let native = Arc::clone(supervision.inner());
+            tauri::async_runtime::spawn_blocking(move || native.launch_connection())
+                .await
+                .map_err(|_| NativeFailure::SidecarFailed)??
+                .ok_or(NativeFailure::CredentialUnavailable)?
+        };
+        super::recheck_authority(&response_window, &original_authority)?;
+        let ledger = connector
+            .notification_connection_ledger(&original, profile.as_ref().map(|v| v.id.as_str()))?;
+        let key = ledger.key.clone();
         let scope = uuid::Uuid::now_v7().to_string();
-        let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
-        state.begin(Target {
-            label: window.label().into(),
-            scope: scope.clone(),
-            instance,
-        })?;
+        {
+            let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
+            state.begin(Target {
+                label: window.label().into(),
+                scope: scope.clone(),
+                instance,
+                connection: Some(key.clone()),
+            })?;
+            state
+                .authorities
+                .insert(window.label().into(), original_authority.clone());
+        }
+        host.observe_connection(app, connector, original, ledger)?;
         Ok(scope)
     }
     .await;
@@ -102,6 +141,13 @@ pub async fn end_notifications(
             label: window.label().into(),
             scope,
             instance: original,
+            connection: host
+                .state
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .scopes
+                .get(window.label())
+                .and_then(|v| v.connection.clone()),
         };
         let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
         state.end(&target);
@@ -166,10 +212,24 @@ pub async fn present_notification(
         let original = instance(&window, &windows)?;
         canonical_id(&scope)?;
         notice.validate()?;
+        if matches!(
+            notice.kind,
+            notifications::NotificationKind::ServerLost
+                | notifications::NotificationKind::ServerRestored
+        ) {
+            return Err(NativeFailure::PermissionDenied);
+        }
         let target = Target {
             label: window.label().into(),
             scope,
             instance: original,
+            connection: host
+                .state
+                .lock()
+                .map_err(|_| NativeFailure::Busy)?
+                .scopes
+                .get(window.label())
+                .and_then(|v| v.connection.clone()),
         };
         let receiver = host.start(app, target, notice)?;
         Ok(receiver.await.unwrap_or(PresentationResult::Uncertain))
@@ -183,7 +243,23 @@ impl State {
     fn end(&mut self, target: &Target) {
         if self.scopes.get(&target.label) == Some(target) {
             self.scopes.remove(&target.label);
+            self.authorities.remove(&target.label);
             self.cancel_label(&target.label);
+            self.cancel_unused_observers();
+        }
+    }
+
+    fn cancel_unused_observers(&mut self) {
+        for (key, observer) in &mut self.observers {
+            if !self
+                .scopes
+                .values()
+                .any(|v| v.connection.as_ref() == Some(key))
+            {
+                if let Some(cancel) = observer.cancel.take() {
+                    let _ = cancel.send(());
+                }
+            }
         }
     }
 
@@ -201,6 +277,7 @@ impl State {
         }
         self.cancel_label(&target.label);
         self.scopes.insert(target.label.clone(), target);
+        self.cancel_unused_observers();
         Ok(())
     }
 
@@ -216,6 +293,133 @@ impl State {
     }
 }
 impl NotificationHost {
+    fn observe_connection(
+        self: &Arc<Self>,
+        app: AppHandle<CefRuntime>,
+        connector: Arc<delidev_desktop::Connector>,
+        connection: delidev_desktop::Connection,
+        ledger: delidev_desktop::notification_connection::Ledger,
+    ) -> Result<(), NativeFailure> {
+        let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
+        if self.stopping.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
+        if let Some(observer) = state.observers.get(&ledger.key) {
+            return if observer.cancel.is_some() {
+                Ok(())
+            } else {
+                Err(NativeFailure::Busy)
+            };
+        }
+        if state.observers.len() >= MAX_ACTIVE {
+            return Err(NativeFailure::Busy);
+        }
+        let (cancel, mut canceled) = oneshot::channel();
+        let host = Arc::clone(self);
+        let key = ledger.key.clone();
+        let task = tauri::async_runtime::spawn(async move {
+            let mut transitions = delidev_desktop::notification_connection::Transition::default();
+            let mut cadence = tokio::time::interval(Duration::from_secs(30));
+            cadence.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {biased;_=&mut canceled=>break,_=cadence.tick()=>{}}
+                if host.stopping.load(Ordering::Acquire) {
+                    break;
+                }
+                let current = host
+                    .state
+                    .lock()
+                    .ok()
+                    .map(|state| {
+                        state
+                            .scopes
+                            .values()
+                            .filter(|target| target.connection.as_ref() == Some(&ledger.key))
+                            .filter_map(|target| {
+                                state
+                                    .authorities
+                                    .get(&target.label)
+                                    .cloned()
+                                    .map(|authority| (target.clone(), authority))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let current = current.into_iter().find_map(|(target, authority)| {
+                    app.get_webview_window(&target.label)
+                        .filter(|window| super::recheck_authority(window, &authority).is_ok())
+                        .map(|window| (target, window, authority))
+                });
+                let Some((validated_target, window, authority)) = current else {
+                    break;
+                };
+                let native = Arc::clone(&connector);
+                let original = connection.clone();
+                // Await the bounded native child even on scope disposal. Quit
+                // joins this original read; canceling a future
+                // cannot abandon its process.
+                let observed = tauri::async_runtime::spawn_blocking(move || {
+                    native.observe_notification_connection(&original)
+                })
+                .await;
+                if host.stopping.load(Ordering::Acquire) {
+                    break;
+                }
+                if super::recheck_authority(&window, &authority).is_err() {
+                    continue;
+                }
+                let Ok(Ok(observed)) = observed else {
+                    tracing::warn!(
+                        operation = "notification_connection_observation",
+                        code = "unconfirmed"
+                    );
+                    break;
+                };
+                if matches!(
+                    observed,
+                    delidev_desktop::notification_connection::Observation::AuthenticatedSuccess { .. }
+                ) {
+                    match ledger.acknowledged(&observed) {
+                        Ok(true) => transitions = Default::default(),
+                        Ok(false) => {}
+                        Err(_) => break,
+                    }
+                }
+                let edge = match transitions.observe(&observed, &connection.server_id) {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                if let Some(kind) = edge {
+                    if host.current(&validated_target.label, &validated_target.scope) {
+                        let target = validated_target;
+                        match ledger.reserve(kind) {
+                            Ok(Some(notice)) => {
+                                let _ = host.start(app.clone(), target, notice);
+                            }
+                            Ok(None) => {}
+                            Err(_) => tracing::warn!(
+                                operation = "notification_connection_reservation",
+                                code = "unconfirmed"
+                            ),
+                        }
+                    }
+                }
+            }
+            tracing::info!(operation = "notification_connection_observation_joined");
+            if let Ok(mut state) = host.state.lock() {
+                state.observers.remove(&ledger.key);
+            }
+        });
+        state.observers.insert(
+            key,
+            Observer {
+                cancel: Some(cancel),
+                task,
+            },
+        );
+        Ok(())
+    }
+
     pub fn current(&self, label: &str, scope: &str) -> bool {
         !self.stopping.load(Ordering::Acquire)
             && self.state.lock().is_ok_and(|state| {
@@ -329,13 +533,26 @@ impl NotificationHost {
                                         state.scopes.get(&target.label) == Some(&target)
                                     })
                                 {
-                                    tray_host::activate_inbox(
-                                        &queued,
-                                        target.label,
-                                        target.instance,
-                                        target.scope,
-                                        inbox,
-                                    );
+                                    if matches!(
+                                        notice.kind,
+                                        notifications::NotificationKind::ServerLost
+                                            | notifications::NotificationKind::ServerRestored
+                                    ) {
+                                        tray_host::activate_connection_diagnostics(
+                                            &queued,
+                                            target.label,
+                                            target.instance,
+                                            target.scope,
+                                        );
+                                    } else {
+                                        tray_host::activate_inbox(
+                                            &queued,
+                                            target.label,
+                                            target.instance,
+                                            target.scope,
+                                            inbox,
+                                        );
+                                    }
                                 }
                             })
                             .is_err()
@@ -376,7 +593,9 @@ impl NotificationHost {
     pub fn remove(&self, label: &str) {
         if let Ok(mut state) = self.state.lock() {
             state.scopes.remove(label);
+            state.authorities.remove(label);
             state.cancel_label(label);
+            state.cancel_unused_observers();
         }
     }
 
@@ -384,11 +603,16 @@ impl NotificationHost {
         if self.stopping.swap(true, Ordering::AcqRel) {
             return;
         }
-        let (active, prompt) = if let Ok(mut state) = self.state.lock() {
+        let (active, prompt, observers) = if let Ok(mut state) = self.state.lock() {
             state.scopes.clear();
-            (std::mem::take(&mut state.active), state.prompt.take())
+            state.authorities.clear();
+            (
+                std::mem::take(&mut state.active),
+                state.prompt.take(),
+                std::mem::take(&mut state.observers),
+            )
         } else {
-            (BTreeMap::new(), None)
+            (BTreeMap::new(), None, BTreeMap::new())
         };
         let mut tasks = std::collections::VecDeque::with_capacity(active.len() + 1);
         for (_, active) in active {
@@ -397,12 +621,18 @@ impl NotificationHost {
             }
             tasks.push_back(active.task);
         }
+        for (_, observer) in observers {
+            if let Some(cancel) = observer.cancel {
+                let _ = cancel.send(());
+            }
+            tasks.push_back(observer.task);
+        }
         if let Some(prompt) = prompt {
             let _ = prompt.cancel.send(());
             tasks.push_back(prompt.task);
         }
         tauri::async_runtime::block_on(async {
-            if tokio::time::timeout(Duration::from_secs(5), async {
+            if tokio::time::timeout(Duration::from_secs(15), async {
                 while let Some(task) = tasks.front_mut() {
                     let _ = task.await;
                     tasks.pop_front();
@@ -434,6 +664,7 @@ mod tests {
             label: label.into(),
             scope: uuid::Uuid::now_v7().to_string(),
             instance: instance.map(str::to_owned),
+            connection: None,
         }
     }
     #[test]

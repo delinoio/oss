@@ -29,6 +29,7 @@ enum InboxSource {
   INBOX_SOURCE_INTERACTION = 1;
   INBOX_SOURCE_EXECUTION_TERMINAL = 2;
   INBOX_SOURCE_SUBSCRIPTION_RECOVERY = 3;
+  INBOX_SOURCE_OPERATIONAL = 4;
 }
 
 message InboxView {
@@ -37,6 +38,8 @@ message InboxView {
   // Present only for an interaction source; always its current original record.
   Resource interaction = 3;
   Resource account = 4;
+  Resource machine = 5;
+  Resource occurrence = 6;
 }
 
 message GetInboxEntryRequest {
@@ -83,6 +86,14 @@ enum NotificationKind {
   NOTIFICATION_KIND_FAILED = 3;
   NOTIFICATION_KIND_STOPPED = 4;
   NOTIFICATION_KIND_SUBSCRIPTION_RECOVERY = 5;
+  NOTIFICATION_KIND_QUESTION = 6;
+  NOTIFICATION_KIND_APPROVAL = 7;
+  NOTIFICATION_KIND_WORKER_UNAVAILABLE = 8;
+  NOTIFICATION_KIND_WORKER_AVAILABLE = 9;
+  NOTIFICATION_KIND_QUOTA_EXHAUSTED = 10;
+  NOTIFICATION_KIND_SCHEDULE_START_FAILED = 11;
+  NOTIFICATION_KIND_SCHEDULE_SERVER_OFFLINE = 12;
+  NOTIFICATION_KIND_SCHEDULE_WORKER_OFFLINE = 13;
 }
 
 enum NotificationState {
@@ -99,6 +110,23 @@ message NotificationPreferences {
   uint64 revision = 1;
   bool interactions = 2;
   bool terminals = 3;
+  SituationNotificationPreferences situations = 4;
+}
+
+// A complete acknowledged generation; omission denotes the legacy write shape.
+message SituationNotificationPreferences {
+  bool questions = 1;
+  bool approvals = 2;
+  bool succeeded = 3;
+  bool failed = 4;
+  bool stopped = 5;
+  bool server_lost = 6;
+  bool server_restored = 7;
+  bool worker_unavailable = 8;
+  bool worker_available = 9;
+  bool quota_exhausted = 10;
+  bool schedule_start_failed = 11;
+  bool schedule_offline = 12;
 }
 
 message NotificationCandidate {
@@ -106,6 +134,8 @@ message NotificationCandidate {
   string session_id = 2;
   NotificationKind kind = 3;
   string account_id = 4;
+  string machine_id = 5;
+  string occurrence_id = 6;
 }
 
 message NotificationDelivery {
@@ -114,7 +144,10 @@ message NotificationDelivery {
   NotificationState state = 3;
 }
 
-message GetNotificationPreferencesRequest {}
+message GetNotificationPreferencesRequest {
+  // Opt in to capability-58 initialization with future-only checkpoints.
+  bool situations = 1;
+}
 
 message GetNotificationPreferencesResponse {
   NotificationPreferences preferences = 1;

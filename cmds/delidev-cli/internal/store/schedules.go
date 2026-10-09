@@ -110,7 +110,11 @@ func (t *Tx) AppendScheduleOccurrence(id domain.ID, schedule Record, next domain
 	if _, err := t.PutSchedule(schedule.ID, schedule.Revision, next); err != nil {
 		return Record{}, err
 	}
-	return t.Put(domain.OccurrenceKind, id, 0, occurrence.SessionID, occurrence.Selection.ProjectID, occurrence)
+	record, err := t.Put(domain.OccurrenceKind, id, 0, occurrence.SessionID, occurrence.Selection.ProjectID, occurrence)
+	if err != nil {
+		return record, err
+	}
+	return record, t.publishScheduleNotification(record, occurrence)
 }
 
 func (t *Tx) UpdateScheduleOccurrence(record Record, value domain.ScheduleOccurrence) (Record, error) {
@@ -150,7 +154,11 @@ func (t *Tx) UpdateScheduleOccurrence(record Record, value domain.ScheduleOccurr
 	if err := t.validateOccurrenceSession(record.ID, value); err != nil {
 		return Record{}, err
 	}
-	return t.Put(domain.OccurrenceKind, record.ID, record.Revision, value.SessionID, value.Selection.ProjectID, value)
+	updated, err := t.Put(domain.OccurrenceKind, record.ID, record.Revision, value.SessionID, value.Selection.ProjectID, value)
+	if err != nil {
+		return updated, err
+	}
+	return updated, t.publishScheduleNotification(updated, value)
 }
 
 func (t *Tx) WaitingOccurrenceCount(schedule domain.ID) (int, error) {

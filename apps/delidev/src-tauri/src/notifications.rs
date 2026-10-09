@@ -8,6 +8,17 @@ pub const APPLICATION_ID: &str = "io.delino.delidev";
 #[serde(rename_all = "kebab-case")]
 pub enum NotificationKind {
     Request,
+    Question,
+    Approval,
+    WorkerUnavailable,
+    WorkerAvailable,
+    QuotaExhausted,
+    ScheduleStartFailed,
+    ScheduleServerOffline,
+    ScheduleWorkerOffline,
+    ServerLost,
+    ServerRestored,
+
     Succeeded,
     Failed,
     Stopped,
@@ -16,6 +27,37 @@ pub enum NotificationKind {
 impl NotificationKind {
     pub fn title(self) -> &'static str {
         match self {
+            Self::Question => {
+                crate::localization::text(crate::localization::Message::QuestionNotice)
+            }
+            Self::Approval => {
+                crate::localization::text(crate::localization::Message::ApprovalNotice)
+            }
+            Self::WorkerUnavailable => {
+                crate::localization::text(crate::localization::Message::WorkerUnavailableNotice)
+            }
+            Self::WorkerAvailable => {
+                crate::localization::text(crate::localization::Message::WorkerAvailableNotice)
+            }
+            Self::QuotaExhausted => {
+                crate::localization::text(crate::localization::Message::QuotaExhaustedNotice)
+            }
+            Self::ScheduleStartFailed => {
+                crate::localization::text(crate::localization::Message::ScheduleStartFailedNotice)
+            }
+            Self::ScheduleServerOffline => {
+                crate::localization::text(crate::localization::Message::ScheduleServerOfflineNotice)
+            }
+            Self::ScheduleWorkerOffline => {
+                crate::localization::text(crate::localization::Message::ScheduleWorkerOfflineNotice)
+            }
+            Self::ServerLost => {
+                crate::localization::text(crate::localization::Message::ServerLostNotice)
+            }
+            Self::ServerRestored => {
+                crate::localization::text(crate::localization::Message::ServerRestoredNotice)
+            }
+
             Self::Request => crate::localization::text(crate::localization::Message::RequestTitle),
             Self::Succeeded => {
                 crate::localization::text(crate::localization::Message::SucceededTitle)
@@ -90,7 +132,18 @@ pub struct Notice {
 impl Notice {
     pub fn validate(&self) -> Result<(), NativeFailure> {
         canonical_id(&self.claim_id)?;
-        canonical_id(&self.inbox_id)
+        if matches!(
+            self.kind,
+            NotificationKind::ServerLost | NotificationKind::ServerRestored
+        ) {
+            if self.inbox_id.is_empty() {
+                Ok(())
+            } else {
+                Err(NativeFailure::InvalidEvidence)
+            }
+        } else {
+            canonical_id(&self.inbox_id)
+        }
     }
 }
 

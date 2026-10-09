@@ -461,6 +461,10 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		} else if !quotaAccountReady(a) || state.Pending != nil || observed.Outcome != "" || observed.ConsumeUncertain || state.Lease.Action != domain.SubscriptionExecute {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
+		beforeQuota := a
+		beforeState := *a.Subscription
+		beforeQuota.Subscription = &beforeState
+		beforeQuota.Quota = append([]domain.QuotaWindow(nil), a.Quota...)
 		recovered := false
 		if observed.Quota != nil && quotaAccountReady(a) && state.Pending == nil {
 			recovered, err = domain.ApplySubscriptionQuota(&a, *observed.Quota, time.Now().UTC())
@@ -475,6 +479,11 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
+		}
+		if observed.Quota != nil && (input.Operation == "" || state.Observation != nil && state.Observation.Action == domain.SubscriptionQuota) {
+			if err := tx.ObserveQuotaNotification(beforeQuota, a, r.ID, source, *observed.Quota); err != nil {
+				return nil, err
+			}
 		}
 		if recovered {
 			if _, err := tx.CreateSubscriptionRecoveryInbox(r.ID, source, a.Connection.ID, observed.Quota.ObservedAt); err != nil {

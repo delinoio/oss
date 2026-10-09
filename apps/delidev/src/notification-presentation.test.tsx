@@ -48,7 +48,7 @@ it("never prompts from polling and leaves the inbox untouched when permission is
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><NotificationPresentation /><NativeNotificationSettings active /></QueryClientProvider></TransportProvider>);
   await screen.findByText("Notification permission has not been requested.");
-  expect(native.invoke.mock.calls.every(([command]) => command === "notification_permission")).toBe(true);
+  expect(native.invoke.mock.calls.every(([command]) => ["notification_permission","begin_notifications"].includes(command))).toBe(true);
   expect(list).not.toHaveBeenCalled(); expect(claim).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Allow desktop notifications" }));
   await screen.findByText(/Notifications are disabled/);

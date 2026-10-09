@@ -43,6 +43,8 @@ func inboxSource(value pb.InboxSource) (domain.InboxSource, error) {
 		return "", nil
 	case pb.InboxSource_INBOX_SOURCE_INTERACTION:
 		return domain.InteractionInbox, nil
+	case pb.InboxSource_INBOX_SOURCE_OPERATIONAL:
+		return domain.OperationalInbox, nil
 	case pb.InboxSource_INBOX_SOURCE_SUBSCRIPTION_RECOVERY:
 		return domain.SubscriptionRecoveryInbox, nil
 	case pb.InboxSource_INBOX_SOURCE_EXECUTION_TERMINAL:
@@ -58,6 +60,27 @@ func currentInboxView(tx *store.Tx, record store.Record) (*pb.InboxView, error) 
 	}
 	if record.Kind != domain.InboxKind || entry.Validate() != nil {
 		return nil, domain.Fail(domain.RecoveryRequired, "The retained inbox source is inconsistent.", "Preserve the original inbox and source records for reconciliation.")
+	}
+	if entry.Source == domain.OperationalInbox {
+		if record.SessionID != "" || record.ProjectID != "" {
+			return nil, domain.Fail(domain.RecoveryRequired, "Invalid operational Inbox scope.", "Inspect the original observed source.")
+		}
+		view := &pb.InboxView{Entry: rpc.Resource(record)}
+		target, err := tx.OperationalInboxTarget(*entry.Operational)
+		if err != nil {
+			return nil, err
+		}
+		if target.ID != "" {
+			switch target.Kind {
+			case domain.AccountKind:
+				view.Account = rpc.Resource(target)
+			case domain.MachineKind:
+				view.Machine = rpc.Resource(target)
+			case domain.OccurrenceKind:
+				view.Occurrence = rpc.Resource(target)
+			}
+		}
+		return view, nil
 	}
 	if entry.Source == domain.SubscriptionRecoveryInbox {
 		account, err := tx.Get(domain.AccountKind, entry.Recovery.AccountID)

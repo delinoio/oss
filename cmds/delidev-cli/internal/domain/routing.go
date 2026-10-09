@@ -257,3 +257,22 @@ func quotaEvidence(windows []QuotaWindow, now time.Time) (ObservationState, *flo
 	sort.Strings(groups)
 	return Observed, &minimum, reset, strings.Join(groups, "|")
 }
+
+// ConfirmedSubscriptionQuotaUsable requires complete fresh blocking evidence.
+// Sparse observations cannot promote one known positive window into a baseline.
+func ConfirmedSubscriptionQuotaUsable(a Account, now time.Time) bool {
+	if a.SubscriptionService != SubscriptionChatGPT || a.Subscription == nil || a.ConfirmedExhausted {
+		return false
+	}
+	state, score, _, _ := quotaEvidence(a.Quota, now)
+	if state != Observed || score == nil || *score <= 0 {
+		return false
+	}
+	if a.Subscription.SpendControlReached != nil {
+		at := a.Subscription.QuotaObservedAt
+		if *a.Subscription.SpendControlReached || at == nil || at.After(now) || now.Sub(*at) > 5*time.Minute {
+			return false
+		}
+	}
+	return true
+}

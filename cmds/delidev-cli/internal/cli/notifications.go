@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
+	"fmt"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
@@ -23,11 +26,16 @@ func notificationCommand(ctx context.Context, c client, o options, args []string
 	}
 	f := flags("notification " + args[0])
 	switch args[0] {
+	case "observe-connection":
+		if err := parse(f, args[1:]); err != nil {
+			return nil, err
+		}
+		return observeNotificationConnection(ctx, c)
 	case "preferences":
 		if err := parse(f, args[1:]); err != nil {
 			return nil, err
 		}
-		value, err := c.inbox.GetNotificationPreferences(ctx, request(c, &pb.GetNotificationPreferencesRequest{}))
+		value, err := c.inbox.GetNotificationPreferences(ctx, request(c, &pb.GetNotificationPreferencesRequest{Situations: true}))
 		if err != nil {
 			return nil, rpc.ClientError(err)
 		}
@@ -36,8 +44,89 @@ func notificationCommand(ctx context.Context, c client, o options, args []string
 		revision := f.Uint64("revision", 0, "original preferences revision")
 		interactions := f.String("interactions", "", "on or off")
 		terminals := f.String("terminals", "", "on or off")
+		controls := map[string]*string{}
+		controls["questions"] = f.String("questions", "", "on or off; preserve other situations")
+		controls["approvals"] = f.String("approvals", "", "on or off; preserve other situations")
+		controls["succeeded"] = f.String("succeeded", "", "on or off; preserve other situations")
+		controls["failed"] = f.String("failed", "", "on or off; preserve other situations")
+		controls["stopped"] = f.String("stopped", "", "on or off; preserve other situations")
+		controls["server-lost"] = f.String("server-lost", "", "on or off; preserve other situations")
+		controls["server-restored"] = f.String("server-restored", "", "on or off; preserve other situations")
+		controls["worker-unavailable"] = f.String("worker-unavailable", "", "on or off; preserve other situations")
+		controls["worker-available"] = f.String("worker-available", "", "on or off; preserve other situations")
+		controls["quota-exhausted"] = f.String("quota-exhausted", "", "on or off; preserve other situations")
+		controls["schedule-start-failed"] = f.String("schedule-start-failed", "", "on or off; preserve other situations")
+		controls["schedule-offline"] = f.String("schedule-offline", "", "on or off; preserve other situations")
+
 		if err := parse(f, args[1:]); err != nil {
 			return nil, err
+		}
+		individual := false
+		for _, value := range controls {
+			if *value != "" {
+				individual = true
+				if *value != "on" && *value != "off" {
+					return nil, domain.Fail(domain.InvalidArgument, "Notification choices must be on or off.", "Use an explicit typed situation.")
+				}
+			}
+		}
+		if individual {
+			if *revision == 0 || *interactions != "" || *terminals != "" {
+				return nil, domain.Fail(domain.InvalidArgument, "Use a revision and individual notification choices.", "Do not mix individual and legacy combined controls.")
+			}
+			current, err := c.inbox.GetNotificationPreferences(ctx, request(c, &pb.GetNotificationPreferencesRequest{Situations: true}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			v := current.Msg.Preferences
+			if v == nil || v.Situations == nil {
+				return nil, domain.Fail(domain.Unsupported, "This server does not support individual notifications.", "Use a compatible server.")
+			}
+			if v.Revision != *revision {
+				return nil, domain.Fail(domain.Conflict, "Notification preferences changed.", "Read the current revision before configuration.")
+			}
+			p := v.Situations
+			if value := *controls["questions"]; value != "" {
+				p.Questions = value == "on"
+			}
+			if value := *controls["approvals"]; value != "" {
+				p.Approvals = value == "on"
+			}
+			if value := *controls["succeeded"]; value != "" {
+				p.Succeeded = value == "on"
+			}
+			if value := *controls["failed"]; value != "" {
+				p.Failed = value == "on"
+			}
+			if value := *controls["stopped"]; value != "" {
+				p.Stopped = value == "on"
+			}
+			if value := *controls["server-lost"]; value != "" {
+				p.ServerLost = value == "on"
+			}
+			if value := *controls["server-restored"]; value != "" {
+				p.ServerRestored = value == "on"
+			}
+			if value := *controls["worker-unavailable"]; value != "" {
+				p.WorkerUnavailable = value == "on"
+			}
+			if value := *controls["worker-available"]; value != "" {
+				p.WorkerAvailable = value == "on"
+			}
+			if value := *controls["quota-exhausted"]; value != "" {
+				p.QuotaExhausted = value == "on"
+			}
+			if value := *controls["schedule-start-failed"]; value != "" {
+				p.ScheduleStartFailed = value == "on"
+			}
+			if value := *controls["schedule-offline"]; value != "" {
+				p.ScheduleOffline = value == "on"
+			}
+			result, err := c.inbox.SetNotificationPreferences(ctx, request(c, &pb.SetNotificationPreferencesRequest{RequestId: string(o.requestID), Preferences: v}))
+			if err != nil {
+				return nil, rpc.ClientError(err)
+			}
+			return notificationOutput(result.Msg)
 		}
 		if *revision == 0 || (*interactions != "on" && *interactions != "off") || (*terminals != "on" && *terminals != "off") {
 			return nil, domain.Fail(domain.InvalidArgument, "Complete revision-bound notification preferences are required.", "Use --revision and explicit --interactions on|off and --terminals on|off.")
@@ -102,4 +191,50 @@ func notificationCommand(ctx context.Context, c client, o options, args []string
 	default:
 		return nil, usage()
 	}
+}
+
+// Native observation consumes this closed metadata projection, not mapped
+// product errors. A wire Unavailable is not evidence of a network edge.
+func observeNotificationConnection(parent context.Context, c client) (any, error) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	status, err := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+	if err != nil {
+		state := "unusable"
+		if !connect.IsWireError(err) {
+			switch connect.CodeOf(err) {
+			case connect.CodeUnavailable:
+				state = "network-unavailable"
+			case connect.CodeDeadlineExceeded:
+				state = "network-deadline"
+			}
+		}
+		return map[string]any{"state": state}, nil
+	}
+	v := status.Msg
+	if v.Stopping || v.ProtocolVersion != rpc.ProtocolVersion {
+		return map[string]any{"state": "unusable"}, nil
+	}
+	supported := false
+	for _, capability := range v.Capabilities {
+		supported = supported || capability == pb.SystemCapability_SYSTEM_CAPABILITY_SITUATION_NOTIFICATIONS_V1
+	}
+	if !supported {
+		return map[string]any{"state": "unusable"}, nil
+	}
+	preferences, err := c.inbox.GetNotificationPreferences(ctx, request(c, &pb.GetNotificationPreferencesRequest{Situations: true}))
+	if err != nil {
+		// A successful original status read is recovery evidence even if the
+		// subsequent preference refresh loses transport. Retain only native's
+		// previously acknowledged cache; wire/authentication errors dispose it.
+		if !connect.IsWireError(err) && (connect.CodeOf(err) == connect.CodeUnavailable || connect.CodeOf(err) == connect.CodeDeadlineExceeded) {
+			return map[string]any{"state": "authenticated-success", "server_id": v.ServerId}, nil
+		}
+		return map[string]any{"state": "unusable"}, nil
+	}
+	p := preferences.Msg.Preferences
+	if p == nil || p.Revision == 0 || p.Situations == nil {
+		return map[string]any{"state": "unusable"}, nil
+	}
+	return map[string]any{"state": "authenticated-success", "server_id": v.ServerId, "revision": fmt.Sprint(p.Revision), "lost": p.Situations.ServerLost, "restored": p.Situations.ServerRestored}, nil
 }
