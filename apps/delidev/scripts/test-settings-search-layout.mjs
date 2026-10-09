@@ -30,7 +30,7 @@ try {
   page.on("pageerror", error => console.error("fixture_page_error", error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const catalogs = Object.fromEntries(await Promise.all(["en","ko"].map(async language=>[language, Object.assign(...await Promise.all(["settings","remediation-policy","network-settings","ssh-setup","appearance","language","date-format","notification-settings"].map(async name=>JSON.parse(await readFile(join(app,`src/locales/${language}/${name}.json`),"utf8")))))])));
-  for (const language of ["en","ko"]) for(const theme of ["light","dark","system"]) for(const [width,height] of [[1440,900],[1100,768],[960,640],[640,480],[720,450],[480,320]]) {
+  for (const language of ["en","ko"]) for(const theme of ["light","dark","system"]) for(const [width,height] of [[1440,900],[1280,820],[960,640],[640,480],[720,450],[480,320]]) {
     await page.setViewportSize({width,height}); await page.goto(`${origin}/?language=${language}&theme=${theme}`);
     const t=key=>catalogs[language][key];
     await page.getByRole("button",{name:t("settings.settings_74a883"),exact:true}).click();
@@ -38,6 +38,36 @@ try {
     const open=async()=>{if(width<760 && !(await page.getByRole('searchbox').isVisible()))await drawer.click();};
     await open(); const input=page.getByRole('searchbox'); await input.waitFor();
     assert.equal(await page.locator('[data-settings-category]').count(),17);
+    const originalCategories=await page.locator('[data-settings-category]').evaluateAll(nodes=>nodes.map(node=>node.dataset.settingsCategory));
+    assert.equal(await input.getAttribute('placeholder'),language==='en'?'Search Settings':'설정 검색');
+    assert.equal(await input.getAttribute('aria-label'),t('settings.search.label'));
+    assert.equal(await page.getByRole('button',{name:t('settings.search.clear'),exact:true}).count(),0);
+    assert.equal(await page.locator('.settings-search-header label').count(),0);
+    const assertPinned = async () => {
+      const geometry=await page.locator('.settings-search-header').evaluate(header=>{
+        const scroller=header.closest('.sidebar-list'),field=header.querySelector('input'),icon=header.querySelector('svg');
+        const box=header.getBoundingClientRect(),bounds=scroller.getBoundingClientRect(),input=field.getBoundingClientRect(),glyph=icon.getBoundingClientRect();
+        return {top:box.top,bottom:box.bottom,scrollTop:bounds.top,scrollBottom:bounds.bottom,overlap:glyph.right>=input.left+parseFloat(getComputedStyle(field).paddingLeft),overflow:header.scrollWidth>header.clientWidth};
+      });
+      assert(geometry.top>=geometry.scrollTop-1 && geometry.bottom<=geometry.scrollBottom+1,'Sticky controls stay in scroller');
+      assert.equal(geometry.overlap,false,'Search text clears icon');assert.equal(geometry.overflow,false);
+    };
+    const assertFocusedRow = async row => {
+      await row.focus();
+      assert(await row.evaluate(node=>{const box=node.getBoundingClientRect(),header=node.closest('.settings-search').querySelector('.settings-search-header').getBoundingClientRect(),bounds=node.closest('.sidebar-list').getBoundingClientRect();return box.top>=header.bottom+4 && box.bottom<=bounds.bottom-4 && node.closest('.sidebar-list').scrollWidth<=node.closest('.sidebar-list').clientWidth && parseFloat(getComputedStyle(node).outlineOffset)<=0;}),'Focused row clears pinned controls');
+    };
+    await page.locator('.sidebar-list').evaluate(node=>{node.scrollTop=node.scrollHeight;});
+    await assertPinned();await assertFocusedRow(page.locator('[data-settings-category]').last());
+    await assertFocusedRow(page.locator('[data-settings-category]').first());await assertPinned();
+    // Common letters in bundled metadata produce an overflowing result list.
+    await input.fill(language==='en'?'a':'이');
+    const results=page.locator('[data-settings-search-result]');
+    assert(await results.count()>3);
+    await page.locator('.sidebar-list').evaluate(node=>{node.scrollTop=node.scrollHeight;});
+    await assertPinned();await assertFocusedRow(results.last());await assertFocusedRow(results.first());
+    await input.fill('');
+    assert.deepEqual(await page.locator('[data-settings-category]').evaluateAll(nodes=>nodes.map(node=>node.dataset.settingsCategory)),originalCategories);
+    if(width<760){await page.keyboard.press('Escape');assert(await drawer.evaluate(node=>node===document.activeElement));await open();}
     const search=async key=>{await open();await input.fill(t(key));};
     const select=async id=>{const result=page.locator(`[data-settings-search-result="${id}"]`);await result.focus();await result.press('Enter');await page.waitForFunction(id=>document.activeElement?.getAttribute('data-settings-search-target')===id,id);};
     await search('appearance.theme_efb52e');
@@ -54,21 +84,21 @@ try {
     await search('notification-settings.questionsAndApprovalRequests_e6c1b4');await select('notification-questions');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await search('ssh-setup.setUpAWorkerOverSsh_9a1626');await select('ssh');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await open();await input.fill('private-resource-name-no-match');assert.equal(await page.locator('[data-settings-search-result]').count(),0);
-    await page.getByRole('button',{name:t('settings.search.clear')}).click();assert.equal(await input.inputValue(),'');assert(await input.evaluate(node=>node===document.activeElement));assert(await page.locator('[data-settings-groups]').isVisible());
+    await input.fill('');assert.equal(await input.inputValue(),'');assert(await input.evaluate(node=>node===document.activeElement));assert(await page.locator('[data-settings-groups]').isVisible());
     await input.fill('   ');assert(await page.locator('[data-settings-groups]').isVisible());
-    await page.getByRole('button',{name:t('settings.search.clear')}).click();
+    await input.fill('');
     await page.locator('[data-settings-category="instructions"]').click();
     await page.locator('.settings-toolbar button.primary').click();
     await page.locator('dialog[open]:not([role="region"])').waitFor();
     await page.locator(".settings-search input").evaluate(node=>node.focus());assert.equal(await page.locator(".settings-search input").evaluate(node=>node===document.activeElement),false);
     await page.keyboard.press('Escape');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await search('appearance.theme_efb52e');const themeResult=page.locator('[data-settings-search-result="theme"]');await themeResult.focus();await themeResult.press('Space');await page.waitForFunction(()=>document.activeElement?.getAttribute('data-settings-search-target')==='theme');
-    await search('appearance.theme_efb52e');await input.focus();await input.press('Tab');assert.equal(await page.getByRole('button',{name:t('settings.search.clear')}).evaluate(node=>node===document.activeElement),true);
+    await search('appearance.theme_efb52e');await input.focus();await input.press('Tab');assert.equal(await page.locator('[data-settings-search-result]').first().evaluate(node=>node===document.activeElement),true);
     assert(await page.locator('.settings-search').evaluate(node=>node.scrollWidth<=node.clientWidth+1));
     for(const box of await page.locator('.settings-search button:visible').evaluateAll(nodes=>nodes.map(node=>({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width}))))assert(box.height>=40);
     if(process.env.DELIDEV_SEARCH_SCREENSHOT_DIR && width===1440 && language==='en' && theme==='light')await page.screenshot({path:resolve(process.env.DELIDEV_SEARCH_SCREENSHOT_DIR,'settings-search.png'),fullPage:true});
     // Departure closes the visit; entry restores the ordinary subscription category.
-    await page.getByRole('button',{name:t('settings.search.clear')}).click();
+    await input.fill('');
     await page.locator('[data-settings-category="appearance"]').click();
     await page.getByRole('button',{name:language==='ko'?'사용량':'Usage',exact:true}).click();
     await page.getByRole('button',{name:t('settings.settings_74a883'),exact:true}).click();await open();assert.equal(await page.getByRole('searchbox').inputValue(),'');

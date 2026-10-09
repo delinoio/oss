@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { SettingsCategory as Category } from "./settings-category";
 import "./settings-search.css";
@@ -31,15 +31,33 @@ export function matchSettings(query: string, categories: readonly SettingsSearch
  if (!tokens.length) return [];
  return categories.flatMap(category => [target(SettingsSearchTarget.Category,"settings.search.category"),...(settingsSearchTargets[category.category]??[])].map(entry => ({category:category.category,target:entry.target,categoryLabel:category.label,label:copy(entry.label),help:entry.help?copy(entry.help):entry.target===SettingsSearchTarget.Category?category.help:""})).filter(entry => tokens.every(token => normalized(`${entry.categoryLabel} ${entry.label} ${entry.help}`).includes(token))));
 }
-export function SettingsSearch({ categories, select }: { categories: readonly SettingsSearchCategory[]; select: (result: SettingsSearchResult) => void }) {
+export function SettingsSearch({ categories, select, children }: { categories: readonly SettingsSearchCategory[]; select: (result: SettingsSearchResult) => void; children?: ReactNode }) {
  useLocale();
- const [query,setQuery]=useState(""); const input=useRef<HTMLInputElement>(null),composing=useRef(false);
+ const [query,setQuery]=useState(""); const composing=useRef(false), header=useRef<HTMLElement>(null);
+ // Native focus scrolling does not account for an overlapping sticky header.
+ // Reveal only the focused navigation row in its original sidebar scroller.
+ const revealFocusedRow = (event: React.FocusEvent<HTMLDivElement>) => {
+  const node=event.target;
+  if(!(node instanceof HTMLElement)||header.current?.contains(node))return;
+  const scroller=node.closest<HTMLElement>(".sidebar-list"), pinned=header.current;
+  if(!scroller||!pinned)return;
+  const row=node.getBoundingClientRect(), controls=pinned.getBoundingClientRect(), bounds=scroller.getBoundingClientRect();
+  const top=controls.bottom+6,bottom=bounds.bottom-6;
+  if(row.top<top)scroller.scrollTop-=top-row.top;
+  else if(row.bottom>bottom)scroller.scrollTop+=row.bottom-bottom;
+ };
  const searching=query.trim()!=="",matches=matchSettings(query,categories);
  const ime=(event:React.KeyboardEvent) => composing.current || event.nativeEvent.isComposing || event.keyCode===229;
- return <div className="settings-search" data-searching={searching||undefined}>
-  <label>{copy("settings.search.label")}<input ref={input} type="search" value={query} maxLength={256} onChange={event=>setQuery(event.target.value)} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={event=>{if(ime(event)&&event.key==="Enter")event.preventDefault();}} /></label>
-  <button type="button" disabled={!query} onClick={()=>{setQuery("");input.current?.focus();}}>{copy("settings.search.clear")}</button>
+ return <div className="settings-search" data-searching={searching||undefined} onFocusCapture={revealFocusedRow}>
+  <header className="settings-search-header" ref={header}>
+   <h2>{copy("settings.settings_74a883")}</h2>
+   <div className="settings-search-field">
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
+    <input aria-label={copy("settings.search.label")} placeholder={copy("settings.search.placeholder")} type="search" value={query} maxLength={256} onChange={event=>setQuery(event.target.value)} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={event=>{if(ime(event)&&event.key==="Enter")event.preventDefault();}} />
+   </div>
+  </header>
   {searching?<div className="settings-search-results" aria-label={copy("settings.search.label")}>{matches.length?matches.map(result=><button type="button" key={`${result.category}:${result.target}`} data-settings-search-result={result.target} onKeyDown={event=>{if((event.key==="Enter"||event.key===" ")&&ime(event))event.preventDefault();}} onClick={()=>{if(!composing.current)select(result);}}><span>{result.categoryLabel} › {result.label}</span></button>):<p role="status">{copy("settings.search.empty")}</p>}</div>:null}
+  {children}
  </div>;
 }
 /** A navigation generation owns one presentation-only focus; polling cannot repeat it. */

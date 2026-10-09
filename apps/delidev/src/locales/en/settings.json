@@ -173,6 +173,7 @@
   "settings.connections.loading": "Loading saved servers…",
   "settings.connections.continue": "Continue {{title}}",
   "settings.search.label": "Search settings",
+  "settings.search.placeholder": "Search Settings",
   "settings.search.clear": "Clear search",
   "settings.search.empty": "No settings match this search.",
   "settings.search.unavailable": "This setting is unavailable here.",

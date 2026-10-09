@@ -1,9 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .settings-search { display: grid; gap: 8px; margin: 0 0 16px; min-width: 0; }
-.settings-search label { display: grid; gap: 8px; min-width: 0; }
-.settings-search input { width: 100%; min-width: 0; min-height: 40px; }
+.settings-search-header { position: sticky; top: 0; z-index: 2; display: grid; gap: 8px; padding-block: 8px; background: var(--surface-muted); }
+.settings-search-header h2 { margin: 3px 4px 4px; color: var(--text); font-size: 16px; font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
+.settings-search-field { position: relative; min-width: 0; }
+.settings-search-field svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; pointer-events: none; color: var(--muted); }
+.settings-navigation .settings-search input { width: 100%; min-width: 0; min-height: 40px; padding-inline-start: 36px; }
 .settings-search button { min-height: 40px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
+/* Keep row focus outlines inside the existing clipped sidebar scroll owner. */
+.settings-navigation .settings-search button:focus-visible { outline-offset: -3px; }
 .settings-search-results { display: grid; gap: 8px; min-width: 0; }
-.settings-search[data-searching] + nav[data-settings-groups] { display: none; }
+.settings-search[data-searching] > nav[data-settings-groups] { display: none; }
 [data-settings-search-target]:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 .settings-search-unavailable { margin: 8px 16px; }

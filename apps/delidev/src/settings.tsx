@@ -309,8 +309,8 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
     destinationConsumed?.();
   }, [destinationConsumed, entryDestination, navigate]);
   return <>
-    <SidebarSurface active title={copy("settings.settings_74a883")} className="settings-navigation">
-      <SettingsSearch categories={settingsGroups.flatMap(group => group.categories.map(category => ({ category, label: settingsCategories[category].label, help: settingsCategories[category].description })))} select={(target) => { navigate(target.category); setSearchRequest({ ...target, generation: newRequestId() }); }} />
+    <SidebarSurface active title={copy("settings.settings_74a883")} className="settings-navigation" showHeading={false}>
+      <SettingsSearch categories={settingsGroups.flatMap(group => group.categories.map(category => ({ category, label: settingsCategories[category].label, help: settingsCategories[category].description })))} select={(target) => { navigate(target.category); setSearchRequest({ ...target, generation: newRequestId() }); }}>
       <nav aria-label={copy("settings.settingsCategories_b9ed95")} data-settings-groups>
         {settingsGroups.map(group => <section className="settings-nav-group" key={group.label}>
           <h2>{copy(group.label === SettingsGroup.Ai ? "settings.group.aiAgents" : group.label === SettingsGroup.Coding ? "settings.group.coding" : group.label === SettingsGroup.Devices ? "settings.group.devices" : "settings.group.system")}</h2>
@@ -319,6 +319,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
           </button>)}
         </section>)}
       </nav>
+      </SettingsSearch>
     </SidebarSurface>
     {/* Each category owns its waits and drafts. Disposal rejects late results
         without canceling or replaying already accepted server/native work. */}
