@@ -39,7 +39,7 @@ it("shows failed launch guidance and original registration controls inline witho
 function savedFixture(stopServer?: (_request: unknown) => Promise<object>) {
   const profile: SavedConnection = { version: 1, revision: 1, id: newRequestId(), name: "Remote fixture", endpoint: "https://fixture.example.test", server_id: newRequestId(), device_id: newRequestId(), pairing_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
   const connection = { runtime_generation: newRequestId(), runtime_key: "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk", endpoint: profile.endpoint, server_id: profile.server_id, device_id: profile.device_id, token: "private-native-fixture-token" };
-  const status = vi.fn(() => ({ version: "0.1.0", protocolVersion: 1, serverId: profile.server_id }));
+  const status = vi.fn(() => ({ version: "0.1.0", protocolVersion: 2, serverId: profile.server_id }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status, stopServer });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
@@ -250,7 +250,7 @@ it("rechecks an adopted local identity without startup and resets only changed-d
   let changed: (() => void) | undefined;
   const unlisten = vi.fn();
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1, serverId: server }) });
+    router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 2, serverId: server }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
   });
   bridge.createTransport.mockReturnValue(transport);
