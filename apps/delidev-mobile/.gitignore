@@ -1,0 +1,6 @@
+dist/
+src-tauri/gen/
+src-tauri/mobile/.tauri/
+src-tauri/mobile/ios/.build/
+src-tauri/mobile/android/.gradle/
+artifacts/

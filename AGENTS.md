@@ -176,7 +176,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - DeliDev active issue #964 scope includes the complete desktop app plus CLI/server/Worker requirements, as explicitly confirmed by the owner on 2026-09-25; prior CLI-only increments do not narrow completion. Keep desktop implementation and native evidence gaps visible.
-- `delidev` -> `apps/delidev`, `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`, `packages/delidev-api-client`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in pull requests, issues and CI logs/artifacts.
+- `delidev` -> `apps/delidev`, `apps/delidev-mobile`, `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`, `packages/delidev-api-client`; follow `docs/project-delidev.md` and the complete issue #964 requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in pull requests, issues and CI logs/artifacts.
 - `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `docs/project-forge.md` and `docs/crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 - `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`

@@ -190,6 +190,64 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.2.1(@types/node@25.5.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.46.1)(tsx@4.20.6))
 
+  apps/delidev-mobile:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.14.0
+        version: 2.14.0
+      '@connectrpc/connect':
+        specifier: 2.1.2
+        version: 2.1.2(@bufbuild/protobuf@2.14.0)
+      '@connectrpc/connect-query':
+        specifier: 2.3.1
+        version: 2.3.1(@bufbuild/protobuf@2.14.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.14.0))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@connectrpc/connect-web':
+        specifier: 2.1.2
+        version: 2.1.2(@bufbuild/protobuf@2.14.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.14.0))
+      '@delinoio/delidev-api-client':
+        specifier: workspace:*
+        version: link:../../packages/delidev-api-client
+      '@tanstack/react-query':
+        specifier: 5.101.4
+        version: 5.101.4(react@19.2.8)
+      '@tauri-apps/api':
+        specifier: 2.11.1
+        version: 2.11.1
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@rsbuild/core':
+        specifier: 2.1.10
+        version: 2.1.10
+      '@rsbuild/plugin-react':
+        specifier: 2.0.1
+        version: 2.0.1(@rsbuild/core@2.1.10)(@rspack/core@2.1.8(@swc/helpers@0.5.23))
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      js-yaml:
+        specifier: 4.3.2
+        version: 4.3.2
+      jsdom:
+        specifier: 20.0.3
+        version: 20.0.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.2.1(@types/node@25.5.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.46.1)(tsx@4.20.6))
+
   apps/devhud:
     dependencies:
       '@connectrpc/connect':
@@ -4317,7 +4375,7 @@ snapshots:
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
-      '@babel/runtime': 7.29.2
+      '@babel/runtime': 7.29.7
       '@testing-library/dom': 10.4.2
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
@@ -4327,7 +4385,7 @@ snapshots:
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@babel/runtime': 7.29.2
+      '@babel/runtime': 7.29.7
       '@testing-library/dom': 10.4.2
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)

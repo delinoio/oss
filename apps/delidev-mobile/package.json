@@ -1,0 +1,42 @@
+{
+  "name": "delidev-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "rsbuild dev",
+    "build": "pnpm --filter @delinoio/delidev-api-client build && rsbuild build",
+    "build:frontend": "pnpm build",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm --filter @delinoio/delidev-api-client build && pnpm typecheck && vitest run && node --test scripts/*.test.mjs && pnpm build",
+    "mobile:generate": "node scripts/mobile.mjs generate",
+    "build:ios:sim": "node scripts/mobile.mjs ios-simulator",
+    "build:android:emulator": "node scripts/mobile.mjs android-emulator",
+    "build:ios": "node scripts/mobile.mjs ios-device",
+    "build:android": "node scripts/mobile.mjs android-bundle",
+    "beta:dry-run": "node scripts/beta.mjs --dry-run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@connectrpc/connect": "2.1.2",
+    "@connectrpc/connect-query": "2.3.1",
+    "@delinoio/delidev-api-client": "workspace:*",
+    "@tanstack/react-query": "5.101.4",
+    "@tauri-apps/api": "2.11.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@connectrpc/connect-web": "2.1.2"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "jsdom": "20.0.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11",
+    "js-yaml": "4.3.2"
+  }
+}

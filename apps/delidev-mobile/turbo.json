@@ -1,0 +1,26 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "cache": false
+    },
+    "mobile:generate": {
+      "cache": false
+    },
+    "build:ios:sim": {
+      "cache": false
+    },
+    "build:android:emulator": {
+      "cache": false
+    },
+    "build:ios": {
+      "cache": false
+    },
+    "build:android": {
+      "cache": false
+    },
+    "beta:dry-run": {
+      "cache": false
+    }
+  }
+}

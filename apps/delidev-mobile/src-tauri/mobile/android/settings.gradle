@@ -1,0 +1,4 @@
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+rootProject.name = "delidev-mobile-native"
+include(":tauri-android")
+project(":tauri-android").projectDir = file(".tauri/tauri-api")

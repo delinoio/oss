@@ -2121,6 +2121,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "delidev-mobile"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin",
+ "tauri-runtime-wry",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "delino-forge"
 version = "0.0.0"
 dependencies = [
