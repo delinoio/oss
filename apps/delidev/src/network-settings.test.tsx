@@ -12,8 +12,9 @@ import { NetworkSettings } from "./network-settings";
 import { WorkerNetworkAction, WorkerNetworkControlProvider } from "./worker-network-native";
 import { encryptedInput, workerRecipient, workerRouteStatus } from "./worker-network";
 import { SettingsLifetime } from "./settings-lifetime";
+import { SettingsActionScope } from "./settings-action";
 
-function fixture(lose = false, native?: (machine: string, action: WorkerNetworkAction, ciphertext: Uint8Array, digest: string) => Promise<unknown>, inline = false) {
+function fixture(lose = false, native?: (machine: string, action: WorkerNetworkAction, ciphertext: Uint8Array, digest: string) => Promise<unknown>, inline = false, scoped = false) {
   const authority = { endpoint: "https://server.example", serverId: newRequestId() }, machine = newRequestId();
   const row = create(ResourceSchema, { kind: EntityKind.NETWORK_PROFILE, id: newRequestId(), revision: 9007199254740993n, schemaVersion: 1, documentJson: encode({ name: "Pinned proxy", mode: "http", host: "proxy.example", port: 3128 }) });
   const route = create(ResourceSchema, { kind: EntityKind.NETWORK_ROUTE, id: newRequestId(), revision: 9007199254740994n, schemaVersion: 1, documentJson: encode({ machine_id: machine, profile: { name: "Direct", mode: "direct" } }) });
@@ -29,7 +30,7 @@ function fixture(lose = false, native?: (machine: string, action: WorkerNetworkA
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = <SettingsLifetime>{() => <MutationIntents><NetworkSettings active machine={inline ? "" : machine} authority={authority} /></MutationIntents>}</SettingsLifetime>;
-  const rendered = render(<TransportProvider transport={transport}><QueryClientProvider client={client}>{native ? <WorkerNetworkControlProvider control={native}>{view}</WorkerNetworkControlProvider> : view}</QueryClientProvider></TransportProvider>);
+  const rendered = render(<TransportProvider transport={transport}><QueryClientProvider client={client}>{native ? <WorkerNetworkControlProvider control={native}>{view}</WorkerNetworkControlProvider> : scoped ? <SettingsActionScope>{view}</SettingsActionScope> : view}</QueryClientProvider></TransportProvider>);
   return { ...rendered, authority, machine, row, route, requests, select, reads, save, remove, client };
 }
 it("keeps network reads collapsed and distinct exact control/native generations", async () => {
@@ -269,4 +270,18 @@ it("fences an accepted inline selection response after collapse", async () => {
   await act(async () => { release({ resource: create(ResourceSchema, { ...f.route, revision: 9007199254740999n, documentJson: encode({ profile: { name: "Disposed response", mode: "direct" } }) }) }); });
   expect(screen.queryByText(/Disposed response/)).toBeNull();
   expect(f.select).toHaveBeenCalledTimes(1);
+});
+
+it("names icon-only profile deletion with the original target and opens only its confirmation", async () => {
+ const f = fixture(false, undefined, true, true);
+ fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
+ const opener = await screen.findByRole("button", { name: `Delete profile · Pinned proxy · ${f.row.id}` });
+ expect(opener.getAttribute("data-settings-action-presentation")).toBe("icon");
+ act(() => opener.focus());
+ fireEvent.click(opener);
+ await screen.findByRole("dialog", { name: "Delete profile" });
+ expect(f.remove).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button", { name: "Close Delete profile" }));
+ await waitFor(() => expect(document.activeElement).toBe(opener));
+ expect(f.remove).not.toHaveBeenCalled();
 });

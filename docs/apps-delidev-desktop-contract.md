@@ -951,6 +951,8 @@ Use existing semantic light/dark/System tokens and system font; no external asse
 
 ### Settings action icons (issue #1964)
 
+Icon-only paged resource actions include the original resource ID alongside the localized target name. Identity does not depend on which payload pages remain mounted, and computing it adds no reads. Network profile deletion uses the same exact target name and ID as editing.
+
 The Project defaults and project-behavior editors use the same closed action catalog. Return-to-global and exact read retries keep visible labels and original callbacks. The direct project Settings entry retains its original presentation outside the Settings action scope.
 
 All 17 Settings categories, their forms, dialogs and action menus share the closed frontend `SettingsActionIcon` catalog in `settings-action.tsx` and static `settings-action.css`. `SettingsActionScope` grants presentation only; shared workflow consumers outside Settings retain their original native button presentation. `SettingsActionButton` forwards the same native button, ref, type, form association, disabled guard and callbacks. Settings task footer association recognizes it without transferring mutation or dismissal ownership.
