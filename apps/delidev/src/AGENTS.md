@@ -917,6 +917,9 @@ Backup inspection pauses all three background inventory/history readers and refr
 
 - Add repository alone uses the compact grouped hierarchy in the desktop contract: fixed selected-server title/X, URL and conditional GitHub picker, separated Name/guidance, two independent full-width optional checkout disclosure rows, conditional advanced fields and one fixed Cancel/current Add-or-Clone footer separator. Preserve 640px task geometry, body-only scroll and every original draft, admission, proof, restriction, job, exact retry and parent/child disposal owner. The shared New Project registration child uses the same presentation.
 
+- Issue #2141 compact queue preserves original queued-only reconciliation, bounded payload restoration, revisions, immutable images/skills and independent exact request/draft ownership. Hide only a current successful complete resident empty queue, never a read failure/continuation/eviction. Keep composer mounted, Agent requests separate, image-startup recovery visible and movement controls absent until separate capability negotiation. Follow the desktop compact waiting-input contract.
+
+
 - Saved Project editors share `project-edit-tabs.tsx` and its scoped CSS. Keep four initially-General manual-activation tabs, mounted hidden panels with independent scroll/drafts/queries, fixed original dialog header/tab strip/footer and shared save/retry ownership. Reveal/focus/report the first invalid control across tabs without bypassing complete-document validation. Keep tab navigation outside mutation field locks, all optional/default/remediation/access values and configured-empty deny-all semantics; New Project keeps its original wizard.
 
 
