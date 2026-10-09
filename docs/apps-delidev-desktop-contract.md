@@ -1099,8 +1099,20 @@ reconfiguration without rewriting historical executions.
 
 The Model step uses source-scoped server catalog autocomplete and permits exact
 native ID input after loading, empty, failed or unsupported discovery results.
-The single-source wizard scrolls the exact active option during keyboard
-navigation, including options nested in retained scroll-payload pages.
+Both wizard generations reserve an always-mounted 280 CSS-pixel result area
+beneath each model input. Keep suggestions, initial/additional/loading/error/empty
+and catalog-result messages inside its bounded scroll owner even while the
+suggestion list is closed. At fixed viewport and body scroll, result transitions
+must keep the dialog, model input, Reload, footer and later source inputs within
+one CSS pixel. Keyboard highlighting scrolls only this result area, including
+options nested in retained payload pages; focus within it retains the popup.
+Closed/hidden/inert ancestors never admit continuation reads. Preserve original
+source, query, account/model revision, drafts, exact-ID, retry and mutation
+ownership. Shared dialog sizing and other steps remain unchanged.
+`scripts/test-worker-model-layout.mjs` owns the bounded synthetic geometry
+fixture with committed product styles and host-supplied Playwright. Component
+checks retain real catalog/query/pagination adapters; synthetic browser evidence
+grants no packaged CEF or installed-platform acceptance.
 Typing never contacts a provider endpoint. Endpoint refresh uses the deliberate
 existing discovery RPC and original account revision. Codex native observation
 retains explicit selected-account/Runner Device/installation scope, accepted jobs,
