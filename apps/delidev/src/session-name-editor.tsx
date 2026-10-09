@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { EntityKind, ResourceQuery, SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, clientFailure, FailureCode, ResourceQuery, SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { resourceName } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { copy, useLocale } from "./localization";
@@ -27,6 +27,13 @@ function SessionNameController({ id, visible, opener, alive, close }: { id: stri
   useEffect(() => { if (visible && readable && !draft && !rename.busy && !rename.uncertain) setDraft({ value: resourceName(current), revision: current.revision }); }, [visible, readable, current, draft, rename.busy, rename.uncertain]);
   useLayoutEffect(() => { if (!visible) return; dialog.current?.showModal(); input.current?.focus(); input.current?.select(); return () => { dialog.current?.close(); if (alive.current) { const target = opener.isConnected && !opener.closest('[hidden],[inert]') ? opener : document.querySelector<HTMLElement>('#main'); target?.focus({ preventScroll: true }); } }; }, [visible, opener]);
   useLayoutEffect(() => { if (visible && draft && document.activeElement !== input.current && !rename.busy && !rename.uncertain) { input.current?.focus(); input.current?.select(); } }, [visible, Boolean(draft)]);
+  const observedConflict = useRef<unknown>(undefined);
+  useEffect(() => {
+    if (!visible || rename.uncertain || !rename.error || observedConflict.current === rename.error || clientFailure(rename.error).code !== FailureCode.Conflict) return;
+    observedConflict.current = rename.error;
+    // A definite rejection permits a read, while the original draft remains revision-bound.
+    void result.refetch();
+  }, [visible, rename.error, rename.uncertain, result.refetch]);
   const conflict = readable && draft && draft.revision !== current.revision;
   const valid = draft && validSessionName(draft.value);
   const blocked = !readable || Boolean(result.error) || !draft || !valid || conflict || rename.busy || rename.uncertain;

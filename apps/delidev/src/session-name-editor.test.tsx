@@ -43,3 +43,14 @@ it("retains a second session editor when the original closed editor finishes a r
  await act(async () => finish({ change: { session: create(ResourceSchema, { ...resources.get(first)!, revision: 9n, documentJson: encode({ name: "Renamed first" }) }), requestId: request.mutation!.requestId } }));
  expect(screen.getByRole("dialog").contains(secondInput)).toBe(true); expect(secondInput).toHaveProperty("value", "Retained second draft"); expect(document.activeElement).toBe(secondInput);
 });
+
+it("reads a peer revision after a definite rename conflict without losing the draft", async () => {
+ const f=fixture(); render(f.view); fireEvent.doubleClick(screen.getByText("Sidebar name"));
+ const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original name"));
+ fireEvent.change(input,{target:{value:"Retained draft"}}); f.peer();
+ f.rename.mockRejectedValueOnce(new ConnectError("Revision changed",Code.Aborted)); fireEvent.click(screen.getByRole("button",{name:"Save"}));
+ fireEvent.click(await screen.findByRole("button",{name:"Discard draft and reload"}));
+ await waitFor(()=>expect(input).toHaveProperty("value","Original name"));
+ fireEvent.change(input,{target:{value:"Fresh name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
+ await waitFor(()=>expect(f.rename).toHaveBeenCalledTimes(2));expect(f.rename.mock.calls[1][0].mutation?.expectedRevision).toBe(9n);
+});
