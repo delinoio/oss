@@ -627,6 +627,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 				if err := uniqueSubscriptionIdentity(tx, id, commitment); err != nil {
 					return nil, err
 				}
+				st.AutomaticCreditConsent = nil
 				st.Generation = o.FinishID
 				st.IdentityCommitment = commitment
 				st.OwnerMachineID = ""
@@ -635,6 +636,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 				}
 				a.Health = domain.AccountReady
 			} else if success && operation.Action == domain.SubscriptionLogout {
+				st.AutomaticCreditConsent = nil
 				a.Connection = nil
 				a.Health = domain.AccountDisconnected
 				a.Validation = nil

@@ -32,13 +32,18 @@ func (r *managedObservationRegistry) register(account domain.ID, native *codex.C
 	}
 	r.owners[account] = owner
 	r.mu.Unlock()
+	var once sync.Once
 	return func() {
-		r.mu.Lock()
-		delete(r.owners, account)
-		r.mu.Unlock()
-		owner.mu.Lock()
-		owner.closed = true
-		owner.mu.Unlock()
+		once.Do(func() {
+			r.mu.Lock()
+			if r.owners[account] == owner {
+				delete(r.owners, account)
+			}
+			r.mu.Unlock()
+			owner.mu.Lock()
+			owner.closed = true
+			owner.mu.Unlock()
+		})
 	}
 }
 func (r *managedObservationRegistry) run(ctx context.Context, account domain.ID, operation domain.SubscriptionObservationOperation) (bool, error) {
@@ -89,14 +94,44 @@ func (l *managedSubscriptionLease) observe(ctx context.Context, native *codex.Cl
 	raw, _ := json.Marshal(result)
 	reportCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
-	_, err = l.client.PublishSubscriptionObservation(reportCtx, authenticated(l.credential, &pb.PublishSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), OperationId: string(original.ID), GenerationId: l.response.GenerationId, ObservationJson: raw}))
+	published, err := l.client.PublishSubscriptionObservation(reportCtx, authenticated(l.credential, &pb.PublishSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), OperationId: string(original.ID), GenerationId: l.response.GenerationId, ObservationJson: raw}))
 	if err != nil {
 		if l.logger != nil {
 			l.logger.WarnContext(reportCtx, "subscription_observation_publication_failed", "account_id", l.account, "operation_id", original.ID, "code", domain.SafeError(rpc.ClientError(err)).Code)
 		}
 		return rpc.ClientError(err)
 	}
+
+	// A stale-inventory refresh can admit only one subsequent consumption while
+	// this exact native owner is still held. It never opens an idle native process.
+	if original.Action == domain.SubscriptionQuota && original.AutomaticEpisodeID != "" {
+		var account domain.Account
+		if published.Msg.Account != nil && domain.Decode(published.Msg.Account.DocumentJson, &account) == nil && account.Subscription != nil {
+			next := account.Subscription.Observation
+			if next != nil && next.ID != original.ID && next.Action == domain.SubscriptionResetCredit && next.AutomaticEpisodeID == original.AutomaticEpisodeID && next.AutomaticLeaseID == domain.ID(l.response.LeaseId) && next.Phase == domain.SubscriptionObservationQueued {
+				return l.observe(ctx, native, *next)
+			}
+		}
+	}
 	return nil
+}
+func (l *managedSubscriptionLease) publishQuotaBlock(ctx context.Context, registry *managedObservationRegistry, block domain.SubscriptionQuotaBlock) {
+	bounded, stop := context.WithTimeout(ctx, 5*time.Second)
+	defer stop()
+	raw, _ := json.Marshal(domain.SubscriptionObservationResult{QuotaBlock: &block})
+	published, err := l.client.PublishSubscriptionObservation(bounded, authenticated(l.credential, &pb.PublishSubscriptionObservationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(l.account), ExpectedRevision: l.response.LeaseRevision}, LeaseId: l.response.LeaseId, MachineId: string(l.credential.MachineID), InstanceId: string(l.instance), GenerationId: l.response.GenerationId, ObservationJson: raw}))
+	if err == nil && published.Msg.Account != nil {
+		var account domain.Account
+		if domain.Decode(published.Msg.Account.DocumentJson, &account) == nil && account.Subscription != nil {
+			op := account.Subscription.Observation
+			if op != nil && op.AutomaticBlock != nil && *op.AutomaticBlock == block && op.AutomaticLeaseID == domain.ID(l.response.LeaseId) && op.Phase == domain.SubscriptionObservationQueued {
+				_, err = registry.run(ctx, l.account, *op)
+			}
+		}
+	}
+	if err != nil && l.logger != nil {
+		l.logger.WarnContext(ctx, "automatic_credit_original_owner_failed", "account_id", l.account, "execution_id", block.ExecutionID, "code", domain.SafeError(rpc.ClientError(err)).Code)
+	}
 }
 func (l *managedSubscriptionLease) publishRollingQuota(ctx context.Context, observed domain.SubscriptionQuotaObservation) {
 	bounded, stop := context.WithTimeout(ctx, 3*time.Second)

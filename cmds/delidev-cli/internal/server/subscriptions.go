@@ -203,6 +203,7 @@ func (s *Service) RequestSubscription(ctx context.Context, req *connect.Request[
 		}
 		state.Pending = &domain.SubscriptionOperation{ID: domain.ID(m.RequestId), Action: action, MachineID: input.Machine, Actor: actor, DeviceCode: input.DeviceCode, Phase: domain.SubscriptionQueued}
 		if action == domain.SubscriptionLogout {
+			state.AutomaticCreditConsent = nil
 			// Deny new executions at acceptance. Existing ownership remains leased
 			// until its original Worker reports native/file cleanup.
 			a.Health = domain.AccountRevoked
@@ -573,7 +574,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 		} else if action == domain.SubscriptionQuota || action == domain.SubscriptionResetCredit {
 			op := state.Observation
-			if op == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionObservationQueued || op.Generation != state.Generation || !quotaAccountReady(a) || state.Pending != nil || observationMachine(tx, input.Machine) != nil || subscriptionActorValid(tx, op.Actor) != nil {
+			if op == nil || op.AutomaticEpisodeID != "" || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionObservationQueued || op.Generation != state.Generation || !quotaAccountReady(a) || state.Pending != nil || observationMachine(tx, input.Machine) != nil || subscriptionActorValid(tx, op.Actor) != nil {
 				return nil, subscriptionDenied()
 			}
 		} else {
@@ -910,6 +911,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 					state.Pending = nil
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
+					state.AutomaticCreditConsent = nil
 					state.Generation = domain.ID(m.RequestId)
 					state.IdentityCommitment = identityCommitment
 					state.OwnerMachineID = lease.MachineID

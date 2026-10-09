@@ -478,3 +478,9 @@ recovery storage through closed versioned variants, without a migration.
 Preserve original native history/account/Worker ownership, independent cleanup,
 immutable historical contexts and separate Fork/Sidechat lifetimes under the
 [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).
+
+Issue #2123 owns System 77 (`AUTOMATIC_RESET_CREDIT_CONSENT_V1`), Worker 52
+(`CODEX_QUOTA_BLOCK_V1`) and the complete consent RPC declarations in its feature
+PR. These allocations add no migration or native action. Preserve other owners
+and require original active Execute/native lease proof under the subscription
+contract before automatic spending.

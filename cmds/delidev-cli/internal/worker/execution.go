@@ -424,9 +424,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}
 	}()
+	var unregisterObservations func()
 	if managed != nil && config.observations != nil {
-		unregister := config.observations.register(input.AccountID, client, managed)
-		defer unregister()
+		unregisterObservations = config.observations.register(input.AccountID, client, managed)
+		defer unregisterObservations()
 	}
 	input.Installation.Version = client.Version()
 	publisher.nativeVersion = client.Version()
@@ -569,7 +570,16 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if parentTerminal == nil || !childrenClosed {
 			continue
 		}
+
 		event = *parentTerminal
+		if managed != nil && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
+			managed.publishQuotaBlock(ctx, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})
+		}
+		// Fence and join original observations before native credential capture and
+		// terminal cleanup, including an admitted operation with a lost publication.
+		if unregisterObservations != nil {
+			unregisterObservations()
+		}
 		// A terminal event is not cleanup. Close/join the native scope, prove
 		// the workspace lease's process index, then form a completion result.
 		// Read native identity and final credentials while its wire is still

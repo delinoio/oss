@@ -24,6 +24,7 @@ func (s TurnStatus) terminal() bool {
 }
 
 type Turn struct {
+	QuotaBlock  domain.CodexQuotaBlock
 	ID          domain.ID
 	Status      TurnStatus
 	StartedAt   *int64

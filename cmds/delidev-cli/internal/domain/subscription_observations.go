@@ -34,6 +34,9 @@ func (v SubscriptionResetOutcome) Valid() bool {
 // One durable logical attempt. ID is the official reset idempotency key and
 // never changes during explicit reconciliation. Presentation grants no lease.
 type SubscriptionObservationOperation struct {
+	AutomaticBlock       *SubscriptionQuotaBlock      `json:"automatic_block,omitempty"`
+	AutomaticEpisodeID   ID                           `json:"automatic_episode_id,omitempty"`
+	AutomaticLeaseID     ID                           `json:"automatic_lease_id,omitempty"`
 	ID                   ID                           `json:"id"`
 	Action               SubscriptionAction           `json:"action"`
 	MachineID            ID                           `json:"machine_id"`
@@ -53,6 +56,12 @@ func (v SubscriptionObservationOperation) Active() bool {
 	return v.Phase == SubscriptionObservationQueued || v.Phase == SubscriptionObservationSending || v.Phase == SubscriptionObservationUncertain
 }
 func (v SubscriptionObservationOperation) Validate() error {
+	if (v.AutomaticBlock == nil) != (v.AutomaticEpisodeID == "") || v.AutomaticBlock != nil && v.AutomaticBlock.Validate() != nil {
+		return InvalidSubscriptionObservation()
+	}
+	if (v.AutomaticEpisodeID == "") != (v.AutomaticLeaseID == "") || v.AutomaticEpisodeID != "" && (v.AutomaticEpisodeID.Validate() != nil || v.AutomaticLeaseID.Validate() != nil) {
+		return InvalidSubscriptionObservation()
+	}
 	for _, id := range []ID{v.ID, v.MachineID, v.ConnectionID, v.Generation} {
 		if id.Validate() != nil {
 			return InvalidSubscriptionObservation()
@@ -137,6 +146,7 @@ type SubscriptionQuotaObservation struct {
 	Credits             *SubscriptionResetCredits `json:"credits,omitempty"`
 }
 type SubscriptionObservationResult struct {
+	QuotaBlock       *SubscriptionQuotaBlock       `json:"quota_block,omitempty"`
 	Quota            *SubscriptionQuotaObservation `json:"quota,omitempty"`
 	QuotaError       Code                          `json:"quota_error,omitempty"`
 	Outcome          SubscriptionResetOutcome      `json:"outcome,omitempty"`

@@ -61,5 +61,15 @@
   "subscription-quota.serverNativeQuotaUnavailable": "Check the selected server’s Codex installation and native routing, then retry quota.",
   "subscription-quota.serverQuotaAuthenticationUnavailable": "Check the selected server connection. If account authentication has expired, refresh it explicitly before retrying quota.",
   "subscription-quota.creditNumber": "Reset credit {{v0}}",
-  "subscription-quota.creditId": "ID: {{v0}}"
+  "subscription-quota.creditId": "ID: {{v0}}",
+  "subscription-quota.automaticLabel": "Automatically use a reset credit when subscription quota is exhausted",
+  "subscription-quota.automaticLifetime": "While the server is running. Sign in again to reauthorize.",
+  "subscription-quota.automaticConfirmTitle": "Enable automatic reset credits",
+  "subscription-quota.automaticConfirmBody": "For this signed-in account, the server may consume one reset credit per verified Codex subscription exhaustion. It selects the earliest-expiring eligible credit, or lets Codex select the next credit when individual details are unavailable. This spends a credit even when this dialog is closed. Consumption does not automatically resume the failed session.",
+  "subscription-quota.automaticChanged": "The account changed. Cancel and review its current signed-in account before enabling.",
+  "subscription-quota.automaticEnable": "Enable automatic reset credits",
+  "subscription-quota.automaticCancel": "Keep automatic reset credits off",
+  "subscription-quota.automaticRetry": "Retry original automatic credit consent",
+  "subscription-quota.automaticUnsupported": "Update the server to configure automatic reset credits.",
+  "subscription-quota.automaticEpisode": "This exhaustion episode is retained. Another automatic credit requires freshly observed quota recovery; use explicit reconciliation or Resume when needed."
 }

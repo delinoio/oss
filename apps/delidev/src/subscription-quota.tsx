@@ -15,6 +15,7 @@ import { accountPreferencesDocument } from "./account-preferences";
 import { serviceAccount } from "./subscription-accounts";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
+import { SettingsTaskDialog, SettingsDialogFocus, SettingsDialogSize } from "./settings-task";
 
 interface CreditConfirmation { machine: string; account: Resource; creditId: string; ordinal?: number; next: boolean; inventoryId: string; connection: string; generation: string }
 const outcomeLabels: Record<string, string> = { get reset() { return copy("subscription-quota.resetCreditConsumed_ac52a6"); }, get alreadyRedeemed() { return copy("subscription-quota.originalResetCreditWasAlreadyConsumed_3d5beb"); }, get nothingToReset() { return copy("subscription-quota.noCurrentQuotaWindowNeededA_972b84"); }, get noCredit() { return copy("subscription-quota.noResetCreditWasAvailable_648345"); } };
@@ -57,6 +58,8 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const creditLaneAvailable = isEntityId(ownerMachine) ? workerCreditsSupported : serverCreditReady;
   const [confirmation, setConfirmation] = useState<CreditConfirmation>();
   const [expanded, setExpanded] = useState(false);
+  const [consentConfirmation, setConsentConfirmation] = useState<Resource>();
+  const consentOpener = useRef<HTMLInputElement>(null);
   const sectionHeading = useRef<HTMLHeadingElement>(null), detailsHeading = useRef<HTMLHeadingElement>(null), confirmationHeading = useRef<HTMLHeadingElement>(null);
   const selectionOpener = useRef<HTMLElement | null>(null), focusDetails = useRef(false), focusConfirmation = useRef(false);
   const detailsId = useId(), detailsHeadingId = useId();
@@ -78,7 +81,8 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const observe = useRetainedMutation("subscription:observe:" + current.id, SubscriptionQuery.requestSubscriptionObservation, (result) => { if (result.account) accepted(result.account); setConfirmation(undefined); }, (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const reconcile = useRetainedMutation("subscription:credit:reconcile:" + current.id, SubscriptionQuery.reconcileSubscriptionCredit, (result) => { if (result.account) accepted(result.account); }, (result, request) => serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
   const preferences = useRetainedMutation("subscription:quota:preferences:" + current.id, ConfigurationQuery.saveConfiguration, (result) => { if (result.resource) accepted(result.resource); }, (result, request) => serviceAccount(result.resource, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
-  const busy = observe.busy || observe.uncertain || reconcile.busy || reconcile.uncertain || preferences.busy || preferences.uncertain;
+  const consent = useRetainedMutation("subscription:automatic-credit:consent:" + current.id, SubscriptionQuery.setAutomaticResetCreditConsent, (result) => { if (result.account) accepted(result.account); setConsentConfirmation(undefined); }, (result, request) => serviceAccount(result.account, current.id, undefined, request.mutation?.expectedRevision ?? 1n));
+  const busy = consent.busy || consent.uncertain || observe.busy || observe.uncertain || reconcile.busy || reconcile.uncertain || preferences.busy || preferences.uncertain;
   useEffect(() => { busyChanged(busy); return () => busyChanged(false); }, [busy, busyChanged]);
   const originalActive = ["queued", "sending", "uncertain"].includes(text(observation.phase)) || ["queued", "sending", "uncertain"].includes(text(serverObservation.phase)) || ["queued", "sending", "uncertain"].includes(text(serverCredit.phase));
   const ready = active && quotaSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && serverAvailable && state.recovery_required !== true && !text(object(state.pending).id) && !data.removal && !busy;
@@ -115,6 +119,24 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     setPreferenceProblem("");
     void preferences.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, kind: EntityKind.ACCOUNT, schemaVersion: 2, documentJson });
   };
+  const automaticSupported = status.data?.capabilities.includes(SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1) === true;
+  const automaticConsent = object(state.automatic_credit_consent);
+  const automaticEnabled = automaticConsent.connection_id === connection && automaticConsent.generation === generation;
+  const automaticReady = active && automaticSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && quotaAccountAvailable(data) && !busy;
+  const sendConsent = (enabled: boolean, original = current) => {
+    const saved = document(original), savedState = object(saved.subscription);
+    void consent.send({ mutation: { requestId: newRequestId(), id: original.id, expectedRevision: original.revision }, connectionId: text(object(saved.connection).id), generationId: text(savedState.generation), enabled, confirmed: enabled });
+  };
+  const closeConsent = () => { setConsentConfirmation(undefined); queueMicrotask(() => consentOpener.current?.focus()); };
+  if (consentConfirmation) return <SettingsTaskDialog title={copy("subscription-quota.automaticConfirmTitle")} size={SettingsDialogSize.Form} focus={SettingsDialogFocus.Heading} close={closeConsent} onDismiss={() => setConsentConfirmation(undefined)}>
+    <p>{copy("subscription-quota.confirmAccount", { v0: text(document(consentConfirmation).alias) || copy("subscription-quota.extra.ca1844969742") })}</p>
+    <p>{copy("subscription-quota.automaticConfirmBody")}</p>
+    <p className="reset-credit-secondary">{copy("subscription-quota.automaticLifetime")}</p>
+    {consentConfirmation.revision !== current.revision || consentConfirmation.id !== current.id ? <p role="alert">{copy("subscription-quota.automaticChanged")}</p> : null}
+    <Problem error={consent.error} />
+    <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Confirm} type="button" className="primary" disabled={!automaticReady || consentConfirmation.revision !== current.revision || consentConfirmation.id !== current.id} onClick={() => sendConsent(true, consentConfirmation)}>{copy("subscription-quota.automaticEnable")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={consent.busy} onClick={closeConsent}>{copy("subscription-quota.automaticCancel")}</SettingsActionButton></div>
+    {consent.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={consent.busy} onClick={consent.retry}>{copy("subscription-quota.automaticRetry")}</SettingsActionButton> : null}
+  </SettingsTaskDialog>;
   return <section aria-label={copy("subscription-quota.nativeQuotaAndResetCredits_8a07a3")}>
     <h3>{copy("subscription-quota.quota_6c105c")}</h3>
     {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <><Timestamp value={text(state.quota_observed_at)} fallback={copy("subscription-quota.extra.ca1844969742")} /></>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><SettingsActionButton icon={SettingsActionIcon.Refresh} type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: "", action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</SettingsActionButton></>}
@@ -129,6 +151,10 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
       </div>
       {creditReason ? <p role="status" className="reset-credit-secondary">{creditReason}</p> : null}
       {creditsSupported && !isEntityId(ownerMachine) && !serverCreditsSupported ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.serverCreditsUnavailable")}</p> : null}
+      <label className="checkbox reset-credit-automatic"><input ref={consentOpener} type="checkbox" checked={automaticEnabled} disabled={!automaticReady} onChange={event => event.target.checked ? setConsentConfirmation(current) : sendConsent(false)} />{copy("subscription-quota.automaticLabel")}</label>
+      <p className="reset-credit-secondary">{copy("subscription-quota.automaticLifetime")}</p>
+      {!automaticSupported ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.automaticUnsupported")}</p> : null}
+      {text(object(state.automatic_credit_episode).id) ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.automaticEpisode")}</p> : null}
       <DisclosureButton density={DisclosureDensity.Settings} type="button" className="reset-credit-disclosure" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>{copy(expanded ? "subscription-quota.hideDetails" : "subscription-quota.viewDetails")}</DisclosureButton>
       <DisclosureContent id={detailsId} hidden={!expanded}>
         <h4 ref={detailsHeading} id={detailsHeadingId} tabIndex={-1}>{copy("subscription-quota.creditDetails")}</h4>
@@ -156,9 +182,10 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     {text(serverCredit.id) ? <p role="status">{statusLabel(text(serverCredit.phase))}{outcomeLabels[text(serverCredit.outcome)] ? copy("subscription-quota.message_2fa20b", { v0: outcomeLabels[text(serverCredit.outcome)] }) : ""}</p> : null}
     {text(observation.id) ? <p role="status">{text(observation.action)} · {statusLabel(text(observation.phase))}{outcomeLabels[text(observation.outcome)] ? copy("subscription-quota.message_2fa20b", { v0: outcomeLabels[text(observation.outcome)] }) : ""}</p> : null}
     {(observation.action === "reset-credit" || text(serverCredit.id)) && creditObservation.phase === "uncertain" ? <><p>{copy("subscription-quota.theOriginalConsumptionResultIsUncertain_11cf11")}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!creditReady || !creditsSupported || reconcilingServer && serverCredit.cleanup_confirmed !== true} onClick={() => void reconcile.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, operationId: text(creditObservation.id), connectionId: connection, generationId: generation })}>{copy("subscription-quota.reconcileOriginalCreditOperation_2ca418")}</SettingsActionButton></> : null}
-    <Problem error={status.error || observe.error || reconcile.error || preferences.error} />
+    <Problem error={status.error || consent.error || observe.error || reconcile.error || preferences.error} />
     {observe.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={observe.busy} onClick={observe.retry}>{copy("subscription-quota.retryOriginalQuotaOrCreditRequest_071535")}</SettingsActionButton> : null}
     {reconcile.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={reconcile.busy} onClick={reconcile.retry}>{copy("subscription-quota.retryOriginalCreditReconciliationRequest_1dd094")}</SettingsActionButton> : null}
+    {consent.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={consent.busy} onClick={consent.retry}>{copy("subscription-quota.automaticRetry")}</SettingsActionButton> : null}
     {preferences.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={preferences.busy} onClick={preferences.retry}>{copy("subscription-quota.retryOriginalRecoveryPreference_fa3cb3")}</SettingsActionButton> : null}
   </section>;
 }

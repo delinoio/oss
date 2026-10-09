@@ -457,3 +457,50 @@ Independent managed Fork now follows the separately negotiated System 53 / Worke
 
 ## Situation quota exhaustion notifications (#2055)
 Only ChatGPT quota observations can publish this metadata-only operational Inbox kind. The original connection must move from complete fresh known usable evidence to explicitly confirmed exhausted evidence in a strictly ordered successful observation. Unknown/sparse/stale/failed observations, credit reset, reconnect, import and restore cannot establish that transition. Notification preference and display claims do not alter per-account quota recovery consent or start recovery. Follow `cmds-delidev-inbox-contract.md`; native/account acceptance remains independently recorded.
+
+## Automatic reset-credit consent — issue #2123
+
+System `AUTOMATIC_RESET_CREDIT_CONSENT_V1 = 77` owns the closed
+`SetAutomaticResetCreditConsent` revision-checked mutation. Worker
+`CODEX_QUOTA_BLOCK_V1 = 52` owns bounded original failed-turn quota markers.
+Record declarations and complete implementation together; no migration or new
+native action is added. Existing manual consumption, server credit lanes and
+explicit Resume retain their independent ownership.
+
+Consent defaults off and binds the authenticated actor, account connection and
+credential generation. Enabling requires explicit confirmation; disabling is a
+separate exact mutation. Logout and every replacement credential generation clear
+consent. Portable exports remove subscription state and restored credentials clear
+it. Generic configuration saves must preserve the entire server-owned state, so
+older clients cannot omit these fields or manufacture consent.
+
+Only the closed original Codex `usageLimitExceeded` marker, or
+`rateLimitExceeded` with fresh observed subscription exhaustion, can qualify.
+Free text, context limits, session budgets, server overload and paid spend limits
+grant no spending authority. The server validates the retained failed Execute
+job, immutable selection, native thread/turn, Worker device/instance, server epoch
+and original active credential lease before atomic admission. Sidechat, Fork,
+idle processes, replaced Workers and already cleaned native sessions cannot spend.
+
+One durable account episode owns at most one UUIDv7 reset-credit operation and
+its original provider idempotency key. Repeated errors, status, restart and lost
+acknowledgments do not replay sends. Bounded original-turn fences survive fresh
+quota recovery so delayed redelivery cannot spend again. Fresh observed recovery
+alone rearms a new exhaustion episode, independently of notification preference;
+elapsed reset times do not rearm. At the 1,024 retained-marker bound, automatic
+admission stops conservatively rather than evicting a spending fence.
+
+A fresh positive inventory selects a copy of eligible, unexpired Codex credits by
+expiry (no expiry last), grant time and full ID, preserving display order. A
+positive count without individual details permits only native next-credit
+selection. Stale inventory permits one read-only refresh on the same original
+lease; missing, zero or failed results do not admit consumption. The retained
+observer publishes and claims the admitted operation once, before joined native
+cleanup. No idle Worker lease may adopt an automatic operation. Explicit
+same-key reconciliation retains the original selector and provider key but removes
+automatic lease authority and follows the existing confirmed-cleanup/recovery
+contract. Consumption outcomes and quota recovery remain separate.
+
+The approved Settings confirmation uses the existing task lifetime, retained
+mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
+accepted server processing. No consumption resumes a failed session automatically.

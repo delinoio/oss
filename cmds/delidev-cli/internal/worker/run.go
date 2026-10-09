@@ -458,7 +458,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1)
 			}
 			if managedCapabilityExpected {
-				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1)
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
 			}
 			if claudeCapabilityExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1)

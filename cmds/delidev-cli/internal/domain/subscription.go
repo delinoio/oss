@@ -23,6 +23,7 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
+	AutomaticCreditBlocks  []SubscriptionQuotaBlock          `json:"automatic_credit_blocks,omitempty"`
 	AutomaticCreditConsent *AutomaticResetCreditConsent      `json:"automatic_credit_consent,omitempty"`
 	AutomaticCreditEpisode *AutomaticResetCreditEpisode      `json:"automatic_credit_episode,omitempty"`
 	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
@@ -73,6 +74,14 @@ func (s SubscriptionState) Validate(account Account) error {
 	}
 	if s.AutomaticCreditConsent != nil && (s.AutomaticCreditConsent.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) || s.AutomaticCreditEpisode != nil && (s.AutomaticCreditEpisode.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) {
 		return invalid()
+	}
+	if len(s.AutomaticCreditBlocks) > 1024 {
+		return invalid()
+	}
+	for _, block := range s.AutomaticCreditBlocks {
+		if block.Validate() != nil {
+			return invalid()
+		}
 	}
 	if account.Type != SubscriptionAccount {
 		return invalid()

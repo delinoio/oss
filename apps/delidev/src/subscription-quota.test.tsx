@@ -18,16 +18,17 @@ function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLim
   let account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2, documentJson: encode(data) });
   const request = vi.fn(async (value) => ({ account, operationId: value.mutation?.requestId }));
   const reconcile = vi.fn(async (_value: unknown) => ({ account }));
+  const consent = vi.fn(async (value) => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, automatic_credit_consent: value.enabled ? { connection_id: value.connectionId, generation: value.generationId } : undefined } }) }); return { account }; });
   const transport = createRouterTransport((router) => {
-    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(serverCredits ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1] : []), ...(supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
-    router.service(SubscriptionService, { requestSubscriptionObservation: request, reconcileSubscriptionCredit: reconcile });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1, SystemCapability.SUBSCRIPTION_RESET_CREDITS_V1, ...(serverCredits ? [SystemCapability.SERVER_SUBSCRIPTION_RESET_CREDITS_V1] : []), ...(supported ? [SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2] : [SystemCapability.SUBSCRIPTION_QUOTA_V1])] }) });
+    router.service(SubscriptionService, { requestSubscriptionObservation: request, reconcileSubscriptionCredit: reconcile, setAutomaticResetCreditConsent: consent });
   });
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  function Harness() {
     const [current, setCurrent] = useState(account), [, setBusy] = useState(false);
     return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: Array.isArray(details) ? [...details].reverse() : details } } }) }); setCurrent(account); }}>Reorder fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
   }
-  return { Harness, request, reconcile, account, machine, connection, generation, inventory };
+  return { Harness, request, reconcile, consent, account, machine, connection, generation, inventory };
 }
 
 async function selectExactCredit() {
@@ -285,4 +286,25 @@ it("retains captured ordinal and full identity through reorder, replacement, loc
  finally {await i18n.changeLanguage("en")}
  fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));expect(confirmation.textContent).toContain("Consume reset credit 3");expect(confirmation.textContent).toContain(numberedDetails[2].id);
  fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();expect(value.reconcile).not.toHaveBeenCalled();
+});
+
+
+it("keeps automatic credits off until exact confirmation and disables them explicitly", async () => {
+ const value=fixture();render(<value.Harness />);
+ const checkbox=await screen.findByRole("checkbox",{name:"Automatically use a reset credit when subscription quota is exhausted"}) as HTMLInputElement;
+ await waitFor(()=>expect(checkbox.disabled).toBe(false));expect(checkbox.checked).toBe(false);
+ fireEvent.click(checkbox);expect(value.consent).not.toHaveBeenCalled();
+ expect(await screen.findByRole("heading",{name:"Enable automatic reset credits"})).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Enable automatic reset credits"}));
+ await waitFor(()=>expect(value.consent).toHaveBeenCalledTimes(1));
+ expect(value.consent.mock.calls[0][0]).toMatchObject({connectionId:value.connection,generationId:value.generation,enabled:true,confirmed:true,mutation:{id:value.account.id,expectedRevision:1n}});
+ const enabled=await screen.findByRole("checkbox",{name:"Automatically use a reset credit when subscription quota is exhausted"}) as HTMLInputElement;
+ await waitFor(()=>expect(enabled.checked).toBe(true));fireEvent.click(enabled);
+ await waitFor(()=>expect(value.consent).toHaveBeenCalledTimes(2));expect(value.consent.mock.calls[1][0]).toMatchObject({enabled:false,confirmed:false});expect(value.request).not.toHaveBeenCalled();
+});
+it("fences a consent confirmation after account revision replacement", async()=>{
+ const value=fixture();render(<value.Harness />);const checkbox=await screen.findByRole("checkbox",{name:"Automatically use a reset credit when subscription quota is exhausted"});await waitFor(()=>expect((checkbox as HTMLInputElement).disabled).toBe(false));fireEvent.click(checkbox);
+ fireEvent.click(screen.getByRole("button",{name:"Change fixture account revision"}));
+ expect((screen.getByRole("button",{name:"Enable automatic reset credits"}) as HTMLButtonElement).disabled).toBe(true);expect(value.consent).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Keep automatic reset credits off"}));expect((await screen.findByRole("checkbox",{name:"Automatically use a reset credit when subscription quota is exhausted"}) as HTMLInputElement).checked).toBe(false);
 });

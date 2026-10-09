@@ -29,14 +29,17 @@ func (b CodexQuotaBlock) Valid() bool {
 // The episode is recorded even when inventory or native ownership prevents
 // admission. Time passing, restarts and repeated failures do not rearm it.
 type AutomaticResetCreditEpisode struct {
-	ID             ID              `json:"id"`
-	Generation     ID              `json:"generation"`
-	ExecutionID    ID              `json:"execution_id"`
-	NativeThreadID NativeIdentity  `json:"native_thread_id"`
-	NativeTurnID   NativeIdentity  `json:"native_turn_id"`
-	Block          CodexQuotaBlock `json:"block"`
-	ObservedAt     time.Time       `json:"observed_at"`
-	OperationID    ID              `json:"operation_id,omitempty"`
+	ID                 ID              `json:"id"`
+	RefreshOperationID ID              `json:"refresh_operation_id,omitempty"`
+	SessionID          ID              `json:"session_id,omitempty"`
+	LeaseID            ID              `json:"lease_id,omitempty"`
+	Generation         ID              `json:"generation"`
+	ExecutionID        ID              `json:"execution_id"`
+	NativeThreadID     NativeIdentity  `json:"native_thread_id"`
+	NativeTurnID       NativeIdentity  `json:"native_turn_id"`
+	Block              CodexQuotaBlock `json:"block"`
+	ObservedAt         time.Time       `json:"observed_at"`
+	OperationID        ID              `json:"operation_id,omitempty"`
 }
 
 func (c AutomaticResetCreditConsent) Validate() error {
@@ -46,7 +49,7 @@ func (c AutomaticResetCreditConsent) Validate() error {
 	return nil
 }
 func (e AutomaticResetCreditEpisode) Validate() error {
-	if e.ID.Validate() != nil || e.Generation.Validate() != nil || e.ExecutionID.Validate() != nil || e.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || e.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || !e.Block.Valid() || e.ObservedAt.Unix() <= 0 || e.ObservedAt.Year() > 9999 || e.OperationID != "" && e.OperationID.Validate() != nil {
+	if e.ID.Validate() != nil || e.Generation.Validate() != nil || e.ExecutionID.Validate() != nil || e.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || e.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || !e.Block.Valid() || e.ObservedAt.Unix() <= 0 || e.ObservedAt.Year() > 9999 || e.OperationID != "" && e.OperationID.Validate() != nil || e.RefreshOperationID != "" && e.RefreshOperationID.Validate() != nil || e.SessionID != "" && e.SessionID.Validate() != nil || e.LeaseID != "" && e.LeaseID.Validate() != nil {
 		return InvalidSubscriptionObservation()
 	}
 	return nil
@@ -93,4 +96,21 @@ func SelectAutomaticResetCredit(v *SubscriptionResetCredits, now time.Time) (str
 		return "", false
 	}
 	return eligible[0].ID, true
+}
+
+// QuotaBlock is emitted only from the typed failed original Codex turn. It
+// carries no native diagnostic text and cannot authorize another execution.
+type SubscriptionQuotaBlock struct {
+	SessionID      ID              `json:"session_id"`
+	ExecutionID    ID              `json:"execution_id"`
+	NativeThreadID NativeIdentity  `json:"native_thread_id"`
+	NativeTurnID   NativeIdentity  `json:"native_turn_id"`
+	Reason         CodexQuotaBlock `json:"reason"`
+}
+
+func (b SubscriptionQuotaBlock) Validate() error {
+	if b.SessionID.Validate() != nil || b.ExecutionID.Validate() != nil || b.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || b.NativeTurnID.Validate(Codex, NativeTurnIdentity) != nil || !b.Reason.Valid() {
+		return InvalidSubscriptionObservation()
+	}
+	return nil
 }

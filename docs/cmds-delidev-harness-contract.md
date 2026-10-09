@@ -1966,3 +1966,14 @@ profile or retained private checkpoint; legacy profiles retain their closed
 metadata/history checks. Native method or schema rejection does not permit
 rollback, fallback, omission, resend or a fresh target. A retained empty prefix
 is separately proved and never manufactures an old turn or input.
+
+### Codex automatic-credit marker
+
+The failed-turn decoder projects only the closed `codexErrorInfo` unit tags
+`usageLimitExceeded` and `rateLimitExceeded`. Native diagnostic text and other
+string/object variants remain private and grant no credit authority. Managed
+Execute publishes this marker only after its original terminal progress, then
+joins the retained observation owner before credential capture and native cleanup.
+The existing official reset-credit consume method retains the admitted original
+UUIDv7 idempotency key; automatic admission adds no native action or continuation.
+Follow the subscription contract for separate fresh rate-limit proof and consent.
