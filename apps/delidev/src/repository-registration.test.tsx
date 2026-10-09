@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState } from "react";
@@ -707,4 +708,12 @@ it("groups independent optional checkout rows and retains the current footer act
  expect(footer.contains(within(dialog).getByRole('button',{name:'Cancel'}))).toBe(true);
  expect(footer.contains(within(dialog).getByRole('button',{name:'Clone & add repository'}))).toBe(true);
  expect(f.save).not.toHaveBeenCalled();expect(f.clone).not.toHaveBeenCalled();
+});
+
+it("preserves shared footer spacing when a nested remediation owns ordinary actions", async () => {
+ const f=fixture(metadata,true);f.mount();await f.add(false);const dialog=screen.getByRole("dialog",{name:"Add repository"});
+ const footer=dialog.querySelector<HTMLElement>(".settings-task-footer")!;
+ const css=readFileSync("src/repository-registration.css","utf8");const selector=css.match(/([^{}]+)\{ padding: 0; border: 0; \}/)![1].trim();
+ expect(footer.matches(selector)).toBe(true);const registrationActions=footer.querySelector(".repository-add-footer")!;registrationActions.remove();const nested=document.createElement("div");nested.className="actions";footer.append(nested);
+ expect(dialog.querySelector(".repository-registration")).not.toBeNull();expect(footer.matches(selector)).toBe(false);nested.remove();footer.append(registrationActions);
 });

@@ -44,7 +44,7 @@
 .repository-remote-fields label { display: grid; gap: 8px; }
 .repository-remote-fields p { margin: 0; color: var(--muted); }
 
-.settings-task-dialog:has(.repository-registration) > .settings-task-footer { padding: 0; border: 0; }
+.settings-task-dialog > .settings-task-footer:has(> .repository-add-footer) { padding: 0; border: 0; }
 .repository-remote-fields > label:not(:first-child), .repository-remote-fields > .repository-clone-name { margin-top: 4px; }
 .repository-checkout-group { margin-top: 20px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .repository-checkout-group > button.disclosure-header.disclosure-header.repository-checkout-toggle { display: grid; grid-template-columns: 20px minmax(0,1fr) 14px; gap: 12px; width: 100%; min-height: 40px; padding: 16px; border: 0; border-radius: 0; background: transparent; }
