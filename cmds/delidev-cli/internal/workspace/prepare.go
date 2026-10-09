@@ -564,9 +564,8 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	}
 	// The final descriptive verification must follow an actual read of every
 	// prepared directory, including Local and General Chat workspaces.
-	if err := m.verify(manifest); err != nil {
-		return failed(err)
-	}
+	// This observation-only probe must never alter preparation or cleanup.
+	verificationObserved := m.verify(manifest) == nil
 	manifest.State = Ready
 	if forkSnapshot != nil {
 		if err := forkSnapshot.Verify(ctx, manifest); err != nil {
@@ -578,7 +577,9 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 			return failed(err)
 		}
 	}
-	startupProgress(ctx, domain.StartupWorkspaceVerify, domain.StartupProgressCompleted)
+	if verificationObserved {
+		startupProgress(ctx, domain.StartupWorkspaceVerify, domain.StartupProgressCompleted)
+	}
 	startupProgress(ctx, domain.StartupWorkspacePublish, domain.StartupProgressRunning)
 	if err := write(); err != nil {
 		return failed(domain.SafeError(err))

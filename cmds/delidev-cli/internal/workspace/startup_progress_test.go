@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -121,5 +122,33 @@ func TestSessionStartupProgressApplicableLocalChatAndBound(t *testing.T) {
 	}
 	if len(StartupProgressPlan(input)) != 403 {
 		t.Fatal("stage set exceeded original 100 repository bound")
+	}
+}
+
+func TestSessionStartupProgressObservationFailureDoesNotChangePreparation(t *testing.T) {
+	m := manager(t)
+	input, _ := requestFor(repository(t))
+	input.Type = domain.Local
+	var observed []domain.StartupProgressStep
+	ctx := WithStartupObserver(context.Background(), func(s domain.StartupProgressStep) {
+		observed = append(observed, s)
+		if s.WorkspaceOperation == domain.StartupWorkspaceVerify && s.State == domain.StartupProgressRunning {
+			if err := os.RemoveAll(input.Repositories[0].Checkout); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	manifest, err := m.Prepare(ctx, input)
+	if err != nil || manifest.State != Ready {
+		t.Fatalf("descriptive probe changed publication: %v", err)
+	}
+	for _, s := range observed {
+		if s.WorkspaceOperation == domain.StartupWorkspaceVerify && s.State == domain.StartupProgressCompleted {
+			t.Fatal("unreadable directory reported verified")
+		}
+	}
+	last := observed[len(observed)-1]
+	if last.WorkspaceOperation != domain.StartupWorkspacePublish || last.State != domain.StartupProgressCompleted {
+		t.Fatal("original publication did not complete")
 	}
 }
