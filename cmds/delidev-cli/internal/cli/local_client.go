@@ -26,6 +26,7 @@ type localPairingAttempt struct {
 	RequestID domain.ID `json:"request_id"`
 	ServerID  domain.ID `json:"server_id"`
 	Endpoint  string    `json:"endpoint"`
+	Name      string    `json:"name,omitempty"`
 }
 
 // pairLocalDevice is an explicit local bootstrap operation, never server
@@ -45,7 +46,7 @@ func pairLocalDeviceJoined(ctx context.Context, o options, root string, kind dom
 func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.DeviceType, join bool, expected string) (any, error) {
 	name := "DeliDev desktop"
 	if kind == domain.WorkerDevice {
-		name = "DeliDev local Worker"
+		name = "This computer"
 	} else if kind != domain.ClientDevice {
 		return nil, usage()
 	}
@@ -125,7 +126,7 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 	var attempt localPairingAttempt
 	raw, err := security.ReadPrivate(path, 4096)
 	if errors.Is(err, os.ErrNotExist) {
-		attempt.RequestID, attempt.ServerID, attempt.Endpoint = domain.NewID(), identity.ServerID, endpoint.URL
+		attempt.RequestID, attempt.ServerID, attempt.Endpoint, attempt.Name = domain.NewID(), identity.ServerID, endpoint.URL, name
 		raw, err = json.Marshal(attempt)
 		if err != nil {
 			return nil, err
@@ -145,6 +146,16 @@ func pairLocalDeviceAt(ctx context.Context, o options, root string, kind domain.
 		if attempt.ServerID != identity.ServerID || !localEndpointMatches(o, attempt.ServerID, attempt.Endpoint, endpoint.URL) {
 			return nil, domain.Fail(domain.Conflict, "A different local pairing attempt is retained.", "Restore its original authority or explicitly select a separate device scope.")
 		}
+	}
+	// An absent name belongs to a pre-change intent. Keep its original grant
+	// receipt input even when no acknowledgment was retained locally.
+	if attempt.Name != "" {
+		if err := domain.Text(attempt.Name, "device name", 256, true); err != nil {
+			return nil, err
+		}
+		name = attempt.Name
+	} else if kind == domain.WorkerDevice {
+		name = "DeliDev local Worker"
 	}
 	o.requestID = attempt.RequestID
 	if o.desktop != nil {

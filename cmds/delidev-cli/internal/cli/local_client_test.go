@@ -1,8 +1,18 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+
+	"connectrpc.com/connect"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
+	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"io"
 	"log/slog"
 	"os"
@@ -109,5 +119,161 @@ func TestCLILocalPairingDoesNotStartServerOrCreateMissingScope(t *testing.T) {
 	}
 	if _, err := os.Stat(root); !os.IsNotExist(err) {
 		t.Fatal("implicit server scope creation", err)
+	}
+}
+
+func TestCLILocalWorkerNameAndOriginalAcknowledgmentReplay(t *testing.T) {
+	for _, pinnedName := range []string{"This computer", "", "My workstation"} {
+		t.Run("name="+pinnedName, func(t *testing.T) {
+			root, workerRoot := filepath.Join(t.TempDir(), "server"), filepath.Join(t.TempDir(), "paired-worker")
+			ctx, cancel := context.WithCancel(context.Background())
+			ready, done := make(chan server.Endpoint, 1), make(chan error, 1)
+			go func() {
+				done <- server.Serve(ctx, server.Config{DisableBackgroundMaintenanceForTesting: true, DataDir: root, Listen: "127.0.0.1:0", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}, func(endpoint server.Endpoint) { ready <- endpoint })
+			}()
+			t.Cleanup(func() {
+				cancel()
+				if err := <-done; err != nil {
+					t.Error(err)
+				}
+			})
+			var endpoint server.Endpoint
+			select {
+			case endpoint = <-ready:
+			case <-time.After(10 * time.Second):
+				t.Fatal("server did not become ready")
+			}
+			originalURL := endpoint.URL
+			httpClient, transport := rpc.HTTPClient()
+			defer transport.CloseIdleConnections()
+			var mu sync.Mutex
+			requests := map[string][][]byte{}
+			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == delidevv1connect.DeviceServiceCreatePairingProcedure {
+					intentRaw, err := security.ReadPrivate(filepath.Join(workerRoot, "local-pairing.json"), 4096)
+					var intent localPairingAttempt
+					if err != nil || json.Unmarshal(intentRaw, &intent) != nil || intent.Name != pinnedName {
+						t.Error("name was not pinned before grant issuance")
+					}
+				}
+				raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+				forward, _ := http.NewRequestWithContext(r.Context(), r.Method, originalURL+r.URL.Path, bytes.NewReader(raw))
+				forward.Header = r.Header.Clone()
+				response, err := httpClient.Do(forward)
+				if err != nil {
+					w.WriteHeader(http.StatusBadGateway)
+					return
+				}
+				defer response.Body.Close()
+				body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+				mu.Lock()
+				lose := false
+				if r.URL.Path == delidevv1connect.DeviceServiceCreatePairingProcedure || r.URL.Path == delidevv1connect.DeviceServicePairDeviceProcedure {
+					requests[r.URL.Path] = append(requests[r.URL.Path], raw)
+					lose = len(requests[r.URL.Path]) == 1
+				}
+				mu.Unlock()
+				if lose {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				for name, values := range response.Header {
+					for _, value := range values {
+						w.Header().Add(name, value)
+					}
+				}
+				w.WriteHeader(response.StatusCode)
+				_, _ = w.Write(body)
+			}))
+			defer proxy.Close()
+			endpoint.URL = proxy.URL
+			raw, _ := json.Marshal(endpoint)
+			if err := security.WriteAtomic(filepath.Join(root, "server.json"), raw); err != nil {
+				t.Fatal(err)
+			}
+			expectedName := pinnedName
+			if pinnedName != "This computer" {
+				if err := security.PrivateDir(workerRoot); err != nil {
+					t.Fatal(err)
+				}
+				attempt := localPairingAttempt{RequestID: domain.NewID(), ServerID: endpoint.ServerID, Endpoint: proxy.URL, Name: pinnedName}
+				raw, _ := json.Marshal(attempt)
+				if err := security.WriteAtomic(filepath.Join(workerRoot, "local-pairing.json"), raw); err != nil {
+					t.Fatal(err)
+				}
+				if pinnedName == "" {
+					expectedName = "DeliDev local Worker"
+				}
+			}
+			args := []string{"worker", "pair-local", "--worker-dir", workerRoot}
+			for i := 0; i < 2; i++ {
+				if code, _ := cliRun(t, root, args, ""); code == 0 {
+					t.Fatal("lost acknowledgment reported complete")
+				}
+			}
+			// The original machine JSON remains in the lower-level pending journal.
+			pending, err := os.ReadFile(filepath.Join(workerRoot, "pairing-pending.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if code, result := cliRun(t, root, args, ""); code != 0 {
+				t.Fatal(result)
+			}
+			saved, err := worker.LoadCredential(workerRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity, err := security.LoadIdentity(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resources := delidevv1connect.NewResourceServiceClient(httpClient, originalURL)
+			for kind, id := range map[pb.EntityKind]domain.ID{pb.EntityKind_ENTITY_KIND_DEVICE: saved.DeviceID, pb.EntityKind_ENTITY_KIND_MACHINE: saved.MachineID} {
+				req := connect.NewRequest(&pb.GetResourceRequest{Kind: kind, Id: string(id)})
+				req.Header().Set("Authorization", "Bearer "+identity.Token)
+				response, err := resources.GetResource(ctx, req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var document struct {
+					Name string `json:"name"`
+				}
+				if err := json.Unmarshal(response.Msg.Resource.DocumentJson, &document); err != nil || document.Name != expectedName {
+					t.Fatalf("%v name = %q, want %q: %v", kind, document.Name, expectedName, err)
+				}
+			}
+			if code, result := cliRun(t, root, args, ""); code != 0 {
+				t.Fatal(result)
+			}
+			repeated, err := worker.LoadCredential(workerRoot)
+			if err != nil || repeated != saved {
+				t.Fatal("completed credentials changed", err)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if len(requests) != 2 {
+				t.Fatal("both acknowledgment boundaries were not tested")
+			}
+			for procedure, values := range requests {
+				expected := 2
+				if procedure == delidevv1connect.DeviceServiceCreatePairingProcedure {
+					expected = 3
+				}
+				if len(values) != expected {
+					t.Fatalf("%s replay count = %d, want %d", procedure, len(values), expected)
+				}
+				for _, value := range values[1:] {
+					if !bytes.Equal(values[0], value) {
+						t.Fatal("replay changed original pairing bytes")
+					}
+				}
+			}
+			var journal map[string]any
+			if err := json.Unmarshal(pending, &journal); err != nil || len(journal) == 0 {
+				t.Fatal("original pending journal missing", err)
+			}
+			// Exact PairDevice bytes include the retained machine document, request,
+			// verifier and identities, so a replay cannot create another resource.
+		})
 	}
 }

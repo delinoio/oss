@@ -652,7 +652,7 @@ func recoverDesktop(ctx context.Context, o options, c client, serverID, id domai
 		if saved.DeviceID == id {
 			return nil, recoveryRequired()
 		}
-		attempt := localPairingAttempt{o.requestID, serverID, c.endpoint}
+		attempt := localPairingAttempt{RequestID: o.requestID, ServerID: serverID, Endpoint: c.endpoint, Name: "DeliDev desktop"}
 		if err := writeRecoveryJSON(filepath.Join(candidate, "local-pairing.json"), attempt); err != nil {
 			return nil, err
 		}

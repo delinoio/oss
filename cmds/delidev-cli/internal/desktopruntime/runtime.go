@@ -116,6 +116,7 @@ func LocalRoot(root string, serverID domain.ID, pairedEndpoint string) (string, 
 		RequestID domain.ID `json:"request_id"`
 		ServerID  domain.ID `json:"server_id"`
 		Endpoint  string    `json:"endpoint"`
+		Name      string    `json:"name,omitempty"`
 	}
 	if domain.Decode(raw, &original) != nil || original.RequestID.Validate() != nil || original.ServerID != serverID || original.Endpoint != pairedEndpoint {
 		return "", false, unavailable()
@@ -277,6 +278,7 @@ func MarkLocal(t Target) error {
 		RequestID domain.ID `json:"request_id"`
 		ServerID  domain.ID `json:"server_id"`
 		Endpoint  string    `json:"endpoint"`
+		Name      string    `json:"name,omitempty"`
 	}
 	if domain.Decode(raw, &original) != nil {
 		return unavailable()

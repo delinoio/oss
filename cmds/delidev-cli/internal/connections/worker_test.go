@@ -81,84 +81,134 @@ func TestProfileWorkersStayDistinctAndNeverReplaceRevokedOrLostAuthority(t *test
 }
 
 func TestProfileWorkerRetriesBothLostAcknowledgmentsWithOriginalBytes(t *testing.T) {
-	for _, loseJournal := range []bool{false, true} {
-		t.Run(map[bool]string{false: "exact replay", true: "lost journal"}[loseJournal], func(t *testing.T) {
-			f := start(t)
-			root, id, ctx := filepath.Join(t.TempDir(), "client"), domain.NewID(), context.Background()
-			httpClient, transport := rpc.HTTPClient()
-			defer transport.CloseIdleConnections()
-			var mu sync.Mutex
-			armed := false
-			requests := map[string][][]byte{}
-			proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-				forward, _ := http.NewRequestWithContext(r.Context(), r.Method, f.endpoint.URL+r.URL.Path, bytes.NewReader(raw))
-				forward.Header = r.Header.Clone()
-				response, err := httpClient.Do(forward)
-				if err != nil {
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				defer response.Body.Close()
-				body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-				mu.Lock()
-				lose := false
-				if armed && (r.URL.Path == delidevv1connect.DeviceServiceCreatePairingProcedure || r.URL.Path == delidevv1connect.DeviceServicePairDeviceProcedure) {
-					requests[r.URL.Path] = append(requests[r.URL.Path], raw)
-					lose = len(requests[r.URL.Path]) == 1
-				}
-				mu.Unlock()
-				if lose {
-					w.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
-				for name, values := range response.Header {
-					for _, value := range values {
-						w.Header().Add(name, value)
+	for _, pinnedName := range []string{"This computer", "", "My workstation"} {
+		t.Run("name="+pinnedName, func(t *testing.T) {
+			for _, loseJournal := range []bool{false, true} {
+				t.Run(map[bool]string{false: "exact replay", true: "lost journal"}[loseJournal], func(t *testing.T) {
+					f := start(t)
+					root, id, ctx := filepath.Join(t.TempDir(), "client"), domain.NewID(), context.Background()
+					httpClient, transport := rpc.HTTPClient()
+					defer transport.CloseIdleConnections()
+					var mu sync.Mutex
+					armed := false
+					requests := map[string][][]byte{}
+					proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						mu.Lock()
+						checkName := armed && r.URL.Path == delidevv1connect.DeviceServiceCreatePairingProcedure
+						mu.Unlock()
+						if checkName {
+							raw, err := security.ReadPrivate(filepath.Join(root, "connections", string(id), "local-worker.json"), 16<<10)
+							var intent struct {
+								Name string `json:"name"`
+							}
+							expectedPin := pinnedName
+							// Reading a legacy intent pins its original default on the
+							// subsequent acknowledgment checkpoint, never the new name.
+							if pinnedName == "" {
+								expectedPin = "DeliDev local Worker"
+							}
+							if err != nil || json.Unmarshal(raw, &intent) != nil || (intent.Name != pinnedName && intent.Name != expectedPin) {
+								t.Error("name was not pinned before grant issuance")
+							}
+						}
+						raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+						forward, _ := http.NewRequestWithContext(r.Context(), r.Method, f.endpoint.URL+r.URL.Path, bytes.NewReader(raw))
+						forward.Header = r.Header.Clone()
+						response, err := httpClient.Do(forward)
+						if err != nil {
+							w.WriteHeader(http.StatusBadGateway)
+							return
+						}
+						defer response.Body.Close()
+						body, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+						mu.Lock()
+						lose := false
+						if armed && (r.URL.Path == delidevv1connect.DeviceServiceCreatePairingProcedure || r.URL.Path == delidevv1connect.DeviceServicePairDeviceProcedure) {
+							requests[r.URL.Path] = append(requests[r.URL.Path], raw)
+							lose = len(requests[r.URL.Path]) == 1
+						}
+						mu.Unlock()
+						if lose {
+							w.WriteHeader(http.StatusServiceUnavailable)
+							return
+						}
+						for name, values := range response.Header {
+							for _, value := range values {
+								w.Header().Add(name, value)
+							}
+						}
+						w.WriteHeader(response.StatusCode)
+						_, _ = w.Write(body)
+					}))
+					defer proxy.Close()
+					code := grant(t, f)
+					code.Endpoint = proxy.URL
+					profile, err := connections.Pair(ctx, root, id, "fixture", code)
+					if err != nil {
+						t.Fatal(err)
 					}
-				}
-				w.WriteHeader(response.StatusCode)
-				_, _ = w.Write(body)
-			}))
-			defer proxy.Close()
-			code := grant(t, f)
-			code.Endpoint = proxy.URL
-			if _, err := connections.Pair(ctx, root, id, "fixture", code); err != nil {
-				t.Fatal(err)
-			}
-			mu.Lock()
-			armed = true
-			mu.Unlock()
-			for i := 0; i < 2; i++ {
-				if _, err := connections.RegisterWorker(ctx, root, id); err == nil {
-					t.Fatal("lost acknowledgment reported complete")
-				}
-			}
-			if loseJournal {
-				path, _ := connections.WorkerRoot(root, id)
-				if err := os.Remove(filepath.Join(path, "pairing-pending.json")); err != nil {
-					t.Fatal(err)
-				}
-			}
-			credential, err := connections.RegisterWorker(ctx, root, id)
-			if loseJournal && domain.SafeError(err).Code != domain.RecoveryRequired {
-				t.Fatal("lost journal recreated", err)
-			} else if !loseJournal && (err != nil || credential.MachineID == "") {
-				t.Fatal("exact registration did not complete", err)
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if len(requests) != 2 {
-				t.Fatal("both remote acceptance boundaries were not exercised")
-			}
-			for procedure, values := range requests {
-				expected := 2
-				if loseJournal && procedure == delidevv1connect.DeviceServicePairDeviceProcedure {
-					expected = 1
-				}
-				if len(values) != expected || (len(values) == 2 && !bytes.Equal(values[0], values[1])) {
-					t.Fatal("retry changed grant or device request ownership")
-				}
+					expectedName := pinnedName
+					if pinnedName != "This computer" {
+						// A legacy intent has no name field; an already pinned custom name
+						// must also survive requests and completed-registration reuse.
+						token, err := worker.RandomToken()
+						if err != nil {
+							t.Fatal(err)
+						}
+						intent := map[string]any{"version": 1, "profile_id": id, "client_id": profile.DeviceID, "request_id": domain.NewID(), "grant": worker.PairingCode{Version: 1, ServerID: profile.ServerID, Endpoint: profile.Endpoint, Code: token}}
+						if pinnedName != "" {
+							intent["name"] = pinnedName
+						} else {
+							expectedName = "DeliDev local Worker"
+						}
+						raw, _ := json.Marshal(intent)
+						if err := security.WriteAtomic(filepath.Join(root, "connections", string(id), "local-worker.json"), raw); err != nil {
+							t.Fatal(err)
+						}
+					}
+					mu.Lock()
+					armed = true
+					mu.Unlock()
+					for i := 0; i < 2; i++ {
+						if _, err := connections.RegisterWorker(ctx, root, id); err == nil {
+							t.Fatal("lost acknowledgment reported complete")
+						}
+					}
+					if loseJournal {
+						path, _ := connections.WorkerRoot(root, id)
+						if err := os.Remove(filepath.Join(path, "pairing-pending.json")); err != nil {
+							t.Fatal(err)
+						}
+					}
+					credential, err := connections.RegisterWorker(ctx, root, id)
+					if loseJournal && domain.SafeError(err).Code != domain.RecoveryRequired {
+						t.Fatal("lost journal recreated", err)
+					} else if !loseJournal && (err != nil || credential.MachineID == "") {
+						t.Fatal("exact registration did not complete", err)
+					}
+					if !loseJournal {
+						assertWorkerNames(t, f, credential, expectedName)
+						repeated, err := connections.RegisterWorker(ctx, root, id)
+						if err != nil || repeated != credential {
+							t.Fatal("completed registration changed", err)
+						}
+						assertWorkerNames(t, f, repeated, expectedName)
+					}
+					mu.Lock()
+					defer mu.Unlock()
+					if len(requests) != 2 {
+						t.Fatal("both remote acceptance boundaries were not exercised")
+					}
+					for procedure, values := range requests {
+						expected := 2
+						if loseJournal && procedure == delidevv1connect.DeviceServicePairDeviceProcedure {
+							expected = 1
+						}
+						if len(values) != expected || (len(values) == 2 && !bytes.Equal(values[0], values[1])) {
+							t.Fatal("retry changed grant or device request ownership")
+						}
+					}
+				})
 			}
 		})
 	}
@@ -201,5 +251,22 @@ func TestProfileWorkerRejectsForeignPrivateRegistrationAndClientRevocation(t *te
 	retained, err := connections.WorkerCredential(root, id)
 	if err != nil || retained != credential {
 		t.Fatal("client revocation changed offline Worker identity", err)
+	}
+}
+
+func assertWorkerNames(t *testing.T, f fixture, credential worker.Credential, expected string) {
+	t.Helper()
+	resources := delidevv1connect.NewResourceServiceClient(http.DefaultClient, f.endpoint.URL)
+	for kind, id := range map[pb.EntityKind]domain.ID{pb.EntityKind_ENTITY_KIND_DEVICE: credential.DeviceID, pb.EntityKind_ENTITY_KIND_MACHINE: credential.MachineID} {
+		response, err := resources.GetResource(context.Background(), owner(f, &pb.GetResourceRequest{Kind: kind, Id: string(id)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var document struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(response.Msg.Resource.DocumentJson, &document); err != nil || document.Name != expected {
+			t.Fatalf("%v name = %q, want %q: %v", kind, document.Name, expected, err)
+		}
 	}
 }
