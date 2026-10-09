@@ -107,3 +107,12 @@ it("retains the typed invalid draft when Enter cannot commit a disabled candidat
  await waitFor(()=>expect(change).toHaveBeenLastCalledWith([{repository_id:f.repositories[0].id,reference:{type:"remote-branch",remote:"upstream",name:"feature/new"}}]));
  expect(validity).toHaveBeenLastCalledWith(true);
 });
+
+
+it.each(["\u00a0", "\u0085", "\u1680", "\u2000\u200a", "\u2028\u2029", "\u202f", "\u205f", "\u3000"])("rejects server-invalid whitespace-only branch %j without committing", async name => {
+ const f=fixture(),change=vi.fn(),validity=vi.fn();render(f.view([],change,false,f.project,validity));
+ const input=screen.getByRole("combobox",{name:"Starting branch"});fireEvent.focus(input);await screen.findByText(/Branch discovery is unavailable/);
+ fireEvent.change(input,{target:{value:name}});
+ expect(validStartingBranch(name)).toBe(false);expect(change).not.toHaveBeenCalled();expect(input.getAttribute("aria-invalid")).toBe("true");expect(validity).toHaveBeenLastCalledWith(false);
+});
+it("preserves nonempty branch spelling instead of trimming Unicode whitespace",()=>{expect(validStartingBranch("\u00a0topic\u00a0")).toBe(true);});
