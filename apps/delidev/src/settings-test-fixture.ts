@@ -47,15 +47,18 @@ beforeAll(async () => {
   let ready = false;
   while (Date.now() < until) {
     if (process.exitCode !== null) throw new Error("Temporary server exited before readiness");
+    let status: { protocolVersion: number; stopping: boolean };
     try {
       const origin = JSON.parse(await readFile(join(scope, "server.json"), "utf8")).url;
       const token = JSON.parse(await readFile(join(scope, "owner.json"), "utf8")).token;
       transport = createDeliDevTransport({ origin, getToken: () => token });
-      const status = await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
-      if (status.protocolVersion !== 2 || status.stopping) throw new Error("Owned fixture server protocol mismatch");
-      ready = true;
-      break;
-    } catch { await pause(); }
+      status = await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
+    } catch { await pause(); continue; }
+    // Missing private readiness files and transient RPC failures may retry.
+    // A successful incompatible response is final, never a transient timeout.
+    if (status.protocolVersion !== 2 || status.stopping) throw new Error("Owned fixture server protocol mismatch");
+    ready = true;
+    break;
   }
   if (!ready) throw new Error("Temporary server readiness timed out");
   // Only this owned non-inference HTTP endpoint is used. No installed model

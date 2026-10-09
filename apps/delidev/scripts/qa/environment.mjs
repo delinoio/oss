@@ -119,7 +119,7 @@ export class Environment {
     try {
       const transport = this.api.createDeliDevTransport({ origin: this.endpoint, getToken: () => this.clientCredential.token });
       const value = await createClient(this.api.SystemService, transport).getStatus({}, { timeoutMs: 2000 });
-      if (value.serverId !== this.serverId || value.version !== "0.1.0" || value.protocolVersion !== 1 || value.stopping) throw new QaError("paired-verification-failed");
+      verifyServerStatus(value, this.serverId, "paired-verification-failed");
       return { state: "ready", attempts: 0, retry_ms: 0 };
     } catch { return { state: this.server?.child.exitCode !== null || this.server?.child.signalCode !== null ? "stopped" : "blocked", attempts: 0, retry_ms: 0, failure: "qa-connection-unavailable" }; }
   }
