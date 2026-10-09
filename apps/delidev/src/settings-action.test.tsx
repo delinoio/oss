@@ -46,3 +46,8 @@ it("preserves unsupported Repository and Agent Worker action guards", () => {
   for(const button of screen.getAllByRole("button")) { expect(button).toHaveProperty("disabled",true); fireEvent.click(button); }
   expect(edit).not.toHaveBeenCalled();expect(remove).not.toHaveBeenCalled();expect(preview).not.toHaveBeenCalled();
 });
+
+it("replaces an explicitly decorative text prefix visually while retaining its original accessible label", () => {
+  render(<SettingsActionScope><SettingsActionButton icon={SettingsActionIcon.Add} decorativePrefix="+ ">+ Add account source</SettingsActionButton></SettingsActionScope>);
+  const button = screen.getByRole("button", { name: "+ Add account source" }); expect(button.textContent).toBe("Add account source"); expect(button.querySelectorAll("svg")).toHaveLength(1);
+});

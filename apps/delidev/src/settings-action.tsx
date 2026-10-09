@@ -45,16 +45,19 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: SettingsActionIcon;
   presentation?: SettingsActionPresentation;
   ref?: Ref<HTMLButtonElement>;
+  decorativePrefix?: string;
   targetName?: string;
   targetId?: string;
   "data-settings-task-cancel"?: boolean;
 }
 /** Native element identity, callbacks, guards and form ownership stay with callers. */
-export function SettingsActionButton({ icon, presentation = SettingsActionPresentation.Label, ref, children, targetName, targetId, ...props }: Props) {
+export function SettingsActionButton({ icon, presentation = SettingsActionPresentation.Label, ref, children, decorativePrefix, targetName, targetId, ...props }: Props) {
   const scoped = useContext(ActionScope), tooltipId = useId();
   const [tooltip, setTooltip] = useState<{ left: number; top: number; owner: HTMLElement }>();
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const name = scoped && (targetName || targetId) ? [props["aria-label"] ?? (typeof children === "string" ? children : undefined), targetName, targetId].filter(Boolean).join(" · ") : props["aria-label"];
+  const label = scoped && decorativePrefix && typeof children === "string" && children.startsWith(decorativePrefix) ? children.slice(decorativePrefix.length) : children;
+  const originalName = props["aria-label"] ?? (label !== children && typeof children === "string" ? children : undefined);
+  const name = scoped && (targetName || targetId) ? [originalName ?? (typeof children === "string" ? children : undefined), targetName, targetId].filter(Boolean).join(" · ") : originalName;
   useLayoutEffect(() => {
     if (!tooltip || !tooltipRef.current) return;
     const zoom = Number(getComputedStyle(document.body).zoom) || 1;
@@ -82,6 +85,6 @@ export function SettingsActionButton({ icon, presentation = SettingsActionPresen
     onPointerEnter={event => { props.onPointerEnter?.(event); if (iconOnly) reveal(event.currentTarget); }}
     onPointerLeave={event => { props.onPointerLeave?.(event); if (document.activeElement !== event.currentTarget) setTooltip(undefined); }}
     onKeyDown={event => { props.onKeyDown?.(event); if (event.key === "Escape") setTooltip(undefined); }}>
-    {scoped ? <SettingsActionGlyph icon={icon} /> : null}{iconOnly ? <span className="settings-action-name">{children}</span> : children}
+    {scoped ? <SettingsActionGlyph icon={icon} /> : null}{iconOnly ? <span className="settings-action-name">{label}</span> : label}
   </button>{iconOnly && tooltip ? createPortal(<div ref={tooltipRef} id={tooltipId} role="tooltip" className="settings-action-tooltip" style={{ left: tooltip.left, top: tooltip.top }}>{name ?? children}</div>, tooltip.owner) : null}</>;
 }
