@@ -55,7 +55,7 @@ export function PRRemediationHistory({ selection, validateSet, routineRefresh = 
   return <section ref={bindRoot} aria-label={copy("pr-remediation-history.prRemediationHistory_932012")}><h4>{copy("pr-remediation-history.prRemediationHistory_932012")}</h4>
     <p>{copy("pr-remediation-history.attemptsRemainRecordedAcrossSessionsAnd_bf906c")}</p>
     {routineRefresh ? <button disabled={history.isFetching} onClick={refresh}>{copy("pr-remediation-history.refreshRemediationHistory_512d6b")}</button> : null}
-    <Problem error={history.error || resume.error} />
+    <Problem error={history.error || resume.error} />{history.error ? <button disabled={history.isFetching} onClick={traversal.refreshExplicit}>{copy("ui.retryCurrentRead")}</button> : null}
     {resume.uncertain ? <button disabled={resume.busy} onClick={resume.retry}>{copy("pr-remediation-history.retryOriginalAllowanceResumption_991985")}</button> : null}
     {history.isPending ? <p role="status">{copy("pr-remediation-history.readingRemediationAttempts_2d6438")}</p> : !valid ? <p role="alert">{copy("pr-remediation-history.thisRemediationPageDoesNotMatch_b7c6c3")}</p> : <>
       {history.error ? <p>{copy("pr-remediation-history.previousAttemptHistoryIsShownRefresh_8a7eae")}</p> : null}

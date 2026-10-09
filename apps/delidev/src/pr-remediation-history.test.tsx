@@ -87,3 +87,10 @@ it("hides Info routine remediation refresh while keeping failed-read and allowan
  await screen.findByRole("button", { name: "Resume automatic attempt allowance" });
  expect(f.history).toHaveBeenCalledTimes(2); expect(f.resume).not.toHaveBeenCalled();
 });
+
+it("retries failed Info remediation reads without routine Refresh", async () => {
+  const f = fixture(); f.history.mockRejectedValueOnce(new ConnectError("Read unavailable", Code.Unavailable));
+  render(f.view(false)); fireEvent.click(await screen.findByRole("button", { name: "Retry current read" }));
+  await waitFor(() => expect(f.history).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("button", { name: "Refresh remediation history" })).toBeNull();
+});
