@@ -74,9 +74,9 @@ impl CaptureGate {
     pub fn end(&mut self) {
         if let Some((owner, token, _)) = self.owner.take() {
             self.retired.insert((owner, token));
+            self.epoch += 1;
         }
         self.paused = false;
-        self.epoch += 1;
     }
 
     pub fn queued_allowed(&self, epoch: u64) -> bool {
@@ -120,6 +120,15 @@ mod tests {
         assert!(gate.retire("original".into(), "lost-ack".into()));
         assert!(!gate.begin("original".into(), "lost-ack".into(), Instant::now()));
         assert!(gate.begin("original".into(), "fresh-explicit".into(), Instant::now()));
+    }
+    #[test]
+    fn duplicate_end_does_not_cancel_native_actions_after_original_retirement() {
+        let mut gate = CaptureGate::default();
+        gate.begin("original".into(), "token".into(), Instant::now());
+        gate.end();
+        let queued = gate.epoch;
+        gate.end();
+        assert!(gate.queued_allowed(queued));
     }
     #[test]
     fn final_bounded_retirement_remains_idempotently_recoverable() {

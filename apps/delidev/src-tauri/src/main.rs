@@ -53,7 +53,6 @@ use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
     update_runner_device_preferences, update_session_creation_preferences,
 };
-use shortcut_capture_host::shortcut_capture_native;
 use shortcut_preferences_host::{read_shortcut_preferences, update_shortcut_preferences};
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
@@ -1747,66 +1746,74 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&connector))
         .manage(Arc::clone(&supervision))
         .manage(Arc::new(tray_status_host::PanelHost::default()))
-        .invoke_handler(tauri::generate_handler![
-            tray_status_host::watch_tray_status,
-            tray_status_host::read_tray_status,
-            tray_status_host::activate_tray_status,
-            tray_status_host::dismiss_tray_status,
-            account_oauth_native,
-            desktop_credential_access,
-            choose_repository_folder,
-            read_appearance,
-            shortcut_capture_native,
-            read_shortcut_preferences,
-            update_shortcut_preferences,
-            read_date_format,
-            update_date_format,
-            read_runner_device_preferences,
-            update_runner_device_preferences,
-            read_session_creation_preferences,
-            update_session_creation_preferences,
-            update_appearance,
-            read_language,
-            update_language,
-            open_browser,
-            control_browser,
-            browser_state,
-            open_github,
-            open_provider_guidance,
-            connect_local,
-            launch_local,
-            retry_local,
-            inspect_local_registration,
-            recover_local_registration,
-            local_server_status,
-            local_worker_proof,
-            local_worker_control,
-            worker_network_control,
-            desktop_update_context,
-            desktop_update_native,
-            connection_context,
-            saved_connections,
-            removed_connections,
-            remove_connection,
-            retained_worker_control,
-            pair_connection,
-            retry_connection,
-            rename_connection,
-            open_connection,
-            connect_saved,
-            saved_worker_proof,
-            saved_worker_control,
-            show_connection_manager,
-            begin_tray,
-            publish_tray,
-            read_tray_action,
-            acknowledge_tray_action,
-            begin_notifications,
-            end_notifications,
-            notification_permission,
-            request_notification_permission,
-            present_notification
-        ])
+        .invoke_handler({
+            let ordinary: fn(tauri::ipc::Invoke<CefRuntime>) -> bool = tauri::generate_handler![
+                tray_status_host::watch_tray_status,
+                tray_status_host::read_tray_status,
+                tray_status_host::activate_tray_status,
+                tray_status_host::dismiss_tray_status,
+                account_oauth_native,
+                desktop_credential_access,
+                choose_repository_folder,
+                read_appearance,
+                read_shortcut_preferences,
+                update_shortcut_preferences,
+                read_date_format,
+                update_date_format,
+                read_runner_device_preferences,
+                update_runner_device_preferences,
+                read_session_creation_preferences,
+                update_session_creation_preferences,
+                update_appearance,
+                read_language,
+                update_language,
+                open_browser,
+                control_browser,
+                browser_state,
+                open_github,
+                open_provider_guidance,
+                connect_local,
+                launch_local,
+                retry_local,
+                inspect_local_registration,
+                recover_local_registration,
+                local_server_status,
+                local_worker_proof,
+                local_worker_control,
+                worker_network_control,
+                desktop_update_context,
+                desktop_update_native,
+                connection_context,
+                saved_connections,
+                removed_connections,
+                remove_connection,
+                retained_worker_control,
+                pair_connection,
+                retry_connection,
+                rename_connection,
+                open_connection,
+                connect_saved,
+                saved_worker_proof,
+                saved_worker_control,
+                show_connection_manager,
+                begin_tray,
+                publish_tray,
+                read_tray_action,
+                acknowledge_tray_action,
+                begin_notifications,
+                end_notifications,
+                notification_permission,
+                request_notification_permission,
+                present_notification
+            ];
+            move |invoke: tauri::ipc::Invoke<CefRuntime>| {
+                if invoke.message.command() == "shortcut_capture_native" {
+                    shortcut_capture_host::dispatch(invoke)
+                } else {
+                    ordinary(invoke)
+                }
+            }
+        })
         .on_window_event(|window, event| {
             if window.label() == tray_status_host::LABEL {
                 match event {

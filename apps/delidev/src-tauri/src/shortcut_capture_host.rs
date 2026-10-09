@@ -272,21 +272,69 @@ impl CaptureHost {
     }
 }
 
-#[tauri::command]
-pub async fn shortcut_capture_native(
+// The ordinary async command macro resolves arguments only on first poll.
+// Capture the committed document epoch synchronously at already-authorized
+// invoke dispatch, before scheduling any work, so reload cannot adopt a queued
+// old-document Begin. URL/storage authorization remains off the UI loop.
+pub fn dispatch(invoke: tauri::ipc::Invoke<CefRuntime>) -> bool {
+    use tauri::ipc::{CommandArg, CommandItem, InvokeError};
+    fn argument<'a, T: CommandArg<'a, CefRuntime>>(
+        invoke: &'a tauri::ipc::Invoke<CefRuntime>,
+        key: &'static str,
+    ) -> Result<T, InvokeError> {
+        T::from_command(CommandItem {
+            plugin: None,
+            name: "shortcut_capture_native",
+            key,
+            message: &invoke.message,
+            acl: &invoke.acl,
+        })
+    }
+    let admitted = (|| {
+        if invoke.acl.as_ref().is_none_or(|rules| rules.is_empty()) {
+            return Err(InvokeError::from(NativeFailure::PermissionDenied));
+        }
+        let window: WebviewWindow<CefRuntime> = argument(&invoke, "window")?;
+        let app = window.app_handle().clone();
+        let host = Arc::clone(app.state::<Arc<CaptureHost>>().inner());
+        let epoch = host.document_epoch(window.label());
+        let operation: Operation = argument(&invoke, "operation")?;
+        let token: String = argument(&invoke, "token")?;
+        let revision: u32 = argument(&invoke, "expectedRevision")?;
+        let windows = Arc::clone(app.state::<Arc<ProductWindows>>().inner());
+        let store = Arc::clone(app.state::<Arc<ShortcutStore>>().inner());
+        Ok((
+            window, app, windows, host, store, operation, token, revision, epoch,
+        ))
+    })();
+    match admitted {
+        Ok((window, app, windows, host, store, operation, token, revision, epoch)) => {
+            invoke.resolver.respond_async(async move {
+                operate(
+                    window, app, windows, host, store, operation, token, revision, epoch,
+                )
+                .await
+                .map_err(InvokeError::from)
+            })
+        }
+        Err(error) => invoke.resolver.invoke_error(error),
+    }
+    true
+}
+async fn operate(
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
-    windows: tauri::State<'_, Arc<ProductWindows>>,
-    host: tauri::State<'_, Arc<CaptureHost>>,
-    store: tauri::State<'_, Arc<ShortcutStore>>,
+    windows: Arc<ProductWindows>,
+    host: Arc<CaptureHost>,
+    store: Arc<ShortcutStore>,
     operation: Operation,
     token: String,
     expected_revision: u32,
+    document_epoch: u64,
 ) -> Result<Receipt, NativeFailure> {
     if token.len() != 36 || uuid::Uuid::parse_str(&token).is_err() {
         return Err(NativeFailure::InvalidEvidence);
     }
-    let document_epoch = host.document_epoch(window.label());
     let original = capture_authority(&window)?;
     if super::is_local(&window) {
         super::trusted_local(&window)?;
@@ -300,8 +348,7 @@ pub async fn shortcut_capture_native(
         }
     }
     recheck_authority(&window, &original)?;
-    let store = Arc::clone(store.inner());
-    let host = Arc::clone(host.inner());
+
     let app_loop = app.clone();
     let owned = original.clone();
     let (send, receive) = tokio::sync::oneshot::channel();

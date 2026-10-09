@@ -175,7 +175,8 @@ restores the menu for other windows but retains an expired original-token
 context; original focus return synchronously reinstalls its fence until End.
 Disposal/Quit retires that context, and no other window may adopt it. Native
 page-load Started also retires the original document context; capture commands
-recheck its document epoch before native-loop admission and response, and hold
+capture its document epoch synchronously at already-ACL-resolved invoke dispatch
+before an async task can first poll, then recheck before native-loop admission and response, and hold
 the retained verified preference revision through physical Begin admission
 without disk I/O or CEF URL getters on that loop. Renderer
 retirement completions check the original capture generation so a delayed duplicate
