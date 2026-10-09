@@ -12,7 +12,7 @@ import { MutationIntents } from "./mutation";
 import { copy } from "./localization";
 import { NativeNotificationPermission, NativeNotificationProblem } from "./notifications";
 
-export const notificationFixtureCounts = { nativeReads: 0, permissionRequests: 0, preferenceReads: 0, preferenceWrites: 0 };
+export const notificationFixtureCounts = { nativeReads: 0, permissionRequests: 0, preferenceReads: 0, preferenceWrites: 0, subscriptionOpens:0 };
 export function prepareNotificationLayoutFixture(args: URLSearchParams) {
   const permission = args.get("permission") ?? NativeNotificationPermission.Granted;
   Object.assign(window, { isTauri: true, notificationFixtureCounts, __TAURI_INTERNALS__: { invoke: async (operation: string) => {
@@ -27,5 +27,5 @@ export function prepareNotificationLayoutFixture(args: URLSearchParams) {
 }
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 export function NotificationLayoutFixture({ transport }: { transport: Transport }) {
-  return <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsActionScope><SettingsTasks><main className="settings-content" aria-label="Synthetic Notifications settings" style={{ minHeight: "100dvh" }}><SettingsTaskBackground><div className="settings-content-column"><SettingsHeading title={copy("notification-settings.notifications_788011")} description={copy("settings.thesePreferencesBelongToThisClient_082e1e")} scope="" /><NotificationSettings active showCategoryIntro={false} /></div></SettingsTaskBackground></main></SettingsTasks></SettingsActionScope></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>;
+  return <TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsActionScope><SettingsTasks><main className="settings-content" aria-label="Synthetic Notifications settings" style={{ minHeight: "100dvh" }}><SettingsTaskBackground><div className="settings-content-column"><SettingsHeading title={copy("notification-settings.notifications_788011")} description={copy("settings.thesePreferencesBelongToThisClient_082e1e")} scope="" /><NotificationSettings active showCategoryIntro={false} openSubscriptions={()=>{notificationFixtureCounts.subscriptionOpens++;}} /></div></SettingsTaskBackground></main></SettingsTasks></SettingsActionScope></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>;
 }

@@ -252,6 +252,18 @@ impl State {
         }
     }
 
+    fn dispose_connection(&mut self, connection: &str) {
+        let targets = self
+            .scopes
+            .values()
+            .filter(|target| target.connection.as_deref() == Some(connection))
+            .cloned()
+            .collect::<Vec<_>>();
+        for target in targets {
+            self.end(&target);
+        }
+    }
+
     fn cancel_unused_observers(&mut self) {
         for (key, observer) in &mut self.observers {
             if !self
@@ -414,6 +426,9 @@ impl NotificationHost {
             }
             tracing::info!(operation = "notification_connection_observation_joined");
             if let Ok(mut state) = host.state.lock() {
+                // Invalid/revoked/stopping authority ends this entire original
+                // connection scope, including delayed native presentation.
+                state.dispose_connection(&ledger.key);
                 state.observers.remove(&ledger.key);
             }
         });
@@ -722,6 +737,52 @@ mod tests {
         state.begin(target("main", None)).unwrap();
         assert_eq!(state.scopes.len(), MAX_ACTIVE);
     }
+    #[test]
+    fn disposed_connection_cancels_all_original_windows_and_retains_other_authority() {
+        let host = NotificationHost::default();
+        let mut originals = vec![target("main", None), target("saved", Some("original"))];
+        let mut unrelated = target("other", Some("other"));
+        unrelated.connection = Some("unrelated".into());
+        let mut completed = Vec::new();
+        {
+            let mut state = host.state.lock().unwrap();
+            state.begin(unrelated.clone()).unwrap();
+            for (index, original) in originals.iter_mut().enumerate() {
+                original.connection = Some("original-connection".into());
+                state.begin(original.clone()).unwrap();
+                let claim = format!("claimed-{index}");
+                state.reserve(original, &claim).unwrap();
+                let done = Arc::new(AtomicBool::new(false));
+                completed.push(Arc::clone(&done));
+                let (cancel, canceled) = oneshot::channel();
+                let task = tauri::async_runtime::spawn(async move {
+                    let _ = canceled.await;
+                    done.store(true, Ordering::Release);
+                });
+                state.active.insert(
+                    claim,
+                    Active {
+                        target: original.clone(),
+                        cancel: Some(cancel),
+                        task,
+                    },
+                );
+            }
+            state.dispose_connection("original-connection");
+            assert_eq!(state.scopes.len(), 1);
+            assert_eq!(state.scopes.get("other"), Some(&unrelated));
+            assert!(state.active.values().all(|active| active.cancel.is_none()));
+            for (index, original) in originals.iter().enumerate() {
+                assert!(state.reserve(original, "late-presentation").is_err());
+                assert!(state.seen.contains(&format!("claimed-{index}")));
+            }
+            assert!(state.reserve(&unrelated, "still-authorized").is_ok());
+        }
+        host.stop();
+        assert!(completed.iter().all(|done| done.load(Ordering::Acquire)));
+        assert!(host.state.lock().unwrap().active.is_empty());
+    }
+
     #[test]
     fn removal_and_exit_cancel_and_join_owned_work_without_releasing_claims() {
         let host = NotificationHost::default();

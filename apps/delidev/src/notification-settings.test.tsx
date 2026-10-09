@@ -13,7 +13,7 @@ import { SidebarOutletProvider } from "./sidebar-context";
 import { NotificationProvider } from "./toast-notifications";
 import { SettingsTasks, SettingsTaskBackground } from "./settings-task";
 
-function fixture(granular = false) {
+function fixture(granular = false, openSubscriptions?:()=>void) {
   let preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false, situations: granular ? create(SituationNotificationPreferencesSchema, { questions:true,approvals:true,serverLost:true,workerUnavailable:true,quotaExhausted:true,scheduleStartFailed:true,scheduleOffline:true }) : undefined });
   const save = vi.fn(async (request: { preferences?: typeof preferences }) => {
     preferences = create(NotificationPreferencesSchema, { ...request.preferences!, revision: preferences.revision + 1n });
@@ -22,7 +22,7 @@ function fixture(granular = false) {
   const read = vi.fn(async () => ({ preferences }));
   const transport = createRouterTransport((router) => router.service(InboxService, { getNotificationPreferences: read, setNotificationPreferences: save }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NotificationSettings active={active} openSubscriptions={openSubscriptions} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { view, save, read, transport, client, change: async () => { preferences = create(NotificationPreferencesSchema, { revision: 9n, interactions: false, terminals: false }); await client.invalidateQueries(); } };
 }
 
@@ -255,8 +255,9 @@ it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s in
 });
 
  it("edits a complete twelve-choice generation with separate account recovery consent", async () => {
-  const value=fixture(true);render(value.view());
+  const openSubscriptions=vi.fn();const value=fixture(true,openSubscriptions);render(value.view());
   await screen.findByText("Managed per account");
+  fireEvent.click(screen.getByRole("button",{name:"AI Subscription settings"}));expect(openSubscriptions).toHaveBeenCalledTimes(1);
   expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
   expect(screen.getByRole("heading",{name:"Connections"})).toBeTruthy();
   fireEvent.click(screen.getByRole("button",{name:"Edit notification preferences"}));
