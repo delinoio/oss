@@ -227,6 +227,10 @@ func ApplySubscriptionQuota(a *Account, v SubscriptionQuotaObservation, now time
 			a.ConfirmedExhausted = false
 		}
 	}
+	// Episode rearming is independent of notification preferences.
+	if wasExhausted && !a.ConfirmedExhausted {
+		state.AutomaticCreditEpisode = nil
+	}
 	return wasExhausted && !a.ConfirmedExhausted && a.RecoveryNotifications, nil
 }
 
