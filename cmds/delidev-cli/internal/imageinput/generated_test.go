@@ -96,3 +96,34 @@ func TestGeneratedImageChangedOwnerAndUnpublishedPartialIntent(t *testing.T) {
 		t.Fatal("original user image removed")
 	}
 }
+
+func TestNewGeneratedReferenceNeverAdoptsExistingStorage(t *testing.T) {
+	m := Manager{Root: t.TempDir()}
+	root, err := m.open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	for _, suffix := range []string{".json", ".data", ".deleted"} {
+		ref := domain.ImageAttachment{ID: domain.NewID(), MachineID: domain.NewID(), MediaType: domain.ImagePNG, ByteLength: 1, SHA256: "0000000000000000000000000000000000000000000000000000000000000000"}
+		if err = unusedGeneratedReference(root, ref); err != nil {
+			t.Fatal(err)
+		}
+		name := string(ref.ID) + suffix
+		file, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = file.Write([]byte("original foreign storage")); err != nil {
+			t.Fatal(err)
+		}
+		file.Close()
+		if unusedGeneratedReference(root, ref) == nil {
+			t.Fatal("existing storage adopted", suffix)
+		}
+		raw, err := root.ReadFile(name)
+		if err != nil || string(raw) != "original foreign storage" {
+			t.Fatal("foreign storage changed", err)
+		}
+	}
+}

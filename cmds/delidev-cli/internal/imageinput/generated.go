@@ -96,7 +96,17 @@ func (m Manager) SaveGenerated(owner GenerationOwner, native string, raw []byte)
 			found = true
 		}
 	}
+	root, err := m.open()
+	if err != nil {
+		return ref, err
+	}
+	defer root.Close()
 	if !found {
+		// A random reference collision grants no ownership of an existing input,
+		// tombstone or foreign output, even if its bytes and digest happen to match.
+		if err = unusedGeneratedReference(root, ref); err != nil {
+			return ref, err
+		}
 		if len(journal.Entries) >= domain.MaxSessionImageAttachments {
 			return ref, domain.Fail(domain.ResourceExhausted, "Native image retention reached its bound.", "Retain original outputs for confirmed cleanup.")
 		}
@@ -109,11 +119,6 @@ func (m Manager) SaveGenerated(owner GenerationOwner, native string, raw []byte)
 			return ref, conflict()
 		}
 	}
-	root, err := m.open()
-	if err != nil {
-		return ref, err
-	}
-	defer root.Close()
 	if err = journalRef(root, ref); err != nil {
 		return ref, err
 	}
@@ -142,6 +147,15 @@ func (m Manager) SaveGenerated(owner GenerationOwner, native string, raw []byte)
 	}
 	return ref, nil
 }
+func unusedGeneratedReference(root *os.Root, ref domain.ImageAttachment) error {
+	for _, suffix := range []string{".json", ".data", ".deleted"} {
+		if _, err := root.Lstat(string(ref.ID) + suffix); !errors.Is(err, os.ErrNotExist) {
+			return conflict()
+		}
+	}
+	return nil
+}
+
 func journalRef(root *os.Root, ref domain.ImageAttachment) error { return journal(root, ref, true) }
 
 // Cleanup includes unpublished and partially written outputs. A changed journal
