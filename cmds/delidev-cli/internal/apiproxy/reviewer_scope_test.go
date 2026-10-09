@@ -9,8 +9,7 @@ import (
 
 func TestReviewerScopeRetainsClosedAttributionAndOriginalIdentities(t *testing.T) {
 	original := Scope{
-		ContextRevision: 7,
-		ExecutionID:     domain.NewID(), SessionID: domain.NewID(),
+		ExecutionID: domain.NewID(), SessionID: domain.NewID(),
 		AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(),
 		Harness:             domain.Codex,
 		NativeModel:         domain.CodexReviewerNativeModel,
@@ -21,9 +20,6 @@ func TestReviewerScopeRetainsClosedAttributionAndOriginalIdentities(t *testing.T
 	}
 	if err := original.Validate(); err != nil {
 		t.Fatal("proved builtin reviewer with no catalog Model ID rejected", err)
-	}
-	if original.ContextRevision != 7 {
-		t.Fatal("original context generation changed")
 	}
 	for _, test := range []struct {
 		name   string
