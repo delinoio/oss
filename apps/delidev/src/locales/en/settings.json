@@ -1,4 +1,5 @@
 {
+  "settings.refreshGitWorkflow": "Refresh Git workflow",
   "settings.savedOnTheSelectedServer_93dbee": "Saved on the selected server.",
   "settings.theServerAcknowledgedThisRequestWithout_061fa2": "The server acknowledged this request without a readable result. Inspect its receipt before starting another save.",
   "settings.configurationSavedAfterWorkerValidation_d2b875": "Configuration saved after Worker validation.",
