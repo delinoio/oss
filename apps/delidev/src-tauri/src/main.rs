@@ -1839,11 +1839,11 @@ fn run() -> Result<(), NativeFailure> {
             } else if matches!(event, WindowEvent::Focused(true)) {
                 capture.departure(window.app_handle(), window.label(), true);
             }
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if capture.close_requested(window.label()) {
-                    api.prevent_close();
-                    return;
-                }
+            if let WindowEvent::CloseRequested { api, .. } = event
+                && capture.close_requested(window.label())
+            {
+                api.prevent_close();
+                return;
             }
             let windows = window.state::<Arc<ProductWindows>>();
             if matches!(event, WindowEvent::Focused(true))

@@ -311,7 +311,17 @@ pub fn dispatch(invoke: tauri::ipc::Invoke<CefRuntime>) -> bool {
         Ok((window, app, windows, host, store, operation, token, revision, epoch)) => {
             invoke.resolver.respond_async(async move {
                 operate(
-                    window, app, windows, host, store, operation, token, revision, epoch,
+                    CaptureOperationContext {
+                        window,
+                        app,
+                        windows,
+                        host,
+                        store,
+                    },
+                    operation,
+                    token,
+                    revision,
+                    epoch,
                 )
                 .await
                 .map_err(InvokeError::from)
@@ -321,17 +331,27 @@ pub fn dispatch(invoke: tauri::ipc::Invoke<CefRuntime>) -> bool {
     }
     true
 }
-async fn operate(
+struct CaptureOperationContext {
     window: WebviewWindow<CefRuntime>,
     app: AppHandle<CefRuntime>,
     windows: Arc<ProductWindows>,
     host: Arc<CaptureHost>,
     store: Arc<ShortcutStore>,
+}
+async fn operate(
+    context: CaptureOperationContext,
     operation: Operation,
     token: String,
     expected_revision: u32,
     document_epoch: u64,
 ) -> Result<Receipt, NativeFailure> {
+    let CaptureOperationContext {
+        window,
+        app,
+        windows,
+        host,
+        store,
+    } = context;
     if token.len() != 36 || uuid::Uuid::parse_str(&token).is_err() {
         return Err(NativeFailure::InvalidEvidence);
     }
