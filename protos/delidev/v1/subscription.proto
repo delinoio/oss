@@ -365,13 +365,13 @@ enum CodexDiagnosticPhase {
 
 // Explicit standing consent for one original authentication generation.
 message SetAutomaticResetCreditConsentRequest {
- Mutation mutation = 1;
- string connection_id = 2;
- string generation_id = 3;
- bool enabled = 4;
- bool confirmed = 5;
+  Mutation mutation = 1;
+  string connection_id = 2;
+  string generation_id = 3;
+  bool enabled = 4;
+  bool confirmed = 5;
 }
 message SetAutomaticResetCreditConsentResponse {
- Resource account = 1;
- bool replayed = 2;
+  Resource account = 1;
+  bool replayed = 2;
 }

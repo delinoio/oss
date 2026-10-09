@@ -10201,6 +10201,76 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
       "number": 35
+    },
+    {
+      "issue": 2123,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1",
+      "number": 77
+    },
+    {
+      "issue": 2123,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
+      "number": 52
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentRequest",
+      "member": "connection_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentRequest",
+      "member": "generation_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentRequest",
+      "member": "enabled",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentRequest",
+      "member": "confirmed",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentResponse",
+      "member": "account",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2123,
+      "kind": "message",
+      "declaration": "SetAutomaticResetCreditConsentResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -10336,6 +10406,15 @@
       "method": "RevertSession",
       "input": "RevertSessionRequest",
       "output": "RevertSessionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2123,
+      "service": "SubscriptionService",
+      "method": "SetAutomaticResetCreditConsent",
+      "input": "SetAutomaticResetCreditConsentRequest",
+      "output": "SetAutomaticResetCreditConsentResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }
