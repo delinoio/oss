@@ -626,4 +626,6 @@ Release automation baseline:
 
 - DeliDev protocol 2 and DB baseline 32 use Model-free inline Worker schema 4, current-only portable bundle 4, exact source/native-ID usage and immutable prices. Preserve original System42/Worker22 ownership and all newer activated account, API-profile, native cleanup and session-default fields. Automatic reference collection grants no execution or credential authority. Follow the catalog, usage, storage and pre-release reset contracts.
 
+- Waiting input movement (#2142) follows the sessions, storage, protocol and desktop contracts. Preserve System 75, original actor/revision/generation receipts, private dispatch order with unchanged public acceptance sequence, every claim's effective head and exact uint64/bigint generation. Freeze explicit Fork image sets at admission and retain original Worker byte/deletion ownership; legacy jobs retain their verified cutoff. No Worker allocation, public rank or migration.
+
 - ChatGPT/Codex paid-credit observations (#2124) use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.

@@ -488,3 +488,7 @@ runtime support; its historical declaration keeps immutable numeric provenance
 and returns Unsupported without receipts or files. Current creation retains
 `RequestBackup`, original durable jobs and joined publication. These changes do
 not relax protected/native cleanup, validation, cancellation or account authority.
+
+## Waiting queue order allocation closure
+
+Issue #2142 records System 75 `WAITING_QUEUE_ORDER_V1`, complete owner/client movement and waiting-list declarations, generated bindings, private ordering metadata and Fork image snapshots in its owning feature PR. Preserve existing allocations and legacy queue/assignment shapes. No Worker allocation or SQLite migration is required. Sessions, storage, protocol and desktop contracts jointly own this feature; declarations and fixtures grant no native/account/platform acceptance.
