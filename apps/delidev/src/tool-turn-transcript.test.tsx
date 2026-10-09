@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+import { create } from "@bufbuild/protobuf";
+import { EntityKind, ResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { createRef } from "react";
+import { encode } from "./documents";
+import { TranscriptItem } from "./session";
+import { ToolTurnTranscript } from "./tool-turn-transcript";
+import { conversationProjection } from "./tool-turn-projection";
+afterEach(cleanup);
+const sessionId=newRequestId(), execution=newRequestId();
+const row=(data:object,id=newRequestId(),revision=1n)=>create(ResourceSchema,{id,sessionId,kind:EntityKind.MESSAGE,schemaVersion:1,revision,documentJson:encode(data)});
+const tool=(name:string,extra={})=>({role:'tool',state:'streaming',text:'',execution_id:execution,native_thread_id:'thread',native_turn_id:'turn',tool:{started:{kind:name,command:{command:'echo  original\n'}},completed:{status:'pending',command:{command:'echo  original\n',aggregated_output:'aggregate\n  original'}},output:'<script>inert()</script>\n  exact'},...extra});
+function query(pages:Resource[][]){return {pages:pages.map((rows,i)=>({token:i?`original-${i}`:'',nextPageToken:i<pages.length-1?`original-${i+1}`:'',rows:rows.map(r=>conversationProjection(r,sessionId))})),payloadPages:pages.map((payload,i)=>({token:i?`original-${i}`:'',payload})),nextPageToken:'',restore:vi.fn(),protect:vi.fn(),measure:vi.fn()};}
+const props=(q:ReturnType<typeof query>,live=new Map<string,Resource>(),arrivals:string[]=[])=>({sessionId,query:q,live,removed:new Set<string>(),arrivals,root:createRef<HTMLDivElement>(),render:(resource:Resource)=><TranscriptItem resource={resource}/>});
+function expand(node:HTMLDetailsElement){node.open=true;fireEvent(node,new Event('toggle'));}
+it('anchors one collapsed list at first tool, preserves commentary and exact inert output',()=>{
+ const q=query([[row({role:'assistant',text:'Before'}),row(tool('command')),row({role:'assistant',text:'Between'}),row(tool('patch')),row({role:'assistant',text:'Final'})]]);const {container}=render(<ToolTurnTranscript {...props(q)}/>);const group=container.querySelector<HTMLDetailsElement>('.tool-turn')!;expect(container.querySelectorAll('.tool-turn')).toHaveLength(1);expect(group.open).toBe(false);
+ expect([...container.querySelectorAll('[data-payload-page] > div')].map(n=>n.textContent?.includes('Tool calls')?'group':n.textContent)).toEqual([expect.stringContaining('Before'),'group',expect.stringContaining('Between'),expect.stringContaining('Final')]);expect([...group.querySelectorAll('li > details > summary span')].map(n=>n.textContent)).toEqual(['command','patch']);expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expect(entry.open).toBe(false);expand(entry);expect(entry.querySelector('pre')?.textContent).toBe('echo  original\n');expect(container.querySelector('script')).toBeNull();expect(q.restore).not.toHaveBeenCalled();
+});
+it('revisions preserve choices and connected focus without duplicate entries',()=>{
+ const pending=row(tool('command')),q=query([[pending]]);const {container,rerender}=render(<ToolTurnTranscript {...props(q)}/>);const group=container.querySelector<HTMLDetailsElement>('.tool-turn')!;expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expand(entry);const summary=entry.querySelector('summary')!;summary.focus();const failed=tool('command',{state:'complete'});failed.tool.completed.status='failed';const update=row(failed,pending.id,2n);rerender(<ToolTurnTranscript {...props(q,new Map([[update.id,update]]),[update.id])}/>);expect(container.querySelectorAll('.tool-turn li')).toHaveLength(1);expect(group.open).toBe(true);expect(entry.open).toBe(true);expect(document.activeElement).toBe(summary);expect(entry.querySelector('summary small')?.textContent).toBe('failed');
+});
+it('joins pages/live arrivals and restores evicted details using original token without resetting anchor',()=>{
+ const first=row(tool('command')),last=row(tool('patch')),tail=row(tool('shell')),q=query([[first],[row({role:'assistant',text:'Between'})],[last]]),p=props(q,new Map([[tail.id,tail]]),[tail.id]);const {container,rerender}=render(<ToolTurnTranscript {...p}/>);const group=container.querySelector<HTMLDetailsElement>('.tool-turn')!;expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expand(entry);rerender(<ToolTurnTranscript {...p} query={{...q,payloadPages:q.payloadPages.slice(1)}}/>);expect(container.querySelector('.tool-turn')).toBe(group);expect(group.open).toBe(true);expect(entry.open).toBe(true);expect(group.querySelectorAll('li')).toHaveLength(3);expect(group.textContent).toContain('reached records only');fireEvent.click(entry.querySelector('button')!);expect(q.restore).toHaveBeenCalledWith('');rerender(<ToolTurnTranscript {...p}/>);expect(entry.open).toBe(true);expect(entry.querySelector('pre')?.textContent).toBe('echo  original\n');expect(q.payloadPages.length).toBe(3);
+});
+it('separates execution/turn owners and retains malformed/foreign/mixed fallback',()=>{
+ const rows=[tool('valid'),tool('turn2',{native_turn_id:'turn2'}),tool('execution2',{execution_id:newRequestId()}),tool('missing',{native_turn_id:undefined}),tool('malformed',{execution_id:'foreign'}),tool('control',{native_thread_id:'bad\0id'}),tool('mixed',{artifact:{}})].map(d=>row(d));expect(conversationProjection({...rows[0],sessionId:newRequestId()},sessionId).tool).toBeUndefined();expect(conversationProjection({...rows[0],id:'malformed'},sessionId).tool).toBeUndefined();const {container}=render(<ToolTurnTranscript {...props(query([rows]))}/>);expect(container.querySelectorAll('.tool-turn')).toHaveLength(3);expect(container.querySelectorAll('.tool-entry-payload')).toHaveLength(3);expect(screen.getByText(/missing/)).toBeTruthy();
+});
+it('retains every Grok observation without reconstructing or counting unique calls',()=>{
+ const thread=newRequestId(),turn='123e4567-e89b-42d3-a456-426614174000';const grok=(update:object)=>row({role:'tool',state:'complete',execution_id:execution,native_thread_id:thread,native_turn_id:turn,grok_tool:{method:'session/update',payload:{sessionId:thread,update}}});const rows=[grok({sessionUpdate:'tool_call',title:'Read',toolCallId:'original'}),grok({sessionUpdate:'tool_call_update',status:'completed',toolCallId:'original'}),grok({sessionUpdate:'tool_call_update',title:'No call attribution'})];const {container}=render(<ToolTurnTranscript {...props(query([rows]))}/>);expect(container.querySelectorAll('.tool-turn')).toHaveLength(1);expect(container.querySelectorAll('.tool-turn li')).toHaveLength(3);expect(container.querySelector('.tool-turn > summary')?.textContent).toBe('Tool calls');expect(container.textContent).toContain('No call attribution');
+});
+it('resets choices when owner disposes',()=>{const q=query([[row(tool('command'))]]);const view=render(<ToolTurnTranscript {...props(q)}/>);expand(view.container.querySelector<HTMLDetailsElement>('.tool-turn')!);view.unmount();const next=render(<ToolTurnTranscript {...props(q)}/>);expect(next.container.querySelector<HTMLDetailsElement>('.tool-turn')?.open).toBe(false);});
+it('groups original Claude entries through their validator and retains foreign reference fallback',()=>{
+ const id=newRequestId(), messageId=newRequestId();
+ const data={role:'tool',state:'streaming',text:'',execution_id:execution,native_thread_id:'thread',native_turn_id:'turn',native_id:'original-tool',native_parent_id:'original-message',claude_tool:{reference:{id,native_id:'original-tool',name:'Read'},message_id:messageId,native_message_id:'original-message',index:0,caller:null,initial_input:'{ "path": "exact" }',input_delta:null,proposal:null,result:null}};
+ const original=row(data,id),foreign=row({...data,claude_tool:{...data.claude_tool,reference:{...data.claude_tool.reference,id:newRequestId()}}});
+ expect(conversationProjection(original,sessionId).tool?.name).toBe('Read');expect(conversationProjection(foreign,sessionId).tool).toBeUndefined();
+ const {container}=render(<ToolTurnTranscript {...props(query([[original,row(tool('command')),foreign]]))}/>);
+ expect(container.querySelectorAll('.tool-turn')).toHaveLength(1);expect(container.querySelectorAll('.tool-turn li')).toHaveLength(2);expect(screen.getByText('{ "path": "exact" }')).toBeTruthy();expect(screen.getByLabelText('Claude tool unavailable')).toBeTruthy();
+});
+
+it('projects the original builtin name and latest active native status without retaining snapshots',()=>{
+ const record=row({...tool('opencode-builtin'),tool:{started:{kind:'opencode-builtin',status:'pending',builtin:{name:'webfetch',input_json:'{ "url":"private fixture" }'}},states:[{sequence:1,snapshot:{kind:'opencode-builtin',status:'running',builtin:{name:'webfetch',output:'DO NOT RETAIN'}}}]}});
+ const projected=conversationProjection(record,sessionId);expect(projected.tool?.name).toBe('webfetch');expect(projected.tool?.state).toBe('running');expect(JSON.stringify(projected,(_,v)=>typeof v==='bigint'?String(v):v)).not.toContain('DO NOT RETAIN');
+});
+
+it.each([['opencode-read','read'],['opencode-shell','bash'],['opencode-todo','todowrite']])('preserves the closed %s adapter original native name %s',(kind,name)=>{
+ expect(conversationProjection(row(tool(kind)),sessionId).tool?.name).toBe(name);
+});
+
+it('retains expanded tool state while denying exact-page restoration in an inactive pane',()=>{
+ const q=query([[row(tool('command'))]]),p=props({...q,payloadPages:[]});const view=render(<ToolTurnTranscript {...p} active={false}/>);const group=view.container.querySelector<HTMLDetailsElement>('.tool-turn')!;expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expand(entry);const restore=entry.querySelector<HTMLButtonElement>('button')!;expect(restore.disabled).toBe(true);fireEvent.click(restore);expect(q.restore).not.toHaveBeenCalled();view.rerender(<ToolTurnTranscript {...p} active/>);expect(group.open).toBe(true);expect(entry.open).toBe(true);fireEvent.click(restore);expect(q.restore).toHaveBeenCalledExactlyOnceWith('');
+});

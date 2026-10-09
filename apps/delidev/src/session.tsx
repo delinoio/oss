@@ -1,6 +1,7 @@
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
+import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { SessionHarness } from "./session-harness";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
@@ -508,7 +509,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={messages} root={transcriptRoot} active={conversationActive}>{payload => messageRows(payload, live.resources, live.removed, [], id, false).map(row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />)}</ScrollPayloadWindow>{!messages.nextPageToken ? messageRows([], live.resources, live.removed, live.newMessageIds, id, true).filter(row => !messages.rows.some(known => known.id === row.id)).map(row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />) : null}</> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
         {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedMessage")}>

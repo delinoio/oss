@@ -115,5 +115,7 @@
   "session.submissionUncertain": "확인할 수 없음",
   "session.submissionRejected": "거절됨",
   "session.submissionRemoved": "제거됨",
-  "session.harnessUnavailable": "하네스 사용 불가"
+  "session.harnessUnavailable": "하네스 사용 불가",
+  "session.toolCalls": "도구 호출",
+  "session.reachedTools": "이 목록에는 불러온 기록만 포함됩니다. 대화 기록 컨트롤을 사용하여 더 많은 기록을 불러오세요."
 }
