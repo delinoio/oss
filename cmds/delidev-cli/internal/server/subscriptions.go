@@ -527,7 +527,7 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 
 			case domain.ForkSessionJob:
 				var fork domain.ForkJobInput
-				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != state.Generation || fork.SourceSessionID != jr.SessionID {
+				if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != state.Generation || fork.SourceSessionID != jr.SessionID {
 					return nil, subscriptionDenied()
 				}
 				if err := validateForkAuthority(tx, fork); err != nil {
@@ -974,7 +974,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				}
 				if job.Type == domain.ForkSessionJob {
 					var fork domain.ForkJobInput
-					if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != input.Generation || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+					if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != input.Generation || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
 						return nil, subscriptionDenied()
 					}
 					receipt.ManagedSidechat = &domain.SubscriptionForkFinish{JobRevision: jr.Revision, Job: jr.ID, Account: r.ID, Machine: lease.MachineID, Instance: lease.InstanceID, Device: lease.DeviceID, Generation: input.Generation, Finish: domain.ID(m.RequestId)}
@@ -1168,7 +1168,7 @@ func managedSidechatLease(tx *store.Tx, lease domain.SubscriptionLease) (*domain
 		return nil, nil
 	}
 	var fork domain.ForkJobInput
-	if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || fork.Purpose != domain.SidechatFork || fork.SubscriptionGeneration != lease.Generation || lease.ForkRevision == 0 || jr.Revision != lease.ForkRevision || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
+	if domain.Decode(job.Input, &fork) != nil || fork.Validate() != nil || (fork.Purpose != domain.SidechatFork && fork.Purpose != domain.IndependentFork) || fork.SubscriptionGeneration != lease.Generation || lease.ForkRevision == 0 || jr.Revision != lease.ForkRevision || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID {
 		return nil, subscriptionDenied()
 	}
 	if err := validateForkAuthority(tx, fork); err != nil {

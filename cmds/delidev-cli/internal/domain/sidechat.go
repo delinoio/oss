@@ -96,3 +96,18 @@ type SubscriptionForkFinish struct {
 	JobRevision                                                 uint64 `json:"job_revision"`
 	Job, Account, Machine, Instance, Device, Generation, Finish ID
 }
+
+const ManagedCodexForkV1 WorkerCapability = "managed-codex-fork-v1"
+
+func ManagedForkSupported(capabilities []WorkerCapability) bool {
+	return slices.Contains(capabilities, ManagedCodexForkV1) && slices.Contains(capabilities, ManagedCodexSubscriptionsV1)
+}
+func ManagedForkUnavailable() error {
+	return Fail(Unsupported, "The original Runner Device does not support independent ChatGPT Fork.", "Update and reconnect the original Runner Device; retain the original account and settled history.")
+}
+func (i ForkJobInput) ManagedCapabilitySupported(capabilities []WorkerCapability) bool {
+	if i.Purpose == SidechatFork {
+		return ManagedSidechatSupported(capabilities)
+	}
+	return i.Purpose == IndependentFork && ManagedForkSupported(capabilities)
+}

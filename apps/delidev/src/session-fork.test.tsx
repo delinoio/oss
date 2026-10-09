@@ -339,3 +339,19 @@ it.each(["eligible", "missing-server", "missing-worker", "missing-auth", "locked
  }
  if (profile !== "eligible") expect(fork).not.toHaveBeenCalled();
 });
+
+it.each(["all", "server", "worker", "subscription"])("negotiates managed independent Fork separately: %s", async missing => {
+ const machineId = newRequestId();
+ const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Managed source", machine_id: machineId, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex", subscription: true } }, execution: { native_thread_id: newRequestId(), native_turn_id: newRequestId(), cleanup_verified: true } }) });
+ const workerCapabilities = ["managed-codex-sidechat-v1", "codex-read-only-sidechat-v1", ...(missing === "worker" ? [] : ["managed-codex-fork-v1"]), ...(missing === "subscription" ? [] : ["managed-codex-subscriptions-v1"])];
+ const machine = create(ResourceSchema, { kind: EntityKind.MACHINE, id: machineId, revision: 1n, schemaVersion: 1, documentJson: encode({ os: "linux", worker_capabilities: workerCapabilities }) });
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.CODEX_SESSION_FORK_V1, SystemCapability.MANAGED_CODEX_SIDECHAT_V1, ...(missing === "server" ? [] : [SystemCapability.MANAGED_CODEX_FORK_V1])] }) });
+  router.service(ResourceService, { getResource: () => ({ resource: machine }) });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ const rendered = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ await waitFor(() => expect(client.getQueryCache().getAll().filter(query => query.state.status === "success").length).toBe(2));
+ expect(Boolean(screen.queryByRole("button", { name: "Fork session" }))).toBe(missing === "all");
+ rendered.unmount();client.clear();
+});

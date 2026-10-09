@@ -14,7 +14,14 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
 
-func (s *ForkSource) Checkpoint() ContinuationCheckpoint { return s.checkpoint }
+func (s *ForkSource) Checkpoint() ContinuationCheckpoint {
+	result := s.checkpoint
+	// Retain only a private digest: historical tools are verified, never replayed.
+	if s.managedToolHistory {
+		result.ForkHistory = &ForkHistoryCheckpoint{TurnsCount: uint32(len(s.turns)), HistoryDigest: historyDigest(s.turns)}
+	}
+	return result
+}
 
 // RehomeSkills makes complete child-owned package copies before any native child
 // exists. Remapping is limited to explicit skill nodes and native generated path

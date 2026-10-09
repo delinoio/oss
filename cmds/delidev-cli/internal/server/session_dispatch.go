@@ -178,6 +178,9 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	protocol := domain.OpenAIResponses
 	switch c.Harness {
 	case domain.Codex:
+		if c.Subscription && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {
+			return empty, domain.ManagedForkUnavailable()
+		}
 		if c.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) {
 			return empty, domain.Fail(domain.Unsupported, "The original Runner Device lacks native AI approval review support.", "Update and reconnect that Runner Device; do not omit the selected reviewer.")
 		}

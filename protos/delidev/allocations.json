@@ -9657,6 +9657,20 @@
       "declaration": "SubscriptionServiceIdentity",
       "member": "SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO",
       "number": 4
+    },
+    {
+      "issue": 1979,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_CODEX_FORK_V1",
+      "number": 53
+    },
+    {
+      "issue": 1979,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1",
+      "number": 29
     }
   ],
   "rpcReservations": [
