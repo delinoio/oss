@@ -34,9 +34,9 @@ func newCheckpointFixture(t *testing.T) checkpointFixture {
 		t.Fatal(err)
 	}
 	root = filepath.Join(root, "worker")
-	providerID, modelID, accountID := domain.NewID(), domain.NewID(), domain.NewID()
+	providerID, accountID := domain.NewID(), domain.NewID()
 	model := domain.Model{Name: "Fixture", NativeID: "fixture-model", ProviderID: providerID, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}
-	agent := domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: modelID, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}
+	agent := domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: (domain.ModelIdentity{ProviderID: providerID, NativeID: model.NativeID}).Key(), Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: providerID, NativeID: model.NativeID}, Name: model.Name, MetadataSource: model.MetadataSource}, Accounts: []domain.WeightedAccount{{ID: accountID, Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}}
 	configuration, err := domain.ResolveExecutionConfiguration(domain.NewID(), 1, agent, 1, model, domain.Priority, nil)
 	if err != nil {
 		t.Fatal(err)
