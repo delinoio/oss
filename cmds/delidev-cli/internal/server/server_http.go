@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,9 +37,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 			_ = writer.Write(w, r, rpc.Error(err, correlation))
 		}
 		if loopback {
-			host, _, err := net.SplitHostPort(r.Host)
-			ip := net.ParseIP(host)
-			if err != nil || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
+			if !loopbackAuthority(r.Host) {
 				reject(domain.Fail(domain.PermissionDenied, "The RPC authority is not an allowed loopback host.", "Use the server's explicit local endpoint."))
 				return
 			}
@@ -95,4 +94,28 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 		mux.ServeHTTP(w, r)
 		s.logger.Debug("rpc_finished", "correlation_id", correlation, "duration_ms", time.Since(started).Milliseconds())
 	})
+}
+
+// URL.origin omits default HTTP/HTTPS ports. Accept only canonical portless
+// loopback authorities; explicit ports retain the existing IP-family policy.
+func loopbackAuthority(authority string) bool {
+	switch authority {
+	case "localhost", "127.0.0.1", "[::1]":
+		return true
+	}
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil || port == "" || strings.HasPrefix(authority, "[") && !strings.Contains(host, ":") {
+		return false
+	}
+	for _, digit := range port {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	number, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || number == 0 {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
