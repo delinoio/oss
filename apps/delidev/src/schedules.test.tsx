@@ -2,12 +2,13 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, ScheduleService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ScheduleDetails, ScheduleEditor, Schedules } from "./schedules";
+import { i18n } from "./localization";
 import { MachineSettings } from "./machine-settings";
 
 function fixture() {
@@ -26,14 +27,15 @@ function fixture() {
   const agent = create(ResourceSchema, { id: definition.agent_id, kind: EntityKind.AGENT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Selected agent" }) });
   const resources = [machine, project, agent];
   const list = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind), nextPageToken: "" }));
+  const get = vi.fn(async (request: { kind: EntityKind; id: string }) => ({ resource: request.kind === EntityKind.JOB ? job : resources.find((row) => row.id === request.id) }));
   const transport = createRouterTransport((router) => {
     router.service(ScheduleService, { listSchedules: () => ({ schedules: [schedule] }), getSchedule: () => ({ schedule }), saveSchedule: save, runScheduleNow: run, controlSchedule: control, deleteSchedule: remove, listScheduleOccurrences: () => ({ occurrences: [occurrence] }), getScheduleOccurrence: () => ({ occurrence }) });
-    router.service(ResourceService, { listResources: list, getResource: (request) => ({ resource: request.kind === EntityKind.JOB ? job : resources.find((row) => row.id === request.id) }) });
+    router.service(ResourceService, { listResources: list, getResource: get });
     router.service(WorkerService, { discoverHarnesses: discovery });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { schedule, machine, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, project, agent, repositoryId };
+  return { schedule, machine, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, get, project, agent, repositoryId };
 }
 
 it("sends only the editable schedule definition and retries its exact original revision", async () => {
@@ -131,13 +133,21 @@ async function fillCreation(value: ReturnType<typeof fixture>) {
   fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Morning review" } });
   fireEvent.change(screen.getByLabelText("Scheduled prompt"), { target: { value: "Review project changes" } });
   for (const [label, resource] of [["Project", value.project], ["Agent Worker", value.agent], ["Runner Device", value.machine]] as const) {
+    if (label === "Agent Worker") goStep(1);
     const select = screen.getByRole("combobox", { name: label });
     fireEvent.click(select);
     fireEvent.click(await screen.findByRole("option", { name: JSON.parse(new TextDecoder().decode(resource.documentJson)).name }));
     await waitFor(() => expect(select.getAttribute("data-value")).toBe(resource.id));
   }
 }
-const choose = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+function goStep(target: number) {
+ const current = () => Number(globalThis.document.querySelector('[data-authoring-step]:not([hidden])')?.getAttribute('data-authoring-step') ?? 3);
+ for (let count=0; current()!==target && count<4; count++) fireEvent.click(screen.getByRole("button", { name: current()<target?"Next":"Back" }));
+}
+const choose = (label: string, value: string) => {
+ const control = screen.getByLabelText(label), step = control.closest('[data-authoring-step]'); if (step) goStep(Number(step.getAttribute('data-authoring-step')));
+ fireEvent.change(control, { target: { value } });
+};
 function createRequest(value: ReturnType<typeof fixture>) {
   return value.save.mock.calls[0][0] as { definitionJson: Uint8Array; mutation: { id: string; requestId: string; expectedRevision: bigint }; schemaVersion: number; localWorkerToken: string };
 }
@@ -146,11 +156,11 @@ it("creates a paused strict definition with explicit resources and the original 
   const value = fixture(), saved = vi.fn();
   render(value.view(<ScheduleEditor active saved={saved} cancel={() => {}} />));
   expect(screen.getByLabelText("Schedule name")).toBe(globalThis.document.activeElement);
-  expect(screen.getByRole("button", { name: /Starting reference overrides/ }).getAttribute("aria-expanded")).toBe("false");
   await fillCreation(value);
+  expect(screen.getByRole("button", { name: /Starting reference overrides/ }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByLabelText("Project").getAttribute("aria-required")).toBe("true");
-  expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  goStep(2); expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(false);
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
   const request = createRequest(value);
   expect(JSON.parse(new TextDecoder().decode(request.definitionJson))).toEqual({ name: "Morning review", prompt: "Review project changes", enabled: false, project_id: value.project.id, agent_id: value.agent.id, machine_id: value.machine.id, workspace: "worktree", mode: "execute", cron: "0 9 * * 1-5", timezone: "UTC", overlap: "overlap", starting: [] });
@@ -163,15 +173,15 @@ it.each([["daily", "07:05", undefined, "5 7 * * *"], ["weekdays", "18:30", undef
   await fillCreation(value); choose("Frequency", frequency!); choose("Time", time!);
   if (weekday) choose("Weekday", weekday);
   choose("IANA timezone", "Asia/Seoul");
-  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   const definition = JSON.parse(new TextDecoder().decode(createRequest(value).definitionJson));
   expect(definition).toMatchObject({ cron, timezone: "Asia/Seoul", enabled: false, mode: "execute", overlap: "overlap" });
   expect(Object.keys(definition).sort()).toEqual(["name", "prompt", "enabled", "project_id", "agent_id", "machine_id", "workspace", "mode", "cron", "timezone", "overlap", "starting"].sort());
 });
 
-it("retains preset time and Weekly weekday while importing only canonical custom time", () => {
-  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+it("retains preset time and Weekly weekday while importing only canonical custom time", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
   choose("Frequency", "weekly"); expect((screen.getByLabelText("Weekday") as HTMLSelectElement).value).toBe("1");
   choose("Weekday", "3"); choose("Time", "07:05"); choose("Frequency", "daily"); choose("Frequency", "weekdays");
   expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("07:05");
@@ -185,8 +195,8 @@ it("retains preset time and Weekly weekday while importing only canonical custom
   expect(screen.getByText("30 18 * * 3")).toBeTruthy();
 });
 
-it("uses 09:00 when no valid preset time has been retained, without parsing arbitrary cron", () => {
-  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+it("uses 09:00 when no valid preset time has been retained, without parsing arbitrary cron", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
   choose("Time", ""); choose("Frequency", "custom");
   expect((screen.getByLabelText("Cron expression") as HTMLInputElement).value).toBe("0 9 * * 1-5");
   choose("Cron expression", " 5 7 * * 2 "); choose("Frequency", "daily"); expect(screen.getByText("0 9 * * *")).toBeTruthy();
@@ -195,8 +205,8 @@ it("uses 09:00 when no valid preset time has been retained, without parsing arbi
 it("keeps empty Time visible and blocks even direct form submission instead of sending stale cron", async () => {
   const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
   choose("Time", ""); expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("");
-  expect((screen.getByRole("button", { name: "Create schedule" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.submit(screen.getByRole("button", { name: "Create schedule" }).closest("form")!);
+  fireEvent.click(screen.getByRole("button", { name: "Next" })); expect(screen.queryByRole("button", { name: "Create schedule" })).toBeNull();
+  fireEvent.submit(screen.getByRole("button", { name: "Next" }).closest("form")!);
   expect(value.save).not.toHaveBeenCalled(); expect(screen.queryByText("0 9 * * 1-5")).toBeNull();
 });
 
@@ -204,11 +214,11 @@ it.each([["0 0 31 2 *", "UTC"], ["0 9 * * 1-5", "unknown/zone"]])("retains serve
   const value = fixture(); value.save.mockRejectedValueOnce(new ConnectError("Calendar rejected", Code.InvalidArgument));
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
   choose("Frequency", "custom"); choose("Cron expression", cron); choose("IANA timezone", timezone);
-  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   await waitFor(() => expect((screen.getByRole("button", { name: "Create schedule" }) as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByLabelText("Cron expression") as HTMLInputElement).value).toBe(cron); expect((screen.getByLabelText("IANA timezone") as HTMLInputElement).value).toBe(timezone);
-  expect(screen.getByText("Next run is calculated by the server after saving.")).toBeTruthy();
+  expect(screen.getAllByText("Next run is calculated by the server after saving.")[0]).toBeTruthy();
   expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
 });
 
@@ -222,7 +232,7 @@ it("keeps complete reference drafts mounted behind the disclosure and clears the
   expect(screen.getByLabelText(`Starting ${value.repositoryId} name`)).toBe(reference); expect((reference as HTMLInputElement).value).toBe("retained-branch");
   fireEvent.click(screen.getByRole("button", { name: "Remove starting override" })); expect(disclosure.textContent).toContain("Using saved project references");
   choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
-  fireEvent.click(screen.getByRole("combobox", { name: "Project" })); fireEvent.click(screen.getByRole("option", { name: "Select project" }));
+  goStep(0); fireEvent.click(screen.getByRole("combobox", { name: "Project" })); fireEvent.click(screen.getByRole("option", { name: "Select project" }));
   await waitFor(() => expect(disclosure.textContent).toContain("Using saved project references")); expect(screen.queryByLabelText(`Starting ${value.repositoryId} name`)).toBeNull();
   expect(document(value.project)).toMatchObject({ base: { name: "main" } });
 });
@@ -238,7 +248,7 @@ it("locks creation during fresh Local proof and retains identical bytes/token on
   await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
   expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true); expect((screen.getByLabelText("Agent Worker") as HTMLSelectElement).disabled).toBe(false);
   expect(screen.queryByRole("button", { name: /Starting reference overrides/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await screen.findByRole("button", { name: "Retry the same schedule" });
   rendered.rerender(value.view(<ScheduleEditor active={false} saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); rendered.rerender(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
   fireEvent.submit(screen.getByRole("button", { name: "Create schedule" }).closest("form")!); expect(value.save).toHaveBeenCalledOnce();
@@ -254,7 +264,7 @@ it.each(["changed", "malformed", "rejected"])("refuses %s Local submission proof
   else read.mockResolvedValueOnce(failure === "changed" ? { ...proof, machineId: newRequestId() } : { ...proof, token: "bad" });
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); await fillCreation(value);
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); await waitFor(() => expect((screen.getByRole("radio", { name: "Local computer" }) as HTMLInputElement).checked).toBe(true));
-  fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await screen.findByText(/paired Worker could not be verified/);
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await screen.findByText(/paired Worker could not be verified/);
   expect(value.save).not.toHaveBeenCalled(); expect(screen.getByLabelText("Runner Device").getAttribute("data-value")).toBe(value.machine.id);
 });
 
@@ -262,12 +272,12 @@ it("retains creation UI state across inactivity without focus theft and Cancel r
   const value = fixture(), rendered = render(value.view(<Schedules active={false} open={() => {}} />));
   rendered.rerender(value.view(<Schedules active open={() => {}} />)); fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   expect(screen.getByLabelText("Schedule name")).toBe(globalThis.document.activeElement);
-  choose("Frequency", "weekly"); choose("Weekday", "3"); choose("Time", "18:30"); choose("Frequency", "custom"); choose("Cron expression", "*/15 * * * *");
-  fireEvent.click(screen.getByRole("button", { name: /Starting reference overrides/ })); screen.getByLabelText("Scheduled prompt").focus();
+  await fillCreation(value); choose("Frequency", "weekly"); choose("Weekday", "3"); choose("Time", "18:30"); choose("Frequency", "custom"); choose("Cron expression", "*/15 * * * *");
+  goStep(1); fireEvent.click(screen.getByRole("button", { name: /Starting reference overrides/ })); goStep(0); screen.getByLabelText("Scheduled prompt").focus();
   rendered.rerender(value.view(<Schedules active={false} open={() => {}} />)); rendered.rerender(value.view(<Schedules active open={() => {}} />));
   await value.client.invalidateQueries();
   expect(globalThis.document.activeElement).toBe(screen.getByLabelText("Scheduled prompt")); expect((screen.getByLabelText("Cron expression") as HTMLInputElement).value).toBe("*/15 * * * *");
-  expect(screen.getByRole("button", { name: /Starting reference overrides/ }).getAttribute("aria-expanded")).toBe("true");
+  goStep(1); expect(screen.getByRole("button", { name: /Starting reference overrides/ }).getAttribute("aria-expanded")).toBe("true");
   choose("Frequency", "weekly"); expect((screen.getByLabelText("Weekday") as HTMLSelectElement).value).toBe("3"); expect((screen.getByLabelText("Time") as HTMLInputElement).value).toBe("18:30");
   fireEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(screen.getByText(/Select a schedule from the sidebar/)).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
 });
@@ -284,7 +294,7 @@ it("shows initial catalog loading and successful empty pages without selecting a
   value.list.mockImplementation(async () => { await pending; return { resources: [], nextPageToken: "" }; });
   render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
   expect(screen.getByText("Loading Project choices…")).toBeTruthy(); expect(screen.getByLabelText("Project").getAttribute("data-value")).toBe("");
-  ready(); await screen.findByText("No selectable Project choices are on this page."); await screen.findByText("No selectable Agent Worker choices are on this page.");
+  ready(); await screen.findByText("No selectable Project choices are on this page."); expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
 });
 
@@ -296,7 +306,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])("shows 
 });
 
 it("reports cached catalog refresh failure with the previous exact choices and selections", async () => {
-  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value); goStep(0);
   value.list.mockRejectedValue(new ConnectError("fixture offline", Code.Unavailable)); await value.client.invalidateQueries();
   await screen.findByText(/Showing cached Project choices/);
   expect(screen.getByLabelText("Project").getAttribute("data-value")).toBe(value.project.id); fireEvent.click(screen.getByRole("combobox", { name: "Project" })); expect(screen.getByRole("option", { name: "Selected project" })).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
@@ -304,10 +314,10 @@ it("reports cached catalog refresh failure with the previous exact choices and s
 
 it("preserves exact choices through accepted continuation and suspends inactive reads", async () => {
   const value = fixture(); value.list.mockImplementation(async (request) => ({ resources: request.filter?.pageToken ? [] : value.resources.filter((row) => row.kind === request.filter?.kind), nextPageToken: request.filter?.kind === EntityKind.PROJECT && !request.filter.pageToken ? "next-project-page" : "" }));
-  const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
+  const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value); goStep(0);
   const selected = screen.getByRole("combobox", { name: "Project" });
   fireEvent.click(selected);
-  fireEvent.click(screen.getByRole("button", { name: "Load more Project" }));
+  await waitFor(()=>expect((screen.getByRole("button", { name: "Load more Project" }) as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(screen.getByRole("button", { name: "Load more Project" }));
   await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.kind === EntityKind.PROJECT && request.filter.pageToken === "next-project-page")).toBe(true));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Load more Project" })).toBeNull());
   expect(selected.getAttribute("data-value")).toBe(value.project.id);
@@ -321,7 +331,7 @@ it("discards a Local selection proof that arrives after creation disposal", asyn
   const value = fixture(); let ready!: (proof: { machineId: string; token: string }) => void;
   const read = () => new Promise<{ machineId: string; token: string }>((resolve) => { ready = resolve; });
   const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />));
-  fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); rendered.unmount();
+  await fillCreation(value); fireEvent.click(screen.getByRole("radio", { name: "Local computer" })); rendered.unmount();
   ready({ machineId: value.machine.id, token: "a".repeat(42) + "A" }); await Promise.resolve(); expect(value.save).not.toHaveBeenCalled();
 });
 
@@ -334,7 +344,85 @@ it("revalidates untouched Runner defaults against the selected Worktree project"
  const bridge={read:vi.fn(async()=>({revision:1,scope:{server_id:server,device_id:device},machine_id:history,problem:null})),update:vi.fn()};
  const {RunnerPreferenceProvider}=await import("./runner-device-preferences");
  render(<TransportProvider transport={transport}><QueryClientProvider client={value.client}><MutationIntents><RunnerPreferenceProvider bridge={bridge} readLocalWorker={async()=>({machineId:local,token:"discarded"})}><ScheduleEditor active saved={()=>{}} cancel={()=>{}}/></RunnerPreferenceProvider></MutationIntents></QueryClientProvider></TransportProvider>);
- await waitFor(()=>expect(screen.getByRole("combobox",{name:"Runner Device"}).getAttribute("data-value")).toBe(history));
+ await waitFor(()=>expect(screen.getByLabelText("Runner Device").getAttribute("data-value")).toBe(history));
  const {chooseScrollOption}=await import("./test-scroll-picker");await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),project.id);
- await waitFor(()=>expect(screen.getByRole("combobox",{name:"Runner Device"}).getAttribute("data-value")).toBe(local));expect(value.save).not.toHaveBeenCalled();expect(bridge.update).not.toHaveBeenCalled();
+ await waitFor(()=>expect(screen.getByLabelText("Runner Device").getAttribute("data-value")).toBe(local));expect(value.save).not.toHaveBeenCalled();expect(bridge.update).not.toHaveBeenCalled();
+});
+
+it("validates each wizard step, retains drafts through Back and Edit, and only Review saves",async()=>{
+ const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));const name=screen.getByLabelText("Schedule name");
+ fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(globalThis.document.activeElement).toBe(name);expect(screen.queryByRole("button",{name:"Create schedule"})).toBeNull();expect(value.save).not.toHaveBeenCalled();
+ fireEvent.keyDown(name,{key:"Enter"});expect(value.save).not.toHaveBeenCalled();await fillCreation(value);goStep(3);expect(screen.getByText("Review shows configured selections, not execution readiness.")).toBeTruthy();
+ expect(screen.getByText(value.project.id)).toBeTruthy();expect(screen.getByText(value.agent.id)).toBeTruthy();expect(screen.getByText(value.machine.id)).toBeTruthy();expect(screen.getByText("Review project changes",{selector:"dd"})).toBeTruthy();
+ expect((screen.getByRole("button",{name:"Edit task"}) as HTMLButtonElement).disabled).toBe(false);fireEvent.click(screen.getByRole("button",{name:"Edit task"}));expect((name as HTMLInputElement).value).toBe("Morning review");expect(globalThis.document.activeElement?.textContent).toBe("Task");choose("Schedule name","Changed title");goStep(3);expect(screen.getByText("Changed title")).toBeTruthy();expect(value.save).not.toHaveBeenCalled();
+ fireEvent.change(name,{target:{value:""}});fireEvent.click(screen.getByRole("button",{name:"Create schedule"}));expect(globalThis.document.activeElement).toBe(name);expect(screen.queryByRole("button",{name:"Create schedule"})).toBeNull();expect(value.save).not.toHaveBeenCalled();
+});
+it("opens the Execution step and collapsed overrides for an invalid reference",async()=>{
+ const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));await fillCreation(value);const disclosure=screen.getByRole("button",{name:/Starting reference overrides/});fireEvent.click(disclosure);await within(screen.getByLabelText("Add repository override")).findByRole("option",{name:value.repositoryId});choose("Add repository override",value.repositoryId);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));const field=screen.getByLabelText(`Starting ${value.repositoryId} name`);fireEvent.click(disclosure);fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(disclosure.getAttribute("aria-expanded")).toBe("true");expect(globalThis.document.activeElement).toBe(field);expect(value.save).not.toHaveBeenCalled();
+});
+
+it("retains exact Review labels through locale changes without another choice read or save", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); goStep(3);
+  const assertLabels = () => {
+    const review = globalThis.document.querySelector(".schedule-creation-review")!;
+    for (const label of ["Selected project", "Selected agent", "Selected Worker"]) expect(review.textContent).toContain(label);
+  };
+  assertLabels(); const reads = value.list.mock.calls.length;
+  await act(() => i18n.changeLanguage("ko")); assertLabels();
+  await act(() => i18n.changeLanguage("en")); assertLabels();
+  expect(value.list).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled();
+});
+
+it("allows the focused step heading to scroll into view on Next, Back and Review Edit", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value);
+  const heading = globalThis.document.querySelector<HTMLElement>(".schedule-creation-step-title")!;
+  const focus = vi.spyOn(heading, "focus");
+  fireEvent.click(screen.getByRole("button", { name: "Next" })); expect(focus).toHaveBeenLastCalledWith(); expect(globalThis.document.activeElement).toBe(heading);
+  fireEvent.click(screen.getByRole("button", { name: "Back" })); expect(focus).toHaveBeenLastCalledWith();
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(focus).toHaveBeenLastCalledWith(); expect(heading.textContent).toBe("Task");
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("keeps paused or enabled creation intent visible in the persistent footer on every step", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  const footer = globalThis.document.querySelector(".schedule-creation-footer")!;
+  expect(footer.textContent).toContain("Paused on creation"); await fillCreation(value);
+  expect(footer.textContent).toContain("Paused on creation"); goStep(2);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable future scheduled runs" })); expect(footer.textContent).toContain("Enabled on creation");
+  goStep(3); expect(footer.textContent).toContain("Enabled on creation");
+  fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(footer.textContent).toContain("Enabled on creation");
+  expect(footer.textContent).toContain("1 of 4"); expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["Project", EntityKind.PROJECT, "project_id", 0],
+  ["Agent Worker", EntityKind.AGENT, "agent_id", 1],
+  ["Runner Device", EntityKind.MACHINE, "machine_id", 1],
+] as const)("retains %s verification until it settles before allowing wizard navigation", async (label, kind, key, step) => {
+  const value = fixture();
+  const replacement = create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Replacement selection" }) });
+  value.resources.push(replacement);
+  const originalGet = value.get.getMockImplementation()!;
+  let complete!: (response: { resource: Resource }) => void;
+  value.get.mockImplementation(request => request.id === replacement.id ? new Promise(resolve => { complete = resolve; }) : originalGet(request));
+  render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); goStep(step);
+  const picker = screen.getByRole("combobox", { name: label });
+  fireEvent.click(picker); fireEvent.click(await screen.findByRole("option", { name: "Replacement selection" }));
+  await waitFor(() => expect(complete).toBeTypeOf("function"));
+  expect(picker.dataset.value).toBe(value.definition[key]);
+  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+  if (step) expect(screen.getByRole("button", { name: "Back" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.submit(globalThis.document.querySelector(".schedule-creation form")!);
+  expect(globalThis.document.querySelector(".schedule-creation-step-title")?.textContent).toBe(step ? "Execution" : "Task");
+  expect(value.save).not.toHaveBeenCalled();
+  await act(() => complete({ resource: replacement }));
+  await waitFor(() => expect(picker.dataset.value).toBe(replacement.id));
+  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
+  goStep(3); expect(globalThis.document.querySelector(".schedule-creation-review")?.textContent).toContain("Replacement selection");
+  expect(screen.getByText(replacement.id)).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
 });
