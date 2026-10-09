@@ -24,7 +24,8 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
-	OrdinaryTools executionenv.Ordinary `json:"-"`
+	ManagedForkHistory bool
+	OrdinaryTools      executionenv.Ordinary `json:"-"`
 
 	SkillsRoot       string
 	ImageRoot        string
@@ -41,29 +42,30 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
-	quotaUsed        atomic.Bool
-	skillsRoot       string
-	imageRoot        string
-	imageMachine     domain.ID
-	sidechat         SidechatProfile
-	quotaObserver    func(context.Context, domain.SubscriptionQuotaObservation)
-	subagents        map[string]domain.SubagentObservation
-	subagentTurn     domain.ID
-	modelObservation string
-	home             string
-	wire             *nativewire.Connection
-	version          string
-	ownerID          domain.ID
-	logger           *slog.Logger
-	control          chan struct{}
-	thread           domain.ID
-	problem          *domain.Error
-	mode             ProtocolMode
-	execution        *executionState
-	eventGate        chan struct{}
-	pendingEvent     *nativewire.Event
-	api              *apiBinding
-	managedHome      string
+	managedForkHistory bool
+	quotaUsed          atomic.Bool
+	skillsRoot         string
+	imageRoot          string
+	imageMachine       domain.ID
+	sidechat           SidechatProfile
+	quotaObserver      func(context.Context, domain.SubscriptionQuotaObservation)
+	subagents          map[string]domain.SubagentObservation
+	subagentTurn       domain.ID
+	modelObservation   string
+	home               string
+	wire               *nativewire.Connection
+	version            string
+	ownerID            domain.ID
+	logger             *slog.Logger
+	control            chan struct{}
+	thread             domain.ID
+	problem            *domain.Error
+	mode               ProtocolMode
+	execution          *executionState
+	eventGate          chan struct{}
+	pendingEvent       *nativewire.Event
+	api                *apiBinding
+	managedHome        string
 }
 
 type ProtocolMode string
@@ -111,6 +113,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		config.Mode = ProbeProtocol
 	}
 	if config.Mode != ProbeProtocol && config.Mode != ThreadProtocol && config.Mode != SubscriptionProtocol && config.Mode != QuotaProtocol {
+		return nil, incompatible()
+	}
+	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
 		return nil, incompatible()
 	}
 	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
@@ -239,7 +244,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

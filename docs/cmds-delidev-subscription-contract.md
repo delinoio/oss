@@ -115,7 +115,7 @@ Existing-login import, externally supplied token bundles, internal-only `chatgpt
 
 ## Runtime and Language
 
-Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. Independent native Fork uses that API profile and rejects managed subscription sources before accepting work. Managed ChatGPT Sidechat uses its separately negotiated protected Fork lease under the Sidechat contract. Source inspection cannot grant credentials; the exact claimed Sidechat job owns protected Take, joined native/plaintext cleanup and original-account write-back before publication.
+Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. Independent native Fork uses the API profile or the separately negotiated protected managed profile under issue #1979 in the Fork contract. Managed ChatGPT Sidechat uses its separately negotiated protected Fork lease under the Sidechat contract. Source inspection cannot grant credentials; the exact claimed Sidechat job owns protected Take, joined native/plaintext cleanup and original-account write-back before publication.
 
 ## Users and Operators
 
@@ -373,7 +373,7 @@ Successful projection shares sparse-window merging, minimum remaining fractions 
 
 The owner will perform real-account, installed-native, remote and platform acceptance separately. This batch's automated fixture/build validation does not establish those results; that skipped acceptance is nonblocking for this feature PR under the owner's explicit instruction.
 
-Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork remains unsupported.
+Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork follows the separate System 53 / Worker 29 profile in the Fork contract and uses the same original-job receipt lifecycle.
 
 Managed subscription installation refusal describes missing verified Codex installation evidence, not an exact or minimum native version. Existing bounded version metadata, detected state, path, protocol, observation and capability predicates remain authoritative. Safe guidance directs the user to the selected Runner Device’s installed Codex and protocol verification without exposing native paths or output.
 
@@ -452,3 +452,5 @@ Preserve last-success quota windows/timestamps on failures, truthful pending/fai
 ## OpenCode Go subscriptions — issue #2097
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+Independent managed Fork now follows the separately negotiated System 53 / Worker 29 profile in [the Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979). It reuses the exact accepted Fork EXECUTE lease and durable Finish receipt, including original generation, actor, cleanup and uncertainty checks. Legacy internal Sidechat-named receipt storage also serves this independent profile without changing existing receipt bytes or requiring a migration.

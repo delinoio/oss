@@ -187,6 +187,18 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			input.Version, input.Purpose, input.Workspace = 3, purpose, session.Workspace
 			origin = session.LocalOrigin
 		}
+		// OpenCode Go uses protected keys and owns no ChatGPT login generation.
+		if purpose == domain.IndependentFork && input.SourceAssignment.Configuration.Subscription && !input.SourceAssignment.Configuration.IsOpenCodeGo() {
+			_, machine, e := activeMachine(tx, session.MachineID)
+			if e != nil || !domain.ManagedForkSupported(machine.WorkerCapabilities) {
+				return nil, domain.ManagedForkUnavailable()
+			}
+			_, account, e := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)
+			if e != nil || account.Subscription == nil || account.Subscription.Generation == "" || account.Subscription.Lease != nil || account.Subscription.RecoveryRequired || account.Subscription.Pending != nil || account.Subscription.ServerObservationActive() || account.Subscription.Observation != nil && account.Subscription.Observation.Active() {
+				return nil, subscriptionDenied()
+			}
+			input.SubscriptionGeneration = account.Subscription.Generation
+		}
 		if (session.Workspace == domain.GeneralChat) != (input.Workspace == domain.GeneralChat) {
 			return nil, forkConflict()
 		}
@@ -340,7 +352,7 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 
 	if input.SubscriptionGeneration != "" {
 		_, machine, err := activeMachine(tx, source.MachineID)
-		if err != nil || !domain.ManagedSidechatSupported(machine.WorkerCapabilities) {
+		if err != nil || !input.ManagedCapabilitySupported(machine.WorkerCapabilities) {
 			return domain.SidechatUnavailable()
 		}
 		_, account, err := subscriptionAccount(tx, input.SourceAssignment.AccountID, 0)

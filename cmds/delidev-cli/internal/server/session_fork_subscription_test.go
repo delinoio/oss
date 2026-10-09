@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSessionForkRefusesManagedAuthenticationAssignmentBeforeNativeWork(t *testing.T) {
+func TestSessionForkRefusesUnprovedManagedGenerationBeforeNativeWork(t *testing.T) {
 	f, _, accepted := acceptedForkFixture(t)
 	_, input := forkClaimFixture(t, f, accepted.Job.Id)
 	if err := input.Validate(); err != nil {
@@ -20,12 +20,11 @@ func TestSessionForkRefusesManagedAuthenticationAssignmentBeforeNativeWork(t *te
 	input.SourceAssignment.ConfigurationDigest = digest
 	input.Snapshot.Configuration = input.SourceAssignment.Configuration
 	input.Snapshot.ConfigurationDigest = digest
-	// The source assignment itself remains valid. Fork's API-only native
-	// coordinator cannot acquire managed credentials from this configuration.
+	// The source lacks a frozen protected generation and cannot acquire credentials.
 	if err := input.SourceAssignment.Validate(); err != nil {
 		t.Fatal("invalid managed source assignment", err)
 	}
 	if err := input.Validate(); domain.SafeError(err).Code != domain.Unsupported {
-		t.Fatal("API-only native fork admitted managed authentication", err)
+		t.Fatal("unproved Fork admitted managed authentication", err)
 	}
 }

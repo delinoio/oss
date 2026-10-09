@@ -465,3 +465,7 @@ Issue #1854 owns System 50 `SERVER_SUBSCRIPTION_QUOTA_V2`, recorded with its com
 ## OpenCode Go subscriptions — issue #2097
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+### Managed independent Codex Fork allocation closure
+
+Issue #1979 owns System 53 `MANAGED_CODEX_FORK_V1` and Worker 29 `MANAGED_CODEX_FORK_V1`, recorded with complete implementation under the allocation workflow. Existing System 27/47 and Worker 3/16/26 retain separate generic Fork, Sidechat and protected-subscription ownership. Preserve every existing number and no migration is added. The [Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979) defines original-job authentication, exact inherited tool history and independent child ownership; declarations alone grant no native/account acceptance.

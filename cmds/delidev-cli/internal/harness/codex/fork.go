@@ -23,15 +23,16 @@ const maxForkRollout = 64 << 20
 // ForkSource is in-memory evidence from the exact original Worker runtime.
 // Its private path is never supplied by a product client or serialized publicly.
 type ForkSource struct {
-	imageRoot    string
-	imageMachine domain.ID
-	packageHome  string
-	packages     map[string]string
-	original     *ForkSource
-	home, path   string
-	checkpoint   ContinuationCheckpoint
-	fileDigest   [sha256.Size]byte
-	turns        []json.RawMessage
+	managedToolHistory bool
+	imageRoot          string
+	imageMachine       domain.ID
+	packageHome        string
+	packages           map[string]string
+	original           *ForkSource
+	home, path         string
+	checkpoint         ContinuationCheckpoint
+	fileDigest         [sha256.Size]byte
+	turns              []json.RawMessage
 }
 
 func unsupportedFork() error {
@@ -80,7 +81,7 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil || !forkableMetadata(again, checkpoint) || string(again.Path) != string(wire.Path) || *again.UpdatedAt != *wire.UpdatedAt {
 		return nil, continuationUncertain()
 	}
-	return &ForkSource{imageRoot: c.imageRoot, imageMachine: c.imageMachine, home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
+	return &ForkSource{managedToolHistory: c.managedForkHistory, imageRoot: c.imageRoot, imageMachine: c.imageMachine, home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
 }
 
 func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {
@@ -170,9 +171,21 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 			for _, item := range wire.Items {
 				var identity struct {
 					Type string `json:"type"`
+					ID   string `json:"id"`
 				}
-				if json.Unmarshal(item, &identity) != nil || !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
+				if json.Unmarshal(item, &identity) != nil {
 					return nil, unsupportedFork()
+				}
+				if c.managedForkHistory {
+					if seen["item:"+identity.ID] || !managedForkItem(item, identity.Type) {
+						return nil, unsupportedFork()
+					}
+					seen["item:"+identity.ID] = true
+				}
+				if !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
+					if !c.managedForkHistory || !settledForkTool(item, identity.Type) {
+						return nil, unsupportedFork()
+					}
 				}
 			}
 			bytes += len(raw)
@@ -220,7 +233,7 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 			c.logger.InfoContext(ctx, "Codex native fork operation", "owner_id", c.ownerID, "request_id", requestID, "code", code)
 		}
 	}()
-	if source == nil || requestID.Validate() != nil || c.mode != ThreadProtocol || nativePathEqual(c.home, source.home) {
+	if source == nil || source.managedToolHistory != c.managedForkHistory || requestID.Validate() != nil || c.mode != ThreadProtocol || nativePathEqual(c.home, source.home) {
 		return result, unsupportedFork()
 	}
 	params, err := settings.params()
@@ -413,4 +426,56 @@ func sameForkDefaults(a, b EffectiveSettings) bool {
 
 func optionalForkString(a, b *string) bool {
 	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+
+// Preserve complete native tool JSON; decoding establishes eligibility only and never executes history.
+func settledForkTool(raw json.RawMessage, kind string) bool {
+	if kind != "commandExecution" && kind != "fileChange" {
+		return false
+	}
+	tool, err := decodeTool(raw, kind, true)
+	if err != nil {
+		return false
+	}
+	if tool.Command != nil {
+		c := tool.Command
+		if c.Source != AgentCommand && c.Source != UserShellCommand || c.PluginID != nil || c.ScriptPath != nil {
+			return false
+		}
+		if tool.Status != ToolDeclined && c.ExitCode == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "commandExecution" || kind == "fileChange" {
+		return settledForkTool(raw, kind)
+	}
+	if kind == "reasoning" || kind == "agentMessage" {
+		return true
+	}
+	if kind != "userMessage" {
+		return false
+	}
+	var item struct {
+		Content []json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &item) != nil {
+		return false
+	}
+	plain, _, err := nativeInputSkills(item.Content)
+	if err != nil {
+		return false
+	}
+	for _, part := range plain {
+		var p struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal(part, &p) != nil || p.Type != "text" {
+			return false
+		}
+	}
+	return len(plain) > 0
 }

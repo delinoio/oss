@@ -317,3 +317,155 @@ func TestManagedSidechatRefusesIndependentForkAndChangedTakeAuthority(t *testing
 		})
 	}
 }
+
+func TestManagedIndependentForkProtectedFinishPrecedesPublication(t *testing.T) {
+	for _, fault := range []string{"valid", "missing-finish", "unconfirmed-cleanup", "changed-generation", "missing-capability"} {
+		t.Run(fault, func(t *testing.T) {
+			f, generation, bundle := managedIndependentFixture(t)
+			job, input, creation := acceptManagedIndependent(t, f)
+			if input.SubscriptionGeneration != generation {
+				t.Fatal("original generation not frozen")
+			}
+			client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, f.endpoint.URL)
+			takeReq := &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.input.AccountID), ExpectedRevision: job.Revision}, MachineId: f.machine.Id, InstanceId: f.workerInstance, OperationId: job.Id, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE}
+			taken, err := client.TakeSubscription(context.Background(), ownerRequest(f.workerIdentity, takeReq))
+			if err != nil || !bytes.Equal(taken.Msg.Bundle, bundle) {
+				t.Fatal("protected Sidechat Take", err)
+			}
+			if _, err := client.TakeSubscription(context.Background(), ownerRequest(f.workerIdentity, takeReq)); err == nil {
+				t.Fatal("Take replay redistributed credentials")
+			}
+			var finish domain.ID
+			if fault != "missing-finish" {
+				finish = domain.NewID()
+				rotated := subscriptionTestBundle("fixture-sidechat", "rotated", time.Now().UTC())
+				req := &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(finish), Id: string(f.input.AccountID), ExpectedRevision: taken.Msg.LeaseRevision}, LeaseId: taken.Msg.LeaseId, GenerationId: taken.Msg.GenerationId, MachineId: f.machine.Id, InstanceId: f.workerInstance, Bundle: bytes.Clone(rotated), Succeeded: true, CleanupConfirmed: fault != "unconfirmed-cleanup"}
+				if _, err := client.FinishSubscription(context.Background(), ownerRequest(f.workerIdentity, req)); err != nil {
+					t.Fatal("protected Finish", err)
+				}
+				req.Bundle = bytes.Clone(rotated)
+				if _, err := client.FinishSubscription(context.Background(), ownerRequest(f.workerIdentity, req)); err != nil {
+					t.Fatal("Finish receipt replay", err)
+				}
+			}
+			if fault == "changed-generation" || fault == "missing-capability" {
+				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.changed-sidechat-authority", fault, func(tx *store.Tx) (any, error) {
+					if fault == "changed-generation" {
+						r, a, err := accountFromTx(tx, f.input.AccountID, 0)
+						if err != nil {
+							return nil, err
+						}
+						a.Subscription.Generation = domain.NewID()
+						return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+					}
+					r, m, err := activeMachine(tx, domain.ID(f.machine.Id))
+					if err != nil {
+						return nil, err
+					}
+					m.WorkerCapabilities = nil
+					return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			raw := managedIndependentResult(t, input, finish)
+			_, err = f.workerClient.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw}))
+			if err != nil {
+				t.Fatal("Fork report", err)
+			}
+			result, err := sessionClient(f.accountFixture).GetSessionFork(context.Background(), ownerRequest(f.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fault != "valid" {
+				if result.Msg.Session != nil {
+					t.Fatal("unproven credentials published a child")
+				}
+				return
+			}
+			if result.Msg.Session == nil {
+				t.Fatal("confirmed managed Sidechat not published", string(result.Msg.Job.DocumentJson))
+			}
+			var child domain.Session
+			if domain.Decode(result.Msg.Session.DocumentJson, &child) != nil || child.IsSidechat() || !child.Fork.Snapshot.Configuration.Subscription || child.Dispatch != domain.DispatchPaused || child.PendingInputs != 0 || child.Fork.Snapshot.InitialAccountID != f.input.AccountID {
+				t.Fatal("child lost immutable managed authority")
+			}
+			replay, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, creation))
+			if err != nil || replay.Msg.Session == nil || replay.Msg.Session.Id != result.Msg.Session.Id {
+				t.Fatal("creation replay duplicated/lost child", err)
+			}
+		})
+	}
+}
+
+func managedIndependentFixture(t *testing.T) (*continuationFixture, domain.ID, []byte) {
+	f, g, b := managedSidechatFixture(t)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-fork-capability", nil, func(tx *store.Tx) (any, error) {
+		r, m, e := activeMachine(tx, domain.ID(f.machine.Id))
+		if e != nil {
+			return nil, e
+		}
+		m.WorkerCapabilities = append(m.WorkerCapabilities, domain.ManagedCodexForkV1)
+		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f, g, b
+}
+func acceptManagedIndependent(t *testing.T, f *continuationFixture) (*pb.Resource, domain.ForkJobInput, *pb.ForkSessionRequest) {
+	parent := f.refresh(t)
+	req := &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(parent.ID), ExpectedRevision: parent.Revision}, ExpectedTurnId: string(f.turn), Name: "Managed independent"}
+	result, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, req))
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, input := forkClaimFixture(t, f, result.Msg.Job.Id)
+	return job, input, req
+}
+func managedIndependentResult(t *testing.T, input domain.ForkJobInput, finish domain.ID) []byte {
+	result := forkResultFixture(t, input)
+	result.ManagedFinish = finish
+	raw, _ := json.Marshal(result)
+	return raw
+}
+
+func TestManagedIndependentForkAdmissionRequiresOwnCapabilityAndSettledAccount(t *testing.T) {
+	for _, fault := range []string{"fork-capability", "subscription-capability", "recovery"} {
+		t.Run(fault, func(t *testing.T) {
+			f, _, _ := managedIndependentFixture(t)
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-fork-admission", fault, func(tx *store.Tx) (any, error) {
+				if fault == "recovery" {
+					r, a, e := accountFromTx(tx, f.input.AccountID, 0)
+					if e != nil {
+						return nil, e
+					}
+					a.Subscription.RecoveryRequired = true
+					return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				}
+				r, m, e := activeMachine(tx, domain.ID(f.machine.Id))
+				if e != nil {
+					return nil, e
+				}
+				filtered := []domain.WorkerCapability{}
+				for _, capability := range m.WorkerCapabilities {
+					if fault == "fork-capability" && capability == domain.ManagedCodexForkV1 || fault == "subscription-capability" && capability == domain.ManagedCodexSubscriptionsV1 {
+						continue
+					}
+					filtered = append(filtered, capability)
+				}
+				m.WorkerCapabilities = filtered
+				return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			parent := f.refresh(t)
+			_, err = sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, &pb.ForkSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(parent.ID), ExpectedRevision: parent.Revision}, ExpectedTurnId: string(f.turn), Name: "Refused"}))
+			if err == nil {
+				t.Fatal("unproved managed Fork admitted")
+			}
+		})
+	}
+}

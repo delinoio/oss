@@ -183,7 +183,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
+	sourceConfig := codex.Config{ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
 		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
@@ -191,6 +191,14 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			if err := validateManagedAuthenticationHome(sourceHome, manifest.WorkspaceRoots()); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if sourceConfig.ManagedAuthentication {
+		if err := validateManagedAuthenticationHome(sourceHome, manifest.WorkspaceRoots()); err != nil {
+			return nil, err
+		}
+		if _, err := os.Lstat(filepath.Join(sourceHome, "auth.json")); !errors.Is(err, os.ErrNotExist) {
+			return nil, executionCheckpointUncertain()
 		}
 	}
 	sourceClient, err := codex.Open(ctx, sourceConfig)
@@ -278,7 +286,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}
@@ -324,7 +332,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 			return nil, err
 		}
 		closeRPC = close
-		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "take")
+		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "take")
 		managed, err = takeManagedSubscription(ctx, config, rpcClient, config.execution.Credential, config.execution.Instance, assignment.AccountID, owner, config.execution.Assignment.Revision, pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE)
 		if err != nil {
 			return nil, err
@@ -355,14 +363,14 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if managed != nil {
 		bounded, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		var captureErr error
-		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "capture")
+		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "capture")
 		latest, captureErr = client.ManagedBundle(bounded, false)
 		captured = captureErr == nil
 		stop()
 	}
 	closeErr = client.Close()
 	if managed != nil && closeErr == nil {
-		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "cleanup")
+		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "cleanup")
 		cleanup = cleanupExecutionAuthentication(nativeConfig.Home, latest, managed.response.Bundle) == nil
 		if !captured || !cleanup {
 			return nil, &managedExecutionUncertain{subscription.Invalid()}
@@ -399,7 +407,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 
 	var managedFinish domain.ID
 	if managed != nil {
-		logger.InfoContext(ctx, "managed_sidechat_authentication", "job_id", owner, "phase", "finish")
+		logger.InfoContext(ctx, "managed_fork_authentication", "job_id", owner, "phase", "finish")
 		if err := managed.finish(latest, cleanup, false, captured); err != nil {
 			finished = true
 			return nil, &managedExecutionUncertain{err}
@@ -480,6 +488,9 @@ func readForkCheckpoint(root string, input domain.ExecutionJobInput) (codex.Cont
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(f.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
 	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &result) != nil || ((input.Configuration.SidechatPolicy == "" && result.Version != 1) || (input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 && result.Version != 3)) || result.SidechatPolicy != input.Configuration.SidechatPolicy || result.JobID != f.JobID || result.SessionID != input.SessionID || result.MachineID != input.MachineID || result.RuntimeID != f.RuntimeID || result.ConfigurationDigest != input.ConfigurationDigest || result.AccountID != input.AccountID || result.ConnectionID != input.ConnectionID || result.ManifestDigest != executionInputDigest(input.Manifest) || string(result.Native.ThreadID) != string(f.NativeThreadID) || string(result.Native.TurnID) != string(f.NativeTurnID) || result.Native.Status != codex.TurnCompleted || string(mustForkJSON(result)) != string(raw) {
+		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
+	}
+	if input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && (result.Native.ForkHistory == nil || result.Native.ForkHistory.TurnsCount == 0 || result.Native.ForkHistory.TurnsCount > 128 || len(result.Native.ForkHistory.HistoryDigest) != 64) {
 		return codex.ContinuationCheckpoint{}, executionCheckpointUncertain()
 	}
 	return result.Native, nil

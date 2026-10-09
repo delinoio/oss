@@ -2,7 +2,7 @@
 
 ## Direct startup source identity
 
-[Direct startup](cmds-delidev-execution-startup-contract.md) permits source assignments with private execution version 4. Freeze the original successful readiness digest into the Fork input without rewriting source assignment bytes. The Worker resolves and rehashes only the original private resolved executable. Publication retains the original startup selection and successful readiness digest in the child-owned Fork boundary before returning the child. The Worker also retains the original resolved executable identity in the child-owned runtime before native Fork publication. Child execution uses this retained selection and private identity even after parent deletion purges the source-owned creation job and journal. An older child without retained selection may read only its surviving original creation seed; missing evidence requires recovery and cannot select a replacement executable. Independent parent deletion cannot transfer or erase child ownership. Existing API-only, platform, transcript, account/Worker, workspace-copy and native mutation/cleanup limits remain unchanged.
+[Direct startup](cmds-delidev-execution-startup-contract.md) permits source assignments with private execution version 4. Freeze the original successful readiness digest into the Fork input without rewriting source assignment bytes. The Worker resolves and rehashes only the original private resolved executable. Publication retains the original startup selection and successful readiness digest in the child-owned Fork boundary before returning the child. The Worker also retains the original resolved executable identity in the child-owned runtime before native Fork publication. Child execution uses this retained selection and private identity even after parent deletion purges the source-owned creation job and journal. An older child without retained selection may read only its surviving original creation seed; missing evidence requires recovery and cannot select a replacement executable. Independent parent deletion cannot transfer or erase child ownership. Existing separately negotiated authentication, platform, transcript, account/Worker, workspace-copy and native mutation/cleanup limits remain unchanged.
 
 ## Scope
 
@@ -23,7 +23,7 @@ to the repository's independently verified native `0.151.0` profile.
 
 Owner and paired clients request/observe Fork through Connect, CLI or desktop.
 Only the original authorized Worker may inspect its private source and create a
-child. Provider/account authorities remain the original immutable selection. The independent Codex Fork coordinator supports API-authenticated sources only. Managed ChatGPT Sidechat follows the separately negotiated protected lease, joined cleanup and final credential write-back profile in the Sidechat contract. Ordinary Fork capability does not grant managed authentication.
+child. Provider/account authorities remain the original immutable selection. Independent Codex Fork supports API authentication and separately negotiated managed ChatGPT authentication under issue #1979 below. Managed ChatGPT Sidechat follows the separately negotiated protected lease, joined cleanup and final credential write-back profile in the Sidechat contract. Ordinary Fork capability does not grant managed authentication.
 
 ## Interfaces and Contracts
 
@@ -93,8 +93,7 @@ child cwd and runtime workspace roots. Path import may name only the exact
 validated rollout returned for the original Worker-private runtime. Reject
 incomplete, active, paginated, child, goal and unsupported histories. The initial
 profile supports complete user/assistant text and reasoning turns (at most 128
-turns / 4 MiB, with a 64 MiB rollout); settled tools and rich auxiliary histories
-remain unsupported until their complete inherited state is independently verified. Unknown
+turns / 4 MiB, with a 64 MiB rollout); API Fork and Sidechat retain the text/reasoning profile. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. Unknown
 creation or cleanup outcomes retain uncertainty and never authorize replay.
 
 Project forks default to separate detached worktrees at every actual source
@@ -384,3 +383,19 @@ Legacy seeds with an omitted marker may resolve only through the exact retained 
 OpenCode lost-report recovery checks a child-owned immutable closed creation proof before admitting inspection work. Verified Fork publication atomically retains the expected creation request, child ID, original accepted output digest and digest binding of the complete original Fork boundary (including accepted input digest, native checkpoint/runtime, Worker and selection). This retains no source prompt or protected native content and survives independent parent purge. Changed valid creation UUIDs, checkpoint/runtime/selection or proof ownership reject before admission. Older seeds without that proof must compare any recorded marker against the exact retained completed original Fork input/output; absence remains recovery-required. The proof is trusted server-owned publication metadata, never authority derived from a later mutable marker; no RPC, allocation or migration.
 
 A settled eligible first child turn may become a manual compaction source under the compaction contract. Its new continuation restore clears the one-shot Fork import and retains the child-owned Fork runtime as history, preserving legacy 3-to-2 and startup 4-to-4 assignment profiles. Independent child lifetime and Sidechat dependent/read-only ownership remain separate.
+
+## Managed ChatGPT independent Fork — issue #1979
+
+Record System capability 53 `MANAGED_CODEX_FORK_V1` and Worker capability 29 in the complete feature PR. Preserve existing ownership, including Sidechat 27/16, protected subscriptions 3 and managed Sidechat 47/26. These declarations compose complete runtime support; they alone prove no native/account/platform acceptance. No SQLite migration is added.
+
+Version 1 with explicit or omitted independent purpose retains the existing RPC and child publication format. Admission, claim, publication and child continuation require the separate managed Fork capability and original account/connection. Freeze original actor, source revision, completed native turn, immutable configuration and reviewer, generation, startup identity, Worker machine/device/instance and claimed job revision. Busy lease, pending lifecycle, recovery and active server/Worker observations refuse admission before protected credentials or native work. No new login, account fallback, sandbox expansion or reviewer substitution is permitted.
+
+Inspect the original source without authentication files. Only the newly owned child runtime receives the original account's exact Fork EXECUTE Take. Native Fork makes one inclusive boundary attempt; capture the final bundle, join the original child, compare/remove/scan plaintext and commit the original Finish receipt before publication. Lost responses and uncertain creation or cleanup retain original recovery authority without retry. Logs contain only structured identities and safe phases.
+
+The managed history profile retains complete native user text, assistant text and reasoning plus terminal `commandExecution` and `fileChange` items. Command source is ordinary agent or user shell, without plugin/script provenance. Executed completed/failed commands require an exit code; declined commands retain no-send semantics. File changes must be terminal. Preserve item and turn IDs, order, status, source, exact command/cwd, output, exit, paths, patches and native metadata in the whole normalized JSON comparison. Never replay tools or rewrite inherited tool paths. Existing authenticated typed skill-package rehoming remains separate and preserves opaque/user text. Reject active, unknown, rich-media, goal, child-agent and compacted histories. Retain the original 128-turn, 4 MiB history and 64 MiB rollout bounds, complete pagination, unique identities and before/after source digest checks.
+
+The child privately retains a complete inherited-history digest and count. Its first Resume rereads the complete closed profile and verifies that digest before new input, in addition to original settings, reviewer, native idle and latest-turn checks. The digest grants no replay or runtime authority.
+
+Existing workspace ownership applies unchanged: Worktree copies actual HEAD and dirty contents, General Chat copies owned files, and Local preserves its original machine rules. Publish paused with an empty queue. Independent parent deletion preserves child-owned checkpoint, runtime and workspace; later turns retain the original account and immutable reviewer/branch-prefix provenance. Parent-dependent read-only Sidechat remains a separate overlay and deletion profile.
+
+Automated fixtures and builds validate these boundaries. Installed native, real-account, remote-machine, platform and manual visual acceptance remain owner-assigned and are not claimed by those checks.

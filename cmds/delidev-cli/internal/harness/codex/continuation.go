@@ -42,15 +42,25 @@ func (input HistoricalInput) MarshalJSON() ([]byte, error) {
 // its terminal publication and independent owned-process cleanup. This private
 // adapter does not prove account authority, cleanup, interaction acceptance or
 // the user's explicit Resume; those remain the coordinator's responsibility.
+type ForkHistoryCheckpoint struct {
+	TurnsCount    uint32 `json:"turns_count"`
+	HistoryDigest string `json:"history_digest"`
+}
+
+func (p ForkHistoryCheckpoint) matches(turns []json.RawMessage) bool {
+	return p.TurnsCount > 0 && p.TurnsCount <= maxForkTurns && contextDigest(p.HistoryDigest) && uint32(len(turns)) == p.TurnsCount && historyDigest(turns) == p.HistoryDigest
+}
+
 type ContinuationCheckpoint struct {
-	Context   *ContinuationContextCheckpoint `json:",omitempty"`
-	ThreadID  domain.ID
-	SessionID domain.ID
-	TurnID    domain.ID
-	Status    TurnStatus
-	Mode      domain.SessionMode
-	Inputs    []HistoricalInput
-	Effective EffectiveSettings
+	ForkHistory *ForkHistoryCheckpoint         `json:",omitempty"`
+	Context     *ContinuationContextCheckpoint `json:",omitempty"`
+	ThreadID    domain.ID
+	SessionID   domain.ID
+	TurnID      domain.ID
+	Status      TurnStatus
+	Mode        domain.SessionMode
+	Inputs      []HistoricalInput
+	Effective   EffectiveSettings
 }
 
 func continuationUncertain() *domain.Error {
@@ -124,6 +134,12 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
 		return result, err
+	}
+	if checkpoint.ForkHistory != nil {
+		turns, err := c.forkTurnsLocked(ctx, c.thread)
+		if err != nil || !c.managedForkHistory || !checkpoint.ForkHistory.matches(turns) {
+			return mismatch()
+		}
 	}
 	if checkpoint.Context != nil {
 		turns, err := c.compactionTurnsLocked(ctx)
