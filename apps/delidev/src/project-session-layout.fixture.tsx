@@ -23,7 +23,7 @@ const agent = make(EntityKind.AGENT, "Agent One"), machine = make(EntityKind.MAC
 const repositories = [make(EntityKind.REPOSITORY, "Primary repository"), make(EntityKind.REPOSITORY, "Secondary repository")].slice(0,args.get("repositories") === "1" ? 1 : 2);
 project.documentJson = encode({name:"Project One",repositories:repositories.map(row=>row.id),primary_repository:repositories[0].id});
 machine.documentJson = encode({name:"Worker One",worker_capabilities:[WorkerCapability.REPOSITORY_BRANCH_DISCOVERY_V1]});
-for (const repository of repositories) repository.documentJson = encode({name:JSON.parse(new TextDecoder().decode(repository.documentJson)).name,comparison_base:{type:"remote-branch",remote:"upstream",name:"main"}});
+for (const repository of repositories) repository.documentJson = encode({name:JSON.parse(new TextDecoder().decode(repository.documentJson)).name,preferred_remote:"upstream",comparison_base:{type:"remote-branch",remote:"upstream",name:"main"}});
 const rows = [agent, machine, project, ...repositories], creates: Record<string, unknown>[] = [];
 let release: (() => void) | undefined;
 document.documentElement.dataset.discoveries = "0";

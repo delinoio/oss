@@ -75,5 +75,10 @@
   "new-session.noBranches": "원격 저장소에 브랜치가 없습니다.",
   "new-session.branchLookupFailed": "원격 브랜치를 읽을 수 없습니다. 저장된 시작 참조 또는 직접 지정한 참조를 사용하세요.",
   "new-session.planDefaultUnavailable": "계획 모드 기본값을 불러오는 중이거나 사용할 수 없습니다. 설정을 다시 확인하거나 계획 모드를 직접 선택하세요.",
-  "new-session.retryPlanDefaults": "계획 모드 기본값 다시 확인"
+  "new-session.retryPlanDefaults": "계획 모드 기본값 다시 확인",
+  "new-session.invalidStartingBranch": "1,024 UTF-8바이트 이하의 올바른 브랜치 이름을 입력하세요.",
+  "new-session.branchRepositoryUnavailable": "저장소 정보를 사용할 수 없습니다. 설정된 원격을 확인할 때까지 입력을 유지합니다.",
+  "new-session.useTypedBranch": "\"{{name}}\" 사용",
+  "new-session.branchInputHelp": "발견된 브랜치를 선택하거나 브랜치 이름을 입력하세요. 비어 있으면 저장된 시작 참조를 사용합니다.",
+  "new-session.noMatchingBranches": "일치하는 브랜치가 없습니다. 올바른 이름을 직접 입력할 수 있습니다."
 }

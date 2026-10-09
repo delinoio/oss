@@ -12,8 +12,8 @@ export function useProjectSessionPlacement(active: boolean, language: string) {
     const measure = () => {
       if (section.hidden || owner.clientHeight <= 0) return;
       let primaryHeight = end.getBoundingClientRect().bottom - start.getBoundingClientRect().top;
-      // Only direct branch disclosures contribute. Nested secondary bodies are
-      // already contained in Additional repositories and must not be subtracted twice.
+      // Only the direct Additional repositories body contributes. Branch popups
+      // are fixed top-layer overlays and never contribute to primary flow height.
       for (const details of body.querySelectorAll<HTMLDetailsElement>(".starting-branches > details[open]")) {
         const summary = details.querySelector<HTMLElement>(":scope > summary");
         if (!summary) continue;
