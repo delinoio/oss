@@ -1234,3 +1234,25 @@ it.each([false, true])("saves explicit Fast mode for a connected ChatGPT subscri
  const saved = JSON.parse(new TextDecoder().decode(value.save.mock.calls[0][0].documentJson));
  expect(saved.options.service_tier).toBe("fast");expect(saved.harness).toBe("codex");expect(value.save.mock.calls[0][0].model?.selection).toEqual({ case: "nativeId", value: "exact-native-model" });
 });
+
+it("keeps selected Claude Anthropic profile guidance conditional and unverified account observations separate", async () => {
+ const value=fixture();
+ value.provider.documentJson=encode({...document(value.provider),protocol:"anthropic-messages"});
+ await start(value);confirmHarness("Claude Code");
+ await waitScrollChoices(sourceChoice("Account source"));
+ await chooseScrollOption(sourceChoice("Account source"),`api:${value.provider.id}`);
+ const account=await screen.findByRole("checkbox",{name:/Personal API.*unverified/});
+ fireEvent.click(account);
+ expect(screen.getAllByText(/Execution eligibility is checked at start/).length).toBeGreaterThan(0);
+ fireEvent.click(screen.getByRole("button",{name:/^Load more.*[Aa]ccount/}));
+ await screen.findByRole("checkbox",{name:/Team API/});
+ expect(screen.queryByRole("checkbox",{name:/Backup API/})).toBeNull();
+ await nextAfterAccountRead();
+ fireEvent.focus(await screen.findByRole("combobox",{name:"Model"}));
+ fireEvent.click(await screen.findByRole("option",{name:/Example A/}));next();
+ expect(screen.getByText("Saving settings does not authorize or start Claude execution.")).toBeTruthy();
+ expect(screen.getByText(/matching Anthropic Messages profile.*selected Runner Device/)).toBeTruthy();
+ expect(screen.queryByText(/public execution integration is still unavailable/)).toBeNull();
+ expect(document(value.accounts[0]).health).toBe("unverified");
+ expect(value.save).not.toHaveBeenCalled();expect(value.discover).not.toHaveBeenCalled();
+},15000);

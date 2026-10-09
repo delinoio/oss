@@ -116,6 +116,7 @@ export function AgentPermissions({ harness, options, change, active, disabled, r
       {selected === ClaudePermission.Bypass ? <p className="notice">{copy("configuration-fields.bypassSkipsNativePermissionPromptsSelect_8c3404")}</p> : null}
       {conflict ? <><p role="alert"><LocalizedText id="configuration-fields.retainedSandboxOrApprovalPolicySettings_7733d3" components={{ s0: <>{text(options.permission)}</>, s1: <>{text(options.approval_policy)}</> }} /></p><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => { const next: Document = { ...options, permission: Permission.Default }; delete next.approval_policy; change(next); }}>{copy("configuration-fields.clearIncompatiblePermissionSettings_2e8a8c")}</SettingsActionButton></> : null}
       <p>{copy("configuration-fields.savingSettingsDoesNotEnableClaude_05773c")}</p>
+      <p>{copy("configuration-fields.claudeExecutionRequirements")}</p>
     </fieldset>;
   }
   return <>
