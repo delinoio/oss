@@ -1185,3 +1185,9 @@ restore retains protected references, revocations, subscription quarantine and
 independent native cleanup. Persistent Model search, suppression, validation and
 deletion entry points return Unsupported; ephemeral decoding of an exact internal
 source key grants no registry, account or native authority.
+
+Current protocol-2 backup creation uses only `RequestBackup` and its original
+actor/server-bound job. Historical `CreateBackup` declarations retain allocation
+provenance but return Unsupported without a receipt, backup file or current job.
+Current inventory/restore fixtures explicitly publish retained durable jobs;
+retirement does not change independent backup deletion or restore obligations.
