@@ -11,7 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
-func TestAssignmentMigrationAndUncertainResultPreserveOriginalEnvelope(t *testing.T) {
+func TestAssignmentUncertaintyPreservesOriginalEnvelopeAcrossRestart(t *testing.T) {
 	s, root := openTest(t)
 	ctx := context.Background()
 	id := domain.NewID()
@@ -36,9 +36,6 @@ func TestAssignmentMigrationAndUncertainResultPreserveOriginalEnvelope(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := historicalSchema(s.db, "005"); err != nil {
-		t.Fatal(err)
-	}
 	s.Close()
 	s, err = Open(ctx, root)
 	if err != nil {
@@ -46,8 +43,8 @@ func TestAssignmentMigrationAndUncertainResultPreserveOriginalEnvelope(t *testin
 	}
 	defer s.Close()
 	backups, _ := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if len(backups) != 1 {
-		t.Fatal("missing v5 backup")
+	if len(backups) != 0 {
+		t.Fatal("restart generated an unauthorized upgrade backup")
 	}
 	_, err = s.Mutate(ctx, domain.NewID(), "fixture.uncertain", nil, func(tx *Tx) (any, error) {
 		job, err := Decode[domain.Job](original)

@@ -26,7 +26,9 @@ type executionFixture struct {
 
 func newExecutionFixture(t *testing.T, s *Store) executionFixture {
 	t.Helper()
-	f := executionFixture{s, domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), []domain.ID{domain.NewID(), domain.NewID()}}
+	f := executionFixture{s, domain.NewID(), "", domain.NewID(), domain.NewID(), domain.NewID(), []domain.ID{domain.NewID(), domain.NewID()}}
+	model := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: f.provider, NativeID: "native-fixture"}, MetadataSource: domain.UserDeclared}
+	f.model = model.ModelIdentity.Key()
 	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.execution-configuration", f.agent, func(tx *Tx) (any, error) {
 		put := func(kind domain.Kind, id domain.ID, body any) {
 			if _, err := tx.Put(kind, id, 0, "", "", body); err != nil {
@@ -34,16 +36,17 @@ func newExecutionFixture(t *testing.T, s *Store) executionFixture {
 			}
 		}
 		put(domain.ProviderKind, f.provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
-		put(domain.ModelKind, f.model, domain.Model{Name: "Fixture", NativeID: "native-fixture", ProviderID: f.provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
 		put(domain.MachineKind, f.machine, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"})
 		put(domain.TemplateKind, f.template, domain.Template{Name: "Fixture", Contents: "Initial additive text."})
 		links := []domain.WeightedAccount{}
 		for _, id := range f.accounts {
-			put(domain.AccountKind, id, domain.Account{Alias: "Fixture", ProviderID: f.provider, Type: domain.APIAccount, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.KeylessAuth, ConnectedAt: time.Now().UTC()}})
+			connection := domain.NewID()
+			now := time.Now().UTC()
+			put(domain.AccountKind, id, domain.Account{Alias: "Fixture", ProviderID: f.provider, Type: domain.APIAccount, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: connection, Authentication: domain.KeylessAuth, ConnectedAt: now}, Validation: &domain.AccountValidation{RequestID: domain.NewID(), ConnectionID: connection, ObservedAt: now, State: domain.Observed, Authentication: domain.KeylessEndpoint}})
 			links = append(links, domain.WeightedAccount{ID: id, Weight: 1})
 		}
 		policy := domain.RoundRobin
-		put(domain.AgentKind, f.agent, domain.Agent{Name: "Fixture", Harness: domain.Codex, ModelID: f.model, Effort: "high", Accounts: links, Routing: &policy, Templates: []domain.ID{f.template}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
+		put(domain.AgentKind, f.agent, domain.Agent{Name: "Fixture", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: model, Accounts: links, Routing: &policy}}, Effort: "high", Templates: []domain.ID{f.template}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
 		return f.agent, nil
 	})
 	if err != nil {
@@ -227,6 +230,7 @@ func TestConcurrentInitialExecutionPersistsRotationWithoutPreviewReservations(t 
 			}
 			accounts[id] = a
 		}
+		agent = agent.WithSource(agent.SourceRoutes()[0])
 		for range 3 {
 			if _, _, err := domain.RouteAccount(f.agent, agent, model, nil, accounts, domain.Priority, state, time.Now().UTC()); err != nil {
 				return err
@@ -376,12 +380,11 @@ func TestSourceRoutingFirstClaimRecoveryAndHistory(t *testing.T) {
 	s, _ := openTest(t)
 	f := newExecutionFixture(t, s)
 	ctx := context.Background()
-	subID, subModel := domain.NewID(), domain.NewID()
+	subID := domain.NewID()
+	subIdentity := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{SubscriptionService: domain.SubscriptionChatGPT, NativeID: "subscription-native"}, MetadataSource: domain.Unknown}
+	subModel := subIdentity.ModelIdentity.Key()
 	_, err := s.Mutate(ctx, domain.NewID(), "fixture.source-worker", f.agent, func(tx *Tx) (any, error) {
 		if _, err := tx.Put(domain.AccountKind, subID, 0, "", "", domain.Account{Alias: "Subscription", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountReady, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("0", 64)}, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}}); err != nil {
-			return nil, err
-		}
-		if _, err := tx.Put(domain.ModelKind, subModel, 0, "", "", domain.Model{Name: "Subscription", NativeID: "subscription-native", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.Unknown}); err != nil {
 			return nil, err
 		}
 		record, agent, err := decodeEntity[domain.Agent](tx, domain.AgentKind, f.agent)
@@ -389,7 +392,7 @@ func TestSourceRoutingFirstClaimRecoveryAndHistory(t *testing.T) {
 			return nil, err
 		}
 		priority := domain.Priority
-		agent.Routes = []domain.AgentSourceRoute{{ModelID: subModel, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, {ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: agent.Routing}}
+		agent.Routes = []domain.AgentSourceRoute{{Model: subIdentity, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, agent.SourceRoutes()[0]}
 		agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
 		agent.Options.Permission = domain.PermissionWorkspaceWrite
 		for _, id := range f.accounts {
@@ -517,12 +520,11 @@ func TestSourceRoutingAdmitsEveryCodexSubscriptionPermission(t *testing.T) {
 		t.Run(string(permission), func(t *testing.T) {
 			s, _ := openTest(t)
 			f := newExecutionFixture(t, s)
-			subID, subModel := domain.NewID(), domain.NewID()
+			subID := domain.NewID()
+			subIdentity := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{SubscriptionService: domain.SubscriptionChatGPT, NativeID: "subscription-native"}, MetadataSource: domain.Unknown}
+			subModel := subIdentity.ModelIdentity.Key()
 			_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.source-worker-permission", f.agent, func(tx *Tx) (any, error) {
 				if _, err := tx.Put(domain.AccountKind, subID, 0, "", "", domain.Account{Alias: "Subscription", Type: domain.SubscriptionAccount, SubscriptionService: domain.SubscriptionChatGPT, Enabled: true, Health: domain.AccountReady, Subscription: &domain.SubscriptionState{Generation: domain.NewID(), IdentityCommitment: strings.Repeat("0", 64)}, Connection: &domain.AccountConnection{ID: domain.NewID(), Authentication: domain.SubscriptionAuth, ConnectedAt: time.Now().UTC()}}); err != nil {
-					return nil, err
-				}
-				if _, err := tx.Put(domain.ModelKind, subModel, 0, "", "", domain.Model{Name: "Subscription", NativeID: "subscription-native", SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.Unknown}); err != nil {
 					return nil, err
 				}
 				record, agent, err := decodeEntity[domain.Agent](tx, domain.AgentKind, f.agent)
@@ -530,7 +532,7 @@ func TestSourceRoutingAdmitsEveryCodexSubscriptionPermission(t *testing.T) {
 					return nil, err
 				}
 				priority := domain.Priority
-				agent.Routes = []domain.AgentSourceRoute{{ModelID: subModel, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, {ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: agent.Routing}}
+				agent.Routes = []domain.AgentSourceRoute{{Model: subIdentity, Accounts: []domain.WeightedAccount{{ID: subID, Weight: 1}}, Routing: &priority}, agent.SourceRoutes()[0]}
 				agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
 				agent.Options.Permission = permission
 				for _, id := range f.accounts {

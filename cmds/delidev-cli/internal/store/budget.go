@@ -36,53 +36,6 @@ func (t *Tx) addSessionEstimate(session domain.ID, value domain.ResponseEstimate
 	return storageError(err)
 }
 
-// Backfill only already retained immutable estimates, never current prices. Page
-// the original ledger before writes to bound memory and close SQLite cursors.
-func (t *Tx) backfillSessionEstimates() error {
-	var after domain.ID
-	for {
-		rows, err := t.tx.QueryContext(t.ctx, "SELECT id,session_id,body FROM response_usage WHERE id>? ORDER BY id LIMIT 250", after)
-		if err != nil {
-			return storageError(err)
-		}
-		type original struct {
-			id, session domain.ID
-			body        []byte
-		}
-		var batch []original
-		err = func() error {
-			defer rows.Close()
-			for rows.Next() {
-				var value original
-				if err := rows.Scan(&value.id, &value.session, &value.body); err != nil {
-					return storageError(err)
-				}
-				batch = append(batch, value)
-			}
-			return storageError(rows.Err())
-		}()
-		if err != nil {
-			return err
-		}
-		if len(batch) == 0 {
-			return nil
-		}
-		for _, value := range batch {
-			var record domain.ResponseUsageRecord
-			if value.id.Validate() != nil || len(value.body) > 16<<10 || domain.Decode(value.body, &record) != nil || record.Validate() != nil || record.SessionID != value.session {
-				return corrupt()
-			}
-			estimate, _, err := t.ResponseEstimate(value.id)
-			if err != nil {
-				return err
-			}
-			if err = t.addSessionEstimate(value.session, estimate); err != nil {
-				return err
-			}
-			after = value.id
-		}
-	}
-}
 func (t *Tx) SessionBudgetEstimate(session domain.ID, currency domain.Currency) (domain.BudgetEvidence, error) {
 	total, err := t.SessionEstimate(session, currency)
 	if err != nil {

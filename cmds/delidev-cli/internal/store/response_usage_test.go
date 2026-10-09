@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,7 +10,9 @@ import (
 
 func responseRecord(f searchFixture) domain.ResponseUsageRecord {
 	input, cached, output, reasoning, total := int64(10), int64(2), int64(4), int64(1), int64(14)
-	return domain.ResponseUsageRecord{SessionID: f.session, ProjectID: f.project, ExecutionID: f.execution, AccountID: f.account, ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(domain.NewID()), TurnID: string(domain.NewID()), Sequence: 3, Usage: domain.NativeResponseUsage{ResponseDigest: strings.Repeat("a", 64), CostEvidence: domain.UsageCostMissing, Counts: &domain.NativeTokenCounts{Input: &input, Cached: &cached, Output: &output, Reasoning: &reasoning, Total: &total}}}
+	provider := domain.NewID()
+	model := domain.ModelIdentity{ProviderID: provider, NativeID: "fixture"}.Key()
+	return domain.ResponseUsageRecord{SessionID: f.session, ProjectID: f.project, ExecutionID: f.execution, AccountID: f.account, ConnectionID: domain.NewID(), ProviderID: provider, ModelID: model, Harness: domain.Codex, Version: domain.CodexProtocolVersion, ThreadID: string(domain.NewID()), TurnID: string(domain.NewID()), Sequence: 3, Usage: domain.NativeResponseUsage{ResponseDigest: strings.Repeat("a", 64), CostEvidence: domain.UsageCostMissing, Counts: &domain.NativeTokenCounts{Input: &input, Cached: &cached, Output: &output, Reasoning: &reasoning, Total: &total}}}
 }
 
 func writeResponse(s *Store, id domain.ID, record domain.ResponseUsageRecord) (domain.ID, bool, error) {
@@ -70,8 +70,9 @@ func TestResponseUsageDurableIdentityAndDeletion(t *testing.T) {
 			bad.ConnectionID = domain.NewID()
 		case "provider":
 			bad.ProviderID = domain.NewID()
+			bad.ModelID = domain.ModelIdentity{ProviderID: bad.ProviderID, NativeID: "fixture"}.Key()
 		case "model":
-			bad.ModelID = domain.NewID()
+			bad.ModelID = domain.ModelIdentity{ProviderID: bad.ProviderID, NativeID: "different"}.Key()
 		case "count":
 			counts := *bad.Usage.Counts
 			value := int64(15)
@@ -124,66 +125,6 @@ func TestResponseUsageRollbackAndMissingCounts(t *testing.T) {
 	value, err := s.ResponseUsage(context.Background(), id)
 	if err != nil || value.Record.Usage.Counts != nil {
 		t.Fatal("missing usage invented zero", err)
-	}
-}
-
-func TestResponseUsageMigrationPreservesHistoryWithoutInventingRequests(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
-		t.Run(map[bool]string{false: "migrate", true: "rollback"}[conflict], func(t *testing.T) {
-			s, root := openTest(t)
-			f := seedSearch(t, s, "pre-migration", domain.Archived)
-			if _, err := historicalSchema(s.db, "013"); err != nil {
-				t.Fatal(err)
-			}
-			if conflict {
-				if _, err := s.db.Exec("CREATE TABLE response_usage(conflict TEXT)"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := s.Close(); err != nil {
-				t.Fatal(err)
-			}
-			migrated, err := Open(context.Background(), root)
-			if conflict {
-				if err == nil {
-					migrated.Close()
-					t.Fatal("adopted foreign usage schema")
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer migrated.Close()
-				rows, _, _, err := searchPage(t, migrated, SearchFilter{Query: "pre-migration"})
-				if err != nil || len(rows) != 1 || rows[0].ID != f.message {
-					t.Fatal("migration lost transcript", err)
-				}
-				var count int
-				if err = migrated.db.QueryRow("SELECT COUNT(*) FROM response_usage").Scan(&count); err != nil || count != 0 {
-					t.Fatal("migration invented usage", err)
-				}
-			}
-			backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if err != nil || len(backups) != 1 {
-				t.Fatal("missing original backup", err)
-			}
-			for _, path := range []string{backups[0], filepath.Join(root, "state.sqlite")} {
-				db, err := sql.Open("sqlite", databaseURI(path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version int
-				err = db.QueryRow("PRAGMA user_version").Scan(&version)
-				db.Close()
-				want := 13
-				if path != backups[0] && !conflict {
-					want = SchemaVersion
-				}
-				if err != nil || version != want {
-					t.Fatal("migration lost version/rollback", version, err)
-				}
-			}
-		})
 	}
 }
 

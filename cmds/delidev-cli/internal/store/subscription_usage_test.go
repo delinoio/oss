@@ -16,13 +16,10 @@ func TestSubscriptionResponseAccountingPinsIndependentServiceAndPrice(t *testing
 	record := responseRecord(f)
 	record.ProviderID = ""
 	record.SubscriptionService = domain.SubscriptionChatGPT
+	record.ModelID = domain.ModelIdentity{SubscriptionService: record.SubscriptionService, NativeID: "fixture"}.Key()
 	var price PricingVersion
 	amount := "1"
 	_, err := s.Mutate(ctx, domain.NewID(), "fixture.native-price", nil, func(tx *Tx) (any, error) {
-		model := domain.Model{SourceKind: domain.SubscriptionModel, SubscriptionService: domain.SubscriptionChatGPT, Name: "Native", NativeID: "fixture", Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}
-		if _, err := tx.Put(domain.ModelKind, record.ModelID, 0, "", "", model); err != nil {
-			return nil, err
-		}
 		var err error
 		price, err = tx.PutPricing(record.ModelID, 0, domain.NewID(), domain.TokenPricing{Currency: "USD", Source: "Explicit fixture basis", AsOf: "2026-10-03", InputMode: domain.UniformInputPrice, InputPerMillion: &amount, OutputPerMillion: &amount})
 		return price, err

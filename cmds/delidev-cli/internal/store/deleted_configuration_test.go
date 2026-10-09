@@ -3,8 +3,6 @@ package store
 import (
 	"bytes"
 	"context"
-	"database/sql"
-	"path/filepath"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -114,64 +112,4 @@ func TestDeletedProjectPolicyAtomicRetentionAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCode(t, s.Read(ctx, func(tx *Tx) error { return tx.RequireExecutionAgent(session, f.agent) }), domain.NotFound)
-}
-
-func TestDeletedConfigurationMigrationPreservesV11Schedules(t *testing.T) {
-	for _, conflict := range []bool{false, true} {
-		t.Run(map[bool]string{false: "preserve", true: "schema-conflict"}[conflict], func(t *testing.T) {
-			s, root := openTest(t)
-			r, value := scheduleFixture(t, s)
-			occurrence, schedule, _ := appendWaiting(t, s, r, value)
-			if !conflict {
-				if _, err := historicalSchema(s.db, "011"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := s.db.Exec("PRAGMA user_version=11"); err != nil {
-				t.Fatal(err)
-			}
-			s.Close()
-			ctx := context.Background()
-			migrated, err := Open(ctx, root)
-			if conflict {
-				if err == nil {
-					migrated.Close()
-					t.Fatal("conflicting schema migrated")
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, before := range []Record{schedule, occurrence} {
-					after, err := migrated.Get(ctx, before.Kind, before.ID)
-					if err != nil || after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) {
-						t.Fatal("migration changed accepted schedule state", err)
-					}
-				}
-				migrated.Close()
-			}
-			backups, _ := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if len(backups) != 1 {
-				t.Fatal("missing pre-migration backup")
-			}
-			for _, path := range []string{backups[0], filepath.Join(root, "state.sqlite")} {
-				db, err := sql.Open("sqlite", databaseURI(path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version int
-				if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-					t.Fatal(err)
-				}
-				db.Close()
-				want := 11
-				if path != backups[0] && !conflict {
-					want = SchemaVersion
-				}
-				if version != want {
-					t.Fatal("migration/backup version changed", version, want)
-				}
-			}
-		})
-	}
 }

@@ -19,7 +19,9 @@ func sidechatDeletionFixture(t *testing.T, s *Store, ctx context.Context) (Recor
 	parent, _, _ := deletionSession(t, s, "parent")
 	independent, _, _ := deletionSession(t, s, "independent")
 	childID, machine, device, instance := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
-	c, err := domain.ResolveExecutionConfiguration(domain.NewID(), 2, domain.Agent{Name: "Parent", Harness: domain.Codex, ModelID: domain.NewID(), Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite}}, 4, domain.Model{Name: "Parent", ProviderID: domain.NewID(), NativeID: "fixture", Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}, domain.Priority, nil)
+	provider := domain.NewID()
+	model := domain.ModelIdentity{ProviderID: provider, NativeID: "fixture"}.Key()
+	c, err := domain.ResolveExecutionConfiguration(domain.NewID(), 2, domain.Agent{Name: "Parent", Harness: domain.Codex, ModelID: model, Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: provider, NativeID: "fixture"}, MetadataSource: domain.UserDeclared}, Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite}}, 4, domain.Model{Name: "Parent", ProviderID: provider, NativeID: "fixture", Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}, domain.Priority, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

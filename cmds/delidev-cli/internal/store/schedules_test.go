@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -166,75 +164,6 @@ func TestScheduleConcurrentAcceptanceAndImmutableOccurrence(t *testing.T) {
 	}
 	if _, err := s.Mutate(ctx, domain.NewID(), "fixture.repeat", nil, func(tx *Tx) (any, error) { return tx.UpdateScheduleOccurrence(record, failed) }); err == nil {
 		t.Fatal("stale completion accepted")
-	}
-}
-
-func TestScheduleMigrationPreservesV10InboxAndRefusesUnknownScheduleState(t *testing.T) {
-	for _, foreign := range []bool{false, true} {
-		t.Run(map[bool]string{false: "preserve", true: "unrecognized"}[foreign], func(t *testing.T) {
-			s, root := openTest(t)
-			ctx := context.Background()
-			// An existing inbox must not be re-backfilled or rejected by v10 -> v11.
-			inbox := domain.NewID()
-			_, err := s.Mutate(ctx, domain.NewID(), "fixture.inbox", nil, func(tx *Tx) (any, error) {
-				return tx.Put(domain.InboxKind, inbox, 0, "", "", map[string]string{"retained": "v10"})
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if foreign {
-				if _, err := s.Mutate(ctx, domain.NewID(), "fixture.unknown", nil, func(tx *Tx) (any, error) {
-					return tx.Put(domain.ScheduleKind, domain.NewID(), 0, "", "", map[string]string{"legacy": "unproven"})
-				}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := historicalSchema(s.db, "010"); err != nil {
-				t.Fatal(err)
-			}
-			s.Close()
-			migrated, err := Open(ctx, root)
-			if foreign {
-				if err == nil {
-					migrated.Close()
-					t.Fatal("unknown ownership migrated")
-				}
-			} else {
-				if err != nil {
-					t.Fatal(err)
-				}
-				retained, err := migrated.Get(ctx, domain.InboxKind, inbox)
-				if err != nil || retained.Revision != 1 {
-					t.Fatal("inbox changed", err)
-				}
-				migrated.Close()
-			}
-			backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-			if err != nil || len(backups) != 1 {
-				t.Fatal("missing migration backup", err)
-			}
-			for _, path := range []string{backups[0], filepath.Join(root, "state.sqlite")} {
-				db, err := sql.Open("sqlite", databaseURI(path, true))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var version, count int
-				if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-					t.Fatal(err)
-				}
-				if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name='occurrence_position'").Scan(&count); err != nil {
-					t.Fatal(err)
-				}
-				db.Close()
-				want, wantCount := 10, 0
-				if path != backups[0] && !foreign {
-					want, wantCount = SchemaVersion, 1
-				}
-				if version != want || count != wantCount {
-					t.Fatal("migration/rollback/backup mismatch", version, count)
-				}
-			}
-		})
 	}
 }
 

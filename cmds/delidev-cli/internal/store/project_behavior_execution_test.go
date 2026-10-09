@@ -39,9 +39,9 @@ func TestProjectRoutingSnapshotMatchesSelectedRoute(t *testing.T) {
 				if err != nil {
 					return nil, err
 				}
-				agent.Routing = tc.agent
+				agent.Routes[0].Routing = tc.agent
 				if tc.ordered {
-					agent.Routes = []domain.AgentSourceRoute{{ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: tc.agent}}
+					agent.Routes = []domain.AgentSourceRoute{agent.SourceRoutes()[0]}
 					agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
 					for _, id := range f.accounts {
 						ar, account, err := decodeEntity[domain.Account](tx, domain.AccountKind, id)

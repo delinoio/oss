@@ -5,27 +5,22 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
 
-func migrateRestoreImage(ctx context.Context, path, root string) error {
-	if err := security.PrivateDir(filepath.Join(root, "backups")); err != nil {
-		return storageError(err)
-	}
-	db, err := sql.Open("sqlite", databaseURI(path, false))
+// validateRestoreImage admits only the current immutable layout. The original
+// selected image is never upgraded; cleanup of previously retained journals
+// remains independently owned by their original receipts.
+func validateRestoreImage(ctx context.Context, path string) error {
+	db, err := sql.Open("sqlite", databaseURI(path, true)+"&immutable=1")
 	if err != nil {
 		return storageError(err)
 	}
-	db.SetMaxOpenConns(1)
 	defer db.Close()
-	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL"); err != nil {
-		return storageError(err)
-	}
-	return migrate(context.WithValue(ctx, historicalSubscriptionRetirement{}, true), db, root)
+	db.SetMaxOpenConns(1)
+	return inspect(ctx, db, false)
 }
 
 // Only the private candidate is writable. The synchronized current snapshot is
@@ -119,7 +114,6 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"INSERT INTO jobs SELECT j.* FROM current_state.jobs j JOIN current_state.backup_deletions b ON b.job_id=j.id",
 		"INSERT INTO backup_deletions SELECT * FROM current_state.backup_deletions",
 		"INSERT OR REPLACE INTO deleted_project_policies SELECT * FROM current_state.deleted_project_policies",
-		"INSERT OR IGNORE INTO model_suppressions SELECT s.* FROM current_state.model_suppressions s JOIN entities p ON p.id=s.provider_id",
 		// Receipts keep their immutable digests so reconnect cannot accept an
 		// old operation as new. Their historical content/grants are quarantined.
 		"INSERT OR IGNORE INTO receipts SELECT * FROM current_state.receipts",

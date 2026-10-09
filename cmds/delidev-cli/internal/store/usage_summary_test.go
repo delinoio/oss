@@ -112,7 +112,9 @@ func TestUsageSummaryDailyAndModelAnalyticsShareRetentionSnapshot(t *testing.T) 
 	}
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, zone)
 	until := time.Date(2026, 9, 5, 12, 0, 0, 0, zone)
-	provider, modelA, modelB := domain.NewID(), domain.NewID(), domain.NewID()
+	provider := domain.NewID()
+	modelA := (domain.ModelIdentity{ProviderID: provider, NativeID: "fixture"}).Key()
+	modelB := (domain.ModelIdentity{ProviderID: provider, NativeID: "other"}).Key()
 	base := responseRecord(fixture)
 	base.ProviderID, base.ModelID = provider, modelA
 	price := preparePrice(t, s, base)
@@ -207,7 +209,7 @@ func TestUsageSummaryModelRankingAndOtherModels(t *testing.T) {
 			for index, total := range scenario.values {
 				record := base
 				record.ProviderID = provider
-				record.ModelID = domain.NewID()
+				record.ModelID = (domain.ModelIdentity{ProviderID: provider, NativeID: fmt.Sprintf("rank-%d", index)}).Key()
 				record.Sequence = uint64(index + 1)
 				record.Usage.ResponseDigest = fmt.Sprintf("%064x", index+1)
 				if total < 0 {
@@ -288,7 +290,7 @@ func TestUsageSummaryExactNullableCountersAndHistoricalFilters(t *testing.T) {
 		case "provider":
 			filter.ProviderID = domain.NewID()
 		case "model":
-			filter.ModelID = domain.NewID()
+			filter.ModelID = (domain.ModelIdentity{ProviderID: record.ProviderID, NativeID: "unmatched"}).Key()
 		case "general":
 			filter.GeneralChat = true
 		}
@@ -353,7 +355,7 @@ func TestUsageSummaryHalfOpenTimeZeroAndGroupBounds(t *testing.T) {
 	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.group-limit", nil, func(tx *Tx) (any, error) {
 		for i := 0; i < maxUsageGroups; i++ {
 			copy := record
-			copy.ModelID = domain.NewID()
+			copy.ModelID = (domain.ModelIdentity{ProviderID: record.ProviderID, NativeID: fmt.Sprintf("group-%d", i)}).Key()
 			copy.Usage.ResponseDigest = fmt.Sprintf("%064x", i+100)
 			if _, _, err := tx.PutResponseUsage(domain.NewID(), copy); err != nil {
 				return nil, err

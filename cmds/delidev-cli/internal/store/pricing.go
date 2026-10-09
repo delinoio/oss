@@ -18,11 +18,7 @@ func (t *Tx) Pricing(id domain.ID) (PricingVersion, error) {
 	}
 	var body, provenance []byte
 	var created int64
-	serviceColumn := "subscription_service"
-	if t.historicalPricingV1 {
-		serviceColumn = "''"
-	}
-	err := t.tx.QueryRowContext(t.ctx, "SELECT model_key,provider_id,"+serviceColumn+",revision,body,created_at,provenance FROM pricing_versions WHERE id=?", id).Scan(&value.ModelID, &value.ProviderID, &value.SubscriptionService, &value.Revision, &body, &created, &provenance)
+	err := t.tx.QueryRowContext(t.ctx, "SELECT model_key,provider_id,subscription_service,revision,body,created_at,provenance FROM pricing_versions WHERE id=?", id).Scan(&value.ModelID, &value.ProviderID, &value.SubscriptionService, &value.Revision, &body, &created, &provenance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, domain.Fail(domain.NotFound, "The pricing version is unavailable.", "Read the selected model's current pricing or retain the original historical version.")
 	}

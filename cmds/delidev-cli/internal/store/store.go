@@ -88,16 +88,13 @@ type Result struct {
 type Tx struct {
 	automaticPrice func(*Tx, domain.ModelIdentity) error
 	resolvingPrice bool
-	// Only migration 16 reads pre-service immutable pricing while rebuilding its
-	// original budget table. Normal transactions require the current layout.
-	historicalPricingV1 bool
-	tx                  *sql.Tx
-	ctx                 context.Context
-	requestID           domain.ID
-	now                 time.Time
-	touched             map[domain.ID]bool
-	queueTouched        map[domain.ID]bool
-	readOnly            bool
+	tx             *sql.Tx
+	ctx            context.Context
+	requestID      domain.ID
+	now            time.Time
+	touched        map[domain.ID]bool
+	queueTouched   map[domain.ID]bool
+	readOnly       bool
 }
 
 // ObservationTime is the UTC clock captured for this original transaction.
@@ -217,7 +214,7 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		}
 	}
 	if !created {
-		if err := migrate(ctx, db, root); err != nil {
+		if err := checkCurrentSchemaVersion(ctx, db); err != nil {
 			return fail(err)
 		}
 	}
@@ -1203,7 +1200,7 @@ func validateBackup(ctx context.Context, path string, owner *domain.ID) error {
 // The schema declaration is kept literal for review; this check prevents the
 // SQLite application marker from drifting away from its reader.
 func init() {
-	if !strings.Contains(schema, fmt.Sprintf("PRAGMA application_id=%d;", applicationID)) {
+	if !strings.Contains(currentSchema, fmt.Sprintf("PRAGMA application_id=%d;", applicationID)) {
 		panic("DeliDev SQLite application ID mismatch")
 	}
 }

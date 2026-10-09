@@ -2,8 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +11,8 @@ import (
 func diagnosticFixture(session domain.ID) domain.RequestDiagnostic {
 	attempted := false
 	id := domain.NewID()
-	return domain.RequestDiagnostic{ID: id, CorrelationID: id, SessionID: session, ExecutionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ModelID: domain.NewID(), Source: domain.DiagnosticProxyHTTP, Operation: domain.DiagnosticResponse, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: domain.Codex, ObservedAt: time.Now().UTC(), HTTPAttempted: &attempted}
+	provider := domain.NewID()
+	return domain.RequestDiagnostic{ID: id, CorrelationID: id, SessionID: session, ExecutionID: domain.NewID(), AccountID: domain.NewID(), ConnectionID: domain.NewID(), ProviderID: provider, ModelID: domain.ModelIdentity{ProviderID: provider, NativeID: "fixture"}.Key(), Source: domain.DiagnosticProxyHTTP, Operation: domain.DiagnosticResponse, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: domain.Codex, ObservedAt: time.Now().UTC(), HTTPAttempted: &attempted}
 }
 
 func TestRequestDiagnosticGuardedSettingsRefineOnlyFirstUnsentObservation(t *testing.T) {
@@ -66,55 +65,6 @@ func TestRequestDiagnosticGuardedSettingsRefineOnlyFirstUnsentObservation(t *tes
 				t.Fatal("published requested settings were replaced", err)
 			}
 		})
-	}
-}
-
-func TestRequestDiagnosticMigrationPreservesV26AndBackup(t *testing.T) {
-	s, root := openTest(t)
-	ctx := context.Background()
-	session := domain.NewID()
-	_, err := s.Mutate(ctx, domain.NewID(), "fixture.session", nil, func(tx *Tx) (any, error) { return tx.Put(domain.SessionKind, session, 0, session, "", struct{}{}) })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := historicalSchema(s.db, "026"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s, err = Open(ctx, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if err != nil || len(backups) != 1 {
-		t.Fatal("missing synchronized original backup")
-	}
-	backup, err := sql.Open("sqlite", databaseURI(backups[0], true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer backup.Close()
-	var version, table int
-	if err := backup.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 26 {
-		t.Fatal("original backup changed", version, err)
-	}
-	if err := backup.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name='request_diagnostics'").Scan(&table); err != nil || table != 0 {
-		t.Fatal("backup contains new layout")
-	}
-	if _, err := s.Get(ctx, domain.SessionKind, session); err != nil {
-		t.Fatal("migration removed historical session", err)
-	}
-	if err := s.Read(ctx, func(tx *Tx) error {
-		rows, _, err := tx.ListRequestDiagnostics(session, "", "", 50)
-		if len(rows) != 0 {
-			t.Fatal("migration manufactured historical requests")
-		}
-		return err
-	}); err != nil {
-		t.Fatal(err)
 	}
 }
 
