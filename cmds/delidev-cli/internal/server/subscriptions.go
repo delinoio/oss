@@ -911,6 +911,7 @@ func (s *Service) FinishSubscription(ctx context.Context, req *connect.Request[p
 				}
 				if usable && lease.Action != domain.SubscriptionLogout {
 					state.Generation = domain.ID(m.RequestId)
+					state.PaidCredits = nil
 					state.IdentityCommitment = identityCommitment
 					state.OwnerMachineID = lease.MachineID
 					if state.Observation != nil && state.Observation.Generation == input.Generation {

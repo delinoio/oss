@@ -70,3 +70,49 @@ func TestPaidCreditPublicationRequiresOriginalNegotiatedWorker(t *testing.T) {
 		})
 	}
 }
+
+func TestPaidCreditsClearedOnOriginalGenerationRotation(t *testing.T) {
+	for _, lane := range []string{"worker", "server"} {
+		t.Run(lane, func(t *testing.T) {
+			f := newSubscriptionFixture(t)
+			original := f.login()
+			defer clear(original)
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.old-paid-bucket", nil, func(tx *store.Tx) (any, error) {
+				r, a, e := subscriptionAccount(tx, f.input.AccountID, 0)
+				if e != nil {
+					return nil, e
+				}
+				yes, no := true, false
+				balance := "7.125"
+				a.Subscription.PaidCredits = []domain.SubscriptionPaidCreditBucket{{ID: "codex", HasCredits: &yes, Unlimited: &no, Balance: &balance, ObservedAt: time.Now().UTC()}}
+				_, e = tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+				return nil, e
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, before := f.record()
+			after := subscriptionTestBundle("fixture-account", "paid-rotation", time.Now().UTC())
+			defer clear(after)
+			if lane == "worker" {
+				op := f.start(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+				lease, e := f.take(op, pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+				if e != nil {
+					t.Fatal(e)
+				}
+				clear(lease.Bundle)
+				if _, e = f.finish(lease, after, true, true, true); e != nil {
+					t.Fatal(e)
+				}
+			} else {
+				f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_REFRESH)
+				done := f.serverRun(&serverLoginFixture{bundle: after})
+				awaitServerFixture(t, done)
+			}
+			_, a := f.record()
+			if a.Subscription.Generation == before.Subscription.Generation || a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || len(a.Subscription.PaidCredits) != 0 {
+				t.Fatal("rotated original credentials retained prior-generation paid credits")
+			}
+		})
+	}
+}
