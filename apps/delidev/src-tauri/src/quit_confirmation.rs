@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn counts_reject_noncanonical_or_overflowing_numbers() {
         for value in ["", "-1", "+1", "01", "18446744073709551616"] {
-            assert_eq!(parse_count(value), Err(()));
+            assert_eq!(parse_count(value), Err(CountError::InvalidCount));
         }
         assert_eq!(parse_count("18446744073709551615"), Ok(u64::MAX));
     }
