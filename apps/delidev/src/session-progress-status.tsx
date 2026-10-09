@@ -3,6 +3,7 @@ import { copy, useLocale, type MessageKey } from "./localization";
 import { SessionProgressPhase } from "./session-progress";
 import { observedStartupOperation, type StartupOperations, type StartupOperationRow } from "./session-startup-operations";
 import type { Resource } from "@delinoio/delidev-api-client";
+import { Disclosure, DisclosureDensity, DisclosureSummary } from "./disclosure";
 import "./session-progress.css";
 const labels: Record<SessionProgressPhase, MessageKey> = {
  [SessionProgressPhase.Preparing]: "session-progress.preparing",
@@ -25,7 +26,7 @@ export function SessionProgressStatus({ phase, compact, operations }: { phase: S
  const label = current ? (currentNative ? nativeLabels : workspaceLabels)[current.operation] : labels[phase];
  return <div className={`session-progress${compact ? " is-compact" : ""}${operations ? " has-operations" : ""}`}>
  <div className="session-startup-status" role="status" aria-live="polite" aria-atomic="true">{!operations || compact ? <span className="session-progress-spinner" aria-hidden="true"/> : null}<span>{operations && !compact ? copy("session-progress.title") : copy(label)}{compact && current?.ordinal && current.count ? ` ${current.ordinal}/${current.count}` : ""}</span></div>
- {operations ? compact ? <details className="session-startup-disclosure"><summary>{copy("session-progress.details")}</summary><Groups operations={operations}/></details> : <Groups operations={operations}/> : null}
+ {operations ? compact ? <Disclosure density={DisclosureDensity.Compact} className="session-startup-disclosure"><DisclosureSummary>{copy("session-progress.details")}</DisclosureSummary><Groups operations={operations}/></Disclosure> : <Groups operations={operations}/> : null}
  </div>;
 }
 
