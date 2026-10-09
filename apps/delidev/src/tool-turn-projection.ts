@@ -12,7 +12,7 @@ const label = (value: unknown) => identity(value) && value.length <= 256 ? value
 export function conversationProjection(row: Resource, sessionId: string): ConversationProjection {
   const projection: ConversationProjection = { id: row.id, revision: row.revision };
   const d = readDocument(row);
-  if (row.kind !== EntityKind.MESSAGE || row.sessionId !== sessionId || !uuid(sessionId) || !uuid(d.execution_id) || !identity(d.native_thread_id) || !identity(d.native_turn_id) || d.role !== "tool") return projection;
+  if (row.kind !== EntityKind.MESSAGE || row.sessionId !== sessionId || !uuid(row.id) || !uuid(sessionId) || !uuid(d.execution_id) || !identity(d.native_thread_id) || !identity(d.native_turn_id) || d.role !== "tool") return projection;
   const families = ["tool", "claude_tool", "grok_tool"].filter(key => Object.hasOwn(d, key));
   if (families.length !== 1 || ["artifact", "progress", "claude", "claude_progress", "claude_interruption", "grok_text", "grok_user"].some(key => Object.hasOwn(d, key))) return projection;
   let name = "", state = label(d.state);
