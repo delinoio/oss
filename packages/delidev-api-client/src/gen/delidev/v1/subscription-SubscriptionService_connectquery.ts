@@ -5,6 +5,11 @@
 import { SubscriptionService } from "./subscription_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent
+ */
+export const setAutomaticResetCreditConsent = SubscriptionService.method.setAutomaticResetCreditConsent;
+
+/**
  * @generated from rpc delidev.v1.SubscriptionService.CleanupFailedSubscriptions
  */
 export const cleanupFailedSubscriptions = SubscriptionService.method.cleanupFailedSubscriptions;

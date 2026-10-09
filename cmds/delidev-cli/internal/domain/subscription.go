@@ -23,7 +23,11 @@ const (
 // These fields are non-secret server-owned fencing metadata. Historical account
 // JSON omits this optional extension and retains its original representation.
 type SubscriptionState struct {
-	PaidCredits            []SubscriptionPaidCreditBucket    `json:"paid_credits,omitempty"`
+	AutomaticCreditBlocks  []SubscriptionQuotaBlock       `json:"automatic_credit_blocks,omitempty"`
+	AutomaticCreditConsent *AutomaticResetCreditConsent   `json:"automatic_credit_consent,omitempty"`
+	AutomaticCreditEpisode *AutomaticResetCreditEpisode   `json:"automatic_credit_episode,omitempty"`
+	PaidCredits            []SubscriptionPaidCreditBucket `json:"paid_credits,omitempty"`
+
 	ServerCredit           *ServerCreditOperation            `json:"server_credit,omitempty"`
 	ServerQuota            *ServerQuotaOperation             `json:"server_quota,omitempty"`
 	ServerQuotaGeneration  ID                                `json:"server_quota_generation,omitempty"`
@@ -69,6 +73,17 @@ type SubscriptionLease struct {
 func (s SubscriptionState) Validate(account Account) error {
 	invalid := func() error {
 		return Fail(InvalidArgument, "Invalid managed subscription ownership.", "Use server-owned subscription operations to change leases or credential generations.")
+	}
+	if s.AutomaticCreditConsent != nil && (s.AutomaticCreditConsent.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) || s.AutomaticCreditEpisode != nil && (s.AutomaticCreditEpisode.Validate() != nil || account.SubscriptionService != SubscriptionChatGPT) {
+		return invalid()
+	}
+	if len(s.AutomaticCreditBlocks) > 1024 || len(s.AutomaticCreditBlocks) > 0 && account.SubscriptionService != SubscriptionChatGPT {
+		return invalid()
+	}
+	for _, block := range s.AutomaticCreditBlocks {
+		if block.Validate() != nil {
+			return invalid()
+		}
 	}
 	if account.Type != SubscriptionAccount {
 		return invalid()

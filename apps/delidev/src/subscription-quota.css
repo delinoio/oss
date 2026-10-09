@@ -17,3 +17,5 @@
   .reset-credit-summary > button { margin-inline-start: 0; flex-basis: 100%; }
   .reset-credit-row { align-items: flex-start; flex-direction: column; }
 }
+
+.reset-credit-automatic { min-height: 40px; margin-top: 12px; }

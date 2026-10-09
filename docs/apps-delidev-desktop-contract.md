@@ -3532,6 +3532,20 @@ Publication uses a synced same-directory temporary file and atomic create-new li
 
 Fixtures cover exact bytes, no replacement, cancellation, changed request/scope rejection and lost-acknowledgment observation. Builds and fixtures do not establish actual platform-dialog or account acceptance.
 
+### Automatic reset-credit consent — issue #2123
+
+Reset credits includes a default-off automatic-use checkbox and secondary
+“While the server is running. Sign in again to reauthorize.” guidance. Enabling
+opens the existing Settings confirmation task, identifies the account and
+explains one credit per verified subscription exhaustion, earliest-expiry/native
+next selection, server processing after dialog closure and explicit session
+Resume. Bind the exact account revision, connection and credential generation;
+replacement invalidates confirmation. Retain original uncertain consent requests,
+keyboard focus and dismissal ownership. Use 14px primary/12px secondary text,
+16px section padding, 8px radius and at least 40px controls with narrow wrapping.
+English and Korean use generated localized copy. Capability 77 gates the mutation;
+older servers receive update guidance. UI presence grants no native support.
+
 ## Process-owned unread Inbox badge (issue #2143)
 
 One joined native BadgeHost selects the most recently focused admitted product

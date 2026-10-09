@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SubscriptionServiceSetAutomaticResetCreditConsentProcedure is the fully-qualified name of the
+	// SubscriptionService's SetAutomaticResetCreditConsent RPC.
+	SubscriptionServiceSetAutomaticResetCreditConsentProcedure = "/delidev.v1.SubscriptionService/SetAutomaticResetCreditConsent"
 	// SubscriptionServiceCleanupFailedSubscriptionsProcedure is the fully-qualified name of the
 	// SubscriptionService's CleanupFailedSubscriptions RPC.
 	SubscriptionServiceCleanupFailedSubscriptionsProcedure = "/delidev.v1.SubscriptionService/CleanupFailedSubscriptions"
@@ -88,6 +91,7 @@ const (
 
 // SubscriptionServiceClient is a client for the delidev.v1.SubscriptionService service.
 type SubscriptionServiceClient interface {
+	SetAutomaticResetCreditConsent(context.Context, *connect.Request[v1.SetAutomaticResetCreditConsentRequest]) (*connect.Response[v1.SetAutomaticResetCreditConsentResponse], error)
 	CleanupFailedSubscriptions(context.Context, *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error)
 	GetFailedSubscriptionCleanup(context.Context, *connect.Request[v1.GetFailedSubscriptionCleanupRequest]) (*connect.Response[v1.GetFailedSubscriptionCleanupResponse], error)
 	RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error)
@@ -118,6 +122,12 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 	baseURL = strings.TrimRight(baseURL, "/")
 	subscriptionServiceMethods := v1.File_delidev_v1_subscription_proto.Services().ByName("SubscriptionService").Methods()
 	return &subscriptionServiceClient{
+		setAutomaticResetCreditConsent: connect.NewClient[v1.SetAutomaticResetCreditConsentRequest, v1.SetAutomaticResetCreditConsentResponse](
+			httpClient,
+			baseURL+SubscriptionServiceSetAutomaticResetCreditConsentProcedure,
+			connect.WithSchema(subscriptionServiceMethods.ByName("SetAutomaticResetCreditConsent")),
+			connect.WithClientOptions(opts...),
+		),
 		cleanupFailedSubscriptions: connect.NewClient[v1.CleanupFailedSubscriptionsRequest, v1.CleanupFailedSubscriptionsResponse](
 			httpClient,
 			baseURL+SubscriptionServiceCleanupFailedSubscriptionsProcedure,
@@ -225,6 +235,7 @@ func NewSubscriptionServiceClient(httpClient connect.HTTPClient, baseURL string,
 
 // subscriptionServiceClient implements SubscriptionServiceClient.
 type subscriptionServiceClient struct {
+	setAutomaticResetCreditConsent *connect.Client[v1.SetAutomaticResetCreditConsentRequest, v1.SetAutomaticResetCreditConsentResponse]
 	cleanupFailedSubscriptions     *connect.Client[v1.CleanupFailedSubscriptionsRequest, v1.CleanupFailedSubscriptionsResponse]
 	getFailedSubscriptionCleanup   *connect.Client[v1.GetFailedSubscriptionCleanupRequest, v1.GetFailedSubscriptionCleanupResponse]
 	requestSubscriptionObservation *connect.Client[v1.RequestSubscriptionObservationRequest, v1.RequestSubscriptionObservationResponse]
@@ -242,6 +253,12 @@ type subscriptionServiceClient struct {
 	takeSubscription               *connect.Client[v1.TakeSubscriptionRequest, v1.TakeSubscriptionResponse]
 	publishSubscriptionProgress    *connect.Client[v1.PublishSubscriptionProgressRequest, v1.PublishSubscriptionProgressResponse]
 	finishSubscription             *connect.Client[v1.FinishSubscriptionRequest, v1.FinishSubscriptionResponse]
+}
+
+// SetAutomaticResetCreditConsent calls
+// delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent.
+func (c *subscriptionServiceClient) SetAutomaticResetCreditConsent(ctx context.Context, req *connect.Request[v1.SetAutomaticResetCreditConsentRequest]) (*connect.Response[v1.SetAutomaticResetCreditConsentResponse], error) {
+	return c.setAutomaticResetCreditConsent.CallUnary(ctx, req)
 }
 
 // CleanupFailedSubscriptions calls delidev.v1.SubscriptionService.CleanupFailedSubscriptions.
@@ -333,6 +350,7 @@ func (c *subscriptionServiceClient) FinishSubscription(ctx context.Context, req 
 
 // SubscriptionServiceHandler is an implementation of the delidev.v1.SubscriptionService service.
 type SubscriptionServiceHandler interface {
+	SetAutomaticResetCreditConsent(context.Context, *connect.Request[v1.SetAutomaticResetCreditConsentRequest]) (*connect.Response[v1.SetAutomaticResetCreditConsentResponse], error)
 	CleanupFailedSubscriptions(context.Context, *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error)
 	GetFailedSubscriptionCleanup(context.Context, *connect.Request[v1.GetFailedSubscriptionCleanupRequest]) (*connect.Response[v1.GetFailedSubscriptionCleanupResponse], error)
 	RequestSubscriptionObservation(context.Context, *connect.Request[v1.RequestSubscriptionObservationRequest]) (*connect.Response[v1.RequestSubscriptionObservationResponse], error)
@@ -359,6 +377,12 @@ type SubscriptionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	subscriptionServiceMethods := v1.File_delidev_v1_subscription_proto.Services().ByName("SubscriptionService").Methods()
+	subscriptionServiceSetAutomaticResetCreditConsentHandler := connect.NewUnaryHandler(
+		SubscriptionServiceSetAutomaticResetCreditConsentProcedure,
+		svc.SetAutomaticResetCreditConsent,
+		connect.WithSchema(subscriptionServiceMethods.ByName("SetAutomaticResetCreditConsent")),
+		connect.WithHandlerOptions(opts...),
+	)
 	subscriptionServiceCleanupFailedSubscriptionsHandler := connect.NewUnaryHandler(
 		SubscriptionServiceCleanupFailedSubscriptionsProcedure,
 		svc.CleanupFailedSubscriptions,
@@ -463,6 +487,8 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 	)
 	return "/delidev.v1.SubscriptionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SubscriptionServiceSetAutomaticResetCreditConsentProcedure:
+			subscriptionServiceSetAutomaticResetCreditConsentHandler.ServeHTTP(w, r)
 		case SubscriptionServiceCleanupFailedSubscriptionsProcedure:
 			subscriptionServiceCleanupFailedSubscriptionsHandler.ServeHTTP(w, r)
 		case SubscriptionServiceGetFailedSubscriptionCleanupProcedure:
@@ -505,6 +531,10 @@ func NewSubscriptionServiceHandler(svc SubscriptionServiceHandler, opts ...conne
 
 // UnimplementedSubscriptionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSubscriptionServiceHandler struct{}
+
+func (UnimplementedSubscriptionServiceHandler) SetAutomaticResetCreditConsent(context.Context, *connect.Request[v1.SetAutomaticResetCreditConsentRequest]) (*connect.Response[v1.SetAutomaticResetCreditConsentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.SetAutomaticResetCreditConsent is not implemented"))
+}
 
 func (UnimplementedSubscriptionServiceHandler) CleanupFailedSubscriptions(context.Context, *connect.Request[v1.CleanupFailedSubscriptionsRequest]) (*connect.Response[v1.CleanupFailedSubscriptionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SubscriptionService.CleanupFailedSubscriptions is not implemented"))

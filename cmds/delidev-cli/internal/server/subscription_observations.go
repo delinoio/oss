@@ -348,6 +348,11 @@ func (s *Service) ReconcileSubscriptionCredit(ctx context.Context, req *connect.
 		if err := observationMachine(tx, op.MachineID); err != nil {
 			return nil, err
 		}
+		// Fresh explicit reconciliation retains the original provider key and selector,
+		// but no longer borrows automatic admission from the retired Execute lease.
+		op.AutomaticBlock = nil
+		op.AutomaticEpisodeID = ""
+		op.AutomaticLeaseID = ""
 		op.Generation = input.Generation
 		op.Actor = actor
 		op.Phase = domain.SubscriptionObservationQueued
@@ -394,6 +399,9 @@ func (s *Service) ClaimSubscriptionObservation(ctx context.Context, req *connect
 		if op.Action == domain.SubscriptionQuota && a.Subscription.Lease.Action == domain.SubscriptionExecute && quotaObservationMachine(tx, a, input.Machine, s.subscriptionServerEpoch()) != nil {
 			return nil, subscriptionDenied()
 		}
+		if op.AutomaticEpisodeID != "" && (op.AutomaticLeaseID != a.Subscription.Lease.ID || op.AutomaticBlock == nil || s.originalQuotaBlock(tx, r.ID, a, *op.AutomaticBlock) != nil) {
+			return nil, subscriptionDenied()
+		}
 		op.Phase = domain.SubscriptionObservationSending
 		operation = *op
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
@@ -420,7 +428,7 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		return nil, rpc.Error(err, c)
 	}
 	var observed domain.SubscriptionObservationResult
-	if len(req.Msg.ObservationJson) > 32<<10 || domain.Decode(req.Msg.ObservationJson, &observed) != nil || !domain.ValidSubscriptionObservationCode(observed.QuotaError) || observed.Quota != nil && observed.Quota.Validate(time.Now().UTC()) != nil || observed.Quota != nil && observed.QuotaError != "" || observed.Outcome != "" && !observed.Outcome.Valid() {
+	if len(req.Msg.ObservationJson) > 32<<10 || domain.Decode(req.Msg.ObservationJson, &observed) != nil || observed.QuotaBlock != nil && (observed.QuotaBlock.Validate() != nil || observed.Quota != nil || observed.QuotaError != "" || observed.Outcome != "" || observed.ConsumeUncertain) || !domain.ValidSubscriptionObservationCode(observed.QuotaError) || observed.Quota != nil && observed.Quota.Validate(time.Now().UTC()) != nil || observed.Quota != nil && observed.QuotaError != "" || observed.Outcome != "" && !observed.Outcome.Valid() {
 		return nil, rpc.Error(domain.InvalidSubscriptionObservation(), c)
 	}
 	input := struct {
@@ -439,6 +447,9 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		}
 		source := domain.ID(m.RequestId)
 		if input.Operation != "" {
+			if observed.QuotaBlock != nil {
+				return nil, domain.InvalidSubscriptionObservation()
+			}
 			op := state.Observation
 			if op == nil || op.ID != input.Operation || op.Phase != domain.SubscriptionObservationSending || op.Generation != input.Generation || op.MachineID != input.Machine {
 				return nil, subscriptionDenied()
@@ -461,6 +472,7 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		} else if !quotaAccountReady(a) || state.Pending != nil || observed.Outcome != "" || observed.ConsumeUncertain || state.Lease.Action != domain.SubscriptionExecute {
 			return nil, domain.InvalidSubscriptionObservation()
 		}
+		quotaPublication := input.Operation == "" || state.Observation != nil && state.Observation.Action == domain.SubscriptionQuota
 		if observed.Quota != nil && len(observed.Quota.PaidCredits) > 0 {
 			_, machine, err := activeMachine(tx, input.Machine)
 			if err != nil {
@@ -470,6 +482,7 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 				return nil, domain.Fail(domain.Unsupported, "Paid-credit observations require an updated original Worker.", "")
 			}
 		}
+
 		beforeQuota := a
 		beforeState := *a.Subscription
 		beforeQuota.Subscription = &beforeState
@@ -481,15 +494,20 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 				return nil, err
 			}
 		} else if observed.Quota == nil {
-			if observed.QuotaError == "" {
+			if observed.QuotaError == "" && observed.QuotaBlock == nil {
 				return nil, domain.InvalidSubscriptionObservation()
 			}
-			state.QuotaState = domain.ObservationFailed
+			if observed.QuotaBlock == nil {
+				state.QuotaState = domain.ObservationFailed
+			}
+		}
+		if err := s.admitAutomaticCredit(tx, r.ID, &a, observed.QuotaBlock, input.Operation); err != nil {
+			return nil, err
 		}
 		if _, err := tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a); err != nil {
 			return nil, err
 		}
-		if observed.Quota != nil && (input.Operation == "" || state.Observation != nil && state.Observation.Action == domain.SubscriptionQuota) {
+		if observed.Quota != nil && quotaPublication {
 			if err := tx.ObserveQuotaNotification(beforeQuota, a, r.ID, source, *observed.Quota); err != nil {
 				return nil, err
 			}
@@ -508,6 +526,6 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	s.logger.InfoContext(ctx, "subscription_observation_published", "account_id", input.Account, "operation_id", input.Operation, "generation", input.Generation, "quota_code", observed.QuotaError, "consume_uncertain", observed.ConsumeUncertain, "replayed", result.Replayed)
+	s.logger.InfoContext(ctx, "subscription_observation_published", "account_id", input.Account, "operation_id", input.Operation, "generation", input.Generation, "quota_code", observed.QuotaError, "consume_uncertain", observed.ConsumeUncertain, "outcome", observed.Outcome, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.PublishSubscriptionObservationResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
 }

@@ -61,5 +61,15 @@
   "subscription-quota.serverNativeQuotaUnavailable": "선택한 서버의 Codex 설치와 네이티브 라우팅을 확인한 뒤 할당량을 다시 요청하세요.",
   "subscription-quota.serverQuotaAuthenticationUnavailable": "선택한 서버 연결을 확인하세요. 계정 인증이 만료되었다면 명시적으로 갱신한 뒤 할당량을 다시 요청하세요.",
   "subscription-quota.creditNumber": "리셋권 {{v0}}",
-  "subscription-quota.creditId": "식별자: {{v0}}"
+  "subscription-quota.creditId": "식별자: {{v0}}",
+  "subscription-quota.automaticLabel": "구독 한도가 소진되면 리셋 크레딧 자동 사용",
+  "subscription-quota.automaticLifetime": "서버가 실행 중일 때 동작합니다. 다시 로그인하면 재승인이 필요합니다.",
+  "subscription-quota.automaticConfirmTitle": "리셋 크레딧 자동 사용 켜기",
+  "subscription-quota.automaticConfirmBody": "현재 로그인한 계정에서 Codex 구독 한도 소진이 확인될 때마다 서버가 리셋 크레딧 하나를 사용할 수 있습니다. 사용 가능한 크레딧 중 만료가 가장 빠른 것을 선택하며, 개별 정보가 없으면 Codex가 다음 크레딧을 선택합니다. 이 대화 상자를 닫아도 크레딧이 사용됩니다. 크레딧을 사용해도 실패한 세션은 자동으로 재개되지 않습니다.",
+  "subscription-quota.automaticChanged": "계정이 변경되었습니다. 취소한 후 현재 로그인된 계정을 확인하고 승인하세요.",
+  "subscription-quota.automaticEnable": "리셋 크레딧 자동 사용 켜기",
+  "subscription-quota.automaticCancel": "자동 사용 끄기 유지",
+  "subscription-quota.automaticRetry": "원래 자동 사용 동의 요청 재시도",
+  "subscription-quota.automaticUnsupported": "리셋 크레딧 자동 사용을 설정하려면 서버를 업데이트하세요.",
+  "subscription-quota.automaticEpisode": "이번 한도 소진 기록이 유지됩니다. 한도 회복이 새로 확인되어야 다른 크레딧을 자동 사용할 수 있습니다. 필요하면 명시적으로 재조정하거나 재개하세요."
 }

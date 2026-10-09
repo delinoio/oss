@@ -1052,6 +1052,15 @@ ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKin
 
 Authenticated Session progress and primary-user Message resources may include optional `turn_timing` with UTC `accepted_at` and optional `terminal_at`. Go owns capture in the original acceptance/terminal transactions and exact receipt replay. This additive resource metadata changes no protobuf declaration, RPC, capability or allocation. Closed Worker execution event/update documents reject injected timing. Native assignment, continuation/Fork/compaction and checkpoint/digest projections retain their prior closed shapes without timing. Historical omission is unavailable display evidence, never a synthesized zero or changed native outcome.
 
+Issue #2123 adds System 77 `AUTOMATIC_RESET_CREDIT_CONSENT_V1`, Worker 52
+`CODEX_QUOTA_BLOCK_V1` and `SetAutomaticResetCreditConsent`. Its request contains
+Mutation (1), connection ID (2), generation ID (3), enabled (4) and confirmed (5);
+the response contains Account Resource (1) and replayed (2). The existing bounded
+subscription observation JSON carries only the closed original failed-turn
+marker and session/execution/native identities; it cannot carry native error text
+or add a native action. Follow the subscription contract for actor/generation,
+original lease and once-only admission. No migration is added.
+
 ## Unread Inbox count allocation (issue #2143)
 
 The complete feature owns System `UNREAD_INBOX_COUNT_V1 = 80`,

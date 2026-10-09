@@ -50,6 +50,12 @@ func decodeTurn(raw json.RawMessage) (Turn, error) {
 		if domain.Decode(wire.Error, &failure) != nil || failure.Message == nil || wire.Status != TurnFailed {
 			return Turn{}, incompatible()
 		}
+		// Only closed protocol tags qualify. Free text, unrelated native errors,
+		// object-shaped variants and malformed tags never grant spending authority.
+		var tag domain.CodexQuotaBlock
+		if json.Unmarshal(failure.Code, &tag) == nil && tag.Valid() {
+			result.QuotaBlock = tag
+		}
 	}
 	if wire.Status == TurnFailed {
 		result.Problem = domain.Fail(domain.Unavailable, "The native Codex turn failed.", "Reconcile native state and resume explicitly; native diagnostic content is not exposed.")
