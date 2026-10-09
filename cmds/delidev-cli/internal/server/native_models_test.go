@@ -143,28 +143,15 @@ func TestNativeModelReceiptRestartPagingAndExplicitRegistration(t *testing.T) {
 	}
 	configuration := &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, Kind: pb.EntityKind_ENTITY_KIND_MODEL, SchemaVersion: 1}
 	configuration.DocumentJson, _ = json.Marshal(domain.Model{Name: "Selected", ProviderID: f.provider, NativeID: models[0].Model, Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.Unknown})
-	saved, err := f.service.SaveConfiguration(f.ctx, connect.NewRequest(configuration))
-	if err != nil {
-		t.Fatal(err)
-	}
-	retry, err := f.service.SaveConfiguration(f.ctx, connect.NewRequest(configuration))
-	if err != nil || !retry.Msg.Replayed || retry.Msg.Resource.Id != saved.Msg.Resource.Id {
-		t.Fatal("explicit registration was not idempotent")
+	_, err = f.service.SaveConfiguration(f.ctx, connect.NewRequest(configuration))
+	if err == nil {
+		t.Fatal("retired Model registry write accepted")
 	}
 	list, err = f.service.Store.List(f.ctx, store.Filter{Kind: domain.ModelKind, Limit: 50})
-	if err != nil || len(list) != 1 {
-		t.Fatal("registration did not retain exactly one manual model")
+	if err != nil || len(list) != 0 {
+		t.Fatal("optional observation created registry", err)
 	}
-	registered := list[0]
-	later, err := f.service.DiscoverNativeModels(f.ctx, f.request())
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.complete(t, domain.ID(later.Msg.Job.Id), domain.NativeModelFailure())
-	preserved, err := f.service.Store.Get(f.ctx, domain.ModelKind, registered.ID)
-	if err != nil || preserved.Revision != registered.Revision || string(preserved.Data) != string(registered.Data) {
-		t.Fatal("subsequent failed discovery altered the registered manual entry")
-	}
+
 }
 
 func TestNativeModelsSubscriptionRemainsExplicitlyUnsupported(t *testing.T) {

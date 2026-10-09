@@ -21,8 +21,8 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 	f := newPublicationFixture(t)
 	ctx := context.Background()
 	c := delidevv1connect.NewUsageServiceClient(f.http.Client(), f.http.URL)
-	model := string(f.input.Configuration.ModelID)
-	current, err := c.GetModelPricing(ctx, ownerRequest(f.service.Identity, &pb.GetModelPricingRequest{ModelId: model}))
+	model := &pb.ModelIdentity{ProviderId: string(f.input.Configuration.ProviderID), NativeId: f.input.Configuration.NativeModel}
+	current, err := c.GetTokenPricing(ctx, ownerRequest(f.service.Identity, &pb.GetTokenPricingRequest{Model: model}))
 	if err != nil || current.Msg.Pricing != nil {
 		t.Fatal("absent price", err)
 	}
@@ -36,28 +36,29 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 		f.publish(t, e)
 	}
 	publish(3, "a")
-	request := &pb.SetModelPricingRequest{ExpectedModelRevision: 1, Mutation: &pb.Mutation{Id: model, RequestId: string(domain.NewID())}, Basis: publicPrice("USD")}
-	first, err := c.SetModelPricing(ctx, ownerRequest(f.service.Identity, request))
+	request := &pb.SetTokenPricingRequest{Model: model, ExpectedProviderRevision: 1, RequestId: string(domain.NewID()), Basis: publicPrice("USD")}
+	first, err := c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, request))
 	if err != nil || first.Msg.Replayed || first.Msg.Pricing.Revision != 1 {
 		t.Fatal("price create", err)
 	}
 	publish(4, "b")
-	next := proto.Clone(request).(*pb.SetModelPricingRequest)
-	next.Mutation.RequestId = string(domain.NewID())
-	next.Mutation.ExpectedRevision = 1
+	next := proto.Clone(request).(*pb.SetTokenPricingRequest)
+	next.RequestId = string(domain.NewID())
+	next.ExpectedRevision = 1
+	next.ExpectedPolicyRevision = 1
 	next.Basis.Currency = "EUR"
 	next.Basis.InputPerMillion = nil
-	second, err := c.SetModelPricing(ctx, ownerRequest(f.service.Identity, next))
+	second, err := c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, next))
 	if err != nil || second.Msg.Pricing.Revision != 2 {
 		t.Fatal("price replace", err)
 	}
 	publish(5, "c")
 	publish(6, "b")
-	replay, err := c.SetModelPricing(ctx, ownerRequest(f.service.Identity, request))
+	replay, err := c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, request))
 	if err != nil || !replay.Msg.Replayed || !proto.Equal(replay.Msg.Pricing, first.Msg.Pricing) {
 		t.Fatal("retry changed accepted price", err)
 	}
-	current, err = c.GetModelPricing(ctx, ownerRequest(f.service.Identity, &pb.GetModelPricingRequest{ModelId: model}))
+	current, err = c.GetTokenPricing(ctx, ownerRequest(f.service.Identity, &pb.GetTokenPricingRequest{Model: model}))
 	if err != nil || !proto.Equal(current.Msg.Pricing, second.Msg.Pricing) {
 		t.Fatal("old retry changed active price", err)
 	}
@@ -65,14 +66,14 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 	if err != nil || !proto.Equal(historical.Msg.Pricing, first.Msg.Pricing) {
 		t.Fatal("historical read", err)
 	}
-	stale := proto.Clone(request).(*pb.SetModelPricingRequest)
-	stale.Mutation.RequestId = string(domain.NewID())
-	if _, err = c.SetModelPricing(ctx, ownerRequest(f.service.Identity, stale)); connect.CodeOf(err) != connect.CodeAborted {
+	stale := proto.Clone(request).(*pb.SetTokenPricingRequest)
+	stale.RequestId = string(domain.NewID())
+	if _, err = c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, stale)); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("stale accepted", err)
 	}
-	changed := proto.Clone(request).(*pb.SetModelPricingRequest)
+	changed := proto.Clone(request).(*pb.SetTokenPricingRequest)
 	changed.Basis.Source = "Different source"
-	if _, err = c.SetModelPricing(ctx, ownerRequest(f.service.Identity, changed)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err = c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, changed)); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("request identity changed", err)
 	}
 	summary, err := c.GetUsageSummary(ctx, ownerRequest(f.service.Identity, &pb.GetUsageSummaryRequest{}))
@@ -91,15 +92,15 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 	}
 	for _, action := range []func() error{
 		func() error {
-			r := connect.NewRequest(&pb.GetModelPricingRequest{ModelId: model})
+			r := connect.NewRequest(&pb.GetTokenPricingRequest{Model: model})
 			r.Header().Set("Authorization", "Bearer "+f.workerToken)
-			_, e := c.GetModelPricing(ctx, r)
+			_, e := c.GetTokenPricing(ctx, r)
 			return e
 		},
 		func() error {
 			r := connect.NewRequest(request)
 			r.Header().Set("Authorization", "Bearer "+f.workerToken)
-			_, e := c.SetModelPricing(ctx, r)
+			_, e := c.SetTokenPricing(ctx, r)
 			return e
 		},
 		func() error {
@@ -114,10 +115,10 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 		}
 	}
 	paired, device := pairedQuestionClient(t, f)
-	if _, err = c.GetModelPricing(ctx, ownerRequest(paired, &pb.GetModelPricingRequest{ModelId: model})); err != nil {
+	if _, err = c.GetTokenPricing(ctx, ownerRequest(paired, &pb.GetTokenPricingRequest{Model: model})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = c.SetModelPricing(ctx, ownerRequest(paired, request)); connect.CodeOf(err) != connect.CodeAborted {
+	if _, err = c.SetTokenPricing(ctx, ownerRequest(paired, request)); connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatal("actor reused another receipt", err)
 	}
 	devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
@@ -125,22 +126,25 @@ func TestPricingRPCHistoricalSummaryReplayAndAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	staleCtx := domain.WithPrincipal(ctx, domain.Principal{Type: domain.ClientDevice, DeviceID: domain.ID(device.Id)})
-	if _, err = f.service.SetModelPricing(staleCtx, connect.NewRequest(next)); err == nil {
+	if _, err = f.service.SetTokenPricing(staleCtx, connect.NewRequest(next)); err == nil {
 		t.Fatal("revoked principal wrote prices")
 	}
-	if _, err = f.service.GetModelPricing(staleCtx, connect.NewRequest(&pb.GetModelPricingRequest{ModelId: model})); err == nil {
+	if _, err = f.service.GetTokenPricing(staleCtx, connect.NewRequest(&pb.GetTokenPricingRequest{Model: model})); err == nil {
 		t.Fatal("revoked principal read prices")
 	}
-	// Deleting configuration redacts the model-owned mutation receipt, while the
-	// original immutable basis remains readable for retained response history.
-	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.delete-priced-model", nil, func(tx *store.Tx) (any, error) { return nil, tx.Delete(domain.ModelKind, domain.ID(model), 1) })
+	// Removing the Worker does not own an independent source pricing policy.
+	// Original accepted receipts and immutable response bases remain readable.
+	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.delete-priced-worker", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.Delete(domain.AgentKind, f.input.Configuration.AgentID, 1)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = c.SetModelPricing(ctx, ownerRequest(f.service.Identity, request)); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Fatal("deleted model receipt replayed", err)
+	replay, err = c.SetTokenPricing(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil || !replay.Msg.Replayed || !proto.Equal(replay.Msg.Pricing, first.Msg.Pricing) {
+		t.Fatal("Worker removal changed original price receipt", err)
 	}
 	if _, err = c.GetPricingVersion(ctx, ownerRequest(f.service.Identity, &pb.GetPricingVersionRequest{Id: first.Msg.Pricing.Id})); err != nil {
-		t.Fatal("history lost after configuration removal", err)
+		t.Fatal("history lost", err)
 	}
 }

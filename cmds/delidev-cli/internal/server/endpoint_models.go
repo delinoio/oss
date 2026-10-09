@@ -89,7 +89,9 @@ func (s *Service) ListEndpointModels(ctx context.Context, req *connect.Request[p
 	observation, e := providers.ListEndpointModels(checkCtx, provider, key, project, s.outboundResolver())
 	clear(key)
 	if e == nil {
-		e = observation.Problem()
+		if problem := observation.Problem(); problem != nil {
+			e = problem
+		}
 	}
 	if e != nil {
 		return nil, rpc.Error(e, correlation)

@@ -64,16 +64,13 @@ func TestResourcePageFitsCompleteEnvelopeBoundary(t *testing.T) {
 	}
 }
 
-func TestProviderAndModelPagesBoundBothWireEncodings(t *testing.T) {
+func TestProviderPagesBoundBothWireEncodings(t *testing.T) {
 	f := newAccountFixture(t)
-	var providerIDs, modelIDs []string
+	var providerIDs []string
 	for i := range 5 {
 		provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: fmt.Sprintf("wire-provider-%d", i), Endpoint: "https://fixture.invalid/" + strings.Repeat("x", 900<<10), Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth})
 		providerIDs = append(providerIDs, provider.Id)
-		for j := range 2 {
-			model := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{ProviderID: domain.ID(provider.Id), NativeID: fmt.Sprintf("wire-model-%d-%d", i, j), Name: fmt.Sprintf("wire-model-%d-%d", i, j), MetadataSource: domain.UserDeclared, Harnesses: []domain.Harness{domain.Codex}})
-			modelIDs = append(modelIDs, model.Id)
-		}
+
 	}
 	httpClient := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 	defer httpClient.CloseIdleConnections()
@@ -123,52 +120,7 @@ func TestProviderAndModelPagesBoundBothWireEncodings(t *testing.T) {
 				}
 				seen[id] = true
 			}
-			ids = nil
-			token = ""
-			pages = 0
-			for {
-				request := &pb.SearchModelsRequest{Query: "wire-model", PageSize: 10, PageToken: token}
-				response, err := client.SearchModels(context.Background(), ownerRequest(f.identity, request))
-				if err != nil {
-					t.Fatal(err)
-				}
-				assertWirePageBound(t, response.Msg)
-				pages++
-				represented := map[string]bool{}
-				for _, model := range response.Msg.Models {
-					ids = append(ids, model.Id)
-					represented[string(catalogBody(t, model).ProviderID)] = true
-				}
-				if len(represented) != len(response.Msg.Providers) {
-					t.Fatal("missing or duplicated represented providers")
-				}
-				for _, provider := range response.Msg.Providers {
-					if !represented[provider.Id] {
-						t.Fatal("unrepresented provider")
-					}
-				}
-				replay, err := client.SearchModels(context.Background(), ownerRequest(f.identity, request))
-				if err != nil || !proto.Equal(&pb.SearchModelsResponse{Models: response.Msg.Models, Providers: response.Msg.Providers}, &pb.SearchModelsResponse{Models: replay.Msg.Models, Providers: replay.Msg.Providers}) {
-					t.Fatalf("model replay changed: %v", err)
-				}
-				if response.Msg.NextPageToken == "" {
-					break
-				}
-				if len(response.Msg.Models) == 0 || response.Msg.NextPageToken == token {
-					t.Fatal("nonadvancing model page")
-				}
-				token = response.Msg.NextPageToken
-			}
-			if !slices.Equal(ids, modelIDs) || pages < 2 {
-				t.Fatalf("model enumeration count=%d pages=%d", len(ids), pages)
-			}
-			seen = map[string]bool{}
-			for _, id := range ids {
-				if seen[id] {
-					t.Fatal("duplicate model identity")
-				}
-				seen[id] = true
-			}
+
 		})
 	}
 }

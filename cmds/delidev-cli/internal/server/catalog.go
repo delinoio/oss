@@ -329,11 +329,5 @@ func (s *Service) SearchModels(ctx context.Context, req *connect.Request[pb.Sear
 	return nil, rpc.Error(domain.Fail(domain.Unsupported, "Persistent Model search is retired.", "Use source-native configuration and optional endpoint suggestions."), req.Header().Get(rpc.CorrelationHeader))
 }
 func (s *Service) ResolveModel(ctx context.Context, req *connect.Request[pb.ResolveModelRequest]) (*connect.Response[pb.ResolveModelResponse], error) {
-	model, err := s.Store.ResolveModel(ctx, req.Msg.Selector, domain.ID(req.Msg.ProviderId))
-	if err != nil {
-		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
-	}
-	response := connect.NewResponse(&pb.ResolveModelResponse{Model: rpc.Resource(model)})
-	rpc.CopyCorrelation(response, req.Header())
-	return response, nil
+	return nil, rpc.Error(domain.Fail(domain.Unsupported, "Persistent Model resolution is retired.", "Keep the exact source and native ID in the Worker route."), req.Header().Get(rpc.CorrelationHeader))
 }
