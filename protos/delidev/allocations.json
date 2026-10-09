@@ -10233,6 +10233,13 @@
       "member": "TERMINAL_CREATION_MODE_REUSE_OR_CREATE",
       "number": 1,
       "newDeclaration": true
+    },
+    {
+      "issue": 2112,
+      "declaration": "CreateTerminalRequest",
+      "kind": "message",
+      "member": "preferred_terminal_id",
+      "number": 6
     }
   ],
   "rpcReservations": [
