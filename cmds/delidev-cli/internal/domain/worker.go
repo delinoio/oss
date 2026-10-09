@@ -113,6 +113,7 @@ const (
 	SessionForwardingV1            WorkerCapability = "session-forwarding-v1"
 	ManagedCodexSubscriptionsV1    WorkerCapability = "managed-codex-subscriptions-v1"
 	NativeClaudeSubscriptionsV1    WorkerCapability = "native-claude-subscriptions-v1"
+	SubscriptionPaidCreditsV1      WorkerCapability = "subscription-paid-credits-v1"
 	SubscriptionObservationsV1     WorkerCapability = "subscription-observations-v1"
 	NativeSessionCompactionV1      WorkerCapability = "native-session-compaction-v1"
 	CodexSessionCompactionV1       WorkerCapability = "codex-session-compaction-v1"
