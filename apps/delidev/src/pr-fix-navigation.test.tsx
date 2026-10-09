@@ -77,6 +77,7 @@ it("keeps original Fix recovery available before the automatic return read", asy
   const f = fixture(); f.fix.mockRejectedValueOnce(new ConnectError("Lost receipt", Code.Unavailable));
   render(<App transport={f.transport} />); await f.start();
   await f.pending().findByRole("button", { name: "Retry original fix request" });
+  await waitFor(() => expect((f.pending().getByRole("button", { name: "Retry original fix request" }) as HTMLButtonElement).disabled).toBe(false));
   f.leave(); f.back();
   expect(screen.queryByText("Original feedback")).toBeNull();
   expect(f.pending().getByText("Manual PR fix · remote repository 37 · PR ID 53")).toBeTruthy();
@@ -84,7 +85,7 @@ it("keeps original Fix recovery available before the automatic return read", asy
   expect(queries).toBe(2);
   expect(f.fix).toHaveBeenCalledOnce();
   fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));
-  await f.pending().findByText("No pending PR actions.");
+  await waitFor(() => expect(f.pending().getByText("No pending PR actions.")).toBeTruthy());
   expect(f.fix.mock.calls[1][0]).toEqual(f.fix.mock.calls[0][0]);
   expect(JSON.parse(new TextDecoder().decode(f.fix.mock.calls[1][0].documentJson))).toEqual({ set_id: f.set.id, set_revision: "9007199254740993", project_id: f.projectId, repository_id: f.repositoryId, problems: [{ id: f.problem.id, revision: "9007199254740995", content_version: "c".repeat(64) }] });
   await waitFor(() => expect(f.query).toHaveBeenCalledTimes(3));

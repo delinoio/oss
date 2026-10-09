@@ -447,3 +447,17 @@ it("disposes pending search timers while inactive and resumes retained filters",
   await waitFor(() => expect(submitted(value, value.query.mock.calls.length - 1).search).toBe("retained"));
   expect(submitted(value, value.query.mock.calls.length - 1).page).toBe(1);
 });
+
+it.each([false, true])("waits for fresh cached-repository proof on return, including removed=%s", async removed => {
+  const value = fixture(); render(<App transport={value.transport} />);
+  await open(); await choose(value.rows[0]); await screen.findByText("Original fixture title");
+  expect(value.get).toHaveBeenCalledTimes(1); expect(value.query).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; });
+  value.get.mockImplementationOnce(async () => { await pending; return { resource: removed ? undefined : value.rows[0] }; });
+  await open(); await waitFor(() => expect(value.get).toHaveBeenCalledTimes(2));
+  expect(value.query).toHaveBeenCalledTimes(1);
+  await act(async () => { release(); await pending; });
+  if (removed) { await screen.findByText(/^This repository is no longer available\./); expect(value.query).toHaveBeenCalledTimes(1); }
+  else { await screen.findByText("Original fixture title"); expect(value.query).toHaveBeenCalledTimes(2); expect(submitted(value, 1)).toMatchObject({ operation: "list", page: 1, state: "open", page_size: 20 }); }
+});

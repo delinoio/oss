@@ -3,7 +3,7 @@ import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclo
 import { ScrollContinuation } from "./scroll-continuation";
 import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
@@ -122,11 +122,28 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const navigationActive = active && paneVisible;
   const repositories = useGitHubCatalog(EntityKind.REPOSITORY, navigationActive);
   const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) });
+  const metadataScope = useRef({ active: false, id: "", generation: 0 });
+  if (metadataScope.current.active !== active || metadataScope.current.id !== repositoryId) {
+    metadataScope.current = { active, id: repositoryId, generation: metadataScope.current.generation + 1 };
+  }
+  const metadataGeneration = metadataScope.current.generation;
+  const [confirmedMetadataGeneration, setConfirmedMetadataGeneration] = useState<number>();
+  useEffect(() => {
+    if (!active || !repositoryId) return;
+    let current = true;
+    // A cached selected resource is historical on reentry. Join the original
+    // query's current read rather than admitting GitHub work before it settles.
+    void selectedQuery.refetch({ cancelRefetch: false }).then(() => {
+      if (current && metadataScope.current.generation === metadataGeneration) setConfirmedMetadataGeneration(metadataGeneration);
+    }, () => { console.warn("delidev.pull_requests.metadata_confirmation_failed", { phase: "activation" }); });
+    return () => { current = false; };
+  }, [active, repositoryId, metadataGeneration, selectedQuery.refetch]);
+  const metadataConfirmed = confirmedMetadataGeneration === metadataGeneration;
   const selected = selectedQuery.data?.resource;
   const config = document(selected);
   const configured = Boolean(selected && selected.id === repositoryId && selected.kind === EntityKind.REPOSITORY && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
   const searchValid = plainSearch(search.trim());
-  const canLoad = Boolean(active && configured && !selectedQuery.error && !selectedQuery.isFetching && searchValid && !composing);
+  const canLoad = Boolean(active && metadataConfirmed && configured && !selectedQuery.error && !selectedQuery.isFetching && searchValid && !composing);
   const scopeKey = selected ? JSON.stringify([selected.id, selected.revision.toString(), state, appliedSearch, pageSize]) : "";
 
   useEffect(() => {
