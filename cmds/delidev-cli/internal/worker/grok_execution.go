@@ -130,7 +130,11 @@ func executeGrokSession(ctx context.Context, config Config, owner domain.ID, inp
 	defer cancelNative()
 	cancelTargeted := context.AfterFunc(ctx, cancelNative)
 	defer cancelTargeted()
-	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: input.Configuration.Instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
+	instructions, err := input.Configuration.NativeInstructions(input.Input.Mode)
+	if err != nil {
+		return nil, err
+	}
+	nativeConfig := grok.APIExecutionConfig{OrdinaryTools: ordinaryTools, Probe: grok.ProbeConfig{Process: process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "grok")}, Workspace: lease.WorkingDirectory(), Model: input.Configuration.NativeModel, Instructions: instructions, ContextTokens: contextTokens, Mode: input.Input.Mode, ServerOrigin: connection.Credential.Endpoint, Token: token}
 	tools, err := OpenGrokEventPublisher(binding)
 	if err != nil {
 		return nil, err

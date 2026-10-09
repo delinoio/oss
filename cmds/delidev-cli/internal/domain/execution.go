@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
+	BranchPrefix        *BranchPrefixSelection  `json:"branch_prefix,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
 	SidechatPolicy      SidechatPolicy          `json:"sidechat_policy,omitempty"`
 	AgentID             ID                      `json:"agent_id"`
@@ -117,6 +118,14 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.BranchPrefix != nil {
+		if err := c.BranchPrefix.Validate(); err != nil {
+			return err
+		}
+		if _, err := c.NativeInstructions(ExecuteMode); err != nil {
+			return err
+		}
+	}
 	if err := c.ValidateSidechat(); err != nil {
 		return err
 	}

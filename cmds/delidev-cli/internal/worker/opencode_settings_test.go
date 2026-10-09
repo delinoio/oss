@@ -60,3 +60,25 @@ func TestOpenCodeRequestedSettingsPreserveImmutableSelections(t *testing.T) {
 		t.Fatal("unknown input mode accepted")
 	}
 }
+
+func TestBranchPrefixOpenCodeSettingsUseSharedExecuteComposition(t *testing.T) {
+	f := newCheckpointFixture(t)
+	c := f.input.Configuration
+	c.Harness, c.Effort, c.Options = domain.OpenCode, "", domain.AgentOptions{Permission: domain.PermissionDefault}
+	c.BranchPrefix = &domain.BranchPrefixSelection{Version: 1, Prefix: "team"}
+	digest, _ := c.Digest()
+	for _, mode := range []domain.SessionMode{domain.ExecuteMode, domain.PlanMode} {
+		settings, err := openCodeExecutionSettings(c, mode, "Original title")
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected, _ := c.NativeInstructions(mode)
+		if settings.Instructions != expected {
+			t.Fatal("shared prefix instruction dropped")
+		}
+		after, _ := c.Digest()
+		if after != digest {
+			t.Fatal("mapping rewrote selected generation")
+		}
+	}
+}

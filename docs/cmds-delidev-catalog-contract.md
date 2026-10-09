@@ -574,3 +574,53 @@ The once-only automatic plan policy decision stays in the original server-owned 
 Agent Worker configuration presents Native default, Fast mode and Custom service tier through the shared legacy and ordered-source form. Native default explicitly omits `options.service_tier`; Fast saves exact `fast`. Existing other nonempty strings select Custom and remain exact, including whitespace, until edited. Opening the editor never changes absent, empty or null values. Custom entry retains the existing bound. Other harnesses retain disabled saved values and the original explicit clearing action; source/loading/save admission gates remain owned by the existing wizard/editor.
 
 Fast is an explicit native Codex request for API and ChatGPT subscription sources, subject to original model/account availability. The localized control links [official guidance](https://learn.chatgpt.com/docs/agent-configuration/speed) and explains potentially higher subscription usage without a fixed billing multiplier, entitlement or speed claim. Saving grants no native support. No account defaults, session switches, feature flag, version gate, protocol allocation or migration are added. Immutable execution and continuation configurations retain their original tier after Worker edits. Existing applied-setting verification rejects null/different native tiers before input and never downgrades or retries with defaults.
+
+## New-session defaults and literal branch prefixes — issues #2054 and #2057
+
+The complete feature uses System capability 56 and schema-3 Project/Settings
+JSON, preserving capability 52 and readable schema-1/2 documents. Legacy full
+writes cannot replace a newer document with an older schema. Portable exports
+and reviewed import plans use version 6; versions 1–5 retain their original
+semantics and cannot declare the new fields. No SQLite migration is added.
+
+Server `plan_mode_default` defaults to false. The project's typed
+`settings.plan_mode_default` inherits or explicitly enables/disables it.
+New Session follows the selected project override and then the global value;
+General Chat follows the global value. Defaults apply until an explicit mode
+checkbox edit. Prompt, Agent, Runner and budget edits do not count as mode edits.
+Loading, failed, incomplete, stale or malformed reads cannot authorize a
+provisional mode. Explicit mode selection remains available. Freeze original
+mode during pending/uncertain creation, preserve exact retries and mounted draft
+ownership, and reset automatic resolution after accepted creation.
+
+Server `branch_prefix` defaults to literal `delidev/`. Optional project
+`settings.branch_prefix` inherits when absent; explicit empty disables the
+instruction. Preserve exact UTF-8 input, add no separator and accept no variable
+expansion. Nonempty values are bounded to 256 UTF-8 bytes and must form a valid
+Git branch name when concatenated with the fixed safe suffix `branch`. Domain
+and desktop validators reject the same control/space/ref grammar. Values never
+enter shell commands or diagnostics.
+
+The accepted configuration transaction pins the selected prefix and original
+Settings/Project IDs and revisions in optional version-1 immutable execution
+metadata. Omitted declarations preserve historical bytes and digests. Current
+settings never rewrite prior generations. Retain selection through Plan/Execute
+transitions, continuation, retry, recovery, compaction and Fork snapshots.
+The existing ordered template text remains exact. Compose one deterministic
+shared instruction after it in Execute only, including it in the aggregate
+256 KiB limit. Plan and read-only Sidechat receive no prefix instruction. Codex,
+Claude Code, OpenCode and Grok Build use their existing instruction channels;
+Grok's unchanged empty-template Plan profile remains independently required.
+Worker capability 38 negotiates the complete declaration before native dispatch;
+unsupported Workers receive an explicit update requirement, with no native
+version gate. This preference never creates/renames branches, changes detached
+Worktree or Local preparation, grants Git workspace authority, or guarantees
+model compliance. General Chat gains no repository authority.
+
+UI uses the existing explicit-save singleton editors: the Plan checkbox belongs
+to Project defaults; Branch prefix belongs to global Git settings. Project
+settings expose typed Plan inheritance and Use server default / Override project
+prefix choices with effective values and literal-input guidance. Preserve hidden
+fields, revision conflicts, exact uncertain requests, English/Korean text,
+Settings search, keyboard access and responsive presentation. Diagnostics retain
+operation identities, revisions and safe outcomes, never prefixes/instructions.

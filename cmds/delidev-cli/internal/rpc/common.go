@@ -132,6 +132,13 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 	if kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil {
+			var behavior map[string]json.RawMessage
+			_ = json.Unmarshal(fields["settings"], &behavior)
+			if fields["plan_mode_default"] != nil || fields["branch_prefix"] != nil || behavior["plan_mode_default"] != nil || behavior["branch_prefix"] != nil {
+				return 3
+			}
+		}
 		if json.Unmarshal(raw, &fields) == nil && (fields["settings"] != nil || fields["automatic_plan_approval"] != nil) {
 			return 2
 		}

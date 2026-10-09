@@ -205,5 +205,12 @@
   "configuration-fields.serviceTier.custom": "Custom service tier",
   "configuration-fields.serviceTier.guidance": "Fast mode depends on native model and account availability and can use more subscription usage. Selecting it does not confirm entitlement, billing or measured speed.",
   "configuration-fields.serviceTier.learn": "Official Fast mode guidance",
-  "configuration-fields.unsupportedPermissionSelection": "Unsupported selection · {{value}}"
+  "configuration-fields.unsupportedPermissionSelection": "Unsupported selection · {{value}}",
+  "configuration-fields.planModeDefault": "Start new sessions in Plan Mode",
+  "configuration-fields.branchPrefix": "Branch prefix",
+  "configuration-fields.branchPrefixLiteral": "Literal branch prefix",
+  "configuration-fields.useServerDefault": "Use server default",
+  "configuration-fields.overrideProject": "Override project",
+  "configuration-fields.branchPrefixHelp": "The prefix is joined directly to the chosen suffix. No separator is added. Leave empty to disable the instruction. Applies to newly configured sessions.",
+  "configuration-fields.branchPrefixInvalid": "Use a valid Git branch prefix of up to 256 UTF-8 bytes, or leave it empty."
 }

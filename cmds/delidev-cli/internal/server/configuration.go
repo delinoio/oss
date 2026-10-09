@@ -29,6 +29,12 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 		if err := domain.Decode(raw, &fields); err != nil {
 			return nil, err
 		}
+		if v, ok := fields["plan_mode_default"]; kind == domain.SettingsKind && ok && !bytes.Equal(v, []byte("true")) && !bytes.Equal(v, []byte("false")) {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid Plan Mode default.", "Use an explicit boolean.")
+		}
+		if v, ok := fields["branch_prefix"]; kind == domain.SettingsKind && ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid branch prefix.", "Use a string, including empty to disable.")
+		}
 		if v, ok := fields["automatic_plan_approval"]; kind == domain.SettingsKind && ok && !bytes.Equal(v, []byte("true")) && !bytes.Equal(v, []byte("false")) {
 			return nil, domain.Fail(domain.InvalidArgument, "Invalid automatic plan approval value.", "Use an explicit boolean.")
 		}
@@ -52,12 +58,16 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 	case domain.TemplateKind:
 		value = &domain.Template{}
 	case domain.SettingsKind:
-		value = &domain.Settings{}
+		prefix := domain.DefaultBranchPrefix
+		value = &domain.Settings{BranchPrefix: &prefix}
 	default:
 		return nil, domain.Fail(domain.InvalidArgument, "This entity is not editable configuration.", "Use the entity's dedicated product operation.")
 	}
 	if err := domain.Decode(raw, value); err != nil {
 		return nil, err
+	}
+	if project, ok := value.(*domain.Project); ok && project.Settings != nil && project.Settings.BranchPrefix != nil && project.Settings.PlanModeDefault == "" {
+		project.Settings.PlanModeDefault = domain.InheritBoolean
 	}
 	if repository, ok := value.(*domain.Repository); ok {
 		if repository.RemoteURL == "" {
@@ -100,12 +110,21 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 			if err != nil {
 				return nil, err
 			}
-			if rpc.ResourceSchemaVersion(input.Kind, previous.Data) == 2 && rpc.ResourceSchemaVersion(input.Kind, input.Document) != 2 {
-				return nil, domain.Fail(domain.Unsupported, "Project behavior settings require a current client.", "Preserve schema 2 and all behavior settings when editing.")
+			if rpc.ResourceSchemaVersion(input.Kind, previous.Data) > rpc.ResourceSchemaVersion(input.Kind, input.Document) {
+				return nil, domain.Fail(domain.Unsupported, "Project behavior settings require a current client.", "Preserve the current schema and all behavior settings when editing.")
 			}
 		}
-		if project, ok := value.(*domain.Project); ok && project.Settings == nil {
-			project.Settings = &domain.ProjectBehavior{AutomaticFetch: domain.InheritBoolean, AutomaticPlanApproval: domain.InheritBoolean}
+		if project, ok := value.(*domain.Project); ok {
+			if project.Settings == nil {
+				project.Settings = &domain.ProjectBehavior{AutomaticFetch: domain.InheritBoolean, AutomaticPlanApproval: domain.InheritBoolean}
+			}
+			if project.Settings.PlanModeDefault == "" {
+				project.Settings.PlanModeDefault = domain.InheritBoolean
+			}
+		}
+		if settings, ok := value.(*domain.Settings); ok && settings.BranchPrefix == nil {
+			prefix := domain.DefaultBranchPrefix
+			settings.BranchPrefix = &prefix
 		}
 		if provider, ok := value.(*domain.Provider); ok {
 			if err := preserveProviderActivation(tx, input, id, provider); err != nil {

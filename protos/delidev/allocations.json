@@ -9608,6 +9608,20 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_PROJECT_BEHAVIOR_SETTINGS_V1",
       "number": 52
+    },
+    {
+      "issue": 2054,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SESSION_DEFAULTS_V1",
+      "number": 56
+    },
+    {
+      "issue": 2057,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1",
+      "number": 38
     }
   ],
   "rpcReservations": [

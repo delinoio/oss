@@ -114,3 +114,18 @@ it.each(["failed refresh", "incomplete empty page"])("does not project defaults 
  fireEvent.change(policy, { target: { value: "explicit" } });
  expect(screen.getByLabelText("retained project").textContent).not.toContain('"remediation"');
 });
+
+it("retains literal branch overrides including empty disable and typed Plan defaults",async()=>{
+ const values={...newConfiguration(EntityKind.SETTINGS),plan_mode_default:true,branch_prefix:"team"};
+ const row=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SETTINGS,revision:1n,schemaVersion:3,documentJson:new TextEncoder().encode(JSON.stringify(values))});
+ const transport=createRouterTransport(router=>router.service(ResourceService,{listResources:()=>({resources:[row]})}));
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ function Fixture(){const [data,setData]=useState<Document>({settings:{}});return <><ProjectBehaviorFields data={data} change={setData} active supportsSessionDefaults /><output aria-label="new defaults">{JSON.stringify(data.settings)}</output></>;}
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsActionScope><Fixture /></SettingsActionScope></QueryClientProvider></TransportProvider>);
+ await screen.findByText("Effective value: team");
+ fireEvent.change(screen.getByLabelText("Branch prefix"),{target:{value:"override"}});
+ const prefix=screen.getByLabelText("Literal branch prefix") as HTMLInputElement;expect(prefix.value).toBe("team");
+ fireEvent.change(prefix,{target:{value:""}});expect(screen.getByLabelText("new defaults").textContent).toContain('"branch_prefix":""');
+ fireEvent.change(screen.getByLabelText("Start new sessions in Plan Mode"),{target:{value:"disabled"}});expect(screen.getByLabelText("new defaults").textContent).toContain('"plan_mode_default":"disabled"');
+ fireEvent.change(screen.getByLabelText("Branch prefix"),{target:{value:"inherit"}});expect(screen.getByLabelText("new defaults").textContent).not.toContain('"branch_prefix"');
+});

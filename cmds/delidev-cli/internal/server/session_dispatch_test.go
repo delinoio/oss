@@ -132,7 +132,7 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	ctx, client, instance, stream := workspaceStreamWithLifetime(t, base, identity, domain.ID(f.machine.Id), time.Minute)
 	f.workerIdentity, f.workerClient, f.workerInstance, f.workerStream = identity, client, instance, stream
 	if harness == domain.OpenCode {
-		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1}})); err != nil {
+		if _, err := client.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: f.machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1}})); err != nil {
 			t.Fatal(err)
 		}
 	}

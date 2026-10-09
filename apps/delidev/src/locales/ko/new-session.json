@@ -73,5 +73,7 @@
   "new-session.chooseBranchWorker": "원격 브랜치를 읽으려면 실행할 Worker를 선택하세요.",
   "new-session.branchUnsupported": "브랜치 검색을 사용할 수 없습니다. 저장된 시작 참조 또는 직접 지정한 참조를 사용하세요.",
   "new-session.noBranches": "원격 저장소에 브랜치가 없습니다.",
-  "new-session.branchLookupFailed": "원격 브랜치를 읽을 수 없습니다. 저장된 시작 참조 또는 직접 지정한 참조를 사용하세요."
+  "new-session.branchLookupFailed": "원격 브랜치를 읽을 수 없습니다. 저장된 시작 참조 또는 직접 지정한 참조를 사용하세요.",
+  "new-session.planDefaultUnavailable": "계획 모드 기본값을 불러오는 중이거나 사용할 수 없습니다. 설정을 다시 확인하거나 계획 모드를 직접 선택하세요.",
+  "new-session.retryPlanDefaults": "계획 모드 기본값 다시 확인"
 }

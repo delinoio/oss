@@ -205,5 +205,12 @@
   "configuration-fields.serviceTier.custom": "사용자 지정 서비스 등급",
   "configuration-fields.serviceTier.guidance": "빠른 모드는 네이티브 모델 및 계정의 지원 여부에 따라 달라지며 구독 사용량을 더 많이 사용할 수 있습니다. 선택만으로 이용 권한, 요금 또는 실제 속도가 확인되지는 않습니다.",
   "configuration-fields.serviceTier.learn": "공식 빠른 모드 안내",
-  "configuration-fields.unsupportedPermissionSelection": "지원되지 않는 선택 · {{value}}"
+  "configuration-fields.unsupportedPermissionSelection": "지원되지 않는 선택 · {{value}}",
+  "configuration-fields.planModeDefault": "새 세션을 계획 모드로 시작",
+  "configuration-fields.branchPrefix": "브랜치 접두사",
+  "configuration-fields.branchPrefixLiteral": "브랜치 접두사 값",
+  "configuration-fields.useServerDefault": "서버 기본값 사용",
+  "configuration-fields.overrideProject": "프로젝트에서 재정의",
+  "configuration-fields.branchPrefixHelp": "접두사와 선택한 접미사를 그대로 연결합니다. 구분자를 추가하지 않습니다. 비워 두면 지침을 끕니다. 새로 구성한 세션에 적용됩니다.",
+  "configuration-fields.branchPrefixInvalid": "유효한 Git 브랜치 접두사를 UTF-8 256바이트 이내로 입력하거나 비워 두세요."
 }

@@ -205,7 +205,11 @@ func (c *GrokBindingPublisher) BindSession(ctx context.Context, binding grok.Ses
 		observed.GrokContextTokens = binding.ContextTokens
 	}
 	instructionsDigest := ""
-	if instructions := c.publisher.input.Configuration.Instructions; instructions != "" {
+	instructions, err := c.publisher.input.Configuration.NativeInstructions(c.publisher.input.Input.Mode)
+	if err != nil {
+		return err
+	}
+	if instructions != "" {
 		digest := sha256.Sum256([]byte(instructions))
 		instructionsDigest = hex.EncodeToString(digest[:])
 	}

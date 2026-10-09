@@ -38,7 +38,7 @@ const name = (entry: Entry) => text(entry.document.name) || text(entry.document.
 function readBundle(raw: string): Bundle {
   if (encoder.encode(raw).byteLength > bundleLimit) throw new ProductError("validation.0c01933238f8");
   const value = object(JSON.parse(raw));
-  if (![1, 2, 3, 4, 5].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new ProductError("validation.71aacc919010");
+  if (![1, 2, 3, 4, 5, 6].includes(value.version as number) || !Array.isArray(value.entries) || !Array.isArray(value.machines) || value.entries.length > 256 || value.machines.length > 64) throw new ProductError("validation.71aacc919010");
   const ids = new Set<string>();
   for (const item of value.entries) {
     const entry = object(item), id = text(entry.id);
@@ -74,7 +74,7 @@ function readBundle(raw: string): Bundle {
 function readPreview(bytes: Uint8Array): Preview {
   if (bytes.byteLength > 1 << 20) throw new ProductError("validation.6eb6dd2fc3cb");
   const value = object(JSON.parse(decoder.decode(bytes))), plan = object(value.plan);
-  if (!text(value.token) || ![1, 2, 3, 4, 5].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new ProductError("validation.9b79652ebc21");
+  if (!text(value.token) || ![1, 2, 3, 4, 5, 6].includes(plan.version as number) || !Array.isArray(plan.changes) || !plan.changes.length || plan.changes.length > 256 || !Array.isArray(plan.machines)) throw new ProductError("validation.9b79652ebc21");
   for (const item of plan.changes) {
     const change = object(item);
     if (!canonicalId.test(text(change.id)) || !canonicalId.test(text(change.source_id)) || !Object.hasOwn(kinds, text(change.kind)) || !Object.values(ImportAction).includes(change.action as ImportAction) || !change.after || typeof change.after !== "object" || Array.isArray(change.after)) throw new ProductError("validation.028484655c91");

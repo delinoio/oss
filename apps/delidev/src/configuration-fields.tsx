@@ -1,3 +1,4 @@
+import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { readableServerPreferences } from "./server-preferences";
@@ -240,13 +241,15 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", ProjectDefaults = "project-defaults" }
-interface FieldsProps { disabled?: boolean; supportsProjectBehavior?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+interface FieldsProps { disabled?: boolean; supportsProjectBehavior?: boolean; supportsSessionDefaults?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
-  const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false } = props;
+  const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false, supportsSessionDefaults = false } = props;
   const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
   if (kind === EntityKind.SETTINGS) return <>
  {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <h3>{copy("configuration-fields.projectDefaults")}</h3> : null}
+ {supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <section data-settings-search-target="plan-mode-default"><Check label={copy("configuration-fields.planModeDefault")} value={data.plan_mode_default} change={field("plan_mode_default")} /></section> : null}
+ {supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.GitWorkflow ? <section data-settings-search-target="branch-prefix"><BranchPrefixField value={typeof data.branch_prefix === "string" ? data.branch_prefix : defaultBranchPrefix} change={field("branch_prefix")} /></section> : null}
  {supportsProjectBehavior ? <section data-settings-search-target="automatic-plan-approval"><Check label={copy("configuration-fields.automaticPlanApproval")} value={data.automatic_plan_approval} change={field("automatic_plan_approval")} /><p>{copy("configuration-fields.planApprovalHelp")}</p></section> : null}
     {serverPreferenceSection !== ServerPreferenceSection.GitWorkflow ? <section data-settings-search-target="account-routing" className="server-preference-section"><h4>{copy("configuration-fields.accountRouting_0c3707")}</h4><div data-settings-search-target="default-routing" className="server-routing-field"><Choice label={copy("configuration-fields.defaultAccountRouting_bb44ea")} value={data.default_routing} choices={Object.values(Routing)} change={field("default_routing")} /><p>{copy("configuration-fields.usedByAgentWorkersThatInherit_4e05b2")}</p></div></section> : null}
     {serverPreferenceSection !== ServerPreferenceSection.AccountRouting ? <>
@@ -302,7 +305,7 @@ export function projectRepositoryOption(id: string, index: number, names: Readon
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
 }
-function ProjectFields({ data, change, active, movementActive = active, supportsProjectBehavior = false }: FieldsProps) {
+function ProjectFields({ data, change, active, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
@@ -320,7 +323,7 @@ function ProjectFields({ data, change, active, movementActive = active, supports
       <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
       <p>{copy("configuration-fields.theHarnessStartsInThisRepository_8c3af5")}</p>
     </fieldset>
-    {supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>}
+    {supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} supportsSessionDefaults={supportsSessionDefaults} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>}
     <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
     <RestrictionFields label={copy("configuration-fields.aiAccounts_050a21")} kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} />
   </>;
@@ -419,7 +422,7 @@ function AgentReconfiguration({ data, change, active }: { data: Document; change
 }
 
 export enum BooleanOverride { Inherit = "inherit", Enabled = "enabled", Disabled = "disabled" }
-export function ProjectBehaviorFields({ data, change, active }: Pick<FieldsProps, "data" | "change" | "active">) {
+export function ProjectBehaviorFields({ data, change, active, supportsSessionDefaults = false }: Pick<FieldsProps, "data" | "change" | "active" | "supportsSessionDefaults">) {
  useLocale();
  const defaults = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: active });
  const values = defaults.data?.resources;
@@ -440,9 +443,20 @@ export function ProjectBehaviorFields({ data, change, active }: Pick<FieldsProps
  <p>{copy("configuration-fields.effectiveValue", { value: routing || text(global?.default_routing) || copy("configuration-fields.unavailable") })}</p>
  {booleanField("automatic_fetch", copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c"))}
  {booleanField("automatic_plan_approval", copy("configuration-fields.automaticPlanApproval"))}
+ {supportsSessionDefaults ? <>
+ {booleanField("plan_mode_default", copy("configuration-fields.planModeDefault"))}
+ <label>{copy("configuration-fields.branchPrefix")}<select value={Object.hasOwn(overrides, "branch_prefix") ? "override" : "inherit"} onChange={event => { const next = { ...overrides }; if (event.target.value === "inherit") delete next.branch_prefix; else next.branch_prefix = typeof global?.branch_prefix === "string" ? global.branch_prefix : defaultBranchPrefix; change({ ...data, settings: next }); }}><option value="inherit">{copy("configuration-fields.useServerDefault")}</option><option value="override">{copy("configuration-fields.overrideProject")}</option></select></label>
+ {Object.hasOwn(overrides, "branch_prefix") ? <BranchPrefixField value={text(overrides.branch_prefix)} change={value => set("branch_prefix", value)} /> : <p>{copy("configuration-fields.effectiveValue", { value: global ? (typeof global.branch_prefix === "string" ? global.branch_prefix : defaultBranchPrefix) || copy("configuration-fields.disabled") : copy("configuration-fields.unavailable") })}</p>}
+ </> : null}
  <p>{copy("configuration-fields.planApprovalHelp")}</p>
  <label>{copy("configuration-fields.remediationInheritance")}<select value={overrides.remediation ? "explicit" : "inherit"} onChange={event => { const next = { ...overrides }; if (event.target.value === "inherit") delete next.remediation; else if (policy) next.remediation = { ...policy }; change({ ...data, settings: next }); }}><option value="inherit">{copy("configuration-fields.useGlobal")}</option><option value="explicit" disabled={!policy}>{copy("configuration-fields.projectOverride")}</option></select></label>
  {policy ? <><p>{["ci_failure", "review_feedback", "merge_conflict"].map(key => `${copy(key === "ci_failure" ? "configuration-fields.ciRemediation" : key === "review_feedback" ? "configuration-fields.reviewRemediation" : "configuration-fields.conflictRemediation")}: ${copy(policy[key] ? "configuration-fields.enabled" : "configuration-fields.disabled")}`).join(" · ")}</p><fieldset disabled={!overrides.remediation}><RemediationFields value={policy} change={value => set("remediation", value)} active={active && Boolean(overrides.remediation)} /></fieldset></> : <p>{copy("configuration-fields.unavailable")}</p>}
- <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => change({ ...data, settings: { automatic_fetch: BooleanOverride.Inherit, automatic_plan_approval: BooleanOverride.Inherit } })}>{copy("configuration-fields.returnToGlobal")}</SettingsActionButton>
+ <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => change({ ...data, settings: { automatic_fetch: BooleanOverride.Inherit, automatic_plan_approval: BooleanOverride.Inherit, ...(supportsSessionDefaults ? { plan_mode_default: BooleanOverride.Inherit } : {}) } })}>{copy("configuration-fields.returnToGlobal")}</SettingsActionButton>
  </fieldset>;
+}
+
+function BranchPrefixField({ value, change }: { value: string; change: (value: string) => void }) {
+ const input = useRef<HTMLInputElement>(null);
+ useEffect(() => { input.current?.setCustomValidity(validBranchPrefix(value) ? "" : copy("configuration-fields.branchPrefixInvalid")); }, [value]);
+ return <div><label>{copy("configuration-fields.branchPrefixLiteral")}<input ref={input} value={value} onChange={event => change(event.target.value)} aria-invalid={!validBranchPrefix(value) || undefined} /></label><p>{copy("configuration-fields.branchPrefixHelp")}</p>{!validBranchPrefix(value) ? <p role="alert">{copy("configuration-fields.branchPrefixInvalid")}</p> : null}</div>;
 }
