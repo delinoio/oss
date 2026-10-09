@@ -31,3 +31,9 @@ it("retains imported references without reads or writes and explicitly clears se
  expect(change).not.toHaveBeenCalled();fireEvent.click(screen.getByRole("button",{name:"Remove selection"}));expect(change.mock.calls[0][0].mcp_selections).toEqual({selections:[]});
  await i18n.changeLanguage("ko");expect(screen.getByRole("button",{name:"선택 제거"})).toBeTruthy();
 });
+it("keeps remaining imported references inert after partial unselection",()=>{
+ mocks.rows=[fixture()];const change=vi.fn();const data={mcp_selections:{rebinding_required:true,selections:[{machine_id:"worker-one",device_id:"device-one",server_id:"definition-one",revision:"7"},{machine_id:"worker-one",device_id:"device-one",server_id:"definition-two",revision:"3"}]}};
+ render(<McpSelectionFields data={data} change={change} active disabled={false}/>);fireEvent.change(screen.getByLabelText("Runner device"),{target:{value:"worker-one"}});
+ expect(screen.getByRole("checkbox").hasAttribute("disabled")).toBe(true);fireEvent.click(screen.getAllByRole("button",{name:"Remove selection"})[0]);
+ expect(change.mock.calls[0][0].mcp_selections.rebinding_required).toBe(true);expect(change.mock.calls[0][0].mcp_selections.selections).toHaveLength(1);
+});
