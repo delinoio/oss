@@ -49,6 +49,12 @@ try {
       return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select, .pr-repository-details")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
     });
     assert(!geometry.overflow && !geometry.outside && geometry.targets, `${context}: ${JSON.stringify(geometry)}`);
+    const disclosures = await pane.locator(".pr-repository-details-toggle").evaluateAll(nodes => nodes.map(node => {
+      const style = getComputedStyle(node), box = node.getBoundingClientRect(), glyph = node.querySelector(".disclosure-chevron").getBoundingClientRect(), row = node.parentElement.getBoundingClientRect();
+      return { border: style.borderWidth, background: style.backgroundColor, shadow: style.boxShadow, width: box.width, height: box.height, glyphWidth: glyph.width, glyphHeight: glyph.height, centered: Math.abs(glyph.x + glyph.width / 2 - box.x - box.width / 2) < 1 && Math.abs(glyph.y + glyph.height / 2 - box.y - box.height / 2) < 1, contained: box.left >= row.left && box.right <= row.right && box.top >= row.top && box.bottom <= row.bottom };
+    }));
+    assert(disclosures.every(item => item.border === "0px" && item.background === "rgba(0, 0, 0, 0)" && item.shadow === "none" && item.width >= 40 && item.height >= 40 && item.glyphWidth === 14 && item.glyphHeight === 14 && item.centered && item.contained), `${context}: ${JSON.stringify(disclosures)}`);
+
     assert.deepEqual(await page.evaluate(() => window.__prSidebarFixture), { github: 0, repository: 0 }, context);
   };
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1100,768], [960,640], [640,480], [720,450], [480,320]]) {
@@ -61,6 +67,7 @@ try {
     await assertLayout(pane, `${language}/${theme}/${width}: unselected`);
     if (screenshots && width === 1440) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `pr-${language}-${theme}-unselected.png`) }); }
     const details = pane.getByRole("button", { name: language === "ko" ? `oss 상세. 저장소 ID: ${id}` : `Details for oss. Repository ID: ${id}`, exact: true });
+    await details.hover(); await assertLayout(pane, `${language}/${theme}/${width}: hover`);
     await details.focus(); await details.press("Enter");
     await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).waitFor();
     assert.equal(await row.getAttribute("aria-pressed"), "false");

@@ -38,6 +38,25 @@ try {
     const drawer=page.locator('.sidebar-context-trigger');
     const open=async()=>{if(width<760 && !(await page.getByRole('searchbox').isVisible()))await drawer.click();};
     await open(); const input=page.getByRole('searchbox'); await input.waitFor();
+    const fieldGeometry = await input.evaluate(node => {
+      const header = node.closest('.settings-search-header'), category = node.closest('.settings-search').querySelector('[data-settings-category]');
+      const field = node.getBoundingClientRect(), available = header.getBoundingClientRect(), row = category.getBoundingClientRect();
+      return { left: field.left, right: field.right, headerLeft: available.left, headerRight: available.right, rowLeft: row.left, rowRight: row.right };
+    });
+    for (const [fieldEdge, expectedEdge] of [[fieldGeometry.left, fieldGeometry.headerLeft], [fieldGeometry.right, fieldGeometry.headerRight], [fieldGeometry.left, fieldGeometry.rowLeft], [fieldGeometry.right, fieldGeometry.rowRight]]) assert(Math.abs(fieldEdge - expectedEdge) <= 1, 'Search fills the sidebar content width');
+    for (const availableWidth of [260, 190]) {
+      const measured = await input.evaluate((node, width) => {
+        const header = node.closest('.settings-search-header'), original = header.style.width;
+        header.style.width = `${width}px`;
+        const bounds = node.getBoundingClientRect(), available = header.getBoundingClientRect(), overflow = header.scrollWidth > header.clientWidth;
+        header.style.width = original;
+        return { width: bounds.width, left: bounds.left, right: bounds.right, availableLeft: available.left, availableRight: available.right, overflow };
+      }, availableWidth);
+      assert(Math.abs(measured.width - availableWidth) <= 1, `Search fills ${availableWidth}px`);
+      assert(Math.abs(measured.left - measured.availableLeft) <= 1 && Math.abs(measured.right - measured.availableRight) <= 1);
+      assert.equal(measured.overflow, false, 'Narrow search remains contained');
+    }
+
     assert.equal(await page.locator('[data-settings-category]').count(),19);
     const originalCategories=await page.locator('[data-settings-category]').evaluateAll(nodes=>nodes.map(node=>node.dataset.settingsCategory));
     assert.equal(await input.getAttribute('placeholder'),language==='en'?'Search Settings':'설정 검색');
@@ -129,8 +148,9 @@ try {
     await search('remediation-policy.consecutiveAutomaticAttemptLimit_844605');await select('remediation-attempts');assert.equal(await attempts.inputValue(),'8');
     assert.equal(await page.locator('.server-remediation-details').getAttribute('open'),'');
     await search('network-settings.networkSettings_600f22');await select('network');assert.equal(await page.locator('.network-inline > div').count(),1);assert.equal(await page.locator('.network-workspace').count(),0);
-    await search('notification-settings.aboutNotificationDelivery_e8b4e9');await select('notification-delivery');
-    const delivery=page.locator('[data-settings-search-target="notification-delivery"]');assert.equal(await delivery.evaluate(node=>node.tabIndex),0);assert.equal(await delivery.getAttribute('tabindex'),null);await page.locator('.notification-preferences button').first().focus();await page.keyboard.press('Tab');assert(await delivery.evaluate(node=>node===document.activeElement));
+    await open(); await input.fill(language === 'en' ? 'About notification delivery' : '알림 전달 정보');
+    assert.equal(await page.locator('[data-settings-search-result]').count(), 0);
+    assert.equal(await page.locator('[data-settings-search-target="notification-delivery"]').count(), 0);
     await search('notification-settings.questionsAndApprovalRequests_e6c1b4');await select('notification-questions');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await search('ssh-setup.setUpAWorkerOverSsh_9a1626');await select('ssh');assert.equal(await page.locator('dialog[open]:not([role="region"])').count(),0);
     await open();await input.fill('private-resource-name-no-match');assert.equal(await page.locator('[data-settings-search-result]').count(),0);
