@@ -150,8 +150,14 @@ function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, f
     let live = true;
     queueMicrotask(() => { if (live) committed.current = true; });
     node.showModal();
+    const initialFocus = document.activeElement;
     const frame = requestAnimationFrame(() => {
       if (!node.open || anotherModal(node, ancestorDialogs)) return;
+      // A nested chooser can open and restore its trigger before this frame.
+      // Preserve newer focus inside this original task instead of replaying its
+      // initial focus policy over the user's accepted destination.
+      const focused = document.activeElement;
+      if (focused !== initialFocus && focused?.isConnected && node.contains(focused)) return;
       const target = current.focus === SettingsDialogFocus.Heading ? heading.current
         : current.focus === SettingsDialogFocus.Close ? node.querySelector<HTMLElement>(".settings-task-close")
         : current.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel]:not(:disabled)") ?? node.querySelector<HTMLElement>(".settings-task-close")
