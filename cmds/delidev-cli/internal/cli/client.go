@@ -26,7 +26,6 @@ type client struct {
 	system        delidevv1connect.SystemServiceClient
 	resources     delidevv1connect.ResourceServiceClient
 	search        delidevv1connect.SearchServiceClient
-	activity      delidevv1connect.ActivityServiceClient
 	usage         delidevv1connect.UsageServiceClient
 	configuration delidevv1connect.ConfigurationServiceClient
 	devices       delidevv1connect.DeviceServiceClient
@@ -161,7 +160,6 @@ func connectClient(o options, input io.Reader) (client, error) {
 		system:        delidevv1connect.NewSystemServiceClient(httpClient, endpoint, opts...),
 		resources:     delidevv1connect.NewResourceServiceClient(httpClient, endpoint, opts...),
 		search:        delidevv1connect.NewSearchServiceClient(httpClient, endpoint, opts...),
-		activity:      delidevv1connect.NewActivityServiceClient(httpClient, endpoint, opts...),
 		usage:         delidevv1connect.NewUsageServiceClient(httpClient, endpoint, opts...),
 		configuration: delidevv1connect.NewConfigurationServiceClient(httpClient, endpoint, opts...),
 	}, nil

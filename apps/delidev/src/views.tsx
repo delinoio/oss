@@ -1,54 +1,30 @@
 import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
-import { Timestamp } from "./timestamp-display";
-import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import {
-  ActivityKind, ActivityQuery, EntityKind, ResourceQuery,
-  SearchArchiveState, SearchExecutionOutcome, SearchQuery, isEntityId, type ConversationSearchHit, type ActivityEntry, type SearchConversationsResponse, type ListActivityResponse,
+  EntityKind,
+  SearchArchiveState, SearchExecutionOutcome, SearchQuery, isEntityId, type ConversationSearchHit, type SearchConversationsResponse,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, text } from "./documents";
 import { Failure } from "./ui";
 import { ResourceChoice } from "./configuration-fields";
 import { SidebarSurface, useCloseSidebarDrawer, useSidebarDrawerOpen, useOpenSidebarDrawer } from "./sidebar-context";
-import { ActivityPRDetails } from "./activity-pr-source";
-import "./activity-sidebar.css";
 import { Surface } from "./surface";
 export { Surface } from "./surface";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
 
-const activityNames: Partial<Record<ActivityKind, import("./localization").MessageKey>> = {
-  [ActivityKind.UNSPECIFIED]: "views.activity.UNSPECIFIED",
-  [ActivityKind.EXECUTION_ACCEPTED]: "views.activity.EXECUTION_ACCEPTED",
-  [ActivityKind.EXECUTION_SUCCEEDED]: "views.activity.EXECUTION_SUCCEEDED",
-  [ActivityKind.EXECUTION_FAILED]: "views.activity.EXECUTION_FAILED",
-  [ActivityKind.EXECUTION_STOPPED]: "views.activity.EXECUTION_STOPPED",
-  [ActivityKind.SCHEDULE_CRON]: "views.activity.SCHEDULE_CRON",
-  [ActivityKind.SCHEDULE_RUN_NOW]: "views.activity.SCHEDULE_RUN_NOW",
-  [ActivityKind.PR_PROBLEM_OBSERVED]: "views.activity.PR_PROBLEM_OBSERVED",
-  [ActivityKind.PR_PROBLEM_DISMISSED]: "views.activity.PR_PROBLEM_DISMISSED",
-  [ActivityKind.PR_REMEDIATION_ATTEMPT]: "views.activity.PR_REMEDIATION_ATTEMPT",
-  [ActivityKind.PR_VERIFIED_HANDLED]: "views.activity.PR_VERIFIED_HANDLED"
-};
-
 const searchIdentity = (hit: ConversationSearchHit) => hit.message!.id;
 const searchRevision = (hit: ConversationSearchHit) => hit.message!.revision;
-const activityIdentity = (entry: ActivityEntry) => entry.id;
-const activityRevision = (entry: ActivityEntry) => entry.sourceRevision;
 function searchPage(response: SearchConversationsResponse) {
   if (response.hits.length > 30 || response.hits.some(hit => !hit.message || !isEntityId(hit.message.id) || !isEntityId(hit.message.sessionId))) throw new ConnectError("Invalid conversation search page", Code.DataLoss);
   return { rows: response.hits.map(hit => ({ id: hit.message!.id, revision: hit.message!.revision })), nextPageToken: response.nextPageToken, payload: response.hits };
 }
-function activityPage(response: ListActivityResponse) {
-  if (response.entries.length > 50 || response.entries.some(entry => !isEntityId(entry.id) || !Number.isSafeInteger(Number(entry.observedAtUnixMs)) || Math.abs(Number(entry.observedAtUnixMs)) > 8640000000000000)) throw new ConnectError("Invalid activity page", Code.DataLoss);
-  return { rows: response.entries.map(entry => ({ id: entry.id, revision: entry.sourceRevision })), nextPageToken: response.nextPageToken, payload: response.entries };
-}
-
 interface SearchFilters { query: string; archive: SearchArchiveState; projectId: string; sessionId: string; agentId: string; accountId: string; outcome: SearchExecutionOutcome }
 const emptySearch: SearchFilters = { query: "", archive: SearchArchiveState.UNSPECIFIED, projectId: "", sessionId: "", agentId: "", accountId: "", outcome: SearchExecutionOutcome.UNSPECIFIED };
 
@@ -107,63 +83,6 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
     <Failure failure={result.error?.failure} />{query && !result.loaded && result.loading ? <p role="status">{copy("views.searching_c31723")}</p> : null}{query && result.error && result.loaded ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_22c320")}</p> : null}
     <ScrollPayloadWindow identity={searchIdentity} revision={searchRevision} query={result} root={root} active={active}>{payload => payload.map((hit) => <article key={hit.message?.id} className="result"><button disabled={!hit.message?.sessionId} onClick={() => open(hit.message!.sessionId)}>{hit.sessionName}</button><p>{text(document(hit.message).text)}</p><small>{hit.message?.sessionId}</small></article>)}</ScrollPayloadWindow>
     {result.loaded && result.rows.length === 0 ? <p>{copy("views.noRetainedConversationMatches_b59f78")}</p> : null}<ScrollContinuation query={result} root={root} active={active} label={copy("views.searchConversations_8abdf3")} />
-  </section></>;
-}
-
-interface ActivityFilters { projectId: string; sessionId: string }
-const emptyActivity: ActivityFilters = { projectId: "", sessionId: "" };
-interface ActivitySelection extends ActivityFilters { projectLabel: string; sessionLabel: string }
-const emptyActivitySelection: ActivitySelection = { ...emptyActivity, projectLabel: "", sessionLabel: "" };
-
-// Native selects can clip names. Retain only the two selected labels from the
-// existing change callbacks, with exact IDs and explicit last-selected wording;
-// this text never claims a fresh/off-page read or adds a resource lookup.
-function ActivitySelectedLabel({ label, id, name }: { label: string; id: string; name: string }) {
-  useLocale();
-  return id ? <p className="activity-selected-label"><LocalizedText id="views.selectedId_e226b5" components={{ s0: <>{name ? <><LocalizedText id="views.lastSelectedLabel_2f7d02" components={{ s0: <>{label.toLowerCase()}</>, s1: <span>{name}</span>, s2: <br /> }} /></> : null}</>, s1: <>{label.toLowerCase()}</>, s2: <span>{id}</span> }} /></p> : null;
-}
-export function Activity({ active, open }: { active: boolean; open: (id: string) => void }) {
-  useLocale();
-  const content = useRef<HTMLElement>(null);
-  const root = useScrollRoot(content);
-  const [selection, setSelection] = useState<ActivitySelection>(emptyActivitySelection);
-  const [selectionResetToken, setSelectionResetToken] = useState(0);
-  const closeDrawer = useCloseSidebarDrawer();
-  const request = useCallback((token: string) => ({ projectId: selection.projectId, sessionId: selection.sessionId, pageSize: 50, pageToken: token }), [selection.projectId, selection.sessionId]);
-  const reader = useConnectPaginationReader(ActivityQuery.listActivity, request, activityPage);
-  const result = usePaginationChain(JSON.stringify({ projectId: selection.projectId, sessionId: selection.sessionId }), active, reader);
-  usePaginationRefresh(ActivityQuery.listActivity, request(""), active, result.refresh);
-  const reset = () => {
-    // Fence pending exact-resource acceptance without replacing either selector
-    // or changing its independent metadata continuation/read identity.
-    setSelectionResetToken(current => current + 1);
-    if (!selection.projectId && !selection.sessionId) result.reload();
-    setSelection(emptyActivitySelection);
-    closeDrawer();
-  };
-  return <>
-  <SidebarSurface active={active} title={copy("views.activity_38da15")} className="activity-sidebar">
-    <button type="button" className="activity-all" aria-pressed={!selection.projectId && !selection.sessionId} onClick={reset}>
-      <svg className="activity-filter-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><path d="M5 4h8M5 8h8M5 12h8M2 4h.01M2 8h.01M2 12h.01" /></svg>
-      <span>{copy("views.allActivity_29ebb2")}</span>
-      {!selection.projectId && !selection.sessionId ? <svg className="activity-filter-icon activity-selected-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg> : null}
-    </button>
-    <div className="activity-filter-group" role="group" aria-label={copy("views.activityFilters_b58a53")}>
-      <h3>{copy("views.filters_29ded9")}</h3>
-      <div>
-        <ResourceChoice label={copy("views.project_985959")} kind={EntityKind.PROJECT} selectionResetToken={selectionResetToken} value={selection.projectId} change={(projectId, _data, row) => setSelection((current) => ({ ...current, projectId, projectLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
-        <ActivitySelectedLabel label={copy("views.project_985959")} id={selection.projectId} name={selection.projectLabel} />
-      </div>
-      <div>
-        <ResourceChoice label={copy("views.session_6959b4")} kind={EntityKind.SESSION} selectionResetToken={selectionResetToken} value={selection.sessionId} change={(sessionId, _data, row) => setSelection((current) => ({ ...current, sessionId, sessionLabel: row ? resourceName(row) : "" }))} active={active} showStatus />
-        <ActivitySelectedLabel label={copy("views.session_6959b4")} id={selection.sessionId} name={selection.sessionLabel} />
-      </div>
-      <div className="activity-filter-actions"><button type="button" className="activity-reset" onClick={reset}>{copy("views.reset_daee76")}</button></div>
-    </div>
-  </SidebarSurface>
-  <section ref={content} hidden={!active} className="page"><header><h2>{copy("views.activity_38da15")}</h2><button disabled={Boolean(result.loading)} onClick={result.refreshExplicit}>{copy("views.refresh_0e9161")}</button></header><Failure failure={result.error?.failure} />{result.loading ? <p role="status">{copy("views.loadingActivity_a389c3")}</p> : null}{result.error && result.loaded ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_c8711b")}</p> : null}
-    <ScrollPayloadWindow identity={activityIdentity} revision={activityRevision} query={result} root={root} active={active}>{payload => payload.map((entry) => <article className="result" key={entry.id}><strong>{activityNames[entry.kind] ? copy(activityNames[entry.kind]!) : copy("views.activity.UNSPECIFIED")}</strong><p><Timestamp value={new Date(Number(entry.observedAtUnixMs)).toISOString()} /></p>{entry.pullRequest ? <ActivityPRDetails target={entry.pullRequest} revision={entry.sourceRevision} active={active} /> : null}{entry.sessionId ? <button onClick={() => open(entry.sessionId)}>{copy("views.openSession_b205bb")}</button> : !entry.pullRequest ? <p>{copy("views.waitingOrSkippedOccurrence_94fac5")}</p> : null}{entry.accountId ? <small><LocalizedText id="views.account_cc4945" components={{ s0: <>{entry.accountId}</> }} /></small> : null}</article>)}</ScrollPayloadWindow>
-    {result.loaded && result.rows.length === 0 ? <p>{copy("views.noActivityYet_a288d2")}</p> : null}<ScrollContinuation query={result} root={root} active={active} label={copy("views.activity_38da15")} />
   </section></>;
 }
 

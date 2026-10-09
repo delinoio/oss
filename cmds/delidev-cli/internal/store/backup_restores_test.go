@@ -854,9 +854,10 @@ func TestBackupRestorePreservesSessionPRActivityDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seedLegacyPRActivity(t, s, f, attempt)
 	// The reserved transition predates session binding and has no session_id.
 	// Its deletion tombstone must survive restoration along with bound history.
-	if rows := prActivityRows(t, s); len(rows) != 3 {
+	if rows := prActivityRows(t, s); len(rows) != 4 {
 		t.Fatal("fixture omitted original observed/reserved/bound activity", len(rows))
 	}
 	backup, err := s.Backup(ctx)
@@ -878,7 +879,7 @@ func TestBackupRestorePreservesSessionPRActivityDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rows := prActivityRows(t, s); len(rows) != 1 {
+	if rows := prActivityRows(t, s); len(rows) != 2 {
 		t.Fatal("deletion retained original session-owned transitions", len(rows))
 	}
 	in.ExpectedRevision, _ = s.RestoreRevision(ctx)
@@ -891,7 +892,7 @@ func TestBackupRestorePreservesSessionPRActivityDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if rows := prActivityRows(t, reopened); len(rows) != 1 {
+	if rows := prActivityRows(t, reopened); len(rows) != 2 {
 		t.Fatal("restore resurrected deleted activity or erased shared PR evidence", len(rows))
 	}
 	for _, id := range []domain.ID{bound.SessionID, bound.InputID} {

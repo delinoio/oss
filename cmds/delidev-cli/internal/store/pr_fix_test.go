@@ -129,8 +129,8 @@ func TestPRFixOnlyVerifiedOriginalPushHandlesEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			verifiedPush := scenario == "verified" || strings.HasPrefix(scenario, "worker-clock-")
-			if verifiedPush && verifications != 1 || !verifiedPush && verifications != 0 {
-				t.Fatal("outcome fabricated or omitted Activity proof", scenario, verifications)
+			if verifications != 0 {
+				t.Fatal("retired Activity verification was published", scenario, verifications)
 			}
 			if verifiedPush {
 				if p.State != domain.PRProblemHandled || p.Handling == nil || p.Handling.AttemptID != a.ID || v.State != domain.PRRemediationFinished {

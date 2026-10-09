@@ -125,6 +125,12 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 
 	case "turn/steer":
 		f.steerCount++
+		if f.mode == "thread-turn-steer-reject" || f.mode == "thread-turn-steer-unsupported" {
+			// Model a busy fixture process without turning a definite rejection
+			// into the deliberately lost-response scenario. Keep this delay above
+			// that scenario's 70 ms deadline to guard the distinction.
+			time.Sleep(100 * time.Millisecond)
+		}
 		if f.mode == "thread-turn-late-steer-reject" {
 			late()
 			reject()

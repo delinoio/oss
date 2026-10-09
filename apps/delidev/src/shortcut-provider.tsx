@@ -94,7 +94,7 @@ export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
   };
 }
 const names: Record<Surface, MessageKey> = {
-  [Surface.Sessions]: "sidebar.sessions_6fa3cb", [Surface.NewSession]: "shortcuts.newSession", [Surface.NewGeneralChat]: "shortcuts.newSession", [Surface.Search]: "sidebar.search_49c266", [Surface.Settings]: "sidebar.settings_74a883", [Surface.PullRequests]: "sidebar.pullRequests_d9e3f2", [Surface.Usage]: "sidebar.usage_8d5982", [Surface.Schedules]: "sidebar.schedules_221ff1", [Surface.Activity]: "sidebar.activity_38da15", [Surface.Inbox]: "sidebar.inbox_94835e",
+  [Surface.Sessions]: "sidebar.sessions_6fa3cb", [Surface.NewSession]: "shortcuts.newSession", [Surface.NewGeneralChat]: "shortcuts.newSession", [Surface.Search]: "sidebar.search_49c266", [Surface.Settings]: "sidebar.settings_74a883", [Surface.PullRequests]: "sidebar.pullRequests_d9e3f2", [Surface.Usage]: "sidebar.usage_8d5982", [Surface.Schedules]: "sidebar.schedules_221ff1", [Surface.Inbox]: "sidebar.inbox_94835e",
 };
 function ShortcutHelp({ store, platform, close, dispatch }: { store: ShortcutStore; platform: ShortcutPlatform; close: () => void; dispatch: MutableRefObject<ShortcutHelpDispatch | undefined> }) {
   useLocale();

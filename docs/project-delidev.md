@@ -129,7 +129,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 - [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Retained conversation search](cmds-delidev-search-contract.md)
-- [Retained activity](cmds-delidev-activity-contract.md)
+- [Activity retirement](cmds-delidev-activity-contract.md)
 - [Exact native response usage](cmds-delidev-usage-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
 
@@ -188,7 +188,7 @@ owns the lifecycle, snapshot-copy deletion integration and remaining database-re
 - Manual PR fixes use explicit original evidence/project ownership, eligible sessions and Worker Git authentication; the server lookup PAT never authorizes publication. Native completion requires independent push/cleanup proof before exact evidence handling. Bounded automatic fixes reuse the same gates for explicitly linked PRs and independently enabled policies, retaining one durable chain and explicit Stop/Archive authority. Unperformed native/account acceptance remains separate.
 
 - Managed database restore preserves current revocations and external permanent deletion obligations, quarantines historical execution and ends the original server epoch. Temporary recovery images participate in permanent erasure; the storage contract owns their lifecycle.
-- PR activity preserves immutable source/version/actor metadata across Go, generated clients, CLI and desktop. Attempt success cannot establish verified handling; only a dedicated original verification source can project that outcome.
+- Activity is retired across desktop, CLI and live server projections. Preserve authenticated Unsupported compatibility declarations/generated clients, legacy original metadata and dependent erasure/backup quarantine. Canonical PR handling still requires independent original assignment/native/cleanup/push proof.
 - Token Usage displays zero for a fully present empty recorded response summary only in its six top-level cards. Missing execution/compaction coverage remains explicit; details, charts, native accounting and ledger evidence retain their original meanings. See the [usage contract](cmds-delidev-usage-contract.md).
 - Session Usage tables chain vertical scrolling natively to main content while retaining horizontal containment, nine columns and existing controls under the [desktop contract](apps-delidev-desktop-contract.md). Scrolling cannot change filters, queries or accounting evidence.
 - Negotiated native usage keeps Codex responses and verified Grok closed inputs as distinct accounting units across Go, CLI and desktop. Grok retention requires original input/history/closure and independently confirmed cleanup; its totals never imply pricing, actual cost or estimated-budget contribution. See the [usage contract](cmds-delidev-usage-contract.md).

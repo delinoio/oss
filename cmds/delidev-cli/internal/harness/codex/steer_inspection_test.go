@@ -140,7 +140,13 @@ func TestSteerInspectionDefiniteRejectionNeverNeedsHistoryOrResends(t *testing.T
 	for _, mode := range []string{"steer-reject", "late-steer-reject", "steer-unsupported"} {
 		t.Run(mode, func(t *testing.T) {
 			c, capture, first, request, inputID, _ := steerHistoryFixture(t, mode)
-			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Millisecond)
+			// Only the lost-response case needs a short deadline. Definite
+			// rejection must remain observable on a busy fixture process.
+			timeout := 10 * time.Second
+			if mode == "late-steer-reject" {
+				timeout = 70 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			_, err := c.Steer(ctx, request, inputID, first.TurnID, input(domain.ExecuteMode))
 			cancel()
 			expected := domain.Conflict

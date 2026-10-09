@@ -139,6 +139,15 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if command == "integration" && len(rest) > 0 && rest[0] == "replace-token" && o.tokenStdin {
 		return emit(nil, domain.Fail(domain.InvalidArgument, "Server authentication and a PAT cannot share stdin.", "Use a paired client or local owner connection before supplying --pat-stdin."))
 	}
+	// Unknown commands, including retired commands, cannot select a server or consume authentication input.
+	switch command {
+	case "project", "snapshot", "update", "storage", "service-control", "usage", "search", "schedule", "notification", "inbox", "interaction", "session", "queue", "provider", "model", "github", "network", "integration", "browser-profile", "account", "machine", "device", "repository", "server", "doctor", "configuration", "backup", "events":
+	default:
+		kind := domain.Kind(command)
+		if !kind.Valid() || rpc.WireKind(kind) == pb.EntityKind_ENTITY_KIND_UNSPECIFIED {
+			return emit(nil, usage())
+		}
+	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {
 		if command == "server" && len(rest) == 1 && rest[0] == "stop" && o.server == "" && !o.tokenStdin && domain.SafeError(err).Code == domain.ServerUnavailable {
@@ -233,10 +242,6 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		}
 	case "usage":
 		if code, handled := dispatchUsage(ctx, c, o, rest, streams); handled {
-			return code
-		}
-	case "activity":
-		if code, handled := dispatchActivity(ctx, c, o, rest, streams); handled {
 			return code
 		}
 	case "search":

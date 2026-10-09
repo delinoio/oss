@@ -552,6 +552,23 @@ it("routes the icon rail to the matching surface and opens New project independe
   expect(value.sessionRequests).toHaveLength(1);
 });
 
+it("retires Activity while retaining the four rail destinations and header navigation in both languages", async () => {
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
+  await screen.findByRole("button", { name: "Sessions" });
+  for (const language of [SupportedLanguage.English, SupportedLanguage.Korean]) {
+    await act(async () => { await i18n.changeLanguage(language); });
+    const rail = document.querySelector(".sidebar-rail")!;
+    const names = [...rail.querySelectorAll("button")].map(button => button.getAttribute("aria-label"));
+    const expected = language === SupportedLanguage.English ? ["Sessions", "Pull requests", "Usage", "Schedules"] : ["세션", "풀 리퀘스트", "사용량", "예약 작업"];
+    expect(names.slice(0, 4)).toEqual(expected);
+    expect(names).not.toContain(language === SupportedLanguage.English ? "Activity" : "활동");
+    expect(screen.queryByRole("button", { name: language === SupportedLanguage.English ? "Activity" : "활동" })).toBeNull();
+    expect(document.querySelectorAll(".sidebar-header-actions button")).toHaveLength(2);
+  }
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
+  expect(value.sessionRequests).toHaveLength(1);
+});
+
 function reach(label: string, remaining = 96) {
   const root = window.document.querySelector<HTMLDivElement>(".sidebar-list")!;
   Object.defineProperty(root, "clientHeight", { configurable: true, value: 400 });
@@ -609,7 +626,7 @@ it("discards delayed named continuations on collapse and preserves accepted rows
   expect(screen.getAllByRole("button", { name: "New Chat" })[0].getAttribute("aria-current")).toBe("page");
   expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
-  value.setProps({ surface: Surface.Activity });
+  value.setProps({ surface: Surface.Usage });
   expect(screen.queryByRole("button", { name: /Accepted/ })).toBeNull();
   value.setProps({ surface: Surface.Sessions });
   expect(screen.getByRole("button", { name: /Accepted/ })).toBeTruthy();
@@ -705,7 +722,7 @@ it.each(["loading", "empty", "denied", "unavailable", "cached-refresh"])("shows 
   fireEvent.click(screen.getByRole("button", { name: "New session" }));
   expectHeaderActions(true);
   const reads = [value.projectRequests.length, value.sessionRequests.length];
-  for (const surface of [Surface.PullRequests, Surface.Usage, Surface.Schedules, Surface.Activity, Surface.Inbox, Surface.Search]) {
+  for (const surface of [Surface.PullRequests, Surface.Usage, Surface.Schedules, Surface.Inbox, Surface.Search]) {
     value.setSurface(surface);
     expectHeaderActions(false);
     expect([value.projectRequests.length, value.sessionRequests.length]).toEqual(reads);

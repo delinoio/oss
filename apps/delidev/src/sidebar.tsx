@@ -45,7 +45,6 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
     case "pull-requests": return <svg {...common}><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v10a4 4 0 0 0 4 4M18 16V8a4 4 0 0 0-4-4h-2"/><path d="m12 2-2 2 2 2"/></svg>;
     case "usage": return <svg {...common}><path d="M4 20V12M10 20V5M16 20v-9M22 20V8"/></svg>;
     case "schedules": return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>;
-    case "activity": return <svg {...common}><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/><path d="M9 6h10M9 12h10M9 18h10"/></svg>;
     case "settings": return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.2 2.1-2 2-2.1-1.2-.2.1-2.4 1v2.4h-2.8v-2.4l-2.4-1-.2-.1-2.1 1.2-2-2 1.2-2.1.1-.2-1-2.4H2.4v-2.8h2.4l1-2.4-.1-.2-1.2-2.1 2-2 2.1 1.2.2-.1 2.4-1V2.4h2.8v2.4l2.4 1 .2.1 2.1-1.2 2 2-1.2 2.1-.1.2 1 2.4h2.4v2.8h-2.4z" transform="translate(1 1) scale(.92)"/></svg>;
     case "inbox": return <svg {...common}><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>;
     case "search": return <svg {...common}><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>;
@@ -459,7 +458,6 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
       <SidebarButton label={copy("sidebar.pullRequests_d9e3f2")} icon="pull-requests" current={surface === Surface.PullRequests} onClick={() => navigate(Surface.PullRequests)} />
       <SidebarButton label={copy("sidebar.usage_8d5982")} icon="usage" current={surface === Surface.Usage} onClick={() => navigate(Surface.Usage)} />
       <SidebarButton label={copy("sidebar.schedules_221ff1")} icon="schedules" current={surface === Surface.Schedules} onClick={() => navigate(Surface.Schedules)} />
-      <SidebarButton label={copy("sidebar.activity_38da15")} icon="activity" current={surface === Surface.Activity} onClick={() => navigate(Surface.Activity)} />
       <span className="sidebar-rail-spacer" />
       <SubscriptionRail enabled={connectionReady && !drawerOpen} manage={openSettings} focusFallback={() => rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button")?.focus()} />
       <button type="button" className="sidebar-rail-button" aria-label={copy("command-menu.title")} aria-keyshortcuts={commandAria} aria-haspopup="dialog" onClick={openCommandMenu}><Icon name="search" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("command-menu.title")} <kbd>{commandAria.startsWith("Meta") ? "⌘ K" : "Ctrl K"}</kbd></span></button>

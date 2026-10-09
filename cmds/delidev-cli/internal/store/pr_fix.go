@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package store
 
-import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-)
+import "github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 
 func (t *Tx) BindPRFixTarget(id domain.ID, expected uint64, project domain.ID, target domain.PRGitTarget) (Record, error) {
 	if _, err := t.prRemediationActor(); err != nil {
@@ -138,7 +133,6 @@ func (t *Tx) finishPRFixPush(id domain.ID, v domain.PRRemediationAttempt, input 
 		return false, nil
 	}
 	if done.PRPush.State == domain.PRPushVerified && done.Outcome == domain.ExecutionSucceeded {
-		handled := []domain.PRRemediationProblemRef{}
 		for _, ref := range v.Problems {
 			row, p, err := t.GetPRProblem(ref.ID)
 			if err != nil {
@@ -153,19 +147,6 @@ func (t *Tx) finishPRFixPush(id domain.ID, v domain.PRRemediationAttempt, input 
 				if _, err := t.putPRProblem(row.ID, row.Revision, p); err != nil {
 					return false, err
 				}
-				handled = append(handled, ref)
-			}
-		}
-		if len(handled) != 0 {
-			// Publish immutable Activity proof only after the original native,
-			// cleanup and push checks, atomically with these exact handled versions.
-			raw, err := json.Marshal(done.PRPush)
-			if err != nil {
-				return false, storageError(err)
-			}
-			digest := sha256.Sum256(raw)
-			if _, err := t.RetainPRHandlingVerification(v.SetID, handled, hex.EncodeToString(digest[:])); err != nil {
-				return false, err
 			}
 		}
 	}

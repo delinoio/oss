@@ -648,7 +648,7 @@ try {
   for (language of ["en", "ko"]) {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${origin}/?theme=light&language=${language}`);
-    for (const surface of ["Sessions", "New session", "Pull requests", "Usage", "Schedules", "Activity", "Inbox", "Search"]) {
+    for (const surface of ["Sessions", "New session", "Pull requests", "Usage", "Schedules", "Inbox", "Search"]) {
       if (surface === "Inbox" || surface === "Search") await page.getByRole("button", { name: l("Sessions"), exact: true }).click();
       await page.getByRole("button", { name: l(surface), exact: true }).click();
       assert.equal(await page.locator("main").evaluate(node => node.scrollWidth <= node.clientWidth), true, `${language}/${surface} overflow`);

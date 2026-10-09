@@ -6,7 +6,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, InboxService, ResourceSchema, ResourceService, ScheduleService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ActivityService, EntityKind, InboxService, ResourceSchema, ResourceService, ScheduleService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { chooseScrollOption } from "./test-scroll-picker";
 import { ResourceChoice } from "./configuration-fields";
@@ -30,7 +30,9 @@ function fixture() {
   const choices = vi.fn(async (_request: { filter?: { pageSize: number; pageToken: string; kind: EntityKind } }) => ({ resources: [project], nextPageToken: "project-next" }));
   const history = vi.fn(async (_request: { scheduleId: string; pageSize: number; pageToken: string }) => ({ occurrences: [] }));
   const run = vi.fn(async (_request: unknown) => ({ occurrence: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.OCCURRENCE, revision: 1n, schemaVersion: 1 }) }));
+  const activity = vi.fn(() => { throw new ConnectError("Activity retired", Code.Unimplemented); });
   const transport = () => createRouterTransport((router) => {
+    router.service(ActivityService, { listActivity: activity });
     router.service(ScheduleService, { listSchedules: list, getSchedule: (request) => ({ schedule: schedules.find((schedule) => schedule.id === request.id) }), listScheduleOccurrences: history, runScheduleNow: run });
     router.service(ResourceService, { listResources: choices, getResource: request => ({ resource: request.id === project.id ? project : undefined }) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
@@ -41,7 +43,7 @@ function fixture() {
   const initialTransport = transport();
   const closeDrawer = vi.fn();
   const view = (active = true, target: HTMLElement | null = null) => <StrictMode><TransportProvider transport={initialTransport}><QueryClientProvider client={client}><MutationIntents><SidebarOutletProvider target={target} closeDrawer={closeDrawer} drawerOpen><Schedules active={active} open={() => {}} /></SidebarOutletProvider></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
-  return { project, schedules, list, choices, history, run, transport, initialTransport, client, closeDrawer, view };
+  return { activity, project, schedules, list, choices, history, run, transport, initialTransport, client, closeDrawer, view };
 }
 
 function pane() { return within(screen.getByRole("region", { name: "Schedules navigation and filters" })); }
@@ -281,7 +283,7 @@ it("retains Schedules connection memory on same-identity reconnect and resets on
   fireEvent.click(disclosure());
   const id = newRequestId();
   fireEvent.change(pane().getByLabelText("Retained schedule ID"), { target: { value: id } });
-  fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+  fireEvent.click(screen.getByRole("button", { name: "Usage" }));
   fireEvent.click(screen.getByRole("button", { name: "Schedules" }));
   rendered.rerender(<App transport={value.transport()} pairingAuthority={{ ...authority }} currentDeviceId={deviceId} connectionEpoch={1} />);
   expect(disclosure().getAttribute("aria-expanded")).toBe("true");
@@ -295,4 +297,5 @@ it("retains Schedules connection memory on same-identity reconnect and resets on
   expect(document.querySelector<HTMLInputElement>(".schedules-sidebar input")?.value).toBe("");
   await screen.findByRole("button", { name: /^Morning review/ });
   expect(pane().getByRole("button", { name: /^Morning review/ }).getAttribute("aria-current")).toBeNull();
+  expect(value.activity).not.toHaveBeenCalled();
 });
