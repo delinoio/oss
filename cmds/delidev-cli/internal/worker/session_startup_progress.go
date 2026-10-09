@@ -13,6 +13,7 @@ import (
 type sessionStartupReporter struct {
 	mu                 sync.Mutex
 	sequence           uint64
+	closed             bool
 	queue              chan domain.StartupProgressStep
 	cancel             context.CancelFunc
 	done               chan struct{}
@@ -46,7 +47,7 @@ func (r *sessionStartupReporter) observe(step domain.StartupProgressStep) {
 	defer r.mu.Unlock()
 	// Fixed operation set and at most 100 repositories. Telemetry loss cannot
 	// backpressure Git, native input, cleanup or any authoritative publication.
-	if r.sequence >= 806 {
+	if r.closed || r.sequence >= 806 {
 		return
 	}
 	r.sequence++
@@ -63,8 +64,23 @@ func (r *sessionStartupReporter) close() {
 	if r == nil {
 		return
 	}
+	r.mu.Lock()
+	if !r.closed {
+		r.closed = true
+		close(r.queue)
+	}
+	r.mu.Unlock()
+	// Close callback admission first, then drain already accepted metadata within
+	// one aggregate reporting bound. This never renews the authoritative job.
+	timer := time.NewTimer(1500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-r.done:
+	case <-timer.C:
+		r.cancel()
+		<-r.done
+	}
 	r.cancel()
-	<-r.done
 }
 func (r *sessionStartupReporter) run(ctx context.Context) {
 	defer close(r.done)
@@ -72,7 +88,10 @@ func (r *sessionStartupReporter) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case step := <-r.queue:
+		case step, ok := <-r.queue:
+			if !ok {
+				return
+			}
 			c := r.config
 			q := &pb.ReportSessionStartupProgressRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: c.Assignment.Id, ExpectedRevision: c.Assignment.Revision}, MachineId: string(c.Credential.MachineID), InstanceId: string(c.Instance), SessionId: string(r.session), ExecutionId: string(r.execution), Sequence: step.Sequence, WorkspaceOperation: pb.SessionStartupWorkspaceOperation(step.WorkspaceOperation), NativePhase: pb.ExecutionStartupPhase(step.NativePhase), State: pb.SessionStartupProgressState(step.State), RepositoryId: string(step.RepositoryID), RepositoryOrdinal: step.RepositoryOrdinal, RepositoryCount: step.RepositoryCount}
 			// One bounded transmission and one exact receipt retry. Never retry an

@@ -88,3 +88,28 @@ func TestSessionStartupProgressLostAcknowledgmentRetainsExactRequest(t *testing.
 		t.Fatal("original assignment changed")
 	}
 }
+
+type successfulProgressClient struct {
+	delidevv1connect.WorkerServiceClient
+	reports []*pb.ReportSessionStartupProgressRequest
+}
+
+func (c *successfulProgressClient) ReportSessionStartupProgress(_ context.Context, r *connect.Request[pb.ReportSessionStartupProgressRequest]) (*connect.Response[pb.ReportSessionStartupProgressResponse], error) {
+	c.reports = append(c.reports, proto.Clone(r.Msg).(*pb.ReportSessionStartupProgressRequest))
+	return connect.NewResponse(&pb.ReportSessionStartupProgressResponse{}), nil
+}
+func TestSessionStartupProgressCloseDrainsFinalReport(t *testing.T) {
+	c := &successfulProgressClient{}
+	r := newSessionStartupReporter(context.Background(), Config{startupProgress: true, execution: &PublicationConfig{Assignment: &pb.Resource{Id: string(domain.NewID()), SessionId: string(domain.NewID()), Revision: 9}, Instance: domain.NewID(), Client: c}}, domain.Job{Type: domain.PrepareWorkspaceJob})
+	r.observe(domain.StartupProgressStep{WorkspaceOperation: domain.StartupWorkspacePublish, State: domain.StartupProgressRunning})
+	r.observe(domain.StartupProgressStep{WorkspaceOperation: domain.StartupWorkspacePublish, State: domain.StartupProgressCompleted})
+	r.close()
+	if len(c.reports) != 2 || c.reports[1].Sequence != 2 || c.reports[1].State != pb.SessionStartupProgressState_SESSION_STARTUP_PROGRESS_STATE_COMPLETED {
+		t.Fatalf("final report lost: %v", c.reports)
+	}
+	r.observe(domain.StartupProgressStep{WorkspaceOperation: domain.StartupWorkspacePublish, State: domain.StartupProgressCompleted})
+	r.close()
+	if r.sequence != 2 || len(c.reports) != 2 {
+		t.Fatal("closed admission accepted another report")
+	}
+}

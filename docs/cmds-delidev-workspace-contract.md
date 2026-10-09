@@ -380,6 +380,6 @@ bounded operation plan from the accepted request, including the original ordinal
 and total count. A multi-repository group completes only after every applicable
 original operation is observed complete. Success of a later stage cannot fill a
 missing earlier observation. Callbacks carry no paths, remote URLs or Git output.
-Worker reporting is nonblocking and independently joined; it changes neither
+Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
