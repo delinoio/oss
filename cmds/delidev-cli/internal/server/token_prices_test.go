@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"os"
@@ -125,4 +126,80 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 		}
 		return e
 	})
+}
+
+func TestAutomaticPricingUsesOnlyReviewedUnchangedPresetNamespaces(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.unmapped-local-provider", nil, func(tx *store.Tx) (any, error) {
+		for _, preset := range providers.Presets() {
+			if preset.ID == domain.PresetOllama {
+				return tx.Put(domain.ProviderKind, domain.NewID(), 0, "", "", preset.Provider)
+			}
+		}
+		return nil, domain.Fail(domain.NotFound, "Missing local preset fixture.", "Preserve the original local preset.")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gemini store.Record
+	err = db.Read(ctx, func(tx *store.Tx) error {
+		rows, err := tx.List(store.Filter{Kind: domain.ProviderKind, Limit: 100})
+		if err != nil {
+			return err
+		}
+		expected := map[domain.ProviderPresetID]string{domain.PresetGemini: "google", domain.PresetVercel: "vercel", domain.PresetOpenAI: "openai", domain.PresetOllama: "", domain.PresetTogetherAI: "", domain.PresetHuggingFace: ""}
+		seen := 0
+		for _, row := range rows {
+			p, err := store.Decode[domain.Provider](row)
+			if err != nil {
+				return err
+			}
+			want, checked := expected[*p.PresetID]
+			if !checked {
+				continue
+			}
+			seen++
+			got, _, err := priceNamespace(tx, domain.ModelIdentity{ProviderID: row.ID, NativeID: "Exact/Native"})
+			if err != nil || got != want {
+				t.Fatalf("preset %s namespace=%q want=%q err=%v", *p.PresetID, got, want, err)
+			}
+			if *p.PresetID == domain.PresetGemini {
+				gemini = row
+			}
+		}
+		if seen != len(expected) {
+			t.Fatalf("missing reviewed preset fixtures: %d", seen)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.changed-pricing-endpoint", nil, func(tx *store.Tx) (any, error) {
+		p, err := store.Decode[domain.Provider](gemini)
+		if err != nil {
+			return nil, err
+		}
+		p.Endpoint = "https://custom.example/v1"
+		if _, err = tx.Put(domain.ProviderKind, gemini.ID, gemini.Revision, "", "", p); err != nil {
+			return nil, err
+		}
+		got, _, err := priceNamespace(tx, domain.ModelIdentity{ProviderID: gemini.ID, NativeID: "Exact/Native"})
+		if err != nil || got != "" {
+			t.Fatal("edited endpoint adopted managed price namespace", got, err)
+		}
+		return nil, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

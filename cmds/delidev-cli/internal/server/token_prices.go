@@ -83,12 +83,11 @@ func priceNamespace(tx *store.Tx, m domain.ModelIdentity) (string, uint64, error
 			case domain.PresetVercel:
 				namespace = "vercel"
 			case domain.PresetOpenRouter, domain.PresetOpenAI, domain.PresetAnthropic, domain.PresetXAI, domain.PresetDeepSeek,
-				domain.PresetGroq, domain.PresetMistral, domain.PresetTogetherAI, domain.PresetFireworksAI, domain.PresetPerplexity,
-				domain.PresetCohere, domain.PresetCerebras, domain.PresetNebius, domain.PresetNovita, domain.PresetDeepInfra,
-				domain.PresetHuggingFace, domain.PresetVenice, domain.PresetScaleway, domain.PresetBaseten, domain.PresetMoonshot,
-				domain.PresetMoonshotCN, domain.PresetMiniMax, domain.PresetMiniMaxCN, domain.PresetSiliconFlow, domain.PresetSiliconFlowCN,
-				domain.PresetQianfan, domain.PresetTencentTokenHub, domain.PresetTencentTokenHubInternational,
-				domain.PresetAlibabaModelStudioInternational, domain.PresetAlibabaModelStudioHongKong:
+				domain.PresetGroq, domain.PresetMistral, domain.PresetFireworksAI, domain.PresetPerplexity,
+				domain.PresetCohere, domain.PresetCerebras, domain.PresetNebius, domain.PresetDeepInfra,
+				domain.PresetVenice, domain.PresetScaleway, domain.PresetBaseten,
+				domain.PresetMiniMax, domain.PresetMiniMaxCN, domain.PresetSiliconFlow, domain.PresetSiliconFlowCN,
+				domain.PresetTencentTokenHub:
 				// These reviewed remote presets use their exact upstream namespace.
 			default:
 				// Local and future presets remain unmapped even if a new upstream

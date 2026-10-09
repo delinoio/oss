@@ -382,3 +382,13 @@ The protocol-2 current layout supersedes the saved-Model pricing and Settings â†
 Model prices provides one source/native-ID picker. The compact header contains Automatic (models.dev) or Manual, Refresh prices and Edit. Show input, cached input and output rates, currency, retrieval freshness and the once-per-day update cadence. Missing rates differ from explicit zero. Detailed reference identity, snapshot digest, exclusions and immutable historical versions remain collapsed. Do not display a persistent Model UUID or a separate redundant Model details header. Retired API sources expose historical prices read-only; their metadata does not authorize new policies or rates.
 
 Automatic uses only exact reviewed upstream provider/native-ID matches. A valid last snapshot survives a failed refresh as stale; cold failure and unsupported or unmatched rates remain unavailable. Manual retains independently saved decimal rates and is never overwritten by refresh. A changed automatic basis creates a new immutable version only for later observations. Refresh is an explicit joined server operation and cannot replay inference, native inspection, login or account validation. Mode and manual writes preserve the original actor, provider/policy/price revisions, exact request receipt and uncertain retry ownership. UI polling reads metadata without starting upstream refreshes.
+
+Automatic namespace mappings are closed to the reviewed models.dev source at
+`a2413aa7d0b467bdbbb22265e75944bedc57f5a5`: unchanged OpenAI, Anthropic,
+OpenRouter, xAI, DeepSeek, Groq, Mistral, Fireworks AI, Perplexity, Cohere,
+Cerebras, Nebius, DeepInfra, Venice, Scaleway, Baseten, MiniMax/CN,
+SiliconFlow/CN and Tencent TokenHub use their exact preset IDs. Gemini maps to
+`google` and Vercel AI Gateway to `vercel`. Other current and future presets
+remain unmapped even if a later upstream namespace shares their spelling.
+Endpoint or API-profile edits remove managed mapping eligibility. No name,
+URL resemblance or native-ID alias establishes a match.
