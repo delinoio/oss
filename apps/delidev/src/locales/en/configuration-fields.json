@@ -223,5 +223,6 @@
   "configuration-fields.projectEdit.general": "General",
   "configuration-fields.projectEdit.repositories": "Repositories",
   "configuration-fields.projectEdit.execution": "Execution",
-  "configuration-fields.projectEdit.access": "Access"
+  "configuration-fields.projectEdit.access": "Access",
+  "configuration-fields.planApprovalHeading": "Plan approval"
 }

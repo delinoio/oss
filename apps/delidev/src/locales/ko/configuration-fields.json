@@ -223,5 +223,6 @@
   "configuration-fields.projectEdit.general": "일반",
   "configuration-fields.projectEdit.repositories": "저장소",
   "configuration-fields.projectEdit.execution": "실행 설정",
-  "configuration-fields.projectEdit.access": "사용 제한"
+  "configuration-fields.projectEdit.access": "사용 제한",
+  "configuration-fields.planApprovalHeading": "계획 승인"
 }
