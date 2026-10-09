@@ -4,7 +4,7 @@ import { useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, clientFailure, FailureCode, ResourceQuery, SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { resourceName } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { copy, useLocale } from "./localization";
 import { DialogSurface, Problem } from "./ui";
 const Editor = createContext<((id: string, opener: HTMLElement) => void) | undefined>(undefined);
@@ -34,9 +34,10 @@ function SessionNameController({ id, visible, opener, alive, close }: { id: stri
     // A definite rejection permits a read, while the original draft remains revision-bound.
     void result.refetch();
   }, [visible, rename.error, rename.uncertain, result.refetch]);
+  const recoveryPending = useRetainedMutationIntents("session-").some(intent => [`session-prepare:${id}`, `session-workspace-recovery:${id}`, `session-execution-recovery:${id}`].includes(intent.key) && (intent.busy || intent.uncertain));
   const conflict = readable && draft && draft.revision !== current.revision;
   const valid = draft && validSessionName(draft.value);
-  const blocked = !readable || Boolean(result.error) || !draft || !valid || conflict || rename.busy || rename.uncertain;
+  const blocked = recoveryPending || !readable || Boolean(result.error) || !draft || !valid || conflict || rename.busy || rename.uncertain;
   return <DialogSurface ref={dialog} hidden={!visible} className="session-name-dialog" aria-label={copy("session-name.edit")} onCancel={() => close()} onKeyDown={event => {
     if (event.key !== "Tab") return;
     // Keep keyboard focus in the editor even when a desktop host includes chrome in its modal Tab cycle.
@@ -46,11 +47,11 @@ function SessionNameController({ id, visible, opener, alive, close }: { id: stri
   }}>
     <header><h2>{copy("session-name.edit")}</h2><button type="button" onClick={close}>{copy("ui.close_7d9eb7")}</button></header>
     <form onSubmit={event => { event.preventDefault(); if (blocked || !draft) return; void rename.send({ mutation: { id, expectedRevision: draft.revision, requestId: newRequestId() }, name: draft.value }); }}>
-      <label>{copy("session-tools.sessionName_136a71")}<input ref={input} value={draft?.value ?? ""} disabled={!readable || rename.busy || rename.uncertain} aria-invalid={draft && !valid ? true : undefined} onChange={event => draft && setDraft({ ...draft, value: event.target.value })} onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} /></label>
+      <label>{copy("session-tools.sessionName_136a71")}<input ref={input} value={draft?.value ?? ""} disabled={!readable || recoveryPending || rename.busy || rename.uncertain} aria-invalid={draft && !valid ? true : undefined} onChange={event => draft && setDraft({ ...draft, value: event.target.value })} onKeyDown={event => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} /></label>
       {draft && !valid ? <p role="alert">{copy("session-name.invalid")}</p> : null}
       {conflict ? <><p role="alert">{copy("session-tools.thisSessionChangedWhileEditingThe_e72d40")}</p><button type="button" disabled={rename.busy || rename.uncertain} onClick={() => setDraft(undefined)}>{copy("session-name.discard")}</button></> : null}
       <Problem error={result.error} actions={<button type="button" onClick={() => void result.refetch()}>{copy("session-name.retryRead")}</button>} /><Problem error={rename.error} />
-      {rename.uncertain ? <button type="button" disabled={rename.busy} onClick={rename.retry}>{copy("session-name.retry")}</button> : null}
+      {rename.uncertain ? <button type="button" disabled={rename.busy || recoveryPending} onClick={rename.retry}>{copy("session-name.retry")}</button> : null}
       <button className="primary" disabled={Boolean(blocked)}>{copy("session-name.save")}</button>
     </form>
   </DialogSurface>;

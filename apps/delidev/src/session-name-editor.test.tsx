@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, SessionService, newRequestId, type RenameSessionRequest, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { MutationIntents } from "./mutation";
+import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionNameEditorProvider, useSessionNameEditor, validSessionName } from "./session-name-editor";
 function Names({ id }: { id: string }) { const open=useSessionNameEditor();return <><button onDoubleClick={e=>open?.(id,e.currentTarget)}>Sidebar name</button><h2 tabIndex={-1} onDoubleClick={e=>open?.(id,e.currentTarget)}>Header name</h2><main id="main" tabIndex={-1}/></>; }
 function fixture(){
@@ -53,4 +53,16 @@ it("reads a peer revision after a definite rename conflict without losing the dr
  await waitFor(()=>expect(input).toHaveProperty("value","Original name"));
  fireEvent.change(input,{target:{value:"Fresh name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
  await waitFor(()=>expect(f.rename).toHaveBeenCalledTimes(2));expect(f.rename.mock.calls[1][0].mutation?.expectedRevision).toBe(9n);
+});
+
+it.each(["rename", "recovery"])("blocks the other original session operation after uncertain %s", async (first) => {
+ const id=newRequestId(), session=create(ResourceSchema,{id,kind:EntityKind.SESSION,revision:8n,schemaVersion:1,documentJson:encode({name:"Original",archive:"active",preparation:{state:"failed"},recovery:"none"})});
+ const rename=vi.fn(async()=>{throw new ConnectError("Lost rename receipt",Code.Unavailable)}), prepare=vi.fn(async()=>{throw new ConnectError("Lost preparation receipt",Code.Unavailable)});
+ const transport=createRouterTransport(router=>{router.service(ResourceService,{getResource:()=>({resource:session})});router.service(SessionService,{renameSession:rename,prepareSessionWorkspace:prepare});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const {SessionTools}=await import("./session-tools");
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionNameEditorProvider><Names id={id}/><SessionTools resource={session} changed={()=>{}} /></SessionNameEditorProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ const openRename=async()=>{fireEvent.doubleClick(screen.getByText("Sidebar name"));const input=await screen.findByLabelText("Session name");await waitFor(()=>expect(input).toHaveProperty("value","Original"));return input;};
+ if(first === "rename") {const input=await openRename();fireEvent.change(input,{target:{value:"New"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));await screen.findByRole("button",{name:"Retry original rename"});fireEvent.click(screen.getByRole("button",{name:"Close"}));await waitFor(()=>expect(screen.getByRole("button",{name:"Prepare workspace again"})).toHaveProperty("disabled",true));expect(prepare).not.toHaveBeenCalled();}
+ else {fireEvent.click(screen.getByRole("button",{name:"Prepare workspace again"}));fireEvent.click(screen.getByRole("button",{name:"Confirm selected recovery action"}));await screen.findByRole("button",{name:"Retry the same preparation"});await openRename();expect(screen.getByRole("button",{name:"Save"})).toHaveProperty("disabled",true);expect(rename).not.toHaveBeenCalled();}
 });

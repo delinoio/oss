@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource, type SessionChange } from "@delinoio/delidev-api-client";
 import { document, object, resourceName, text, Workspace, workspaceNames } from "./documents";
 import { TrackedJob } from "./jobs";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { Problem } from "./ui";
 
 import { sessionTitlePresentation } from "./session-title";
@@ -48,7 +48,8 @@ export function SessionTools({ resource, changed, initiallyOpen = false, childre
   const prepare = useRetainedMutation(`session-prepare:${resource.id}`, SessionQuery.prepareSessionWorkspace, (value) => acknowledge(value.change));
   const workspace = useRetainedMutation(`session-workspace-recovery:${resource.id}`, SessionQuery.recoverSessionWorkspace, (value) => acknowledge(value.change));
   const recover = useRetainedMutation(`session-execution-recovery:${resource.id}`, SessionQuery.recoverSessionExecution, (value) => acknowledge(value.change));
-  const operations = [prepare, workspace, recover], blocked = operations.some((operation) => operation.busy || operation.uncertain);
+  const renamePending = useRetainedMutationIntents(`session-name:${resource.id}`).some(intent => intent.key === `session-name:${resource.id}` && (intent.busy || intent.uncertain));
+  const operations = [prepare, workspace, recover], blocked = renamePending || operations.some((operation) => operation.busy || operation.uncertain);
   const request = (action: RecoveryAction, opener: HTMLButtonElement) => { recoveryOpener.current = opener; setAccepted(false); setConfirm({ action, revision: resource.revision, execution: executionId }); };
   const submit = () => {
     if (!confirm || blocked || confirm.revision !== resource.revision) return;
