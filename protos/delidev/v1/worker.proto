@@ -493,4 +493,6 @@ message ReportSessionStartupProgressRequest {
   uint32 repository_ordinal = 11;
   uint32 repository_count = 12;
 }
-message ReportSessionStartupProgressResponse { bool replayed = 1; }
+message ReportSessionStartupProgressResponse {
+  bool replayed = 1;
+}
