@@ -481,9 +481,6 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .schedules-sidebar .schedules-empty { display: flex; align-items: flex-start; gap: 8px; margin: 16px 8px; }
 .schedules-sidebar .schedules-pages { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
 .schedules-sidebar .schedules-pages > button { border-color: transparent; background: transparent; }
-.schedules-sidebar .schedules-history-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 12px 8px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; text-align: left; overflow-wrap: anywhere; }
-.schedules-sidebar .schedules-history-chevron { transform: rotate(-90deg); }
-.schedules-sidebar .schedules-history-toggle[aria-expanded="true"] .schedules-history-chevron { transform: rotate(0); }
 .schedules-sidebar .sidebar-form { gap: 12px; padding: 8px 0 0; }
 .schedules-sidebar .sidebar-form > button { margin: 0; }
 .schedule-page { min-height: 100%; }
