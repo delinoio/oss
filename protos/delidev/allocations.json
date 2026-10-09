@@ -9981,6 +9981,116 @@
       "member": "schedule_offline",
       "number": 12,
       "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SetNotificationPreferencesRequest",
+      "member": "changes",
+      "number": 3
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SetNotificationPreferencesRequest",
+      "member": "expected_revision",
+      "number": 4
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "questions",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "approvals",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "succeeded",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "failed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "stopped",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "server_lost",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "server_restored",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "worker_unavailable",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "worker_available",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "quota_exhausted",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "schedule_start_failed",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2055,
+      "kind": "message",
+      "declaration": "SituationNotificationChanges",
+      "member": "schedule_offline",
+      "number": 12,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

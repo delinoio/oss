@@ -157,6 +157,24 @@ message SetNotificationPreferencesRequest {
   string request_id = 1;
   // Revision belongs to the authenticated client's preferences only.
   NotificationPreferences preferences = 2;
+  // Exclusive with preferences. Exact typed input preserves uncertain retries.
+  SituationNotificationChanges changes = 3;
+  uint64 expected_revision = 4;
+}
+
+message SituationNotificationChanges {
+  optional bool questions = 1;
+  optional bool approvals = 2;
+  optional bool succeeded = 3;
+  optional bool failed = 4;
+  optional bool stopped = 5;
+  optional bool server_lost = 6;
+  optional bool server_restored = 7;
+  optional bool worker_unavailable = 8;
+  optional bool worker_available = 9;
+  optional bool quota_exhausted = 10;
+  optional bool schedule_start_failed = 11;
+  optional bool schedule_offline = 12;
 }
 
 message SetNotificationPreferencesResponse {

@@ -74,55 +74,56 @@ func notificationCommand(ctx context.Context, c client, o options, args []string
 			if *revision == 0 || *interactions != "" || *terminals != "" {
 				return nil, domain.Fail(domain.InvalidArgument, "Use a revision and individual notification choices.", "Do not mix individual and legacy combined controls.")
 			}
-			current, err := c.inbox.GetNotificationPreferences(ctx, request(c, &pb.GetNotificationPreferencesRequest{Situations: true}))
-			if err != nil {
-				return nil, rpc.ClientError(err)
+			changes := &pb.SituationNotificationChanges{}
+			if raw := *controls["questions"]; raw != "" {
+				enabled := raw == "on"
+				changes.Questions = &enabled
 			}
-			v := current.Msg.Preferences
-			if v == nil || v.Situations == nil {
-				return nil, domain.Fail(domain.Unsupported, "This server does not support individual notifications.", "Use a compatible server.")
+			if raw := *controls["approvals"]; raw != "" {
+				enabled := raw == "on"
+				changes.Approvals = &enabled
 			}
-			if v.Revision != *revision {
-				return nil, domain.Fail(domain.Conflict, "Notification preferences changed.", "Read the current revision before configuration.")
+			if raw := *controls["succeeded"]; raw != "" {
+				enabled := raw == "on"
+				changes.Succeeded = &enabled
 			}
-			p := v.Situations
-			if value := *controls["questions"]; value != "" {
-				p.Questions = value == "on"
+			if raw := *controls["failed"]; raw != "" {
+				enabled := raw == "on"
+				changes.Failed = &enabled
 			}
-			if value := *controls["approvals"]; value != "" {
-				p.Approvals = value == "on"
+			if raw := *controls["stopped"]; raw != "" {
+				enabled := raw == "on"
+				changes.Stopped = &enabled
 			}
-			if value := *controls["succeeded"]; value != "" {
-				p.Succeeded = value == "on"
+			if raw := *controls["server-lost"]; raw != "" {
+				enabled := raw == "on"
+				changes.ServerLost = &enabled
 			}
-			if value := *controls["failed"]; value != "" {
-				p.Failed = value == "on"
+			if raw := *controls["server-restored"]; raw != "" {
+				enabled := raw == "on"
+				changes.ServerRestored = &enabled
 			}
-			if value := *controls["stopped"]; value != "" {
-				p.Stopped = value == "on"
+			if raw := *controls["worker-unavailable"]; raw != "" {
+				enabled := raw == "on"
+				changes.WorkerUnavailable = &enabled
 			}
-			if value := *controls["server-lost"]; value != "" {
-				p.ServerLost = value == "on"
+			if raw := *controls["worker-available"]; raw != "" {
+				enabled := raw == "on"
+				changes.WorkerAvailable = &enabled
 			}
-			if value := *controls["server-restored"]; value != "" {
-				p.ServerRestored = value == "on"
+			if raw := *controls["quota-exhausted"]; raw != "" {
+				enabled := raw == "on"
+				changes.QuotaExhausted = &enabled
 			}
-			if value := *controls["worker-unavailable"]; value != "" {
-				p.WorkerUnavailable = value == "on"
+			if raw := *controls["schedule-start-failed"]; raw != "" {
+				enabled := raw == "on"
+				changes.ScheduleStartFailed = &enabled
 			}
-			if value := *controls["worker-available"]; value != "" {
-				p.WorkerAvailable = value == "on"
+			if raw := *controls["schedule-offline"]; raw != "" {
+				enabled := raw == "on"
+				changes.ScheduleOffline = &enabled
 			}
-			if value := *controls["quota-exhausted"]; value != "" {
-				p.QuotaExhausted = value == "on"
-			}
-			if value := *controls["schedule-start-failed"]; value != "" {
-				p.ScheduleStartFailed = value == "on"
-			}
-			if value := *controls["schedule-offline"]; value != "" {
-				p.ScheduleOffline = value == "on"
-			}
-			result, err := c.inbox.SetNotificationPreferences(ctx, request(c, &pb.SetNotificationPreferencesRequest{RequestId: string(o.requestID), Preferences: v}))
+			result, err := c.inbox.SetNotificationPreferences(ctx, request(c, &pb.SetNotificationPreferencesRequest{RequestId: string(o.requestID), ExpectedRevision: *revision, Changes: changes}))
 			if err != nil {
 				return nil, rpc.ClientError(err)
 			}

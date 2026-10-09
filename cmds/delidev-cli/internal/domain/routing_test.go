@@ -163,3 +163,32 @@ func TestStoredOrDisconnectedCredentialsCannotRoute(t *testing.T) {
 		}
 	}
 }
+
+func TestSituationNotificationQuotaBaselineRejectsSparseFailedStaleAndOtherServices(t *testing.T) {
+	now := time.Now().UTC()
+	positive := 0.5
+	negative := false
+	baseline := Account{SubscriptionService: SubscriptionChatGPT, Subscription: &SubscriptionState{QuotaState: Observed, QuotaObservedAt: &now, SpendControlReached: &negative, SpendControlObservedAt: &now}, Quota: []QuotaWindow{{ID: "short", Blocking: true, ComparisonGroup: "chatgpt", Remaining: &positive, ObservedAt: now, State: Observed}}}
+	if !ConfirmedSubscriptionQuotaUsable(baseline, now) {
+		t.Fatal("known usable evidence rejected")
+	}
+	for _, change := range []func(*Account){
+		func(a *Account) {
+			a.Quota = append(a.Quota, QuotaWindow{ID: "weekly", Blocking: true, ComparisonGroup: "chatgpt", State: ObservationUnknown})
+		},
+		func(a *Account) { a.Subscription.QuotaState = ObservationFailed },
+		func(a *Account) { stale := now.Add(-6 * time.Minute); a.Subscription.SpendControlObservedAt = &stale },
+		func(a *Account) { a.Quota[0].ObservedAt = now.Add(-6 * time.Minute) },
+		func(a *Account) { a.SubscriptionService = SubscriptionClaude },
+		func(a *Account) { a.ConfirmedExhausted = true },
+	} {
+		current := baseline
+		state := *baseline.Subscription
+		current.Subscription = &state
+		current.Quota = append([]QuotaWindow(nil), baseline.Quota...)
+		change(&current)
+		if ConfirmedSubscriptionQuotaUsable(current, now) {
+			t.Fatal("incomplete baseline became usable", current)
+		}
+	}
+}

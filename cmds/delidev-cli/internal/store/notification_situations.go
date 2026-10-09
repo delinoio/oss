@@ -87,35 +87,44 @@ func (s *Store) EnsureSituationNotificationPreferences(ctx context.Context) erro
 		return storageError(err)
 	}
 	defer tx.Rollback()
+
 	t := &Tx{tx: tx, ctx: ctx}
-	client, err := t.notificationClient()
-	if err != nil {
+	if _, err := t.InitializeSituationNotificationPreferences(); err != nil {
 		return err
 	}
+	return storageError(tx.Commit())
+}
+
+// Initialization and partial configuration can share one original mutation
+// transaction. Receipt replay returns before this code and cannot reapply it.
+func (t *Tx) InitializeSituationNotificationPreferences() (domain.NotificationPreferences, error) {
 	current, err := t.NotificationPreferences()
 	if err != nil {
-		return err
+		return current, err
 	}
 	if current.Situations != nil {
-		return nil
+		return current, nil
+	}
+	client, err := t.notificationClient()
+	if err != nil {
+		return current, err
 	}
 	sequence, err := t.notificationSequence()
 	if err != nil {
-		return err
+		return current, err
 	}
 	v := situationPreferenceEnvelope{Version: 1, Revision: current.Revision, Values: domain.DefaultSituationNotifications(current), Checkpoints: map[domain.NotificationKind]uint64{}}
 	for _, kind := range domain.OperationalNotificationKinds {
 		v.Checkpoints[kind] = sequence
 	}
 	if err := t.putNotificationMetadata(notificationPreferencePrefix+client, v); err != nil {
-		return err
+		return current, err
 	}
-	if err := tx.Commit(); err != nil {
-		return storageError(err)
-	}
-	slog.InfoContext(ctx, "notification_preference_generation_initialized", "revision", current.Revision, "checkpoint", sequence)
-	return nil
+	current.Situations = &v.Values
+	slog.InfoContext(t.ctx, "notification_preference_generation_initialized", "revision", current.Revision, "checkpoint", sequence)
+	return current, nil
 }
+
 func (t *Tx) saveSituationNotifications(client string, current, next domain.NotificationPreferences) error {
 	previous, err := t.situationPreferences(client, current.Revision)
 	if err != nil {

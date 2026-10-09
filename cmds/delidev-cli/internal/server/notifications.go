@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"google.golang.org/protobuf/encoding/protojson"
 	"time"
 
 	"connectrpc.com/connect"
@@ -67,18 +68,86 @@ func (s *Service) SetNotificationPreferences(ctx context.Context, req *connect.R
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	if req.Msg.Preferences == nil {
-		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Notification preferences are required.", "Read this client's current preferences and retain their revision."), correlation)
+	var result store.Result
+	if req.Msg.Changes != nil {
+		if req.Msg.Preferences != nil || req.Msg.ExpectedRevision == 0 {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Use one revision-bound notification changes shape.", "Do not mix complete preferences and changes."), correlation)
+		}
+		raw, marshalErr := protojson.Marshal(req.Msg.Changes)
+		if marshalErr != nil {
+			return nil, rpc.Error(domain.SafeError(marshalErr), correlation)
+		}
+		identity := struct {
+			Actor    domain.Principal
+			Revision uint64
+			Changes  string
+		}{actor, req.Msg.ExpectedRevision, string(raw)}
+		result, err = s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "notification.preferences.changes", identity, func(tx *store.Tx) (any, error) {
+			v, err := tx.InitializeSituationNotificationPreferences()
+			if err != nil {
+				return nil, err
+			}
+			if v.Revision != identity.Revision || v.Situations == nil {
+				return nil, domain.Fail(domain.Conflict, "Notification preferences changed or are unavailable.", "Read current individual choices and their revision before a new change.")
+			}
+			changes := req.Msg.Changes
+			if changes.Questions != nil {
+				v.Situations.Questions = *changes.Questions
+			}
+			if changes.Approvals != nil {
+				v.Situations.Approvals = *changes.Approvals
+			}
+			if changes.Succeeded != nil {
+				v.Situations.Succeeded = *changes.Succeeded
+			}
+			if changes.Failed != nil {
+				v.Situations.Failed = *changes.Failed
+			}
+			if changes.Stopped != nil {
+				v.Situations.Stopped = *changes.Stopped
+			}
+			if changes.ServerLost != nil {
+				v.Situations.ServerLost = *changes.ServerLost
+			}
+			if changes.ServerRestored != nil {
+				v.Situations.ServerRestored = *changes.ServerRestored
+			}
+			if changes.WorkerUnavailable != nil {
+				v.Situations.WorkerUnavailable = *changes.WorkerUnavailable
+			}
+			if changes.WorkerAvailable != nil {
+				v.Situations.WorkerAvailable = *changes.WorkerAvailable
+			}
+			if changes.QuotaExhausted != nil {
+				v.Situations.QuotaExhausted = *changes.QuotaExhausted
+			}
+			if changes.ScheduleStartFailed != nil {
+				v.Situations.ScheduleStartFailed = *changes.ScheduleStartFailed
+			}
+			if changes.ScheduleOffline != nil {
+				v.Situations.ScheduleOffline = *changes.ScheduleOffline
+			}
+			_, err = tx.SetNotificationPreferences(v)
+			return struct{}{}, err
+		})
+	} else {
+		if req.Msg.ExpectedRevision != 0 {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "An expected revision requires typed notification changes.", "Use the complete preferences revision otherwise."), correlation)
+		}
+		if req.Msg.Preferences == nil {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Notification preferences are required.", "Read this client's current preferences and retain their revision."), correlation)
+		}
+		v := req.Msg.Preferences
+		identity := struct {
+			Actor       domain.Principal
+			Preferences domain.NotificationPreferences
+		}{actor, notificationPreferencesDomain(v)}
+		result, err = s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "notification.preferences", identity, func(tx *store.Tx) (any, error) {
+			_, err := tx.SetNotificationPreferences(identity.Preferences)
+			return struct{}{}, err
+		})
 	}
-	v := req.Msg.Preferences
-	identity := struct {
-		Actor       domain.Principal
-		Preferences domain.NotificationPreferences
-	}{actor, notificationPreferencesDomain(v)}
-	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "notification.preferences", identity, func(tx *store.Tx) (any, error) {
-		_, err := tx.SetNotificationPreferences(identity.Preferences)
-		return struct{}{}, err
-	})
+
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}

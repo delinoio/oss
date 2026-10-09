@@ -1129,9 +1129,12 @@ type SetNotificationPreferencesRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// Revision belongs to the authenticated client's preferences only.
-	Preferences   *NotificationPreferences `protobuf:"bytes,2,opt,name=preferences,proto3" json:"preferences,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Preferences *NotificationPreferences `protobuf:"bytes,2,opt,name=preferences,proto3" json:"preferences,omitempty"`
+	// Exclusive with preferences. Exact typed input preserves uncertain retries.
+	Changes          *SituationNotificationChanges `protobuf:"bytes,3,opt,name=changes,proto3" json:"changes,omitempty"`
+	ExpectedRevision uint64                        `protobuf:"varint,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SetNotificationPreferencesRequest) Reset() {
@@ -1178,6 +1181,152 @@ func (x *SetNotificationPreferencesRequest) GetPreferences() *NotificationPrefer
 	return nil
 }
 
+func (x *SetNotificationPreferencesRequest) GetChanges() *SituationNotificationChanges {
+	if x != nil {
+		return x.Changes
+	}
+	return nil
+}
+
+func (x *SetNotificationPreferencesRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+type SituationNotificationChanges struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Questions           *bool                  `protobuf:"varint,1,opt,name=questions,proto3,oneof" json:"questions,omitempty"`
+	Approvals           *bool                  `protobuf:"varint,2,opt,name=approvals,proto3,oneof" json:"approvals,omitempty"`
+	Succeeded           *bool                  `protobuf:"varint,3,opt,name=succeeded,proto3,oneof" json:"succeeded,omitempty"`
+	Failed              *bool                  `protobuf:"varint,4,opt,name=failed,proto3,oneof" json:"failed,omitempty"`
+	Stopped             *bool                  `protobuf:"varint,5,opt,name=stopped,proto3,oneof" json:"stopped,omitempty"`
+	ServerLost          *bool                  `protobuf:"varint,6,opt,name=server_lost,json=serverLost,proto3,oneof" json:"server_lost,omitempty"`
+	ServerRestored      *bool                  `protobuf:"varint,7,opt,name=server_restored,json=serverRestored,proto3,oneof" json:"server_restored,omitempty"`
+	WorkerUnavailable   *bool                  `protobuf:"varint,8,opt,name=worker_unavailable,json=workerUnavailable,proto3,oneof" json:"worker_unavailable,omitempty"`
+	WorkerAvailable     *bool                  `protobuf:"varint,9,opt,name=worker_available,json=workerAvailable,proto3,oneof" json:"worker_available,omitempty"`
+	QuotaExhausted      *bool                  `protobuf:"varint,10,opt,name=quota_exhausted,json=quotaExhausted,proto3,oneof" json:"quota_exhausted,omitempty"`
+	ScheduleStartFailed *bool                  `protobuf:"varint,11,opt,name=schedule_start_failed,json=scheduleStartFailed,proto3,oneof" json:"schedule_start_failed,omitempty"`
+	ScheduleOffline     *bool                  `protobuf:"varint,12,opt,name=schedule_offline,json=scheduleOffline,proto3,oneof" json:"schedule_offline,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *SituationNotificationChanges) Reset() {
+	*x = SituationNotificationChanges{}
+	mi := &file_delidev_v1_inbox_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SituationNotificationChanges) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SituationNotificationChanges) ProtoMessage() {}
+
+func (x *SituationNotificationChanges) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_inbox_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SituationNotificationChanges.ProtoReflect.Descriptor instead.
+func (*SituationNotificationChanges) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *SituationNotificationChanges) GetQuestions() bool {
+	if x != nil && x.Questions != nil {
+		return *x.Questions
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetApprovals() bool {
+	if x != nil && x.Approvals != nil {
+		return *x.Approvals
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetSucceeded() bool {
+	if x != nil && x.Succeeded != nil {
+		return *x.Succeeded
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetFailed() bool {
+	if x != nil && x.Failed != nil {
+		return *x.Failed
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetStopped() bool {
+	if x != nil && x.Stopped != nil {
+		return *x.Stopped
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetServerLost() bool {
+	if x != nil && x.ServerLost != nil {
+		return *x.ServerLost
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetServerRestored() bool {
+	if x != nil && x.ServerRestored != nil {
+		return *x.ServerRestored
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetWorkerUnavailable() bool {
+	if x != nil && x.WorkerUnavailable != nil {
+		return *x.WorkerUnavailable
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetWorkerAvailable() bool {
+	if x != nil && x.WorkerAvailable != nil {
+		return *x.WorkerAvailable
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetQuotaExhausted() bool {
+	if x != nil && x.QuotaExhausted != nil {
+		return *x.QuotaExhausted
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetScheduleStartFailed() bool {
+	if x != nil && x.ScheduleStartFailed != nil {
+		return *x.ScheduleStartFailed
+	}
+	return false
+}
+
+func (x *SituationNotificationChanges) GetScheduleOffline() bool {
+	if x != nil && x.ScheduleOffline != nil {
+		return *x.ScheduleOffline
+	}
+	return false
+}
+
 type SetNotificationPreferencesResponse struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
 	Preferences   *NotificationPreferences `protobuf:"bytes,1,opt,name=preferences,proto3" json:"preferences,omitempty"`
@@ -1189,7 +1338,7 @@ type SetNotificationPreferencesResponse struct {
 
 func (x *SetNotificationPreferencesResponse) Reset() {
 	*x = SetNotificationPreferencesResponse{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[14]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1201,7 +1350,7 @@ func (x *SetNotificationPreferencesResponse) String() string {
 func (*SetNotificationPreferencesResponse) ProtoMessage() {}
 
 func (x *SetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[14]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1214,7 +1363,7 @@ func (x *SetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use SetNotificationPreferencesResponse.ProtoReflect.Descriptor instead.
 func (*SetNotificationPreferencesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{14}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SetNotificationPreferencesResponse) GetPreferences() *NotificationPreferences {
@@ -1248,7 +1397,7 @@ type ListNotificationCandidatesRequest struct {
 
 func (x *ListNotificationCandidatesRequest) Reset() {
 	*x = ListNotificationCandidatesRequest{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[15]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1260,7 +1409,7 @@ func (x *ListNotificationCandidatesRequest) String() string {
 func (*ListNotificationCandidatesRequest) ProtoMessage() {}
 
 func (x *ListNotificationCandidatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[15]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1273,7 +1422,7 @@ func (x *ListNotificationCandidatesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListNotificationCandidatesRequest.ProtoReflect.Descriptor instead.
 func (*ListNotificationCandidatesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{15}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListNotificationCandidatesRequest) GetLimit() uint32 {
@@ -1293,7 +1442,7 @@ type ListNotificationCandidatesResponse struct {
 
 func (x *ListNotificationCandidatesResponse) Reset() {
 	*x = ListNotificationCandidatesResponse{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[16]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1305,7 +1454,7 @@ func (x *ListNotificationCandidatesResponse) String() string {
 func (*ListNotificationCandidatesResponse) ProtoMessage() {}
 
 func (x *ListNotificationCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[16]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1318,7 +1467,7 @@ func (x *ListNotificationCandidatesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ListNotificationCandidatesResponse.ProtoReflect.Descriptor instead.
 func (*ListNotificationCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{16}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListNotificationCandidatesResponse) GetCandidates() []*NotificationCandidate {
@@ -1345,7 +1494,7 @@ type ClaimNotificationRequest struct {
 
 func (x *ClaimNotificationRequest) Reset() {
 	*x = ClaimNotificationRequest{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[17]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1357,7 +1506,7 @@ func (x *ClaimNotificationRequest) String() string {
 func (*ClaimNotificationRequest) ProtoMessage() {}
 
 func (x *ClaimNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[17]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1370,7 +1519,7 @@ func (x *ClaimNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimNotificationRequest.ProtoReflect.Descriptor instead.
 func (*ClaimNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{17}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ClaimNotificationRequest) GetInboxId() string {
@@ -1401,7 +1550,7 @@ type ClaimNotificationResponse struct {
 
 func (x *ClaimNotificationResponse) Reset() {
 	*x = ClaimNotificationResponse{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[18]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1413,7 +1562,7 @@ func (x *ClaimNotificationResponse) String() string {
 func (*ClaimNotificationResponse) ProtoMessage() {}
 
 func (x *ClaimNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[18]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1426,7 +1575,7 @@ func (x *ClaimNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimNotificationResponse.ProtoReflect.Descriptor instead.
 func (*ClaimNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{18}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ClaimNotificationResponse) GetDelivery() *NotificationDelivery {
@@ -1466,7 +1615,7 @@ type GetNotificationDeliveryRequest struct {
 
 func (x *GetNotificationDeliveryRequest) Reset() {
 	*x = GetNotificationDeliveryRequest{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[19]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1478,7 +1627,7 @@ func (x *GetNotificationDeliveryRequest) String() string {
 func (*GetNotificationDeliveryRequest) ProtoMessage() {}
 
 func (x *GetNotificationDeliveryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[19]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1491,7 +1640,7 @@ func (x *GetNotificationDeliveryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNotificationDeliveryRequest.ProtoReflect.Descriptor instead.
 func (*GetNotificationDeliveryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{19}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetNotificationDeliveryRequest) GetInboxId() string {
@@ -1510,7 +1659,7 @@ type GetNotificationDeliveryResponse struct {
 
 func (x *GetNotificationDeliveryResponse) Reset() {
 	*x = GetNotificationDeliveryResponse{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[20]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1522,7 +1671,7 @@ func (x *GetNotificationDeliveryResponse) String() string {
 func (*GetNotificationDeliveryResponse) ProtoMessage() {}
 
 func (x *GetNotificationDeliveryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[20]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1535,7 +1684,7 @@ func (x *GetNotificationDeliveryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNotificationDeliveryResponse.ProtoReflect.Descriptor instead.
 func (*GetNotificationDeliveryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{20}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetNotificationDeliveryResponse) GetDelivery() *NotificationDelivery {
@@ -1557,7 +1706,7 @@ type ReportNotificationRequest struct {
 
 func (x *ReportNotificationRequest) Reset() {
 	*x = ReportNotificationRequest{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[21]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1569,7 +1718,7 @@ func (x *ReportNotificationRequest) String() string {
 func (*ReportNotificationRequest) ProtoMessage() {}
 
 func (x *ReportNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[21]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1582,7 +1731,7 @@ func (x *ReportNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportNotificationRequest.ProtoReflect.Descriptor instead.
 func (*ReportNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{21}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ReportNotificationRequest) GetInboxId() string {
@@ -1624,7 +1773,7 @@ type ReportNotificationResponse struct {
 
 func (x *ReportNotificationResponse) Reset() {
 	*x = ReportNotificationResponse{}
-	mi := &file_delidev_v1_inbox_proto_msgTypes[22]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1636,7 +1785,7 @@ func (x *ReportNotificationResponse) String() string {
 func (*ReportNotificationResponse) ProtoMessage() {}
 
 func (x *ReportNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_inbox_proto_msgTypes[22]
+	mi := &file_delidev_v1_inbox_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1649,7 +1798,7 @@ func (x *ReportNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportNotificationResponse.ProtoReflect.Descriptor instead.
 func (*ReportNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{22}
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ReportNotificationResponse) GetDelivery() *NotificationDelivery {
@@ -1756,11 +1905,45 @@ const file_delidev_v1_inbox_proto_rawDesc = "" +
 	"situations\x18\x01 \x01(\bR\n" +
 	"situations\"k\n" +
 	"\"GetNotificationPreferencesResponse\x12E\n" +
-	"\vpreferences\x18\x01 \x01(\v2#.delidev.v1.NotificationPreferencesR\vpreferences\"\x89\x01\n" +
+	"\vpreferences\x18\x01 \x01(\v2#.delidev.v1.NotificationPreferencesR\vpreferences\"\xfa\x01\n" +
 	"!SetNotificationPreferencesRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12E\n" +
-	"\vpreferences\x18\x02 \x01(\v2#.delidev.v1.NotificationPreferencesR\vpreferences\"\xa6\x01\n" +
+	"\vpreferences\x18\x02 \x01(\v2#.delidev.v1.NotificationPreferencesR\vpreferences\x12B\n" +
+	"\achanges\x18\x03 \x01(\v2(.delidev.v1.SituationNotificationChangesR\achanges\x12+\n" +
+	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\"\xe6\x05\n" +
+	"\x1cSituationNotificationChanges\x12!\n" +
+	"\tquestions\x18\x01 \x01(\bH\x00R\tquestions\x88\x01\x01\x12!\n" +
+	"\tapprovals\x18\x02 \x01(\bH\x01R\tapprovals\x88\x01\x01\x12!\n" +
+	"\tsucceeded\x18\x03 \x01(\bH\x02R\tsucceeded\x88\x01\x01\x12\x1b\n" +
+	"\x06failed\x18\x04 \x01(\bH\x03R\x06failed\x88\x01\x01\x12\x1d\n" +
+	"\astopped\x18\x05 \x01(\bH\x04R\astopped\x88\x01\x01\x12$\n" +
+	"\vserver_lost\x18\x06 \x01(\bH\x05R\n" +
+	"serverLost\x88\x01\x01\x12,\n" +
+	"\x0fserver_restored\x18\a \x01(\bH\x06R\x0eserverRestored\x88\x01\x01\x122\n" +
+	"\x12worker_unavailable\x18\b \x01(\bH\aR\x11workerUnavailable\x88\x01\x01\x12.\n" +
+	"\x10worker_available\x18\t \x01(\bH\bR\x0fworkerAvailable\x88\x01\x01\x12,\n" +
+	"\x0fquota_exhausted\x18\n" +
+	" \x01(\bH\tR\x0equotaExhausted\x88\x01\x01\x127\n" +
+	"\x15schedule_start_failed\x18\v \x01(\bH\n" +
+	"R\x13scheduleStartFailed\x88\x01\x01\x12.\n" +
+	"\x10schedule_offline\x18\f \x01(\bH\vR\x0fscheduleOffline\x88\x01\x01B\f\n" +
+	"\n" +
+	"_questionsB\f\n" +
+	"\n" +
+	"_approvalsB\f\n" +
+	"\n" +
+	"_succeededB\t\n" +
+	"\a_failedB\n" +
+	"\n" +
+	"\b_stoppedB\x0e\n" +
+	"\f_server_lostB\x12\n" +
+	"\x10_server_restoredB\x15\n" +
+	"\x13_worker_unavailableB\x13\n" +
+	"\x11_worker_availableB\x12\n" +
+	"\x10_quota_exhaustedB\x18\n" +
+	"\x16_schedule_start_failedB\x13\n" +
+	"\x11_schedule_offline\"\xa6\x01\n" +
 	"\"SetNotificationPreferencesResponse\x12E\n" +
 	"\vpreferences\x18\x01 \x01(\v2#.delidev.v1.NotificationPreferencesR\vpreferences\x12\x1d\n" +
 	"\n" +
@@ -1856,7 +2039,7 @@ func file_delidev_v1_inbox_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_inbox_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_delidev_v1_inbox_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_delidev_v1_inbox_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_delidev_v1_inbox_proto_goTypes = []any{
 	(InboxReadState)(0),                        // 0: delidev.v1.InboxReadState
 	(InboxSource)(0),                           // 1: delidev.v1.InboxSource
@@ -1876,30 +2059,31 @@ var file_delidev_v1_inbox_proto_goTypes = []any{
 	(*GetNotificationPreferencesRequest)(nil),  // 15: delidev.v1.GetNotificationPreferencesRequest
 	(*GetNotificationPreferencesResponse)(nil), // 16: delidev.v1.GetNotificationPreferencesResponse
 	(*SetNotificationPreferencesRequest)(nil),  // 17: delidev.v1.SetNotificationPreferencesRequest
-	(*SetNotificationPreferencesResponse)(nil), // 18: delidev.v1.SetNotificationPreferencesResponse
-	(*ListNotificationCandidatesRequest)(nil),  // 19: delidev.v1.ListNotificationCandidatesRequest
-	(*ListNotificationCandidatesResponse)(nil), // 20: delidev.v1.ListNotificationCandidatesResponse
-	(*ClaimNotificationRequest)(nil),           // 21: delidev.v1.ClaimNotificationRequest
-	(*ClaimNotificationResponse)(nil),          // 22: delidev.v1.ClaimNotificationResponse
-	(*GetNotificationDeliveryRequest)(nil),     // 23: delidev.v1.GetNotificationDeliveryRequest
-	(*GetNotificationDeliveryResponse)(nil),    // 24: delidev.v1.GetNotificationDeliveryResponse
-	(*ReportNotificationRequest)(nil),          // 25: delidev.v1.ReportNotificationRequest
-	(*ReportNotificationResponse)(nil),         // 26: delidev.v1.ReportNotificationResponse
-	(*Resource)(nil),                           // 27: delidev.v1.Resource
-	(*Mutation)(nil),                           // 28: delidev.v1.Mutation
+	(*SituationNotificationChanges)(nil),       // 18: delidev.v1.SituationNotificationChanges
+	(*SetNotificationPreferencesResponse)(nil), // 19: delidev.v1.SetNotificationPreferencesResponse
+	(*ListNotificationCandidatesRequest)(nil),  // 20: delidev.v1.ListNotificationCandidatesRequest
+	(*ListNotificationCandidatesResponse)(nil), // 21: delidev.v1.ListNotificationCandidatesResponse
+	(*ClaimNotificationRequest)(nil),           // 22: delidev.v1.ClaimNotificationRequest
+	(*ClaimNotificationResponse)(nil),          // 23: delidev.v1.ClaimNotificationResponse
+	(*GetNotificationDeliveryRequest)(nil),     // 24: delidev.v1.GetNotificationDeliveryRequest
+	(*GetNotificationDeliveryResponse)(nil),    // 25: delidev.v1.GetNotificationDeliveryResponse
+	(*ReportNotificationRequest)(nil),          // 26: delidev.v1.ReportNotificationRequest
+	(*ReportNotificationResponse)(nil),         // 27: delidev.v1.ReportNotificationResponse
+	(*Resource)(nil),                           // 28: delidev.v1.Resource
+	(*Mutation)(nil),                           // 29: delidev.v1.Mutation
 }
 var file_delidev_v1_inbox_proto_depIdxs = []int32{
-	27, // 0: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
-	27, // 1: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
-	27, // 2: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
-	27, // 3: delidev.v1.InboxView.account:type_name -> delidev.v1.Resource
-	27, // 4: delidev.v1.InboxView.machine:type_name -> delidev.v1.Resource
-	27, // 5: delidev.v1.InboxView.occurrence:type_name -> delidev.v1.Resource
+	28, // 0: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
+	28, // 1: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
+	28, // 2: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
+	28, // 3: delidev.v1.InboxView.account:type_name -> delidev.v1.Resource
+	28, // 4: delidev.v1.InboxView.machine:type_name -> delidev.v1.Resource
+	28, // 5: delidev.v1.InboxView.occurrence:type_name -> delidev.v1.Resource
 	4,  // 6: delidev.v1.GetInboxEntryResponse.view:type_name -> delidev.v1.InboxView
 	0,  // 7: delidev.v1.ListInboxRequest.read_state:type_name -> delidev.v1.InboxReadState
 	1,  // 8: delidev.v1.ListInboxRequest.source:type_name -> delidev.v1.InboxSource
 	4,  // 9: delidev.v1.ListInboxResponse.entries:type_name -> delidev.v1.InboxView
-	28, // 10: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
+	29, // 10: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 11: delidev.v1.SetInboxReadStateRequest.read_state:type_name -> delidev.v1.InboxReadState
 	4,  // 12: delidev.v1.SetInboxReadStateResponse.view:type_name -> delidev.v1.InboxView
 	12, // 13: delidev.v1.NotificationPreferences.situations:type_name -> delidev.v1.SituationNotificationPreferences
@@ -1908,35 +2092,36 @@ var file_delidev_v1_inbox_proto_depIdxs = []int32{
 	3,  // 16: delidev.v1.NotificationDelivery.state:type_name -> delidev.v1.NotificationState
 	11, // 17: delidev.v1.GetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
 	11, // 18: delidev.v1.SetNotificationPreferencesRequest.preferences:type_name -> delidev.v1.NotificationPreferences
-	11, // 19: delidev.v1.SetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
-	13, // 20: delidev.v1.ListNotificationCandidatesResponse.candidates:type_name -> delidev.v1.NotificationCandidate
-	14, // 21: delidev.v1.ClaimNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	14, // 22: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	3,  // 23: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
-	14, // 24: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	5,  // 25: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
-	7,  // 26: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
-	9,  // 27: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
-	15, // 28: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
-	17, // 29: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
-	19, // 30: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
-	21, // 31: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
-	23, // 32: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
-	25, // 33: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
-	6,  // 34: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
-	8,  // 35: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
-	10, // 36: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
-	16, // 37: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
-	18, // 38: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
-	20, // 39: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
-	22, // 40: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
-	24, // 41: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
-	26, // 42: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
-	34, // [34:43] is the sub-list for method output_type
-	25, // [25:34] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	18, // 19: delidev.v1.SetNotificationPreferencesRequest.changes:type_name -> delidev.v1.SituationNotificationChanges
+	11, // 20: delidev.v1.SetNotificationPreferencesResponse.preferences:type_name -> delidev.v1.NotificationPreferences
+	13, // 21: delidev.v1.ListNotificationCandidatesResponse.candidates:type_name -> delidev.v1.NotificationCandidate
+	14, // 22: delidev.v1.ClaimNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	14, // 23: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	3,  // 24: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
+	14, // 25: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
+	5,  // 26: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
+	7,  // 27: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
+	9,  // 28: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
+	15, // 29: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
+	17, // 30: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
+	20, // 31: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
+	22, // 32: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
+	24, // 33: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
+	26, // 34: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
+	6,  // 35: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
+	8,  // 36: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
+	10, // 37: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
+	16, // 38: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
+	19, // 39: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
+	21, // 40: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
+	23, // 41: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
+	25, // 42: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
+	27, // 43: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
+	35, // [35:44] is the sub-list for method output_type
+	26, // [26:35] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_inbox_proto_init() }
@@ -1945,13 +2130,14 @@ func file_delidev_v1_inbox_proto_init() {
 		return
 	}
 	file_delidev_v1_common_proto_init()
+	file_delidev_v1_inbox_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_inbox_proto_rawDesc), len(file_delidev_v1_inbox_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   23,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

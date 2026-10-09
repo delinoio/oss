@@ -16,7 +16,7 @@ import { SettingsTasks, SettingsTaskBackground } from "./settings-task";
 function fixture(granular = false) {
   let preferences = create(NotificationPreferencesSchema, { revision: 1n, interactions: true, terminals: false, situations: granular ? create(SituationNotificationPreferencesSchema, { questions:true,approvals:true,serverLost:true,workerUnavailable:true,quotaExhausted:true,scheduleStartFailed:true,scheduleOffline:true }) : undefined });
   const save = vi.fn(async (request: { preferences?: typeof preferences }) => {
-    preferences = create(NotificationPreferencesSchema, { ...request.preferences, revision: preferences.revision + 1n });
+    preferences = create(NotificationPreferencesSchema, { ...request.preferences!, revision: preferences.revision + 1n });
     return { preferences };
   });
   const read = vi.fn(async () => ({ preferences }));
