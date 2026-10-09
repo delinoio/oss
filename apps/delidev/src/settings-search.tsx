@@ -33,12 +33,17 @@ export function matchSettings(query: string, categories: readonly SettingsSearch
 }
 export function SettingsSearch({ categories, select, children }: { categories: readonly SettingsSearchCategory[]; select: (result: SettingsSearchResult) => void; children?: ReactNode }) {
  useLocale();
- const [query,setQuery]=useState(""); const composing=useRef(false), header=useRef<HTMLElement>(null);
+ const [query,setQuery]=useState(""); const composing=useRef(false), header=useRef<HTMLElement>(null), pointerTarget=useRef<Element|null>(null);
  // Native focus scrolling does not account for an overlapping sticky header.
  // Reveal only the focused navigation row in its original sidebar scroller.
  const revealFocusedRow = (event: React.FocusEvent<HTMLDivElement>) => {
   const node=event.target;
   if(!(node instanceof HTMLElement)||header.current?.contains(node))return;
+  // Pointer focus precedes click hit-testing. Moving that target here can send
+  // the eventual click to the background instead of its original button.
+  // Keyboard/programmatic focus still gets sticky-header clearance.
+  if(pointerTarget.current && node.contains(pointerTarget.current))return;
+  pointerTarget.current=null;
   const scroller=node.closest<HTMLElement>(".sidebar-list"), pinned=header.current;
   if(!scroller||!pinned)return;
   const row=node.getBoundingClientRect(), controls=pinned.getBoundingClientRect(), bounds=scroller.getBoundingClientRect();
@@ -48,7 +53,12 @@ export function SettingsSearch({ categories, select, children }: { categories: r
  };
  const searching=query.trim()!=="",matches=matchSettings(query,categories);
  const ime=(event:React.KeyboardEvent) => composing.current || event.nativeEvent.isComposing || event.keyCode===229;
- return <div className="settings-search" data-searching={searching||undefined} onFocusCapture={revealFocusedRow}>
+ return <div className="settings-search" data-searching={searching||undefined} onFocusCapture={revealFocusedRow}
+  onPointerDownCapture={event=>{pointerTarget.current=event.target instanceof Element?event.target:null;}}
+  onClickCapture={()=>{pointerTarget.current=null;}}
+  onPointerCancelCapture={()=>{pointerTarget.current=null;}}
+  onKeyDownCapture={()=>{pointerTarget.current=null;}}
+  onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))pointerTarget.current=null;}}>
   <header className="settings-search-header" ref={header}>
    <h2>{copy("settings.settings_74a883")}</h2>
    <div className="settings-search-field">

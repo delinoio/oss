@@ -75,3 +75,14 @@ it("uses a named icon search field without a visible label or application clear 
  expect(input.getAttribute('aria-label')).toBe('설정 검색');
  expect(document.activeElement).toBe(input);
 });
+
+it("keeps a pointer target still until click while keyboard and independent focus clear the pinned header",()=>{
+ const activate=vi.fn();const view=render(<div className="sidebar-list"><SettingsSearch categories={categories} select={vi.fn()}><button onClick={activate}><span>Original pointer row</span></button><button>Keyboard row</button></SettingsSearch></div>);
+ const scroller=view.container.querySelector<HTMLElement>('.sidebar-list')!,header=view.container.querySelector<HTMLElement>('.settings-search-header')!;
+ const pointer=screen.getByRole('button',{name:'Original pointer row'}),keyboard=screen.getByRole('button',{name:'Keyboard row'});
+ vi.spyOn(scroller,'getBoundingClientRect').mockReturnValue({top:0,bottom:300} as DOMRect);vi.spyOn(header,'getBoundingClientRect').mockReturnValue({top:0,bottom:100} as DOMRect);
+ vi.spyOn(pointer,'getBoundingClientRect').mockReturnValue({top:80,bottom:120} as DOMRect);vi.spyOn(keyboard,'getBoundingClientRect').mockReturnValue({top:80,bottom:120} as DOMRect);
+ scroller.scrollTop=200;fireEvent.pointerDown(pointer.querySelector('span')!);pointer.focus();expect(scroller.scrollTop).toBe(200);fireEvent.pointerUp(pointer);expect(scroller.scrollTop).toBe(200);fireEvent.click(pointer);expect(activate).toHaveBeenCalledTimes(1);
+ fireEvent.keyDown(pointer,{key:'Tab'});keyboard.focus();expect(scroller.scrollTop).toBe(174);
+ fireEvent.pointerDown(pointer);fireEvent.pointerCancel(pointer);pointer.focus();expect(scroller.scrollTop).toBe(148);
+});

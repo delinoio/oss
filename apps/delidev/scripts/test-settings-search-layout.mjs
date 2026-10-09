@@ -44,6 +44,26 @@ try {
     assert.equal(await input.getAttribute('aria-label'),t('settings.search.label'));
     assert.equal(await page.getByRole('button',{name:t('settings.search.clear'),exact:true}).count(),0);
     assert.equal(await page.locator('.settings-search-header label').count(),0);
+    // Actual native pointer sequence that previously lost its click when focus
+    // revealed a category between pointerdown and the browser's click target.
+    if(width>=760){
+    const retainedInput=await input.elementHandle();
+    for(const category of originalCategories){await open();await page.locator(`[data-settings-category="${category}"]`).click();}
+    await open();const pointerRow=page.locator('[data-settings-category="agent-workers"]');
+    await pointerRow.scrollIntoViewIfNeeded();
+    await pointerRow.evaluate(node=>{
+      window.settingsPointerProbe=[];
+      for(const type of ['pointerdown','focusin','pointerup','click'])node.addEventListener(type,()=>{const rect=node.getBoundingClientRect();window.settingsPointerProbe.push({type,top:rect.top,scroll:node.closest('.sidebar-list').scrollTop});},{once:true});
+    });
+    await pointerRow.click();
+    await page.waitForFunction(()=>document.querySelector('[data-settings-category="agent-workers"]')?.getAttribute('aria-current')==='page');
+    const probe=await page.evaluate(()=>window.settingsPointerProbe);
+    const down=probe.find(value=>value.type==='pointerdown'),up=probe.find(value=>value.type==='pointerup');
+    assert(down&&up&&probe.some(value=>value.type==='click'),'Native pointer sequence activates its original row');
+    assert.equal(up.top,down.top,'Pointer focus cannot move its target before activation');
+    assert.equal(up.scroll,down.scroll,'Pointer focus cannot change sidebar scroll before activation');
+    await open();assert(await input.evaluate((node,original)=>node===original,retainedInput));await retainedInput.dispose();
+    }
     const assertPinned = async () => {
       const geometry=await page.locator('.settings-search-header').evaluate(header=>{
         const scroller=header.closest('.sidebar-list'),field=header.querySelector('input'),icon=header.querySelector('svg');
