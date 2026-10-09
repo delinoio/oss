@@ -39,9 +39,9 @@ func inputBody(t *testing.T, r *pb.Resource) domain.QueuedInput {
 func sessionSelection(t *testing.T, f *accountFixture) (domain.CreateSession, security.Identity) {
 	t.Helper()
 	worker, paired := pairedWorker(t, context.Background(), f.endpoint, f.identity)
-	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIChat, Authentication: domain.KeylessAuth})
-	m := f.save(pb.EntityKind_ENTITY_KIND_MODEL, domain.Model{Name: "Fixture model", NativeID: "fixture", ProviderID: domain.ID(p.Id), Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared})
-	a := f.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture Agent", Harness: domain.Codex, ModelID: domain.ID(m.Id), Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
+	p := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	account := wizardAccount(f, p, "Disconnected fixture")
+	a := f.save(pb.EntityKind_ENTITY_KIND_AGENT, domain.Agent{Name: "Fixture Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: domain.ID(p.Id), NativeID: "fixture"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: domain.ID(account.Id), Weight: 1}}}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
 	return domain.CreateSession{Name: "Fixture session", AgentID: domain.ID(a.Id), MachineID: domain.ID(paired.Machine.Id), Workspace: domain.GeneralChat, Prompt: "initial private prompt", Mode: domain.ExecuteMode, Source: domain.ExternalCLISession}, worker
 }
 func createSessionFixture(t *testing.T, f *accountFixture, input domain.CreateSession) (*pb.CreateSessionRequest, *pb.SessionChange) {

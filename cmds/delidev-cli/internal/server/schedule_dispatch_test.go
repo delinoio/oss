@@ -39,15 +39,15 @@ func newScheduleDispatchFixture(t *testing.T, overlap domain.ScheduleOverlap, lo
 	f.service = &Service{Store: db, Endpoint: Endpoint{StartedAt: f.now.Add(-time.Hour)}, logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
 	t.Cleanup(func() { f.service.Store.Close() })
 	f.mutate(t, func(tx *store.Tx) error {
-		model, provider := domain.NewID(), domain.NewID()
+		account, provider := domain.NewID(), domain.NewID()
 		for _, item := range []struct {
 			kind  domain.Kind
 			id    domain.ID
 			value any
 		}{
 			{domain.ProviderKind, provider, domain.Provider{Name: "Fixture", Endpoint: "http://127.0.0.1:1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth}},
-			{domain.ModelKind, model, domain.Model{Name: "Fixture", NativeID: "fixture", ProviderID: provider, Harnesses: []domain.Harness{domain.Codex}, MetadataSource: domain.UserDeclared}},
-			{domain.AgentKind, f.agent, domain.Agent{Name: "Fixture", ModelID: model, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
+			{domain.AccountKind, account, domain.Account{Alias: "Disconnected", ProviderID: provider, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected}},
+			{domain.AgentKind, f.agent, domain.Agent{Name: "Fixture", Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: provider, NativeID: "fixture"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: account, Weight: 1}}}}, Harness: domain.Codex, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}},
 			{domain.MachineKind, f.machine, domain.Machine{WorkerCapabilities: []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.InlineModelExecutionV1, domain.ExecutionStartupV1, domain.BranchPrefixInstructionsV1}, Name: "Fixture", OS: "linux", Architecture: "arm64"}},
 			{domain.DeviceKind, f.device, domain.Device{Name: "Fixture", Type: domain.WorkerDevice, MachineID: f.machine, PairedAt: f.now.Add(-time.Hour)}},
 			{domain.RepositoryKind, f.repository, domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: f.machine, Path: filepath.Join(t.TempDir(), "checkout")}}, Base: domain.Reference{Type: domain.LocalBranch, Name: "main"}, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}},
