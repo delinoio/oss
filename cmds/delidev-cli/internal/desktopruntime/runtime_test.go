@@ -4,6 +4,7 @@ package desktopruntime
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"io"
@@ -121,5 +122,44 @@ func TestTargetRequiresCanonicalLoopbackPort(t *testing.T) {
 		if fixtureTarget(address).Validate() == nil {
 			t.Fatalf("accepted %s", address)
 		}
+	}
+}
+
+func TestLocalPairingNameMetadataPreservesOriginalRuntimeProof(t *testing.T) {
+	for _, name := range []string{"", "This computer", "DeliDev local Worker", "My workstation"} {
+		t.Run("name="+name, func(t *testing.T) {
+			target := fixtureTarget("http://127.0.0.1:46310")
+			target.Root = filepath.Join(t.TempDir(), "owner")
+			root := filepath.Join(target.Root, "worker")
+			if err := security.PrivateDir(root); err != nil {
+				t.Fatal(err)
+			}
+			original := map[string]any{"request_id": domain.NewID(), "server_id": target.ServerID, "endpoint": target.Endpoint}
+			if name != "" {
+				original["name"] = name
+			}
+			raw, _ := json.Marshal(original)
+			path := filepath.Join(root, "local-pairing.json")
+			if err := security.WriteAtomic(path, raw); err != nil {
+				t.Fatal(err)
+			}
+			owner, local, err := LocalRoot(root, target.ServerID, target.Endpoint)
+			if err != nil || !local || owner != target.Root {
+				t.Fatal("name changed local authority", err)
+			}
+			if err := MarkLocal(target); err != nil {
+				t.Fatal("name prevented original runtime following", err)
+			}
+			retained, err := security.ReadPrivate(path, 4096)
+			if err != nil || string(retained) != string(raw) {
+				t.Fatal("runtime verification rewrote pairing intent", err)
+			}
+			if _, _, err := LocalRoot(root, domain.NewID(), target.Endpoint); err == nil {
+				t.Fatal("name permitted foreign server")
+			}
+			if _, _, err := LocalRoot(root, target.ServerID, "http://127.0.0.1:46311"); err == nil {
+				t.Fatal("name permitted changed endpoint")
+			}
+		})
 	}
 }

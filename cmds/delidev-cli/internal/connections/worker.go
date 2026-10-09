@@ -18,7 +18,7 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
-const workerName = "DeliDev local Worker"
+const workerName = "This computer"
 
 // Registration retains both remote grant issuance and local pairing ownership.
 // It is private intent, never a product response. PairStarted is committed before
@@ -28,6 +28,7 @@ type workerRegistration struct {
 	ProfileID   domain.ID          `json:"profile_id"`
 	ClientID    domain.ID          `json:"client_id"`
 	RequestID   domain.ID          `json:"request_id"`
+	Name        string             `json:"name,omitempty"`
 	Grant       worker.PairingCode `json:"grant"`
 	PairStarted bool               `json:"pair_started"`
 	DeviceID    domain.ID          `json:"device_id,omitempty"`
@@ -48,6 +49,13 @@ func readRegistration(root string, profile Metadata) (workerRegistration, error)
 	}
 	defer clear(raw)
 	if domain.Decode(raw, &value) != nil || value.Version != 1 || value.ProfileID != profile.ID || value.ClientID != profile.DeviceID || value.RequestID.Validate() != nil || value.Grant.ServerID != profile.ServerID || value.Grant.Endpoint != profile.Endpoint {
+		return workerRegistration{}, invalid()
+	}
+	// Legacy intents predate name pinning and must replay the original default.
+	if value.Name == "" {
+		value.Name = "DeliDev local Worker"
+	}
+	if domain.Text(value.Name, "device name", 256, true) != nil {
 		return workerRegistration{}, invalid()
 	}
 	grant := value.Grant
@@ -144,7 +152,7 @@ func RegisterWorker(ctx context.Context, root string, id domain.ID) (worker.Cred
 		if err != nil {
 			return zero, err
 		}
-		value = workerRegistration{Version: 1, ProfileID: id, ClientID: profile.DeviceID, RequestID: domain.NewID(), Grant: worker.PairingCode{Version: 1, ServerID: profile.ServerID, Endpoint: profile.Endpoint, Code: code}}
+		value = workerRegistration{Version: 1, ProfileID: id, ClientID: profile.DeviceID, RequestID: domain.NewID(), Name: workerName, Grant: worker.PairingCode{Version: 1, ServerID: profile.ServerID, Endpoint: profile.Endpoint, Code: code}}
 		if err := writeRegistration(root, value); err != nil {
 			return zero, err
 		}
@@ -171,7 +179,7 @@ func RegisterWorker(ctx context.Context, root string, id domain.ID) (worker.Cred
 	}
 	if value.Grant.PairingID == "" {
 		digest := sha256.Sum256([]byte(value.Grant.Code))
-		request := connect.NewRequest(&pb.CreatePairingRequest{RequestId: string(value.RequestID), Type: pb.DeviceType_DEVICE_TYPE_WORKER, Name: workerName, CodeDigest: digest[:]})
+		request := connect.NewRequest(&pb.CreatePairingRequest{RequestId: string(value.RequestID), Type: pb.DeviceType_DEVICE_TYPE_WORKER, Name: value.Name, CodeDigest: digest[:]})
 		request.Header().Set("Authorization", "Bearer "+client.Token)
 		response, err := delidevv1connect.NewDeviceServiceClient(httpClient, profile.Endpoint, connect.WithReadMaxBytes(64<<10), connect.WithSendMaxBytes(64<<10)).CreatePairing(ctx, request)
 		if err != nil {
@@ -196,7 +204,7 @@ func RegisterWorker(ctx context.Context, root string, id domain.ID) (worker.Cred
 		}
 		pair = worker.Pair
 	}
-	credential, err := pair(ctx, path, value.Grant, domain.WorkerDevice, workerName)
+	credential, err := pair(ctx, path, value.Grant, domain.WorkerDevice, value.Name)
 	if err != nil {
 		return zero, err
 	}
