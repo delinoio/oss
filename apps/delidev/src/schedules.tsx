@@ -1,6 +1,6 @@
 import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
-import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { useRunnerRemediation } from "./runner-remediation";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
@@ -11,7 +11,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, WorkerCapability, newRequestId, isEntityId, supportsResourceSchema, type ListSchedulesResponse, type ListScheduleOccurrencesResponse, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
@@ -139,31 +139,18 @@ export function Schedules({ active, open, readLocalWorker,notificationOccurrence
   const [filter, setFilter] = useState(EnabledFilter.All);
   const content = useRef<HTMLDivElement>(null), root = useScrollRoot(content);
   const [selected, setSelected] = useState<Resource>(), [editing, setEditing] = useState<{ initial?: Resource; key: string }>();
-  const [historyDraft, setHistoryDraft] = useState(""), [history, setHistory] = useState("");
   const [projectId, setProjectId] = useState("");
-  const [historyExpanded, setHistoryExpanded] = useState(false);
-  const historyRegionId = useId();
-  const historyInput = useRef<HTMLInputElement>(null);
-  const focusHistoryOnExpansion = useRef(false);
   const [protectedWorkflow, setProtectedWorkflow] = useState(false);
   const closeDrawer = useCloseSidebarDrawer();
   const locked = protectedWorkflow || Boolean(editing);
-  useEffect(() => {
-    // Only an explicit disclosure expansion owns focus; navigation, reconnects
-    // and portal placement must leave the user's current focus untouched.
-    if (!focusHistoryOnExpansion.current) return;
-    focusHistoryOnExpansion.current = false;
-    if (historyExpanded && active && !locked) historyInput.current?.focus();
-  }, [historyExpanded, active, locked]);
   const request = useCallback((token: string) => ({ projectId, pageSize: 50, pageToken: token, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }), [projectId, filter]);
   const reader = useConnectPaginationReader(ScheduleQuery.listSchedules, request, schedulePage);
   const paneVisible = useSidebarPaneVisible();
   const navigationActive = active && paneVisible;
   const result = usePaginationChain(JSON.stringify([projectId, filter]), navigationActive && !locked, reader);
   usePaginationRefresh(ScheduleQuery.listSchedules, request(""), navigationActive && !locked, result.refresh);
-  const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); setHistory(""); closeDrawer(); };
-  const newSchedule = () => { if (locked) return; setSelected(undefined); setHistory(""); setEditing({ key: newRequestId() }); closeDrawer(); };
-  const openHistory = (event: FormEvent) => { event.preventDefault(); if (locked || !historyDraft.trim()) return; setSelected(undefined); setHistory(historyDraft.trim()); closeDrawer(); };
+  const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); closeDrawer(); };
+  const newSchedule = () => { if (locked) return; setSelected(undefined); setEditing({ key: newRequestId() }); closeDrawer(); };
   return <>
     <SidebarSurface active={active} title={copy("schedules.schedules_221ff1")} className="schedules-sidebar">
       <button className="primary sidebar-action" disabled={locked} onClick={newSchedule}><SidebarIcon name="plus" />{copy("schedules.newSchedule_3bfe90")}</button>
@@ -174,11 +161,7 @@ export function Schedules({ active, open, readLocalWorker,notificationOccurrence
       <div ref={content}><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={result} root={root} active={active && !locked}>{payload => payload.map((row) => <article key={row.id} className="sidebar-schedule-row"><button type="button" disabled={locked} aria-current={selected?.id === row.id ? "true" : undefined} onClick={() => selectSchedule(row)}><span className="schedule-row-title">{scheduleName(row)}</span><span className="schedule-row-state">{object(document(row).definition).enabled === true ? copy("schedules.enabled_92c1cd") : copy("schedules.paused_e159b0")}</span><span className="schedule-row-next"><LocalizedText id="schedules.nextRunUtc_eca09c" components={{ s0: <span>{<Timestamp mode={TimestampMode.Absolute} timeZone="UTC" value={text(document(row).next_run_at)} fallback={copy("schedules.extra.170fa2a3d0f0")} />}</span> }} /></span></button></article>)}</ScrollPayloadWindow>
       {!result.error && result.loaded && result.rows.length === 0 ? <p className="sidebar-help schedules-empty"><SidebarIcon name="schedules" />{copy("schedules.noSavedSchedules_3aa66d")}</p> : null}
       <ScrollContinuation query={result} root={root} active={active && !locked} label={copy("schedules.savedSchedules_97f381")} /></div>
-      <DisclosureButton density={DisclosureDensity.Compact} type="button" className="schedules-history-toggle" aria-expanded={historyExpanded} aria-controls={historyRegionId} disabled={locked} onClick={() => { if (locked) return; focusHistoryOnExpansion.current = !historyExpanded; setHistoryExpanded(!historyExpanded); }}>{copy("schedules.retainedHistory_183a8d")}</DisclosureButton>
-      <DisclosureContent role="region" id={historyRegionId} aria-label={copy("schedules.retainedScheduleHistoryLookup_80858c")} hidden={!historyExpanded}>
-        <form className="sidebar-form" onSubmit={openHistory}><label>{copy("schedules.retainedScheduleId_1b69be")}<input ref={historyInput} value={historyDraft} onChange={(event) => setHistoryDraft(event.target.value)} maxLength={36} required disabled={locked} /></label><button aria-label={copy("schedules.openRetainedHistory_95da82")} disabled={locked}>{copy("schedules.retainedHistory_183a8d")}</button></form>
-      </DisclosureContent>
     </SidebarSurface>
-    <div hidden={!active} className="page schedule-page">{notificationOccurrence?<section key={notificationOccurrence.generation} aria-label={copy("inbox.operational.originalOccurrence")}><h2>{copy("inbox.operational.originalOccurrence")}</h2><button type="button" onClick={clearNotificationOccurrence}>{copy("schedules.backToSchedules_975251")}</button><Problem error={originalNotificationOccurrence.error}/>{!originalNotificationOccurrence.error&&originalNotificationOccurrence.data?.occurrence?.id===notificationOccurrence.id&&originalNotificationOccurrence.data.occurrence.kind===EntityKind.OCCURRENCE?<Occurrence resource={originalNotificationOccurrence.data.occurrence} open={open}/>:<p role="status">{copy("inbox.operational.unavailable")}</p>}</section>:null}{editing ? <ScheduleEditor readLocalWorker={readLocalWorker} key={editing.key} initial={editing.initial} active={active} saved={(row) => { setEditing(undefined); setProtectedWorkflow(false); if (row) setSelected(row); result.refresh(); }} cancel={() => { setEditing(undefined); setProtectedWorkflow(false); }} protectedChange={setProtectedWorkflow} /> : selected ? <ScheduleDetails key={selected.id} initial={selected} active={active} open={open} close={() => { setSelected(undefined); setProtectedWorkflow(false); result.refresh(); }} edit={(initial) => { setSelected(undefined); setEditing({ initial, key: newRequestId() }); }} protectedChange={setProtectedWorkflow} /> : history ? <><button onClick={() => setHistory("")}>{copy("schedules.backToSchedules_975251")}</button><ScheduleHistory key={history} id={history} active={active} open={open} /></> : <section><h2>{copy("schedules.schedules_221ff1")}</h2><p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p></section>}</div>
+    <div hidden={!active} className="page schedule-page">{notificationOccurrence?<section key={notificationOccurrence.generation} aria-label={copy("inbox.operational.originalOccurrence")}><h2>{copy("inbox.operational.originalOccurrence")}</h2><button type="button" onClick={clearNotificationOccurrence}>{copy("schedules.backToSchedules_975251")}</button><Problem error={originalNotificationOccurrence.error}/>{!originalNotificationOccurrence.error&&originalNotificationOccurrence.data?.occurrence?.id===notificationOccurrence.id&&originalNotificationOccurrence.data.occurrence.kind===EntityKind.OCCURRENCE?<Occurrence resource={originalNotificationOccurrence.data.occurrence} open={open}/>:<p role="status">{copy("inbox.operational.unavailable")}</p>}</section>:null}{editing ? <ScheduleEditor readLocalWorker={readLocalWorker} key={editing.key} initial={editing.initial} active={active} saved={(row) => { setEditing(undefined); setProtectedWorkflow(false); if (row) setSelected(row); result.refresh(); }} cancel={() => { setEditing(undefined); setProtectedWorkflow(false); }} protectedChange={setProtectedWorkflow} /> : selected ? <ScheduleDetails key={selected.id} initial={selected} active={active} open={open} close={() => { setSelected(undefined); setProtectedWorkflow(false); result.refresh(); }} edit={(initial) => { setSelected(undefined); setEditing({ initial, key: newRequestId() }); }} protectedChange={setProtectedWorkflow} /> : <section><h2>{copy("schedules.schedules_221ff1")}</h2><p>{copy("schedules.selectAScheduleFromTheSidebar_6800ae")}</p></section>}</div>
   </>;
 }
