@@ -9,7 +9,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context
 .schedule-creation, .schedule-creation > form { height: 100%; min-height: 0; }
 .schedule-creation > form { display: flex; flex-direction: column; }
 .schedule-creation-scroll { flex: 1; min-height: 0; overflow: auto; padding: 32px; scrollbar-gutter: stable; }
-.schedule-creation-header, .schedule-creation-grid, .schedule-creation-errors, .schedule-creation-footer-inner { width: 100%; max-width: 1080px; margin-inline: auto; }
+.schedule-creation-header, .schedule-creation-grid, .schedule-creation-errors, .schedule-creation-footer-inner { width: 100%; max-width: 760px; margin-inline: auto; }
 .schedule-creation-header { display: block; margin-bottom: 12px; }
 .schedule-creation-header h2 { margin-bottom: 8px; font-size: 28px; }
 .schedule-creation-header p { font-size: 14px; }
@@ -41,14 +41,19 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context
 .schedule-creation-footer-inner { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; flex-wrap: wrap; }
 .schedule-creation-footer p { margin: 0; font-size: 14px; }
 .schedule-creation-footer small { display: block; margin-top: 5px; font-size: 13px; }
-@media (min-width: 1280px) {
-  .schedule-creation-grid { grid-template-columns: minmax(0, 1fr) 320px; }
-  .schedule-creation-task { grid-column: 1; grid-row: 1; }
-  .schedule-creation-execution { grid-column: 1; grid-row: 2; }
-  .schedule-creation-repeat { grid-column: 2; grid-row: 1 / span 2; }
-}
 @media (max-width: 759px) {
   .schedule-creation-scroll { padding: 20px 16px; }
   .schedule-creation-card { padding: 24px; }
   .schedule-creation-footer { padding: 12px 16px; }
 }
+
+.schedule-creation-card[hidden] { display:none !important; }
+.schedule-creation-progress,.schedule-creation-step-title,.schedule-creation-review { width:100%; max-width:760px; margin-inline:auto; }
+.schedule-creation-progress { display:flex; gap:12px; flex-wrap:wrap; padding:0; margin-block:20px; list-style:none; color:var(--muted); }
+.schedule-creation-progress li[aria-current="step"] { color:var(--accent); font-weight:600; }
+.schedule-creation-step-title { font-size:18px; margin-bottom:12px; }
+.schedule-creation-review section + section { margin-top:24px; }
+.schedule-creation-review header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.schedule-creation-review dd { margin:4px 0 16px; overflow-wrap:anywhere; }
+.schedule-creation-review code { display:block; overflow-wrap:anywhere; }
+.schedule-creation-review pre,.schedule-review-prompt { white-space:pre-wrap; overflow-wrap:anywhere; }

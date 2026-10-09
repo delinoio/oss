@@ -116,7 +116,7 @@ export function ApiProviderSettings({
     const accountState = entry.accountCountsAvailable ? copy("provider-model-settings.sentence.490d50c6611c", { v0: entry.connectedAccounts.toString(), v1: entry.totalAccounts.toString() }) : copy("provider-model-settings.extra.555765b26ebc");
     return <article className="result provider-row" key={providerIdentity(entry)}>
       <div className="provider-row-heading"><div><h4 className="api-provider-name"><ProviderMark preset={entry.presetId} /><span>{entry.displayName}</span></h4><p>{entry.presetId === ProviderPresetId.UNSPECIFIED ? copy("provider-model-settings.customApiProvider_c1db3d") : [ProviderPresetId.OLLAMA, ProviderPresetId.LM_STUDIO, ProviderPresetId.VLLM].includes(entry.presetId) ? copy("provider-model-settings.localApiServer_dd8eec") : copy("provider-model-settings.preset_7252e7")}</p></div><ProviderToggle entry={entry} presets={presets} changed={changed} refresh={result.refetch} readOnly={Boolean(result.error)} /></div>
-      <p><LocalizedText id="provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388" components={{ s0: <>{accountState}</> }} /></p>
+      <p><LocalizedText id="provider-model-settings.entriesSummary" components={{ s0: <>{accountState}</> }} /></p>
       {!entry.enabled && entry.totalAccounts > 0n ? <p>{copy("provider-model-settings.turningThisProviderOffPreservesIts_2cf65c")}</p> : null}
       <div className="actions">
         <SettingsActionButton icon={SettingsActionIcon.Add} type="button" disabled={Boolean(result.error) || !entry.providerId || (entry.accountCountsAvailable && entry.totalAccounts === 0n && !entry.enabled)} onClick={() => {
@@ -132,6 +132,7 @@ export function ApiProviderSettings({
   };
   return <section data-settings-search-target="provider-inventory" data-settings-search-pending={result.isLoading ? "true" : undefined} ref={root} aria-label={copy("provider-model-settings.apiProviderInventory_db530c")}>
     <SettingsHeading title={copy("provider-model-settings.apiProviders_376855")} description={copy("provider-model-settings.manageApiProvidersAndTheirAvailability_946ee7")} actions={<><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={result.isFetching} onClick={result.refreshExplicit}>{copy("provider-model-settings.refreshProviders_56b2d1")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Add} className="primary" type="button" disabled={!ready} onClick={() => createCustom()}>{copy("provider-model-settings.customProvider_fee405")}</SettingsActionButton></>} />
+    <p className="provider-connection-guidance">{copy("provider-model-settings.connectionGuidance")}</p>
     <div className="search-form"><label>{copy("provider-model-settings.searchApiProviders_1b03d9")}<input value={query} maxLength={256} onChange={(event) => setQuery(event.target.value)} /></label></div>
     {result.error ? <Failure failure={result.error.failure} /> : <Problem error={activeInventory.error || presetsQuery.error} />}
     {!result.error && result.data && !ready ? <p role="alert">{copy("provider-model-settings.thisServerDoesNotReportThe_03ee8f")}</p> : null}

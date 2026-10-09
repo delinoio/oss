@@ -37,14 +37,13 @@
   "pull-requests.setASupportedGithubProfileOwner_c9cd89": "Set a supported GitHub profile, owner and repository name in repository settings before loading.",
   "pull-requests.loadingRepositorySettings_98ac56": "Loading repository settings…",
   "pull-requests.prPageSize_f04cb9": "PR page size",
-  "pull-requests.noGithubRequestIsMadeUntil_55d1b2": "No GitHub request is made until you load pull requests.",
-  "pull-requests.loadPullRequests_c952ba": "Load pull requests",
-  "pull-requests.theDisplayedResultsBelongToThe_44e130": "The displayed results belong to the last loaded state and search. Load again to apply these edits.",
-  "pull-requests.selectARepositoryNoGithubRequest_b499d2": "Select a repository. No GitHub request is made until you load pull requests.",
+  "pull-requests.noGithubRequestIsMadeUntil_55d1b2": "Pull requests load automatically when you select a repository or change filters.",
+  "pull-requests.theDisplayedResultsBelongToThe_44e130": "The displayed results belong to the last applied state and search.",
+  "pull-requests.selectARepositoryNoGithubRequest_b499d2": "Select a repository to load pull requests automatically.",
   "pull-requests.repositorySettings_b00980": "Repository settings",
   "pull-requests.selectOneConfiguredRepositoryInThe_6c065a": "Select one configured repository in the sidebar to get started.",
   "pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad": "This repository is no longer available. Refresh the repository catalog and choose another entry.",
   "pull-requests.configureThisRepositorySGithubProfile_86db03": "Configure this repository's GitHub profile, owner and name in Repository settings before loading requests.",
-  "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "Choose the state and optional title/body terms, then select Load pull requests. Returning to this screen requires an explicit load again.",
+  "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "Pull requests load automatically after repository settings are validated.",
   "pull-requests.pendingFix": "Manual PR fix · remote repository <s0/> · PR ID <s1/>"
 }

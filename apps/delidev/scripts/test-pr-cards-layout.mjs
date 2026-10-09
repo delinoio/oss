@@ -45,9 +45,9 @@ try {
     const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) await opener.click();
     const pane = page.getByRole("region", { name: language === "ko" ? "풀 리퀘스트 탐색 및 필터" : "Pull requests navigation and filters", exact: true });
     await pane.getByRole("button", { name: language === "ko" ? `oss. 저장소 ID: ${id}` : `oss. Repository ID: ${id}`, exact: true }).click();
-    assert.equal(await page.evaluate(() => window.__prSidebarFixture.github), 0, `${context}: explicit initial Load`);
-    const load = pane.getByRole("button", { name: language === "ko" ? "풀 리퀘스트 불러오기" : "Load pull requests", exact: true }); await load.click();
+    assert.equal(await pane.getByRole("button", { name: language === "ko" ? "풀 리퀘스트 불러오기" : "Load pull requests", exact: true }).count(), 0);
     await page.locator(".pr-list-card").first().waitFor();
+    assert.equal(await page.evaluate(() => window.__prSidebarFixture.github), 1, `${context}: automatic initial read`);
     assert.equal(await page.locator(".pr-list-card").count(), 4, context);
     const geometry = await page.locator(".pull-requests-page").evaluate(node => {
       const style = getComputedStyle(node), header = node.querySelector(".pr-list-header"), cards = [...node.querySelectorAll(".pr-list-card")];
@@ -62,8 +62,8 @@ try {
     if (await opener.isVisible()) await opener.click();
     const state = pane.getByRole("radio", { name: language === "ko" ? "열림" : "Open", exact: true }); await state.focus(); await state.press("ArrowRight");
     if (width < 760) await page.keyboard.press("Escape");
-    assert.equal(await page.evaluate(() => window.__prSidebarFixture.github), before, `${context}: draft filters do not read`);
-    assert(await page.locator(".pr-list-applied").first().textContent().then(value => value.includes(language === "ko" ? "열림" : "Open")), context);
+    await page.waitForFunction(count => window.__prSidebarFixture.github === count + 1, before);
+    assert(await page.locator(".pr-list-applied").first().textContent().then(value => value.includes(language === "ko" ? "닫힘" : "Closed")), context);
     const read = page.locator(".pr-list-card").first().getByRole("button"); await read.focus(); await read.press("Enter");
     await page.getByRole("button", { name: language === "ko" ? "결과로 돌아가기" : "Back to results", exact: true }).waitFor();
     assert.equal(await page.locator(".pr-list-card").count(), 0, `${context}: detail uses the original renderer`);
@@ -80,8 +80,8 @@ try {
     const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) await opener.click();
     const pane = page.locator(".sidebar-pull-requests");
     await pane.getByRole("button", { name: language === "ko" ? `oss. 저장소 ID: ${id}` : `oss. Repository ID: ${id}`, exact: true }).click();
-    const load = pane.getByRole("button", { name: language === "ko" ? "풀 리퀘스트 불러오기" : "Load pull requests", exact: true });
-    await page.waitForFunction(() => document.querySelector(".pull-requests-page .actions button")); assert(await load.isDisabled());
+    await page.waitForFunction(() => document.querySelector(".pull-requests-page .actions button"));
+    assert.equal(await pane.getByRole("button", { name: language === "ko" ? "풀 리퀘스트 불러오기" : "Load pull requests", exact: true }).count(), 0);
     if (width < 760) await page.keyboard.press("Escape");
     const shortcut = page.getByRole("button", { name: language === "ko" ? "GitHub 프로필" : "GitHub profiles", exact: true });
     await page.keyboard.press("Tab"); await shortcut.focus();

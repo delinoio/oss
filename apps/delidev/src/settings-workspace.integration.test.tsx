@@ -168,12 +168,16 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><Schedules active open={() => {}} readLocalWorker={readLocalWorker} /></MutationIntents></QueryClientProvider></TransportProvider>);
   fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
   change("Schedule name", "Owned schedule");
+  change("Scheduled prompt", "Private schedule fixture prompt");
   await choose(screen.getByRole("combobox", { name: "Project" }), "Owned project");
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   await choose(screen.getByRole("combobox", { name: "Agent Worker" }), "Accountless schedule agent");
   await choose(screen.getByRole("combobox", { name: "Runner Device" }), "Owned Git Worker");
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
   await waitFor(() => expect((screen.getByLabelText("Runner Device") as HTMLSelectElement).disabled).toBe(true));
-  change("Frequency", "custom"); change("Scheduled prompt", "Private schedule fixture prompt"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  change("Frequency", "custom"); change("Cron expression", "0 0 1 1 *"); change("IANA timezone", "Asia/Seoul");
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   fireEvent.click(await screen.findByRole("button", { name: "Resume future runs" }));
   fireEvent.click(await screen.findByRole("button", { name: "Pause future runs" }));

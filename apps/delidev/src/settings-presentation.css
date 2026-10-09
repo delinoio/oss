@@ -94,3 +94,5 @@
 .settings-content .language-settings { max-width: 720px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .settings-content .language-settings label { font-size: 16px; line-height: 24px; font-weight: 600; }
 .settings-content[aria-label] .settings-breadcrumb { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }
+
+.settings-content .provider-connection-guidance { color: var(--muted); overflow-wrap: anywhere; }

@@ -23,7 +23,6 @@
   "subscription-accounts.subscriptionAccountPages_6c8f61": "Subscription account pages",
   "subscription-accounts.firstPage_0bdbb7": "First page",
   "subscription-accounts.nextPage_c08ac7": "Next page",
-  "subscription-accounts.serviceIdentityIsIndependentOfApi_fe87a6": "Service identity is independent of API providers. Edit preferences from the account menu. Recovery notifications start disabled. Retired legacy configurations retain historical attribution and require explicit Agent Worker and schedule reconfiguration.",
   "subscription-accounts.retryOriginalQuotaRefresh_8a9eca": "Retry original quota refresh",
   "subscription-accounts.extra.22fc4e1096f2": "Service-native account"
 }

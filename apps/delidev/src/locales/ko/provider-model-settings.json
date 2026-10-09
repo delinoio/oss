@@ -8,7 +8,6 @@
   "provider-model-settings.customApiProvider_c1db3d": "사용자 지정 API 제공자",
   "provider-model-settings.localApiServer_dd8eec": "로컬 API 서버",
   "provider-model-settings.preset_7252e7": "프리셋",
-  "provider-model-settings.entriesConnectionStateIsSeparateFrom_e54388": "항목: <s0/>. 연결 상태는 공급자 검증 및 모델 호환성과 별개입니다.",
   "provider-model-settings.turningThisProviderOffPreservesIts_2cf65c": "이 공급자를 꺼도 항목, 자격 증명, 모델 및 기록은 보존됩니다.",
   "provider-model-settings.manageAiApiKeys_a84e42": "AI API 키 관리",
   "provider-model-settings.addAiApiKey_2c04a8": "AI API 키 추가",
@@ -71,5 +70,7 @@
   "provider-model-settings.extra.fdfda19280ec": "지원하지 않는 구독 서비스",
   "provider-model-settings.extra.ca1844969742": "확인할 수 없음",
   "provider-model-settings.extra.dc937b598926": "없음",
-  "provider-model-settings.sentence.490d50c6611c": "{{v0}}개 연결됨 · 총 {{v1}}개"
+  "provider-model-settings.sentence.490d50c6611c": "{{v0}}개 연결됨 · 총 {{v1}}개",
+  "provider-model-settings.entriesSummary": "항목: <s0/>.",
+  "provider-model-settings.connectionGuidance": "연결 상태는 공급자 검증 및 모델 호환성과 별개입니다."
 }

@@ -812,7 +812,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
    and zoom. Keep every presentation rule scoped to this Settings surface. */
 .subscription-settings { width: 100%; max-width: 1120px; container-type: inline-size; color: var(--text); }
 .subscription-settings section + section { margin-top: 32px; }
-.subscription-settings button, .subscription-settings input, .subscription-settings select, .subscription-advanced summary { min-height: 40px; }
+.subscription-settings button, .subscription-settings input, .subscription-settings select { min-height: 40px; }
 .subscription-settings button { white-space: normal; }
 .subscription-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; }
 .subscription-section-heading h2 { margin: 0; font-size: 1.1rem; font-weight: 650; }
@@ -864,9 +864,6 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .subscription-provider-card h3 { margin: 16px 0 4px; font-size: 1rem; font-weight: 600; }
 .subscription-provider-card p { margin: 0 0 20px; color: var(--muted); font-size: .85rem; }
 .subscription-provider-card button { width: 100%; }
-.subscription-advanced { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 12px; }
-.subscription-advanced > summary { cursor: pointer; padding-block: 10px; font-weight: 500; }
-.subscription-advanced > div { padding-top: 12px; }
 .subscription-active-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
 @container (max-width: 1049px) {
   .subscription-row-main { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; }
