@@ -9,7 +9,7 @@
   "estimate-costs.tokenPriceEstimate_580be5": "Token-price estimate:",
   "estimate-costs.knownSubtotalsWithIncompleteTelemetry_9a1323": "Known subtotals, with incomplete telemetry.",
   "estimate-costs.unavailableForThisSelection_4ad32a": "Unavailable for this selection.",
-  "estimate-costs.currenciesAreSeparateCompleteTokenPrice_8dc932": "Currencies are separate. Complete token-price categories do not establish complete native usage, actual spend or budget compliance. Configure future prices in Settings → Models → Token pricing.",
+  "estimate-costs.currenciesAreSeparateCompleteTokenPrice_8dc932": "Currencies are separate. Complete token-price categories do not establish complete native usage, actual spend or budget compliance. To configure future prices, select a Model in the Usage sidebar, open Model details and token pricing, then open Token pricing.",
   "estimate-costs.unknownCurrency_4d3dc3": "Unknown currency",
   "estimate-costs.unknown_b23a6a": "unknown",
   "estimate-costs.historicalBasisVersion_0fade6": "Historical basis · <s0/> · version <s1/> · <s2/>",
