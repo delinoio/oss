@@ -1,3 +1,5 @@
+import { WaitingQueue } from "./waiting-queue";
+
 import { FlatDisclosureScope } from "./disclosure";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SessionToolMenu } from "./session-tool-menu";
@@ -61,7 +63,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
-  ConnectionState, EntityKind, ResourceQuery, ResourceService, SessionAction, SessionQuery,
+  ConnectionState, EntityKind, ResourceQuery, ResourceService, SessionAction, SessionQuery, SystemQuery, SystemCapability,
   SyncKind, newRequestId, synchronizeResources, clientFailure, supportsResourceSchema, type ClientFailure, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
@@ -348,10 +350,12 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     return <Interaction key={row.id} resource={row} refresh={interactions.refresh} draft={draft} saveDraft={editable => { if (draft) requestDrafts.save(row.id, { ...draft, editable }); }} clearDraft={() => requestDrafts.save(row.id)} submissionAllowed={!interactions.error && (!draft || draft.requestIdentity === interactionRequestIdentity(row))} />;
   };
   const transcriptRoot = useRef<HTMLDivElement>(null), requestsRoot = useRef<HTMLDivElement>(null), queueRoot = useRef<HTMLDivElement>(null);
-  const [requestsOpen, setRequestsOpen] = useState(false), [queueOpen, setQueueOpen] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
   const [mode, setMode] = useState(Mode.Execute);
   const messages = useConversationPages(EntityKind.MESSAGE, id, conversationActive && live.generation > 0);
   const queue = useConversationPages(EntityKind.QUEUE, id, conversationActive && live.generation > 0);
+  const queueStatus = useQuery(SystemQuery.getStatus, {}, { enabled: conversationActive });
+  const waitingSupported = queueStatus.data?.capabilities.includes(SystemCapability.WAITING_QUEUE_ORDER_V1) === true;
   const interactions = useConversationPages(EntityKind.INTERACTION, id, conversationActive && live.generation > 0, 20);
   const [acknowledged, setAcknowledged] = useState<Resource>();
   useRetainedMutationNotifications((key, _request, result) => {
@@ -370,6 +374,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     if (!active || ![SessionTabKind.Terminal, SessionTabKind.Terminals].includes(tabs.tab.kind)) { setPendingTerminalOpen(undefined); return; }
     if (session) { setTerminalOpenIntent(current => current ?? { requestId: pendingTerminalOpen, revision: session.revision }); setPendingTerminalOpen(undefined); }
   }, [pendingTerminalOpen, active, tabs.tab.kind, session]);
+  const waitingRevision = `${session?.revision ?? 0n}:${live.generation}:${[...live.resources.values()].filter(row => row.kind === EntityKind.QUEUE).map(row => `${row.id}:${row.revision}`).join(",")}:${[...live.removed].join(",")}`;
   const retryQuestion=useSidechatQuestionRetry(session,conversationActive);
   const historyHeights=useRef(new Map<string,number>());
   const historyRoot=useRef<HTMLDivElement>(null);
@@ -466,8 +471,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     setRevealSubmission(undefined);
   }, [revealSubmission, active]);
   const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
-  const queued = pending.filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session));
-  const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => row.id)).concat(!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
+  const queued = pending.filter(isQueuedInput);
+  const imageRejected = pending.filter(row => isImageStartupRejectedInput(row, session));
+  // Evicted payloads can contain waiting inputs. Keep their exact restoration
+  // controls reachable; retained IDs alone cannot establish an empty queue.
+  const completeQueuePayloads = queue.pages.every(page => queue.payloadPages.some(payload => payload.token === page.token));
+  const confirmedEmptyQueue = live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && !queue.loading && !queue.nextPageToken && completeQueuePayloads && !queued.length;
+  const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => row.id)).concat(!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
@@ -608,12 +618,15 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           </div>
         </Disclosure>
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
-        <Disclosure className="queue" onToggle={event => setQueueOpen(event.currentTarget.open)}><DisclosureSummary>{queue.isPending ? copy("session.loadingQueue") : <LocalizedText id="session.inputQueueWaiting_5228da" components={{ s0: <>{queued.filter(isQueuedInput).length}</> }} />}</DisclosureSummary>
-          <div ref={queueRoot} className="session-tray-content"><Failure failure={queue.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive && queueOpen}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? queued.filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput active={conversationActive && queueOpen} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
-            <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && queueOpen} label={copy("session.queuePages_1acdd8")} />
+        {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
+        <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
+          {queue.isPending ? <p role="status">{copy("session.loadingQueue")}</p> : null}<Failure failure={queue.error?.failure} />
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
+            <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && !confirmedEmptyQueue} label={copy("session.queuePages_1acdd8")} />
           </div>
-        </Disclosure>
+        {imageRejected.length ? <section className="queue-startup-recovery" aria-label={copy("session.startupImageInput")}>
+          {imageRejected.map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} active={conversationActive} readOnly />)}
+        </section> : null}
       </div>
       <form className="composer" {...imageEntryHandlers(images, locked || !imageRoute.systemSupported)} onSubmit={event => { event.preventDefault(); enqueue(); }}>
         <label className="sidebar-sr-only" htmlFor={`prompt-${id}`}>{copy("session.message_2f7766")}</label>
