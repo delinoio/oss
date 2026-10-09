@@ -481,9 +481,6 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .schedules-sidebar .schedules-empty { display: flex; align-items: flex-start; gap: 8px; margin: 16px 8px; }
 .schedules-sidebar .schedules-pages { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
 .schedules-sidebar .schedules-pages > button { border-color: transparent; background: transparent; }
-.schedules-sidebar .schedules-history-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 12px 8px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: transparent; text-align: left; overflow-wrap: anywhere; }
-.schedules-sidebar .schedules-history-chevron { transform: rotate(-90deg); }
-.schedules-sidebar .schedules-history-toggle[aria-expanded="true"] .schedules-history-chevron { transform: rotate(0); }
 .schedules-sidebar .sidebar-form { gap: 12px; padding: 8px 0 0; }
 .schedules-sidebar .sidebar-form > button { margin: 0; }
 .schedule-page { min-height: 100%; }
@@ -509,10 +506,12 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] { color: var(--selected-text); background: transparent; }
 .sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] .sidebar-repository-info { font-weight: 600; }
 .sidebar-pull-requests .sidebar-repository-row[aria-pressed="true"] .sidebar-repository-icon { color: var(--selected-text); }
-.sidebar-pull-requests .pr-repository-details-toggle { display: grid; place-items: center; min-width: 40px; min-height: 40px; padding: 8px; border: 0; background: transparent; color: var(--muted); }
-.sidebar-pull-requests .pr-repository-heading[data-selected="true"] .pr-repository-details-toggle { color: var(--selected-text); }
-.sidebar-pull-requests .pr-repository-details-toggle .sidebar-icon { width: 16px; height: 16px; transform: rotate(-90deg); }
-.sidebar-pull-requests .pr-repository-details-toggle[aria-expanded="true"] .sidebar-icon { transform: none; }
+/* Repository Details is an icon-only row action. Match the shared disclosure
+   specificity so compact/hover rules cannot restore its independent box. */
+.sidebar-pull-requests button.disclosure-header.disclosure-header.pr-repository-details-toggle,
+.sidebar-pull-requests button.disclosure-header.disclosure-header.pr-repository-details-toggle:hover:not(:disabled) { display: grid; place-items: center; min-width: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--muted); }
+.sidebar-pull-requests .pr-repository-heading[data-selected="true"] button.disclosure-header.disclosure-header.pr-repository-details-toggle { color: var(--selected-text); }
+.sidebar-pull-requests button.disclosure-header.disclosure-header.pr-repository-details-toggle:focus-visible { outline-offset: -3px; }
 .sidebar-pull-requests .pr-repository-heading button:focus-visible { outline-offset: -3px; }
 .sidebar-pull-requests .pr-repository-details { margin: 4px 8px 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12px; overflow-wrap: anywhere; }
 .sidebar-pull-requests .pr-repository-details dl { margin: 0; }
