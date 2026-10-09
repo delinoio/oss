@@ -33,3 +33,7 @@
 @media (max-height: 360px) {
   .settings-task-dialog:has(.project-creation) :is(.settings-task-header, .settings-task-footer, .settings-task-body) { padding: 8px 16px; }
 }
+
+.project-repository-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 8px; }
+.project-repository-heading h3 { margin: 0; }
+.project-registration-resolution { margin-block: 16px; }

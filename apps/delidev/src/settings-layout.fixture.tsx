@@ -207,6 +207,11 @@ const fixtureTransport = createRouterTransport(router => {
     if (routingFixture === "compact") return { routeJson: encode({ ...compact, source_index: 0, sources: [{ source: "subscription:chatgpt", model_id: model.id, native_model: "gpt-6", route: compact }] }) };
     return { routeJson: encode(routingFixture === "empty" ? { ...first, candidates: [] } : routingFixture === "selected" ? selected : routingFixture === "sources" ? { ...selected, source_index: 1, sources: [{ source: "subscription:chatgpt", model_id: model.id, native_model: "Fixture subscription model", route: first, problem: { code: "missing_input", message: "Synthetic account state" } }, { source: `api:${provider.id}`, model_id: model.id, native_model: "Fixture API model", route: selected }] } : first) };
   }, saveConfiguration: projectWizard || projectRows ? request => {
+    if (args.get("projectRegistration") === "true" && request.kind === EntityKind.REPOSITORY) {
+      const repository = create(ResourceSchema, { id: newRequestId(), kind: request.kind, schemaVersion: 1, revision: 1n, documentJson: request.documentJson }); records.push(repository);
+      const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "succeeded", output: { id: repository.id, revision: 1 } }) }); records.push(job);
+      document.documentElement.dataset.fixtureRegistrationCount = String(Number(document.documentElement.dataset.fixtureRegistrationCount ?? "0") + 1); return { job };
+    }
     if (projectRows) projectRowReads.writes++;
     // Synthetic acceptance makes accidental writes during Next observable.
     document.documentElement.dataset.fixtureProjectSaveCount = String(Number(document.documentElement.dataset.fixtureProjectSaveCount ?? "0") + 1);

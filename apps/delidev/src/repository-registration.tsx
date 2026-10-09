@@ -74,9 +74,18 @@ function InspectionCompletion({ state, output, completed }: { state: string; out
   useEffect(() => { if (state === JobState.Succeeded) completed(output); }, [state, output, completed]);
   return null;
 }
-function SaveCompletion({ state, saved }: { state: string; saved: () => void }) {
-  useEffect(() => { if (state === JobState.Succeeded) saved(); }, [state, saved]);
-  return null;
+export interface RegisteredRepository { id: string; revision: bigint }
+export function confirmedRepository(output: Document, clone = false): RegisteredRepository | undefined {
+  const id = output[clone ? "repository_id" : "id"], revision = output[clone ? "repository_revision" : "revision"];
+  if (typeof id !== "string" || !uuid.test(id)) return;
+  const decimal = typeof revision === "number" && Number.isSafeInteger(revision) ? String(revision) : typeof revision === "string" ? revision : "";
+  if (!/^[1-9][0-9]{0,19}$/.test(decimal) || BigInt(decimal) > 18446744073709551615n) return;
+  return { id, revision: BigInt(decimal) };
+}
+function SaveCompletion({ state, output, clone = false, saved }: { state: string; output: Document; clone?: boolean; saved: (repository: RegisteredRepository) => void }) {
+  const completed = useRef(false), identity = confirmedRepository(output, clone);
+  useEffect(() => { if (state === JobState.Succeeded && identity && !completed.current) { completed.current = true; saved(identity); } }, [state, identity?.id, identity?.revision, saved]);
+  return state === JobState.Succeeded && !identity ? <p role="alert">{copy("repository-registration.confirmationUnavailable")}</p> : null;
 }
 function repositoryRegistrationDocument(data: Document, legacy: boolean): Document {
   if (!legacy) return data;
@@ -88,7 +97,7 @@ function repositoryRegistrationDocument(data: Document, legacy: boolean): Docume
 }
 
 export function RepositoryRegistration({ active, readLocalWorker, controlLocalWorker, chooseFolder, saved, cancel }: {
-  active: boolean; readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder; saved: () => void; cancel: () => void;
+  active: boolean; readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder; saved: (repository: RegisteredRepository) => void; cancel: () => void;
 }) {
   const disclosureContentId1 = useId();
   const disclosureContentId2 = useId();
@@ -280,7 +289,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   return <section className="repository-registration" aria-label={copy("repository-registration.addRepository_2eda4d")}>
     <SettingsTaskDismissButton type="button" disabled={blocked} onClick={cancelTask}>{copy("repository-registration.backToRepositories_92a79b")}</SettingsTaskDismissButton>
     <h2 hidden={inTask}>{copy("repository-registration.addRepository_2eda4d")}</h2>
-    {cloneJob ? <>{cloneJob === "unknown" ? <p role="alert">{copy("repository-registration.inline.296ac69de7")}</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output) => <><SaveCompletion state={state} saved={saved} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">{copy("repository-registration.inline.a0600eeb9e")} {text(object(output.inspection).root)}{copy("repository-registration.inline.999469a947")}</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setCloneJob(undefined)}>{copy("repository-registration.inline.dc52059dec")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsTaskDismissButton></SettingsTaskActions></> : saveJob ? <>{saveJob === "unknown" ? <p role="alert">{copy("repository-registration.theSaveWasAcknowledgedWithoutA_186074")}</p> : <TrackedJob initial={saveJob} active={active}>{state => <><SaveCompletion state={state} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setSaveJob(undefined)}>{copy("repository-registration.returnToCurrentDraft_0d5f4c")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsTaskDismissButton></SettingsTaskActions></> : <>
+    {cloneJob ? <>{cloneJob === "unknown" ? <p role="alert">{copy("repository-registration.inline.296ac69de7")}</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output) => <><SaveCompletion state={state} output={output} clone saved={repository => { if (live()) saved(repository); }} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">{copy("repository-registration.inline.a0600eeb9e")} {text(object(output.inspection).root)}{copy("repository-registration.inline.999469a947")}</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setCloneJob(undefined)}>{copy("repository-registration.inline.dc52059dec")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsTaskDismissButton></SettingsTaskActions></> : saveJob ? <>{saveJob === "unknown" ? <p role="alert">{copy("repository-registration.theSaveWasAcknowledgedWithoutA_186074")}</p> : <TrackedJob initial={saveJob} active={active}>{(state, output) => <><SaveCompletion state={state} output={output} saved={repository => { if (live()) saved(repository); }} />{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setSaveJob(undefined)}>{copy("repository-registration.returnToCurrentDraft_0d5f4c")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions><SettingsTaskDismissButton type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsTaskDismissButton></SettingsTaskActions></> : <>
       <section className="repository-remote-fields" aria-label={copy("repository-registration.inline.9112065139")}>
         <label>{copy("repository-registration.inline.cd01c2ef6a")}<input ref={initialAction} type="text" value={cloneDraft.url} maxLength={4096} placeholder={copy("repository-registration.inline.a2116e2c72")} disabled={blocked} autoComplete="off" spellCheck={false} onChange={event => changeCloneDraft({ ...cloneDraft, url: event.target.value, directory: undefined })} /></label>
         {cloneDraft.url && !parsedClone ? <p role="alert">{copy("repository-registration.inline.2f00f15706")}</p> : null}

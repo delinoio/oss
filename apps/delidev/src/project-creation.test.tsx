@@ -6,9 +6,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor } from "./settings";
 import { ProjectCreation } from "./project-creation";
+import { SettingsTasks, SettingsTaskDialog, SettingsDialogSize } from "./settings-task";
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
@@ -18,16 +19,22 @@ function repository(name: string) { return create(ResourceSchema, { id: newReque
 type Page = { resources: Resource[]; nextPageToken?: string };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { resolve, promise }; }
 function fixture(rows = [repository("oss"), repository("delidev")], initialData?: Document) {
+  const jobs = new Map<string, Resource>(), profiles: Resource[] = [];
+  const registrationSave = vi.fn(async (request: { documentJson: Uint8Array }) => {
+    const created = repository(JSON.parse(new TextDecoder().decode(request.documentJson)).name); rows.push(created);
+    const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "succeeded", output: { id: created.id, revision: Number(created.revision) } }) }); jobs.set(job.id, job); return { job };
+  });
   const list = vi.fn(async (_token: string): Promise<Page> => ({ resources: rows }));
-  const get = vi.fn(async (id: string) => ({ resource: rows.find(row => row.id === id) }));
+  const get = vi.fn(async (id: string) => ({ resource: rows.find(row => row.id === id) ?? jobs.get(id) }));
   const save = vi.fn(async (request: { documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const transport = createRouterTransport(router => {
-    router.service(ResourceService, { listResources: request => request.filter?.kind === EntityKind.REPOSITORY ? list(request.filter.pageToken) : { resources: [] }, getResource: request => get(request.id) });
-    router.service(ConfigurationService, { saveConfiguration: save });
+    router.service(ResourceService, { listResources: request => request.filter?.kind === EntityKind.REPOSITORY ? list(request.filter.pageToken) : { resources: request.filter?.kind === EntityKind.INTEGRATION ? profiles : [] }, getResource: request => get(request.id) });
+    router.service(ConfigurationService, { saveConfiguration: request => request.kind === EntityKind.REPOSITORY ? registrationSave(request) : save(request) });
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.REMOTE_REPOSITORIES_V1, SystemCapability.GITHUB_REPOSITORY_PICKER_V1] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (content?: ReactNode) => <StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{content ?? <ConfigurationEditor kind={EntityKind.PROJECT} initialData={initialData} active saved={() => {}} cancel={() => {}} />}</MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
-  return { rows, list, get, save, client, view };
+  return { rows, list, get, save, registrationSave, jobs, profiles, client, view };
 }
 const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
 const previous = () => fireEvent.click(screen.getByRole("button", { name: "Previous" }));
@@ -179,7 +186,7 @@ it("uses locale-independent repository search matching", async () => {
 
 it("shows final registered emptiness without enabling repository advancement", async () => {
   const value = fixture([]); render(value.view());
-  await screen.findByText("No registered repositories. Add a repository in Settings → Repositories first.");
+  await screen.findByText("No registered repositories. Use Add repository to register one here.");
   expect(screen.queryByText("Loading repositories…")).toBeNull();
   expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
 });
@@ -213,4 +220,67 @@ it("drops late catalog pages and scoped caches on departure", async () => {
   expect(value.list.mock.calls.some(([token]) => token === "never-read")).toBe(false);
   expect(value.client.getQueryCache().getAll().filter(query => query.queryKey.some(part => typeof part === "object" && part && "projectRepositoryBatch" in part))).toHaveLength(0);
   expect(document.activeElement).toBe(outside); outside.remove();
+});
+
+async function registerFromProject(url = "https://github.com/delinoio/new.git") {
+ fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+ const child = await screen.findByRole("dialog", { name: "Add repository" });
+ fireEvent.change(await within(child).findByRole("textbox", { name: "Git URL" }), { target: { value: url } });
+ const add = within(child).getByRole("button", { name: "Add repository" });
+ await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false)); fireEvent.click(add);
+}
+it("registers and resolves the original confirmed repository without saving the project", async () => {
+ const f = fixture([]); render(f.view()); await screen.findByText(/No registered repositories/);
+ await registerFromProject(); await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add repository" })).toBeNull());
+ await screen.findByRole("button", { name: /^Move repository 1:/ });
+ expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
+ next(); expect(name().value).toBe("new");expect(primary().value).toBe(f.rows[0].id);
+});
+it("preserves search, ordered selections, manual name, Primary and restrictions when the child closes", async () => {
+ const rows=[repository("A"),repository("B")], initial={ name:"Manual", repositories:[rows[1].id,rows[0].id], primary_repository:rows[0].id,agents:[],accounts:[] };
+ const f=fixture(rows,initial);render(f.view());await screen.findByRole("checkbox",{name:"A"});
+ fireEvent.change(screen.getByRole("searchbox"),{target:{value:"hidden"}}); const opener=screen.getByRole("button",{name:"Add repository"});fireEvent.click(opener);
+ const child=await screen.findByRole("dialog",{name:"Add repository"}); fireEvent.click(within(child).getByRole("button",{name:"Close Add repository"}));
+ await waitFor(()=>expect(document.activeElement).toBe(opener));expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("hidden");
+ expect(screen.getAllByRole("button",{name:/^Move repository/}).map(node=>node.textContent)).toHaveLength(2);
+ next();expect(name().value).toBe("Manual");expect(primary().value).toBe(rows[0].id);expect(f.registrationSave).not.toHaveBeenCalled();expect(f.save).not.toHaveBeenCalled();
+});
+it("retains confirmed identity after failed catalog refresh and retries only the read", async () => {
+ const f=fixture([]); render(f.view()); await screen.findByText(/No registered repositories/);
+ f.list.mockRejectedValueOnce(new ConnectError("Read unavailable",Code.Unavailable)); await registerFromProject();
+ await screen.findByRole("button",{name:"Retry repository read"}); expect(screen.queryByRole("button",{name:/^Move repository/})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Retry repository read"}));await screen.findByRole("button",{name:/^Move repository 1:/});
+ expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
+});
+it("appends only the confirmed UUID despite duplicate names and preserves a hidden search and cleared Primary", async()=>{
+ const rows=[repository("A"),repository("new")],f=fixture(rows,{name:"Manual",repositories:rows.map(row=>row.id),primary_repository:"",agents:[],accounts:[]});render(f.view());await screen.findByRole("checkbox",{name:"A"});
+ fireEvent.change(screen.getByRole("searchbox"),{target:{value:"A"}});await registerFromProject(); await waitFor(()=>expect(screen.getAllByRole("button",{name:/^Move repository/})).toHaveLength(3));
+ expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("A");next();expect(name().value).toBe("Manual");expect(primary().value).toBe("");
+ expect([...primary().options].slice(1).map(option=>option.value)).toEqual(rows.map(row=>row.id));expect(f.save).not.toHaveBeenCalled();
+});
+
+it("owns three modal levels and closes only the topmost presentation", async()=>{
+ const f=fixture();f.profiles.push(create(ResourceSchema,{id:newRequestId(),kind:EntityKind.INTEGRATION,revision:1n,schemaVersion:1,documentJson:encode({name:"GitHub",provider:"github.com",token_kind:"classic",resource_owner:"delinoio",connection:{generation_id:newRequestId()}})}));
+ render(f.view(<SettingsTasks><SettingsTaskDialog size={SettingsDialogSize.Form} title="New Project" close={()=>{}}><ConfigurationEditor kind={EntityKind.PROJECT} active saved={()=>{}} cancel={()=>{}} /></SettingsTaskDialog></SettingsTasks>));
+ const parent=await screen.findByRole("dialog",{name:"New Project"});await within(parent).findByRole("checkbox",{name:"oss"});
+ const opener=within(parent).getByRole("button",{name:"Add repository"});fireEvent.click(opener);
+ const child=await screen.findByRole("dialog",{name:"Add repository"});expect(parent.hasAttribute("inert")).toBe(true);
+ const choose=await within(child).findByRole("button",{name:"Choose from GitHub"});fireEvent.click(choose);
+ await waitFor(()=>expect(screen.getAllByRole("dialog")).toHaveLength(3));const top=screen.getAllByRole("dialog").at(-1)!;
+ fireEvent(top,new Event("cancel",{bubbles:true,cancelable:true}));await waitFor(()=>expect(screen.getAllByRole("dialog")).toHaveLength(2));expect(document.activeElement).toBe(choose);
+ fireEvent(child,new Event("cancel",{bubbles:true,cancelable:true}));await waitFor(()=>expect(screen.getAllByRole("dialog")).toHaveLength(1));expect(parent.hasAttribute("inert")).toBe(false);await waitFor(()=>expect(document.activeElement).toBe(opener));expect(f.registrationSave).not.toHaveBeenCalled();expect(f.save).not.toHaveBeenCalled();
+});
+it("ignores an original registration result delivered after child disposal", async()=>{
+ const f=fixture([]),pending=deferred<{job:Resource}>();f.registrationSave.mockImplementationOnce(()=>pending.promise);render(f.view());await screen.findByText(/No registered repositories/);await registerFromProject();
+ fireEvent.click(screen.getByRole("button",{name:"Close Add repository"}));const reads=f.list.mock.calls.length;
+ pending.resolve({job:create(ResourceSchema,{id:newRequestId(),kind:EntityKind.JOB,revision:1n,schemaVersion:1,documentJson:encode({state:"succeeded",output:{id:newRequestId(),revision:1}})})});await act(async()=>{});
+ expect(f.list).toHaveBeenCalledTimes(reads);expect(screen.queryByRole("dialog",{name:"Add repository"})).toBeNull();expect(screen.queryByRole("button",{name:/^Move repository/})).toBeNull();expect(f.save).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Add repository"}));const reopened=await screen.findByRole("dialog",{name:"Add repository"});expect((await within(reopened).findByRole("textbox",{name:"Git URL"}) as HTMLInputElement).value).toBe("");expect(f.registrationSave).toHaveBeenCalledOnce();
+});
+
+it.each(["missing","unsupported","older"])("retains the original confirmation for read-only resolution retry (%s)",async outcome=>{
+ const f=fixture([]);render(f.view());await screen.findByText(/No registered repositories/);
+ f.list.mockImplementationOnce(async()=>({resources:outcome==="missing"?[repository("new")]:f.rows.map(row=>({...row,...(outcome==="unsupported"?{schemaVersion:99}:{revision:6n})}))}));
+ await registerFromProject();await screen.findByRole("button",{name:"Retry repository read"});expect(screen.queryByRole("button",{name:/^Move repository/})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Retry repository read"}));await screen.findByRole("button",{name:/^Move repository 1:/});expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
 });

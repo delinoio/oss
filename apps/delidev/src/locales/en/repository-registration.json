@@ -84,5 +84,6 @@
   "repository-registration.inline.57dbb8a56f": "Clone mode uses the repository folder name and URL. Add the repository first, then configure optional settings.",
   "repository-registration.inline.3f0ac0a40a": "Retry the same clone request",
   "repository-registration.boundedCheckoutPath": "Enter a bounded absolute checkout path.",
-  "repository-registration.selectCheckoutComputer": "Select the computer that owns this checkout."
+  "repository-registration.selectCheckoutComputer": "Select the computer that owns this checkout.",
+  "repository-registration.confirmationUnavailable": "Registration succeeded without a valid repository identity. Reinspect the saved repository; do not repeat registration."
 }
