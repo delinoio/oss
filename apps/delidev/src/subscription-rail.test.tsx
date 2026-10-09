@@ -158,3 +158,51 @@ it("keeps explicit restart at the accepted 200-page limit",async()=>{
  const reload=await screen.findByRole("button",{name:"Reload list"});expect(screen.queryByRole("button",{name:/Load more Subscriptions/})).toBeNull();fireEvent.click(reload);
  await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(201));expect(f.requests.mock.calls.at(-1)?.[0]).toBe("");
 },30000);
+
+it("presents fresh native quota directly without account identity or technical disclosures",async()=>{
+ const observed=new Date().toISOString(),reset=new Date(Date.now()+86400000).toISOString();
+ const row=resource("personal@example.test","chatgpt",{quota:[{id:"codex:primary",state:"observed",remaining:.57,blocking:true,comparison_group:"primary",observed_at:observed,reset_at:reset}]});
+ const f=mount(()=>({resources:[row]}));const opener=await screen.findByRole("button",{name:/personal@example.test/});fireEvent.click(opener);
+ const dialog=screen.getByRole("dialog");expect(dialog.textContent).toContain("personal@example.test");expect(dialog.textContent).toContain("Connected");expect(dialog.textContent).toContain("codex:primary");expect(dialog.querySelector(".subscription-quota-value strong")?.textContent).toBe("57%");expect((dialog.querySelector(".subscription-quota-bar span") as HTMLElement).style.width).toBe("57%");
+ expect(dialog.querySelectorAll("details")).toHaveLength(0);expect(dialog.textContent).not.toContain(row.id);expect(dialog.textContent).not.toMatch(/Account identity|Quota details|most restrictive/);expect(dialog.querySelectorAll("time")).toHaveLength(2);expect([...dialog.querySelectorAll("time")].map(node=>node.getAttribute("title"))).toEqual([reset,observed]);expect(f.requests).toHaveBeenCalledOnce();
+ fireEvent.click(screen.getByRole("button",{name:"Manage subscriptions"}));expect(screen.queryByRole("dialog")).toBeNull();expect(f.manage).toHaveBeenCalledOnce();expect(f.requests).toHaveBeenCalledOnce();
+});
+
+it("retains duplicate-alias ownership and every native window in original order for every service",async()=>{
+ const quota=(id:string)=>({id,state:"observed",remaining:.57,blocking:true,comparison_group:"shared",observed_at:new Date().toISOString()});
+ const rows=["chatgpt","claude","grok"].flatMap(service=>[resource("Same alias",service,{quota:[quota(`${service}:second`),quota(`${service}:first`)]}),resource("Same alias",service,{quota:[quota(`${service}:other`)]})]);
+ const f=mount(()=>({resources:rows}));await screen.findAllByRole("button",{name:/Same alias/});
+ for(const row of rows){fireEvent.click(screen.getByRole("button",{name:new RegExp(row.id)}));const dialog=screen.getByRole("dialog");expect([...dialog.querySelectorAll(".subscription-quota-id")].map(node=>node.textContent)).toEqual(railAccount(row).windows.map(window=>window.id));expect(dialog.textContent).not.toContain(row.id);fireEvent.keyDown(dialog,{key:"Escape"});}
+ expect(f.requests).toHaveBeenCalledOnce();
+});
+
+for(const [name,extra,percent,state] of [
+ ["zero",{remaining:0},"0%","Observed"],["full",{remaining:1},"100%","Observed"],
+ ["stale",{observed_at:new Date(Date.now()-600000).toISOString()},"57%","Stale observation"],
+ ["failed",{state:"failed"},"57%","Observation failed"],
+ ["unsupported",{state:"unsupported"},undefined,"Quota observation unsupported"],
+ ["unknown",{state:"unknown"},undefined,"No current quota evidence"],
+ ["invalid observation",{observed_at:"bad-date"},undefined,"No current quota evidence"],
+ ["future observation",{observed_at:new Date(Date.now()+86400000).toISOString()},undefined,"Stale observation"],
+ ["missing observation",{observed_at:""},undefined,"No current quota evidence"],
+ ["invalid reset",{reset_at:"bad-date"},undefined,"No current quota evidence"],
+ ["expired reset",{reset_at:new Date(Date.now()-60000).toISOString()},"57%","Stale observation"],
+] as const)it(`retains truthful ${name} window presentation without restoring current evidence`,async()=>{
+ const row=resource(name,"chatgpt",{quota:[Object.assign({id:"native:exact",state:"observed",remaining:.57,blocking:true,comparison_group:"primary",observed_at:new Date().toISOString()},extra)]});
+ const f=mount(()=>({resources:[row]}));fireEvent.click(await screen.findByRole("button",{name:new RegExp(row.id)}));const dialog=screen.getByRole("dialog");expect(dialog.querySelector(".subscription-quota-value strong")?.textContent).toBe(percent);expect(dialog.textContent).toContain(state);expect(dialog.querySelectorAll(".subscription-quota-bar")).toHaveLength(percent===undefined?0:1);
+ if(name!=="zero"&&name!=="full")expect(dialog.querySelector(".subscription-quota-historical")).toBeTruthy();expect(f.requests).toHaveBeenCalledOnce();
+});
+
+it("keeps failed-read historical values and warning visible through a deferred saved recheck",async()=>{
+ let stage=0,finish!:(result:{resources:Resource[]})=>void;
+ const row=resource("Retained"),f=mount(()=>{if(stage===1)throw new ConnectError("saved read failed",Code.Unavailable);if(stage===2)return new Promise(resolve=>{finish=resolve;});return{resources:[row]};});
+ const opener=await screen.findByRole("button",{name:/Retained/});fireEvent.click(opener);stage=1;fireEvent(globalThis.window,new Event("focus"));await screen.findByText("Current reads are unavailable. Previous saved values are shown.");
+ expect(screen.getByRole("dialog",{name:/Retained/}).querySelector(".subscription-quota-historical")).toBeTruthy();stage=2;fireEvent.click(screen.getByRole("button",{name:"Explain subscription read problem"}));fireEvent.click(screen.getByRole("button",{name:"Retry"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(3));expect(screen.getByText("Current reads are unavailable. Previous saved values are shown.")).toBeTruthy();expect((screen.getByRole("button",{name:"Recheck saved quota evidence"}) as HTMLButtonElement).disabled).toBe(true);expect(screen.queryByRole("button",{name:/Retained · 28% remaining/})).toBeNull();
+ await act(async()=>finish({resources:[row]}));await screen.findByRole("button",{name:/Retained · 28% remaining/});expect(screen.queryByText("Current reads are unavailable. Previous saved values are shown.")).toBeNull();expect(screen.getByRole("dialog",{name:/Retained/}).querySelector(".subscription-quota-historical")).toBeNull();
+});
+
+it("close and outside dismissal retain the original opener without another read",async()=>{
+ const row=resource("Original opener"),f=mount(()=>({resources:[row]}));const opener=await screen.findByRole("button",{name:new RegExp(row.id)});
+ fireEvent.click(opener);fireEvent.click(screen.getByRole("button",{name:"Close quota details"}));expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(opener);
+ fireEvent.click(opener);fireEvent.pointerDown(document.body);expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(opener);expect(f.requests).toHaveBeenCalledOnce();
+});

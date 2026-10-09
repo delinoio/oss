@@ -13,3 +13,23 @@
 .subscription-rail-popover p { margin: 8px 0; }
 .subscription-rail-popover section { padding-block: 8px; border-top: 1px solid var(--border); }
 .subscription-rail-popover details { margin-block: 12px; }
+
+/* Selected-account presentation is independent of the original read-problem dialog. */
+.subscription-account-popover { width: 320px; padding: 16px; border-radius: 12px; }
+.subscription-account-popover header { display: flex; align-items: center; gap: 8px; }
+.subscription-account-popover header img { flex: 0 0 24px; }
+.subscription-account-popover header strong { flex: 1; min-width: 0; }
+.subscription-account-popover .subscription-account-alias { margin-bottom: 4px; font-weight: 600; }
+.subscription-account-popover .subscription-account-state { margin-top: 0; color: var(--muted); }
+.subscription-account-popover .subscription-quota-window { padding-block: 12px; }
+.subscription-account-popover .subscription-quota-id { margin-top: 0; color: var(--muted); font-size: 12px; }
+.subscription-account-popover .subscription-quota-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-block: 6px; }
+.subscription-quota-value strong { font-size: 32px; line-height: 1.15; font-weight: 650; }
+.subscription-quota-value span { color: var(--muted); }
+.subscription-quota-bar { height: 6px; border-radius: 4px; background: var(--surface-muted); overflow: hidden; margin-block: 8px 12px; }
+.subscription-quota-bar span { display: block; height: 100%; background: var(--accent); }
+.subscription-quota-historical .subscription-quota-bar span { background: var(--muted); }
+.subscription-quota-historical .subscription-quota-value strong { color: var(--muted); }
+.subscription-account-popover .subscription-quota-observation { margin-bottom: 0; color: var(--muted); }
+.subscription-account-actions { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+.subscription-account-actions button { width: 100%; white-space: normal; overflow-wrap: anywhere; }
