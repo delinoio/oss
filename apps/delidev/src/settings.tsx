@@ -170,11 +170,11 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
  const prefixValue = kind === EntityKind.SETTINGS ? data.branch_prefix : kind === EntityKind.PROJECT ? object(data.settings).branch_prefix : undefined;
  const prefixInvalid = prefixValue !== undefined && (typeof prefixValue !== "string" || !validBranchPrefix(prefixValue));
  const behaviorUnsupported = [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) && source?.schemaVersion === 2 && !supportsProjectBehavior;
-  const saveDisabled = defaultsUnsupported || prefixInvalid || behaviorUnsupported || selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
+  const saveDisabled = defaultsUnsupported || (prefixInvalid && kind !== EntityKind.PROJECT) || behaviorUnsupported || selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
   const submit = () => {
     if (kind === EntityKind.PROJECT && form.current && !form.current.checkValidity()) return;
     // The ref also fences a submit dispatched before React commits the disabled button.
-    if (saveDisabled || pendingSelections.current.size) return;
+    if (saveDisabled || prefixInvalid || pendingSelections.current.size) return;
     const selectedFormat = apiFormat(data.api_protocol);
     if (apiEditor && keepsFormatKey && source && selectedFormat && selectedFormat !== document(source).api_protocol) {
       void formatMutation.send({ mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, apiProtocol: apiFormatToWire(selectedFormat), alias: text(data.alias), enabled: data.enabled === true, excludeAutomatic: data.exclude_automatic === true, recoveryNotifications: data.recovery_notifications === true });

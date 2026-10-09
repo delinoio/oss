@@ -1222,3 +1222,12 @@ it.each(Object.values(SupportedLanguage))("shows API provider guidance once with
   expect(value.connect).not.toHaveBeenCalled();
   expect(value.save).not.toHaveBeenCalled();
 });
+
+it("reveals a hidden invalid Project branch prefix through complete-document Save validation", async () => {
+ const repository=resource(EntityKind.REPOSITORY,{name:"Repository"}),project=resource(EntityKind.PROJECT,{name:"Project",repositories:[repository.id],primary_repository:repository.id,agents:{configured:false,ids:[]},accounts:{configured:false,ids:[]},settings:{branch_prefix:"delidev/",plan_mode_default:"inherit"}});
+ const f=fixture([project,repository],{systemCapabilities:[SystemCapability.SESSION_DEFAULTS_V1,SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1]});
+ render(f.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={()=>{}} cancel={()=>{}}/>));
+ fireEvent.click(screen.getByRole("tab",{name:"Execution"}));const prefix=await screen.findByLabelText("Literal branch prefix");fireEvent.change(prefix,{target:{value:"bad..prefix"}});
+ fireEvent.click(screen.getByRole("tab",{name:"General"}));const save=screen.getByRole("button",{name:"Save Project"});await waitFor(()=>expect(save).toHaveProperty("disabled",false));fireEvent.click(save);
+ await waitFor(()=>expect(screen.getByRole("tab",{name:"Execution"}).getAttribute("aria-selected")).toBe("true"));await waitFor(()=>expect(document.activeElement).toBe(prefix));expect(f.save).not.toHaveBeenCalled();
+});
