@@ -8,6 +8,7 @@ mod date_format_host;
 mod notification_host;
 mod oauth_host;
 mod session_creation_preferences_host;
+mod shortcut_capture_host;
 mod shortcut_preferences_host;
 mod tray_host;
 mod tray_status_host;
@@ -52,6 +53,7 @@ use session_creation_preferences_host::{
     read_runner_device_preferences, read_session_creation_preferences,
     update_runner_device_preferences, update_session_creation_preferences,
 };
+use shortcut_capture_host::shortcut_capture_native;
 use shortcut_preferences_host::{read_shortcut_preferences, update_shortcut_preferences};
 mod language_host;
 use cef::{ImplBrowser, ImplBrowserHost};
@@ -1738,6 +1740,7 @@ fn run() -> Result<(), NativeFailure> {
         .manage(Arc::clone(&browser))
         .manage(Arc::new(ProductWindows::default()))
         .manage(Arc::new(window_host::WindowActions::default()))
+        .manage(Arc::new(shortcut_capture_host::CaptureHost::default()))
         .manage(Arc::clone(&tray))
         .manage(Arc::clone(&notifications))
         .manage(Arc::clone(&oauth))
@@ -1753,6 +1756,7 @@ fn run() -> Result<(), NativeFailure> {
             desktop_credential_access,
             choose_repository_folder,
             read_appearance,
+            shortcut_capture_native,
             read_shortcut_preferences,
             update_shortcut_preferences,
             read_date_format,
@@ -1819,6 +1823,20 @@ fn run() -> Result<(), NativeFailure> {
                     _ => {}
                 }
                 return;
+            }
+            let capture = window.state::<Arc<shortcut_capture_host::CaptureHost>>();
+            if matches!(event, WindowEvent::Focused(false)) {
+                capture.departure(window.app_handle(), window.label(), false);
+            } else if matches!(event, WindowEvent::Destroyed) {
+                capture.destroyed(window.app_handle(), window.label());
+            } else if matches!(event, WindowEvent::Focused(true)) {
+                capture.departure(window.app_handle(), window.label(), true);
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if capture.close_requested(window.label()) {
+                    api.prevent_close();
+                    return;
+                }
             }
             let windows = window.state::<Arc<ProductWindows>>();
             if matches!(event, WindowEvent::Focused(true))
@@ -1958,6 +1976,9 @@ fn run() -> Result<(), NativeFailure> {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
             _app.state::<Arc<tray_status_host::PanelHost>>()
                 .request_stop(_app);
+            let _ = _app
+                .state::<Arc<shortcut_capture_host::CaptureHost>>()
+                .release(_app);
             _app.state::<Arc<window_host::WindowActions>>().stop();
             if let Ok(mut registry) = _app.state::<Arc<ProductWindows>>().registry.lock() {
                 registry.stop();

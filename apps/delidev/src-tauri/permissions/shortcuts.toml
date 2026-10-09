@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "device-shortcuts"
 description = "Read or atomically update device-local shortcut preferences; no server configuration, account data, arbitrary paths or execution authority."
-commands.allow = ["read_shortcut_preferences", "update_shortcut_preferences"]
+commands.allow = ["read_shortcut_preferences", "update_shortcut_preferences", "shortcut_capture_native"]

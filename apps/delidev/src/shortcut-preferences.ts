@@ -32,7 +32,7 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
   const value = chord as Record<string, unknown>;
   if (Object.keys(value).sort().join(",") !== "key,shift" || typeof value.shift !== "boolean" || typeof value.key !== "string" || !/^(?:[a-z0-9]|Enter)$/.test(value.key)) return false;
   // Fixed product and native editing chords remain unavailable for rebinding.
-  return value.shift ? !/^[vz]$/.test(value.key) : !/^[knw1-9acvxyz]$/.test(value.key);
+  return value.shift ? !/^[vz]$/.test(value.key) : !/^[knwqhmt1-9acvxyz]$/.test(value.key);
 }
 export function customizationBindings(id: ShortcutId, overrides: ShortcutOverrides): readonly ShortcutBinding[] {
   const override = overrides[id];

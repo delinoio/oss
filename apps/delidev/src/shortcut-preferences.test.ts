@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it } from "vitest";
-import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
+import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}} as const;
@@ -26,3 +26,5 @@ it("capture requires the renderer primary and rejects unsafe input without match
  expect(captureShortcut(new KeyboardEvent("keydown",{key:"J",metaKey:true,shiftKey:true}),ShortcutPlatform.Mac)).toEqual({key:"j",shift:true});
  for(const input of [{key:"j"},{key:"k",ctrlKey:true},{key:"j",ctrlKey:true,repeat:true},{key:"j",ctrlKey:true,isComposing:true},{key:"j",ctrlKey:true,altKey:true},{key:"j",ctrlKey:true,metaKey:true}])expect(captureShortcut(new KeyboardEvent("keydown",input),ShortcutPlatform.Other)).toBeUndefined();
 });
+
+it("rejects fixed native menu chords throughout the complete editable map",()=>{for(const action of editableShortcutCatalog)for(const key of ["q","h","m","t","w"]){expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key,shift:false}}})).toThrow();expect(validShortcutChord({key,shift:true})).toBe(true);}});

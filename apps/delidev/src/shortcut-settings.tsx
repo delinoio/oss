@@ -5,38 +5,57 @@ import { bindingKeys, ShortcutId, shortcutPlatform, type ShortcutBinding } from 
 import { captureShortcut, customizationBindings, ShortcutGroup, ShortcutOverrideState, shortcutCatalog, editableShortcutCatalog, readOnlyShortcutCatalog, shortcutConflicts, type ShortcutOverrides } from "./shortcut-preferences";
 import { ShortcutPreferenceOperation, useShortcutPreferences } from "./shortcut-preference-controller";
 import "./shortcut-settings.css";
+import { shortcutCapture } from "./shortcut-capture";
 const serialize = (value: ShortcutOverrides) => JSON.stringify(Object.entries(value).sort(([a],[b]) => a.localeCompare(b)));
 export function ShortcutSettings() {
   useLocale();
   const { snapshot, operation, save, reload } = useShortcutPreferences();
   const [draft, setDraft] = useState(snapshot.overrides), [baseline, setBaseline] = useState(snapshot);
   const [capturing, setCapturing] = useState<ShortcutId>(), [invalid, setInvalid] = useState(false), [saved, setSaved] = useState(false);
+  const [captureState,setCaptureState]=useState<"arming"|"active"|"retiring"|"uncertain">();
+  const deadline=useRef(0),captureGeneration=useRef(0);
   const restoreFocus = useRef(false);
   const opener = useRef<HTMLButtonElement|null>(null), mounted = useRef(false), platform = shortcutPlatform();
   const dirty = serialize(draft) !== serialize(baseline.overrides), conflict = dirty && baseline.revision !== snapshot.revision;
   const locked = Boolean(operation || snapshot.problem || conflict);
   const conflicts = shortcutConflicts(draft);
-  useEffect(() => { mounted.current=true; return () => { mounted.current=false; }; }, []);
+  useEffect(() => { mounted.current=true; return () => { mounted.current=false;captureGeneration.current++;void shortcutCapture.end().catch(()=>{}); }; }, []);
   useEffect(() => {
     if (!dirty || saved) { setBaseline(snapshot); setDraft(snapshot.overrides); setSaved(false); }
   }, [snapshot, saved]);
-  const cancelCapture = () => { restoreFocus.current=true; setCapturing(undefined); setInvalid(false); };
+  const cancelCapture = () => {
+    captureGeneration.current++;deadline.current=0;setCaptureState("retiring");setInvalid(false);
+    void shortcutCapture.end().then(()=>{if(mounted.current){restoreFocus.current=true;setCapturing(undefined);setCaptureState(undefined);}}).catch(()=>{if(mounted.current)setCaptureState("uncertain");});
+  };
+  const beginCapture=(id:ShortcutId)=>{
+    const generation=++captureGeneration.current;setCapturing(id);setCaptureState("arming");setInvalid(false);
+    void shortcutCapture.begin(snapshot.revision).then(({deadline:until,token})=>{
+      if(!mounted.current||generation!==captureGeneration.current){void shortcutCapture.end(token).catch(()=>{});return;}
+      if(until<=performance.now()){cancelCapture();return;}
+      deadline.current=until;setCaptureState("active");
+    }).catch(()=>{if(mounted.current&&generation===captureGeneration.current)setCaptureState("uncertain");});
+  };
   useLayoutEffect(()=>{if(!capturing&&restoreFocus.current){restoreFocus.current=false;const button=opener.current;if(button?.isConnected&&!button.matches(":disabled")&&!button.closest("[hidden],[inert]"))button.focus({preventScroll:true});}},[capturing]);
   useEffect(() => {
-    if (!capturing || locked) { if(capturing)cancelCapture(); return; }
+    if (!capturing || locked) { if(capturing&&captureState!=="retiring"&&captureState!=="uncertain")cancelCapture(); return; }
     const action = capturing;
+    const expire=setTimeout(()=>{if(captureState==="active")cancelCapture();},Math.max(0,deadline.current-performance.now()));
     const capture = (event:KeyboardEvent) => {
       // Capture owns its event before application dispatch or native editing.
       event.preventDefault();event.stopImmediatePropagation();
+      if(captureState!=="active"||performance.now()>=deadline.current){if(captureState==="active")cancelCapture();return;}
       if(event.key==="Escape"&&!event.isComposing&&event.keyCode!==229&&!event.repeat){cancelCapture();return;}
       const chord=captureShortcut(event,platform);
       if(!chord){setInvalid(true);return;}
       if(!mounted.current)return;
       setDraft(previous=>({...previous,[action]:{state:ShortcutOverrideState.Binding,chord}}));cancelCapture();
     };
+    const departed=()=>cancelCapture();
+    const visibility=()=>{if(document.visibilityState==="hidden")cancelCapture();};
+    window.addEventListener("blur",departed);document.addEventListener("visibilitychange",visibility);
     document.addEventListener("keydown",capture,true);
-    return()=>document.removeEventListener("keydown",capture,true);
-  },[capturing,locked,platform]);
+    return()=>{clearTimeout(expire);window.removeEventListener("blur",departed);document.removeEventListener("visibilitychange",visibility);document.removeEventListener("keydown",capture,true);};
+  },[capturing,locked,platform,captureState]);
   const bindingLabel = (bindings: readonly ShortcutBinding[]) => bindings.length ? bindings.map(binding => bindingKeys(binding,platform).join(" + ")).join(` ${copy("shortcuts.or")} `) : copy("shortcut-settings.disabled");
   const restore = (id:ShortcutId) => setDraft(previous=>{const next={...previous};delete next[id];return next;});
   return <section className="shortcut-settings" data-settings-search-target="shortcut-bindings" aria-label={copy("shortcuts.title")}>
@@ -44,14 +63,14 @@ export function ShortcutSettings() {
     {Object.values(ShortcutGroup).map(group=><section key={group}><h2>{copy(group===ShortcutGroup.Common?"shortcuts.global":group===ShortcutGroup.Session?"shortcut-settings.session":group===ShortcutGroup.Creation?"shortcut-settings.creation":"shortcut-settings.search")}</h2>
       {editableShortcutCatalog.filter(action=>action.group===group).map(action=><div className="shortcut-settings-row" key={action.id}>
         <div><h3>{copy(action.label)}</h3><p>{bindingLabel(customizationBindings(action.id,draft))}</p><small>{copy("shortcut-settings.default",{binding:bindingLabel(action.defaults)})}</small></div>
-        <div className="actions"><button type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.captureAction",{name:copy(action.label)})} onClick={event=>{opener.current=event.currentTarget;setInvalid(false);setCapturing(action.id);}}>{copy("shortcut-settings.capture")}</button>
+        <div className="actions"><button type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.captureAction",{name:copy(action.label)})} onClick={event=>{opener.current=event.currentTarget;beginCapture(action.id);}}>{copy("shortcut-settings.capture")}</button>
           <button type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.disableAction",{name:copy(action.label)})} onClick={()=>setDraft(previous=>({...previous,[action.id]:{state:ShortcutOverrideState.Disabled}}))}>{copy("shortcut-settings.disable")}</button>
           <button type="button" disabled={locked||Boolean(capturing)||!draft[action.id]} aria-label={copy("shortcut-settings.restoreAction",{name:copy(action.label)})} onClick={()=>restore(action.id)}>{copy("shortcut-settings.restore")}</button></div>
       </div>)}
       <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(action.defaults)}</dd></div>)}</dl>
     </section>)}
     <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p></section>
-    {capturing?<div role="status"><p>{copy("shortcut-settings.captureHelp")}</p>{invalid?<p role="alert">{copy("shortcut-settings.invalid")}</p>:null}<button type="button" onClick={cancelCapture}>{copy("shortcut-settings.cancelCapture")}</button></div>:null}
+    {capturing?<div role="status"><p>{copy(captureState==="active"?"shortcut-settings.captureHelp":captureState==="uncertain"?"shortcut-settings.captureUncertain":"shortcut-settings.capturePending")}</p>{invalid?<p role="alert">{copy("shortcut-settings.invalid")}</p>:null}<button type="button" onClick={cancelCapture}>{copy("shortcut-settings.cancelCapture")}</button></div>:null}
     {conflicts.map(([a,b])=><p role="alert" key={`${a}:${b}`}>{copy("shortcut-settings.conflict",{first:copy(shortcutCatalog.find(action=>action.id===a)!.label),second:copy(shortcutCatalog.find(action=>action.id===b)!.label)})}</p>)}
     {conflict?<p role="alert">{copy("shortcut-settings.changed")}</p>:null}
     {snapshot.problem?<><p role="alert">{copy(`shortcut-settings.problem.${snapshot.problem}`)}</p><button type="button" disabled={Boolean(operation)} onClick={reload}>{copy("shortcut-settings.reload")}</button></>:null}

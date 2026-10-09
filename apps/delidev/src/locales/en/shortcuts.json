@@ -39,7 +39,7 @@
   "shortcut-settings.restore": "Restore default",
   "shortcut-settings.restoreAction": "Restore default for {{name}}",
   "shortcut-settings.fixed": "Native and fixed shortcuts",
-  "shortcut-settings.fixedHelp": "Newline, guarded creation Enter, Search Enter, panel Escape, Tab and editing shortcuts keep their original behavior. Command or Control + K, N, W and 1–9 remain reserved.",
+  "shortcut-settings.fixedHelp": "Newline, guarded creation Enter, Search Enter, panel Escape, Tab and editing shortcuts keep their original behavior. Command or Control + K, N, T, W, Q, H, M and 1–9 remain reserved.",
   "shortcut-settings.captureHelp": "Press Command on macOS or Control on Windows/Linux, optionally Shift, with an ASCII letter, digit or Enter. Escape cancels capture.",
   "shortcut-settings.invalid": "Use one supported primary chord. Reserved, editing, repeated and composing keys cannot be assigned.",
   "shortcut-settings.cancelCapture": "Cancel capture",
@@ -59,5 +59,7 @@
   "shortcut-settings.problem.unsupported-version": "The shortcut file uses an unsupported version and was left unchanged.",
   "shortcut-settings.problem.write-failed": "Shortcut settings could not be saved. Reinspect before another save.",
   "shortcut-settings.problem.outcome-unknown": "The save outcome is unknown. Reinspect without repeating the save.",
-  "shortcut-settings.problem.changed": "The saved revision changed. Reinspect and discard the old draft before saving."
+  "shortcut-settings.problem.changed": "The saved revision changed. Reinspect and discard the old draft before saving.",
+  "shortcut-settings.capturePending": "Preparing or ending native capture…",
+  "shortcut-settings.captureUncertain": "Capture could not be confirmed. Cancel to inspect and end the original capture before trying again."
 }

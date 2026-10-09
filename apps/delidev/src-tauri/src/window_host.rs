@@ -226,6 +226,9 @@ pub async fn create_on_loop(
     profile: Option<SavedConnection>,
     source: Option<WindowAuthority>,
 ) -> Result<WebviewWindow<CefRuntime>, NativeFailure> {
+    let capture_epoch = app
+        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+        .epoch();
     let (send, receive) = tokio::sync::oneshot::channel();
     let pending = PendingCreation {
         app: app.clone(),
@@ -238,6 +241,13 @@ pub async fn create_on_loop(
             *state.lock().unwrap_or_else(|e| e.into_inner()),
             CreationState::Pending
         ) {
+            return;
+        }
+        if !target
+            .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+            .allowed(capture_epoch)
+        {
+            let _ = send.send(Err(NativeFailure::Busy));
             return;
         }
         let result = source
@@ -306,6 +316,12 @@ pub fn restore_recent(app: &AppHandle<CefRuntime>) {
 }
 
 pub fn install_menu(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
+    if app
+        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+        .owned()
+    {
+        return Ok(());
+    }
     let menu = Menu::default(app)?;
     let item = MenuItem::with_id(app, NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+T"))?;
     let close = MenuItem::with_id(app, CLOSE_WINDOW, "Close Window", true, Some("CmdOrCtrl+W"))?;
@@ -328,28 +344,49 @@ pub fn install_menu(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     app.set_menu(menu)?;
     // One app-level handler: per-window handlers would all receive the same
     // global menu event and multiply a single key press into many windows.
-    app.on_menu_event(|app, event| match event.id.as_ref() {
-        NEW_WINDOW => enqueue_new(app),
-        CLOSE_WINDOW => {
-            let entry = app
-                .state::<Arc<ProductWindows>>()
-                .registry
-                .lock()
-                .ok()
-                .and_then(|registry| registry.recent(None));
-            if let Some(entry) = entry
-                && let Some(window) = app.get_webview_window(&entry.label)
-                && window.close().is_err()
-            {
-                tracing::warn!(operation = "window_close", code = "window-unavailable");
-            }
+    app.on_menu_event(|app, event| {
+        if app
+            .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+            .fenced()
+        {
+            return;
         }
-        _ => {}
+        match event.id.as_ref() {
+            NEW_WINDOW => enqueue_new(app),
+            CLOSE_WINDOW => {
+                let entry = app
+                    .state::<Arc<ProductWindows>>()
+                    .registry
+                    .lock()
+                    .ok()
+                    .and_then(|registry| registry.recent(None));
+                if let Some(entry) = entry
+                    && let Some(window) = app.get_webview_window(&entry.label)
+                    && app
+                        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+                        .menu_close(&entry.label)
+                    && window.close().is_err()
+                {
+                    tracing::warn!(operation = "window_close", code = "window-unavailable");
+                }
+            }
+            _ => {}
+        }
     });
+    start_capture_watchdog(app);
     Ok(())
 }
 
 fn enqueue_new(app: &AppHandle<CefRuntime>) {
+    let capture_epoch = app
+        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+        .epoch();
+    if !app
+        .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+        .allowed(capture_epoch)
+    {
+        return;
+    }
     let actions = app.state::<Arc<WindowActions>>();
     let mut tasks = actions.tasks.lock().unwrap_or_else(|e| e.into_inner());
     if actions.stopping.load(Ordering::Acquire) {
@@ -401,6 +438,12 @@ fn enqueue_new(app: &AppHandle<CefRuntime>) {
             if stopping.stopping.load(Ordering::Acquire) {
                 return Err(NativeFailure::Stopped);
             }
+            if !app
+                .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+                .allowed(capture_epoch)
+            {
+                return Err(NativeFailure::Busy);
+            }
             create_on_loop(&app, profile, source).await.map(|_| ())
         }
         .await;
@@ -436,4 +479,38 @@ impl WindowActions {
             }
         });
     }
+}
+
+fn start_capture_watchdog(app: &AppHandle<CefRuntime>) {
+    let actions = Arc::clone(app.state::<Arc<WindowActions>>().inner());
+    let running = Arc::clone(&actions);
+    let app = app.clone();
+    actions
+        .tasks
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(tauri::async_runtime::spawn(async move {
+            while !running.stopping.load(Ordering::Acquire) {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                if running.stopping.load(Ordering::Acquire) {
+                    break;
+                }
+                let (send, receive) = tokio::sync::oneshot::channel();
+                let target = app.clone();
+                if app
+                    .run_on_main_thread(move || {
+                        target
+                            .state::<Arc<super::shortcut_capture_host::CaptureHost>>()
+                            .watchdog(&target);
+                        let _ = send.send(());
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                if receive.await.is_err() {
+                    break;
+                }
+            }
+        }));
 }

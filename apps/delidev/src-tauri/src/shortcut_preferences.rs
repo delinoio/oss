@@ -71,7 +71,11 @@ fn chord_valid(chord: &ShortcutChord) -> bool {
     } else {
         !matches!(
             chord.key.as_str(),
-            "k" | "n"
+            "q" | "h"
+                | "m"
+                | "t"
+                | "k"
+                | "n"
                 | "w"
                 | "1"
                 | "2"
@@ -318,6 +322,26 @@ mod tests {
     }
     fn choice() -> ShortcutOverrides {
         BTreeMap::from([(ShortcutAction::NewSession, binding("j", true))])
+    }
+    #[test]
+    fn native_menu_chords_are_rejected_for_every_editable_action() {
+        for action in [
+            ShortcutAction::Help,
+            ShortcutAction::NewSession,
+            ShortcutAction::SessionFocus,
+            ShortcutAction::SessionSend,
+            ShortcutAction::NewSessionFocus,
+            ShortcutAction::NewSessionSend,
+            ShortcutAction::SearchFocus,
+        ] {
+            for key in ["q", "h", "m", "t", "w"] {
+                assert!(!valid(&BTreeMap::from([(action, binding(key, false))])));
+                assert!(chord_valid(&ShortcutChord {
+                    key: key.into(),
+                    shift: true
+                }));
+            }
+        }
     }
     #[test]
     fn defaults_restart_and_stale_revision_preserve_original_map() {

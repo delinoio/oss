@@ -26,8 +26,10 @@ function Owner({bridge,run=()=>{}}:{bridge:ShortcutPreferenceBridge;run?:()=>voi
 }
 const capture = async(name="New session",key="j")=>{
  fireEvent.click(screen.getByRole("button",{name:`Capture shortcut for ${name}`}));
+ await screen.findByText("Press Command on macOS or Control on Windows/Linux, optionally Shift, with an ASCII letter, digit or Enter. Escape cancels capture.");
  fireEvent.keyDown(document.activeElement!,{key,ctrlKey:true,shiftKey:true});
  await screen.findByText("Unsaved changes");
+ await waitFor(()=>expect(screen.queryByRole("button",{name:"Cancel capture"})).toBeNull());
 };
 it("keeps draft bindings inactive until Save and updates dispatch and ARIA without remount",async()=>{
  const f=fixture(),run=vi.fn();render(<StrictMode><Owner bridge={f.bridge} run={run}/></StrictMode>);await screen.findByText("Current saved shortcuts");
@@ -36,7 +38,7 @@ it("keeps draft bindings inactive until Save and updates dispatch and ARIA witho
 });
 it("consumes captures, local resets, disable and category departure without a native save",async()=>{
  const f=fixture(),run=vi.fn();render(<Owner bridge={f.bridge} run={run}/>);await screen.findByText("Current saved shortcuts");
- const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});fireEvent.click(opener);fireEvent.keyDown(opener,{key:"n",ctrlKey:true});expect(run).not.toHaveBeenCalled();await screen.findByRole("alert");fireEvent.keyDown(opener,{key:"Escape"});await waitFor(()=>expect(document.activeElement).toBe(opener));
+ const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});fireEvent.click(opener);await screen.findByText("Press Command on macOS or Control on Windows/Linux, optionally Shift, with an ASCII letter, digit or Enter. Escape cancels capture.");fireEvent.keyDown(opener,{key:"n",ctrlKey:true});expect(run).not.toHaveBeenCalled();await screen.findByRole("alert");fireEvent.keyDown(opener,{key:"Escape"});await waitFor(()=>expect(document.activeElement).toBe(opener));
  await capture();fireEvent.click(screen.getByRole("button",{name:"Discard changes"}));expect(f.bridge.update).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Disable Open shortcut help shortcut"}));fireEvent.click(screen.getByRole("button",{name:"Leave category"}));fireEvent.click(screen.getByRole("button",{name:"Leave category"}));await screen.findByText("Current saved shortcuts");expect(f.bridge.update).not.toHaveBeenCalled();
 });
@@ -61,4 +63,21 @@ it("keeps an admitted save owned above the category and publishes it once after 
  await act(async()=>complete({revision:2,overrides:{"new-session":{state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}}},problem:null}));
  await waitFor(()=>expect(screen.getByRole("button",{name:"Ordinary action"}).getAttribute("aria-keyshortcuts")).toBe("Control+Shift+J"));
  fireEvent.click(screen.getByRole("button",{name:"Leave category"}));await screen.findByText("Current saved shortcuts");expect(f.bridge.update).toHaveBeenCalledOnce();
+});
+it("consumes keys while native admission is pending and never claims active capture after a lost ACK",async()=>{
+ const {shortcutCapture}=await import("./shortcut-capture");let complete!:(v:{deadline:number;token:string})=>void;
+ const begin=vi.spyOn(shortcutCapture,"begin").mockImplementationOnce(()=>new Promise(resolve=>complete=resolve));
+ const end=vi.spyOn(shortcutCapture,"end").mockResolvedValue(undefined);
+ try{
+  const f=fixture(),run=vi.fn();render(<Owner bridge={f.bridge} run={run}/>);await screen.findByText("Current saved shortcuts");
+  const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});fireEvent.click(opener);await screen.findByText("Preparing or ending native capture…");
+  fireEvent.keyDown(opener,{key:"j",ctrlKey:true,shiftKey:true});expect(screen.queryByText("Unsaved changes")).toBeNull();expect(run).not.toHaveBeenCalled();
+  await act(async()=>complete({deadline:performance.now()+10000,token:"original-token"}));await screen.findByText(/Press Command on macOS/);
+  fireEvent.blur(window);await waitFor(()=>expect(screen.queryByRole("button",{name:"Cancel capture"})).toBeNull());expect(end).toHaveBeenCalled();expect(f.bridge.update).not.toHaveBeenCalled();
+ }finally{begin.mockRestore();end.mockRestore();}
+});
+it("a late native admission after category departure cannot reopen capture or change drafts",async()=>{
+ const {shortcutCapture}=await import("./shortcut-capture");let complete!:(v:{deadline:number;token:string})=>void;
+ const begin=vi.spyOn(shortcutCapture,"begin").mockImplementationOnce(()=>new Promise(resolve=>complete=resolve));const end=vi.spyOn(shortcutCapture,"end").mockResolvedValue(undefined);
+ try{const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");fireEvent.click(screen.getByRole("button",{name:"Capture shortcut for New session"}));fireEvent.click(screen.getByRole("button",{name:"Leave category"}));await act(async()=>complete({deadline:performance.now()+10000,token:"departed-token"}));expect(screen.queryByText(/Press Command on macOS/)).toBeNull();expect(end).toHaveBeenCalledWith("departed-token");expect(f.bridge.update).not.toHaveBeenCalled();}finally{begin.mockRestore();end.mockRestore();}
 });

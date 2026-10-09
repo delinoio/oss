@@ -81,7 +81,11 @@ fn provider_guidance_allows_only_trusted_local_webviews() {
     }
 }
 
-const SHORTCUT_COMMANDS: [&str; 2] = ["read_shortcut_preferences", "update_shortcut_preferences"];
+const SHORTCUT_COMMANDS: [&str; 3] = [
+    "read_shortcut_preferences",
+    "update_shortcut_preferences",
+    "shortcut_capture_native",
+];
 
 #[test]
 fn shortcut_preferences_have_complete_closed_compiled_permissions() {

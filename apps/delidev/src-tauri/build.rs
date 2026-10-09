@@ -18,6 +18,7 @@ fn main() {
             "read_appearance",
             "read_date_format",
             "update_date_format",
+            "shortcut_capture_native",
             "read_shortcut_preferences",
             "update_shortcut_preferences",
             "update_appearance",

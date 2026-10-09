@@ -149,7 +149,7 @@ Keyboard shortcuts help permits eligible existing non-input-target actions from 
 
 ### Device-local shortcut preferences (issue #1953)
 
-Native IPC admission uses the closed `device-shortcuts` app permission and compiled read/update command manifest, granted only to existing main/local-* and saved server-* product capabilities. Compiled ACL fixtures verify these admissions and remote/external/tray/auxiliary denial independently of retained original generation checks.
+Native IPC admission uses the closed `device-shortcuts` app permission and compiled read/update and closed capture command manifest, granted only to existing main/local-* and saved server-* product capabilities. Compiled ACL fixtures verify these admissions and remote/external/tray/auxiliary denial independently of retained original generation checks.
 
 Keyboard shortcuts is the System category after Appearance. Its static typed
 catalog lists Common, Session, New session / New general chat and Search
@@ -159,10 +159,33 @@ optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
 override. An absent override selects the original default. Native newline,
 Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
-primary+N, primary+W and primary+1–9 remain fixed reservations. Native editing
+primary+N, primary+T (the current native New Window binding), primary+W,
+primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
 chords cannot be assigned. No palette, window action or tab action is added.
 
-Capture consumes keyboard events before dispatch. Escape cancels capture and
+Capture becomes active only after original-product-window native admission and
+an acknowledged native-loop replacement of the exact original app menu with an
+accelerator-free menu. The closed Begin/Inspect/End operation owns the original
+window instance, device preference revision and random token. Capture admission
+expires after 15 seconds; the renderer stops accepting values conservatively
+before that deadline. Expiry retains the native menu fence until original-token
+inspection/End or independent native focus, visibility, disposal or Quit recovery;
+never restore native accelerators beneath a stale focused capture. Native blur
+restores the menu for other windows but retains an expired original-token
+context; original focus return synchronously reinstalls its fence until End.
+Disposal/Quit retires that context, and no other window may adopt it. Uncertain
+admission/retirement requires exact-token inspection, with no repeated Begin or
+blind renewal. Retired-token tombstones reject a delayed Begin after End and are
+bounded to 1024 captures per app lifetime, failing closed at that bound.
+
+Retain and restore the exact original menu, including partial failure recovery;
+an old retirement cannot replace a newer menu generation. Fence queued native
+New/Close actions across capture epochs and native CloseRequested for the original
+capturing window. An owned native watchdog joins the existing WindowActions Quit
+boundary. Explicit native/Dock Quit still follows original joined shutdown and
+its 35-second owned-sidecar grace. No global OS keyboard registration, RPC,
+protocol allocation, migration or new editable action is added. Capture consumes
+keyboard events before dispatch. Escape cancels capture and
 returns to its initiating control; composing, repeated, AltGraph, Alt/Option,
 modifier-only, mixed-primary and unsupported keys receive localized guidance.
 Validate the complete catalog across inactive scopes, including unavailable
