@@ -182,31 +182,69 @@ pub struct OAuthHost {
 }
 
 impl OAuthHost {
-    pub fn window_epoch(&self, window: &str) -> Result<u64, NativeFailure> {
+    fn exhausted(&self, attempts: &mut BTreeMap<String, Attempt>) -> NativeFailure {
+        self.stopped.store(true, Ordering::Release);
+        // Retained revocations are never evicted. Stop and join every original
+        // listener so capacity failure cannot leave active callback authority.
+        attempts.clear();
+        tracing::warn!(
+            operation = "account_oauth_callback",
+            state = "admission-closed",
+            code = "revocation-capacity"
+        );
+        NativeFailure::Stopped
+    }
+
+    fn epoch(
+        &self,
+        window: &str,
+        attempts: &mut BTreeMap<String, Attempt>,
+    ) -> Result<u64, NativeFailure> {
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
         let mut epochs = self.epochs.lock().map_err(|_| NativeFailure::Busy)?;
         if !epochs.contains_key(window) && epochs.len() >= 4096 {
-            return Err(NativeFailure::Busy);
+            return Err(self.exhausted(attempts));
         }
         Ok(*epochs.entry(window.into()).or_default())
     }
 
-    pub fn close_window(&self, window: &str) {
-        // Joining a listener never waits for CEF or a business operation.
-        if let Ok(mut attempts) = self.attempts.lock() {
-            if let Ok(mut epochs) = self.epochs.lock() {
-                let epoch = epochs.entry(window.into()).or_default();
-                if let Some(next) = epoch.checked_add(1) {
-                    *epoch = next;
-                } else {
-                    self.stopped.store(true, Ordering::Release);
-                }
-            }
-            if let Some(original) = attempts.remove(window)
-                && let Ok(mut disposed) = self.disposed.lock()
-            {
-                disposed.insert(original.scope.clone());
-            }
+    fn remember_disposed(
+        &self,
+        scope: OAuthScope,
+        attempts: &mut BTreeMap<String, Attempt>,
+    ) -> Result<(), NativeFailure> {
+        let mut disposed = self.disposed.lock().map_err(|_| NativeFailure::Busy)?;
+        if !disposed.contains(&scope) && disposed.len() >= 4096 {
+            return Err(self.exhausted(attempts));
         }
+        disposed.insert(scope);
+        Ok(())
+    }
+
+    pub fn window_epoch(&self, window: &str) -> Result<u64, NativeFailure> {
+        let mut attempts = self.attempts.lock().map_err(|_| NativeFailure::Busy)?;
+        self.epoch(window, &mut attempts)
+    }
+
+    pub fn close_window(&self, window: &str) -> Result<(), NativeFailure> {
+        // Joining a listener never waits for CEF or a business operation.
+        let mut attempts = self.attempts.lock().map_err(|_| NativeFailure::Busy)?;
+        let epoch = self.epoch(window, &mut attempts)?;
+        let next = epoch
+            .checked_add(1)
+            .ok_or_else(|| self.exhausted(&mut attempts))?;
+        *self
+            .epochs
+            .lock()
+            .map_err(|_| NativeFailure::Busy)?
+            .get_mut(window)
+            .ok_or(NativeFailure::InvalidEvidence)? = next;
+        if let Some(original) = attempts.remove(window) {
+            self.remember_disposed(original.scope.clone(), &mut attempts)?;
+        }
+        Ok(())
     }
 
     pub fn stop(&self) {
@@ -291,20 +329,19 @@ impl OAuthHost {
         canonical_id(&scope.server)?;
         canonical_id(&scope.opening)?;
         let mut attempts = self.attempts.lock().map_err(|_| NativeFailure::Busy)?;
-        if action != OAuthAction::Dispose && self.window_epoch(&scope.window)? != scope.window_epoch
+        if action != OAuthAction::Dispose
+            && self.epoch(&scope.window, &mut attempts)? != scope.window_epoch
         {
             return Err(NativeFailure::Stopped);
         }
-        {
-            let mut disposed = self.disposed.lock().map_err(|_| NativeFailure::Busy)?;
-            attempts.retain(|_, v| {
-                if Instant::now() >= v.until {
-                    disposed.insert(v.scope.clone());
-                    false
-                } else {
-                    true
-                }
-            });
+        let expired: Vec<_> = attempts
+            .values()
+            .filter(|v| Instant::now() >= v.until)
+            .map(|v| v.scope.clone())
+            .collect();
+        for expired in expired {
+            self.remember_disposed(expired.clone(), &mut attempts)?;
+            attempts.remove(&expired.window);
         }
         if matches!(
             action,
@@ -480,10 +517,7 @@ impl OAuthHost {
         // Disposal is idempotent only for the exact old generation. A late
         // Settings cleanup cannot close a replacement listener.
         if action == OAuthAction::Dispose {
-            self.disposed
-                .lock()
-                .map_err(|_| NativeFailure::Busy)?
-                .insert(scope.clone());
+            self.remember_disposed(scope.clone(), &mut attempts)?;
             if let Some(original) = attempts.get(&scope.window)
                 && original.scope == scope
                 && (generation.is_empty() || original.generation == generation)
@@ -1114,6 +1148,147 @@ mod tests {
             window_epoch: 0,
         }
     }
+    fn inert_attempt(scope: OAuthScope, expired: bool) -> Attempt {
+        Attempt {
+            kind: BrowserBindingKind::Provider,
+            profile: OAuthProfile::Openrouter,
+            scope,
+            generation: uuid::Uuid::now_v7().to_string(),
+            callback: String::new(),
+            attempt: String::new(),
+            authorization: Zeroizing::new(String::new()),
+            until: if expired {
+                Instant::now() - Duration::from_secs(1)
+            } else {
+                Instant::now() + Duration::from_secs(600)
+            },
+            shared: Arc::new(Shared {
+                expected_state: None,
+                api_state: Mutex::new(None),
+                api_profile: None,
+                bound: AtomicBool::new(true),
+                consumed: AtomicBool::new(false),
+                stop: AtomicBool::new(false),
+                code: Mutex::new(Some(Zeroizing::new(b"synthetic callback".to_vec()))),
+            }),
+            thread: None,
+        }
+    }
+    fn fill_disposed(host: &OAuthHost) -> OAuthScope {
+        let original = scope();
+        for index in 0..4096 {
+            let mut next = original.clone();
+            if index != 0 {
+                next.opening = uuid::Uuid::now_v7().to_string();
+            }
+            host.control(next, OAuthAction::Dispose, "", "", "")
+                .unwrap();
+        }
+        original
+    }
+    #[test]
+    fn disposed_capacity_is_idempotent_and_exhaustion_joins_all_callback_authority() {
+        let host = OAuthHost::default();
+        let known = fill_disposed(&host);
+        host.control(known.clone(), OAuthAction::Dispose, "", "", "")
+            .unwrap();
+        assert_eq!(host.disposed.lock().unwrap().len(), 4096);
+        let active = inert_attempt(scope(), false);
+        let callback = Arc::clone(&active.shared);
+        host.attempts
+            .lock()
+            .unwrap()
+            .insert(active.scope.window.clone(), active);
+        let overflow = scope();
+        assert!(matches!(
+            host.control(overflow.clone(), OAuthAction::Dispose, "", "", ""),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(host.disposed.lock().unwrap().len(), 4096);
+        assert!(!host.disposed.lock().unwrap().contains(&overflow));
+        assert!(host.attempts.lock().unwrap().is_empty());
+        assert!(callback.stop.load(Ordering::Acquire));
+        assert!(callback.code.lock().unwrap().is_none());
+        assert!(matches!(
+            host.window_epoch("replacement"),
+            Err(NativeFailure::Stopped)
+        ));
+        assert!(matches!(
+            host.control(known, OAuthAction::Take, "", "", ""),
+            Err(NativeFailure::Stopped)
+        ));
+    }
+    #[test]
+    fn expiry_uses_same_bound_without_evicting_original_revocations() {
+        for known_expiry in [true, false] {
+            let host = OAuthHost::default();
+            let known = fill_disposed(&host);
+            let expired = inert_attempt(if known_expiry { known.clone() } else { scope() }, true);
+            let callback = Arc::clone(&expired.shared);
+            host.attempts
+                .lock()
+                .unwrap()
+                .insert(expired.scope.window.clone(), expired);
+            let result = host.control(scope(), OAuthAction::Profiles, "", "", "");
+            if known_expiry {
+                assert!(result.is_ok());
+                assert!(!host.stopped.load(Ordering::Acquire));
+            } else {
+                assert!(matches!(result, Err(NativeFailure::Stopped)));
+            }
+            assert_eq!(host.disposed.lock().unwrap().len(), 4096);
+            assert!(host.disposed.lock().unwrap().contains(&known));
+            assert!(host.attempts.lock().unwrap().is_empty());
+            assert!(callback.stop.load(Ordering::Acquire));
+            assert!(callback.code.lock().unwrap().is_none());
+        }
+    }
+    #[test]
+    fn window_close_bounds_all_epoch_insertions_and_denies_replacement_on_overflow() {
+        let host = OAuthHost::default();
+        for index in 0..4096 {
+            host.close_window(&format!("window-{index}")).unwrap();
+        }
+        host.close_window("window-0").unwrap();
+        assert_eq!(host.epochs.lock().unwrap().len(), 4096);
+        let active = inert_attempt(scope(), false);
+        let callback = Arc::clone(&active.shared);
+        host.attempts
+            .lock()
+            .unwrap()
+            .insert(active.scope.window.clone(), active);
+        assert!(matches!(
+            host.close_window("overflow"),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(host.epochs.lock().unwrap().len(), 4096);
+        assert!(!host.epochs.lock().unwrap().contains_key("overflow"));
+        assert!(callback.stop.load(Ordering::Acquire));
+        assert!(callback.code.lock().unwrap().is_none());
+        assert!(matches!(
+            host.window_epoch("window-0"),
+            Err(NativeFailure::Stopped)
+        ));
+    }
+    #[test]
+    fn window_close_also_bounds_disposed_scope_insertion() {
+        let host = OAuthHost::default();
+        fill_disposed(&host);
+        let original = inert_attempt(scope(), false);
+        let callback = Arc::clone(&original.shared);
+        host.attempts
+            .lock()
+            .unwrap()
+            .insert(original.scope.window.clone(), original);
+        assert!(matches!(
+            host.close_window("main"),
+            Err(NativeFailure::Stopped)
+        ));
+        assert_eq!(host.disposed.lock().unwrap().len(), 4096);
+        assert!(host.attempts.lock().unwrap().is_empty());
+        assert!(callback.stop.load(Ordering::Acquire));
+        assert!(callback.code.lock().unwrap().is_none());
+    }
     fn authorization(callback: &str) -> String {
         let mut url = url::Url::parse("https://openrouter.ai/auth").unwrap();
         url.query_pairs_mut()
@@ -1313,7 +1488,7 @@ mod tests {
             .unwrap();
         assert_eq!(first.generation, replay.generation);
         assert_eq!(first.callback_url, replay.callback_url);
-        host.close_window("main");
+        host.close_window("main").unwrap();
         assert!(
             host.control(scope.clone(), OAuthAction::Begin, "", "", "")
                 .is_err()
@@ -1543,7 +1718,7 @@ mod tests {
             |_, _| Ok(()),
         )
         .unwrap();
-        host.close_window("main");
+        host.close_window("main").unwrap();
         assert!(
             host.control(
                 scope.clone(),
