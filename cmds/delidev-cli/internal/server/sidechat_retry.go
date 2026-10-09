@@ -163,7 +163,7 @@ func (s *Service) RetrySidechatQuestion(ctx context.Context, req *connect.Reques
 			return nil, domain.SidechatUnavailable()
 		}
 		jobID := domain.NewID()
-		child.SidechatRetries = append(child.SidechatRetries, domain.SidechatRetry{WorkerInstanceID: instance, WorkerDeviceID: child.Fork.WorkerDeviceID, ID: domain.ID(m.RequestId), ForkJobID: jobID, RuntimeID: input.RuntimeID, QuestionID: qr.ID, QuestionRevision: qr.Revision, ParentRevision: pr.Revision, ParentExecutionID: input.Completion.ExecutionID, ParentTurnID: input.Completion.NativeTurnID})
+		child.SidechatRetries = append(child.SidechatRetries, domain.SidechatRetry{PreviousJobID: child.Execution.JobID, PreviousExecutionID: child.Execution.ExecutionID, WorkerInstanceID: instance, WorkerDeviceID: child.Fork.WorkerDeviceID, ID: domain.ID(m.RequestId), ForkJobID: jobID, RuntimeID: input.RuntimeID, QuestionID: qr.ID, QuestionRevision: qr.Revision, ParentRevision: pr.Revision, ParentExecutionID: input.Completion.ExecutionID, ParentTurnID: input.Completion.NativeTurnID})
 		if child.SidechatCurrentAnswer == "" {
 			child.SidechatCurrentAnswer = q.ExecutionID
 		}

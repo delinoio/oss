@@ -47,7 +47,7 @@ func (t *Tx) RequireNoOriginalSessionFork(session domain.ID) error {
 		return storageError(err)
 	}
 	if exists {
-		return domain.SessionDeletionPending()
+		return domain.Fail(domain.Conflict, "This session has an unfinished native fork.", "Observe the original fork job before advancing its source boundary.")
 	}
 	return nil
 }

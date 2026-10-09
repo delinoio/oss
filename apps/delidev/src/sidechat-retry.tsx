@@ -21,7 +21,7 @@ export function parseSidechatRetryView(bytes:Uint8Array):RetryView|undefined {
   if(v.candidate&&(!uuid(v.question_id)||!revision(v.question_revision)||!uuid(v.parent_id)))return;
   if(v.eligible&&(!v.candidate||!revision(v.parent_revision)||typeof v.parent_turn_id!=="string"||!v.parent_turn_id||v.parent_turn_id.length>1024))return;
   if(v.current_answer!==undefined&&!uuid(v.current_answer)||v.observed_generation!==undefined&&!uuid(v.observed_generation))return;
-  if(v.generations.some((g:unknown)=>{const d=object(g);return !uuid(d.id)||!uuid(d.fork_job_id)||!uuid(d.runtime_id)||!uuid(d.question_id)||!revision(d.question_revision)||!revision(d.parent_revision)||!uuid(d.parent_execution_id)||!uuid(d.worker_device_id)||!uuid(d.worker_instance_id)||typeof d.parent_turn_id!=="string"||d.execution_id!==undefined&&!uuid(d.execution_id)||d.execution_job_id!==undefined&&!uuid(d.execution_job_id)||d.completed!==undefined&&typeof d.completed!=="boolean";}))return;
+  if(v.generations.some((g:unknown)=>{const d=object(g);return !uuid(d.previous_job_id)||!uuid(d.previous_execution_id)||!uuid(d.id)||!uuid(d.fork_job_id)||!uuid(d.runtime_id)||!uuid(d.question_id)||!revision(d.question_revision)||!revision(d.parent_revision)||!uuid(d.parent_execution_id)||!uuid(d.worker_device_id)||!uuid(d.worker_instance_id)||typeof d.parent_turn_id!=="string"||d.execution_id!==undefined&&!uuid(d.execution_id)||d.execution_job_id!==undefined&&!uuid(d.execution_job_id)||d.completed!==undefined&&typeof d.completed!=="boolean";}))return;
   if(v.observed_generation&&!v.generations.some((g:Record<string,unknown>)=>g.id===v.observed_generation))return;
   return v;
  }catch{return;}
@@ -77,10 +77,13 @@ export function sidechatAnswerFilter(session:Resource|undefined,history=false):(
  const d=document(session),generations=items(d.sidechat_retries).map(object),current=text(d.sidechat_current_answer);
  const question=text(generations[0]?.question_id);
  if(!current||!question||!object(d.fork).sidechat_parent_snapshot)return ()=>!history;
+ const retryExecutions=new Set(generations.map(g=>text(g.execution_id)).filter(Boolean));
+ const historyExecutions=new Set([...retryExecutions,text(generations[0]?.previous_execution_id)].filter(Boolean));
  return row=>{
   if(row.inherited)return !history;
-  if(row.role==="user")return !history&&row.inputId===question;
+  if(row.role==="user")return !history&&(row.inputId===question||!row.executionId||!retryExecutions.has(row.executionId));
   if(!row.executionId)return !history;
-  return history?row.executionId!==current:row.executionId===current;
+  const answerGeneration=historyExecutions.has(row.executionId);
+  return history?answerGeneration&&row.executionId!==current:!answerGeneration||row.executionId===current;
  };
 }

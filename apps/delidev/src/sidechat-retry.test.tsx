@@ -35,10 +35,12 @@ test("strict observations reject oversized revisions, unknown fields, and foreig
 });
 test("current answer selection preserves inherited context and original question; previous attempts remain history",()=>{
  const question=newRequestId(),baseline=newRequestId(),current=newRequestId(),otherQuestion=newRequestId();
- const session=create(ResourceSchema,{kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({fork:{sidechat_parent_snapshot:{}},sidechat_current_answer:current,sidechat_retries:[{question_id:question}]})});
+ const session=create(ResourceSchema,{kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({fork:{sidechat_parent_snapshot:{}},sidechat_current_answer:current,sidechat_retries:[{question_id:question,previous_execution_id:baseline,execution_id:current}]})});
  const main=sidechatAnswerFilter(session),history=sidechatAnswerFilter(session,true);
  const rows=[{id:"inherited",revision:1n,role:"user",inherited:true,executionId:baseline,inputId:otherQuestion},{id:"question",revision:1n,role:"user",executionId:baseline,inputId:question},{id:"generated",revision:1n,role:"user",executionId:current,inputId:otherQuestion},{id:"old",revision:1n,role:"assistant",executionId:baseline},{id:"new",revision:1n,role:"assistant",executionId:current}];
  expect(rows.filter(main).map(r=>r.id)).toEqual(["inherited","question","new"]);expect(rows.filter(history).map(r=>r.id)).toEqual(["old"]);
+ const ordinary=newRequestId();rows.push({id:"second question",revision:1n,role:"user",executionId:ordinary,inputId:otherQuestion},{id:"ordinary answer",revision:1n,role:"assistant",executionId:ordinary});
+ expect(rows.filter(main).map(r=>r.id)).toEqual(["inherited","question","new","second question","ordinary answer"]);expect(rows.filter(history).map(r=>r.id)).toEqual(["old"]);
 });
 
 test("lost acceptance retains the exact request across presentation departure and observes its original receipt",async()=>{
@@ -53,7 +55,7 @@ test("lost acceptance retains the exact request across presentation departure an
  const calls:unknown[]=[],observations:string[]=[];
  let accepted:any;
  const initial={candidate:true,eligible:true,child_revision:"1",question_id:question,question_revision:"3",parent_id:parent,parent_revision:"5",parent_turn_id:turn,generations:[]};
- const received=()=>({...initial,eligible:false,child_revision:"2",observed_generation:accepted.mutation.requestId,phase:"claimed",generations:[{id:accepted.mutation.requestId,fork_job_id:newRequestId(),runtime_id:newRequestId(),question_id:question,question_revision:"3",parent_revision:"5",parent_execution_id:newRequestId(),parent_turn_id:turn,worker_device_id:worker,worker_instance_id:instance}]});
+ const received=()=>({...initial,eligible:false,child_revision:"2",observed_generation:accepted.mutation.requestId,phase:"claimed",generations:[{id:accepted.mutation.requestId,previous_job_id:newRequestId(),previous_execution_id:newRequestId(),fork_job_id:newRequestId(),runtime_id:newRequestId(),question_id:question,question_revision:"3",parent_revision:"5",parent_execution_id:newRequestId(),parent_turn_id:turn,worker_device_id:worker,worker_instance_id:instance}]});
  const transport=createRouterTransport(router=>{
   router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SIDECHAT_QUESTION_RETRY_V1]})});
   router.service(SessionService,{getSidechatQuestionRetry:r=>{observations.push(r.requestId);return {documentJson:encode(accepted&&r.requestId?received():initial)};},retrySidechatQuestion:r=>{calls.push(r);if(!accepted){accepted=r;throw new ConnectError("fixture lost acknowledgement",Code.Unavailable);}return {requestId:r.mutation!.requestId,replayed:true,documentJson:encode(received())};}});

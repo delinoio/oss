@@ -7,20 +7,22 @@ import "encoding/json"
 // original native Fork and question execution; only a verified successful
 // completion may move the presentation pointer.
 type SidechatRetry struct {
-	WorkerInstanceID  ID                   `json:"worker_instance_id"`
-	WorkerDeviceID    ID                   `json:"worker_device_id"`
-	ID                ID                   `json:"id"`
-	ForkJobID         ID                   `json:"fork_job_id"`
-	RuntimeID         ID                   `json:"runtime_id"`
-	QuestionID        ID                   `json:"question_id"`
-	QuestionRevision  uint64               `json:"question_revision,string"`
-	ParentRevision    uint64               `json:"parent_revision,string"`
-	ParentExecutionID ID                   `json:"parent_execution_id"`
-	ParentTurnID      NativeIdentity       `json:"parent_turn_id"`
-	ExecutionID       ID                   `json:"execution_id,omitempty"`
-	ExecutionJobID    ID                   `json:"execution_job_id,omitempty"`
-	Fork              *SessionDeletionFork `json:"fork,omitempty"`
-	Completed         bool                 `json:"completed,omitempty"`
+	PreviousJobID       ID                   `json:"previous_job_id"`
+	PreviousExecutionID ID                   `json:"previous_execution_id"`
+	WorkerInstanceID    ID                   `json:"worker_instance_id"`
+	WorkerDeviceID      ID                   `json:"worker_device_id"`
+	ID                  ID                   `json:"id"`
+	ForkJobID           ID                   `json:"fork_job_id"`
+	RuntimeID           ID                   `json:"runtime_id"`
+	QuestionID          ID                   `json:"question_id"`
+	QuestionRevision    uint64               `json:"question_revision,string"`
+	ParentRevision      uint64               `json:"parent_revision,string"`
+	ParentExecutionID   ID                   `json:"parent_execution_id"`
+	ParentTurnID        NativeIdentity       `json:"parent_turn_id"`
+	ExecutionID         ID                   `json:"execution_id,omitempty"`
+	ExecutionJobID      ID                   `json:"execution_job_id,omitempty"`
+	Fork                *SessionDeletionFork `json:"fork,omitempty"`
+	Completed           bool                 `json:"completed,omitempty"`
 }
 
 type SidechatRetryFork struct {

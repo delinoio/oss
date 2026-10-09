@@ -74,7 +74,7 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 	if i.Continuation == nil {
 		if i.SidechatRetry != nil && i.Fork != nil {
 			for _, g := range s.SidechatRetries {
-				if g.ID == i.SidechatRetry.GenerationID && g.Fork != nil && g.ExecutionID == i.ExecutionID && g.RuntimeID == i.Fork.RuntimeID && g.Fork.JobID == i.Fork.JobID && g.Fork.CheckpointDigest == i.Fork.CheckpointDigest && s.NativeExecutionRoot() == g.RuntimeID && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID {
+				if g.ID == i.SidechatRetry.GenerationID && g.PreviousJobID == i.SidechatRetry.PreviousJobID && g.PreviousExecutionID == i.SidechatRetry.PreviousExecutionID && g.Fork != nil && g.ExecutionID == i.ExecutionID && g.RuntimeID == i.Fork.RuntimeID && g.Fork.JobID == i.Fork.JobID && g.Fork.CheckpointDigest == i.Fork.CheckpointDigest && s.NativeExecutionRoot() == g.RuntimeID && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID {
 					return true
 				}
 			}
