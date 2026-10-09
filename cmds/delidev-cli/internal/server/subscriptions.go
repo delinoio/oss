@@ -52,6 +52,13 @@ func subscriptionDenied() *domain.Error {
 	return domain.Fail(domain.RecoveryRequired, "The managed account cannot grant authentication authority.", "Reconcile its original lease, credential generation and confirmed native cleanup; never redistribute an older bundle.")
 }
 
+// Only an uncommitted fresh lifecycle claim can prove that no lease was granted.
+func subscriptionTakeNotAdmitted() *domain.Error {
+	problem := domain.Fail(domain.Canceled, "The original queued subscription operation is no longer available.", "Inspect the current account operation before requesting another lifecycle action.")
+	problem.Cause = "subscription_take_not_admitted"
+	return problem
+}
+
 func subscriptionActorValid(tx *store.Tx, actor domain.Principal) error {
 	if actor.Type == domain.OwnerDevice {
 		return nil
@@ -571,8 +578,14 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 			}
 		} else {
 			op := state.Pending
-			if op == nil || op.ID != input.Operation || op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued || op.Canceled {
+			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
+				return nil, err
+			}
+			if op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued) {
 				return nil, subscriptionDenied()
+			}
+			if op == nil || op.ID != input.Operation || op.Canceled {
+				return nil, subscriptionTakeNotAdmitted()
 			}
 			if err := subscriptionActorValid(tx, op.Actor); err != nil {
 				return nil, err
