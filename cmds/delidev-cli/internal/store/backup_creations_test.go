@@ -338,3 +338,100 @@ func TestBackupCreationRecoveryRejectsForeignImageAndAdjacentWAL(t *testing.T) {
 		})
 	}
 }
+
+func TestBackupCreationDeletionWinsSettlement(t *testing.T) {
+	for _, completed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "pending", true: "completed"}[completed], func(t *testing.T) {
+			s, _, ctx, owner := creationFixture(t)
+			request := domain.NewID()
+			original, _, err := s.RequestBackup(ctx, request, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, intent, err := DecodeBackupCreation(original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			copies := 0
+			result, err := s.runBackupCreation(ctx, original.ID, owner, func(work context.Context, id domain.ID) (domain.ID, error) {
+				copies++
+				if id != intent.BackupID {
+					t.Fatal("copy identity changed")
+				}
+				published, err := s.BackupID(work, id)
+				if err != nil {
+					return published, err
+				}
+				checked, err := s.InspectBackup(ctx, id, owner)
+				if err != nil {
+					return published, err
+				}
+				actor, _ := domain.PrincipalFrom(ctx)
+				deletion, _, err := s.DeleteBackup(ctx, domain.NewID(), BackupDeletionInput{Actor: actor, ServerID: owner, Backup: checked.Backup, ExpectedRevision: 1, SHA256: checked.SHA256})
+				if err != nil {
+					return published, err
+				}
+				if completed {
+					if _, err = s.RunBackupDeletion(ctx, deletion.ID, owner); err != nil {
+						return published, err
+					}
+				}
+				return published, nil
+			})
+			job, settled, decodeErr := DecodeBackupCreation(result)
+			if domain.SafeError(err).Code != domain.RecoveryRequired || decodeErr != nil || job.State != domain.JobFailed || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || result.ID != original.ID || settled.BackupID != intent.BackupID || settled.RequestID != request {
+				t.Fatalf("deletion lost settlement: result=%+v job=%+v error=%v decode=%v", result, job, err, decodeErr)
+			}
+			replay, replayed, err := s.RequestBackup(ctx, request, owner)
+			if err != nil || !replayed || replay.ID != result.ID || replay.Revision != result.Revision {
+				t.Fatal("receipt did not retain settled original", replay, replayed, err)
+			}
+			again, err := s.runBackupCreation(ctx, original.ID, owner, func(context.Context, domain.ID) (domain.ID, error) { copies++; return domain.NewID(), nil })
+			if err != nil || copies != 1 || again.Revision != result.Revision {
+				t.Fatal("terminal retry attempted another copy", copies, again, err)
+			}
+			images, err := s.BackupInventory(ctx)
+			if err != nil || len(images) != map[bool]int{false: 1, true: 0}[completed] {
+				t.Fatal("unexpected image inventory", images, err)
+			}
+		})
+	}
+}
+func TestBackupCreationHistoricalSuccessSurvivesLaterDeletion(t *testing.T) {
+	s, _, ctx, owner := creationFixture(t)
+	original, _, err := s.RequestBackup(ctx, domain.NewID(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.RunBackupCreation(ctx, original.ID, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, intent, err := DecodeBackupCreation(result)
+	if err != nil || job.State != domain.JobSucceeded {
+		t.Fatal(job, err)
+	}
+	checked, err := s.InspectBackup(ctx, intent.BackupID, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor, _ := domain.PrincipalFrom(ctx)
+	deletion, _, err := s.DeleteBackup(ctx, domain.NewID(), BackupDeletionInput{Actor: actor, ServerID: owner, Backup: checked.Backup, ExpectedRevision: 1, SHA256: checked.SHA256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.RunBackupDeletion(ctx, deletion.ID, owner); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.RunBackupCreation(ctx, original.ID, owner)
+	if err != nil || again.Revision != result.Revision {
+		t.Fatal("later deletion rewrote history", again, err)
+	}
+	job, _, err = DecodeBackupCreation(again)
+	if err != nil || job.State != domain.JobSucceeded || job.Problem != nil {
+		t.Fatal(job, err)
+	}
+	if images, err := s.BackupInventory(ctx); err != nil || len(images) != 0 {
+		t.Fatal("history replay recreated image", images, err)
+	}
+}

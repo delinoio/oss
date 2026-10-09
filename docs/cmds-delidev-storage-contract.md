@@ -154,7 +154,11 @@ server interruption preserves pending state and the reserved identity.
 If the original file was published before a lost completion acknowledgment, retry
 validates and synchronizes that same file. Terminal success never recreates a
 later removed image. External permanent deletion always wins, including between
-image publication and job settlement. Revoked authority, corrupt ownership or a
+image publication and job settlement. Creation settlement checks the original
+backup deletion index in the same SQLite transaction as its terminal job update.
+An already accepted pending or completed deletion produces the existing typed
+`RecoveryRequired` failure with the original job and image identities. Deletion
+after committed success preserves that historical success. Revoked authority, corrupt ownership or a
 deletion obligation ends the job with a typed failure; transient storage failure
 remains pending. Unchanged failures do not grow revisions or mutation receipts.
 The original creation actor reaches `BackupID` unchanged. Its final authorization
