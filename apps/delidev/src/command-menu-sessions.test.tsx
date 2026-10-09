@@ -22,8 +22,17 @@ function mount(read:(token:string)=>Promise<{sessions:Resource[];nextPageToken:s
 it("projects only title/routing metadata and rejects invalid resources",()=>{const source=row("Title","",{secret:"private",title_state:"generating",transcript:"ignored"});expect(commandSession(source)).toEqual({id:source.id,revision:1n,title:"Title",projectId:"",conversationKind:"work-session"});expect(commandSession({...source,id:"bad"})).toBeUndefined();expect(commandSession({...source,revision:0n})).toBeUndefined();expect(commandSession(row("a".repeat(257)))).toBeUndefined();});
 it("does not read on empty/whitespace, visits all 125 pages once and searches titles only",async()=>{
  const target=row("Needle","",{transcript:"private needle",title_state:"state-needle"});const {requests,client}=mount(token=>{const index=Number(token||0);return {sessions:[index===124?target:row(`Page ${index}`)],nextPageToken:index<124?String(index+1):""};});
- const input=screen.getByRole("combobox");expect(requests).toEqual([]);fireEvent.change(input,{target:{value:" "}});expect(requests).toEqual([]);fireEvent.change(input,{target:{value:"Needle"}});await screen.findByRole("option",{name:"Needle"});await waitFor(()=>expect(requests).toHaveLength(125));expect(new Set(requests).size).toBe(125);expect(client.getQueryCache().getAll()).toHaveLength(0);
- fireEvent.change(input,{target:{value:target.id}});await screen.findByText("No matching sessions.");expect(requests).toHaveLength(125);fireEvent.change(input,{target:{value:"state-needle"}});expect(screen.queryByRole("option",{name:"Needle"})).toBeNull();fireEvent.change(input,{target:{value:" "}});expect(screen.queryByText("No matching sessions.")).toBeNull();expect(requests).toHaveLength(125);
+ const input=screen.getByRole("combobox");expect(requests).toEqual([]);fireEvent.change(input,{target:{value:" "}});expect(requests).toEqual([]);
+ // Accepted pages deliberately yield to React through a timer. Drive those
+ // 125 serial turns explicitly: CI CPU contention can exceed findByRole's
+ // one-second wall clock even while traversal continues correctly.
+ vi.useFakeTimers({toFake:["setTimeout","clearTimeout"]});
+ try {
+  fireEvent.change(input,{target:{value:"Needle"}});
+  for(let page=0;page<125&&requests.length<125;page++)await act(async()=>{await vi.advanceTimersByTimeAsync(1);});
+  expect(requests).toHaveLength(125);expect(screen.getByRole("option",{name:"Needle"})).toBeTruthy();expect(new Set(requests).size).toBe(125);expect(client.getQueryCache().getAll()).toHaveLength(0);
+  fireEvent.change(input,{target:{value:target.id}});expect(screen.getByText("No matching sessions.")).toBeTruthy();expect(requests).toHaveLength(125);fireEvent.change(input,{target:{value:"state-needle"}});expect(screen.queryByRole("option",{name:"Needle"})).toBeNull();fireEvent.change(input,{target:{value:" "}});expect(screen.queryByText("No matching sessions.")).toBeNull();expect(requests).toHaveLength(125);
+ }finally{vi.useRealTimers();}
 });
 it("retains partial results, retries the exact failed token, and closes before opening once",async()=>{
  const first=row("Match first"),second=row("Match second");let fail=true;const {requests,opened}=mount(token=>{if(!token)return {sessions:[first],nextPageToken:"next"};if(fail)throw new ConnectError("temporary",Code.Unavailable);return {sessions:[second],nextPageToken:""};});
