@@ -383,3 +383,14 @@ it("allows the focused step heading to scroll into view on Next, Back and Review
   goStep(3); fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(focus).toHaveBeenLastCalledWith(); expect(heading.textContent).toBe("Task");
   expect(value.save).not.toHaveBeenCalled();
 });
+
+it("keeps paused or enabled creation intent visible in the persistent footer on every step", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  const footer = globalThis.document.querySelector(".schedule-creation-footer")!;
+  expect(footer.textContent).toContain("Paused on creation"); await fillCreation(value);
+  expect(footer.textContent).toContain("Paused on creation"); goStep(2);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable future scheduled runs" })); expect(footer.textContent).toContain("Enabled on creation");
+  goStep(3); expect(footer.textContent).toContain("Enabled on creation");
+  fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(footer.textContent).toContain("Enabled on creation");
+  expect(footer.textContent).toContain("1 of 4"); expect(value.save).not.toHaveBeenCalled();
+});

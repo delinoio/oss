@@ -165,7 +165,7 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
     {/* Distinct Next/Create keys keep a Next click from turning its original
         button into a submit control during synchronous step commitment. */}
     <footer className="schedule-creation-footer"><div className="schedule-creation-footer-inner">
-      <p>{copy("schedule-creation.stepCount", { current: step+1, total: 4 })}<small>{local ? copy("schedule-creation.localComputer_09d55f") : copy("schedule-creation.worktree_c893ba")} · {definition.mode === Mode.Plan ? copy("schedule-creation.plan_fa8ed0") : copy("schedule-creation.execute_e3a67d")}</small></p>
+      <p>{definition.enabled === true ? copy("schedule-creation.enabledOnCreation_f6e986") : copy("schedule-creation.pausedOnCreation_484218")} · {copy("schedule-creation.stepCount", { current: step+1, total: 4 })}<small>{local ? copy("schedule-creation.localComputer_09d55f") : copy("schedule-creation.worktree_c893ba")} · {definition.mode === Mode.Plan ? copy("schedule-creation.plan_fa8ed0") : copy("schedule-creation.execute_e3a67d")}</small></p>
       <div className="actions">{retry}<button type="button" disabled={blocked} onClick={cancel}>{copy("schedule-creation.cancel_19766e")}</button>{step>0?<button type="button" disabled={blocked} onClick={()=>move(step-1)}>{copy("schedule-creation.back")}</button>:null}{step===3?<button key="create" className="primary" type="submit" disabled={blocked || submitBlocked}>{copy("schedule-creation.createSchedule_5b08f3")}</button>:<button key="next" className="primary" type="button" disabled={blocked} onClick={event=>{event.preventDefault();next();}}>{copy("schedule-creation.next")}</button>}</div>
     </div></footer>
   </form></section>;
