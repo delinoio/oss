@@ -122,6 +122,9 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const automaticSupported = status.data?.capabilities.includes(SystemCapability.AUTOMATIC_RESET_CREDIT_CONSENT_V1) === true;
   const automaticConsent = object(state.automatic_credit_consent);
   const automaticEnabled = automaticConsent.connection_id === connection && automaticConsent.generation === generation;
+  // Revocation fences future admissions while the original operation settles.
+  // Its enabled/sending/uncertain state cannot trap standing spending consent.
+  const automaticDisableReady = active && automaticSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && data.enabled !== false && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && state.recovery_required !== true && !state.pending && !data.removal && !consent.busy && !consent.uncertain;
   const automaticReady = active && automaticSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && quotaAccountAvailable(data) && !busy;
   const sendConsent = (enabled: boolean, original = current) => {
     const saved = document(original), savedState = object(saved.subscription);
@@ -151,7 +154,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
       </div>
       {creditReason ? <p role="status" className="reset-credit-secondary">{creditReason}</p> : null}
       {creditsSupported && !isEntityId(ownerMachine) && !serverCreditsSupported ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.serverCreditsUnavailable")}</p> : null}
-      <label className="checkbox reset-credit-automatic"><input ref={consentOpener} type="checkbox" checked={automaticEnabled} disabled={!automaticReady} onChange={event => event.target.checked ? setConsentConfirmation(current) : sendConsent(false)} />{copy("subscription-quota.automaticLabel")}</label>
+      <label className="checkbox reset-credit-automatic"><input ref={consentOpener} type="checkbox" checked={automaticEnabled} disabled={automaticEnabled ? !automaticDisableReady : !automaticReady} onChange={event => event.target.checked ? setConsentConfirmation(current) : sendConsent(false)} />{copy("subscription-quota.automaticLabel")}</label>
       <p className="reset-credit-secondary">{copy("subscription-quota.automaticLifetime")}</p>
       {!automaticSupported ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.automaticUnsupported")}</p> : null}
       {text(object(state.automatic_credit_episode).id) ? <p role="status" className="reset-credit-secondary">{copy("subscription-quota.automaticEpisode")}</p> : null}

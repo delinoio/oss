@@ -12,9 +12,9 @@ import { i18n, copy } from "./localization";
 import { MutationIntents } from "./mutation";
  import { SubscriptionQuotaControls } from "./subscription-quota";
 
-function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false, inventoryFields: Record<string, unknown> = {}, quotaError = "") {
+function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLimits", status: "available" }], lease?: { action: string; machine_id: string }, preferred = "", server = false, supported = true, phase = "", serverCredits = false, creditPhase = "", cleanup = false, workerUncertain = false, inventoryFields: Record<string, unknown> = {}, quotaError = "", automaticConsent = false, automaticPhase = "uncertain") {
   const machine = newRequestId(), connection = newRequestId(), generation = newRequestId(), inventory = newRequestId();
-  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: "uncertain" } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase, error_code: quotaError } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details, ...inventoryFields } } };
+  const data = { alias: "Quota fixture", type: "subscription", subscription_service: "chatgpt", health: "ready", recovery_notifications: false, connection: { id: connection }, subscription: { automatic_credit_consent: automaticConsent ? { connection_id: connection, generation } : undefined, observation: workerUncertain ? { id: newRequestId(), action: "reset-credit", phase: automaticPhase } : undefined, generation, owner_machine_id: server ? "" : machine, server_quota_generation: server ? generation : undefined, server_credit: creditPhase ? { id: newRequestId(), phase: creditPhase, cleanup_confirmed: cleanup, outcome: "" } : undefined, server_quota: phase ? { id: newRequestId(), phase, error_code: quotaError } : undefined, lease, reset_credits: { observation_id: inventory, observed_at: new Date().toISOString(), available_count: "2", credits: details, ...inventoryFields } } };
   let account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 2, documentJson: encode(data) });
   const request = vi.fn(async (value) => ({ account, operationId: value.mutation?.requestId }));
   const reconcile = vi.fn(async (_value: unknown) => ({ account }));
@@ -313,4 +313,11 @@ it.each(["light", "dark"])("localizes automatic credit consent in Korean using t
  globalThis.document.documentElement.dataset.theme=theme;
  try {await i18n.changeLanguage("ko");const value=fixture();render(<value.Harness />);const checkbox=await screen.findByRole("checkbox",{name:"구독 한도가 소진되면 리셋 크레딧 자동 사용"});await waitFor(()=>expect((checkbox as HTMLInputElement).disabled).toBe(false));fireEvent.click(checkbox);expect(await screen.findByRole("heading",{name:"리셋 크레딧 자동 사용 켜기"})).toBeTruthy();expect(screen.getByText("서버가 실행 중일 때 동작합니다. 다시 로그인하면 재승인이 필요합니다.")).toBeTruthy();fireEvent.click(screen.getByRole("button",{name:"자동 사용 끄기 유지"}));expect(value.consent).not.toHaveBeenCalled();}
  finally {await i18n.changeLanguage("en");delete globalThis.document.documentElement.dataset.theme;}
+});
+
+
+it.each(["queued","sending","uncertain"])("permits consent revocation while the original automatic credit is %s",async phase=>{
+ const value=fixture(undefined,undefined,"",false,true,"",false,"",false,true,{},"",true,phase);render(<value.Harness />);
+ const checkbox=await screen.findByRole("checkbox",{name:"Automatically use a reset credit when subscription quota is exhausted"}) as HTMLInputElement;await waitFor(()=>expect(checkbox.disabled).toBe(false));expect(checkbox.checked).toBe(true);
+ fireEvent.click(checkbox);await waitFor(()=>expect(value.consent).toHaveBeenCalledTimes(1));expect(value.consent.mock.calls[0][0]).toMatchObject({enabled:false,confirmed:false,connectionId:value.connection,generationId:value.generation});expect(value.request).not.toHaveBeenCalled();expect(value.reconcile).not.toHaveBeenCalled();
 });
