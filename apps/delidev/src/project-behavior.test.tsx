@@ -75,8 +75,11 @@ it("opens the exact sidebar project and retains its draft through a resource ref
  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
  const { ProjectSettingsMenu } = await import("./project-settings-menu");
  const { MutationIntents } = await import("./mutation");
- render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ProjectSettingsMenu projectId={projectId} label="Original project" active /></MutationIntents></QueryClientProvider></TransportProvider>);
- fireEvent.click(screen.getByRole("button", { name: "Project settings · Original project" }));
+ const { SessionRowActionsProvider } = await import("./session-row-actions");
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionRowActionsProvider active><ProjectSettingsMenu projectId={projectId} label="Original project" active /></SessionRowActionsProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getByRole("button", { name: `Project actions · Original project · ${projectId}` }));
+ expect(get).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("menuitem", { name: "Project settings" }));
  const name = await screen.findByLabelText("Name") as HTMLInputElement;
  expect(get.mock.calls[0][0]).toMatchObject({ kind: EntityKind.PROJECT, id: projectId });
  fireEvent.change(name, { target: { value: "Retained draft" } });
