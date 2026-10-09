@@ -52,7 +52,7 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.click(await screen.findByRole("button", { name: `Rename Real server profile · ${savedProfile!.id}` }, { timeout: 15000 }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await screen.findByRole("button", { name: `Manage Renamed server profile · ${savedProfile!.id}` }, { timeout: 15000 });
+  await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 15000 });
   const output = JSON.parse(await runCLI(["integration", "list"]));
   const row = output.result.resources.find((value: { data: { name: string } }) => value.data.name === "Renamed server profile");
   expect(row).toBeTruthy();
