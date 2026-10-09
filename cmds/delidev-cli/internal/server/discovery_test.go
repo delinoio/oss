@@ -252,7 +252,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 		t.Fatal(err)
 	}
 	// Generic reads independently project current lease metadata; attachment
-	// replay retains its stored document. Only last_seen may differ here.
+	// replay retains its stored document. Only transient lease observations differ.
 	configurationOnly := func(resource *pb.Resource) *pb.Resource {
 		copy := proto.Clone(resource).(*pb.Resource)
 		var fields map[string]json.RawMessage
@@ -260,6 +260,7 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 			t.Fatal(err)
 		}
 		delete(fields, "last_seen")
+		delete(fields, "heartbeat_observed_at")
 		raw, err := json.Marshal(fields)
 		if err != nil {
 			t.Fatal(err)

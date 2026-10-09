@@ -1061,6 +1061,17 @@ marker and session/execution/native identities; it cannot carry native error tex
 or add a native action. Follow the subscription contract for actor/generation,
 original lease and once-only admission. No migration is added.
 
+## Session startup progress — issue #2120
+
+System 74 / Worker 50 and the complete `ReportSessionStartupProgress` closed
+request/response and workspace-operation/progress-state enum profiles are
+allocated and activated together. Preserve System 43/Worker 23 and all
+`ExecutionStartupObservation` fields. Descriptive negotiation grants no native,
+account, input, cleanup or execution support. Original authenticated
+assignment/revision and bounded Session-summary ownership follow the
+[startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+Regenerate bindings from reconciled sources; no migration is introduced.
+
 ## Waiting queue order — issue #2142
 
 System capability `WAITING_QUEUE_ORDER_V1 = 75` owns the owner/client `MoveQueuedInput` and `ListWaitingQueue` declarations. Preserve all older numbers, especially System 53 managed Fork and System 54 OpenCode Go; no Worker capability or database migration is added. Movement fields are mutation 1, session 2, optional expected queue generation 3, before-input ID 4 and before-input revision 5. Presence of generation is required; zero is valid. Response fields are SessionChange 1 and current queue generation 2. Waiting list request fields are session 1, page size 2 and opaque page token 3; response fields are resources 1, next token 2, current generation 3 and exact waiting count 4. Existing Queue JSON and legacy ListQueue remain compatible. Allocation declarations alone grant no execution/native authority.

@@ -1977,3 +1977,12 @@ joins the retained observation owner before credential capture and native cleanu
 The existing official reset-credit consume method retains the admitted original
 UUIDv7 idempotency key; automatic admission adds no native action or continuation.
 Follow the subscription contract for separate fresh rate-limit proof and consent.
+
+## Descriptive startup observer — issue #2120
+
+The original execution process carries one transient nonblocking startup observer.
+Validated Codex handshake, Claude initialize, OpenCode initialization schema and
+Grok initialize responses confirm initialization and begin actual settings
+validation. Original successful settings publication confirms settings only.
+Preserve account/history/protocol/input claims and independent cleanup; no observer
+value grants readiness, native support, credential release or input acceptance.

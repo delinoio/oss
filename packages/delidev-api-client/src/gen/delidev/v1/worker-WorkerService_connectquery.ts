@@ -75,6 +75,11 @@ export const cloneRepository = WorkerService.method.cloneRepository;
 export const discoverHarnesses = WorkerService.method.discoverHarnesses;
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ReportSessionStartupProgress
+ */
+export const reportSessionStartupProgress = WorkerService.method.reportSessionStartupProgress;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.ReportExecutionStartup
  */
 export const reportExecutionStartup = WorkerService.method.reportExecutionStartup;

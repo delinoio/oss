@@ -41,6 +41,9 @@ func machineHeartbeatProjection(record store.Record, instance domain.ID, seen, n
 	// The attachment-time timestamp cannot stand in for a missing or malformed
 	// current lease. Omission stays unknown to earlier clients without new fields.
 	delete(fields, "last_seen")
+	// Retire the experimental extra field even if retained metadata contains it.
+	// Legacy Worker and client decoders require the original closed JSON shape.
+	delete(fields, "heartbeat_observed_at")
 	if instance.Validate() == nil && seen.UnixMilli() > 0 && !seen.After(now.Add(time.Second)) {
 		raw, err := json.Marshal(seen)
 		if err != nil {
