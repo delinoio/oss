@@ -228,6 +228,7 @@ func ApplySubscriptionQuota(a *Account, v SubscriptionQuotaObservation, now time
 			blocked = true
 		}
 	}
+	freshRecovery := false
 	if blocked {
 		a.ConfirmedExhausted = true
 	} else {
@@ -235,10 +236,11 @@ func ApplySubscriptionQuota(a *Account, v SubscriptionQuotaObservation, now time
 		spendFresh := state.SpendControlReached == nil || state.SpendControlObservedAt != nil && now.Sub(*state.SpendControlObservedAt) <= 5*time.Minute
 		if freshPositive && evidence == Observed && score != nil && *score > 0 && spendFresh {
 			a.ConfirmedExhausted = false
+			freshRecovery = true
 		}
 	}
 	// Episode rearming is independent of notification preferences.
-	if wasExhausted && !a.ConfirmedExhausted {
+	if !a.ConfirmedExhausted && (wasExhausted || freshRecovery && state.AutomaticCreditEpisode != nil && state.AutomaticCreditEpisode.Generation != state.Generation) {
 		state.AutomaticCreditEpisode = nil
 	}
 	return wasExhausted && !a.ConfirmedExhausted && a.RecoveryNotifications, nil

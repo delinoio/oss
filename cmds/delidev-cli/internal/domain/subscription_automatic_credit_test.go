@@ -47,3 +47,34 @@ func TestAutomaticCreditEpisodeRearmsWithoutNotifications(t *testing.T) {
 		t.Fatal("episode rearm depended on notification preference", err)
 	}
 }
+
+func TestAutomaticCreditFreshRecoveryClearsGenerationStaleEpisode(t *testing.T) {
+	for _, scenario := range []string{"new-generation-positive", "new-generation-sparse", "same-generation-positive"} {
+		t.Run(scenario, func(t *testing.T) {
+			now := time.Now().UTC()
+			positive := 0.8
+			generation := NewID()
+			episodeGeneration := NewID()
+			if scenario == "same-generation-positive" {
+				episodeGeneration = generation
+			}
+			block := SubscriptionQuotaBlock{SessionID: NewID(), ExecutionID: NewID(), NativeThreadID: NativeIdentity(NewID()), NativeTurnID: NativeIdentity(NewID()), Reason: CodexUsageLimitExceeded}
+			a := Account{Type: SubscriptionAccount, SubscriptionService: SubscriptionChatGPT, ConfirmedExhausted: false, Subscription: &SubscriptionState{Generation: generation, AutomaticCreditEpisode: &AutomaticResetCreditEpisode{ID: NewID(), Generation: episodeGeneration}, AutomaticCreditBlocks: []SubscriptionQuotaBlock{block}}, Quota: []QuotaWindow{{ID: "codex:primary", ComparisonGroup: "chatgpt", Blocking: true, Remaining: &positive, State: Observed, ObservedAt: now.Add(-time.Second)}}}
+			observed := SubscriptionQuotaObservation{ObservedAt: now, Windows: []SubscriptionQuotaWindow{{ID: "codex:primary", Remaining: &positive}}}
+			if scenario == "new-generation-sparse" {
+				observed.Windows = nil
+			}
+			notified, err := ApplySubscriptionQuota(&a, observed, now)
+			if err != nil || notified {
+				t.Fatal("unexpected recovery notification", err)
+			}
+			wantCleared := scenario == "new-generation-positive"
+			if (a.Subscription.AutomaticCreditEpisode == nil) != wantCleared {
+				t.Fatal("stale generation episode recovery boundary changed", scenario)
+			}
+			if len(a.Subscription.AutomaticCreditBlocks) != 1 || a.Subscription.AutomaticCreditBlocks[0] != block {
+				t.Fatal("recovery discarded original turn spending fence")
+			}
+		})
+	}
+}
