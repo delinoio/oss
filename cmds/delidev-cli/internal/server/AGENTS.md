@@ -319,3 +319,5 @@ A fresh subscription lifecycle Take may return Canceled with exact cause `subscr
 - Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
 
 - Automatic title jobs belong exclusively to auxiliary admission and delivery under `docs/cmds-delidev-session-titles-contract.md`. Primary `WatchWork` skips queued and already auxiliary-claimed titles before generic claim and delivery, preserving ordinary dispatch and targeted controls. Keep original title authority, per-Worker/server capacity and capability gates.
+
+- Worker Attach retries preserve immutable acceptance receipts while projecting current Machine discovery and network status in one authorized read. Recheck the paired device, original machine/instance and active Machine before returning observations; do not repeat attachment writes or promote unchecked installations. Follow `docs/cmds-delidev-network-contract.md`.

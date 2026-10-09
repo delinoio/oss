@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -314,5 +315,127 @@ func TestWorkerRevocationSettlesQueuedAndClaimedTitleJobs(t *testing.T) {
 				t.Fatalf("claimed title cleanup uncertainty was lost: job=%+v session=%+v", job, session)
 			}
 		})
+	}
+}
+
+func TestAttachmentReplayReadsCurrentObservationWithoutChangingAcceptance(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	machine, device, instance := domain.NewID(), domain.NewID(), domain.NewID()
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture", nil, func(tx *store.Tx) (any, error) {
+		if _, err := tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "fixture", Type: domain.WorkerDevice, MachineID: machine, PairedAt: time.Now().UTC()}); err != nil {
+			return nil, err
+		}
+		return tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "original", OS: "linux", Architecture: "amd64", Version: rpc.Version})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Store: db, Identity: security.Identity{ServerID: domain.NewID()}, logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+	actor := domain.WithPrincipal(ctx, domain.Principal{Type: domain.WorkerDevice, DeviceID: device, MachineID: machine})
+	request := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(machine), InstanceId: string(instance), Version: rpc.Version}
+	accepted, err := service.AttachWorker(actor, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Preserve the exact historic input shape, including omitted capabilities.
+	receiptInput := struct {
+		Machine, Instance            domain.ID
+		Version                      string
+		Capabilities                 []domain.WorkerCapability
+		NetworkGeneration            uint64
+		NetworkRouteID, NetworkKeyID string
+		NetworkRecipient             string
+	}{machine, instance, rpc.Version, []domain.WorkerCapability{}, 0, "", "", ""}
+	receipt, found, err := db.Replay(actor, domain.ID(request.RequestId), "worker.attach", receiptInput)
+	if err != nil || !found {
+		t.Fatal("missing original receipt", err)
+	}
+	var current store.Record
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.update", nil, func(tx *store.Tx) (any, error) {
+		record, value, err := activeMachine(tx, machine)
+		if err != nil {
+			return nil, err
+		}
+		value.Name = "current display name"
+		value.WorkerCapabilities = []domain.WorkerCapability{domain.NativeSkillsV1}
+		value.Installations = (domain.ExecutableSelections{Executables: []domain.ExecutableSelection{{Harness: domain.Codex, Path: "/synthetic/codex"}}}).Installations()
+		current, err = tx.Put(domain.MachineKind, machine, record.Revision, "", "", value)
+		return current, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := service.AttachWorker(actor, connect.NewRequest(request))
+	if err != nil || replay.Msg.Machine.Revision != current.Revision || !bytes.Equal(replay.Msg.Machine.DocumentJson, current.Data) {
+		t.Fatalf("replay lost current observations: %v %v", replay, err)
+	}
+	if replay.Msg.Machine.Revision == accepted.Msg.Machine.Revision {
+		t.Fatal("fixture did not advance current observation")
+	}
+	after, found, err := db.Replay(actor, domain.ID(request.RequestId), "worker.attach", receiptInput)
+	if err != nil || !found || !bytes.Equal(after.Data, receipt.Data) {
+		t.Fatal("replay rewrote immutable acceptance", err)
+	}
+	saved, err := db.Get(ctx, domain.MachineKind, machine)
+	if err != nil || saved.Revision != current.Revision || !bytes.Equal(saved.Data, current.Data) {
+		t.Fatal("replay repeated attachment mutation", err)
+	}
+	var observed domain.Machine
+	if err := domain.Decode(replay.Msg.Machine.DocumentJson, &observed); err != nil || observed.Installations[0].State != domain.InstallationUnchecked || len(observed.Installations[0].Capabilities) != 0 {
+		t.Fatal("replay promoted unchecked installation", err)
+	}
+	for _, disabled := range []bool{true, false} {
+		_, err = db.Mutate(ctx, domain.NewID(), "fixture.disable", disabled, func(tx *store.Tx) (any, error) {
+			record, err := tx.Get(domain.MachineKind, machine)
+			if err != nil {
+				return nil, err
+			}
+			value, err := store.Decode[domain.Machine](record)
+			if err != nil {
+				return nil, err
+			}
+			value.Disabled = disabled
+			return tx.Put(domain.MachineKind, machine, record.Revision, "", "", value)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = service.AttachWorker(actor, connect.NewRequest(request))
+		if disabled && connect.CodeOf(err) != connect.CodePermissionDenied || !disabled && err != nil {
+			t.Fatal("attachment replay lost current machine admission", err)
+		}
+	}
+	// The same receipt cannot revive a replaced process or a revoked device.
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.replace", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.SetWorkerInstance(machine, domain.NewID(), time.Now().UTC())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.AttachWorker(actor, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("stale instance replay admitted", err)
+	}
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.revoke", nil, func(tx *store.Tx) (any, error) {
+		record, err := tx.Get(domain.DeviceKind, device)
+		if err != nil {
+			return nil, err
+		}
+		value, err := store.Decode[domain.Device](record)
+		if err != nil {
+			return nil, err
+		}
+		value.Revoked = true
+		return tx.Put(domain.DeviceKind, device, record.Revision, "", "", value)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.AttachWorker(actor, connect.NewRequest(request)); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("revoked actor replay admitted", err)
 	}
 }
