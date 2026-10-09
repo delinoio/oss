@@ -372,3 +372,14 @@ it("retains exact Review labels through locale changes without another choice re
   await act(() => i18n.changeLanguage("en")); assertLabels();
   expect(value.list).toHaveBeenCalledTimes(reads); expect(value.save).not.toHaveBeenCalled();
 });
+
+it("allows the focused step heading to scroll into view on Next, Back and Review Edit", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value);
+  const heading = globalThis.document.querySelector<HTMLElement>(".schedule-creation-step-title")!;
+  const focus = vi.spyOn(heading, "focus");
+  fireEvent.click(screen.getByRole("button", { name: "Next" })); expect(focus).toHaveBeenLastCalledWith(); expect(globalThis.document.activeElement).toBe(heading);
+  fireEvent.click(screen.getByRole("button", { name: "Back" })); expect(focus).toHaveBeenLastCalledWith();
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(focus).toHaveBeenLastCalledWith(); expect(heading.textContent).toBe("Task");
+  expect(value.save).not.toHaveBeenCalled();
+});

@@ -93,7 +93,7 @@ export function ScheduleCreation({ definition, change, active, blocked, submitBl
     ? timeInvalid ? copy("schedule-creation.extra.9cd18d06fde1") : copy("schedule-creation.sentence.6caab2b232d7", { v0: frequency === Frequency.Weekly ? copy("schedule-creation.weeklyOn", { day: weekdayNames[weekday] }) : frequencyNames[frequency], v1: time, v2: text(definition.timezone) })
     : copy("schedule-creation.sentence.2a3f85460313", { v0: text(definition.timezone) });
   const steps = [copy("schedule-creation.task_4bc74b"), copy("schedule-creation.execution_a45cd4"), copy("schedule-creation.repeat"), copy("schedule-creation.review")];
-  const move = (next: number) => { if (blocked) return; flushSync(() => { setStep(next); setValidation(false); }); stepHeading.current?.focus({ preventScroll: true }); };
+  const move = (next: number) => { if (blocked) return; flushSync(() => { setStep(next); setValidation(false); }); stepHeading.current?.focus(); };
   const validate = (index: number) => {
     const scope = root.current!.querySelector<HTMLFieldSetElement>(`[data-authoring-step="${index}"]`)!;
     const disabled = scope.disabled; scope.disabled = false;
