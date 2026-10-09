@@ -106,6 +106,33 @@ func (t *Tx) PricingIdentities() ([]domain.ModelIdentity, error) {
 	if e != nil {
 		return nil, storageError(e)
 	}
+	// Default revision-zero Automatic policies have no metadata row. Retained
+	// active prices must remain discoverable after the last route is removed.
+	rows, e = t.tx.QueryContext(t.ctx, "SELECT model_key FROM active_pricing ORDER BY model_key LIMIT 5001")
+	if e != nil {
+		return nil, storageError(e)
+	}
+	for rows.Next() {
+		var key domain.ID
+		if e = rows.Scan(&key); e != nil {
+			rows.Close()
+			return nil, storageError(e)
+		}
+		m, parseError := domain.ParseModelKey(key)
+		if parseError != nil {
+			rows.Close()
+			return nil, corrupt()
+		}
+		if e = add(m); e != nil {
+			rows.Close()
+			return nil, e
+		}
+	}
+	e = rows.Err()
+	rows.Close()
+	if e != nil {
+		return nil, storageError(e)
+	}
 	rows, e = t.tx.QueryContext(t.ctx, "SELECT body FROM entities WHERE kind='agent' ORDER BY id LIMIT 5001")
 	if e != nil {
 		return nil, storageError(e)
