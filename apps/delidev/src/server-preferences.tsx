@@ -11,7 +11,7 @@ export function readableServerPreferences(row: Resource): boolean {
   // Editable values must be present in the saved document. Never turn a parser
   // fallback, future schema or unknown policy into plausible default settings.
   return row.kind === EntityKind.SETTINGS && isEntityId(row.id) && row.revision > 0n && row.documentJson.byteLength <= 1 << 20
-    && row.schemaVersion === 1 && Object.values(Routing).includes(data.default_routing as Routing)
+    && [1, 2].includes(row.schemaVersion) && (row.schemaVersion === 1 || typeof data.automatic_plan_approval === "boolean") && Object.values(Routing).includes(data.default_routing as Routing)
     && typeof data.automatic_fetch === "boolean" && typeof data.notifications === "boolean"
     && [policy.ci_failure, policy.review_feedback, policy.merge_conflict].every(flag => typeof flag === "boolean")
     && Object.values(ConflictStrategy).includes(policy.conflict_strategy as ConflictStrategy)
@@ -35,7 +35,7 @@ export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceS
   useLocale();
   const label = serverPreferenceLabel(section);
   return <section className="server-preferences-unavailable" aria-label={`${label} unavailable`}>
-    <p role="status">{rows.length === 1 && rows[0].schemaVersion !== 1
+    <p role="status">{rows.length === 1 && rows[0].schemaVersion !== 1 && rows[0].schemaVersion !== 2
       ? `Unsupported ${label.toLowerCase()} schema. Policy values are unavailable.`
       : rows.length === 1 && !readableServerPreferences(rows[0])
       ? `${label} contains unreadable or unsupported policy values. Policy values are unavailable.`
@@ -45,7 +45,7 @@ export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceS
 }
 
 export function serverPreferenceLabel(section: ServerPreferenceSection): string {
-  return section === ServerPreferenceSection.GitWorkflow ? copy("server-preferences.gitWorkflow") : copy("settings.serverPreferences_eba66b");
+  return section === ServerPreferenceSection.ProjectDefaults ? copy("configuration-fields.projectDefaults") : section === ServerPreferenceSection.GitWorkflow ? copy("server-preferences.gitWorkflow") : copy("settings.serverPreferences_eba66b");
 }
 
 export function ServerPreferencesEmpty({ section = ServerPreferenceSection.All }: { section?: ServerPreferenceSection }) {
@@ -79,7 +79,7 @@ export function ServerPreferencesSummary({ row, section = ServerPreferenceSectio
         <dl>{[["ci_failure", copy("server-preferences.extra.5ecef0b36ba3")], ["review_feedback", copy("server-preferences.extra.feab8b0b6d7b")], ["merge_conflict", copy("server-preferences.extra.7f64e75c8c6e")]].map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{policy[key] ? copy("server-preferences.on_130011") : copy("server-preferences.off_ca7981")}</dd></div>)}</dl>
       </section>
       </> : null}
-    </> : <p role="status">{row.schemaVersion !== 1 ? copy("server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f") : copy("server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc")}</p>}
+    </> : <p role="status">{row.schemaVersion !== 1 && row.schemaVersion !== 2 ? copy("server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f") : copy("server-preferences.serverPreferencesAreUnreadableOrContain_17b4fc")}</p>}
   </article>;
 }
 

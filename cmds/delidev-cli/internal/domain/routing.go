@@ -69,7 +69,7 @@ func routeAccount(agentID ID, agent Agent, model Model, project *Project, accoun
 	if agent.ReconfigurationRequired {
 		return Route{}, state, SubscriptionReconfigurationRequired()
 	}
-	policy := defaultPolicy
+	policy := project.EffectiveRouting(defaultPolicy)
 	if agent.Routing != nil {
 		policy = *agent.Routing
 	}

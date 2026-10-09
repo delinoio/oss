@@ -149,6 +149,10 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 				return bundle, err
 			}
 			switch v := value.(type) {
+			case *domain.Project:
+				if v.Settings != nil && v.Settings.Remediation != nil && v.Settings.Remediation.MachineID != "" {
+					machineIDs[v.Settings.Remediation.MachineID] = true
+				}
 			case *domain.Repository:
 				if v.Remediation != nil && v.Remediation.MachineID != "" {
 					machineIDs[v.Remediation.MachineID] = true
@@ -318,6 +322,15 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
+		}
+		if bundle.Version < 5 && (entry.Kind == domain.ProjectKind || entry.Kind == domain.SettingsKind) {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(entry.Document, &fields) != nil {
+				return plan, transferInvalid()
+			}
+			if fields["settings"] != nil || fields["automatic_plan_approval"] != nil {
+				return plan, domain.Fail(domain.Unsupported, "Project behavior settings require portable version 5.", "Export the complete current configuration.")
+			}
 		}
 		if bundle.Version < 4 && (entry.Kind == domain.ProviderKind || entry.Kind == domain.AccountKind) {
 			var fields map[string]json.RawMessage
@@ -493,6 +506,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			if err == nil {
 				err = rewriteIDs(v.Accounts.IDs, domain.AccountKind)
 			}
+			if err == nil && v.Settings != nil {
+				err = rewriteRemediation(v.Settings.Remediation)
+			}
 		case *domain.Repository:
 			for i, c := range v.Checkouts {
 				key := checkoutKey{entry.ID, c.MachineID}
@@ -636,6 +652,10 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 			return err
 		}
 		switch v := value.(type) {
+		case *domain.Project:
+			if v.Settings != nil && v.Settings.Remediation != nil && v.Settings.Remediation.MachineID != "" && !machines[v.Settings.Remediation.MachineID] {
+				return transferInvalid()
+			}
 		case *domain.Repository:
 			if v.Remediation != nil && v.Remediation.MachineID != "" && !machines[v.Remediation.MachineID] {
 				return transferInvalid()

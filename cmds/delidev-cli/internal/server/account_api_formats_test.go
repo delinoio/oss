@@ -195,7 +195,7 @@ func TestPortableConfigurationFormatsVersionFour(t *testing.T) {
 		s, _ := newDoctorFixture(t)
 		var plan domain.ConfigurationImportPlan
 		err := s.Store.Read(context.Background(), func(tx *store.Tx) error { var err error; plan, err = buildConfigurationPlan(tx, selection); return err })
-		if err != nil || plan.Version != 4 {
+		if err != nil || plan.Version != domain.ConfigurationBundleVersion {
 			t.Fatal("portable bundle compatibility failed", version, err)
 		}
 		transferApply(t, s, transferPreview(t, s, selection), domain.NewID())
@@ -204,7 +204,7 @@ func TestPortableConfigurationFormatsVersionFour(t *testing.T) {
 			t.Fatal(err)
 		}
 		var bundle domain.ConfigurationBundle
-		if err := domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || bundle.Version != 4 {
+		if err := domain.Decode(exported.Msg.DocumentJson, &bundle); err != nil || bundle.Version != domain.ConfigurationBundleVersion {
 			t.Fatal("round-trip export did not use version four", err)
 		}
 		target, _ := newDoctorFixture(t)

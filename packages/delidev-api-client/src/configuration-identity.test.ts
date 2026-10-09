@@ -60,3 +60,10 @@ it("accepts only the ordered Agent schema-3 family and preserves legacy versions
   expect(supportsResourceSchema(resource(EntityKind.MODEL, body, 3))).toBe(false);
   expect(supportsResourceSchema(resource(EntityKind.AGENT, body, 4))).toBe(false);
 });
+
+ it("preserves the project behavior schema family without accepting destructive legacy projections", () => {
+ expect(supportsResourceSchema(resource(EntityKind.PROJECT, { settings: {} }, 2))).toBe(true);
+ expect(supportsResourceSchema(resource(EntityKind.PROJECT, { settings: {} }, 1))).toBe(false);
+ expect(supportsResourceSchema(resource(EntityKind.SETTINGS, { automatic_plan_approval: false }, 2))).toBe(true);
+ expect(supportsResourceSchema(resource(EntityKind.SETTINGS, { automatic_plan_approval: null }, 2))).toBe(false);
+ });

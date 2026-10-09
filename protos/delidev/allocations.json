@@ -9601,6 +9601,13 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_SERVER_SUBSCRIPTION_QUOTA_V2",
       "number": 50
+    },
+    {
+      "issue": 1965,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PROJECT_BEHAVIOR_SETTINGS_V1",
+      "number": 52
     }
   ],
   "rpcReservations": [

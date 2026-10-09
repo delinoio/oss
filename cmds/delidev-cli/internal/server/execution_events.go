@@ -103,6 +103,11 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if _, err := tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
 			return nil, err
 		}
+		if event.Kind == domain.ExecutionInteractionRequested {
+			if err := s.decideAutomaticPlanApproval(tx, event.Interaction.ID); err != nil {
+				return nil, err
+			}
+		}
 		return executionEventReceipt{Sequence: event.Sequence}, nil
 	})
 	if err != nil {

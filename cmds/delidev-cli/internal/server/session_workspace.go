@@ -60,7 +60,7 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
 			return input, err
 		}
-		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && repo.AutoFetch}
+		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && project.EffectiveFetch(settings.AutomaticFetch) && repo.AutoFetch}
 		if session.Workspace == domain.Worktree {
 			spec.SourceKind, spec.RemoteURL = workspace.RemoteCloneSource, repo.RemoteURL
 		}

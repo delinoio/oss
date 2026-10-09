@@ -46,6 +46,15 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 			return false, executionEventConflict()
 		}
 		value := domain.ExecutionInteraction{ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeItemID: u.NativeItemID, NativeRequestID: u.NativeRequestID, Type: u.Type, Questions: u.Questions, Approval: u.Approval, OpenCode: u.OpenCode, Claude: u.Claude, Grok: u.Grok, Closure: domain.InteractionOpen, FirstSequence: event.Sequence, LastSequence: event.Sequence}
+		if _, eligible := nativePlanApproval(value); eligible {
+			value.PlanApprovalPolicy = domain.PlanApprovalManual
+			enabled, err := effectivePlanApproval(tx, session.ProjectID)
+			if err != nil {
+				value.PlanApprovalPolicy = domain.PlanApprovalUnavailable
+			} else if enabled {
+				value.PlanApprovalPolicy = domain.PlanApprovalAutomatic
+			}
+		}
 		if _, err := tx.Put(domain.InteractionKind, u.ID, 0, session.ID, session.ProjectID, value); err != nil {
 			return false, err
 		}

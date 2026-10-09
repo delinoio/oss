@@ -91,7 +91,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const form = useRef<HTMLFormElement>(null);
   const formId = useId(), taskVisible = useSettingsTaskVisible(), inTask = useInSettingsTask(), cancelTask = useCloseSettingsTask(cancel);
   const current = useQuery(ResourceQuery.getResource, { kind, id: source?.id ?? "" }, { enabled: active && Boolean(source), refetchInterval: active ? 5000 : false });
-  const repositoryStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.REPOSITORY, retry: false });
+  const repositoryStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && [EntityKind.REPOSITORY, EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind), retry: false });
   const savedKind = { [EntityKind.AGENT]: "settings.savedKind.AGENT" as const, [EntityKind.TEMPLATE]: "settings.savedKind.TEMPLATE" as const, [EntityKind.PROJECT]: "settings.savedKind.PROJECT" as const, [EntityKind.REPOSITORY]: "settings.savedKind.REPOSITORY" as const, [EntityKind.ACCOUNT]: "settings.savedKind.ACCOUNT" as const, [EntityKind.MACHINE]: "settings.savedKind.MACHINE" as const, [EntityKind.PROVIDER]: "settings.savedKind.PROVIDER" as const, [EntityKind.MODEL]: "settings.savedKind.MODEL" as const, [EntityKind.SETTINGS]: "settings.savedKind.SETTINGS" as const };
   const mutation = useRetainedMutation(`configuration:${kind}:${source?.id ?? "new"}`, ConfigurationQuery.saveConfiguration, (result, request) => {
     if (result.requestId === request.mutation?.requestId && (result.resource?.kind === kind && isEntityId(result.resource.id) && supportsResourceSchema(result.resource) && result.resource.revision > 0n || result.job?.kind === EntityKind.JOB && isEntityId(result.job.id) && supportsResourceSchema(result.job) && result.job.revision > 0n)) {
@@ -160,7 +160,9 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;
   const repositoryStatusFailed = repositoryNeedsRemoteCapability && Boolean(repositoryStatus.error);
   const repositoryUnsupported = repositoryNeedsRemoteCapability && repositoryStatus.data !== undefined && !repositoryStatus.data.capabilities.includes(SystemCapability.REMOTE_REPOSITORIES_V1);
-  const saveDisabled = selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
+  const supportsProjectBehavior = Boolean(repositoryStatus.data?.capabilities.includes(SystemCapability.PROJECT_BEHAVIOR_SETTINGS_V1));
+  const behaviorUnsupported = [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) && source?.schemaVersion === 2 && !supportsProjectBehavior;
+  const saveDisabled = behaviorUnsupported || selectionPending || fieldsBlocked || repositoryStatusPending || repositoryStatusFailed || repositoryUnsupported || blocked || childPending || stale || inlineReadBlocked || (inline && (!dirty || conflict)) || data.reconfiguration_required === true || !validSubscriptionProvider || Boolean(source && current.error);
   const submit = () => {
     // The ref also fences a submit dispatched before React commits the disabled button.
     if (saveDisabled || pendingSelections.current.size) return;
@@ -169,13 +171,22 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
       void formatMutation.send({ mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, apiProtocol: apiFormatToWire(selectedFormat), alias: text(data.alias), enabled: data.enabled === true, excludeAutomatic: data.exclude_automatic === true, recoveryNotifications: data.recovery_notifications === true });
       return;
     }
+    const submittedData = { ...data };
+    if ([EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind)) {
+      if (supportsProjectBehavior) {
+        if (kind === EntityKind.PROJECT) submittedData.settings = object(data.settings);
+        else submittedData.automatic_plan_approval = data.automatic_plan_approval === true;
+      } else {
+        delete submittedData.settings; delete submittedData.automatic_plan_approval;
+      }
+    }
     let documentJson: Uint8Array;
     try {
-      documentJson = kind === EntityKind.ACCOUNT && source ? accountPreferencesDocument(source, { ...(data.type === "api" && apiFormat(data.api_protocol) ? { api_protocol: apiFormat(data.api_protocol)! } : {}), alias: text(data.alias), enabled: data.enabled === true, exclude_automatic: data.exclude_automatic === true, recovery_notifications: data.recovery_notifications === true }) : encode(data);
+      documentJson = kind === EntityKind.ACCOUNT && source ? accountPreferencesDocument(source, { ...(data.type === "api" && apiFormat(data.api_protocol) ? { api_protocol: apiFormat(data.api_protocol)! } : {}), alias: text(data.alias), enabled: data.enabled === true, exclude_automatic: data.exclude_automatic === true, recovery_notifications: data.recovery_notifications === true }) : encode(submittedData);
     } catch {
       setProblem(copy("settings.accountPreferencesCouldNotBeSavedReopen_4a7c1b")); return;
     }
-    void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: configurationSchemaVersion(kind, data), documentJson });
+    void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) && !supportsProjectBehavior ? 1 : configurationSchemaVersion(kind, submittedData), documentJson });
   };
   if (kind === EntityKind.PROJECT && !source) return <ResourceSelectionPending.Provider value={reportSelectionPending}><ProjectCreationWizard data={data} change={change} active={active} visible={taskVisible} blocked={blocked || childPending} busy={mutation.busy} saveDisabled={saveDisabled} submit={submit} cancel={cancelTask} cancelDisabled={!inTask && (blocked || childPending)} uncertain={mutation.uncertain} retry={mutation.retry}>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
@@ -183,8 +194,9 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   return <ResourceSelectionPending.Provider value={reportSelectionPending}><form id={formId} ref={form} aria-label={inline ? (serverPreferenceSection === ServerPreferenceSection.GitWorkflow ? "Git workflow form" : "Server preferences form") : undefined} className={kind === EntityKind.REPOSITORY && source ? "repository-editor" : kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.REPOSITORY && source ? revealRepositoryInvalidControl : kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
     {inline ? null : isApiEntry ? apiEntryHeading : <h3 hidden={inTask}>{initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">{copy("settings.configureTheEssentialsThenCustomizeOnly_a8beda")}</p> : null}
-    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields movementActive={active && taskVisible && !blocked && !childPending} keepsFormatKey={setKeepsFormatKey} initial={source} saveBlocked={setFieldsBlocked} kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
+    <fieldset disabled={blocked || (inline && (!preferencesObservation?.complete || currentUnavailable))}><ConfigurationFields supportsProjectBehavior={supportsProjectBehavior} movementActive={active && taskVisible && !blocked && !childPending} keepsFormatKey={setKeepsFormatKey} initial={source} saveBlocked={setFieldsBlocked} kind={kind} data={data} change={change} active={active} existing={Boolean(source)} pendingOperation={setChildPending} subscriptionOnly={subscriptionOnly} serverPreferenceSection={serverPreferenceSection} /></fieldset>
     {repositoryUnsupported ? <p role="status">{copy("settings.repositoryServerUpdateRequired")}</p> : null}
+    {behaviorUnsupported ? <p role="status">{copy("configuration-fields.behaviorUnsupported")}</p> : null}
     {stale || (inline && conflict) ? <p role="alert">{inline ? copy("settings.inlinePreferencesChangedElsewhereDraftRetained", { v0: kindLabel }) : copy("settings.thisEntryChangedElsewhereYourDraft_106fa0")}</p> : null}{currentUnavailable ? <p role="status">{inline ? copy("settings.inlinePreferencesUnavailableDraftRetained", { v0: kindLabel }) : copy("settings.serverPreferencesUnavailableDraftRetained")}</p> : null}{problem ? <p role="alert">{problem}</p> : null}<Problem error={current.error} actions={<button type="button" disabled={!active || blocked || current.isFetching} onClick={() => void current.refetch()}>{copy("ui.retryCurrentRead")}</button>} /><Problem error={mutation.error || formatMutation.error || (repositoryNeedsRemoteCapability ? repositoryStatus.error : undefined)} />{repositoryStatusFailed ? <button type="button" disabled={repositoryStatus.isFetching} onClick={() => void repositoryStatus.refetch()}>{copy("settings.retryRepositoryCapability")}</button> : null}
     {subscriptionOnly && !validSubscriptionProvider ? <p role="alert">{copy("settings.subscriptionProvidersMustUseNativeSubscription_8e47b2")}</p> : null}
     {inline ? <div className="actions server-preferences-actions"><span className="server-preferences-status" role="status">{mutation.busy ? copy("settings.savingChanges") : mutation.uncertain ? copy("settings.saveOutcomeUnknown") : dirty ? copy("settings.unsavedChanges") : ""}</span><button type="button" disabled={blocked || childPending || (!dirty && !stale && !conflict)} onClick={discard}>{copy("settings.discardChanges")}</button>{formatMutation.uncertain ? <button type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</button> : null}<button className="primary" disabled={saveDisabled}>{copy("settings.saveChanges")}</button></div> : null}
@@ -226,6 +238,7 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
   [SettingsCategory.Providers]: { get label() { return copy("settings.apiProviders_376855"); }, get description() { return copy("settings.providerAvailabilityIsSavedOnThe_11e7c8"); }, kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
   [SettingsCategory.AgentWorkers]: { get label() { return copy("settings.agentWorkers_e60c23"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.AGENT, area: SettingsArea.Configuration },
   [SettingsCategory.Instructions]: { get label() { return copy("settings.instructions_934652"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.TEMPLATE, area: SettingsArea.Configuration },
+  [SettingsCategory.ProjectDefaults]: { get label() { return copy("configuration-fields.projectDefaults"); }, get description() { return copy("configuration-fields.inheritanceHelp"); }, kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Projects]: { get label() { return copy("settings.projects_04e2a9"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.PROJECT, area: SettingsArea.Configuration },
   [SettingsCategory.Repositories]: { get label() { return copy("settings.repositories_1e32af"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.REPOSITORY, area: SettingsArea.Configuration },
   [SettingsCategory.ExecutionWorkers]: { get label() { return copy("settings.runnerDevices_a176a8"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.MACHINE, area: SettingsArea.Configuration },
@@ -240,12 +253,13 @@ const settingsCategories: Record<SettingsCategory, { label: string; description:
 
 const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
   { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
-  { label: SettingsGroup.Coding, categories: [SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations, SettingsCategory.GitWorkflow] },
+  { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations, SettingsCategory.GitWorkflow] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
   { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+ [SettingsCategory.ProjectDefaults]: "M4 6h16M4 12h16M4 18h16",
   [SettingsCategory.Appearance]: "M12 3a9 9 0 1 0 0 18V3zM12 3a9 9 0 0 1 0 18",
   [SettingsCategory.Backups]: "M4 4h16v16H4zM8 4v6h8V4M8 20v-6h8v6",
   [SettingsCategory.Providers]: "M7 18a4 4 0 1 1 .9-7.9A5.5 5.5 0 0 1 18 9.5 3.5 3.5 0 0 1 18 18z",
@@ -363,8 +377,9 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const isProjects = selectedCategory === SettingsCategory.Projects;
   const isServerPreferences = selectedCategory === SettingsCategory.ServerPreferences;
   const isGitWorkflow = selectedCategory === SettingsCategory.GitWorkflow;
-  const isPreferenceCategory = isServerPreferences || isGitWorkflow;
-  const preferenceSection = isGitWorkflow ? ServerPreferenceSection.GitWorkflow : ServerPreferenceSection.AccountRouting;
+  const isProjectDefaults = selectedCategory === SettingsCategory.ProjectDefaults;
+  const isPreferenceCategory = isServerPreferences || isGitWorkflow || isProjectDefaults;
+  const preferenceSection = isProjectDefaults ? ServerPreferenceSection.ProjectDefaults : isGitWorkflow ? ServerPreferenceSection.GitWorkflow : ServerPreferenceSection.AccountRouting;
   const preferenceLabel = serverPreferenceLabel(preferenceSection);
   const isPairedDevices = selectedCategory === SettingsCategory.PairedDevices;
   const isRunnerDevices = selectedCategory === SettingsCategory.ExecutionWorkers;

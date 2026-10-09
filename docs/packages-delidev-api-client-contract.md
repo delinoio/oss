@@ -298,3 +298,7 @@ oversized documents remain unavailable. This read exception grants no operation
 or native authority. Desktop document/receipt readers and synchronization use
 the same decoder; synchronization retains its existing aggregate memory,
 resource-count, identity/revision and snapshot/event publication bounds.
+
+## Project behavior settings (issue #1965)
+
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.

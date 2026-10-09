@@ -79,14 +79,20 @@ func UniqueIDs(ids []ID) error {
 }
 
 type Project struct {
-	Name              string      `json:"name"`
-	Repositories      []ID        `json:"repositories"`
-	PrimaryRepository ID          `json:"primary_repository"`
-	Agents            Restriction `json:"agents"`
-	Accounts          Restriction `json:"accounts"`
+	Settings          *ProjectBehavior `json:"settings,omitempty"`
+	Name              string           `json:"name"`
+	Repositories      []ID             `json:"repositories"`
+	PrimaryRepository ID               `json:"primary_repository"`
+	Agents            Restriction      `json:"agents"`
+	Accounts          Restriction      `json:"accounts"`
 }
 
 func (p Project) Validate() error {
+	if p.Settings != nil {
+		if err := p.Settings.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := Text(p.Name, "project name", 256, true); err != nil {
 		return err
 	}
@@ -814,10 +820,11 @@ func (m Machine) Validate() error {
 }
 
 type Settings struct {
-	DefaultRouting RoutingPolicy     `json:"default_routing"`
-	Notifications  bool              `json:"notifications"`
-	AutomaticFetch bool              `json:"automatic_fetch"`
-	Remediation    RemediationPolicy `json:"remediation"`
+	AutomaticPlanApproval bool              `json:"automatic_plan_approval"`
+	DefaultRouting        RoutingPolicy     `json:"default_routing"`
+	Notifications         bool              `json:"notifications"`
+	AutomaticFetch        bool              `json:"automatic_fetch"`
+	Remediation           RemediationPolicy `json:"remediation"`
 }
 
 func DefaultSettings() Settings {

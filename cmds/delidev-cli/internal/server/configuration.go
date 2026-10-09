@@ -8,6 +8,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 )
 
@@ -23,6 +24,18 @@ type validatable interface{ Validate() error }
 
 func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
 	var value validatable
+	if kind == domain.ProjectKind || kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		if err := domain.Decode(raw, &fields); err != nil {
+			return nil, err
+		}
+		if v, ok := fields["automatic_plan_approval"]; kind == domain.SettingsKind && ok && !bytes.Equal(v, []byte("true")) && !bytes.Equal(v, []byte("false")) {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid automatic plan approval value.", "Use an explicit boolean.")
+		}
+		if v, ok := fields["settings"]; kind == domain.ProjectKind && ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			return nil, domain.Fail(domain.InvalidArgument, "Invalid project settings.", "Use a typed settings object, including an empty object for inheritance.")
+		}
+	}
 	switch kind {
 	case domain.ProjectKind:
 		value = &domain.Project{}
@@ -81,6 +94,18 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		id := input.ID
 		if id == "" {
 			id = domain.NewID()
+		}
+		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind) {
+			previous, err := tx.Get(input.Kind, id)
+			if err != nil {
+				return nil, err
+			}
+			if rpc.ResourceSchemaVersion(input.Kind, previous.Data) == 2 && rpc.ResourceSchemaVersion(input.Kind, input.Document) != 2 {
+				return nil, domain.Fail(domain.Unsupported, "Project behavior settings require a current client.", "Preserve schema 2 and all behavior settings when editing.")
+			}
+		}
+		if project, ok := value.(*domain.Project); ok && project.Settings == nil {
+			project.Settings = &domain.ProjectBehavior{AutomaticFetch: domain.InheritBoolean, AutomaticPlanApproval: domain.InheritBoolean}
 		}
 		if provider, ok := value.(*domain.Provider); ok {
 			if err := preserveProviderActivation(tx, input, id, provider); err != nil {
@@ -394,6 +419,11 @@ func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
 	switch v := value.(type) {
 	case *domain.Project:
+		if v.Settings != nil && v.Settings.Remediation != nil {
+			if err := validateRemediationRelationships(tx, *v.Settings.Remediation); err != nil {
+				return err
+			}
+		}
 		if err := mustExist(tx, domain.RepositoryKind, v.Repositories...); err != nil {
 			return err
 		}

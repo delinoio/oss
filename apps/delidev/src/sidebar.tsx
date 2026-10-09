@@ -1,3 +1,4 @@
+import { ProjectSettingsMenu } from "./project-settings-menu";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { SubscriptionRail } from "./subscription-rail";
 import { SessionRowActions, SessionRowActionsProvider, useSessionActionMenuOpen } from "./session-row-actions";
@@ -199,6 +200,7 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span>
     </DisclosureButton>
     {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: projectId })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
+    {!fallback ? <ProjectSettingsMenu projectId={projectId} label={label} active={active} /> : null}
     <DisclosureContent id={disclosureContentId1} hidden={!expanded}>{expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}</DisclosureContent>
   </section>;
 }

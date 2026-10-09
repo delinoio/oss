@@ -46,7 +46,7 @@ func RouteSources(agentID ID, agent Agent, project *Project, sources []SourceRou
 		seen[source.Source] = true
 		cursor := state.Sources[source.Source]
 		inner := RoutingState{Current: cursor.Current, Rotation: cursor.Rotation, Tie: cursor.Tie}
-		policy := defaultPolicy
+		policy := project.EffectiveRouting(defaultPolicy)
 		if agent.Routes[i].Routing != nil {
 			policy = *agent.Routes[i].Routing
 		}

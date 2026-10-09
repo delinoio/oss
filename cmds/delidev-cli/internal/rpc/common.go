@@ -116,6 +116,12 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 }
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
+	if kind == domain.ProjectKind || kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && (fields["settings"] != nil || fields["automatic_plan_approval"] != nil) {
+			return 2
+		}
+	}
 	var identity struct {
 		APIProtocol             domain.APIProtocol         `json:"api_protocol"`
 		APIFormats              []domain.ProviderAPIFormat `json:"api_formats"`
