@@ -105,7 +105,7 @@ try {
   assert.equal(await tooltip.textContent(), c("image-input.help"));
   assert.deepEqual(await input.boundingBox(), before, "guidance cannot displace input");
   await tooltip.hover(); await page.waitForTimeout(150); assert(await tooltip.isVisible());
-  await input.hover(); await tooltip.waitFor({ state: "detached" });
+  await page.mouse.move(1, 1); await tooltip.waitFor({ state: "detached" });
   await plus.focus(); await tooltip.waitFor();
   const bounds = await tooltip.boundingBox();
   assert(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width + 1 && bounds.y + bounds.height <= height + 1);
