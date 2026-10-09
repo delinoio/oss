@@ -55,7 +55,7 @@ try {
       const content = node.querySelector('.new-session-content'), fieldset = node.querySelector('fieldset'), list = node.querySelector('.skill-completion');
       const rows = [...list.querySelectorAll('[role=option]')];
       return { content: content.getBoundingClientRect().width, fieldset: fieldset.getBoundingClientRect().width, contentMin: getComputedStyle(content).minWidth, fieldsetMin: getComputedStyle(fieldset).minWidth, listHeight: list.getBoundingClientRect().height, listClient: list.clientHeight, listScroll: list.scrollHeight,
-        rows: rows.map(row => { const name = row.querySelector('strong'), description = row.querySelector('.skill-completion-description'), badge = row.querySelector('.skill-completion-provenance'); return { width: row.clientWidth, scroll: row.scrollWidth, height: row.getBoundingClientRect().height, name: name.getBoundingClientRect().width, description: description.getBoundingClientRect().width, badge: getComputedStyle(badge).flexShrink, original: description.textContent }; }),
+        rows: rows.map(row => { const name = row.querySelector('strong'), description = row.querySelector('.skill-completion-description'), badge = row.querySelector('.skill-completion-provenance'); return { width: row.clientWidth, scroll: row.scrollWidth, height: row.getBoundingClientRect().height, name: name.getBoundingClientRect().width, description: description.getBoundingClientRect().width, badge: getComputedStyle(badge).flexShrink, provenance: badge.textContent, nameText: name.textContent, original: description.textContent }; }),
         pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, mainOverflow: node.closest('main').scrollWidth > node.closest('main').clientWidth + 1 };
     });
     await open('$a'); const one = await geometry();
@@ -63,10 +63,10 @@ try {
     assert(one.content <= 820 && one.fieldset <= one.content + 1, JSON.stringify(one));
     assert.equal(one.pageOverflow, false); assert.equal(one.mainOverflow, false);
     assert.equal(one.rows.length, 1); assert.equal(one.rows[0].original, 'Evidence-driven GitHub issue creation '.repeat(20));
-    const assertRows = data => { for (const row of data.rows) { assert(row.scroll <= row.width + 1, JSON.stringify(row)); assert(row.height >= 40 && row.height < 42); assert.equal(row.badge, '0'); } };
+    const assertRows = data => { for (const row of data.rows) { assert(row.scroll <= row.width + 1, JSON.stringify(row)); assert(row.height >= 40 && row.height < 42); assert.equal(row.badge, '0'); assert(row.name <= row.width * 0.4 + 1); assert([language === 'en' ? 'User' : '사용자', language === 'en' ? 'Project' : '프로젝트'].includes(row.provenance)); } };
     assertRows(one);
     await input.press('Escape'); assert.equal(await root.locator('.skill-completion').count(), 0); assert(await input.evaluate(node => node === document.activeElement));
-    await open('$'); const many = await geometry(); assertRows(many); assert(many.listHeight <= 220); assert(many.listScroll > many.listClient); assert(many.rows.some(row => row.original === ''));
+    await open('$'); const many = await geometry(); assertRows(many); assert(many.listHeight <= 220); assert(many.listScroll > many.listClient); assert(many.rows.some(row => row.original === '' && row.nameText === 'long-name-'.repeat(30))); 
     const scroll = await page.locator('main').evaluate(node => node.scrollTop);
     for (let index = 0; index < 10; index++) await input.press('ArrowDown');
     assert(await root.locator('.skill-completion').evaluate(node => node.scrollTop > 0));
