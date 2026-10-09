@@ -25,7 +25,7 @@ function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLim
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  function Harness() {
     const [current, setCurrent] = useState(account), [, setBusy] = useState(false);
-    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: Array.isArray(details) ? [...details].reverse() : details } } }) }); setCurrent(account); }}>Reorder fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
   }
   return { Harness, request, reconcile, account, machine, connection, generation, inventory };
 }
@@ -34,7 +34,7 @@ async function selectExactCredit() {
  const use = await screen.findByRole("button", { name: "Use" });
  await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(use);
- fireEvent.click(screen.getByRole("button", { name: "Select credit credit_1" }));
+ fireEvent.click(screen.getByRole("button", { name: "Select Reset credit 1" }));
 }
 
 it("preserves authoritative count, confirms the selected credit and retains the exact lost request", async () => {
@@ -103,7 +103,7 @@ it.each([undefined, null])("confirms server reset credits with the original omit
  const next=details===null;
  const review=await screen.findByRole("button",{name:"Use"});
  await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));fireEvent.click(review);
- if (!next) fireEvent.click(screen.getByRole("button", { name: "Select credit credit_1" }));
+ if (!next) fireEvent.click(screen.getByRole("button", { name: "Select Reset credit 1" }));
  fireEvent.click(screen.getByRole("button",{name:"Confirm credit consumption"}));
  await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
  expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",creditId:next?"":"credit_1",nextCredit:next,confirmed:true,connectionId:value.connection,generationId:value.generation,creditsObservationId:value.inventory});
@@ -128,7 +128,7 @@ it("preserves the server confirmation selectors in Korean",async()=>{
   const value=fixture(undefined,undefined,"",true,true,"",true);render(<value.Harness />);
   const use=await screen.findByRole("button",{name:"사용"});
   await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
-  const review=await screen.findByRole("button",{name:/credit_1/});
+  const review=await screen.findByRole("button",{name:"리셋권 1 선택"});
   await waitFor(()=>expect((review as HTMLButtonElement).disabled).toBe(false));fireEvent.click(review);
   fireEvent.click(screen.getByRole("button",{name:copy("subscription-quota.confirmCreditConsumption_251822")}));
   await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
@@ -151,9 +151,9 @@ it("starts collapsed, uses authoritative count, and restores selection focus wit
  const use = await screen.findByRole("button", { name: "Use" });
  await waitFor(() => expect((use as HTMLButtonElement).disabled).toBe(false));
  expect(screen.getByRole("button", { name: "View details" }).getAttribute("aria-expanded")).toBe("false");
- expect(screen.queryByRole("button", { name: "Select credit credit_1" })).toBeNull();
+ expect(screen.queryByRole("button", { name: "Select Reset credit 1" })).toBeNull();
  fireEvent.click(use); expect(globalThis.document.activeElement).toBe(screen.getByRole("heading", { name: "Credit details" }));
- const select = screen.getByRole("button", { name: "Select credit credit_1" }); fireEvent.click(select);
+ const select = screen.getByRole("button", { name: "Select Reset credit 1" }); fireEvent.click(select);
  expect(globalThis.document.activeElement).toBe(screen.getByRole("heading", { name: "Confirm reset credit consumption" }));
  expect(screen.getByText("Account: Quota fixture")).toBeTruthy();
  fireEvent.click(screen.getByRole("button", { name: "Keep credit" })); expect(globalThis.document.activeElement).toBe(select);
@@ -185,7 +185,7 @@ it.each([
 });
 it("locale changes and collapsed details retain the original exact selection without sending",async()=>{
  const value=fixture();render(<value.Harness />);await selectExactCredit();fireEvent.click(screen.getByRole("button",{name:"Hide details"}));
- try {await i18n.changeLanguage("ko");expect(await screen.findByRole("button",{name:"리셋권 사용 확인"})).toBeTruthy();expect(screen.getByText("리셋권 credit_1 사용")).toBeTruthy();expect(value.request).not.toHaveBeenCalled();}
+ try {await i18n.changeLanguage("ko");expect(await screen.findByRole("button",{name:"리셋권 사용 확인"})).toBeTruthy();expect(screen.getByText("리셋권 1 사용")).toBeTruthy();expect(value.request).not.toHaveBeenCalled();}
  finally {await i18n.changeLanguage("en")}
  expect(screen.getByRole("button",{name:"Confirm credit consumption"})).toBeTruthy();
 });
@@ -193,13 +193,13 @@ it("locale changes and collapsed details retain the original exact selection wit
 it("restores the section heading when background inventory disables the original selection opener",async()=>{
  const value=fixture();render(<value.Harness />);await selectExactCredit();
  fireEvent.click(screen.getByRole("button",{name:"Remove fixture credits"}));
- expect((screen.getByRole("button",{name:"Select credit credit_1"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Select Reset credit 1"}) as HTMLButtonElement).disabled).toBe(true);
  fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
  expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
 });
 it("restores the section heading instead of an inert original selection opener",async()=>{
  const value=fixture();render(<value.Harness />);await selectExactCredit();
- screen.getByRole("button",{name:"Select credit credit_1"}).closest(".reset-credit-rows")!.setAttribute("inert","");
+ screen.getByRole("button",{name:"Select Reset credit 1"}).closest(".reset-credit-rows")!.setAttribute("inert","");
  fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));
  expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();
 });
@@ -227,7 +227,7 @@ it.each(["2030", "2030-02-30T00:00:00Z", "", true, 0])("rejects malformed expiry
  await screen.findByText(/Last successful observation/);
  expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
  fireEvent.click(screen.getByRole("button",{name:"View details"}));
- expect(screen.queryByRole("button",{name:"Select credit credit_1"})).toBeNull();
+ expect(screen.queryByRole("button",{name:"Select Reset credit 1"})).toBeNull();
  expect(screen.queryByRole("button",{name:"Confirm credit consumption"})).toBeNull();
  expect(value.request).not.toHaveBeenCalled();
 });
@@ -239,9 +239,9 @@ it.each([undefined,null,"2999-01-01T00:00:00Z"])("preserves omitted and valid fu
 
 it("restores the heading after another credit replaces the selected row", async () => {
  const value=fixture();render(<value.Harness />);await selectExactCredit();
- const original=screen.getByRole("button",{name:"Select credit credit_1"});
+ const original=screen.getByRole("button",{name:"Select Reset credit 1"});
  fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));
- const replacement=screen.getByRole("button",{name:"Select credit credit_2"});
+ const replacement=screen.getByRole("button",{name:"Select Reset credit 1"});
  expect((replacement as HTMLButtonElement).disabled).toBe(false);
  expect(original.isConnected).toBe(false);
  expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(true);
@@ -249,4 +249,40 @@ it("restores the heading after another credit replaces the selected row", async 
  expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));
  expect(globalThis.document.activeElement).not.toBe(replacement);
  expect(value.request).not.toHaveBeenCalled();
+});
+
+const numberedDetails = [
+ {id:"RateLimitResetCredit_fixture_unavailable",reset_type:"codexRateLimits",status:"unavailable",title:"Private native title",description:"Private native description"},
+ {id:"RateLimitResetCredit_fixture_a",reset_type:"codexRateLimits",status:"available",expires_at:"2099-01-01T00:00:00Z"},
+ {id:"RateLimitResetCredit_fixture_b",reset_type:"codexRateLimits",status:"available",expires_at:"2099-01-01T00:00:00Z"}
+];
+it.each(["en","ko"])("numbers every returned detail in %s while sending only the original selected identity",async language=>{
+ await i18n.changeLanguage(language);
+ try {
+  const value=fixture(numberedDetails);value.request.mockRejectedValueOnce(new ConnectError("lost acknowledgment",Code.Unavailable));render(<value.Harness />);
+  const use=await screen.findByRole("button",{name:language==="en"?"Use":"사용"});await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
+  for(let ordinal=1;ordinal<=3;ordinal++) expect(screen.getByText(language==="en"?`Reset credit ${ordinal}`:`리셋권 ${ordinal}`,{selector:"strong"})).toBeTruthy();
+  for(const credit of numberedDetails) expect(screen.getByText(`${language==="en"?"ID":"식별자"}: ${credit.id}`)).toBeTruthy();
+  expect(screen.queryByText("Private native title")).toBeNull();expect(screen.queryByText("Private native description")).toBeNull();
+  expect(screen.queryByRole("button",{name:language==="en"?"Select Reset credit 1":"리셋권 1 선택"})).toBeNull();
+  expect(globalThis.document.querySelectorAll(".reset-credit-row time").length).toBe(2);
+  fireEvent.click(screen.getByRole("button",{name:language==="en"?"Select Reset credit 3":"리셋권 3 선택"}));
+  expect(value.request).not.toHaveBeenCalled();expect(screen.getByText(language==="en"?"Consume reset credit 3":"리셋권 3 사용")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:copy("subscription-quota.confirmCreditConsumption_251822")}));
+  fireEvent.click(await screen.findByRole("button",{name:copy("subscription-quota.retryOriginalQuotaOrCreditRequest_071535")}));
+  await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(2));expect(value.request.mock.calls[1][0]).toEqual(value.request.mock.calls[0][0]);
+  expect(value.request.mock.calls[0][0]).toMatchObject({creditId:numberedDetails[2].id,confirmed:true,nextCredit:false,connectionId:value.connection,generationId:value.generation,creditsObservationId:value.inventory,mutation:{id:value.account.id,expectedRevision:1n}});
+ } finally {await i18n.changeLanguage("en")}
+});
+it("retains captured ordinal and full identity through reorder, replacement, locale and focus changes",async()=>{
+ const value=fixture(numberedDetails);render(<value.Harness />);const use=await screen.findByRole("button",{name:"Use"});await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
+ fireEvent.click(screen.getByRole("button",{name:"Select Reset credit 3"}));fireEvent.click(screen.getByRole("button",{name:"Reorder fixture credits"}));
+ const confirmation=globalThis.document.querySelector(".reset-credit-confirmation")!;
+ expect(confirmation.textContent).toContain("Consume reset credit 3");expect(confirmation.textContent).toContain(`ID: ${numberedDetails[2].id}`);
+ expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(screen.getByRole("button",{name:"Select Reset credit 1"})).toBeTruthy();
+ try {await i18n.changeLanguage("ko");expect(await screen.findByText("리셋권 3 사용")).toBeTruthy();expect(confirmation.textContent).toContain(numberedDetails[2].id);expect((screen.getByRole("button",{name:"리셋권 사용 확인"}) as HTMLButtonElement).disabled).toBe(true);}
+ finally {await i18n.changeLanguage("en")}
+ fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));expect(confirmation.textContent).toContain("Consume reset credit 3");expect(confirmation.textContent).toContain(numberedDetails[2].id);
+ fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();expect(value.reconcile).not.toHaveBeenCalled();
 });
