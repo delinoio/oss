@@ -157,7 +157,8 @@ export function Schedules({ active, open, readLocalWorker,notificationOccurrence
   }, [historyExpanded, active, locked]);
   const request = useCallback((token: string) => ({ projectId, pageSize: 50, pageToken: token, ...(filter === EnabledFilter.All ? {} : { enabled: filter === EnabledFilter.Enabled }) }), [projectId, filter]);
   const reader = useConnectPaginationReader(ScheduleQuery.listSchedules, request, schedulePage);
-  const navigationActive = active && useSidebarPaneVisible();
+  const paneVisible = useSidebarPaneVisible();
+  const navigationActive = active && paneVisible;
   const result = usePaginationChain(JSON.stringify([projectId, filter]), navigationActive && !locked, reader);
   usePaginationRefresh(ScheduleQuery.listSchedules, request(""), navigationActive && !locked, result.refresh);
   const selectSchedule = (row: Resource) => { if (locked) return; setSelected(row); setHistory(""); closeDrawer(); };

@@ -116,7 +116,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const [loaded, setLoaded] = useState<LoadedPullRequests>();
   const [navigation, setNavigation] = useState<PullRequestNavigation>();
   const closeDrawer = useCloseSidebarDrawer();
-  const navigationActive = active && useSidebarPaneVisible();
+  const paneVisible = useSidebarPaneVisible();
+  const navigationActive = active && paneVisible;
   const repositories = useGitHubCatalog(EntityKind.REPOSITORY, navigationActive);
   const selectedQuery = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: repositoryId }, { enabled: active && Boolean(repositoryId) });
   const selected = selectedQuery.data?.resource;

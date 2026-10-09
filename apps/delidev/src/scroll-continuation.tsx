@@ -28,7 +28,8 @@ export function ScrollContinuation({ query, label, root, active, showErrors = tr
   showErrors?: boolean;
   showInitial?: boolean;
 }) {
-  active = active && useSidebarActivity();
+  const sidebarActivity = useSidebarActivity();
+  active = active && sidebarActivity;
   useLocale();
   const anchor = useRef<HTMLDivElement>(null);
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");
