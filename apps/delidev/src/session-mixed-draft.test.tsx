@@ -30,13 +30,17 @@ function fixture() {
  return {transport,original,other,selection,enqueue,select,returnToOriginal,writes,holdPreparation:(promise:Promise<void>)=>{preparation=promise;}};
 }
 
+// Full App fixtures combine native image hashing, skill reads and navigation.
+// Hosted CI shares CPU with Go preparation; their harness deadline is separate
+// from every product request deadline and does not authorize mutation retries.
+const mixedDraftTimeoutMs = 30_000;
 afterEach(()=>vi.unstubAllGlobals());
-it("retains ordered image bytes and exact selected skill together through actual App remount",async()=>{
+it("retains ordered image bytes and exact selected skill together across retained App session switches",async()=>{
  vi.stubGlobal("crypto",webcrypto);vi.stubGlobal("createImageBitmap",async()=>({width:1,height:1,close:()=>{}}));const BaseURL=URL;vi.stubGlobal("URL",class extends BaseURL {static createObjectURL=vi.fn(()=>"blob:mixed-draft");static revokeObjectURL=vi.fn();});
  const bytes=Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9d8AAAAASUVORK5CYII=","base64"));const file=new File([bytes],"fixture.png",{type:"image/png"});Object.defineProperty(file,"arrayBuffer",{value:async()=>bytes.buffer});
- const f=fixture();render(<App transport={f.transport}/>);await f.select();fireEvent.paste(screen.getByRole("textbox",{name:"Message"}),{clipboardData:{files:[file]}});await screen.findByRole("img",{name:"Image 1"});
- const input=await f.returnToOriginal();expect(input).toHaveProperty("value","$retained");expect(screen.getByRole("img",{name:"Image 1"})).toBeDefined();await waitFor(()=>expect(screen.getByRole("button",{name:"Queue message"})).toHaveProperty("disabled",false));fireEvent.click(screen.getByRole("button",{name:"Queue message"}));await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());const request=f.enqueue.mock.calls[0]![0];expect(request.skills?.selections).toEqual([f.selection]);expect(request.attachments).toHaveLength(1);expect(f.writes).toEqual([bytes]);
-});
+ const f=fixture();render(<App transport={f.transport}/>);const originalInput=await f.select();fireEvent.paste(screen.getByRole("textbox",{name:"Message"}),{clipboardData:{files:[file]}});await screen.findByRole("img",{name:"Image 1"});
+ const input=await f.returnToOriginal();expect(input).toBe(originalInput);expect(input).toHaveProperty("value","$retained");expect(screen.getByRole("img",{name:"Image 1"})).toBeDefined();await waitFor(()=>expect(screen.getByRole("button",{name:"Queue message"})).toHaveProperty("disabled",false));fireEvent.click(screen.getByRole("button",{name:"Queue message"}));await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());const request=f.enqueue.mock.calls[0]![0];expect(request.skills?.selections).toEqual([f.selection]);expect(request.attachments).toHaveLength(1);expect(f.writes).toEqual([bytes]);
+}, mixedDraftTimeoutMs);
 
 it("freezes the immediate projection and original skill/mode/images before preparation across navigation",async()=>{
  vi.stubGlobal("crypto",webcrypto);vi.stubGlobal("createImageBitmap",async()=>({width:1,height:1,close:()=>{}}));const BaseURL=URL;vi.stubGlobal("URL",class extends BaseURL {static createObjectURL=vi.fn(()=>"blob:frozen-draft");static revokeObjectURL=vi.fn();});
@@ -48,4 +52,4 @@ it("freezes the immediate projection and original skill/mode/images before prepa
  await f.returnToOriginal();expect(screen.getByRole("textbox",{name:"Message"})).toHaveProperty("disabled",true);
  await act(async()=>release());await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());const request=f.enqueue.mock.calls[0][0];expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({prompt:"$retained",mode:"plan"});expect(request.skills?.selections).toEqual([f.selection]);expect(request.attachments).toHaveLength(1);expect(f.writes).toEqual([bytes]);
  await screen.findByText("Queued");expect(screen.getByRole("textbox",{name:"Message"})).toHaveProperty("value","");
-});
+}, mixedDraftTimeoutMs);

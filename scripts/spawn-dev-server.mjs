@@ -77,7 +77,10 @@ function linuxProcessGroupHasLiveMembers(processGroupId) {
         return true;
       }
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      // proc_single_show can return ESRCH after open succeeds if the task
+      // exits before stat is read. Both errors prove this entry disappeared;
+      // access failures and other unknown observations must still fail closed.
+      if (error.code !== "ENOENT" && error.code !== "ESRCH") {
         throw error;
       }
     }
