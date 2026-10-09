@@ -14,6 +14,20 @@ import (
 )
 
 func (f *threadFixture) handleSkills(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if method == "skills/list" || method == "skills/extraRoots/set" {
+		if file := os.Getenv("DELIDEV_CODEX_CAPTURE"); file != "" {
+			out, err := os.OpenFile(file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				os.Exit(68)
+			}
+			if err = json.NewEncoder(out).Encode(map[string]any{"method": method, "params": raw}); err != nil {
+				os.Exit(69)
+			}
+			if err = out.Close(); err != nil {
+				os.Exit(70)
+			}
+		}
+	}
 	switch method {
 	case "skills/extraRoots/set":
 		var params struct {

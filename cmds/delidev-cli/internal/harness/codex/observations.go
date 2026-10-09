@@ -19,6 +19,7 @@ const (
 	NativeGoalAbsent         MetadataKind = "native-goal-absent"
 	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
 	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"
+	SkillsChangedDiscarded   MetadataKind = "skills-changed-discarded"
 )
 
 type nativeMCPStartupState string
@@ -80,6 +81,14 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "skills/changed":
+		// The original process invalidated its own cache. Discard this passive
+		// notification without enumerating packages or changing selected input.
+		var params *struct{}
+		if domain.Decode(native.Params, &params) != nil || params == nil {
+			return Event{}, incompatible()
+		}
+		return c.metadata(SkillsChangedDiscarded), nil
 	case "mcpServer/startupStatus/updated":
 		var params struct {
 			ThreadID      *domain.ID              `json:"threadId"`
