@@ -273,6 +273,12 @@ and serial retained input/resize controls. Its accepted creation and explicit
 selection survive bounded history payload eviction. Hiding or tab departure
 aborts observation and discards unsent bytes without stopping the original
 process; uncertainty and independent native cleanup remain authoritative.
+Desktop presentation may hide original terminal IDs after authenticated monotonic
+schema-v1 `exited` observations with exact boolean `cleanup_verified: true`.
+Connection-memory dismissal does not delete server history, grant process cleanup
+or retire uncertain original controls. Older restored history cannot revive a
+presentation tombstone; stream completion and lookup failure are not exit proof.
+
 Byte-stream consumers
 retain all native control bytes. Record source revisions, commands, results and unresolved limits in PR #1226,
 issue #1088 and CI logs/artifacts under the root validation policy. Historical

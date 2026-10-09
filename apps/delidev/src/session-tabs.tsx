@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { terminalFallback, TerminalPresentation } from "./terminal-presentation";
 import { Comparison } from "./session-diff-model";
 
 export enum SessionTabKind {
@@ -31,6 +32,12 @@ type SidechatTab = Extract<SessionTab, { kind: SessionTabKind.Sidechat }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
+  private terminals = new Map<string, TerminalPresentation>();
+  terminalPresentation(id: string) {
+    let value = this.terminals.get(id);
+    if (!value) { value = new TerminalPresentation(); this.terminals.set(id, value); }
+    return value;
+  }
   private parents = new Map<string, string>();
   private children = new Map<string, Map<string, SidechatTab>>();
   private sessions = new Map<string, SessionTabsSnapshot>();
@@ -45,6 +52,7 @@ export class SessionTabsStore {
     for (const callback of this.listeners) callback();
   }
   open(id: string, tab: SessionTab) {
+    if (tab.kind === SessionTabKind.Terminal && this.terminalPresentation(id).hidden(tab.id)) return;
     if (tab.kind === SessionTabKind.Sidechat) {
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();
@@ -74,6 +82,15 @@ export class SessionTabsStore {
       tabs: previous.tabs.filter((_, at) => at !== index),
       selected: previous.selected === key ? sessionTabKey(previous.tabs[index - 1]!) : previous.selected,
     });
+  }
+  dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
+    const key = sessionTabKey({ kind: SessionTabKind.Terminal, id: terminalId });
+    const previous = this.snapshot(id);
+    const selected = previous.selected === key;
+    const next = selected ? terminalFallback(previous.tabs.flatMap(tab => tab.kind === SessionTabKind.Terminal ? [tab.id] : []), terminalId) || inventoryFallback : "";
+    this.close(id, key);
+    if (next) this.open(id, { kind: SessionTabKind.Terminal, id: next });
+    return this.snapshot(id).selected;
   }
   // Child controllers survive presentation close and retain their original parent.
   sidechats(parent: string) { return [...(this.children.get(parent)?.values() ?? [])]; }

@@ -103,8 +103,10 @@ it("attaches to the accepted creation beyond the first full history page", async
     router.service(ResourceService, { listResources });
     router.service(TerminalService, { createTerminal, controlTerminal, watchTerminalOutput: async function* (request) {
       watched.push(request.terminalId);
-      yield { epoch: newRequestId(), sequence: 1n, data: new TextEncoder().encode("new original terminal"), terminal };
+      const epoch = newRequestId();
+      yield { epoch, sequence: 1n, data: new TextEncoder().encode("new original terminal"), terminal };
       await held;
+      yield { epoch, sequence: 1n, heartbeat: true, terminal: create(ResourceSchema, { ...terminal, revision: 5n, documentJson: encode({ state: "exited", cleanup_verified: true }) }) };
     } });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -123,6 +125,11 @@ it("attaches to the accepted creation beyond the first full history page", async
     await waitFor(() => expect(controlTerminal).toHaveBeenCalledTimes(1));
     expect(controlTerminal.mock.calls[0]![0]).toMatchObject({ mutation: { id: terminal.id, expectedRevision: 4n }, action: TerminalAction.INPUT });
     expect(screen.getByText("new original terminal")).toBeTruthy();
+    await act(async () => release());
+    await waitFor(() => expect(document.getElementById(`terminal-tab-${terminal.id}`)).toBeNull());
+    expect(screen.getAllByRole("tab")).toHaveLength(50);
+    expect(createTerminal).toHaveBeenCalledTimes(1);
+    expect(controlTerminal).toHaveBeenCalledTimes(1);
   } finally {
     view.unmount(); release(); client.clear();
   }
@@ -222,7 +229,7 @@ it("keeps terminal input enabled while one control is pending and never steals f
 
 it("preserves the explicitly attached terminal and its draft after its history payload is evicted", async () => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, revision: 1n, documentJson: encode({ archive: "active" }) });
-  const history = Array.from({ length: 4 }, () => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, documentJson: encode({ state: "running" }) }));
+  const history = Array.from({ length: 4 }, () => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, schemaVersion: 1, sessionId: session.id, revision: 1n, documentJson: encode({ state: "running" }) }));
   const watch = vi.fn();
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
@@ -299,7 +306,7 @@ it("retains exact uncertain input across dock hiding and never closes or creates
 
 it("keeps every existing terminal picker keyboard reachable in the single-pane workspace", async () => {
  const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({archive:"active"})});
- const terminals=[1,2].map(()=>create(ResourceSchema,{id:newRequestId(),kind:EntityKind.TERMINAL,sessionId:session.id,schemaVersion:1,revision:1n,documentJson:encode({state:"exited",cleanup_verified:true})}));
+ const terminals=[1,2].map(()=>create(ResourceSchema,{id:newRequestId(),kind:EntityKind.TERMINAL,sessionId:session.id,schemaVersion:1,revision:1n,documentJson:encode({state:"running"})}));
  const open=vi.fn(),transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:()=>({resources:terminals})});});
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} tabbed close={()=>{}} openTerminal={open}/></MutationIntents></TransportProvider></QueryClientProvider>);
  const first=await screen.findByRole("button",{name:/Terminal 1/}),second=screen.getByRole("button",{name:/Terminal 2/});expect(first.tabIndex).toBe(0);expect(second.tabIndex).toBe(0);first.focus();expect(fireEvent.keyDown(first,{key:"ArrowRight"})).toBe(true);expect(open).not.toHaveBeenCalled();second.focus();expect(document.activeElement).toBe(second);view.unmount();client.clear();
