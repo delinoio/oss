@@ -161,3 +161,17 @@ it("loads the reader directly and disposes its presentation without introducing 
  openAssociations();await screen.findByText("<script>Retained PR</script>");
  expect(f.list.mock.calls.filter(([request])=>request.filter?.kind===EntityKind.PULL_REQUEST)).toHaveLength(reads+1);expect(f.link).not.toHaveBeenCalled();expect(f.unlink).not.toHaveBeenCalled();
 });
+
+it("keeps uncertain original links when a retry receipt cannot be verified", async () => {
+ const f=fixture();f.link.mockRejectedValueOnce(new ConnectError("Acknowledgment lost",Code.Unavailable));
+ render(f.view);fireEvent.click(screen.getByRole("button",{name:"Seed original link"}));
+ const retry=await screen.findByRole("button",{name:"Retry original PR link"});const original=f.link.mock.calls[0][0];
+ const mismatched=create(ResourceSchema,{id:newRequestId(),projectId:f.session.projectId,sessionId:f.session.id,kind:EntityKind.PULL_REQUEST,revision:1n,schemaVersion:1,documentJson:encode({...f.value,number:"99"})});
+ f.link.mockResolvedValueOnce({association:mismatched,requestId:original.requestId});fireEvent.click(retry);
+ await waitFor(()=>expect(f.link).toHaveBeenCalledTimes(2));await screen.findByRole("button",{name:"Retry original PR link"});
+ expect(f.link.mock.calls[1][0]).toEqual(original);
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Retry original PR link"})).toHaveProperty("disabled",false));
+ fireEvent.click(screen.getByRole("button",{name:"Retry original PR link"}));
+ await waitFor(()=>expect(f.link).toHaveBeenCalledTimes(3));expect(f.link.mock.calls[2][0]).toEqual(original);
+ await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry original PR link"})).toBeNull());
+});

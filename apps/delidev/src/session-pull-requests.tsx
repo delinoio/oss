@@ -108,6 +108,9 @@ export function SessionPullRequests({ session, visible = true, emptyChanged, dia
 }
 
 function OriginalLinkRecovery({ sessionId, refreshed }: { sessionId: string; refreshed: () => void }) {
-  const link = useRetainedMutation(`session-pr:link:${sessionId}`, SessionQuery.linkSessionPullRequest, refreshed);
+  const link = useRetainedMutation(`session-pr:link:${sessionId}`, SessionQuery.linkSessionPullRequest, refreshed, (reply, request) => {
+    const association = reply.association && readSessionPR(reply.association, request.sessionId);
+    return request.sessionId === sessionId && reply.requestId === request.requestId && Boolean(association && association.repository_id === request.repositoryId && association.number === request.number);
+  });
   return link.busy || link.uncertain ? <section><Problem error={link.error}/>{link.uncertain ? <button disabled={link.busy} onClick={link.retry}>{copy("session-pull-requests.retryOriginalPrLink_9f5bd0")}</button> : null}</section> : null;
 }
