@@ -38,7 +38,7 @@ export function NativeGrokUser({ data }: { data: Document }) {
   const valid = data.role === "user" && data.state === "complete" && uuid(data.execution_id, 7) && uuid(data.input_id, 7) && uuid(data.native_thread_id, 7) && uuid(data.native_turn_id, 4) && data.native_id === v.native_event_id && userHistory(v, data.native_thread_id) && typeof data.text === "string" && data.text.length > 0 && !data.text.includes("\0") && !/[\uD800-\uDFFF]/u.test(data.text) && new TextEncoder().encode(data.text).length <= (256 << 10) && Number.isSafeInteger(data.first_sequence) && Number(data.first_sequence) >= 5 && Number(data.first_sequence) <= 100000 && data.last_sequence === data.first_sequence && [data.grok_tool, data.grok_text, data.claude, data.claude_tool, data.claude_progress, data.claude_interruption, data.tool, data.artifact, data.progress, data.phase, data.native_parent_id].every((value) => value === undefined);
   if (!valid) return <article className="message" aria-label={copy("native-grok.grokUserInputUnavailable_7b21a3")}><p>{copy("native-grok.theRetainedGrokUserInputIs_ff8a57")}</p></article>;
   return <article className="message message-user" aria-label={copy("native-grok.grokUserInput_b19458")}>
-    <header><strong>{copy("native-grok.user_04f899")}</strong><small>{copy("native-grok.verifiedFromClosedNativeHistory_2d5065")}</small></header>
+    <header><small>{copy("native-grok.verifiedFromClosedNativeHistory_2d5065")}</small></header>
     <pre>{data.text as string}</pre>
     <Disclosure><DisclosureSummary>{copy("native-grok.grokInputDetails_e34cc2")}</DisclosureSummary><dl>
       <dt>{copy("native-grok.originalNativeEvent_3cd761")}</dt><dd>{v.native_event_id as string}</dd>
@@ -53,7 +53,7 @@ export function NativeGrokText({ data }: { data: Document }) {
   if (!validText(data)) return <article className="message" aria-label={copy("native-grok.grokTextUnavailable_e2350d")}><p>{copy("native-grok.theRetainedGrokTextIsUnavailable_0bab2c")}</p></article>;
   const v = object(data.grok_text), chunks = v.chunks as Document[], first = chunks[0]!, last = chunks[chunks.length - 1]!;
   return <article className="message message-assistant" aria-label={copy("native-grok.grokAssistantText_45c8b0")}>
-    <header><strong>{copy("native-grok.assistant_a39a7f")}</strong><small>{v.interruption !== undefined ? copy("native-grok.partialResponseStopped_fb17b3") : data.state === "complete" ? copy("native-grok.responseTextComplete_9a599a") : copy("native-grok.streaming_a951c5")}</small></header>
+    {v.interruption !== undefined || data.state !== "complete" ? <header><small>{v.interruption !== undefined ? copy("native-grok.partialResponseStopped_fb17b3") : copy("native-grok.streaming_a951c5")}</small></header> : null}
     <pre>{data.text as string}</pre>
     <Disclosure><DisclosureSummary>{copy("native-grok.grokTextDetails_97e9e2")}</DisclosureSummary><dl>
       <dt>{copy("native-grok.responseOrderInThisInput_902357")}</dt><dd>{v.response_ordinal as number}</dd>

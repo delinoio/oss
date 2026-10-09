@@ -39,7 +39,7 @@ import { NativeTodo, NativeTodoProgress } from "./native-todo";
 import { NativeUsage } from "./native-usage";
 import { NativeRead } from "./native-read";
 import { NativeShell } from "./native-shell";
-import { NativeClaudeMessage } from "./native-claude-message";
+import { NativeClaudeMessage, validNativeClaudeMessage } from "./native-claude-message";
 import { NativeClaudeInterruption } from "./native-claude-interruption";
 import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
@@ -171,6 +171,11 @@ export function interactionRows(base: readonly Resource[], live: ReadonlyMap<str
   return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.INTERACTION);
 }
 
+// Completion suppression belongs only to recognized conversation presentation.
+function ConversationStatus({ state }: { state: string }) {
+  return !state || state === "complete" || state === "completed" ? null : <header><small>{statusLabel(state)}</small></header>;
+}
+
 export const TranscriptItem = memo(function TranscriptItem({ resource, active = true }: { resource: Resource; active?: boolean }) {
   useLocale();
   const data = readDocument(resource);
@@ -191,9 +196,9 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
     const valid = data.role === "assistant" && data.text === "" &&
       data.native_parent_id == null && data.input_id == null &&
       data.phase == null && data.tool == null &&
-      data.artifact == null && data.progress == null;
+      data.artifact == null && data.progress == null && validNativeClaudeMessage(data.claude, text(data.state));
     return <article className={valid ? "message message-claude-assistant" : "message"} aria-label={copy("session.assistantMessage_8352f5")}>
-      <header><strong>{copy("session.assistant_a39a7f")}</strong><small>{statusLabel(text(data.state))}</small></header>
+      {valid ? <ConversationStatus state={text(data.state)} /> : <header><strong>{copy("session.assistant_a39a7f")}</strong><small>{statusLabel(text(data.state))}</small></header>}
       <NativeClaudeMessage content={valid ? data.claude : undefined} state={text(data.state)} />
     </article>;
   }
@@ -209,8 +214,8 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const textRole = data.tool == null && data.artifact == null && data.progress == null &&
     ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
-  return <article className={`message${roleClass}`} aria-label={copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
-    <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>
+  return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
+    {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
     {toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
@@ -244,6 +249,11 @@ const tabShortcutIds = [ShortcutId.SessionTab1, ShortcutId.SessionTab2, Shortcut
   ShortcutId.SessionTab7, ShortcutId.SessionTab8, ShortcutId.SessionTab9] as const;
 enum SessionPanel { Closed = "closed", Files = "files", Diff = "diff", Terminals = "terminals", Browser = "browser", Diagnostics = "diagnostics" }
 enum InfoTarget { Status = "status", Recovery = "recovery", Budget = "budget" }
+
+export function SubmissionStatus({ phase }: { phase: SubmissionPhase }) {
+  useLocale();
+  return <header><small role="status">{copy(submissionLabels[phase])}</small></header>;
+}
 
 export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true, embedded = false }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; embedded?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
@@ -536,8 +546,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {progress ? <SessionProgressStatus phase={progress} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
-        {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedMessage")}>
-          <header><strong>{copy("session.submittedUser")}</strong><small role="status">{copy(submissionLabels[row.observationUnavailable ? SubmissionPhase.Uncertain : row.phase])}</small></header>
+        {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedUserMessage")}>
+          <SubmissionStatus phase={row.observationUnavailable ? SubmissionPhase.Uncertain : row.phase} />
           {row.prompt ? <pre>{row.prompt}</pre> : null}
           {row.attachments.length ? <RetainedImages value={row.attachments.map(image => ({ id: image.id, machine_id: image.machineId, media_type: imageMime[image.mediaType], byte_length: Number(image.byteLength), sha256: image.sha256 }))} sessionId={id} active={conversationActive} /> : row.attachmentCount ? <p>{copy("session.submittedImages", { count: row.attachmentCount })}</p> : null}
         </article>)}
