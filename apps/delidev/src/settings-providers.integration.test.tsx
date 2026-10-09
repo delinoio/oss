@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createClient } from "@connectrpc/connect";
+import { Code, createClient } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -40,7 +40,8 @@ it("starts with hosted presets on without accounts or models and retains identit
   expect(saved.providerId).not.toBe("");
   expect(saved.totalAccounts).toBe(0n);
   expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
-  expect((await providers.searchModels({ pageSize: 50 })).models).toHaveLength(0);
+  // Protocol 2 has no persistent Model registry, even for activated Providers.
+  await expect(providers.searchModels({ pageSize: 50 })).rejects.toMatchObject({ code: Code.Unimplemented });
 
   fireEvent.click(turnOff);
   const turnOnAgain = await screen.findByRole("switch", { name: "Turn on OpenAI" });
@@ -54,5 +55,6 @@ it("starts with hosted presets on without accounts or models and retains identit
   saved = (await providers.listProviderInventory({ pageSize: 50 })).entries.find((entry) => entry.presetId === ProviderPresetId.OPENAI)!;
   expect(saved.providerId).toBe(retainedID);
   expect(saved.enabled).toBe(true);
+  expect((await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.ACCOUNT } })).resources).toHaveLength(0);
 }, 30000);
 
