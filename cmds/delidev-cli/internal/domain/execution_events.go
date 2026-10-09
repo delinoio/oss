@@ -474,6 +474,7 @@ func (e ExecutionEvent) Validate() error {
 // verified completion report may set CleanupVerified after terminal publication.
 type ExecutionProgress struct {
 	AutoReviews              AutoReviewState             `json:"auto_reviews,omitempty"`
+	ContextRevision          uint64                      `json:"context_revision,omitempty"`
 	NativeCompactions        NativeCompactionState       `json:"native_compactions,omitempty"`
 	LatestNativeCompactionID ID                          `json:"latest_native_compaction_id,omitempty"`
 	Subagents                SubagentState               `json:"subagents,omitempty"`
@@ -528,6 +529,7 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
+	ContextRevision    uint64                     `json:"context_revision,omitempty"`
 	Attachments        []ImageAttachment          `json:"attachments,omitempty"`
 	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
 	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`

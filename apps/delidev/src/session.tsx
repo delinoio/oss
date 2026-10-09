@@ -1,4 +1,5 @@
 import { NativeAutoReview } from "./native-auto-review";
+import { useSessionRevert } from "./session-revert";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
@@ -179,7 +180,7 @@ function ConversationStatus({ state }: { state: string }) {
   return !state || state === "complete" || state === "completed" ? null : <header><small>{statusLabel(state)}</small></header>;
 }
 
-export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions }: { resource: Resource; active?: boolean; actions?: ReactNode }) {
+export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, contextRevision = 0 }: { resource: Resource; active?: boolean; actions?: ReactNode; contextRevision?: number }) {
   useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
@@ -220,6 +221,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+    {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
     {data.role==="user"?actions:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
     {toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
@@ -402,7 +404,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     return () => { observer?.disconnect(); workspace?.style.removeProperty("--session-composer-cap"); window.removeEventListener("resize", fit); };
   }, [session?.id]);
   const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active: conversationActive, disabled: locked });
-  const canSend = !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
+  const revert = useSessionRevert({ session, active:conversationActive, draft, composer, blocked:locked || images.images.length>0, changed:setAcknowledged, restore:(prompt,nextMode)=>{if(images.images.length || images.busy)return false;if(setDraft(prompt,[])===false)return false;skills.clearAccepted();setMode(nextMode as Mode);return true;} });
+  const contextLocked = Boolean(data.compaction_job_id) || revert.pending || revert.uncertain;
+  const canSend = !contextLocked && !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
   const enqueue = async () => {
     if (!canSend) return;
     const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
@@ -549,7 +553,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} actions={<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/>}/>} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
         {progress ? <SessionProgressStatus phase={progress} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         {items(data.sidechat_retries).length ? <Disclosure className="sidechat-answer-history"><DisclosureSummary>{copy("sidechat.retry.history")}</DisclosureSummary><p>{copy("sidechat.retry.retainedHistory")}</p><div className="sidechat-history-content" ref={historyRoot}><ToolTurnTranscript sessionId={id} active={conversationActive} query={{...messages,pages:messages.pages.map(page=>({...page,height:historyHeights.current.get(page.token)})),measure:(token,height)=>{historyHeights.current.set(token,height);}}} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={historyRoot} include={sidechatAnswerFilter(session,true)} render={row=><TranscriptItem resource={row} active={conversationActive}/>} /></div></Disclosure> : null}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
@@ -586,6 +590,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {skills.list}{skills.warning}
         {imageTextLimit ? <p role="alert">{copy("image-input.textLimit")}</p> : null}
         </ImageAttachmentInput>
+        {revert.content}
         {send.uncertain ? <button className="composer-original-retry" type="button" disabled={send.busy} onClick={send.retry}>{copy("session.retryTheSameMessage_5656d9")}</button> : null}
       </form>
     </div></SessionActivityProvider>

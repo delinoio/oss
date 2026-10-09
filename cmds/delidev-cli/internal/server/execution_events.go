@@ -251,7 +251,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				return executionEventConflict()
 			}
 		}
-		progress = &domain.ExecutionProgress{NativeHistory: session.CurrentNativeHistory, JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
+		progress = &domain.ExecutionProgress{ContextRevision: input.ContextRevision, NativeHistory: session.CurrentNativeHistory, JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress
 	} else {
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {
@@ -513,7 +513,7 @@ func applyExecutionEvent(tx *store.Tx, job store.Record, input domain.ExecutionJ
 				if event.ResponseUsage.Source != "" {
 					return domain.CompactionUncertain()
 				}
-				observation := domain.ResponseUsageRecord{SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
+				observation := domain.ResponseUsageRecord{ContextRevision: input.ContextRevision, SessionID: sr.ID, ProjectID: sr.ProjectID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Harness: input.Configuration.Harness, Version: input.Installation.Version, ThreadID: event.NativeThreadID, TurnID: event.NativeTurnID, Sequence: event.Sequence, Usage: *event.ResponseUsage}
 				if input.Configuration.Options.ApprovalsReviewer == domain.CodexReviewerAuto {
 					observation.ModelID = ""
 					observation.Attribution = domain.UnknownReviewAttribution
@@ -624,7 +624,7 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionMessageStarted {
-		value = domain.ExecutionMessage{Attachments: append([]domain.ImageAttachment(nil), update.Attachments...), ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
+		value = domain.ExecutionMessage{ContextRevision: input.ContextRevision, Attachments: append([]domain.ImageAttachment(nil), update.Attachments...), ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {

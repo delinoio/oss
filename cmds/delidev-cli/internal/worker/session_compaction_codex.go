@@ -56,12 +56,12 @@ func codexCheckpointForContinuation(root string, input domain.ExecutionJobInput,
 	if c.PreviousAccountID != "" {
 		account, connection = c.PreviousAccountID, c.PreviousConnectionID
 	}
-	return ReadCodexExecutionCheckpoint(root, ExecutionCheckpointRef{ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: digest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	return ReadCodexExecutionCheckpoint(root, ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: digest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 }
 
 func executeCodexSessionCompaction(ctx context.Context, config Config, owner domain.ID, job domain.Job, i domain.SessionCompactionInput) (output json.RawMessage, returned error) {
 	c := config.execution
-	if c == nil || c.Assignment == nil || config.executionContext == nil || i.Validate() != nil || i.Version != 2 || i.Assignment.Configuration.Harness != domain.Codex || domain.ID(c.Assignment.Id) != owner {
+	if c == nil || c.Assignment == nil || config.executionContext == nil || i.Validate() != nil || (i.Version != 2 && i.Version != 4) || i.Assignment.Configuration.Harness != domain.Codex || domain.ID(c.Assignment.Id) != owner {
 		return nil, domain.CompactionUncertain()
 	}
 	logger := config.Logger
@@ -70,6 +70,15 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	logger = logger.With("job_id", owner, "action_id", i.ActionID, "session_id", i.Assignment.SessionID)
 	phase := compactionPrepare
+	nativeClosed, workspaceClosed, authenticationClosed := false, false, !i.Assignment.Configuration.Subscription
+	defer func() {
+		if i.Revert != nil && nativeClosed && workspaceClosed && authenticationClosed {
+			proof := revertCleanupClaim{Version: 1, ServerID: c.Credential.ServerID, DeviceID: c.Credential.DeviceID, JobID: owner, InstanceID: c.Instance, Revision: c.Assignment.Revision, AssignmentDigest: executionInputDigest(c.Assignment.DocumentJson), InputDigest: executionInputDigest(job.Input)}
+			if e := writeRevertCleanup(config.Root, i.ActionID, proof); e != nil {
+				output, returned = nil, e
+			}
+		}
+	}()
 	defer func() {
 		if returned != nil {
 			logger.WarnContext(ctx, "codex_session_compaction_uncertain", "phase", phase, "code", domain.SafeError(returned).Code)
@@ -92,6 +101,8 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	defer func() {
 		if err := lease.Close(); err != nil {
 			output, returned = nil, err
+		} else {
+			workspaceClosed = true
 		}
 	}()
 	installation, err := resolveOriginalStartup(ctx, config, i.SourceJobID, i.Assignment)
@@ -169,6 +180,8 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		conclusive := managedCleanup && (managedSuccess || managedUnused)
 		if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
 			output, returned = nil, &managedExecutionUncertain{err}
+		} else if conclusive {
+			authenticationClosed = true
 		} else if !conclusive {
 			output, returned = nil, &managedExecutionUncertain{subscription.Invalid()}
 		}
@@ -224,7 +237,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	defer cancel()
 	cancelAction := context.AfterFunc(ctx, cancel)
 	defer cancelAction()
-	nativeConfig := codex.Config{ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
+	nativeConfig := codex.Config{RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
 	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -273,6 +286,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return err
 		}
 		closed = true
+		nativeClosed = true
 		if managed != nil {
 			managedCleanup = cleanupExecutionAuthentication(nativeHome, managedLatest, managed.response.Bundle) == nil
 			if !managedCleanup || !managedSuccess {
@@ -295,7 +309,11 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if prior != nil {
 		_, err = native.VerifyCompactedContinuation(ctx, i.Restore.Continuation.HistoryRequestID, *prior)
 	} else {
-		_, err = native.VerifyContinuation(ctx, i.Restore.Continuation.HistoryRequestID, source.Native, codex.ContinueAfterSuccess)
+		proofIntent := codex.ContinueAfterSuccess
+		if i.Revert != nil {
+			proofIntent = codex.ResumeAfterTerminal
+		}
+		_, err = native.VerifyContinuation(ctx, i.Restore.Continuation.HistoryRequestID, source.Native, proofIntent)
 	}
 	if err != nil {
 		return nil, err
@@ -305,38 +323,47 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		return nil, err
 	}
 	phase = compactionCommand
-	if err := native.StartCompaction(ctx, i.ActionID, source.Native, prior); err != nil {
-		return nil, err
-	}
-	phase = compactionSettle
+	var retained codex.CompactedCheckpoint
 	usages := []domain.NativeResponseUsage{}
-	for count := 0; ; count++ {
-		if count >= domain.MaxExecutionEvents {
-			return nil, domain.CompactionUncertain()
-		}
-		event, err := native.NextEvent(ctx)
+	if i.Revert != nil {
+		target := codex.HistoricalInput{ID: i.Revert.InputID, PromptDigest: i.Revert.Prompt.InputDigest()}
+		retained, err = native.RevertThread(ctx, i.ActionID, source.Native, target, domain.ID(i.Revert.NativeTurnID), func(intent codex.RevertIntent) error { return writeRevertIntent(config.Root, owner, i, intent) })
 		if err != nil {
 			return nil, err
 		}
-		if event.Kind == codex.ResponseUsageEvent && !event.Late {
-			if event.ResponseUsage == nil || event.ResponseUsage.Validate() != nil {
+	} else {
+		if err := native.StartCompaction(ctx, i.ActionID, source.Native, prior); err != nil {
+			return nil, err
+		}
+		phase = compactionSettle
+		for count := 0; ; count++ {
+			if count >= domain.MaxExecutionEvents {
 				return nil, domain.CompactionUncertain()
 			}
-			usages = append(usages, *event.ResponseUsage)
-		}
-		if event.Kind == codex.CompactionEvent && (event.Compaction == nil || event.Compaction.ActionID != i.ActionID || event.Compaction.Trigger != codex.ManualCompaction) {
-			return nil, domain.CompactionUncertain()
-		}
-		if event.Kind == codex.TurnCompletedEvent && !event.Late {
-			if event.Turn == nil || event.Turn.Status != codex.TurnCompleted {
+			event, err := native.NextEvent(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if event.Kind == codex.ResponseUsageEvent && !event.Late {
+				if event.ResponseUsage == nil || event.ResponseUsage.Validate() != nil {
+					return nil, domain.CompactionUncertain()
+				}
+				usages = append(usages, *event.ResponseUsage)
+			}
+			if event.Kind == codex.CompactionEvent && (event.Compaction == nil || event.Compaction.ActionID != i.ActionID || event.Compaction.Trigger != codex.ManualCompaction) {
 				return nil, domain.CompactionUncertain()
 			}
-			break
+			if event.Kind == codex.TurnCompletedEvent && !event.Late {
+				if event.Turn == nil || event.Turn.Status != codex.TurnCompleted {
+					return nil, domain.CompactionUncertain()
+				}
+				break
+			}
 		}
-	}
-	retained, err := native.RetainCompactedCheckpoint(ctx)
-	if err != nil {
-		return nil, err
+		retained, err = native.RetainCompactedCheckpoint(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	phase = compactionCleanup
 	if err := closeNative(); err != nil {
@@ -376,8 +403,13 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if err := security.WriteAtomic(path, data); err != nil {
 		return nil, domain.CompactionUncertain()
 	}
-	record := retained.Records[len(retained.Records)-1]
-	result := domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{JobID: owner, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, CheckpointDigest: executionInputDigest(data), NativeDigest: executionInputDigest(nativeBytes)}, Codex: &domain.CodexCompactionResult{NativeThreadID: domain.NativeIdentity(source.Native.ThreadID), SourceNativeTurnID: domain.NativeIdentity(source.Native.TurnID), NativeTurnID: domain.NativeIdentity(record.TurnID), LiveItemID: record.ItemID, HistoryItemID: record.HistoryItemID, HistoryDigest: retained.HistoryDigest, Actions: uint32(len(retained.Records)), Acknowledged: true, LifecycleCompleted: true, ResponseUsages: usages}}
+	var result domain.SessionCompactionResult
+	if i.Revert != nil {
+		result = revertResult(owner, i, retained, executionInputDigest(data), executionInputDigest(nativeBytes))
+	} else {
+		record := retained.Records[len(retained.Records)-1]
+		result = domain.SessionCompactionResult{Version: 2, Harness: domain.Codex, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{JobID: owner, ActionID: i.ActionID, ExecutionID: i.Assignment.ExecutionID, CheckpointDigest: executionInputDigest(data), NativeDigest: executionInputDigest(nativeBytes)}, Codex: &domain.CodexCompactionResult{NativeThreadID: domain.NativeIdentity(source.Native.ThreadID), SourceNativeTurnID: domain.NativeIdentity(source.Native.TurnID), NativeTurnID: domain.NativeIdentity(record.TurnID), LiveItemID: record.ItemID, HistoryItemID: record.HistoryItemID, HistoryDigest: retained.HistoryDigest, Actions: uint32(len(retained.Records)), Acknowledged: true, LifecycleCompleted: true, ResponseUsages: usages}}
+	}
 	if result.Validate() != nil {
 		return nil, domain.CompactionUncertain()
 	}
@@ -399,7 +431,7 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 		return empty, domain.CompactionUncertain()
 	}
 	var p codexSessionCompactionCheckpoint
-	if domain.DecodeWithLimit(data, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.Input.Validate() != nil || p.Input.Version != 2 || p.Input.Assignment.Configuration.Harness != domain.Codex || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID {
+	if domain.DecodeWithLimit(data, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.Input.Validate() != nil || (p.Input.Version != 2 && p.Input.Version != 4) || p.Input.Assignment.Configuration.Harness != domain.Codex || p.JobID != ref.JobID || p.Input.ActionID != ref.ActionID || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.SourceJobID != input.Continuation.Previous.JobID {
 		return empty, domain.CompactionUncertain()
 	}
 	canonical, err := json.Marshal(p)
@@ -407,13 +439,31 @@ func readCodexSessionCompactionCheckpoint(ctx context.Context, root string, cred
 	native, nativeErr := json.Marshal(p.Native)
 	sourceBytes, sourceErr := json.Marshal(source.Native)
 	retainedSource, retainedSourceErr := json.Marshal(p.Native.Source)
-	if err != nil || originalErr != nil || nativeErr != nil || sourceErr != nil || retainedSourceErr != nil || !bytes.Equal(data, canonical) || !bytes.Equal(sourceBytes, retainedSource) || executionInputDigest(original) != input.Continuation.AssignmentInputDigest || executionInputDigest(native) != ref.NativeDigest || len(p.Native.Records) == 0 || p.Native.Records[len(p.Native.Records)-1].ActionID != ref.ActionID {
+	if err != nil || originalErr != nil || nativeErr != nil || sourceErr != nil || retainedSourceErr != nil || !bytes.Equal(data, canonical) || !bytes.Equal(sourceBytes, retainedSource) || executionInputDigest(original) != input.Continuation.AssignmentInputDigest || executionInputDigest(native) != ref.NativeDigest || p.Native.Revert == nil && (len(p.Native.Records) == 0 || p.Native.Records[len(p.Native.Records)-1].ActionID != ref.ActionID) {
 		return empty, domain.CompactionUncertain()
 	}
 	raw, err := security.ReadPrivate(filepath.Join(root, "jobs", string(ref.JobID)+".json"), 2<<20)
 	var journal journal
 	var result domain.SessionCompactionResult
-	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.InstanceID.Validate() != nil || journal.ReportID.Validate() != nil || journal.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 || journal.InstanceID != p.InstanceID || journal.JobID != ref.JobID || journal.Digest != p.AssignmentDigest || journal.State != journalFinished && journal.State != journalReported || journal.Problem != nil || domain.Decode(journal.Output, &result) != nil || result.Validate() != nil || result.Harness != domain.Codex || result.Checkpoint != ref || result.Codex.HistoryDigest != p.Native.HistoryDigest || result.Codex.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || result.Codex.SourceNativeTurnID != domain.NativeIdentity(source.Native.TurnID) {
+	if err != nil || domain.Decode(raw, &journal) != nil || journal.Version != 1 || journal.InstanceID.Validate() != nil || journal.ReportID.Validate() != nil || journal.Revision != p.AssignmentRevision || p.AssignmentRevision == 0 || journal.InstanceID != p.InstanceID || journal.JobID != ref.JobID || journal.Digest != p.AssignmentDigest || (journal.State != journalFinished && journal.State != journalReported && !(p.Input.Revert != nil && journal.State == journalStarted)) || (journal.Problem != nil || domain.Decode(journal.Output, &result) != nil || result.Validate() != nil) && !readRevertRecoveryReceipt(root, p, journal, &result) || result.Harness != domain.Codex || result.Checkpoint != ref {
+		return empty, domain.CompactionUncertain()
+	}
+	if p.Native.Revert != nil {
+		expected := revertResult(p.JobID, p.Input, p.Native, ref.CheckpointDigest, ref.NativeDigest)
+		expectedRaw, _ := json.Marshal(expected)
+		actualRaw, _ := json.Marshal(result)
+		if !bytes.Equal(expectedRaw, actualRaw) || verifyRetainedRevertIntent(root, p) != nil {
+			return empty, domain.CompactionUncertain()
+		}
+		if p.Input.Revert == nil || result.Version != 4 || result.Revert == nil || result.Revert.HistoryDigest != p.Native.HistoryDigest || result.Revert.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || p.Native.Revert.ActionID != ref.ActionID || result.Revert.Target.NativeTurnID != domain.NativeIdentity(p.Native.Revert.BeforeTurnID) {
+			return empty, domain.CompactionUncertain()
+		}
+		if err := readCompactionClaimRecords(root, p.JobID, p.Input, p.RegistrationDigest, p.CommandDigest); err != nil {
+			return empty, err
+		}
+		return p.Native, nil
+	}
+	if result.Codex == nil || result.Codex.HistoryDigest != p.Native.HistoryDigest || result.Codex.NativeThreadID != domain.NativeIdentity(source.Native.ThreadID) || result.Codex.SourceNativeTurnID != domain.NativeIdentity(source.Native.TurnID) {
 		return empty, domain.CompactionUncertain()
 	}
 	last := p.Native.Records[len(p.Native.Records)-1]

@@ -469,3 +469,12 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 ### Managed independent Codex Fork allocation closure
 
 Issue #1979 owns System 53 `MANAGED_CODEX_FORK_V1` and Worker 29 `MANAGED_CODEX_FORK_V1`, recorded with complete implementation under the allocation workflow. Existing System 27/47 and Worker 3/16/26 retain separate generic Fork, Sidechat and protected-subscription ownership. Preserve every existing number and no migration is added. The [Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979) defines original-job authentication, exact inherited tool history and independent child ownership; declarations alone grant no native/account acceptance.
+
+### Conversation Revert ownership (issue #2045)
+
+The complete owning feature records System 62 / Worker 36 and its closed RPC
+declarations together with activation. It reuses existing durable context and
+recovery storage through closed versioned variants, without a migration.
+Preserve original native history/account/Worker ownership, independent cleanup,
+immutable historical contexts and separate Fork/Sidechat lifetimes under the
+[Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).

@@ -36,7 +36,10 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if err != nil {
 		return denied()
 	}
-	if i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
+	if i.Revert != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
+		return denied()
+	}
+	if i.Revert == nil && i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
 		return denied()
 	}
 	if i.Assignment.Configuration.Harness == domain.OpenCode && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {
@@ -62,7 +65,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		if lease.Action != domain.SubscriptionExecute || lease.OperationID != g.JobID || lease.MachineID != g.MachineID || lease.InstanceID != g.InstanceID || lease.DeviceID != g.DeviceID || lease.Epoch != a.service.subscriptionServerEpoch() || lease.Generation != state.Generation {
 			return denied()
 		}
-		return apiproxy.Scope{ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, SubscriptionService: v.Configuration.SubscriptionService, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Harness: v.Configuration.Harness}, nil
+		return apiproxy.Scope{ContextRevision: v.ContextRevision, ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, SubscriptionService: v.Configuration.SubscriptionService, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Harness: v.Configuration.Harness}, nil
 	}
 	pr, err := tx.Get(domain.ProviderKind, i.Assignment.Configuration.ProviderID)
 	if err != nil {
@@ -87,7 +90,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if v.Configuration.Harness == domain.Codex {
 		sourceTurn = i.Completion.NativeTurnID
 	}
-	scope := apiproxy.Scope{CompactionSourceTurn: sourceTurn, ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Provider: p, Harness: v.Configuration.Harness, Operations: operations}
+	scope := apiproxy.Scope{ContextRevision: v.ContextRevision, CompactionSourceTurn: sourceTurn, ExecutionID: g.ExecutionID, SessionID: v.SessionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, ModelID: v.Configuration.ModelID, NativeModel: v.Configuration.NativeModel, Provider: p, Harness: v.Configuration.Harness, Operations: operations}
 	if scope.Validate() != nil {
 		return denied()
 	}

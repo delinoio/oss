@@ -50,6 +50,11 @@ export const getSessionDeletion = SessionService.method.getSessionDeletion;
 export const compactSession = SessionService.method.compactSession;
 
 /**
+ * @generated from rpc delidev.v1.SessionService.RevertSession
+ */
+export const revertSession = SessionService.method.revertSession;
+
+/**
  * @generated from rpc delidev.v1.SessionService.GetSessionContext
  */
 export const getSessionContext = SessionService.method.getSessionContext;

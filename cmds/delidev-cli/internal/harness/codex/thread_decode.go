@@ -102,6 +102,9 @@ type boundThreadWire struct {
 }
 
 func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID domain.ID, method threadMethod, version string) (*Thread, *EffectiveSettings, error) {
+	return decodeBoundThreadProfile(raw, settings, expectedID, method, version, false)
+}
+func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expectedID domain.ID, method threadMethod, version string, revert bool) (*Thread, *EffectiveSettings, error) {
 	var response boundThreadWire
 	if domain.Decode(raw, &response) != nil {
 		return nil, nil, incompatible()
@@ -111,7 +114,7 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 		return nil, nil, err
 	}
 	thread := wire.summary()
-	if thread.History != LegacyHistory {
+	if thread.History != LegacyHistory && !revert {
 		return &thread, nil, incompatible()
 	}
 	if expectedID != "" && wire.ID != expectedID {
@@ -120,7 +123,7 @@ func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID 
 	if method == startThread && (wire.SessionID != wire.ID || wire.ForkedFromID != nil || wire.Status.Type != ThreadIdle) {
 		return &thread, nil, incompatible()
 	}
-	if response.ItemsBackwardsCursor != nil || response.TurnsBackwardsCursor != nil {
+	if !revert && (response.ItemsBackwardsCursor != nil || response.TurnsBackwardsCursor != nil) {
 		return &thread, nil, incompatible()
 	}
 	if response.MultiAgentMode != "" && response.MultiAgentMode != "explicitRequestOnly" {

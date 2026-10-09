@@ -10,6 +10,8 @@ import (
 // native input, replace the original assignment, or mint execution credentials.
 type ExecutionRecoveryRequest struct {
 	ApprovalsReviewer     ApprovalsReviewer           `json:"approvals_reviewer,omitempty"`
+	ContextRevision       uint64                      `json:"context_revision,omitempty"`
+	Revert                *SessionRevertRecovery      `json:"revert,omitempty"`
 	Startup               *PRStartupRecoveryReference `json:"startup,omitempty"`
 	Version               uint32                      `json:"version"`
 	Harness               Harness                     `json:"harness,omitempty"`
@@ -41,6 +43,9 @@ func ExecutionRecoveryUncertain() *Error {
 }
 
 func (r ExecutionRecoveryRequest) Validate() error {
+	if r.Revert != nil {
+		return r.validateRevertRecovery()
+	}
 	if r.Startup != nil {
 		return r.validatePRStartupRecovery()
 	}
@@ -108,13 +113,20 @@ func (r ClaudeRecoveryReference) Validate() error {
 // ExecutionRecoveryEvidence binds the original durable report, without granting
 // that old Worker instance any new publication or reporting authority.
 type ExecutionRecoveryEvidence struct {
-	Version    uint32              `json:"version"`
-	JobID      ID                  `json:"job_id"`
-	ReportID   ID                  `json:"report_id"`
-	Completion ExecutionCompletion `json:"completion"`
+	Revert     *SessionCompactionResult `json:"revert,omitempty"`
+	Version    uint32                   `json:"version"`
+	JobID      ID                       `json:"job_id"`
+	ReportID   ID                       `json:"report_id"`
+	Completion ExecutionCompletion      `json:"completion"`
 }
 
 func (e ExecutionRecoveryEvidence) Validate(expected ExecutionRecoveryRequest) error {
+	if expected.Revert != nil {
+		return e.validateRevertRecovery(expected)
+	}
+	if e.Revert != nil {
+		return ExecutionRecoveryUncertain()
+	}
 	terminal := e.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	if expected.Validate() != nil || e.Version != 1 || e.JobID != expected.JobID || e.ReportID.Validate() != nil || e.Completion.Version != 2 || e.Completion.ValidateForHarness(expected.NativeHarness()) != nil || terminal != expected.Completion {

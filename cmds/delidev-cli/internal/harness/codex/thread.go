@@ -374,7 +374,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		return result, problem
 	}
-	thread, effective, err := decodeBoundThread(response.Result, settings, threadID, method, c.version)
+	thread, effective, err := decodeBoundThreadProfile(response.Result, settings, threadID, method, c.version, c.revertHistory)
 	result.Thread, result.Effective = thread, effective
 	if threadID != "" {
 		// A mismatched native response cannot replace the resumed identity's

@@ -1953,3 +1953,16 @@ The Worker binds an opaque observation ID to the original tool record, authentic
 The existing synchronized outbox, atomic native-item index, original account/execution/thread/turn, sequence and receipt checks own publication and replay. Archive and history retain one original observation. Replay never reads the location. Full native history validation accepts only the closed image-view metadata while preserving original rollout/checkpoint digests; it does not replay the tool. Lost acknowledgments, unsupported older peers, foreign generations or changed references retain recovery without input resend. No RPC, capability allocation or migration is added.
 
 Image-view references are separate from image-input attachments and existing authenticated attachment byte retrieval. They grant no preview/download, arbitrary path access, image-to-text conversion, attachment transfer, storage claim or source-file deletion. Metadata retires through ordinary transcript/session deletion after the original native/process cleanup fences; source files retain their independent workspace/Local ownership. Image completion, root outcome, process cleanup and workspace cleanup remain distinct facts.
+
+## Codex Revert profile — issue #2045
+
+The [Revert context contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045)
+owns the closed 0.162.0 thread/revert response and full paginated replacement
+history proof. Bind the actual original process, startup executable and
+configuration. Require the initialized original process to positively report
+0.162.0 before activating this selected closed profile; configured versions and
+general startup eligibility do not prove Revert support. Permit paginated metadata only through the selected Revert
+profile or retained private checkpoint; legacy profiles retain their closed
+metadata/history checks. Native method or schema rejection does not permit
+rollback, fallback, omission, resend or a fresh target. A retained empty prefix
+is separately proved and never manufactures an old turn or input.

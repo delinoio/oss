@@ -12,6 +12,7 @@ import (
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
 	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
+	ContextRevision     uint64                     `json:"context_revision,omitempty"`
 	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
 	Startup             *ExecutionStartupSelection `json:"startup,omitempty"`
 	Fork                *ForkExecution             `json:"fork,omitempty"`

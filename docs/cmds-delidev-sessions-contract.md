@@ -829,3 +829,16 @@ Same-question Sidechat retry follows [the Sidechat contract](cmds-delidev-sidech
 Compose the [closed image-view observation profile](cmds-delidev-harness-contract.md#codex-image-view-observations--issue-2017) with existing tool publication. Store only original Worker-owned observation metadata: opaque tool/reference ID, machine, immutable manifest digest, selected repository/root and relative location. The original immutable execution supplies account, connection, thread, turn and generation attribution. Reject duplicate native item identities and changed lifecycle references atomically, preserving earlier evidence and receipts. Completed native observations do not prove root success or independent cleanup.
 
 The reference is not an ImageUpload or ImageAttachment. Existing byte reads require their independent claimed-upload authority and cannot accept this tool reference. No server image bytes, source paths, inferred image inputs, new file reads or new deletion obligations are created. Ordinary historical replay, Archive and retained Fork history preserve the original metadata; native/history checkpoints remain immutable. Metadata deletion follows existing joined session deletion, while original Local/source files and independently owned workspace cleanup retain their prior authority.
+
+## Revert context revisions — issue #2045
+
+Follow the [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).
+The session advances a context revision only with the verified original native
+Revert and cleanup result. Its version-4 context job and explicit Revert
+checkpoint are separate from historical execution progress. Preserve original
+account, machine, startup identity and all prior assignment generations.
+Later new input freezes the current revision while its continuation still refers
+to the exact historical predecessor and independently validated replacement
+history. Success, failure and Stop outcomes remain attributed to that predecessor.
+Manual Resume and one fresh input do not replay an old turn. Original Fork and
+Sidechat snapshots retain their own lifetimes and contexts.

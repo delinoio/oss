@@ -22,6 +22,8 @@ const (
 )
 
 type SessionCompactionRef struct {
+	ContextRevision  uint64 `json:"context_revision,omitempty"`
+	Revert           bool   `json:"revert,omitempty"`
 	JobID            ID     `json:"job_id"`
 	ActionID         ID     `json:"action_id"`
 	ExecutionID      ID     `json:"execution_id"`
@@ -31,13 +33,14 @@ type SessionCompactionRef struct {
 }
 
 func (r SessionCompactionRef) Validate() error {
-	if UniqueIDs([]ID{r.JobID, r.ActionID, r.ExecutionID}) != nil || !validCompactionDigest(r.CheckpointDigest) || !validCompactionDigest(r.NativeDigest) {
+	if (r.Revert && r.ContextRevision == 0 || !r.Revert && r.ContextRevision != 0) || UniqueIDs([]ID{r.JobID, r.ActionID, r.ExecutionID}) != nil || !validCompactionDigest(r.CheckpointDigest) || !validCompactionDigest(r.NativeDigest) {
 		return CompactionUncertain()
 	}
 	return nil
 }
 
 type SessionCompactionInput struct {
+	Revert      *SessionRevertTarget  `json:"revert,omitempty"`
 	Version     uint32                `json:"version"`
 	ActionID    ID                    `json:"action_id"`
 	SourceJobID ID                    `json:"source_job_id"`
@@ -51,8 +54,11 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
-	profile := i.Version == 1 && a.Configuration.Harness == ClaudeCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version)) || i.Version == 2 && a.Configuration.Harness == Codex && (a.Version == 4 || CodexVersionAllowed(a.Installation.Version)) || i.Version == 3 && a.Configuration.Harness == OpenCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version))
-	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || done.Outcome != ExecutionSucceeded {
+	if (i.Version == 4) != (i.Revert != nil) {
+		return CompactionUncertain()
+	}
+	profile := i.Version == 4 && i.Revert != nil && i.Revert.Validate() == nil && a.Configuration.Harness == Codex || i.Version == 1 && a.Configuration.Harness == ClaudeCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version)) || i.Version == 2 && a.Configuration.Harness == Codex && (a.Version == 4 || CodexVersionAllowed(a.Installation.Version)) || i.Version == 3 && a.Configuration.Harness == OpenCode && (a.Version == 4 || ValidNativeVersionMetadata(a.Installation.Version))
+	if !profile || UniqueIDs([]ID{i.ActionID, i.SourceJobID, a.ExecutionID, a.InputID, a.SessionID}) != nil || a.Validate() != nil || done.ValidateForHarness(a.Configuration.Harness) != nil || done.Version != 2 || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || (i.Revert == nil && done.Outcome != ExecutionSucceeded) {
 		return CompactionUncertain()
 	}
 	if i.Restore.Validate() != nil || i.Restore.ExecutionID != i.ActionID || i.Restore.Continuation == nil || i.Restore.Continuation.Previous.JobID != i.SourceJobID || i.Restore.Continuation.Completion != i.Completion || i.Restore.ConfigurationDigest != a.ConfigurationDigest || i.Restore.SessionID != a.SessionID || i.Restore.AccountID != a.AccountID || i.Restore.ConnectionID != a.ConnectionID {
@@ -61,7 +67,7 @@ func (i SessionCompactionInput) Validate() error {
 	if i.Previous != nil && (i.Previous.Validate() != nil || i.Previous.ExecutionID != a.ExecutionID) {
 		return CompactionUncertain()
 	}
-	if (a.Configuration.Harness == Codex || a.Configuration.Harness == OpenCode) && (i.Dispatch != DispatchReady || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || (!i.Restore.Continuation.Previous.NativeCompactions.Closed() || !i.Restore.Continuation.Previous.AutoReviews.Closed())) {
+	if (a.Configuration.Harness == Codex || a.Configuration.Harness == OpenCode) && (i.Dispatch != DispatchReady && !(i.Revert != nil && i.Dispatch == DispatchPaused) || i.Previous != nil && i.Previous.RequiresResume || len(i.Restore.Continuation.Previous.Subagents) != 0 || (!i.Restore.Continuation.Previous.NativeCompactions.Closed() || !i.Restore.Continuation.Previous.AutoReviews.Closed())) {
 		return CompactionUncertain()
 	}
 	if i.Dispatch != DispatchReady && i.Dispatch != DispatchPaused && i.Dispatch != DispatchBlocked {
@@ -74,6 +80,12 @@ func (i SessionCompactionInput) Validate() error {
 	want.Version, want.ExecutionID, want.InputID = 2, i.ActionID, i.Restore.InputID
 	if a.Version == 4 {
 		want.Version = 4
+	}
+	if i.Revert != nil {
+		if i.Restore.ContextRevision != i.Revert.ContextRevision || i.Revert.ContextRevision < a.ContextRevision {
+			return CompactionUncertain()
+		}
+		want.ContextRevision = i.Revert.ContextRevision
 	}
 	want.Retry, want.Fork = nil, nil
 	want.ThreadRequestID, want.TurnRequestID, want.Continuation = i.Restore.ThreadRequestID, i.Restore.TurnRequestID, c
@@ -99,6 +111,7 @@ func compactionDigest(raw []byte) string {
 }
 
 type SessionCompactionResult struct {
+	Revert             *SessionRevertResult      `json:"revert,omitempty"`
 	Harness            Harness                   `json:"harness,omitempty"`
 	Codex              *CodexCompactionResult    `json:"codex,omitempty"`
 	OpenCode           *OpenCodeCompactionResult `json:"opencode,omitempty"`
@@ -134,6 +147,12 @@ type CodexCompactionResult struct {
 }
 
 func (r SessionCompactionResult) Validate() error {
+	if r.Version == 4 {
+		return r.validateRevert()
+	}
+	if r.Revert != nil || r.Checkpoint.Revert {
+		return CompactionUncertain()
+	}
 	if r.Version == 3 {
 		return r.validateOpenCode()
 	}

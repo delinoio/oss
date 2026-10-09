@@ -31,7 +31,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 	if err != nil {
 		return r, session, input, err
 	}
-	if !session.WorkspaceAvailable() || session.Fork != nil || session.InitialExecution == nil || session.Execution == nil || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionSucceeded || !session.Execution.CleanupVerified || session.Execution.Waiting != (domain.NativeWaiting{}) || session.Execution.UnconfirmedResponses != 0 || session.Execution.NativeTurnID != string(expected) || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
+	if !session.WorkspaceAvailable() || session.Fork != nil || session.InitialExecution == nil || session.Execution == nil || session.CompactionJobID != "" || session.Execution.ContextRevision != session.ContextRevision || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Outcome != domain.ExecutionSucceeded || !session.Execution.CleanupVerified || session.Execution.Waiting != (domain.NativeWaiting{}) || session.Execution.UnconfirmedResponses != 0 || session.Execution.NativeTurnID != string(expected) || session.Preparation == nil || session.Preparation.State != domain.PreparationReady {
 		return r, session, input, forkConflict()
 	}
 	prior, err := tx.SessionExecutionJob(id, session.ExecutionSelection().ID)

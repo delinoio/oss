@@ -67,7 +67,8 @@ func (u NativeResponseUsage) Validate() error {
 // records first publication; subsequent identical observations do not charge it
 // again. Nullable counts/cost evidence cannot become measured zero or spend.
 type ResponseUsageRecord struct {
-	Attribution ModelAttribution `json:"model_attribution,omitempty"`
+	Attribution     ModelAttribution `json:"model_attribution,omitempty"`
+	ContextRevision uint64           `json:"context_revision,omitempty"`
 	// A manual context action has no ordinary input or native turn binding at
 	// the relay boundary. Preserve its original source turn separately; an
 	// unavailable action turn must never borrow the preceding native turn.

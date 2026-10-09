@@ -122,5 +122,14 @@
   "session.submittedUserMessage": "Submitted user message",
   "session.imageView": "Image view",
   "session.imageViewUnsupported": "This image-view observation is unavailable.",
-  "session.imageViewPreviewUnavailable": "Preview unavailable. This native observation does not retain image bytes or grant access to the current file."
+  "session.imageViewPreviewUnavailable": "Preview unavailable. This native observation does not retain image bytes or grant access to the current file.",
+  "session.revertAndEdit": "Revert and edit",
+  "session.revertConfirmation": "Revert the native conversation to before this turn and restore its prompt as an unsent draft? This turn and later turns leave the working context. Files stay unchanged. Previous history, usage, Forks and Sidechats remain available.",
+  "session.revertDraftWarning": "Your current draft will be replaced after the original operation is verified.",
+  "session.revertPending": "Waiting for the original Revert and its verified history. No message has been submitted.",
+  "session.revertDraftChanged": "The conversation was reverted. Your edited draft was preserved. Restore the earlier prompt when ready.",
+  "session.restoreRevertedPrompt": "Restore earlier prompt",
+  "session.retrySameRevert": "Retry the same Revert request",
+  "session.revertHistoricalAttachments": "Earlier images and skill selections remain in history. Select them again for a new input; the restored prompt has not been submitted.",
+  "session.previousContext": "Earlier context"
 }
