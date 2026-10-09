@@ -80,3 +80,12 @@ it("binds continuation summaries to their selected execution rather than precedi
  const mismatched=resource({native:nextNative},{execution:undefined,current_execution:{id:nextExecution},startup:{job_id:nativeJob,execution_id:nextExecution}});
  expect(startupOperations(mismatched,SessionProgressPhase.Starting)).toBeUndefined();
 });
+
+
+it("uses original workspace presence before any execution is selected", () => {
+ const now=Date.now(),machineId=scope.machine_id;
+ const session=resource({workspace},{machine_id:machineId,initial_execution:undefined,current_execution:undefined,execution:undefined,startup:undefined});
+ const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,revision:1n,schemaVersion:1,documentJson:encode({last_seen:new Date(now).toISOString(),network:{instance_id:scope.instance_id},disabled:false})});
+ expect(startupWorkerCurrent(session,machine,now,true)).toBe(true);
+ expect(startupWorkerCurrent(session,machine,now,false)).toBe(false);
+});
