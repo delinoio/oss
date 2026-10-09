@@ -49,3 +49,5 @@
 - Quota privacy checks reject exact original bucket and reset-credit IDs against protected raw values and complete Base64 forms at every length. Strip only the adapter-owned final window suffix; retain long substring checks without short-word substring rejection. Worker reads/updates and server-owned quota reads share `ValidateQuotaSecrets` before publication under the subscription contract.
 
 - Already-owned child agent messages accept omitted delivery or explicit native `delivery:null` without changing root uncertainty. Keep populated opaque delivery private and retain strict unknown-field rejection, original child/source IDs, current-source telemetry omissions and terminal ownership under the subagents contract.
+
+- Discard only notification-form `skills/changed` with a required empty object as closed process metadata. Never refresh skills/catalogs, enumerate packages or alter immutable selected input; null/missing/non-object/nonempty/malformed payloads, same-name server requests and unknown families retain rejection. Preserve original input, continuation, recovery and cleanup fences under the harness contract.

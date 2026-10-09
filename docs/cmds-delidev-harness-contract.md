@@ -60,6 +60,18 @@ and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2
 keep this status separate from tool execution and authentication. Other server
 names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+The original execution process's notification-only `skills/changed` accepts
+exactly a required empty object as discarded process metadata. Its native cache
+invalidation signal never causes `skills/list`, package enumeration, catalog
+refresh, plugin loading or replacement of immutable selected skills. Repeated
+notifications leave the original accepted Plan, Execute or resumed turn running
+without another input send. Missing, null, non-object, nonempty or malformed
+payloads fail; a same-name server request and unknown native families retain
+their unsupported boundary. Existing failed inputs retain recovery and cleanup
+fences and are never replayed. The [official empty notification schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/v2/SkillsChangedNotification.json)
+and [native cache invalidation watcher](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/skills_watcher.rs)
+define this passive observation separately from explicit selected-package proof.
+
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so
 parser-level success cannot conceal an unsupported Worker event family.
