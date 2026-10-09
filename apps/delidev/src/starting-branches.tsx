@@ -40,9 +40,9 @@ export function StartingBranches({project,machineId,starting,change,active,suppo
   useLocale();
   const ids=items(document(project).repositories).map(text),primary=text(document(project).primary_repository);
   const props={project,machineId,starting,change,active,supported};
-  return <div className="starting-branches"><StartingBranch key={primary} repositoryId={primary} {...props}/>{ids.length>1 ? <Disclosure density={DisclosureDensity.Settings}><DisclosureSummary>{copy("new-session.additionalRepositories")}</DisclosureSummary>{ids.filter(id=>id!==primary).map(id=><StartingBranch key={id} repositoryId={id} {...props}/>)}</Disclosure>:null}</div>;
+  return <div className="starting-branches"><div className="starting-branches-label">{copy("new-session.startingBranch")}</div><StartingBranch primary key={primary} repositoryId={primary} {...props}/>{ids.length>1 ? <Disclosure density={DisclosureDensity.Settings}><DisclosureSummary>{copy("new-session.additionalRepositories")}</DisclosureSummary>{ids.filter(id=>id!==primary).map(id=><StartingBranch key={id} repositoryId={id} {...props}/>)}</Disclosure>:null}</div>;
 }
-function StartingBranch({project,repositoryId,machineId,starting,change,active,supported}: {project:Resource;repositoryId:string;machineId:string;starting:unknown[];change:(value:unknown[])=>void;active:boolean;supported:boolean}) {
+function StartingBranch({project,repositoryId,machineId,starting,change,active,supported,primary=false}: {primary?:boolean;project:Resource;repositoryId:string;machineId:string;starting:unknown[];change:(value:unknown[])=>void;active:boolean;supported:boolean}) {
   useLocale();const transport=useTransport();
   const repository=useQuery(ResourceQuery.getResource,{kind:EntityKind.REPOSITORY,id:repositoryId},{enabled:active && Boolean(repositoryId)});
   const machine=useQuery(ResourceQuery.getResource,{kind:EntityKind.MACHINE,id:machineId},{enabled:active && Boolean(machineId)});
@@ -84,8 +84,9 @@ function StartingBranch({project,repositoryId,machineId,starting,change,active,s
   };
   const unavailable=explicit && inventory && (remote!==inventory.remote || !inventory.branches.includes(selected));
   const label=copy("new-session.startingBranch");
+  const selectionLabel=explicit ? selected : reference.type ? copy("new-session.manualStartingReference") : copy("new-session.savedStartingReference");
   return <Disclosure density={DisclosureDensity.Settings} className="starting-branch" open={open} onToggle={event=>{const expanded=event.currentTarget.open;setOpen(expanded);}}>
-    <DisclosureSummary>{label}: {explicit ? selected : reference.type ? copy("new-session.manualStartingReference") : copy("new-session.savedStartingReference")}{repo ? <small>{text(document(repo).name)}</small>:null}</DisclosureSummary>
+    <DisclosureSummary aria-label={primary ? `${label}: ${selectionLabel}${repo ? ` ${text(document(repo).name)}` : ""}` : undefined}><span className="disclosure-label">{primary ? null : `${label}: `}{selectionLabel}{repo ? <small>{text(document(repo).name)}</small>:null}</span></DisclosureSummary>
     <label>{copy("new-session.searchBranches")}<input type="search" value={search} onChange={event=>setSearch(event.target.value)} /></label>
     <label>{label}<select aria-label={label} value={explicit ? selected : ""} onChange={event=>select(event.target.value)} disabled={busy && !inventory}>
       <option value="">{copy("new-session.savedStartingReference")}</option>
