@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
-  ModelIdentitySchema, SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
+  ModelIdentitySchema, ErrorDetailSchema, FailureCode, SubscriptionServiceIdentity, SessionService, SystemService, SystemCapability, newRequestId, RequestDiagnosticSchema,
   RequestDiagnosticSource as Source, RequestDiagnosticState as State, RequestDiagnosticOperation as Operation,
   ListRequestDiagnosticsResponseSchema,
 } from "@delinoio/delidev-api-client";
@@ -45,7 +45,7 @@ it("filters and paginates without changing the conversation draft, and disposes 
   fireEvent.click(screen.getByRole("button", { name: "Load more Model request diagnostics" }));
   await waitFor(() => expect(f.read).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: "opaque-page" }), expect.anything()));
   f.read.mockRejectedValueOnce(new ConnectError("PRIVATE_ERROR_SENTINEL", Code.Unavailable));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh diagnostics" }));
+  void f.client.invalidateQueries({ refetchType: "active" });
   await screen.findByText("Refresh failed. The displayed observations may be stale.");
   expect(screen.queryByText("PRIVATE_ERROR_SENTINEL")).toBeNull();
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Model request diagnostics" }), { key: "Escape" });
@@ -127,4 +127,25 @@ it("accepts Fast only from original Codex native diagnostic evidence", () => {
  expect(validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[row]}),f.session,"").records[0].effectiveServiceTier).toBe("fast");
  for (const harness of ["claude-code","opencode","grok-build"]) expect(()=>validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[create(RequestDiagnosticSchema,{...row,harness})]}),f.session,"")).toThrow("unavailable");
  expect(()=>validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[create(RequestDiagnosticSchema,{...f.row,requestedServiceTier:"fast",effectiveServiceTier:"fast"})]}),f.session,"")).toThrow("unavailable");
+});
+
+it.each(["expired", "stalled", "transient"])("retries %s diagnostic boundaries through the appropriate original read", async failure => {
+ const f = fixture(); render(<f.View />); await screen.findByText("resp_original");
+ if (failure === "expired") f.read.mockRejectedValueOnce(new ConnectError("Original cursor expired", Code.OutOfRange, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: FailureCode.CursorExpired }) }]));
+ else if (failure === "stalled") f.read.mockResolvedValueOnce({ records: [f.row], nextPageToken: "opaque-page" });
+ else f.read.mockRejectedValueOnce(new ConnectError("Original continuation unavailable", Code.Unavailable));
+ fireEvent.click(screen.getByRole("button", { name: "Load more Model request diagnostics" }));
+ const retry = await screen.findByRole("button", { name: "Retry read" });
+ expect(f.read).toHaveBeenCalledTimes(2); f.read.mockResolvedValueOnce({ records: [f.row], nextPageToken: "" }); fireEvent.click(retry);
+ await waitFor(() => expect(f.read).toHaveBeenCalledTimes(3));
+ expect(f.read).toHaveBeenLastCalledWith(expect.objectContaining({ pageToken: failure === "transient" ? "opaque-page" : "", sessionId: f.session }), expect.anything());
+ await waitFor(() => expect(screen.queryByRole("button", { name: "Retry read" })).toBeNull());
+ expect(screen.getByText("resp_original")).toBeTruthy(); expect(screen.getByLabelText("Conversation draft")).toHaveProperty("value", "Retained draft");
+});
+
+it("does not refresh a successful diagnostics page for unchanged Apply filters", async () => {
+ const f=fixture();render(<f.View/>);await screen.findByText("resp_original");const initial=f.read.mock.calls.length;
+ fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial);
+ fireEvent.change(screen.getByLabelText("Execution ID (optional)"),{target:{value:f.execution}});fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(initial+1));
+ fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial+1);
 });

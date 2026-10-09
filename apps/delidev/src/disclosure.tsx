@@ -5,6 +5,9 @@ import { Children, createContext, useContext, useId, useLayoutEffect, useRef, us
 import "./disclosure.css";
 
 export enum DisclosureDensity { Settings = "settings", Details = "details", Compact = "compact" }
+const Flat = createContext(false);
+// Info/Diagnostics flatten read-only groups while their original children keep ownership.
+export function FlatDisclosureScope({ children }: { children: ReactNode }) { return <Flat.Provider value>{children}</Flat.Provider>; }
 const Density = createContext(DisclosureDensity.Details);
 export function DisclosureDensityScope({ density, children }: { density: DisclosureDensity; children: ReactNode }) { return <Density.Provider value={density}>{children}</Density.Provider>; }
 function assign<T>(ref: Ref<T> | undefined, value: T | null) {
@@ -20,6 +23,7 @@ function HeaderContent({ children }: { children: ReactNode }) { return <><Chevro
 
 /** Native DOM is intentional: pagination, validation and explicit reveal use it. */
 export function Disclosure({ ref, density, className = "", onToggle, children, appearanceKind, ...props }: ComponentPropsWithRef<"details"> & { density?: DisclosureDensity; appearanceKind?: "tool_disclosure"|"reasoning_disclosure"|"compaction_disclosure" }) {
+  const flat=useContext(Flat);
   const appearance=useAppearance();
   const preferences=useAppearancePreferences();
   const awaitingInitial=useRef(appearance.snapshot.problem!==null && appearance.snapshot.preferences===undefined);
@@ -51,10 +55,13 @@ export function Disclosure({ ref, density, className = "", onToggle, children, a
     node.current.open=defaultOpen.current;setExpanded(node.current.open);
   },[appearance.snapshot,appearanceKind]);
   useLayoutEffect(() => { if (props.open === false) restoreFocus(node.current, node.current?.querySelector("summary") ?? null); if (node.current) setExpanded(node.current.open); }, [props.open]);
+  if (flat) return <section id={id} className={`session-information-section ${className}`}>{children}</section>;
   return <NativeDisclosure.Provider value={{ contentId, triggerId, expanded }}><details {...props} onClickCapture={event=>{if(event.target instanceof Element && event.target.closest("summary")===node.current?.querySelector("summary"))manuallyChosen.current=true;props.onClickCapture?.(event);}} id={id} ref={value => { node.current = value; assign(ref, value); }} className={`disclosure ${className}`} data-disclosure-density={density ?? inheritedDensity} onToggle={event => { setExpanded(event.currentTarget.open); if (!event.currentTarget.open) restoreFocus(event.currentTarget, event.currentTarget.querySelector("summary")); onToggle?.(event); }}>{summary}<div id={contentId} className="disclosure-native-content">{content}</div></details></NativeDisclosure.Provider>;
 }
 export function DisclosureSummary({ children, className = "", onClick, ...props }: ComponentPropsWithRef<"summary">) {
+  const flat = useContext(Flat);
   const owner = useContext(NativeDisclosure);
+  if (flat) return <h4 className={className}>{children}</h4>;
   return <summary id={owner?.triggerId} aria-controls={owner?.contentId} aria-expanded={owner?.expanded} {...props} className={`disclosure-header ${className}`} onClick={event => { const details = event.currentTarget.parentElement; if (details instanceof HTMLDetailsElement && details.open) restoreFocus(details, event.currentTarget); onClick?.(event); }}><HeaderContent>{children}</HeaderContent></summary>;
 }
 
