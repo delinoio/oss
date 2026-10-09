@@ -282,6 +282,11 @@ func configureLargeCompactionSubscription(t *testing.T, c *continuationFixture) 
 		if err != nil {
 			return nil, err
 		}
+		// The exact inline source key is part of the immutable assignment digest.
+		c.input.ConfigurationDigest, err = c.input.Configuration.Digest()
+		if err != nil {
+			return nil, err
+		}
 		sr, session, err := sessionRecord(tx, c.input.SessionID)
 		if err != nil {
 			return nil, err
