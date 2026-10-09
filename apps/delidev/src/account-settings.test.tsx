@@ -469,8 +469,7 @@ it("labels API entry navigation and omits empty subscription pagination", async 
   expect(screen.queryByRole("navigation", { name: "Entry pages" })).toBeNull();
   view.rerender(value.view(value.settings(AccountSettingsSection.Subscription)));
   expect(await screen.findByRole("heading", { name: "No subscriptions yet" })).toBeTruthy();
-  const advanced = screen.getByText("Advanced settings").closest("details")!;
-  expect(advanced.open).toBe(false); advanced.open = true;
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Filter accounts by provider" })).toBeNull();
   expect(screen.queryByRole("navigation", { name: "Account pages" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add AI API key" })).toBeNull();

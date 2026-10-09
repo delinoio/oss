@@ -851,8 +851,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   const requests: { query: string; pageToken: string; enabledOnly: boolean; pageSize: number }[] = [];
   const value = fixture([provider], { readResources: (kind, token) => ({ resources: [], nextPageToken: kind === EntityKind.ACCOUNT && !token ? "api-page-2" : "" }), readProviderInventory: (pageToken, request) => { requests.push({ ...request, pageToken }); return { entries: [entry], capabilities, nextPageToken: request.query === "Exact" && !pageToken ? "provider-page-2" : "" }; } });
   render(value.view(<Settings />));
-  const advanced = screen.getByText("Advanced settings").closest("details")!;
-  advanced.open = true;
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: "Load more Subscription account pages" }));
   await screen.findByRole("heading", { name: "No subscriptions yet" });
   expect(requests).toHaveLength(0); expect(screen.queryByLabelText("Search providers")).toBeNull();
@@ -882,7 +881,7 @@ it("keeps Subscription free of Provider requests while API inventory preserves e
   fireEvent.click(screen.getByRole("button", { name: "AI Subscription" }));
   expect(screen.queryByLabelText("Search providers")).toBeNull();
   expect(screen.queryByLabelText("Filter accounts by provider")).toBeNull();
-  expect(screen.getByText("Advanced settings").closest("details")!.open).toBe(false);
+  expect(screen.queryByText("Advanced settings")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "API Providers" }));
   expect((screen.getByLabelText("Search API providers") as HTMLInputElement).value).toBe("");
   await waitFor(() => expect(requests.filter(request => !request.enabledOnly).at(-1)).toMatchObject({ query: "", pageToken: "" }));
