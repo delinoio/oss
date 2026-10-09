@@ -59,6 +59,50 @@ try {
     checks++;console.log(JSON.stringify({operation:"subscription-rail-layout",language,theme,width,height,windows,result:"passed"}));
     if(screenshots){await mkdir(screenshots,{recursive:true});await page.screenshot({path:join(screenshots,language+"-"+theme+"-"+width+".png")});}
   }
+  // A 480×320 CSS viewport also covers effective 200% reflow from 960×640.
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,1200],[1440,900],[960,640],[480,320]]) for (const count of [0,1,2,3,4,5,6,70]) {
+    await page.setViewportSize({width,height});
+    await page.goto(`${origin}/?language=${language}&theme=${theme}&count=${count}`);
+    await page.waitForFunction(() => document.documentElement.dataset.accountRead !== undefined);
+    const accounts = page.locator(".subscription-rail-account");
+    await page.waitForFunction(expected => document.querySelectorAll(".subscription-rail-account").length === expected, Math.min(count,50));
+    const fixedGeometry = () => page.locator(".sidebar-rail > .sidebar-rail-button").evaluateAll(nodes => nodes.map(node => { const r=node.getBoundingClientRect();return [r.x+window.scrollX,r.y+window.scrollY,r.width,r.height]; }));
+    const before = await fixedGeometry();
+    if (count === 0) {
+      assert.equal(await page.locator(".subscription-rail-group").count(),0);
+    } else {
+      const scroll = page.locator(".subscription-rail-scroll");
+      const initial = await scroll.evaluate(node => { const r=node.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,client:node.clientHeight,total:node.scrollHeight,rows:[...node.querySelectorAll(".subscription-rail-account")].map(row=>{const b=row.getBoundingClientRect();return {top:b.top,bottom:b.bottom,width:b.width,height:b.height,margin:getComputedStyle(row).marginBottom};})}; });
+      assert(initial.height <= 250.1);
+      assert(initial.rows.every(row=>row.width===44&&row.height===44));
+      if (count<=6) assert.equal(initial.rows.at(-1).margin,"0px");
+      if (count===70) assert.equal(initial.rows.at(-1).margin,"6px");
+      if (height===1200 && count<=5) assert.equal(initial.total,initial.client);
+      if (height===1200 && count===6) {
+        assert.equal(initial.rows.filter(row=>row.top>=initial.top&&row.bottom<=initial.bottom).length,5);
+        assert(initial.rows[5].bottom>initial.bottom);
+      }
+      const first=accounts.first();await first.click();
+      const popup=page.locator(".subscription-rail-popover");await popup.waitFor();
+      const box=await popup.boundingBox();assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1,JSON.stringify(box));
+      await page.keyboard.press("Escape");assert(await first.evaluate(node=>document.activeElement===node));
+      if(count===70){
+        await scroll.evaluate(node=>{node.scrollTop=node.scrollHeight;node.dispatchEvent(new Event("scroll"));});
+        if(await accounts.count()<70){const more=scroll.locator(".sidebar-continuation button");await more.focus();await more.press("Enter");}
+        await page.waitForFunction(()=>document.querySelectorAll(".subscription-rail-account").length===70);
+        const read=await page.evaluate(()=>JSON.parse(document.documentElement.dataset.accountRead));
+        assert.equal(read.pageSize,50);assert.equal(read.pageToken,"50");
+        assert.equal(await accounts.evaluateAll(nodes=>new Set(nodes.map(node=>node.getAttribute("aria-label"))).size),70);
+      }
+      const last=accounts.last();await last.focus();
+      assert(await last.evaluate(node=>{const row=node.getBoundingClientRect(),scroll=node.parentElement.getBoundingClientRect();return document.activeElement===node&&row.bottom>scroll.top&&row.top<scroll.bottom;}));
+      await last.press("Enter");await popup.waitFor();
+      await page.keyboard.press("Escape");assert(await last.evaluate(node=>document.activeElement===node));
+    }
+    assert.deepEqual(await fixedGeometry(),before);
+    checks++;console.log(JSON.stringify({operation:"subscription-rail-layout",language,theme,width,height,count,result:"passed"}));
+    if(screenshots){await mkdir(screenshots,{recursive:true});await page.screenshot({path:join(screenshots,`${language}-${theme}-${width}-${height}-${count}.png`)});}
+  }
   // The independent saved-read problem retains its original geometry and presentation.
   await page.setViewportSize({width:1440,height:900});await page.goto(`${origin}/?readProblem=true`);
   const problem=page.getByRole('button',{name:'Explain subscription read problem',exact:true});await problem.click();

@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.subscription-rail-group { min-height: 0; flex: 0 1 auto; max-height: 42%; width: 44px; display: flex; }
+.subscription-rail-group { min-height: 0; flex: 0 1 auto; max-height: min(42%, 250px); width: 44px; display: flex; }
 .sidebar-rail > .sidebar-rail-button { flex-shrink: 0; }
 .subscription-rail-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; width: 44px; scrollbar-width: none; padding: 3px 0; }
 .subscription-rail-account { width: 44px; min-width: 44px; margin-bottom: 6px; }
+.subscription-rail-scroll > .subscription-rail-account:last-child { margin-bottom: 0; }
 .subscription-rail-account[aria-expanded=true] { background: var(--surface-selected); border-color: var(--selected-border); }
 .subscription-rail-badge { position: absolute; right: 0; top: 0; padding: 1px 2px; background: var(--surface-muted); border: 1px solid var(--surface); border-radius: 5px; color: var(--text); font-size: 10px; line-height: 14px; font-weight: 650; }
 .subscription-rail-guidance, .subscription-rail-scroll > [role=status], .subscription-rail-scroll .sidebar-continuation, .subscription-rail-reload { font-size: 10px; overflow-wrap: anywhere; }
