@@ -215,7 +215,8 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
  const modeReady = manualMode || !supportsDefaults || globalDefaultValid && selectedForMode && ["inherit", "enabled", "disabled"].includes(overrideMode);
  const effectiveMode = manualMode || blocked ? mode : supportsDefaults && globalDefaultValid && selectedForMode ? (overrideMode === "enabled" || overrideMode === "inherit" && document(defaultRow).plan_mode_default === true ? Mode.Plan : Mode.Execute) : mode;
  useEffect(() => { if (!blocked && !manualMode && modeReady) setMode(effectiveMode); }, [blocked, manualMode, modeReady, effectiveMode]);
- const canCreate = modeReady && active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
+ const [branchValid,setBranchValid]=useState(true);
+ const canCreate = (generalChat || !project || workspace!==Workspace.Worktree || branchValid) && modeReady && active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
 
   const submit = async () => {
     if (!canCreate) return;
@@ -282,7 +283,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
               <label><input type="radio" name={`${idPrefix}-workspace`} checked={workspace === Workspace.Worktree} onChange={() => { touched.current = true; setWorkspace(Workspace.Worktree); setMachine(""); setStarting([]); }} />{copy("new-session.worktreeMode")}</label>
               <label><input type="radio" name={`${idPrefix}-workspace`} disabled={!local.available} checked={workspace === Workspace.Local} onChange={() => { touched.current = true; void local.load().then(proof => { if (proof) { setWorkspace(Workspace.Local); setMachine(proof.machineId); setStarting([]); } }); }} />{copy("new-session.localMode")}</label>
             </fieldset>
-            {workspace === Workspace.Worktree && selectedProject.data?.resource ? <StartingBranches key={project} project={selectedProject.data.resource} machineId={machine} starting={starting} active={active && !blocked} supported={status.data?.capabilities.includes(SystemCapability.REPOSITORY_BRANCH_DISCOVERY_V1) ?? false} change={value => { touched.current = true; setStarting(value); }} /> : null}
+            {workspace === Workspace.Worktree && selectedProject.data?.resource ? <StartingBranches validity={setBranchValid} key={project} project={selectedProject.data.resource} machineId={machine} starting={starting} active={active && !blocked} supported={status.data?.capabilities.includes(SystemCapability.REPOSITORY_BRANCH_DISCOVERY_V1) ?? false} change={value => { touched.current = true; setStarting(value); }} /> : null}
           </div> : null}
           <div className="new-session-composer" ref={placement.composer}>
             <label className="new-session-message-label" htmlFor={`${idPrefix}-message`}>{copy("new-session.firstMessage_ecffa2")}</label>
