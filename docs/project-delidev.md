@@ -410,8 +410,8 @@ Issue #1986 adds server-owned source/profile harness defaults with Project and
 Agent overrides under System 63. The catalog contract owns schema-4 inheritance;
 the transfer contract owns portable version 7 and legacy imports. Effective new
 execution settings freeze at the original atomic claim. Existing history, account
-references, route order and native proof remain independent. This adds no native
-operation, Worker capability or SQLite migration.
+references, route order and native proof remain independent. This adds no new
+native operation or SQLite migration.
 
 Issue #1986 also owns Worker 39 original Codex native-default provenance under
 existing startup Ready ownership. Source/Worker/connection/profile/executable
