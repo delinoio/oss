@@ -40,13 +40,33 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   // Half-sized CSS viewports model effective 200% layout. Actual browser chrome
   // zoom and packaged CEF behavior require independent platform acceptance.
-  for (const theme of ["light", "dark"]) for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [480, 320]]) {
+  for (const { theme, os } of [{theme:"light",os:"light"},{theme:"dark",os:"dark"},{theme:"system",os:"light"},{theme:"system",os:"dark"}]) for (const [width, height] of [[1440, 900], [960, 640], [640, 480], [480, 320]]) {
+    await page.emulateMedia({colorScheme:os});
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/?theme=${theme}&subscriptionBackground=true`);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const inventory = page.locator(".subscription-row");
     await inventory.waitFor();
     const original = await inventory.elementHandle();
+    const assertBackdrop = async dialog => {
+      const state=await dialog.evaluate(node=>({modal:node.matches(':modal'),backdrop:getComputedStyle(node,'::backdrop').backgroundColor,blur:getComputedStyle(node,'::backdrop').backdropFilter,surface:getComputedStyle(node).backgroundColor,opacity:getComputedStyle(node).opacity}));
+      assert(state.modal,'Only native modal surfaces paint a backdrop');
+      const color=state.backdrop.match(/rgba\(0, 0, 0, ([\d.]+)\)/);
+      assert(color && Math.abs(Number(color[1])-31/255)<.005,JSON.stringify(state));
+      assert.equal(state.blur,'none');assert.equal(state.opacity,'1');
+      // The compact dialog wrapper is transparent; its pane owns the opaque surface.
+      const surface=await dialog.evaluate(node=>getComputedStyle(node.querySelector('.sidebar-pane') ?? node).backgroundColor);
+      assert(!surface.startsWith('rgba') || surface.endsWith(', 1)'), 'The active dialog stays opaque');
+    };
+    const navigation=page.locator('.sidebar-pane-dialog');
+    if(width<760){
+      const trigger=page.locator('.sidebar-context-trigger');await trigger.click();
+      await assertBackdrop(navigation);
+      await page.keyboard.press('Escape');assert(await trigger.evaluate(node=>node===document.activeElement));
+    }else assert.equal(await navigation.evaluate(node=>node.matches(':modal')),false,'Wide navigation stays nonmodal');
+    await page.locator('.sidebar-rail-button[aria-haspopup="dialog"]').click();
+    const help=page.locator('.shortcut-help');await help.waitFor();await assertBackdrop(help);
+    await page.keyboard.press('Escape');assert.equal(await page.locator('dialog:modal').count(),0);
     // The modal intentionally removes background controls from the accessibility
     // tree. Keep this locator usable when checking their disabled state.
     const opener = inventory.locator(".subscription-more > button");
@@ -62,6 +82,14 @@ try {
       await taskAction.click();
       const dialog = page.getByRole("dialog");
       await dialog.waitFor();
+      await assertBackdrop(dialog);
+      if(theme==='system'){
+        const identity=await dialog.elementHandle();
+        await page.emulateMedia({colorScheme:os==='dark'?'light':'dark'});
+        await page.waitForFunction(expected=>document.documentElement.dataset.theme===expected,os==='dark'?'light':'dark');
+        await assertBackdrop(dialog);assert(await identity.evaluate(node=>node.isConnected && node===document.querySelector('.settings-task-dialog[open]')),'System-theme change must retain the dialog');
+        await page.emulateMedia({colorScheme:os});await identity.dispose();
+      }
       assert(await inventory.isVisible(), "The subscription row disappeared behind the modal");
       assert(await page.locator(".subscription-provider-cards").isVisible(), "The service choices disappeared behind the modal");
       const state = await inventory.evaluate(node => {
@@ -87,6 +115,7 @@ try {
       else if (dismissal === "Escape") await page.keyboard.press("Escape");
       else await dialog.getByRole("button", { name: action === "Delete account" ? "Keep account" : "Cancel edit", exact: true }).click();
       await dialog.waitFor({ state: "detached" });
+      assert.equal(await page.locator("dialog:modal").count(),0,"Final dismissal removes native dimming");
       assert(await original.evaluate(node => node.isConnected && node === document.querySelector(".subscription-row")), "Dismissal replaced the inventory controller");
       assert.equal(await inventory.locator(".subscription-details").count(), 0, "Details returned to inline presentation");
       assert(await page.locator(".subscription-advanced").evaluate(node => node.open), "Dismissal lost the Advanced disclosure");
@@ -96,10 +125,10 @@ try {
       cases++;
     }
     await original.dispose();
-    console.log(JSON.stringify({ operation: "subscription_background_viewport", result: "passed", theme, width, height, cases }));
+    console.log(JSON.stringify({ operation: "subscription_background_viewport", result: "passed", theme, os, width, height, cases }));
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ operation: "subscription_background_layout", result: "passed", cases, themes: 2, viewports: 4, nativeAcceptance: "not-performed", accountAcceptance: "not-performed" }));
+  console.log(JSON.stringify({ operation: "subscription_background_layout", result: "passed", cases, themes: 3, systemPreferences: 2, viewports: 4, nativeAcceptance: "not-performed", accountAcceptance: "not-performed" }));
 } finally {
   await browser?.close();
   if (server?.listening) await new Promise(done => server.close(done));
