@@ -22,6 +22,7 @@ import { useRetainedMutation } from "./mutation";
 import { JobState, TrackedJob } from "./jobs";
 import { providerInventoryReady } from "./provider-model-settings";
 import { CodexSubagentConfiguration } from "./codex-subagent-configuration";
+import { ProviderGuidance, ProviderGuidanceAction } from "./provider-guidance";
 import { ReasoningEffortField, claudeEffortSuggestions, codexEffortSuggestions } from "./reasoning-effort-field";
 import { ProviderAPIFormatFields, AccountAPIFormatField } from "./api-format-fields";
 import { useProjectRepositoryNames } from "./project-repositories";
@@ -57,6 +58,24 @@ export function TextField({ label, value, change, required = false, max = 256, d
   useLocale();
   const help = useId();
   return <><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input aria-label={markRequired ? label : undefined} aria-describedby={unavailable ? help : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled || unavailable} onChange={(event) => change(event.target.value)} /></label>{unavailable ? <div id={help}><NativeOptionExplanation label={label} value={value} clear={() => change("")} /></div> : null}</>;
+}
+enum ServiceTierSelection { Default = "default", Fast = "fast", Custom = "custom" }
+export function ServiceTierField({ value, unavailable, change, clear }: { value: unknown; unavailable: boolean; change: (value: string) => void; clear: () => void }) {
+  useLocale();
+  const description = useId();
+  const [custom, setCustom] = useState(false);
+  const selection = custom || typeof value === "string" && value !== "" && value !== "fast" ? ServiceTierSelection.Custom : value === "fast" ? ServiceTierSelection.Fast : ServiceTierSelection.Default;
+  if (unavailable) return <TextField label={copy("configuration-fields.serviceTier_e9cf60")} value={value} change={change} unavailable />;
+  return <>
+    <label>{copy("configuration-fields.serviceTier_e9cf60")}<select aria-describedby={description} value={selection} onChange={event => {
+      const selected = event.target.value as ServiceTierSelection;
+      setCustom(selected === ServiceTierSelection.Custom);
+      if (selected === ServiceTierSelection.Default) clear();
+      else if (selected === ServiceTierSelection.Fast) change("fast");
+    }}><option value={ServiceTierSelection.Default}>{copy("configuration-fields.serviceTier.nativeDefault")}</option><option value={ServiceTierSelection.Fast}>{copy("configuration-fields.serviceTier.fast")}</option><option value={ServiceTierSelection.Custom}>{copy("configuration-fields.serviceTier.custom")}</option></select></label>
+    {selection === ServiceTierSelection.Custom ? <TextField label={copy("configuration-fields.serviceTier.custom")} value={value} change={change} /> : null}
+    <div id={description}><p>{copy("configuration-fields.serviceTier.guidance")}</p><ProviderGuidance preset="openai" documentation="https://learn.chatgpt.com/docs/agent-configuration/speed" documentationAction={ProviderGuidanceAction.CodexFast} documentationLabel={copy("configuration-fields.serviceTier.learn")} /></div>
+  </>;
 }
 function Choice({ label, value, choices, change, disabled = false, inherited = false }: { label: string; value: unknown; choices: readonly string[]; change: (value: string) => void; disabled?: boolean; inherited?: boolean }) {
   useLocale();
@@ -246,7 +265,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
         </>}
         <TextField label={copy("configuration-fields.approvalPolicy_89d24f")} value={options.approval_policy} change={option("approval_policy")} unavailable={data.harness !== Harness.Codex} />
         <TextField label={copy("configuration-fields.approvalReviewModel_ef091f")} value={options.approval_review_model} change={option("approval_review_model")} unavailable />
-        <TextField label={copy("configuration-fields.serviceTier_e9cf60")} value={options.service_tier} change={option("service_tier")} unavailable={data.harness !== Harness.Codex} />
+        <ServiceTierField value={options.service_tier} change={option("service_tier")} unavailable={data.harness !== Harness.Codex} clear={() => { const next = { ...options }; delete next.service_tier; field("options")(next); }} />
         <p>{copy("configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d")}</p>
       </>}
     />;

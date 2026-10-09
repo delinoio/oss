@@ -155,3 +155,13 @@ it("preserves initial Claude settings and earlier-execution ownership across sti
   expect(screen.getByText(/Retained Claude permission progress is unavailable/)).toBeTruthy();
   expect(screen.queryByText(/Further input requires configuration reconciliation/)).toBeNull();
 });
+
+it("shows the original Fast execution tier independently of later Worker defaults and absent native evidence", () => {
+ const value = fixture();value.configuration.options.service_tier = "fast";
+ render(<ExecutionConfiguration resource={{ ...value.resource, documentJson: encode(value.data) }}/>);
+ fireEvent.click(screen.getByText("Execution configuration and instructions"));
+ const saved = screen.getByRole("region",{name:"Saved execution configuration"});expect(detail(saved,"Requested service tier")).toBe("fast");
+ value.configuration.options.service_tier = "";
+ expect(detail(saved,"Requested service tier")).toBe("fast");
+ expect(detail(screen.getByRole("region",{name:"Native execution observations"}),"Observed service tier")).toBe("Unavailable");
+});

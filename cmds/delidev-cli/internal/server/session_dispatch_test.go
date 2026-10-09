@@ -274,7 +274,11 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	if f.refresh(t).Revision != blocked.Revision {
 		t.Fatal("unchanged block created a revision loop")
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Options.ApprovalReviewModel = ""; a.Effort = "high" })
+	f.mutateAgent(t, func(a *domain.Agent) {
+		a.Options.ApprovalReviewModel = ""
+		a.Effort = "high"
+		a.Options.ServiceTier = "fast"
+	})
 	edited, err := sessionClient(f.accountFixture).EditQueuedInput(ctx, ownerRequest(f.identity, &pb.EditQueuedInputRequest{Mutation: acctMutation(f.change.Input, domain.NewID()), SessionId: f.change.Session.Id, Prompt: "latest input before claim"}))
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +288,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	}
 	accepted := f.refresh(t)
 	state, _ = store.Decode[domain.Session](accepted)
-	if state.InitialExecution == nil || state.InitialExecution.Configuration.Effort != "high" || state.Dispatch != domain.DispatchClaimed || state.PendingInputs != 1 || state.Problem != nil {
+	if state.InitialExecution == nil || state.InitialExecution.Configuration.Effort != "high" || state.InitialExecution.Configuration.Options.ServiceTier != "fast" || state.Dispatch != domain.DispatchClaimed || state.PendingInputs != 1 || state.Problem != nil {
 		t.Fatal("incorrect first immutable snapshot", state)
 	}
 	replay, err := sessionClient(f.accountFixture).CreateSession(ctx, ownerRequest(f.identity, f.request))
@@ -299,7 +303,7 @@ func TestInitialDispatchAtomicConfigurationRollbackAndCurrentReceipt(t *testing.
 	if domain.Decode(job.Input, &assigned) != nil || assigned.Validate() != nil || assigned.Input.Prompt != "latest input before claim" || assigned.Input.Mode != domain.PlanMode || assigned.InputID != domain.ID(edited.Msg.Change.Input.Id) || assigned.ExecutionID != state.InitialExecution.ID || assigned.ConfigurationDigest != state.InitialExecution.ConfigurationDigest {
 		t.Fatal("assignment differs from exact claimed input/configuration")
 	}
-	f.mutateAgent(t, func(a *domain.Agent) { a.Effort = "low" })
+	f.mutateAgent(t, func(a *domain.Agent) { a.Effort = "low"; a.Options.ServiceTier = "" })
 	if err = f.service.dispatchExecution(ctx, accepted); domain.SafeError(err).Code != domain.Conflict {
 		t.Fatal("claimed work re-dispatched", err)
 	}

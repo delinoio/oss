@@ -120,3 +120,10 @@ it("keeps native subscription service attribution independent from API providers
     expect(() => validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [create(RequestDiagnosticSchema, { ...row, ...wrong })] }), f.session, "")).toThrow("unavailable");
   }
 });
+
+it("accepts Fast only from original Codex native diagnostic evidence", () => {
+ const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId(), requestedServiceTier: "fast", effectiveServiceTier: "fast" });row.nativeRequestId = row.id;
+ expect(validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[row]}),f.session,"").records[0].effectiveServiceTier).toBe("fast");
+ for (const harness of ["claude-code","opencode","grok-build"]) expect(()=>validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[create(RequestDiagnosticSchema,{...row,harness})]}),f.session,"")).toThrow("unavailable");
+ expect(()=>validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema,{records:[create(RequestDiagnosticSchema,{...f.row,requestedServiceTier:"fast",effectiveServiceTier:"fast"})]}),f.session,"")).toThrow("unavailable");
+});

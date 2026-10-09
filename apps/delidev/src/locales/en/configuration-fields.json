@@ -199,5 +199,10 @@
   "configuration-fields.ciRemediation": "CI failures",
   "configuration-fields.reviewRemediation": "Review feedback",
   "configuration-fields.conflictRemediation": "Merge conflicts",
-  "configuration-fields.behaviorUnsupported": "Project settings require a server with project behavior settings support."
+  "configuration-fields.behaviorUnsupported": "Project settings require a server with project behavior settings support.",
+  "configuration-fields.serviceTier.nativeDefault": "Native default",
+  "configuration-fields.serviceTier.fast": "Fast mode",
+  "configuration-fields.serviceTier.custom": "Custom service tier",
+  "configuration-fields.serviceTier.guidance": "Fast mode depends on native model and account availability and can use more subscription usage. Selecting it does not confirm entitlement, billing or measured speed.",
+  "configuration-fields.serviceTier.learn": "Official Fast mode guidance"
 }

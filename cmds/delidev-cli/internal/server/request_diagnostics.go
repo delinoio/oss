@@ -78,12 +78,12 @@ func projectNativeDiagnostic(tx *store.Tx, input domain.ExecutionJobInput, event
 	var value domain.RequestDiagnostic
 	var expected uint64
 	if event.Kind == domain.ExecutionThreadBound {
-		value = domain.RequestDiagnostic{ID: input.TurnRequestID, SessionID: input.SessionID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Source: domain.DiagnosticNativeInput, Operation: domain.DiagnosticInput, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: input.Configuration.Harness, InputID: input.InputID, NativeRequestID: string(input.TurnRequestID), NativeThreadID: event.NativeThreadID, RequestedEffort: domain.DiagnosticEffort(input.Configuration.Effort), RequestedServiceTier: domain.DiagnosticServiceTier(input.Configuration.Options.ServiceTier), ObservedAt: time.Now().UTC()}
+		value = domain.RequestDiagnostic{ID: input.TurnRequestID, SessionID: input.SessionID, ExecutionID: input.ExecutionID, AccountID: input.AccountID, ConnectionID: input.ConnectionID, ProviderID: input.Configuration.ProviderID, SubscriptionService: input.Configuration.SubscriptionService, ModelID: input.Configuration.ModelID, Source: domain.DiagnosticNativeInput, Operation: domain.DiagnosticInput, State: domain.DiagnosticInProgress, Purpose: domain.ConversationUsage, Harness: input.Configuration.Harness, InputID: input.InputID, NativeRequestID: string(input.TurnRequestID), NativeThreadID: event.NativeThreadID, RequestedEffort: domain.DiagnosticEffort(input.Configuration.Effort), RequestedServiceTier: domain.DiagnosticNativeServiceTier(input.Configuration.Harness, input.Configuration.Options.ServiceTier), ObservedAt: time.Now().UTC()}
 		if event.Observed.Effort != nil {
 			value.EffectiveEffort = domain.DiagnosticEffort(*event.Observed.Effort)
 		}
 		if event.Observed.ServiceTier != nil {
-			value.EffectiveServiceTier = domain.DiagnosticServiceTier(*event.Observed.ServiceTier)
+			value.EffectiveServiceTier = domain.DiagnosticNativeServiceTier(input.Configuration.Harness, *event.Observed.ServiceTier)
 		}
 	} else {
 		var err error

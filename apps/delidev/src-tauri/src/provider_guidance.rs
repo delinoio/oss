@@ -8,6 +8,7 @@ use crate::NativeFailure;
 pub enum GuidanceAction {
     Documentation,
     ApiKeys,
+    CodexFast,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,6 +47,10 @@ pub fn destination(preset: &str, action: GuidanceAction) -> Result<String, Nativ
     let target = match action {
         GuidanceAction::Documentation => entry.documentation,
         GuidanceAction::ApiKeys => entry.key_creation_url,
+        GuidanceAction::CodexFast if preset == "openai" => {
+            "https://learn.chatgpt.com/docs/agent-configuration/speed".into()
+        }
+        GuidanceAction::CodexFast => return Err(NativeFailure::InvalidInput),
     };
     let url = url::Url::parse(&target).map_err(|_| NativeFailure::InvalidInput)?;
     if url.scheme() != "https"
@@ -105,5 +110,23 @@ mod tests {
             "https://docs.ollama.com/api/openai-compatibility"
         );
         assert!(serde_json::from_str::<GuidanceAction>("\"arbitrary\"").is_err());
+    }
+    #[test]
+    fn codex_fast_guidance_is_one_fixed_official_destination() {
+        assert_eq!(
+            destination("openai", GuidanceAction::CodexFast).unwrap(),
+            "https://learn.chatgpt.com/docs/agent-configuration/speed"
+        );
+        for preset in [
+            "gemini",
+            "anthropic",
+            "https://untrusted.invalid",
+            "openai?secret",
+        ] {
+            assert_eq!(
+                destination(preset, GuidanceAction::CodexFast),
+                Err(NativeFailure::InvalidInput)
+            );
+        }
     }
 }

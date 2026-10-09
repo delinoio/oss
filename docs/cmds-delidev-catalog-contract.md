@@ -568,3 +568,9 @@ references contribute to the existing complete machine bound. Credentials and
 native ownership do not enter portable documents.
 
 The once-only automatic plan policy decision stays in the original server-owned interaction record. Public schema-1 Interaction JSON omits that private provenance so strict legacy Worker decoders continue to read the unchanged native request and queued response. Restart receipts retain the private first decision and original response ID.
+
+### Explicit Codex Fast mode — issue #1961
+
+Agent Worker configuration presents Native default, Fast mode and Custom service tier through the shared legacy and ordered-source form. Native default explicitly omits `options.service_tier`; Fast saves exact `fast`. Existing other nonempty strings select Custom and remain exact, including whitespace, until edited. Opening the editor never changes absent, empty or null values. Custom entry retains the existing bound. Other harnesses retain disabled saved values and the original explicit clearing action; source/loading/save admission gates remain owned by the existing wizard/editor.
+
+Fast is an explicit native Codex request for API and ChatGPT subscription sources, subject to original model/account availability. The localized control links [official guidance](https://learn.chatgpt.com/docs/agent-configuration/speed) and explains potentially higher subscription usage without a fixed billing multiplier, entitlement or speed claim. Saving grants no native support. No account defaults, session switches, feature flag, version gate, protocol allocation or migration are added. Immutable execution and continuation configurations retain their original tier after Worker edits. Existing applied-setting verification rejects null/different native tiers before input and never downgrades or retries with defaults.
