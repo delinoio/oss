@@ -3534,3 +3534,5 @@ The Quit presenter remains mounted at the original Local/Saved desktop-window li
 Final silent-zero admission checks the captured scope set and Local revision while holding the product registry lock, then fences registry publication before ExitRequested. Changed scopes require unknown confirmation; queued New Window cannot enter between the last check and the shutdown fence.
 
 Linux native Quit fallback is retained and waited by the joined original confirmation task. Its child installs a parent-death signal before exec and rechecks the original parent, retaining crash/forced-exit containment independently of ordinary Quit joining.
+
+One Quit presenter precedes the Desktop connection-context gate and stays mounted through original role discovery. Pending or failed context has unknown readiness and supports checking/Cancel without a transport; resolved Local/Saved children publish their current observation transport to this same owner.

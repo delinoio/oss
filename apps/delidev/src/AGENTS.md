@@ -924,3 +924,5 @@ Backup inspection pauses all three background inventory/history readers and refr
 - Settings search uses one `minmax(0, 1fr)` header grid column under issue #2117. Keep the input aligned with the full available header/category content width within 1 CSS pixel, including 260px and 190px widths; preserve original padding, scrolling, input identity, query/focus/IME and compact drawer ownership.
 
 - The Quit presenter lives in each Local/Saved desktop window above connection gates. Missing or disconnected transports report unknown without mounting business providers; keep Cancel and native-attempt observation active on connection pages.
+
+- The original Desktop Quit presenter precedes connection-context discovery and retains one lifetime through role and transport resolution. Local/Saved children publish only their current verified observation transport; unknown role/context cannot prevent Cancel or acquire RPC authority.

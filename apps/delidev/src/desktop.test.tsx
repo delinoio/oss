@@ -347,3 +347,18 @@ it("keeps ownership conflict guidance consistent in startup diagnostics and expl
   }
   await act(() => i18n.changeLanguage("en"));
 });
+
+it("keeps original Quit checking and Cancel before native context resolves",async()=>{
+ const id=newRequestId();
+ bridge.invoke.mockImplementation(async(command:string)=>{
+  if(command==="connection_context")return new Promise(()=>{});
+  if(command==="read_quit_attempt")return {id,checking:true,unknown:true,count:"0",present:true,observe:true};
+  return undefined;
+ });
+ render(<Desktop/>);
+ await screen.findByText("Checking session status…");
+ await waitFor(()=>expect(bridge.invoke).toHaveBeenCalledWith("observe_quit_attempt",{id,count:null}));
+ fireEvent.click(screen.getByRole("button",{name:"Cancel"}));
+ await waitFor(()=>expect(bridge.invoke).toHaveBeenCalledWith("decide_quit_attempt",{id,decision:"cancel"}));
+ expect(bridge.createTransport).not.toHaveBeenCalled();
+});

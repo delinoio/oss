@@ -2,11 +2,22 @@
 import { createClient, type Transport } from "@connectrpc/connect";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { SystemService } from "@delinoio/delidev-api-client";
 import { DialogSurface, Problem } from "./ui";
 import { copy, useLocale } from "./localization";
 import "./quit-confirmation.css";
+interface QuitConnection { transport?:Transport; ready:boolean }
+const QuitConnectionContext=createContext<((value:QuitConnection)=>void)|undefined>(undefined);
+/** The presenter precedes role discovery; transport ownership remains explicit. */
+export function QuitConnectionProvider({children}:{children:ReactNode}) {
+ const [connection,setConnection]=useState<QuitConnection>({ready:false});
+ return <QuitConnectionContext.Provider value={setConnection}><QuitConfirmation {...connection}/>{children}</QuitConnectionContext.Provider>;
+}
+export function useQuitConnection(transport:Transport|undefined,ready:boolean) {
+ const publish=useContext(QuitConnectionContext);
+ useEffect(()=>{publish?.({transport,ready});return()=>publish?.({ready:false});},[publish,transport,ready]);
+}
 export interface QuitAttempt { id:string; checking:boolean; unknown:boolean; count:string; present:boolean; observe:boolean }
 export function validQuitCount(value:unknown):value is string { return typeof value==="string" && /^(0|[1-9][0-9]{0,38})$/.test(value) && BigInt(value)<1n<<128n; }
 export function QuitConfirmation({ ready, transport }: { ready:boolean; transport?:Transport }) {
