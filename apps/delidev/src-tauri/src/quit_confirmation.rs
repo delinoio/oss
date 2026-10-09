@@ -42,15 +42,19 @@ pub fn observers(
     }
     (selected, unknown)
 }
-pub fn parse_count(value: &str) -> Result<u64, ()> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CountError {
+    InvalidCount,
+}
+pub fn parse_count(value: &str) -> Result<u64, CountError> {
     if value.is_empty()
         || value.len() > 20
         || !value.bytes().all(|v| v.is_ascii_digit())
         || value.len() > 1 && value.starts_with('0')
     {
-        return Err(());
+        return Err(CountError::InvalidCount);
     }
-    value.parse().map_err(|_| ())
+    value.parse().map_err(|_| CountError::InvalidCount)
 }
 #[cfg(test)]
 mod tests {
