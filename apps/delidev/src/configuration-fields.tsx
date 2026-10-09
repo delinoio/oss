@@ -386,7 +386,7 @@ export function ProjectBehaviorFields({ data, change, active }: Pick<FieldsProps
  useLocale();
  const defaults = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: active });
  const values = defaults.data?.resources;
- const global = values?.length === 1 && !defaults.data?.nextPageToken && readableServerPreferences(values[0]) && !defaults.error ? document(values[0]) : values?.length === 0 ? newConfiguration(EntityKind.SETTINGS) : undefined;
+ const global = values?.length === 1 && !defaults.data?.nextPageToken && readableServerPreferences(values[0]) && !defaults.error ? document(values[0]) : values?.length === 0 && !defaults.data?.nextPageToken && !defaults.error ? newConfiguration(EntityKind.SETTINGS) : undefined;
  const overrides = object(data.settings);
  const set = (key: string, value: unknown) => change({ ...data, settings: { ...overrides, [key]: value } });
  const booleanField = (key: string, label: string) => {

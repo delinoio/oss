@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { ConnectError, Code, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -81,3 +81,32 @@ it("opens the exact sidebar project and retains its draft through a resource ref
  expect(name.value).toBe("Retained draft");
  expect(screen.getAllByRole("dialog")).toHaveLength(1);
  });
+
+
+it.each(["failed refresh", "incomplete empty page"])("does not project defaults from a cached empty Settings inventory after %s", async state => {
+ let invalid = false;
+ const transport = createRouterTransport(router => router.service(ResourceService, { listResources: () => {
+  if (invalid && state === "failed refresh") throw new ConnectError("Settings observation unavailable", Code.Unavailable);
+  return { resources: [], nextPageToken: invalid ? "original-continuation" : "" };
+ } }));
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ function Fixture() {
+  const [data, setData] = useState<Document>({ name: "retained draft", settings: { automatic_plan_approval: "disabled" } });
+  return <><ProjectBehaviorFields data={data} change={setData} active /><output aria-label="retained project">{JSON.stringify(data)}</output></>;
+ }
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Fixture /></QueryClientProvider></TransportProvider>);
+ await screen.findByText("Effective value: sequential-exhaustion");
+ const fetch = screen.getByLabelText("Allow automatic fetch before Worktree preparation");
+ const policy = screen.getByLabelText("Pull request remediation policy");
+ expect((screen.getByRole("option", { name: "Project override" }) as HTMLOptionElement).disabled).toBe(false);
+ invalid = true;
+ await client.invalidateQueries();
+ await waitFor(() => expect((screen.getByRole("option", { name: "Project override" }) as HTMLOptionElement).disabled).toBe(true));
+ expect(screen.getAllByText("Effective value: Unavailable")).toHaveLength(2);
+ expect(screen.getByText("Effective value: Disabled")).toBeTruthy();
+ expect(screen.getByLabelText("Allow automatic fetch before Worktree preparation")).toBe(fetch);
+ expect(screen.getByLabelText("Pull request remediation policy")).toBe(policy);
+ expect(screen.getByLabelText("retained project").textContent).toBe('{"name":"retained draft","settings":{"automatic_plan_approval":"disabled"}}');
+ fireEvent.change(policy, { target: { value: "explicit" } });
+ expect(screen.getByLabelText("retained project").textContent).not.toContain('"remediation"');
+});
