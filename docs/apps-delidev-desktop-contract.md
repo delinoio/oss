@@ -440,7 +440,44 @@ Generated authenticated Connect Query reads keep independent project-catalog, un
 
 Append accepted rows in server order and deduplicate by original Resource ID, preserving exact bigint revisions. Empty batches with a new continuation remain traversable; absent continuation stops, and repeated/non-advancing tokens produce a stable failure with explicit Reload list. The empty global project selector remains unfiltered. Only an original empty parent is General Chat; off-catalog parents retain `Project · <UUID>` fallback groups. When a later catalog batch names a fallback, retain its rows, expansion and selection until an authoritative named read accepts success. Equal display names never merge identities. A collapsed/unqueried group is not an empty scope.
 
-Home deliberately has **no application row-count cap or Search-only cutoff**. Retained navigation projections contain original IDs/project IDs, exact revisions, names, workspace/execution/archive values and safe title-state descriptions only, alongside accepted page boundaries/continuations. Metadata grows with inventory reached; total Home memory is not constant-bounded. Full Resource documents do not accumulate, and each projected batch query is disposed after its read. One small active invalidation observer per scope refreshes the accepted chain. Ordinary queries retain the existing eight-extra-inactive-payload policy; in-flight requests are protected until settlement. Keep the 100 expanded-project and 50 collapsed-fallback identity bounds; obsolete single-page and 50-project-cursor storage is replaced by accepted Home chains. Collapsing a group retains accepted metadata.
+Home deliberately has **no application row-count cap or Search-only cutoff**. Retained navigation projections contain original IDs/project IDs, exact revisions, names, workspace/execution/archive values, safe title-state descriptions and the validated closed conversation kind/direct parent ID only, alongside accepted page boundaries/continuations. Metadata grows with inventory reached; total Home memory is not constant-bounded. Full Resource documents do not accumulate, and each projected batch query is disposed after its read. One small active invalidation observer per scope refreshes the accepted chain. Ordinary queries retain the existing eight-extra-inactive-payload policy; in-flight requests are protected until settlement. Keep the 100 expanded-project and 50 collapsed-fallback identity bounds; obsolete single-page and 50-project-cursor storage is replaced by accepted Home chains. Collapsing a group retains accepted metadata.
+
+
+Issues #1955/#1954 add a loaded conversation forest within each displayed named,
+fallback or General Chat scope. Retain only the original direct parent ID and
+closed Unknown/General Chat/Work session/Fork/Side Chat presentation kind. Validate
+provenance once while projecting the authenticated Session document. A nonempty
+object Side Chat parent snapshot marker takes precedence over independent Fork
+metadata; malformed markers, invalid parent IDs and unknown workspaces remain
+Unknown. These relationship hints grant no execution, account, native or cleanup
+authority; never accumulate complete Fork snapshots or Resource bodies.
+
+Nest each accepted child under its loaded direct parent, preserving accepted
+server order for roots and siblings and rendering each ID once. Off-page,
+filtered, deleted or cross-scope parents leave reachable roots without backfill
+reads or synthetic rows. Break self/cycle presentation links without rewriting
+provenance. Use semantic nested lists, separate disclosure/navigation buttons,
+and 12px indentation capped visually at 36px while retaining full nesting.
+Newly encountered parents start expanded. Explicit choices stay in connection
+memory across refresh, filters, regrouping and same-identity reconnect, and reset
+with the connection identity or app process. Opening a descendant reveals its
+loaded ancestors and containing group. Collapse changes visibility only; move
+hidden descendant focus to its original parent disclosure. Restore surviving
+visible row/action focus by original identity after regrouping. Preserve accepted
+paging, scroll, selection, drafts and exact revision-checked row actions.
+
+General Chat, ordinary Local/Worktree sessions, independent Forks and Side Chats
+use distinct repository-owned outline bubble, terminal rectangle, branching path
+and paired-bubble glyphs. Keep currentColor and the 14px row glyph, 32px row height,
+status/archive indicators, title state and selection styling. Accessible row
+descriptions include the localized conversation kind. Hover cards retain the
+original workspace text and workspace glyph. Sidebar Side Chat activation keeps
+the canonical original parent/child tab route and child highlight; independent
+Fork activation remains separate. Parent deletion preserves independent Fork
+lifetime, and Side Chat cleanup remains server-owned under its existing contract.
+This presentation adds no creation entry, RPC, allocation, migration, native
+support, feature flag or saved preference. Fixtures do not prove packaged CEF,
+real-account or platform acceptance.
 
 Active, visible global and expanded named scopes refresh every 15 seconds, reading only as many ranges as already accepted. Refresh uses accepted request tokens verbatim and retains those opaque continuations while validating continuation presence (including final exhaustion) and the end-row identity of nonterminal ranges; cursor-expiry renewal alone is allowed, and boundary drift retains the accepted chain and offers scope-local Reload list. It never discovers an unseen trailing range. Commit successful refresh ranges atomically, and preserve previous rows with a previous-data label after failure. Read failures stop automatic retries. Global-session failure/previous-data notices and recovery stay outside the General Chat disclosure, because global-derived fallback rows can remain visible while General Chat is collapsed. Retry repeats the exact failed scope/token, including a failed refresh range; changed refresh boundaries require explicit Reload list. Typed expiry is `clientFailure(error).code === FailureCode.CursorExpired`, never a numeric status guess. Reload reads that scope's first token and replaces the stale chain only after accepted success; other scopes, selected conversation and drafts remain intact. Distinguish first/additional loading, successful exhaustion, permission denial, connection failure and previous data. Additional loading appears at its continuation; successful exhaustion shows no routine completion notice. The mounted anchor remains, and exhausted empty copy is **No projects loaded.** or **No conversations loaded.** No First/Next page-replacement controls or invented totals are present. The shared keyboard Load more fallback remains available.
 

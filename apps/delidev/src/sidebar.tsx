@@ -15,7 +15,7 @@ import { useShortcutHelp, useGlobalShortcutAria } from "./shortcut-provider";
 import { ShortcutId } from "./shortcuts";
 import type { SettingsNavigationEntry } from "./settings";
 import { ScrollContinuation } from "./scroll-continuation";
-import { HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
+import { ConversationKind, conversationForest, revealConversation, HomeNavigation, ReadStage, type NavigationRow } from "./home-navigation";
 import { HomeScope, useNavigationQuery } from "./home-navigation-query";
 import { ServerPresentationKind, type ServerPresentation } from "./server-presentation";
 import { SessionHoverCard, SessionHoverProvider, useSessionHover } from "./session-hover-card";
@@ -53,6 +53,8 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
     case "branch": return <svg {...common}><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10a4 4 0 0 0 4 4h6M18 17V9a4 4 0 0 0-4-4h-2"/></svg>;
     case "computer": return <svg {...common}><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg>;
     case "chat": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M8 9h8M8 13h5"/></svg>;
+    case "work-session": return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>;
+    case "sidechat": return <svg {...common}><path d="M3 4h13v10H7l-4 3zM16 8h5v12l-4-3h-6v-3"/></svg>;
     case "chat-plus": return <svg {...common}><path d="M4 5h16v12H9l-5 4z"/><path d="M12 8v6M9 11h6"/></svg>;
     case "help":
     case "unknown": return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.3 2.3 0 1 1 4.3 1.2c-.9 1.1-2.1 1.2-2.1 3M12 17h.01"/></svg>;
@@ -150,11 +152,12 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const titleState = titlePresentation?.label;
   const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
-  const description = copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
+  const kindLabel = copy(conversationKindLabels[row.conversationKind ?? ConversationKind.Unknown]);
+  const description = `${kindLabel}. ` + copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
   const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
   return <div className="sidebar-session-container">
-    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); if(row.sidechatParent)open(row.id,row.sidechatParent,row.name);else open(row.id); }}>
-      <Icon name={workspaceIcon} className="sidebar-workspace-icon" />
+    <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} data-conversation-kind={row.conversationKind ?? ConversationKind.Unknown} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); if(row.sidechatParent)open(row.id,row.sidechatParent,row.name);else open(row.id); }}>
+      <Icon name={conversationKindIcons[row.conversationKind ?? ConversationKind.Unknown]} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title">{title}</span>
       {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
@@ -173,8 +176,73 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   </div>;
 }
 
-function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, open, active, root }: {
-  projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+const conversationKindLabels = {
+  [ConversationKind.Unknown]: "sidebar.conversationUnknown", [ConversationKind.GeneralChat]: "sidebar.conversationGeneralChat",
+  [ConversationKind.WorkSession]: "sidebar.conversationWorkSession", [ConversationKind.Fork]: "sidebar.conversationFork", [ConversationKind.Sidechat]: "sidebar.conversationSidechat",
+} as const;
+const conversationKindIcons = {
+  [ConversationKind.Unknown]: "unknown", [ConversationKind.GeneralChat]: "chat", [ConversationKind.WorkSession]: "work-session",
+  [ConversationKind.Fork]: "branch", [ConversationKind.Sidechat]: "sidechat",
+} as const;
+
+export function ConversationForest({ rows, home, selected, activation = 0, open }: { rows: readonly NavigationRow[]; home: HomeNavigation; selected: string; activation?: number; open: (id: string, parent?: string, name?: string) => void }) {
+  useLocale();
+  const roots = useMemo(() => conversationForest(rows), [rows]);
+  const contentPrefix = useId();
+  const container = useRef<HTMLUListElement>(null);
+  const focus = useRef<{ id: string; selector: string; element: HTMLElement } | undefined>(undefined);
+  const revealed = useRef<string>("");
+  const [, update] = useState(0);
+  useLayoutEffect(() => {
+    const selection = `${activation}:${selected}`;
+    if (revealed.current === selection) return;
+    const pending = [...roots]; let found = false;
+    while (pending.length) { const node = pending.pop()!; if (node.row.id === selected) { found = true; break; } for (const child of node.children) pending.push(child); }
+    if (!found) return;
+    revealed.current = selection;
+    if (revealConversation(roots, selected, home.collapsedConversations)) update(value => value + 1);
+  }, [selected, activation, home, roots]);
+  useLayoutEffect(() => {
+    const original = focus.current;
+    if (!original || original.element.isConnected || document.activeElement !== document.body) return;
+    const row = [...(container.current?.querySelectorAll<HTMLElement>("[data-conversation-node]") ?? [])].find(node => node.dataset.conversationNode === original.id);
+    const control = row?.querySelector(":scope > .sidebar-conversation-line")?.querySelector<HTMLElement>(original.selector);
+    if (control) {
+      let concealed = control.closest("ul[hidden]");
+      if (!concealed) control.focus({ preventScroll: true });
+      else {
+        while (concealed.parentElement?.closest("ul[hidden]")) concealed = concealed.parentElement.closest("ul[hidden]")!;
+        concealed.parentElement?.querySelector<HTMLButtonElement>(".sidebar-conversation-disclosure")?.focus({ preventScroll: true });
+      }
+    }
+  }, [roots]);
+  const elements = new Map<string, ReactNode>();
+  const pending = roots.map(node => ({ node, depth: 0, visited: false }));
+  while (pending.length) {
+    const entry = pending.pop()!, { node, depth } = entry;
+    if (!entry.visited) { pending.push({ ...entry, visited: true }); for (const child of [...node.children].reverse()) pending.push({ node: child, depth: depth + 1, visited: false }); continue; }
+    const expanded = !home.collapsedConversations.has(node.row.id);
+    elements.set(node.row.id, <li key={node.row.id} data-conversation-node={node.row.id}>
+      <div className="sidebar-conversation-line" style={{ paddingLeft: Math.min(depth * 12, 36) }}>
+        {node.children.length ? <DisclosureButton density={DisclosureDensity.Compact} aria-controls={`${contentPrefix}-${node.row.id}`} className="sidebar-conversation-disclosure" aria-label={copy("sidebar.conversationChildren", { name: node.row.name })} aria-expanded={expanded} onClick={event => {
+          if (expanded) { const li = event.currentTarget.closest("li"); if ([...(li?.children ?? [])].find(child => child.tagName === "UL")?.contains(document.activeElement)) event.currentTarget.focus({ preventScroll: true }); home.collapsedConversations.add(node.row.id); }
+          else home.collapsedConversations.delete(node.row.id);
+          update(value => value + 1);
+        }} /> : <span className="sidebar-conversation-disclosure-spacer" />}
+        <SessionRow row={node.row} selected={selected === node.row.id} open={(id, parent, name) => { revealConversation(roots, id, home.collapsedConversations); update(value => value + 1); if (parent) open(id, parent, name); else open(id); }} />
+      </div>
+      {node.children.length ? <ul id={`${contentPrefix}-${node.row.id}`} hidden={!expanded}>{node.children.map(child => elements.get(child.row.id))}</ul> : null}
+    </li>);
+  }
+  return <ul className="sidebar-conversation-forest" ref={container} onFocusCapture={event => {
+    const element = event.target as HTMLElement, node = element.closest<HTMLElement>("[data-conversation-node]");
+    const selector = element.matches("[data-session-id]") ? "[data-session-id]" : element.matches(".sidebar-session-more") ? ".sidebar-session-more" : element.matches(".sidebar-conversation-disclosure") ? ".sidebar-conversation-disclosure" : undefined;
+    if (node && selector) focus.current = { id: node.dataset.conversationNode!, selector, element };
+  }}>{roots.map(node => elements.get(node.row.id))}</ul>;
+}
+
+function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, activation, open, active, root }: {
+  projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; activation: number; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
 }) {
   useLocale();
   const sessions = useNavigationQuery(home.project(projectId), HomeScope.Sessions, projectId, includeArchived, active && !fallback);
@@ -183,14 +251,14 @@ function ProjectSessions({ projectId, label, fallback = false, fallbackRows, hom
     {!fallback ? <QueryProblem query={sessions} label={copy("sidebar.sessions_f70c94", { v0: label })} retryLabel={copy("sidebar.retrySessions_66ea21", { v0: label })} /> : null}
     {fallback ? <p className="sidebar-fallback-explanation">{copy("sidebar.projectDetailsAreNotInThe_ba6cdd")}</p> : null}
     {!fallback && !sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status"><LocalizedText id="sidebar.loadingSessions_bd5fbc" components={{ s0: <>{label}</> }} /></p> : null}
-    {rows.map((row) => <SessionRow key={row.id} row={row} selected={selected === row.id} open={open} />)}
+    <ConversationForest rows={rows} home={home} selected={selected} activation={activation} open={open} />
     {!fallback && sessions.loaded && !sessions.error && rows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
     <ScrollContinuation showInitial={false} showErrors={false} query={sessions} label={copy("sidebar.sessions_f70c94", { v0: label })} root={root} active={active && !fallback} />
   </div>;
 }
 
-function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, newSession, projectSelectionBlocked, home, includeArchived, selected, open, active, root }: {
-  projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
+function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], expanded, toggle, newSession, projectSelectionBlocked, home, includeArchived, selected, activation, open, active, root }: {
+  projectId: string; label: string; fallback?: boolean; fallbackRows?: NavigationRow[]; expanded: boolean; toggle: () => void; home: HomeNavigation; includeArchived: boolean; selected: string; activation: number; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
   newSession: (projectId: string) => void; projectSelectionBlocked: boolean;
 }) {
   const disclosureContentId1 = useId();
@@ -201,12 +269,12 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
     </DisclosureButton>
     {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: projectId })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
     {!fallback ? <ProjectSettingsMenu projectId={projectId} label={label} active={active} /> : null}
-    <DisclosureContent id={disclosureContentId1} hidden={!expanded}>{expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} open={open} active={active} root={root} /> : null}</DisclosureContent>
+    <DisclosureContent id={disclosureContentId1} hidden={!expanded}>{expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} activation={activation} open={open} active={active} root={root} /> : null}</DisclosureContent>
   </section>;
 }
 
-export function Sidebar({ openCommandMenu, surface, selectedSessionId, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
+export function Sidebar({ openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
@@ -313,6 +381,17 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, serverPre
   }, [sessions.rows]);
   const fallbackGroups = useMemo(() => new Map([...globalGroups].filter(([id]) => id && !knownProjectIds.has(id))), [knownProjectIds, globalGroups]);
   const generalRows = useMemo(() => sessions.rows.filter((row) => !row.projectId), [sessions.rows]);
+  const revealedGroup = useRef("");
+  useLayoutEffect(() => {
+    const selection = `${selectedSessionActivation}:${selectedSessionId}`;
+    if (revealedGroup.current === selection) return;
+    const row = sessions.rows.find(row => row.id === selectedSessionId) ?? [...home.projects.values()].flatMap(chain => chain.getSnapshot().rows).find(row => row.id === selectedSessionId);
+    if (!row) return;
+    revealedGroup.current = selection;
+    if (!row.projectId) setGeneralExpanded(true);
+    else if (knownProjectIds.has(row.projectId)) setExpandedProjects(current => { const next = new Set(current).add(row.projectId); while (next.size > 100) next.delete(next.values().next().value!); return next; });
+    else setCollapsedFallbacks(current => { const next = new Set(current); next.delete(row.projectId); return next; });
+  }, [selectedSessionId, selectedSessionActivation, sessions.rows, knownProjectIds, home]);
   const showNewProjectTooltip = () => {
     const rect = newProjectButton.current?.getBoundingClientRect();
     if (!rect) return;
@@ -399,14 +478,14 @@ export function Sidebar({ openCommandMenu, surface, selectedSessionId, serverPre
         <QueryProblem query={sessions} label={copy("sidebar.sessions_1225ae")} retryLabel={copy("sidebar.retryGlobalSessions_4d93c1")} />
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
         {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
-        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedSessionId} open={chooseSession} active={active} root={list} />)}
+        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedSessionId} activation={selectedSessionActivation} open={chooseSession} active={active} root={list} />)}
         <ScrollContinuation showInitial={false} showErrors={false} query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat has-new-session">
           <DisclosureButton aria-controls={disclosureContentId3} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span></DisclosureButton>
           <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newGeneralChat")} aria-label={copy("sidebar.newGeneralChat")} onClick={(event) => { event.currentTarget.focus(); newGeneralChat(); setDrawerOpen(false); }}><Icon name="plus" /></button>
           <DisclosureContent id={disclosureContentId3} hidden={!generalExpanded}>{generalExpanded ? <>
             {!sessions.loaded && !sessions.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingSessions_c4141f")}</p> : null}
-            {generalRows.map((row) => <SessionRow key={row.id} row={row} selected={selectedSessionId === row.id} open={chooseSession} />)}
+            <ConversationForest rows={generalRows} home={home} selected={selectedSessionId} activation={selectedSessionActivation} open={chooseSession} />
             {sessions.loaded && !sessions.error && generalRows.length === 0 && !sessions.nextPageToken ? <p className="sidebar-empty">{copy("sidebar.noConversationsLoaded_b94bd7")}</p> : null}
             <ScrollContinuation showInitial={false} showErrors={false} query={sessions} label={copy("sidebar.sessions_1225ae")} root={list} active={active && generalExpanded} />
           </> : null}</DisclosureContent>

@@ -26,7 +26,7 @@ it("retains more than 5,000 projected rows with original identity/revision and n
     for (const entry of page.rows) {
       expect(entry).not.toHaveProperty("documentJson");
       expect(entry).not.toHaveProperty("private_content");
-      expect(Object.keys(entry)).toEqual(["id", "projectId", "revision", "name", "workspace", "outcome", "archive", "title"]);
+      expect(Object.keys(entry)).toEqual(["id", "projectId", "revision", "name", "workspace", "outcome", "archive", "title", "conversationKind"]);
     }
   }
 });
@@ -162,6 +162,6 @@ it("accepts opaque cursor renewal while refreshing only the original range token
 });
 
 it("retains only a valid original Sidechat parent hint and leaves independent Forks separate",()=>{
- const parent=newRequestId(),child=newRequestId();const value=(fork:object)=>navigationRow(create(ResourceSchema,{id:child,kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({name:"Child",fork})}));
+ const parent=newRequestId(),child=newRequestId();const value=(fork:object)=>navigationRow(create(ResourceSchema,{id:child,kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({name:"Child",workspace:"local",fork})}));
  const sidechat=value({source_session_id:parent,sidechat_parent_snapshot:{configuration:{private:"not retained"}}});expect(sidechat.sidechatParent).toBe(parent);expect(JSON.stringify({...sidechat,revision:String(sidechat.revision)})).not.toContain("private");expect(value({source_session_id:parent,snapshot:{}}).sidechatParent).toBeUndefined();expect(value({source_session_id:child,sidechat_parent_snapshot:{configuration:{}}}).sidechatParent).toBeUndefined();expect(value({source_session_id:"foreign",sidechat_parent_snapshot:{configuration:{}}}).sidechatParent).toBeUndefined();
 });

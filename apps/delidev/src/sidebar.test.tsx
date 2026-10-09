@@ -817,3 +817,41 @@ it("routes a retained Sidechat through its original parent hint without independ
  const parent=newRequestId();const child=resource(EntityKind.SESSION,"Retained child","",{workspace:"local",outcome:"stopped",archive:"active",fork:{source_session_id:parent,sidechat_parent_snapshot:{configuration:{}}}});
  const value=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:[child]})});fireEvent.click(await screen.findByRole("button",{name:/Local computer Retained child/}));expect(value.openSession).toHaveBeenCalledExactlyOnceWith(child.id,parent,"Retained child");
 });
+
+it("nests loaded Fork/Sidechat generations in accepted order and preserves typed activation",async()=>{
+ const p=resource(EntityKind.SESSION,"Parent","",{workspace:"general-chat",outcome:"running",archive:"active"});
+ const f=resource(EntityKind.SESSION,"Fork child","",{workspace:"general-chat",outcome:"stopped",archive:"active",fork:{source_session_id:p.id}});
+ const child=resource(EntityKind.SESSION,"Side child","",{workspace:"general-chat",outcome:"stopped",archive:"active",fork:{source_session_id:p.id,sidechat_parent_snapshot:{configuration:{}}}});
+ const g=resource(EntityKind.SESSION,"Grandchild","",{workspace:"general-chat",outcome:"stopped",archive:"active",fork:{source_session_id:f.id}});
+ const value=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:[g,child,p,f]})});
+ const grand=await screen.findByRole("button",{name:/General Chat Grandchild/});const parent=value.container.querySelector(`[data-conversation-node="${p.id}"]`)!;
+ expect([...[...parent.children].find(node=>node.tagName==="UL")!.children].map(n=>(n as HTMLElement).dataset.conversationNode)).toEqual([child.id,f.id]);expect(parent.querySelector(`[data-conversation-node="${f.id}"] > ul > li`)?.getAttribute("data-conversation-node")).toBe(g.id);
+ expect(value.container.querySelectorAll(`[data-session-id="${g.id}"]`)).toHaveLength(1);
+ const disclosure=screen.getByRole("button",{name:"Conversations beneath Parent"});grand.focus();fireEvent.click(disclosure);expect(disclosure.getAttribute("aria-expanded")).toBe("false");expect(document.activeElement).toBe(disclosure);expect(screen.queryByRole("button",{name:/General Chat Grandchild/})).toBeNull();expect(value.openSession).not.toHaveBeenCalled();
+ value.setProps({selectedSessionId:g.id});await waitFor(()=>expect(screen.getByRole("button",{name:/General Chat Grandchild/})).toBeTruthy());expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+ fireEvent.click(disclosure);value.setProps({selectedSessionId:g.id,selectedSessionActivation:1});await waitFor(()=>expect(disclosure.getAttribute("aria-expanded")).toBe("true"));
+ fireEvent.click(screen.getByRole("button",{name:/Side Chat.*Side child/}));expect(value.openSession).toHaveBeenLastCalledWith(child.id,p.id,"Side child");
+ fireEvent.click(screen.getByRole("button",{name:/Independent Fork.*Fork child/}));expect(value.openSession).toHaveBeenLastCalledWith(f.id);
+});
+it("regroups an orphan when its accepted parent arrives, retaining focus and collapse across refresh",async()=>{
+ const p=resource(EntityKind.SESSION,"Later parent","",{workspace:"general-chat",outcome:"running",archive:"active"});const f=resource(EntityKind.SESSION,"Retained orphan","",{workspace:"general-chat",outcome:"running",archive:"active",fork:{source_session_id:p.id}});let rows=[f];
+ const value=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:rows})});const orphan=await screen.findByRole("button",{name:/Retained orphan/});orphan.focus();rows=[f,p];await act(()=>value.client.invalidateQueries());await screen.findByRole("button",{name:"Conversations beneath Later parent"});
+ const moved=screen.getByRole("button",{name:/General Chat Retained orphan/});expect(document.activeElement).toBe(moved);expect(moved.closest("li")?.parentElement?.parentElement?.getAttribute("data-conversation-node")).toBe(p.id);expect(value.openSession).not.toHaveBeenCalled();
+ const disclosure=screen.getByRole("button",{name:"Conversations beneath Later parent"});fireEvent.click(disclosure);await act(()=>value.client.invalidateQueries());expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+ rows=[f];await act(()=>value.client.invalidateQueries());await waitFor(()=>expect(screen.getByRole("button",{name:/General Chat Retained orphan/})).toBeTruthy());expect(value.container.querySelectorAll(`[data-session-id="${f.id}"]`)).toHaveLength(1);
+});
+it("keeps distinct conversation glyphs, localized type descriptions and independent workspace/status",async()=>{
+ const parent=newRequestId();const rows=[resource(EntityKind.SESSION,"Same","",{workspace:"general-chat",outcome:"running",archive:"active"}),resource(EntityKind.SESSION,"Same","",{workspace:"local",outcome:"running",archive:"active"}),resource(EntityKind.SESSION,"Same","",{workspace:"worktree",outcome:"running",archive:"active"}),resource(EntityKind.SESSION,"Same","",{workspace:"general-chat",outcome:"running",archive:"active",fork:{source_session_id:parent}}),resource(EntityKind.SESSION,"Same","",{workspace:"general-chat",outcome:"running",archive:"active",fork:{source_session_id:parent,sidechat_parent_snapshot:{configuration:{}}}})];
+ const value=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:rows})});await screen.findByRole("button",{name:/Work session.*Local computer Same/});
+ const glyph=(id:string)=>value.container.querySelector(`[data-session-id="${id}"] > svg`)!.innerHTML;expect(glyph(rows[1]!.id)).toBe(glyph(rows[2]!.id));expect(new Set([rows[0],rows[1],rows[3],rows[4]].map(r=>glyph(r!.id))).size).toBe(4);
+ const icons=rows.map(r=>glyph(r.id));await act(()=>i18n.changeLanguage("ko"));expect(screen.getByRole("button",{name:/사이드 채팅.*Same/})).toBeTruthy();expect(screen.getAllByRole("button",{name:/작업 세션.*Same/})).toHaveLength(2);expect(rows.map(r=>glyph(r.id))).toEqual(icons);await act(()=>i18n.changeLanguage("en"));
+});
+
+it("retains semantic deep nesting after indentation caps and roots every cyclic row",async()=>{
+ const rows:Resource[]=[];for(let i=0;i<8;i++)rows.push(resource(EntityKind.SESSION,`Level ${i}`,"",{workspace:"general-chat",outcome:"running",archive:"active",...(i?{fork:{source_session_id:rows[i-1]!.id}}:{})}));
+ const a=resource(EntityKind.SESSION,"Cycle A","",{workspace:"general-chat",outcome:"running",archive:"active"}),b=resource(EntityKind.SESSION,"Cycle B","",{workspace:"general-chat",outcome:"running",archive:"active"});
+ a.documentJson=encode({name:"Cycle A",workspace:"general-chat",outcome:"running",archive:"active",fork:{source_session_id:b.id}});b.documentJson=encode({name:"Cycle B",workspace:"general-chat",outcome:"running",archive:"active",fork:{source_session_id:a.id}});
+ const value=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:[...rows,a,b]})});await screen.findByRole("button",{name:/General Chat Level 7/});
+ const last=value.container.querySelector(`[data-conversation-node="${rows[7]!.id}"]`)!;expect((last.firstElementChild as HTMLElement).style.paddingLeft).toBe("36px");let depth=0;for(let element=last.parentElement;element;element=element.parentElement)if(element.tagName==="UL"&&element.className!=="sidebar-conversation-forest")depth++;expect(depth).toBe(7);
+ for(const row of [a,b])expect(value.container.querySelector(`[data-conversation-node="${row.id}"]`)?.parentElement?.className).toBe("sidebar-conversation-forest");
+});

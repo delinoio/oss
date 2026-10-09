@@ -72,5 +72,11 @@
   "sidebar.sessionActionsRead": "Reading current session. Actions are unavailable until the read succeeds.",
   "sidebar.retrySessionActionsRead": "Retry session read",
   "sidebar.refreshSessionActions": "Refresh the current session before a new action",
-  "sidebar.fork": "Fork"
+  "sidebar.fork": "Fork",
+  "sidebar.conversationUnknown": "Unknown conversation",
+  "sidebar.conversationGeneralChat": "General Chat",
+  "sidebar.conversationWorkSession": "Work session",
+  "sidebar.conversationFork": "Independent Fork",
+  "sidebar.conversationSidechat": "Side Chat",
+  "sidebar.conversationChildren": "Conversations beneath {{name}}"
 }
