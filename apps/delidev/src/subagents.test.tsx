@@ -44,7 +44,7 @@ test("capability gates original session reads and paging never invokes child con
  const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
  const view = (revision: string) => <QueryClientProvider client={query}><TransportProvider transport={transport}><Subagents sessionId={session} revision={revision} /></TransportProvider></QueryClientProvider>;
  const mounted = render(view("1"));
- fireEvent.click(screen.getByText("Subagents"));
+ expect(screen.queryByText("Subagents")).toBeNull();
  await waitFor(() => expect(screen.getByRole("button", { name: "Load more Subagents" }).hasAttribute("disabled")).toBe(false));
  fireEvent.click(screen.getByRole("button", { name: "Load more Subagents" }));
  await waitFor(() => expect(reads).toContain("original-page"));
@@ -84,7 +84,7 @@ test.each(["codex", "opencode", "oversized", "malformed"])("composes validated c
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(<QueryClientProvider client={client}><TransportProvider transport={transport}><Subagents sessionId={session} revision="1" /></TransportProvider></QueryClientProvider>);
-    fireEvent.click(screen.getByText("Subagents"));
+    expect(screen.queryByText("Subagents")).toBeNull();
     const childCount = () => screen.queryAllByRole("row").filter(row => row.querySelector("td")).length;
     await waitFor(() => expect(childCount()).toBe(50));
     const more = screen.getByRole("button", { name: "Load more Subagents" });
@@ -120,7 +120,7 @@ test("keeps a failed child read halted across native revisions until explicit re
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = (revision: string) => <QueryClientProvider client={client}><TransportProvider transport={transport}><Subagents sessionId={session} revision={revision} /></TransportProvider></QueryClientProvider>;
   const mounted = render(view("1"));
-  fireEvent.click(screen.getByText("Subagents"));
+  expect(screen.queryByText("Subagents")).toBeNull();
   await screen.findByRole("button", { name: "Retry" });
   expect(tokens).toEqual([""]);
   mounted.rerender(view("2"));

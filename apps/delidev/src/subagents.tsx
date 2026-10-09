@@ -5,7 +5,7 @@ import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { EntityKind, ResourceQuery, SystemCapability, SystemQuery, type Resource } from "@delinoio/delidev-api-client";
 import { items, object, text } from "./documents";
@@ -38,14 +38,13 @@ function ChildRows({ rows }: { rows: readonly SubagentRow[] }) {
   </table>;
 }
 
-export function Subagents({ sessionId, revision }: { sessionId: string; revision: string }) {
+export function Subagents({ sessionId, revision, visible = true }: { sessionId: string; revision: string; visible?: boolean }) {
   useLocale();
   const active=useSessionActive();
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = status.data?.capabilities.includes(SystemCapability.SUBAGENT_OBSERVATION_V1) === true;
   const openCodeSupported = status.data?.capabilities.includes(SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1) === true;
-  const root = useRef<HTMLDetailsElement>(null);
-  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
   const validate = useCallback((resources: Resource[]) => { if (!validateSubagentPage(resources, sessionId)) throw new Error("The retained child page is unavailable."); }, [sessionId]);
   const query = useConversationPages(EntityKind.SUBAGENT, sessionId, supported, 50, validate);
   // Native events invalidate only this read. No observation can issue a child
@@ -59,16 +58,17 @@ export function Subagents({ sessionId, revision }: { sessionId: string; revision
     return pages.every((page): page is SubagentRow[] => page !== undefined) ? pages.flat() : undefined;
   }, [query.loaded, query.payloadPages, sessionId]);
   const needsOpenCodeUpdate = rows?.some(row => row.record.harness === "opencode") === true && !openCodeSupported;
-  return <Disclosure ref={root} className="conversation-page-scroll" onToggle={event => setOpen(event.currentTarget.open)}><DisclosureSummary>{copy("subagents.subagents_88296a")}</DisclosureSummary>
+  return <div ref={root} className="conversation-page-scroll">
     <p>{copy("subagents.readOnlyNativeHierarchyParentCompletion_036e57")}</p>
+    {status.isPending ? <p role="status">{copy("subagents.checkingCapability")}</p> : null}
     {status.error ? <Problem error={status.error} /> : null}
     {status.data && !supported ? <p>{copy("subagents.thisServerDoesNotSupportChild_0baf88")}</p> : null}
     {query.error ? <Failure failure={query.error?.failure} /> : null}
     {query.isPending && supported ? <p>{copy("subagents.loadingChildObservations_0a8d53")}</p> : null}
     {supported && (query.error && !query.loaded || query.data && !rows) ? unavailable() : null}
     {supported && rows?.length === 0 ? <p>{copy("subagents.noNativeChildObservationsAreAvailable_8c2be5")}</p> : null}
-    {needsOpenCodeUpdate ? <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p> : supported && rows && rows.length > 0 ? <div><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={query} root={root} active={open}>{payload => <SubagentRows rows={payload} sessionId={sessionId} />}</ScrollPayloadWindow></div> : null}
+    {needsOpenCodeUpdate ? <p>{copy("subagents.updateTheServerAndRunnerDevice_ac66cd")}</p> : supported && rows && rows.length > 0 ? <div><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={query} root={root} active={active && visible}>{payload => <SubagentRows rows={payload} sessionId={sessionId} />}</ScrollPayloadWindow></div> : null}
     <button disabled={!supported || query.isFetching} onClick={() => void query.refetch()}>{copy("subagents.refreshSubagents_1ffca1")}</button>
-    <ScrollContinuation query={query} root={root} active={open && supported && !needsOpenCodeUpdate} label={copy("subagents.subagents_88296a")} />
-  </Disclosure>;
+    <ScrollContinuation query={query} root={root} active={active && visible && supported && !needsOpenCodeUpdate} label={copy("subagents.subagents_88296a")} />
+  </div>;
 }

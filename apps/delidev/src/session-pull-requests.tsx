@@ -1,14 +1,13 @@
-import { useSessionActive, useSessionQuery as useQuery } from "./session-activity";
+import { SessionActivityProvider, useSessionActive, useSessionQuery as useQuery } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
-import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
-import { useId } from "react";
+import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { useStablePageRevisions, paginationError, invalidGitHubPage, resourceProjection, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import { EntityKind, FailureCode, ResourceQuery, SessionQuery, newRequestId, type Resource, type UnlinkSessionPullRequestRequest } from "@delinoio/delidev-api-client";
 import { document, items, text, type Document } from "./documents";
@@ -95,7 +94,7 @@ function LinkRow({ row, value, sessionId, refreshed }: { row: Resource; value: D
   </article>;
 }
 
-function RetainedLinks({ session }: { session: Resource }) {
+function RetainedLinks({ session, refreshOwner }: { session: Resource; refreshOwner: { current: () => void } }) {
   const active=useSessionActive();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
@@ -112,19 +111,27 @@ function RetainedLinks({ session }: { session: Resource }) {
   const list = usePaginationChain(session.id, active, reader);
   usePaginationRefresh(ResourceQuery.listResources, request(""), active && !blocked, list.refresh);
   const refresh = list.error ? list.error.stalled || list.error.failure.code === FailureCode.CursorExpired ? list.reload : list.retry : list.refresh;
+  useLayoutEffect(() => { refreshOwner.current = refresh; return () => { refreshOwner.current = () => undefined; }; }, [refresh, refreshOwner]);
   return <section ref={bindRoot} aria-label={copy("session-pull-requests.sessionPrAssociations_1143d2")}><p>{copy("session-pull-requests.associationsRemainAfterArchiveOrProblem_909961")}</p>
     <button disabled={Boolean(list.loading)} onClick={refresh}>{copy("session-pull-requests.refreshPrAssociations_2e9a89")}</button><Problem error={paginationError(list.error?.failure)} />{list.error && list.loaded ? <p>{copy("session-pull-requests.previousAssociationsAreShownRefreshFailed_8dbbd3")}</p> : null}
-    <PendingUnlinks sessionId={session.id} refreshed={refresh} />
     <ScrollPayloadWindow query={list} root={root} active={active && !blocked}>{(rows, projections) => { const ids = visiblePageIds(list.pages, projections); return rows.filter(row => ids.has(row.id)).map(row => <LinkRow key={row.id} row={row} value={readSessionPR(row, session.id)!} sessionId={session.id} refreshed={refresh} />); }}</ScrollPayloadWindow>
     {list.loaded && !list.rows.length ? <p>{copy("session-pull-requests.noPrAssociationsOnThisPage_83305f")}</p> : null}
     <ScrollContinuation query={list} root={root} active={active && !blocked} label={copy("session-pull-requests.sessionPrAssociations_1143d2")} />
-    {uuid(session.projectId) ? <LinkForm sessionId={session.id} projectId={session.projectId} refreshed={refresh} /> : <p>{copy("session-pull-requests.linkingAPrRequiresAProject_301f3d")}</p>}
   </section>;
 }
 
-export function SessionPullRequests({ session }: { session: Resource }) {
-  const disclosureContentId1 = useId();
+/** The primary Info section owns visibility; only its reader is disposable.
+ * Editors and uncertain requests remain mounted when that reader is closed. */
+export function SessionPullRequests({ session, visible = true }: { session: Resource; visible?: boolean }) {
   useLocale();
-  const [open, setOpen] = useState(false);
-  return <section><DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Details} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? copy("session-pull-requests.closePrAssociations_622b6a") : copy("session-pull-requests.showPrAssociations_8dbf45")}</DisclosureButton><DisclosureContent id={disclosureContentId1} hidden={!open}>{open ? <RetainedLinks key={session.id} session={session} /> : null}</DisclosureContent></section>;
+  const active = useSessionActive();
+  const refreshOwner = useRef<() => void>(() => undefined);
+  const refreshed = useCallback(() => refreshOwner.current(), []);
+  return <section>
+    {visible && active ? <RetainedLinks key={session.id} session={session} refreshOwner={refreshOwner} /> : null}
+    <PendingUnlinks sessionId={session.id} refreshed={refreshed} />
+    <SessionActivityProvider active={active && visible}>
+      {uuid(session.projectId) ? <LinkForm sessionId={session.id} projectId={session.projectId} refreshed={refreshed} /> : <p>{copy("session-pull-requests.linkingAPrRequiresAProject_301f3d")}</p>}
+    </SessionActivityProvider>
+  </section>;
 }

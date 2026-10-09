@@ -28,5 +28,15 @@
   "session-tools.workspacePreparationOperation_7d976d": "작업공간 준비 작업",
   "session-tools.workspaceRecoveryOperation_1c66c0": "작업 공간 복구 작업",
   "session-tools.executionRecoveryOperation_8fc7ad": "실행 복구 작업",
-  "session-tools.extra.6051f94ab1ce": "준비되지 않음"
+  "session-tools.extra.6051f94ab1ce": "준비되지 않음",
+  "session-tools.sessionId": "세션 ID",
+  "session-tools.workspace": "작업 공간",
+  "session-tools.result": "결과",
+  "session-tools.dispatch": "디스패치",
+  "session-tools.archive": "보관",
+  "session-tools.preparation": "준비",
+  "session-tools.recovery": "복구",
+  "session-tools.automaticTitle": "자동 제목",
+  "session-tools.notReported": "보고되지 않음",
+  "session-tools.unavailable": "사용 불가"
 }

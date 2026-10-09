@@ -52,7 +52,7 @@ import {
   ConnectionState, EntityKind, ResourceQuery, ResourceService, SessionAction, SessionQuery,
   SyncKind, newRequestId, synchronizeResources, clientFailure, supportsResourceSchema, type ClientFailure, type Resource,
 } from "@delinoio/delidev-api-client";
-import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace, workspaceNames } from "./documents";
+import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
@@ -66,7 +66,6 @@ import { SessionStorageAction } from "./session-storage";
 import { SessionPullRequests } from "./session-pull-requests";
 import { PendingQueueInputs, QueuedInput, type QueuedInputDraft } from "./queue";
 import { StartupRejection } from "./startup-rejection";
-import { sessionTitlePresentation } from "./session-title";
 
 function useSessionStream(id: string, active: boolean) {
   const transport = useTransport();
@@ -296,6 +295,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLDetailsElement>(null);
   const information = useRef<HTMLElement>(null);
+  const [prOpen, setPROpen] = useState(true), [subagentsOpen, setSubagentsOpen] = useState(true);
   const [infoReveal, setInfoReveal] = useState<{ target: InfoTarget }>();
   useLayoutEffect(() => {
     if (!infoReveal) return;
@@ -338,7 +338,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const browserAccountId = accountChanges.length
     ? text(object(accountChanges.at(-1)).account_id)
     : text(object(data.current_execution).account_id) || text(object(data.initial_execution).initial_account_id);
-  const titlePresentation = sessionTitlePresentation(data);
   const rows = useMemo(() => {
     // The stream records creation order. UUIDs from different Workers are not
     // an append sequence, even when each Worker generates UUID-v7 values.
@@ -470,8 +469,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     <header className="session-header">
       <div className="session-heading">
         <SessionHarness resource={session}><div className="session-heading-line"><h2>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
-        <p>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")} · {statusLabel(text(data.outcome))} · {statusLabel(text(data.dispatch))} · {statusLabel(text(data.archive))}</p>
-        {titlePresentation ? <p className="session-title-status" role="status">{titlePresentation.label}{titlePresentation.detail ? copy("session.message_2fa20b", { v0: titlePresentation.detail }) : ""}</p> : null}
       </div>
       <div className="session-controls" hidden={!embedded && tabs.tab.kind===SessionTabKind.Sidechat} inert={!embedded && tabs.tab.kind===SessionTabKind.Sidechat}>
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
@@ -501,7 +498,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <RunnerTaskRemediation active={conversationActive} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
-      <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}>{session ? <SessionTools resource={session} changed={setAcknowledged} initiallyOpen target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)} /> : null}</SessionActivityProvider>
+      {session ? <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
+          <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
+          {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
+          {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
+          <Problem error={control.error} />
+          <Problem error={send.error} />
+        </div></SessionTools></SessionActivityProvider> : null}
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
@@ -555,19 +558,12 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
       <div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />
-        <div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
-          <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
-          {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
-          {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
-          <Problem error={control.error} />
-          <Problem error={send.error} />
-        </div>
         {session ? <>
-          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.pullRequests")}</DisclosureSummary><SessionPullRequests key={id} session={session} /></Disclosure>
-          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.executionSettings")}</DisclosureSummary><ExecutionConfiguration resource={session} /></Disclosure>
-          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.context")}</DisclosureSummary><SessionContext key={id} session={session} /></Disclosure>
-          <Disclosure className="session-information-section"><DisclosureSummary>{copy("session.subagents")}</DisclosureSummary><Subagents key={id} sessionId={id} revision={session.revision.toString()} /></Disclosure>
-          <Disclosure ref={budgetDetails} className="session-information-section" tabIndex={-1}><DisclosureSummary>{copy("session.usageAndBudget")}</DisclosureSummary><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></Disclosure>
+          <Disclosure open className="session-information-section" onToggle={event => setPROpen(event.currentTarget.open)}><DisclosureSummary>{copy("session.pullRequests")}</DisclosureSummary><SessionPullRequests key={id} session={session} visible={prOpen} /></Disclosure>
+          <Disclosure open className="session-information-section"><DisclosureSummary>{copy("session.executionSettings")}</DisclosureSummary><ExecutionConfiguration resource={session} /></Disclosure>
+          <Disclosure open className="session-information-section"><DisclosureSummary>{copy("session.context")}</DisclosureSummary><SessionContext key={id} session={session} /></Disclosure>
+          <Disclosure open className="session-information-section" onToggle={event => setSubagentsOpen(event.currentTarget.open)}><DisclosureSummary>{copy("session.subagents")}</DisclosureSummary><Subagents key={id} sessionId={id} revision={session.revision.toString()} visible={subagentsOpen} /></Disclosure>
+          <Disclosure open ref={budgetDetails} className="session-information-section" tabIndex={-1}><DisclosureSummary>{copy("session.usageAndBudget")}</DisclosureSummary><NativeUsage session={session} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></Disclosure>
           <SessionStorageAction source={session} />
         </> : null}
       </div>

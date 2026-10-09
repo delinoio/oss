@@ -251,3 +251,31 @@ it("keeps exactly five workspace tools and no Info action in either locale", asy
   expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
   expect(f.enqueue).not.toHaveBeenCalled(); expect(f.rename).not.toHaveBeenCalled(); expect(f.control).not.toHaveBeenCalled();
 });
+
+it("keeps a compact header and all independent status/title evidence in the expanded inspector", async () => {
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{workspace:"worktree",outcome:"succeeded",dispatch:"ready",archive:"active",preparation:{state:"ready"},recovery:"none",name_mode:"automatic",title_state:"unsupported",title_reason:"worker-capability-absent"});
+ render(f.view());await screen.findByRole("heading",{name:"Original session"});
+ const header=document.querySelector(".session-header")!,info=screen.getByRole("complementary",{name:"Session information"});
+ expect(header.querySelector(".session-title-status")).toBeNull();expect(header.textContent).not.toContain("Succeeded");expect(header.textContent).not.toContain("Title generation unsupported");
+ const values=info.querySelector(".session-status-values")!;
+ expect([...values.querySelectorAll("dt")].map(node=>node.textContent)).toEqual(["Session ID","Workspace","Result","Dispatch","Archive","Preparation","Recovery","Automatic title"]);
+ expect([...values.querySelectorAll("dd")].slice(0,7).map(node=>node.textContent)).toEqual([f.session.id,"Worktree","succeeded","ready","active","ready","none"]);
+ expect(values.textContent).toContain("The original Worker did not prove the required title capability.");
+ expect(info.querySelector(".session-tools")).toHaveProperty("open",true);expect([...info.querySelectorAll(".session-information-section")].every(node=>(node as HTMLDetailsElement).open)).toBe(true);
+ expect(info.querySelectorAll(".session-information-section")).toHaveLength(5);
+ expect(screen.queryByRole("button",{name:"Show PR associations"})).toBeNull();
+ expect(info.querySelector(".execution-configuration")?.tagName).toBe("DIV");expect(info.querySelector(".conversation-page-scroll")?.tagName).toBe("DIV");
+ expect(f.control).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it("retains primary section choices and editor/input identities across tools and locale changes",async()=>{
+ const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});
+ const info=screen.getByRole("complementary",{name:"Session information"});
+ const execution=[...info.querySelectorAll<HTMLDetailsElement>(".session-information-section")].find(node=>node.querySelector(".execution-configuration"))!;
+ const projection=info.querySelector(".execution-configuration");
+ await act(async()=>{execution.open=false;fireEvent(execution,new Event("toggle"));});
+ fireEvent.click(screen.getByRole("button",{name:"Files"}));expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
+ await act(async()=>{await i18n.changeLanguage("ko");});expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
+ await act(async()=>{await i18n.changeLanguage("en");});fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);
+ expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
+});

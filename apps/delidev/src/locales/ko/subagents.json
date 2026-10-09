@@ -31,5 +31,6 @@
   "subagents.refreshSubagents_1ffca1": "하위 에이전트 새로고침",
   "subagents.firstChildPage_6cf629": "첫 하위 항목 페이지",
   "subagents.nextChildPage_a95c32": "다음 하위 항목 페이지",
-  "subagents.extra.ca1844969742": "확인할 수 없음"
+  "subagents.extra.ca1844969742": "확인할 수 없음",
+  "subagents.checkingCapability": "하위 관찰 사용 가능 여부 확인 중…"
 }

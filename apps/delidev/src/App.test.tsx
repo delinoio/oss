@@ -902,16 +902,14 @@ it("retries the exact accepted message identity after uncertainty instead of sen
   expect(calls[0][0]).toEqual(calls[1][0]);
 });
 
-it("opens execution configuration without changing the unsent session draft or dispatching work", async () => {
+it("shows expanded execution configuration without changing the unsent session draft or dispatching work", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: /General Chat Retained session/ }));
   const composer = await screen.findByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Keep the original unsent draft" } });
-  fireEvent.click(screen.getByText("Execution settings"));
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
+  expect(screen.getByText("Execution settings").closest("details")?.open).toBe(true);
   expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();
-  fireEvent.click(screen.getByText("Execution configuration and instructions"));
   expect((composer as HTMLTextAreaElement).value).toBe("Keep the original unsent draft");
   expect(value.controls).not.toHaveBeenCalled();
   expect(value.enqueues).not.toHaveBeenCalled();

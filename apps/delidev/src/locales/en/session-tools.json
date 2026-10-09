@@ -28,5 +28,15 @@
   "session-tools.workspacePreparationOperation_7d976d": "Workspace preparation operation",
   "session-tools.workspaceRecoveryOperation_1c66c0": "Workspace recovery operation",
   "session-tools.executionRecoveryOperation_8fc7ad": "Execution recovery operation",
-  "session-tools.extra.6051f94ab1ce": "Not prepared"
+  "session-tools.extra.6051f94ab1ce": "Not prepared",
+  "session-tools.sessionId": "Session ID",
+  "session-tools.workspace": "Workspace",
+  "session-tools.result": "Result",
+  "session-tools.dispatch": "Dispatch",
+  "session-tools.archive": "Archive",
+  "session-tools.preparation": "Preparation",
+  "session-tools.recovery": "Recovery",
+  "session-tools.automaticTitle": "Automatic title",
+  "session-tools.notReported": "Not reported",
+  "session-tools.unavailable": "Unavailable"
 }

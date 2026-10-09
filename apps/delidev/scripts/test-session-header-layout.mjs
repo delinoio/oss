@@ -59,7 +59,16 @@ try {
     assert.equal(geometry.overflow, false); assert(geometry.header.bottom <= geometry.composer.top); if (geometry.composer.bottom > height + 1) assert.equal(await page.locator(".session-conversation-region").evaluate(node => getComputedStyle(node).overflowY), "auto", "Short layouts retain the original bounded conversation scroll owner");
     assert(geometry.buttons.every(value => value >= 40));
     if (width <= 520) assert(geometry.controls.top >= geometry.heading.bottom);
-    assert(await page.locator(".session-title-status").textContent());
+    assert.equal(await page.locator(".session-header .session-title-status").count(), 0);
+    const infoState = await page.locator(".session-information").evaluate(node => ({
+      values: [...node.querySelectorAll(".session-status-values dt")].map(label => label.textContent),
+      evidence: node.querySelector(".session-status-values").textContent,
+      sections: [...node.querySelectorAll(".session-tools, .session-information-section")].map(section => section.open),
+      redundant: node.querySelectorAll(".execution-configuration > summary").length,
+    }));
+    assert.equal(infoState.values.length, 8); assert.equal(infoState.sections.length, 6);
+    assert(infoState.sections.every(Boolean)); assert.equal(infoState.redundant, 0);
+    assert(infoState.evidence.length > 100, "Complete retained technical/title evidence stays in Info");
     if (process.env.DELIDEV_HEADER_SCREENSHOTS && harness === "codex") await page.screenshot({ path: join(process.env.DELIDEV_HEADER_SCREENSHOTS, `${language}-${theme}-${width}x${height}.png`) });
     const more = page.locator(".session-actions-popup > button");
     await more.focus(); await page.keyboard.press("Enter");

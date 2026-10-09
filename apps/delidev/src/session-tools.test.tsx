@@ -371,3 +371,10 @@ it("retains an unavailable Runner Device's original identity through paginated i
   expect(selector.dataset.value).toBe(value.machine.id);
   expect(value.createSession).not.toHaveBeenCalled();
 });
+
+it("labels missing and malformed status without inferring readiness or automatic title ownership",()=>{
+ const f=fixture();const row=create(ResourceSchema,{...f.session,documentJson:encode({name:"Manual",name_mode:"manual",title_state:"failed",outcome:17,archive:"archived",dispatch:"unknown-state"})});
+ render(f.view(<SessionTools resource={row} changed={()=>{}} initiallyOpen/>));
+ const values=globalThis.document.querySelector(".session-status-values")!;const terms=[...values.querySelectorAll("dt")].map(node=>node.textContent);const descriptions=[...values.querySelectorAll("dd")].map(node=>node.textContent);
+ expect(terms).not.toContain("Automatic title");expect(descriptions[2]).toBe("Unavailable");expect(descriptions[3]).toBe("unknown-state");expect(descriptions[5]).toBe("Not reported");expect(descriptions[6]).toBe("Not reported");expect(f.control).not.toHaveBeenCalled();expect(f.prepare).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
+});
