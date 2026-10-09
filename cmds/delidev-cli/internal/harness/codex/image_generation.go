@@ -46,6 +46,22 @@ func decodeImageGeneration(raw json.RawMessage, completed bool) (*ImageGeneratio
 			return nil, incompatible()
 		}
 	}
+	for _, key := range []string{"transparentBackground", "savedPath"} {
+		if value, exists := fields[key]; exists && string(value) == "null" {
+			return nil, incompatible()
+		}
+	}
+	if item.Failure != nil {
+		var failureFields map[string]json.RawMessage
+		if json.Unmarshal(fields["failure"], &failureFields) != nil {
+			return nil, incompatible()
+		}
+		for _, key := range []string{"type", "limitId", "resetsAt"} {
+			if _, exists := failureFields[key]; !exists {
+				return nil, incompatible()
+			}
+		}
+	}
 	result := &ImageGeneration{ID: item.ID, Observation: domain.ImageGenerationObservation{Status: item.Status, RevisedPrompt: item.RevisedPrompt, TransparentBackground: item.TransparentBackground, Outputs: []domain.ImageAttachment{}}}
 	if item.Failure != nil {
 		result.Observation.Failure = &domain.ImageGenerationFailure{Type: item.Failure.Type, LimitID: item.Failure.LimitID, ResetsAt: item.Failure.ResetsAt}

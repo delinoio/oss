@@ -76,6 +76,20 @@ func TestNativeImageGenerationShapesAndOriginalProvider(t *testing.T) {
 			t.Fatal("required native field absent", key)
 		}
 	}
+	for _, key := range []string{"transparentBackground", "savedPath"} {
+		item := generationItem("failed", "")
+		item[key] = nil
+		raw, _ := json.Marshal(item)
+		if _, err := decodeImageGeneration(raw, true); err == nil {
+			t.Fatal("nullable optional native field", key)
+		}
+	}
+	item := generationItem("failed", "")
+	item["failure"] = map[string]any{"type": "usageLimitExceeded", "limitId": "original"}
+	missingReset, _ := json.Marshal(item)
+	if _, err := decodeImageGeneration(missingReset, true); err == nil {
+		t.Fatal("missing nullable reset field admitted")
+	}
 	thread, turn := domain.NewID(), domain.NewID()
 	raw, _ := json.Marshal(generationItem("in_progress", ""))
 	c := &Client{thread: thread, imageRoot: t.TempDir(), imageMachine: domain.NewID(), execution: &executionState{active: turn, turns: map[domain.ID]trackedTurn{turn: {Turn: Turn{ID: turn, Status: TurnRunning}}}}}
