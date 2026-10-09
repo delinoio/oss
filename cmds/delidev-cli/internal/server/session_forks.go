@@ -435,7 +435,10 @@ func finishSessionFork(tx *store.Tx, r store.Record, job domain.Job, revision ui
 		}
 	}
 	if input.Version == 2 {
+		child.Fork.OpenCodeCreationRequestID = input.OpenCode.Fork
 		child.Fork.NativeTurnID = output.NativeTurnID
+		outputDigest := forkInputDigest(raw)
+		child.Fork.OpenCodeCreationProof = &domain.OpenCodeForkCreationProof{CreationRequestID: input.OpenCode.Fork, ChildSessionID: input.ChildSessionID, JobOutputDigest: outputDigest, OriginDigest: child.Fork.OpenCodeCreationDigest(input.ChildSessionID, outputDigest)}
 	}
 	if _, err := tx.Put(domain.SessionKind, input.ChildSessionID, 0, input.ChildSessionID, r.ProjectID, child); err != nil {
 		return nil, err
