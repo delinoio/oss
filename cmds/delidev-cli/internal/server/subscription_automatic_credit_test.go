@@ -366,3 +366,50 @@ func TestAutomaticCreditUncertainFinishClearsGenerationConsentAndReconcilesSameK
 		t.Fatal("explicit same-key reconciliation lost its independent lane", err)
 	}
 }
+
+func TestAutomaticCreditNotificationNeedsPriorUsableEdge(t *testing.T) {
+	for _, baseline := range []string{"unknown", "stale", "usable"} {
+		t.Run(baseline, func(t *testing.T) {
+			f, b := automaticCreditFixture(t, true, false)
+			if baseline != "unknown" {
+				automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+					at := tx.ObservationTime().Add(-time.Second)
+					if baseline == "stale" {
+						at = at.Add(-6 * time.Minute)
+					}
+					positive := 0.5
+					a.Subscription.QuotaState = domain.Observed
+					a.Subscription.QuotaObservedAt = &at
+					a.Quota = []domain.QuotaWindow{{ID: "codex:primary", ComparisonGroup: "chatgpt", Blocking: true, Remaining: &positive, State: domain.Observed, ObservedAt: at}}
+					return nil
+				})
+			}
+			admitFixture(t, f, &b, "")
+			_, a := f.record()
+			if a.Subscription.Observation == nil {
+				t.Fatal("notification baseline incorrectly blocked spending admission")
+			}
+			entries, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.InboxKind, Limit: 100})
+			if err != nil {
+				t.Fatal(err)
+			}
+			count := 0
+			for _, r := range entries {
+				e, err := store.Decode[domain.InboxEntry](r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if e.Operational != nil && e.Operational.Kind == domain.QuotaExhaustedNotification {
+					count++
+				}
+			}
+			want := 0
+			if baseline == "usable" {
+				want = 1
+			}
+			if count != want {
+				t.Fatalf("baseline %s notified %d, want %d", baseline, count, want)
+			}
+		})
+	}
+}

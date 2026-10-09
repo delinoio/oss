@@ -123,7 +123,7 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 			return nil
 		}
 		st.AutomaticCreditEpisode = &domain.AutomaticResetCreditEpisode{ID: domain.NewID(), Generation: st.Generation, SessionID: block.SessionID, LeaseID: st.Lease.ID, ExecutionID: block.ExecutionID, NativeThreadID: block.NativeThreadID, NativeTurnID: block.NativeTurnID, Block: block.Reason, ObservedAt: now}
-		if !a.ConfirmedExhausted {
+		if domain.ConfirmedSubscriptionQuotaUsable(*a, now) && st.QuotaObservedAt != nil && now.After(*st.QuotaObservedAt) {
 			if _, err := tx.CreateOperationalInbox(st.AutomaticCreditEpisode.ID, domain.InboxOperational{Kind: domain.QuotaExhaustedNotification, AccountID: account, ConnectionID: a.Connection.ID, ObservedAt: now}); err != nil {
 				return err
 			}
