@@ -68,7 +68,7 @@ func (s Scope) Validate() error {
 	if !keySubscription && s.ProviderID.Validate() != nil {
 		return domain.Fail(domain.InvalidArgument, "Invalid relay provider identity.", "Retain the accepted provider.")
 	}
-	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID, s.ModelID} {
+	for _, id := range []domain.ID{s.ExecutionID, s.SessionID, s.AccountID, s.ConnectionID} {
 		if err := id.Validate(); err != nil {
 			return err
 		}
