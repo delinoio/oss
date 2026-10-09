@@ -11,8 +11,8 @@ import { encode } from "./documents";
 
 function fixture() {
   const source = newRequestId(), target = newRequestId(), jobId = newRequestId();
-  const bundle = { version: 1, entries: [{ id: source, kind: "template", document: { name: "Instructions", contents: "Exact text\n한국어 <script>never execute</script>\n" } }], machines: [] };
-  const previewDocument = { plan: { version: 1, changes: [{ source_id: source, id: target, kind: "template", action: "create", expected_revision: 0, after: bundle.entries[0]!.document }], machines: [] }, token: "server-scoped-preview" };
+  const bundle = { version: 4, entries: [{ id: source, kind: "template", document: { name: "Instructions", contents: "Exact text\n한국어 <script>never execute</script>\n" } }], machines: [] };
+  const previewDocument = { plan: { version: 4, changes: [{ source_id: source, id: target, kind: "template", action: "create", expected_revision: 0, after: bundle.entries[0]!.document }], machines: [] }, token: "server-scoped-preview" };
   const previewBytes = encode(previewDocument);
   const exported = vi.fn(async () => ({ documentJson: encode(bundle) }));
   const preview = vi.fn(async (_input: unknown) => ({ previewJson: previewBytes }));
@@ -62,7 +62,7 @@ it("invalidates reviewed changes after editing while retaining the original docu
 });
 it("preserves integers outside JavaScript's safe range in exported and submitted documents", async () => {
   const value = fixture();
-  const model = `{"version":1,"entries":[{"id":"${newRequestId()}","kind":"model","document":{"name":"Model","context_limit":18446744073709551615}}],"machines":[]}`;
+  const model = `{"version":4,"entries":[{"id":"${newRequestId()}","kind":"template","document":{"name":"Model","context_limit":18446744073709551615}}],"machines":[]}`;
   value.exported.mockResolvedValueOnce({ documentJson: new TextEncoder().encode(model) });
   render(value.view()); fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
   expect((await screen.findByRole("textbox", { name: "Exported configuration" }) as HTMLTextAreaElement).value).toBe(model);
@@ -144,7 +144,7 @@ it("keeps both inputs mounted and exposes state-derived stages without navigatio
 
 it("selects the exact exported Unicode and uint64 document for copying without importing", async () => {
   const value = fixture();
-  const raw = JSON.stringify({ version: 1, entries: [{ id: newRequestId(), kind: "template", document: { name: "한국어", contents: 'Exact "quoted" text\n', revision: "18446744073709551615" } }], machines: [] }).replace('"18446744073709551615"', "18446744073709551615");
+  const raw = JSON.stringify({ version: 4, entries: [{ id: newRequestId(), kind: "template", document: { name: "한국어", contents: 'Exact "quoted" text\n', revision: "18446744073709551615" } }], machines: [] }).replace('"18446744073709551615"', "18446744073709551615");
   value.exported.mockResolvedValueOnce({ documentJson: new TextEncoder().encode(raw) });
   render(value.view()); fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
   const exported = await screen.findByRole("textbox", { name: "Exported configuration" }) as HTMLTextAreaElement;
@@ -177,10 +177,10 @@ it("loads a UTF-8 file immediately and retains editable input after invalid UTF-
   expect(value.apply).not.toHaveBeenCalled();
 });
 
-it("accepts service-native v2 exports and original v2 preview bytes while retaining API-only v1", async () => {
+it("accepts current service-native v4 exports and preserves original preview bytes", async () => {
   const value = fixture();
-  const body = { version: 2, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt", alias: "Native account" } }], machines: [] };
-  const preview = encode({ token: "server-preview", plan: { version: 2, changes: [{ source_id: body.entries[0].id, id: newRequestId(), kind: "account", action: "create", after: body.entries[0].document }], machines: [] } });
+  const body = { version: 4, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt", alias: "Native account" } }], machines: [] };
+  const preview = encode({ token: "server-preview", plan: { version: 4, changes: [{ source_id: body.entries[0].id, id: newRequestId(), kind: "account", action: "create", after: body.entries[0].document }], machines: [] } });
   value.preview.mockResolvedValue({ previewJson: preview }); render(value.view());
   load(body);
   fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
@@ -193,15 +193,14 @@ it("accepts service-native v2 exports and original v2 preview bytes while retain
   expect(Array.from((value.apply.mock.calls[0][0] as { previewJson: Uint8Array }).previewJson)).toEqual(Array.from(preview));
 });
 
-it("refuses a service-native v1 graph before requesting an import preview", () => {
-  const value = fixture(); render(value.view());
-  load({ ...value.bundle, entries: [{ id: value.bundle.entries[0].id, kind: "account", document: { type: "subscription", subscription_service: "chatgpt" } }] });
-  expect(screen.getByText(/Service-native subscription configuration requires a version 2 export/)).toBeTruthy(); expect(value.preview).not.toHaveBeenCalled();
+it.each([1,2,3,5,6])("refuses portable version %s before requesting an import preview", version => {
+ const value=fixture();render(value.view());load({...value.bundle,version});expect(screen.getByText(/Use a current version 4/)).toBeTruthy();expect(value.preview).not.toHaveBeenCalled();
 });
+it("refuses retired Model entries in the current portable layout",()=>{const value=fixture();render(value.view());load({...value.bundle,entries:[{id:newRequestId(),kind:"model",document:{native_id:"retired"}}]});expect(screen.getByRole("alert")).toBeTruthy();expect(value.preview).not.toHaveBeenCalled();});
 
 it("separates capability-read failure from unsupported repository imports and offers retry", async () => {
   const value = fixture();
-  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Remote", remote_url: "https://example.com/remote.git", checkouts: [], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  const repositoryBundle = { version: 4, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Remote", remote_url: "https://example.com/remote.git", checkouts: [], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
   value.status.mockRejectedValueOnce(new ConnectError("status unavailable", Code.Unavailable));
   render(value.view()); load(repositoryBundle);
   await screen.findByRole("button", { name: "Retry server capability check" });
@@ -216,7 +215,7 @@ it("separates capability-read failure from unsupported repository imports and of
 
 it("keeps legacy checkout-backed repository imports available without capability 37", async () => {
   const value = fixture();
-  const repositoryBundle = { version: 1, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Legacy", remote_url: "", checkouts: [{ machine_id: newRequestId(), path: "/owned/legacy" }], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
+  const repositoryBundle = { version: 4, entries: [{ id: newRequestId(), kind: "repository", document: { name: "Legacy", remote_url: "", checkouts: [{ machine_id: newRequestId(), path: "/owned/legacy" }], base: {}, starting: {}, auto_fetch: true } }], machines: [] };
   render(value.view()); load(repositoryBundle);
   fireEvent.click(await screen.findByRole("button", { name: "Preview configuration changes" }));
   await screen.findByRole("button", { name: "Apply reviewed configuration" });
@@ -278,7 +277,7 @@ it("retains sanitized typed export guidance and clears it for the next export ge
  value.exported.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
  fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
  await waitFor(()=>expect(value.exported).toHaveBeenCalledTimes(2));expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText(message)).toBeNull();expect(screen.queryByText(guidance)).toBeNull();
- const raw=JSON.stringify(value.bundle).replace('"version":1','"version":1,"exact":18446744073709551615');
+ const raw=JSON.stringify(value.bundle).replace('"version":4','"version":4,"exact":18446744073709551615');
  await act(async()=>finish({documentJson:new TextEncoder().encode(raw)}));
  const exported=await screen.findByRole("textbox",{name:"Exported configuration"}) as HTMLTextAreaElement;expect(exported.value).toBe(raw);
  fireEvent.click(screen.getByRole("button",{name:"Select export for copying"}));expect(exported.selectionEnd).toBe(raw.length);expect(screen.queryByRole("alert")).toBeNull();expect(value.preview).not.toHaveBeenCalled();expect(value.apply).not.toHaveBeenCalled();
@@ -289,7 +288,7 @@ it("sanitizes untyped export errors and preserves local document validation mess
  const mounted=render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
  await screen.findByRole("alert");fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText("The DeliDev request could not complete.")).toBeTruthy();expect(document.body.textContent).not.toMatch(/private-token|private\/user|provider response/);expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
  value.exported.mockResolvedValueOnce({documentJson:encode({version:999,entries:[],machines:[]})});fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
- await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a version 1 API-only, version 2 or version 3 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
+ await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a current version 4 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
  mounted.unmount();
 });
 

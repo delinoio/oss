@@ -4,8 +4,8 @@ import { SubscriptionServiceIdentity, UsageAccountingProfile, UsageTimeGranulari
 import type { UsageEntry } from "./usage-entry";
 import { detectDeviceTimeZone, localDateTimeToUnixMs, unixMsToLocalDateTime } from "./usage-time";
 
-interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; subscriptionService: SubscriptionServiceIdentity; modelId: string; generalChat: boolean }
-const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED, modelId: "", generalChat: false };
+interface Filters { from: string; until: string; sessionId: string; projectId: string; accountId: string; providerId: string; subscriptionService: SubscriptionServiceIdentity; nativeId: string; generalChat: boolean }
+const emptyFilters: Filters = { from: "", until: "", sessionId: "", projectId: "", accountId: "", providerId: "", subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED, nativeId: "", generalChat: false };
 function defaults(timeZone: string) {
   const { from: _from, until: _until, ...filters } = emptyFilters;
   return { ...filters, fromUnixMs: 0n, untilUnixMs: 0n, granularity: UsageTimeGranularity.DAY, timeZone, accountingProfile: UsageAccountingProfile.NATIVE_UNITS_V1 };

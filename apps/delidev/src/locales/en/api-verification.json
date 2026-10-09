@@ -10,7 +10,7 @@
   "api-verification.discoveryDisabled": "Model discovery is disabled",
   "api-verification.modelsFailed": "Model refresh failed or is unsupported",
   "api-verification.modelsEmpty": "Model refresh returned no models",
-  "api-verification.modelsSynced": "Models synced",
+  "api-verification.modelsSynced": "Endpoint model hints received",
   "api-verification.modelsAwaiting": "Models have not been refreshed for this connection",
   "api-verification.count": " · {{v0}} models",
   "api-verification.checked": "Last checked {{v0}}",

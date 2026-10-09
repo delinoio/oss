@@ -44,5 +44,20 @@
   "pricing.theModelConfigurationChangedReturnTo_063c62": "모델 구성이 변경되었습니다. 가격을 편집하기 전에 모델로 돌아가 새로 고치세요.",
   "pricing.editTokenPricing_44ae61": "토큰 가격 편집",
   "pricing.backToModels_a28c02": "모델로 돌아가기",
-  "pricing.extra.6d92cc676144": "가격 필드를 검토하세요."
+  "pricing.extra.6d92cc676144": "가격 필드를 검토하세요.",
+  "pricing.mode": "가격 모드",
+  "pricing.automatic": "자동 (models.dev)",
+  "pricing.manual": "수동",
+  "pricing.checked": "확인일",
+  "pricing.checksDaily": "매일 확인",
+  "pricing.refreshPrices": "가격 새로 고침",
+  "pricing.retryMode": "동일한 가격 모드 재시도",
+  "pricing.invalidSourcePrice": "소스 가격 응답이 올바르지 않습니다.",
+  "pricing.noExactReference": "정확히 일치하는 참고 요율이 없습니다.",
+  "pricing.referenceUnavailable": "참고 요율을 사용할 수 없습니다.",
+  "pricing.staleReference": "참고 요율이 오래되었습니다. 마지막 유효 요율을 유지합니다.",
+  "pricing.unsupportedReference": "이 요율표에는 지원하지 않는 가격 유형이 있습니다.",
+  "pricing.upstreamIdentity": "원본 제공자 / 모델",
+  "pricing.snapshot": "참고 스냅샷 다이제스트",
+  "pricing.subscriptionEquivalent": "구독 모델은 구독 요금이 아닌 API에 해당하는 요율을 사용합니다."
 }

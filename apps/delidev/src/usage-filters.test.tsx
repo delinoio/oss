@@ -55,7 +55,7 @@ it.each([
   ["1970-01-01T00:00", "1970-01-02T00:00"],
 ])("retains the valid selection for invalid range %s–%s and applies its correction", (from, until) => {
   const { result } = controller();
-  act(() => result.current.change("modelId", "model"));
+  act(() => result.current.change("nativeId", "model"));
   const before = result.current.selection;
   dates(result, from, until);
   expect(result.current.invalid).toBe(false);
@@ -68,7 +68,7 @@ it.each([
   dates(result);
   act(() => vi.advanceTimersByTime(300));
   expect(result.current.invalid).toBe(false);
-  expect(result.current.selection).toMatchObject({ accountId: "new-account", modelId: "model" });
+  expect(result.current.selection).toMatchObject({ accountId: "new-account", nativeId: "model" });
 });
 
 it("Reset cancels old dates, clears errors and keeps default endpoints", () => {
@@ -110,18 +110,18 @@ it("preserves exact entry instants and zone across selections, changing only the
   const entry = { key: "one", accountId: "account", fromUnixMs: BigInt(Date.parse("2026-11-01T06:30:00.123Z")), untilUnixMs: BigInt(Date.parse("2026-11-02T06:30:00.789Z")) };
   const { result, rerender } = renderHook(({ value, active }) => useUsageFilters(active, value), { initialProps: { value: entry, active: true } });
   deviceZone.value = "Asia/Seoul";
-  act(() => result.current.change("modelId", "model"));
+  act(() => result.current.change("nativeId", "model"));
   expect(result.current.selection).toMatchObject({ fromUnixMs: entry.fromUnixMs, untilUnixMs: entry.untilUnixMs, timeZone: "America/New_York" });
   act(() => result.current.change("until", "2026-11-03T01:30"));
   act(() => vi.advanceTimersByTime(300));
   expect(result.current.selection.fromUnixMs).toBe(entry.fromUnixMs);
   expect(result.current.selection.untilUnixMs).toBe(BigInt(Date.parse("2026-11-03T06:30:00Z")));
   rerender({ value: { ...entry }, active: false }); rerender({ value: { ...entry }, active: true });
-  expect(result.current.selection.modelId).toBe("model");
+  expect(result.current.selection.nativeId).toBe("model");
   act(() => result.current.change("from", "2026-11-02T01:30"));
   rerender({ value: { ...entry, key: "two", accountId: "next" }, active: true });
   act(() => vi.advanceTimersByTime(600));
-  expect(result.current.selection).toMatchObject({ accountId: "next", fromUnixMs: entry.fromUnixMs, untilUnixMs: entry.untilUnixMs, modelId: "" });
+  expect(result.current.selection).toMatchObject({ accountId: "next", fromUnixMs: entry.fromUnixMs, untilUnixMs: entry.untilUnixMs, nativeId: "" });
 });
 
 it("rejects a DST gap without disturbing the original selection", () => {
@@ -139,7 +139,7 @@ it.each([[UsageRangePreset.Hours24, 1n], [UsageRangePreset.Days7, 7n], [UsageRan
   vi.setSystemTime(new Date("2026-10-09T03:00:00.123Z"));
   dates(result, "2026-09-02T10:00", "2026-09-01T10:00");
   act(() => vi.advanceTimersByTime(300));
-  act(() => result.current.edit({ sessionId: "session", projectId: "project", accountId: "account", providerId: "provider", subscriptionService: SubscriptionServiceIdentity.CHATGPT, modelId: "model", generalChat: true }));
+  act(() => result.current.edit({ sessionId: "session", projectId: "project", accountId: "account", providerId: "provider", subscriptionService: SubscriptionServiceIdentity.CHATGPT, nativeId: "model", generalChat: true }));
   expect(result.current.invalid).toBe(true);
   vi.setSystemTime(new Date("2026-10-09T03:00:00.123Z"));
   const clock = vi.spyOn(Date, "now");
@@ -147,7 +147,7 @@ it.each([[UsageRangePreset.Hours24, 1n], [UsageRangePreset.Days7, 7n], [UsageRan
   expect(clock).toHaveBeenCalledTimes(1);
   clock.mockRestore();
   const until = BigInt(Date.parse("2026-10-09T03:00:00.123Z"));
-  expect(result.current.selection).toMatchObject({ fromUnixMs: until - days * 86_400_000n, untilUnixMs: until, sessionId: "session", projectId: "project", accountId: "account", providerId: "provider", subscriptionService: SubscriptionServiceIdentity.CHATGPT, modelId: "model", generalChat: true, timeZone: "UTC" });
+  expect(result.current.selection).toMatchObject({ fromUnixMs: until - days * 86_400_000n, untilUnixMs: until, sessionId: "session", projectId: "project", accountId: "account", providerId: "provider", subscriptionService: SubscriptionServiceIdentity.CHATGPT, nativeId: "model", generalChat: true, timeZone: "UTC" });
   expect(result.current).toMatchObject({ preset, invalid: false, pending: false });
   const selection = result.current.selection;
   act(() => vi.advanceTimersByTime(1000));
@@ -162,7 +162,7 @@ it("supersedes pending dates, retains its indicator through filters/navigation, 
   const first = result.current.selection;
   act(() => vi.advanceTimersByTime(600));
   expect(result.current.selection).toBe(first);
-  act(() => result.current.change("modelId", "model"));
+  act(() => result.current.change("nativeId", "model"));
   expect(result.current.preset).toBe(UsageRangePreset.Days7);
   expect(result.current.selection.untilUnixMs).toBe(first.untilUnixMs);
   rerender({ active: false }); rerender({ active: true });

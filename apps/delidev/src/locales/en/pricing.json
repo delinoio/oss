@@ -44,5 +44,20 @@
   "pricing.theModelConfigurationChangedReturnTo_063c62": "The model configuration changed. Return to Models and refresh before editing its pricing.",
   "pricing.editTokenPricing_44ae61": "Edit token pricing",
   "pricing.backToModels_a28c02": "Back to Models",
-  "pricing.extra.6d92cc676144": "Review the pricing fields."
+  "pricing.extra.6d92cc676144": "Review the pricing fields.",
+  "pricing.mode": "Pricing mode",
+  "pricing.automatic": "Automatic (models.dev)",
+  "pricing.manual": "Manual",
+  "pricing.checked": "Checked",
+  "pricing.checksDaily": "Checks daily",
+  "pricing.refreshPrices": "Refresh prices",
+  "pricing.retryMode": "Retry the same pricing mode",
+  "pricing.invalidSourcePrice": "The source price response is invalid.",
+  "pricing.noExactReference": "No exact reference rate is available.",
+  "pricing.referenceUnavailable": "Reference rates are unavailable.",
+  "pricing.staleReference": "Reference rates are stale. The last valid rates are retained.",
+  "pricing.unsupportedReference": "This rate card contains unsupported pricing variants. Automatic estimates are unavailable.",
+  "pricing.upstreamIdentity": "Upstream provider / model",
+  "pricing.snapshot": "Reference snapshot digest",
+  "pricing.subscriptionEquivalent": "Subscription models use API-equivalent rates, not subscription charges."
 }

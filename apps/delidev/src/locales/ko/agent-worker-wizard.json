@@ -161,5 +161,8 @@
   "agent-worker-wizard.addApiAccount": "AI API 키에서 계정 추가",
   "agent-worker-wizard.addSubscriptionAccount": "AI 구독에서 계정 추가",
   "agent-worker-wizard.retryAccounts": "계정 다시 시도",
-  "agent-worker-wizard.routingEmpty": "계정을 선택하여 순서와 가중치를 설정하세요."
+  "agent-worker-wizard.routingEmpty": "계정을 선택하여 순서와 가중치를 설정하세요.",
+  "agent-worker-wizard.endpointModelOrigin": "엔드포인트 제안",
+  "agent-worker-wizard.endpointSuggestions": "소스 제안을 선택하거나 정확한 네이티브 모델 ID를 입력하세요.",
+  "agent-worker-wizard.endpointReadOnly": "엔드포인트 제안은 읽기 전용 메타데이터입니다. 실행 자격을 확인하지 않습니다."
 }

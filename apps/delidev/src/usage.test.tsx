@@ -5,7 +5,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, SystemService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
+import { AccountingUnitKind, EstimateTotalsSchema, PricingUsageSchema, InputPricingMode, EntityKind, GetUsageSummaryResponseSchema, ResourceSchema, ResourceService, UsageAnalyticsSchema, UsageCostState, UsageCoverage, UsageService, TokenPricingMode, SystemService, UsageTimeGranularity, UsageAccountingProfile, UsageTotalsSchema, newRequestId, type GetUsageSummaryRequest } from "@delinoio/delidev-api-client";
 import { Usage } from "./usage";
 import { i18n, SupportedLanguage } from "./localization";
 import { SidebarOutletProvider } from "./sidebar-context";
@@ -15,10 +15,10 @@ function fixture() {
   const ids = { session: newRequestId(), account: newRequestId(), model: newRequestId(), provider: newRequestId(), project: newRequestId() };
   const count = { knownTotal: "18446744073709551614", measuredResponses: 2, unavailableResponses: 1 };
   const totals = { responses: 3, total: count, input: { knownTotal: "0", measuredResponses: 2, unavailableResponses: 1 }, output: count, cachedInput: { knownTotal: "", measuredResponses: 0, unavailableResponses: 3 }, cacheWriteInput: { knownTotal: "", measuredResponses: 0, unavailableResponses: 3 }, reasoningOutput: { knownTotal: "0", measuredResponses: 3, unavailableResponses: 0 } };
-  const data = create(GetUsageSummaryResponseSchema, { fromUnixMs: BigInt(Date.UTC(2026, 8, 1)), untilUnixMs: BigInt(Date.UTC(2026, 8, 25)), totals, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, actualCost: UsageCostState.UNAVAILABLE, estimatedCost: UsageCostState.UNAVAILABLE, acceptedExecutionsWithoutResponse: 2, groups: [{ sessionId: ids.session, sessionName: "Retained session", accountId: ids.account, accountName: "Original account", modelId: ids.model, modelName: "Original model", providerId: ids.provider, providerName: "Original API", totals }] });
+  const data = create(GetUsageSummaryResponseSchema, { fromUnixMs: BigInt(Date.UTC(2026, 8, 1)), untilUnixMs: BigInt(Date.UTC(2026, 8, 25)), totals, coverage: UsageCoverage.OBSERVED_ROOT_RESPONSES, actualCost: UsageCostState.UNAVAILABLE, estimatedCost: UsageCostState.UNAVAILABLE, acceptedExecutionsWithoutResponse: 2, groups: [{ sessionId: ids.session, sessionName: "Retained session", accountId: ids.account, accountName: "Original account", model: { nativeId: ids.model, providerId: ids.provider }, modelName: "Original model", providerId: ids.provider, providerName: "Original API", totals }] });
   const read = vi.fn(async (_request: GetUsageSummaryRequest) => data);
   const transport = createRouterTransport((router) => {
-    router.service(UsageService, { getUsageSummary: read });
+    router.service(UsageService, { getUsageSummary: read, getTokenPricing: () => ({providerRevision:0n,policy:{mode:TokenPricingMode.AUTOMATIC},reference:{state:"unavailable"}}) });
     router.service(ResourceService, { getResource: request => ({ resource: create(ResourceSchema, { id: request.id, kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Original account" }) }) }), listResources: (request) => ({ resources: request.filter?.kind === EntityKind.ACCOUNT ? [create(ResourceSchema, { id: ids.account, kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Original account" }) })] : [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
@@ -36,7 +36,7 @@ it.each([
   await i18n.changeLanguage(language);
   const f = fixture();
   if (historical) {
-    f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), modelId: f.ids.model, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original price source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "1", exclusions: ["Original exclusion"] } } })];
+    f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), model: { nativeId: f.ids.model, providerId: f.ids.provider }, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original price source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "1", exclusions: ["Original exclusion"] } } })];
   }
   render(f.view());
   const english = language === SupportedLanguage.English;
@@ -92,7 +92,7 @@ it("applies selections immediately and preserves invalid dates across navigation
 
 it.each([false, true])("keeps native-only groups and models out of response views with mixed responses=%s", async (mixed) => {
   const f = fixture();
-  const native = create(GetUsageSummaryResponseSchema, { groups: [{ sessionId: newRequestId(), sessionName: "Grok-only session", accountId: f.ids.account, providerId: f.ids.provider, modelId: newRequestId(), modelName: "Grok-only model", totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] } }] }).groups[0];
+  const native = create(GetUsageSummaryResponseSchema, { groups: [{ sessionId: newRequestId(), sessionName: "Grok-only session", accountId: f.ids.account, providerId: f.ids.provider, model: { nativeId: newRequestId() }, modelName: "Grok-only model", totals: { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] } }] }).groups[0];
   f.data.accountingProfile = UsageAccountingProfile.NATIVE_UNITS_V1;
   f.data.groups[0].totals = create(UsageTotalsSchema, { responses: 1, total: { unavailableResponses: 1 }, accounting: [{ kind: AccountingUnitKind.CODEX_RESPONSE, units: 1, unavailableUnits: 1 }] });
   f.data.totals = create(UsageTotalsSchema, { responses: mixed ? 1 : 0, total: mixed ? { unavailableResponses: 1 } : undefined, accounting: [...(mixed ? f.data.groups[0].totals.accounting : []), ...native.totals!.accounting] });
@@ -100,7 +100,7 @@ it.each([false, true])("keeps native-only groups and models out of response view
   f.data.analytics = create(UsageAnalyticsSchema, {
     granularity: UsageTimeGranularity.DAY, timeZone: "UTC",
     days: [{ fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs, totals: f.data.totals }],
-    models: f.data.groups.map(({ providerId, providerName, modelId, modelName, totals }) => ({ providerId, providerName, modelId, modelName, totals })),
+    models: f.data.groups.map(({ providerId, providerName, model, modelName, totals }) => ({ providerId, providerName, model, modelName, totals })),
   });
   render(f.view());
   await screen.findByText("Incomplete coverage"); fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
@@ -118,7 +118,7 @@ it.each([false, true])("keeps native-only groups and models out of response view
   fireEvent.click(within(responseChart).getByRole("button", { name: "View data" }));
   const responseModelTable = within(responseChart).getByRole("table");
   expect(within(responseModelTable).queryByText("Grok-only model")).toBeNull();
-  expect(within(responseModelTable).queryByText(native.modelId)).toBeNull();
+  expect(within(responseModelTable).queryByText(native.model!.nativeId)).toBeNull();
   expect(within(responseModelTable).getAllByRole("row")).toHaveLength(mixed ? 2 : 1);
   if (mixed) expect(within(responseModelTable).getByText("Original model")).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
@@ -143,7 +143,7 @@ it("explains separate response and Grok completion times across a day boundary",
   f.data.analytics = create(UsageAnalyticsSchema, {
     granularity: UsageTimeGranularity.DAY, timeZone: "UTC",
     days: [{ fromUnixMs: start, untilUnixMs: start + day, totals: response }, { fromUnixMs: start + day, untilUnixMs: start + day * 2n, totals: closedInput }],
-    models: [{ providerId: f.ids.provider, modelId: f.ids.model, totals }],
+    models: [{ providerId: f.ids.provider, model: { nativeId: f.ids.model, providerId: f.ids.provider }, totals }],
   });
   render(f.view());
   await screen.findByText("Incomplete coverage"); fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
@@ -235,8 +235,8 @@ it("renders daily zero, unavailable and empty evidence with keyboard detail and 
   const start = BigInt(Date.UTC(2026, 8, 1));
   const day = 86_400_000n;
   const unavailable = { responses: 1, total: { knownTotal: "", measuredResponses: 0, unavailableResponses: 1 } };
-  const models = [100, 90, 80, 70, 60, 0, 0].map((total, index) => ({ providerId: newRequestId(), modelId: newRequestId(), providerName: "Shared API", modelName: `Model ${index + 1}`, totals: { responses: 1, total: { knownTotal: String(total), measuredResponses: 1, unavailableResponses: 0 } } }));
-  models.push({ providerId: newRequestId(), modelId: newRequestId(), providerName: "Retained API", modelName: "Unmeasured model", totals: { responses: 1, total: { knownTotal: "", measuredResponses: 0, unavailableResponses: 1 } } });
+  const models = [100, 90, 80, 70, 60, 0, 0].map((total, index) => ({ providerId: newRequestId(), model: { nativeId: newRequestId() }, providerName: "Shared API", modelName: `Model ${index + 1}`, totals: { responses: 1, total: { knownTotal: String(total), measuredResponses: 1, unavailableResponses: 0 } } }));
+  models.push({ providerId: newRequestId(), model: { nativeId: newRequestId() }, providerName: "Retained API", modelName: "Unmeasured model", totals: { responses: 1, total: { knownTotal: "", measuredResponses: 0, unavailableResponses: 1 } } });
   f.data.analytics = create(UsageAnalyticsSchema, {
     granularity: UsageTimeGranularity.DAY,
     timeZone: "UTC",
@@ -285,7 +285,7 @@ it("renders daily zero, unavailable and empty evidence with keyboard detail and 
 it("keeps historical currency subtotals, partial coverage and source basis separate from actual cost", async () => {
   const f = fixture();
   f.data.estimates = create(EstimateTotalsSchema, { unpricedResponses: 1, currencies: [{ currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, { currency: "EUR", knownAmount: "0", partialResponses: 1 }] });
-  f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), modelId: f.ids.model, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0.000000001", exclusions: ["Fixture fee excluded"] } }, totals: { currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, input: { knownTokens: "9223372036854775807", knownAmount: "9223.372036854775807", pricedResponses: 1 }, output: { missingPriceResponses: 1 } })];
+  f.data.pricing = [create(PricingUsageSchema, { pricing: { id: newRequestId(), model: { nativeId: f.ids.model, providerId: f.ids.provider }, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Retained original source", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0.000000001", exclusions: ["Fixture fee excluded"] } }, totals: { currency: "USD", knownAmount: "9223.372036854775807", completeResponses: 1 }, input: { knownTokens: "9223372036854775807", knownAmount: "9223.372036854775807", pricedResponses: 1 }, output: { missingPriceResponses: 1 } })];
   render(f.view()); await screen.findByText("USD 9,223.372036854775807"); fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
   expect(screen.getByText("EUR 0")).toBeTruthy();
   expect(screen.getByText(/1 responses have no matching historical price/)).toBeTruthy();
@@ -453,24 +453,24 @@ it("shows independent source totals and exact retained estimates without manufac
 
 it("opens exact historical pricing without changing filters and retains read-only deleted evidence", async () => {
  const f = fixture(); const version = newRequestId();
- f.data.pricing = [create(PricingUsageSchema, { pricing: { id: version, modelId: f.ids.model, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Original deleted price", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0" } } })];
+ f.data.pricing = [create(PricingUsageSchema, { pricing: { id: version, model: { nativeId: f.ids.model, providerId: f.ids.provider }, providerId: f.ids.provider, revision: 1n, basis: { currency: "USD", source: "Original deleted price", asOf: "2026-09-01", inputMode: InputPricingMode.UNIFORM, inputPerMillion: "0" } } })];
  render(f.view()); await screen.findByText("Incomplete coverage");fireEvent.click(screen.getByRole("tab", { name: "Usage history" }));
  fireEvent.click(screen.getByRole("button", { name: "Original model" }));
  const panel = screen.getByRole("tabpanel", { name: "Model prices" });
  await within(panel).findByText("This original identity has no editable current model. Historical price evidence is read-only.");
  expect(within(panel).getByText("Original deleted price")).toBeTruthy();expect(within(panel).getByText(new RegExp(version))).toBeTruthy();
- expect(within(panel).queryByRole("button", { name: "Edit token pricing" })).toBeNull();expect(f.read).toHaveBeenCalledTimes(1);
- expect((screen.getByRole("combobox", { name: "Model", hidden: true }) as HTMLElement).dataset.value).toBe("");
+ expect(within(panel).getByRole("button", { name: "Edit token pricing" })).toHaveProperty("disabled",true);expect(f.read).toHaveBeenCalledTimes(1);
+ expect(screen.getByRole("textbox", { name: "Exact native model ID", hidden: true })).toHaveProperty("value", "");
 });
 
 it("retains manual price draft and exact uncertain retry across tabs and dashboard Refresh", async () => {
  const f=fixture();
  const model=create(ResourceSchema,{id:f.ids.model,kind:EntityKind.MODEL,schemaVersion:1,revision:1n,documentJson:encode({name:"Original model",provider_id:f.ids.provider,native_id:"native-original",harnesses:["codex"],manual:true,metadata_source:"user-declared"})});
  const basis={currency:"USD",source:"Original source",asOf:"2026-09-01",inputMode:InputPricingMode.UNIFORM,inputPerMillion:"1"};
- const pricing=create(PricingUsageSchema,{pricing:{id:newRequestId(),modelId:f.ids.model,providerId:f.ids.provider,revision:1n,basis}}).pricing!;
- const write=vi.fn().mockRejectedValueOnce(new ConnectError("Lost price response",Code.Unavailable)).mockResolvedValue({pricing});
+ const pricing=create(PricingUsageSchema,{pricing:{id:newRequestId(),model: { nativeId: f.ids.model, providerId: f.ids.provider },providerId:f.ids.provider,revision:1n,basis}}).pricing!;
+ const write=vi.fn().mockRejectedValueOnce(new ConnectError("Lost price response",Code.Unavailable)).mockImplementation(request=>({pricing,requestId:request.requestId,policy:{mode:TokenPricingMode.MANUAL,revision:1n}}));
  const transport=createRouterTransport(router=>{
-  router.service(UsageService,{getUsageSummary:f.read,getModelPricing:()=>({pricing,modelRevision:1n}),setModelPricing:write});
+  router.service(UsageService,{getUsageSummary:f.read,getTokenPricing:()=>({pricing,providerRevision:1n,policy:{mode:TokenPricingMode.MANUAL,revision:0n},reference:{state:"current"}}),setTokenPricing:write});
   router.service(ResourceService,{getResource:()=>({resource:model}),listResources:request=>({resources:request.filter?.kind===EntityKind.MODEL?[model]:[]})});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});

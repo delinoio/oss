@@ -12,7 +12,7 @@ import { MutationIntents } from "./mutation";
 import { i18n } from "./localization";
 
 function fixture(extra: Document = {}, discovery = true) {
-  const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, schemaVersion: 1, documentJson: encode({ enabled: true, discovery }) });
+  const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision:1n, schemaVersion: 1, documentJson: encode({ enabled: true, discovery }) });
   const connection = newRequestId();
   let row = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "api", provider_id: provider.id, enabled: true, connection: { id: connection }, ...extra }) });
   const order: string[] = [];
@@ -22,12 +22,9 @@ function fixture(extra: Document = {}, discovery = true) {
     row = create(ResourceSchema, { ...row, revision: 2n, documentJson: encode({ ...document(row), validation }) });
     return { account: row, requestId: request.mutation!.requestId, validationJson: encode(validation) };
   });
-  const discover = vi.fn(async (request: { mutation?: { expectedRevision: bigint; requestId: string } }) => {
-    order.push("discover"); expect(request.mutation!.expectedRevision).toBe(2n);
-    return { account: row, requestId: request.mutation!.requestId, observationJson: encode({ request_id: request.mutation!.requestId, connection_id: connection, state: "observed" }) };
-  });
+  const discover = vi.fn(async (request: { accountId:string;expectedAccountRevision:bigint;expectedProviderRevision:bigint }) => {order.push("discover");expect(request.expectedAccountRevision).toBe(2n);return {accountId:row.id,accountRevision:2n,providerId:provider.id,providerRevision:provider.revision,connectionId:connection,observedAtUnixMs:1780000000000n,models:[]};});
   const getProvider = vi.fn(async (_request: { id: string; kind: EntityKind }) => ({ resource: provider }));
-  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: getProvider }); router.service(AccountService, { validateAccount: validate }); router.service(ProviderService, { discoverModels: discover }); });
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: getProvider }); router.service(AccountService, { validateAccount: validate }); router.service(ProviderService, { listEndpointModels: discover }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const changed = vi.fn();
   const view = (resource: Resource = row, active = true, suppliedProvider: Resource | null = provider) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ApiVerification row={resource} provider={suppliedProvider ?? undefined} active={active} changed={changed} /></MutationIntents></QueryClientProvider></TransportProvider>;
@@ -43,13 +40,13 @@ it("retains an uncertain validation identity and blocks discovery until an expli
   await screen.findByRole("button", { name: "Retry original authentication check" }); expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", true); expect(f.discover).not.toHaveBeenCalled(); const original = f.validate.mock.calls[0][0];
   fireEvent.click(screen.getByRole("button", { name: "Retry original authentication check" })); await waitFor(() => expect(f.discover).toHaveBeenCalledTimes(1)); expect(f.validate.mock.calls[1][0]).toEqual(original);
 });
-it("does not discover when disabled and preserves focus while localized observations change", async () => {
-  const f = fixture({}, false); render(f.view()); const button = screen.getByRole("button", { name: "Check again" }); button.focus(); fireEvent.click(button); await screen.findByText("API authentication verified"); expect(f.discover).not.toHaveBeenCalled(); expect(globalThis.document.activeElement).toBe(button);
-  await act(async () => { await i18n.changeLanguage("ko"); }); expect(screen.getByText("모델 검색이 비활성화되었습니다")).toBeTruthy(); expect(f.validate).toHaveBeenCalledTimes(1); await act(async () => { await i18n.changeLanguage("en"); });
+it("does not treat discovery compatibility flags as current authority and preserves localized focus", async () => {
+  const f = fixture({}, false); render(f.view()); const button = screen.getByRole("button", { name: "Check again" }); button.focus(); expect(f.discover).not.toHaveBeenCalled(); expect(globalThis.document.activeElement).toBe(button);
+  await act(async () => { await i18n.changeLanguage("ko"); }); expect(screen.getByText(i18n.t("api-verification.modelsAwaiting"))).toBeTruthy(); expect(f.validate).not.toHaveBeenCalled(); await act(async () => { await i18n.changeLanguage("en"); });
 });
 it.each(["failed", "unsupported"])("keeps authentication %s and retained catalog failures separate", async state => {
   const f = fixture(); const row = create(ResourceSchema, { ...f.row, documentJson: encode({ ...document(f.row), validation: { connection_id: f.connection, state, authentication: "unknown" }, catalog: { connection_id: f.connection, state: "failed", last_success_at: "2026-10-06T01:00:00Z" } }) });
-  render(f.view(row)); expect(screen.queryByText("API authentication verified")).toBeNull(); expect(screen.getByText(/Previous models retained/)).toBeTruthy(); expect(f.validate).not.toHaveBeenCalled();
+  render(f.view(row)); expect(screen.queryByText("API authentication verified")).toBeNull(); expect(screen.getByText("Models have not been refreshed for this connection")).toBeTruthy(); expect(f.validate).not.toHaveBeenCalled();
 });
 it("ignores mismatched connection evidence and disables Check again for cleanup state", async () => {
   const f = fixture({ validation: { connection_id: newRequestId(), state: "observed", authentication: "credential-accepted" }, removal: { request_id: newRequestId() } }); render(f.view()); expect(screen.queryByText("API authentication verified")).toBeNull(); expect(screen.getByText("Credential cleanup is pending.")).toBeTruthy(); expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", true);
@@ -73,28 +70,6 @@ it("reconciles an old validation replay without discovering the replacement conn
   expect(screen.queryByText("API authentication verified")).toBeNull();
 });
 
-it.each(["request", "connection"])("settles original discovery replay after reconnect and rejects a wrong %s receipt", async mismatch => {
-  const f = fixture();
-  f.discover.mockRejectedValueOnce(new ConnectError("lost acknowledgment", Code.Unavailable));
-  const view = render(f.view());
-  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
-  await screen.findByRole("button", { name: "Retry original model refresh" });
-  const original = f.discover.mock.calls[0][0];
-  const replacement = create(ResourceSchema, { ...f.row, revision: 5n, documentJson: encode({ ...document(f.row), connection: { id: newRequestId() } }) });
-  view.rerender(f.view(replacement));
-  f.discover.mockResolvedValueOnce({ account: replacement, requestId: original.mutation!.requestId, observationJson: encode({ request_id: mismatch === "request" ? newRequestId() : original.mutation!.requestId, connection_id: mismatch === "connection" ? newRequestId() : f.connection, state: "observed" }) });
-  fireEvent.click(screen.getByRole("button", { name: "Retry original model refresh" }));
-  await waitFor(() => expect(f.discover).toHaveBeenCalledTimes(2));
-  await screen.findByRole("button", { name: "Retry original model refresh" });
-  f.discover.mockResolvedValueOnce({ account: replacement, requestId: original.mutation!.requestId, observationJson: encode({ request_id: original.mutation!.requestId, connection_id: f.connection, state: "observed" }) });
-  fireEvent.click(screen.getByRole("button", { name: "Retry original model refresh" }));
-  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original model refresh" })).toBeNull());
-  expect(f.discover.mock.calls[1][0]).toEqual(original);
-  expect(f.discover.mock.calls[2][0]).toEqual(original);
-  expect(f.validate).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
-  expect(screen.queryByText("API authentication verified")).toBeNull();
-});
 
 it("resolves a provider outside the bounded inventory by exact identity before checking", async () => {
   const f = fixture(); render(f.view(f.row, true, null));
@@ -140,7 +115,7 @@ it("keeps complete observations in distinct groups and the disclaimer outside th
   const band = window.document.querySelector(".api-verification-band")!;
   expect(band.querySelectorAll(".api-verification-group")).toHaveLength(3);
   expect(screen.getByText("API authentication verified").closest(".api-verification-group")).not.toBeNull();
-  expect(screen.getByText("Models synced · 467 models").closest(".api-verification-group")).not.toBeNull();
+  expect(screen.getByText("Models have not been refreshed for this connection").closest(".api-verification-group")).not.toBeNull();
   expect(screen.getByText(/Last checked/).closest(".api-verification-times")).not.toBeNull();
   const disclaimer = screen.getByText("Verification does not establish model inference permission, harness readiness, usage or quota recovery.");
   expect(band.contains(disclaimer)).toBe(false);

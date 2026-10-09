@@ -105,8 +105,8 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   const configurations = createClient(ConfigurationService, transport);
   const save = async (kind: EntityKind, value: Record<string, unknown>) => (await configurations.saveConfiguration({ kind, mutation: { requestId: newRequestId() }, schemaVersion: 1, documentJson: encode(value) })).resource!;
   const providerConfig = await save(EntityKind.PROVIDER, { name: "Schedule fixture provider", endpoint: providerOrigin, protocol: "openai-chat", authentication: "keyless", discovery: false });
-  const model = await save(EntityKind.MODEL, { name: "Schedule fixture model", provider_id: providerConfig.id, native_id: "fixture-model", harnesses: ["codex"], manual: true, metadata_source: "unknown" });
-  const accountlessAgent = await save(EntityKind.AGENT, { name: "Accountless schedule agent", harness: "codex", model_id: model.id, accounts: [], templates: [], options: { permission: "default" } });
+  const disconnectedAccount = await save(EntityKind.ACCOUNT, {alias:"Disconnected schedule account",type:"api",provider_id:providerConfig.id,enabled:true,health:"disconnected"});
+  const accountlessAgent = (await createClient(ConfigurationService,transport).saveConfiguration({kind:EntityKind.AGENT,mutation:{requestId:newRequestId()},schemaVersion:4,documentJson:encode({name:"Accountless schedule agent",harness:"codex",routes:[{model:{provider_id:providerConfig.id,native_id:"fixture-model",input_modalities:["text"],metadata_source:"unknown"},accounts:[{id:disconnectedAccount.id,weight:1}]}],templates:[],options:{permission:"default"}})})).resource!;
   cleanup();
   const scheduleClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const readLocalWorker = async () => {

@@ -83,7 +83,7 @@ function appliedFilters(selection: UsageSelection): string[] {
   if (selection.accountId) values.push(copy("usage.sentence.a422d5ea430e", { v0: selection.accountId }));
   if (selection.providerId) values.push(copy("usage.sentence.886fdf04e3f3", { v0: selection.providerId }));
   if (selection.subscriptionService) values.push(copy("usage.sentence.67a16314500f", { v0: SubscriptionServiceIdentity[selection.subscriptionService].toLowerCase() }));
-  if (selection.modelId) values.push(copy("usage.sentence.1d3a37cc1c5e", { v0: selection.modelId }));
+  if (selection.nativeId) values.push(copy("usage.sentence.1d3a37cc1c5e", { v0: selection.nativeId }));
   return values;
 }
 
@@ -98,7 +98,8 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
   const { draft, selection, invalid, pending, preset, selectPreset, change, edit, reset: resetFilters, ready } = useUsageFilters(active, entry);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const nativeFilters = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
-  const result = useQuery(UsageQuery.getUsageSummary, selection, { enabled: active && ready });
+  const request = { ...selection, model: selection.nativeId && (selection.providerId || selection.subscriptionService) ? { providerId: selection.providerId, subscriptionService: selection.subscriptionService, nativeId: selection.nativeId } : undefined };
+  const result = useQuery(UsageQuery.getUsageSummary, request, { enabled: active && ready });
   const closeDrawer = useCloseSidebarDrawer();
   const detectedTimeZone = selection.timeZone;
   const reset = () => { resetFilters(); closeDrawer(); };
@@ -128,7 +129,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
         <ResourceChoice label={copy("usage.account_7e1b0d")} kind={EntityKind.ACCOUNT} value={draft.accountId} change={(id) => change("accountId", id)} active={active} />
         <ResourceChoice label={copy("usage.provider_472590")} kind={EntityKind.PROVIDER} value={draft.providerId} change={(id) => edit({ providerId: id, subscriptionService: SubscriptionServiceIdentity.UNSPECIFIED })} active={active} />
         <label>{copy("usage.subscriptionService_0e16df")}<select disabled={!nativeFilters} value={draft.subscriptionService} onChange={(event) => edit({ providerId: "", subscriptionService: Number(event.target.value) as SubscriptionServiceIdentity })}><option value={SubscriptionServiceIdentity.UNSPECIFIED}>{copy("usage.allServices_5b9809")}</option><option value={SubscriptionServiceIdentity.CHATGPT}>{copy("usage.chatgpt_50a412")}</option><option value={SubscriptionServiceIdentity.CLAUDE}>{copy("usage.claude_061557")}</option><option value={SubscriptionServiceIdentity.GROK}>{copy("usage.grok_dca61d")}</option><option value={SubscriptionServiceIdentity.OPENCODE_GO}>{subscriptionServiceLabel(SubscriptionServiceIdentity.OPENCODE_GO)}</option></select></label>
-        <ResourceChoice label={copy("usage.model_5e2c61")} kind={EntityKind.MODEL} value={draft.modelId} change={(id) => change("modelId", id)} active={active} />
+        <label>{copy("usage.nativeModelId")}<input value={draft.nativeId} maxLength={256} disabled={!draft.providerId && !draft.subscriptionService} onChange={(event) => change("nativeId", event.target.value)} /></label>
 
         </fieldset></div>
         {invalid ? <p role="alert">{copy("usage.extra.fac4f0da83d0")}</p> : null}

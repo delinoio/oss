@@ -14,7 +14,8 @@ import { RequestDiagnostics, validateDiagnosticPage } from "./request-diagnostic
 
 function fixture(supported = true) {
   const session = newRequestId(), execution = newRequestId(), id = newRequestId();
-  const row = create(RequestDiagnosticSchema, { id, sessionId: session, executionId: execution, accountId: newRequestId(), connectionId: newRequestId(), providerId: newRequestId(), modelId: newRequestId(), revision: 9007199254740993n, source: Source.PROXY_HTTP, operation: Operation.RESPONSE, state: State.SUCCEEDED, purpose: "conversation", harness: "codex", correlationId: id, publicationRequestId: newRequestId(), httpAttempted: true, httpStatus: 200, durationMs: 0n, requestedEffort: "high", nativeResponseId: "resp_original", observedAt: "2026-09-30T00:00:00Z", finishedAt: "2026-09-30T00:00:01Z" });
+  const row = create(RequestDiagnosticSchema, { id, sessionId: session, executionId: execution, accountId: newRequestId(), connectionId: newRequestId(), providerId: newRequestId(), model: { nativeId: "exact-original-native" }, revision: 9007199254740993n, source: Source.PROXY_HTTP, operation: Operation.RESPONSE, state: State.SUCCEEDED, purpose: "conversation", harness: "codex", correlationId: id, publicationRequestId: newRequestId(), httpAttempted: true, httpStatus: 200, durationMs: 0n, requestedEffort: "high", nativeResponseId: "resp_original", observedAt: "2026-09-30T00:00:00Z", finishedAt: "2026-09-30T00:00:01Z" });
+  row.model!.providerId = row.providerId;
   const read = vi.fn(async () => ({ records: [row], nextPageToken: "opaque-page" }));
   const transport = createRouterTransport((router) => { router.service(SystemService, { getStatus: () => ({ capabilities: supported ? [SystemCapability.REQUEST_DIAGNOSTICS_V1] : [] }) }); router.service(SessionService, { listRequestDiagnostics: read }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -113,7 +114,7 @@ it("preserves standard-only requested capacity independently from the effective 
 });
 
 it("keeps native subscription service attribution independent from API providers", () => {
-  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), providerId: "", subscriptionService: SubscriptionServiceIdentity.CHATGPT, source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId() });
+  const f = fixture(), row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), providerId: "", subscriptionService: SubscriptionServiceIdentity.CHATGPT, model: { providerId:"", nativeId:"exact-original-native",subscriptionService:SubscriptionServiceIdentity.CHATGPT }, source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId() });
   row.nativeRequestId = row.id;
   expect(validateDiagnosticPage(create(ListRequestDiagnosticsResponseSchema, { records: [row] }), f.session, "").records[0].providerId).toBe("");
   for (const wrong of [{ providerId: newRequestId() }, { subscriptionService: SubscriptionServiceIdentity.CLAUDE }, { subscriptionService: 99 as SubscriptionServiceIdentity }, { source: Source.PROXY_HTTP }]) {

@@ -16,7 +16,7 @@ export function retainedPrices(data:GetUsageSummaryResponse|undefined,selection:
  for(const price of versions)if(price && priceIdentity(price.model)===key)unique.set(price.id,price);
  return [...unique.values()];
 }
-export function validSourceModel(model:SourceModel){return model.nativeId && new TextEncoder().encode(model.nativeId).length<=256 && (!model.providerId && [SubscriptionServiceIdentity.CHATGPT,SubscriptionServiceIdentity.CLAUDE,SubscriptionServiceIdentity.GROK,SubscriptionServiceIdentity.OPENCODE_GO].includes(model.subscriptionService) || isEntityId(model.providerId) && model.subscriptionService===SubscriptionServiceIdentity.UNSPECIFIED);}
+export function validSourceModel(model:SourceModel){return model.nativeId && model.nativeId.trim()===model.nativeId && !model.nativeId.includes("\0") && new TextEncoder().encode(model.nativeId).length<=256 && (!model.providerId && [SubscriptionServiceIdentity.CHATGPT,SubscriptionServiceIdentity.CLAUDE,SubscriptionServiceIdentity.GROK,SubscriptionServiceIdentity.OPENCODE_GO].includes(model.subscriptionService) || isEntityId(model.providerId) && model.subscriptionService===SubscriptionServiceIdentity.UNSPECIFIED);}
 function usePriceModels(active:boolean){
  const request=useCallback((pageToken:string)=>({pageToken,pageSize:50}),[]);
  const project=useCallback((response:ListTokenPricingResponse)=>{if(response.models.length>50 || response.models.some(model=>!validSourceModel(model)) || new Set(response.models.map(priceIdentity)).size!==response.models.length)throw new ConnectError("Invalid source price page.",Code.DataLoss);return {rows:response.models.map(model=>({id:priceIdentity(model),revision:1n,model})),payload:response.models,nextPageToken:response.nextPageToken};},[]);
