@@ -489,6 +489,37 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return nil
 	case *domain.Agent:
+
+		if expected > 0 {
+			row, e := tx.Get(domain.AgentKind, id)
+			if e != nil {
+				return e
+			}
+			prior, e := store.Decode[domain.Agent](row)
+			if e != nil {
+				return e
+			}
+			if v.MCPSelections == nil {
+				v.MCPSelections = prior.MCPSelections
+			}
+		}
+		if v.MCPSelections != nil && !v.MCPSelections.RebindingRequired {
+			for _, selection := range v.MCPSelections.Selections {
+				owner, ok := tx.(interface {
+					MCPMetadata(domain.ID, domain.ID) (store.MCPMetadata, bool, error)
+				})
+				if !ok {
+					return domain.Fail(domain.Unsupported, "MCP references require explicit Worker rebinding.", "Select the original Worker catalog before importing Agent selections.")
+				}
+				meta, exists, e := owner.MCPMetadata(selection.MachineID, selection.ServerID)
+				if e != nil {
+					return e
+				}
+				if !exists || meta.Deleted || !meta.Enabled || !meta.AuthenticationReady || meta.PendingID != "" || meta.DeviceID != selection.DeviceID || meta.Revision != selection.Revision {
+					return domain.Fail(domain.Conflict, "The selected MCP definition changed or is unavailable.", "Refresh its original Runner catalog and select its current revision.")
+				}
+			}
+		}
 		if expected > 0 && len(v.Routes) == 0 {
 			previous, err := tx.Get(domain.AgentKind, id)
 			if err != nil {

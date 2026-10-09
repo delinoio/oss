@@ -41,3 +41,5 @@ export * as SkillQuery from "./gen/delidev/v1/skills-SkillService_connectquery.j
 export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService_connectquery.js";
 
 export * from "./harness-inheritance.js";
+export * from "./gen/delidev/v1/mcp_management_pb.js";
+export * as McpQuery from "./gen/delidev/v1/mcp_management-McpManagementService_connectquery.js";

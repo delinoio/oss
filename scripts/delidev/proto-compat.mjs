@@ -9,6 +9,12 @@ export const layout = JSON.parse(readFileSync(new URL('./proto-layout.json', imp
 
 // Compatibility facades are generated after Buf. They contain no declarations
 // and can be removed only when the historical public import paths are retired.
+// Current protoc-gen-es versions retain public-import dependencies in the
+// empty compatibility file. Reuse those bindings rather than redeclaring them.
+export function compatibilityImports(original, files) {
+ return files.filter(file => !original.includes(`import { file_delidev_v1_${file} } from "./${file}_pb.js";`)).map(file => `import { file_delidev_v1_${file} } from "./${file}_pb.js";`).join('\n');
+}
+
 export function generateCompatibility() {
   const directory = resolve(root, 'packages/delidev-api-client/src/gen/delidev/v1');
   const target = resolve(directory, 'delidev_pb.ts');
@@ -37,7 +43,7 @@ export function generateCompatibility() {
   const facade = `${original.replace('export const file_delidev_v1_delidev:', 'const legacyBase:')}
 
 ${marker}
-${files.map(file => `import { file_delidev_v1_${file} } from "./${file}_pb.js";`).join('\n')}
+${compatibilityImports(original, files)}
 const ownedFiles = [${modules.join(', ')}];
 const declarationOrder = new Map<string, number>(${JSON.stringify(order)}.map((name, index) => [name, index]));
 const ordered = <T extends { name: string }>(items: T[]): T[] => items.sort((a, b) => (declarationOrder.get(a.name) ?? Number.MAX_SAFE_INTEGER) - (declarationOrder.get(b.name) ?? Number.MAX_SAFE_INTEGER) || a.name.localeCompare(b.name));

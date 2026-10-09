@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { relocateBaseline } from '../delidev/proto-compat.mjs';
+import { compatibilityImports, relocateBaseline } from '../delidev/proto-compat.mjs';
 
 test('descriptor relocation preserves changes and never hides unknown declarations', () => {
   const message = { name: 'Known', field: [{ name: 'value', number: 1, type: 'TYPE_STRING' }] };
@@ -128,4 +128,9 @@ test('new RPC ownership retains the closed method profile', t => {
     assert.equal(methods[0].clientStreaming ?? false, reservation.clientStreaming);
     assert.equal(methods[0].serverStreaming ?? false, reservation.serverStreaming);
   }
+});
+
+test("compatibility facade reuses generated public dependency bindings",()=>{
+ const original='import { file_delidev_v1_account } from "./account_pb.js";';
+ assert.equal(compatibilityImports(original,["account","mcp_management"]),'import { file_delidev_v1_mcp_management } from "./mcp_management_pb.js";');
 });

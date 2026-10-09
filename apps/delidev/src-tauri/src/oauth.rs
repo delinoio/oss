@@ -25,6 +25,7 @@ pub enum OAuthAction {
     BeginHuggingFace,
     BeginGoogleGemini,
     BeginBaseten,
+    BeginMcp,
     Profiles,
     BindOpen,
     SubscriptionOpen,
@@ -57,10 +58,11 @@ pub enum OAuthProfile {
     HuggingFace,
     GoogleGemini,
     Baseten,
+    Mcp,
 }
 
 fn registered_client(profile: OAuthProfile) -> Option<String> {
-    if profile == OAuthProfile::Openrouter {
+    if profile == OAuthProfile::Openrouter || profile == OAuthProfile::Mcp {
         return Some(String::new());
     }
     let registrations: serde_json::Value = serde_json::from_str(include_str!(
@@ -74,7 +76,7 @@ fn registered_client(profile: OAuthProfile) -> Option<String> {
         ),
         OAuthProfile::GoogleGemini => ("gemini", "http://127.0.0.1/oauth/google-gemini/callback"),
         OAuthProfile::Baseten => ("baseten", ""),
-        OAuthProfile::Openrouter => return Some(String::new()),
+        OAuthProfile::Openrouter | OAuthProfile::Mcp => return Some(String::new()),
     };
     let registration = registrations.get(key)?;
     let id = registration.get("client_id")?.as_str()?;
@@ -458,6 +460,7 @@ impl OAuthHost {
                 | OAuthAction::BeginHuggingFace
                 | OAuthAction::BeginGoogleGemini
                 | OAuthAction::BeginBaseten
+                | OAuthAction::BeginMcp
         ) {
             let profile = if action == OAuthAction::Begin {
                 OAuthProfile::Openrouter
@@ -465,6 +468,8 @@ impl OAuthHost {
                 OAuthProfile::HuggingFace
             } else if action == OAuthAction::BeginGoogleGemini {
                 OAuthProfile::GoogleGemini
+            } else if action == OAuthAction::BeginMcp {
+                OAuthProfile::Mcp
             } else {
                 OAuthProfile::Baseten
             };
@@ -733,7 +738,9 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
         .map_err(|_| NativeFailure::SidecarFailed)?;
     // Each UUID-v7 has fresh cryptographic random bits. Their concatenation
     // supplies an unpredictable 32-byte path without a persistent identifier.
-    let path = if profile == OAuthProfile::GoogleGemini {
+    let path = if profile == OAuthProfile::Mcp {
+        "/oauth/mcp/callback".into()
+    } else if profile == OAuthProfile::GoogleGemini {
         "/oauth/google-gemini/callback".into()
     } else if profile == OAuthProfile::HuggingFace {
         "/oauth/hugging-face/callback".into()
@@ -744,7 +751,7 @@ fn begin_profile(scope: OAuthScope, profile: OAuthProfile) -> Result<Attempt, Na
             uuid::Uuid::now_v7().simple()
         )
     };
-    let host_name = if profile == OAuthProfile::GoogleGemini {
+    let host_name = if profile == OAuthProfile::GoogleGemini || profile == OAuthProfile::Mcp {
         "127.0.0.1"
     } else {
         "localhost"
@@ -1058,6 +1065,9 @@ fn validate_public_authorization(
     client: &str,
     profile: OAuthProfile,
 ) -> Result<Zeroizing<String>, NativeFailure> {
+    if profile == OAuthProfile::Mcp {
+        return validate_mcp_authorization(raw, callback);
+    }
     if raw.len() > 4096 || raw.chars().any(char::is_control) {
         return Err(NativeFailure::InvalidInput);
     }
@@ -1069,7 +1079,7 @@ fn validate_public_authorization(
             "https://www.googleapis.com/auth/cloud-platform",
             9,
         ),
-        OAuthProfile::Openrouter | OAuthProfile::Baseten => {
+        OAuthProfile::Openrouter | OAuthProfile::Baseten | OAuthProfile::Mcp => {
             return Err(NativeFailure::InvalidInput);
         }
     };
@@ -1120,6 +1130,60 @@ fn validate_public_authorization(
     }
     fields.remove("state").ok_or(NativeFailure::InvalidInput)
 }
+// MCP dynamic public-client authorization has its own trusted-window callback
+// profile. It never borrows an account provider's registration or callback.
+fn validate_mcp_authorization(
+    raw: &str,
+    callback: &str,
+) -> Result<Zeroizing<String>, NativeFailure> {
+    if raw.len() > 8192 || raw.chars().any(char::is_control) {
+        return Err(NativeFailure::InvalidInput);
+    }
+    let url = url::Url::parse(raw).map_err(|_| NativeFailure::InvalidInput)?;
+    let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"));
+    if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.as_str() != raw
+    {
+        return Err(NativeFailure::InvalidInput);
+    }
+    let mut fields = BTreeMap::new();
+    for (key, value) in url.query_pairs() {
+        if fields
+            .insert(key.into_owned(), Zeroizing::new(value.into_owned()))
+            .is_some()
+        {
+            return Err(NativeFailure::InvalidInput);
+        }
+    }
+    let get = |name: &str| fields.get(name).map(|value| value.as_str());
+    if fields.len() != 7
+        || get("redirect_uri") != Some(callback)
+        || get("response_type") != Some("code")
+        || get("code_challenge_method") != Some("S256")
+        || get("client_id").is_none_or(|value| value.is_empty() || value.len() > 1024)
+        || get("resource").is_none_or(|value| value.is_empty() || value.len() > 4096)
+    {
+        return Err(NativeFailure::InvalidInput);
+    }
+    for key in ["state", "code_challenge"] {
+        if get(key).is_none_or(|value| {
+            value.len() != 43
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        }) {
+            return Err(NativeFailure::InvalidInput);
+        }
+    }
+    Ok(Zeroizing::new(
+        get("state").ok_or(NativeFailure::InvalidInput)?.to_owned(),
+    ))
+}
+
 fn open_authorization(url: &str, stopped: &AtomicBool) -> Result<(), NativeFailure> {
     crate::browser_opener::dispatch(url, stopped)
 }
@@ -2464,5 +2528,47 @@ mod claude_subscription_tests {
         ] {
             assert!(validate_claude_subscription_authorization(&changed).is_err());
         }
+    }
+    #[test]
+    fn mcp_authorization_pins_original_callback_and_separate_public_profile() {
+        let callback = "http://127.0.0.1:54321/oauth/mcp/callback";
+        let state = "a".repeat(43);
+        let mut authorization = url::Url::parse("https://issuer.example.test/authorize").unwrap();
+        authorization.query_pairs_mut().extend_pairs([
+            ("client_id", "mcp-public-client"),
+            ("redirect_uri", callback),
+            ("response_type", "code"),
+            ("code_challenge_method", "S256"),
+            ("code_challenge", state.as_str()),
+            ("state", state.as_str()),
+            ("resource", "https://mcp.example.test/api"),
+        ]);
+        assert_eq!(
+            validate_mcp_authorization(authorization.as_str(), callback)
+                .unwrap()
+                .as_str(),
+            state
+        );
+        assert!(
+            validate_mcp_authorization(
+                authorization.as_str(),
+                "http://127.0.0.1:54322/oauth/mcp/callback"
+            )
+            .is_err()
+        );
+        authorization
+            .query_pairs_mut()
+            .append_pair("state", "replacement");
+        assert!(validate_mcp_authorization(authorization.as_str(), callback).is_err());
+        assert!(registered_client(OAuthProfile::Mcp).is_some());
+        assert!(
+            validate_public_authorization(
+                authorization.as_str(),
+                callback,
+                "",
+                OAuthProfile::GoogleGemini
+            )
+            .is_err()
+        );
     }
 }

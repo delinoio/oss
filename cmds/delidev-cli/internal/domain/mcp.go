@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const MCPManagementV1 WorkerCapability = "mcp-management-v1"
+
 type MCPTransport string
 
 const (
@@ -47,7 +49,8 @@ type MCPSelection struct {
 	Revision  uint64 `json:"revision,string"`
 }
 type MCPSelectionList struct {
-	Selections []MCPSelection `json:"selections"`
+	RebindingRequired bool           `json:"rebinding_required,omitempty"`
+	Selections        []MCPSelection `json:"selections"`
 }
 
 func (s MCPSelectionList) Validate() error {
@@ -108,6 +111,9 @@ func (v MCPDefinition) Validate() error {
 			return mcpInvalid()
 		}
 		seen[key] = true
+	}
+	if v.Authentication == MCPOAuth && len(v.HeaderNames) > 0 {
+		return mcpInvalid()
 	}
 	if v.Authentication == MCPAnonymous && (len(v.EnvironmentNames) > 0 || len(v.HeaderNames) > 0) {
 		return mcpInvalid()

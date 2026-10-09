@@ -236,6 +236,22 @@ func (s *Service) SaveAgentWorker(ctx context.Context, req *connect.Request[pb.S
 	if rpc.ResourceSchemaVersion(domain.AgentKind, req.Msg.DocumentJson) != req.Msg.SchemaVersion && !(req.Msg.SchemaVersion == 2 && len(req.Msg.RouteModels) == 0) {
 		return nil, rpc.Error(domain.Fail(domain.Unsupported, "Worker schema does not match its account routes.", "Use schema 3 for ordered source routes."), correlation)
 	}
+
+	if req.Msg.McpSelections != nil {
+		var fields map[string]json.RawMessage
+		if domain.Decode(req.Msg.DocumentJson, &fields) != nil {
+			return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Invalid Agent document.", "Keep its complete original configuration."), correlation)
+		}
+		values := domain.MCPSelectionList{Selections: []domain.MCPSelection{}}
+		for _, v := range req.Msg.McpSelections.Selections {
+			values.Selections = append(values.Selections, domain.MCPSelection{MachineID: domain.ID(v.MachineId), DeviceID: domain.ID(v.WorkerDeviceId), ServerID: domain.ID(v.ServerId), Revision: v.ExpectedRevision})
+		}
+		if e := values.Validate(); e != nil {
+			return nil, rpc.Error(e, correlation)
+		}
+		fields["mcp_selections"], _ = json.Marshal(values)
+		req.Msg.DocumentJson, _ = json.Marshal(fields)
+	}
 	input := agentWorkerMutation{ConfigurationMutation: ConfigurationMutation{RequestID: domain.ID(req.Msg.Mutation.RequestId), ID: domain.ID(req.Msg.Mutation.Id), ExpectedRevision: req.Msg.Mutation.ExpectedRevision, Kind: domain.AgentKind, Document: req.Msg.DocumentJson}}
 	selection := func(value *pb.AgentWorkerModelSelection) agentWorkerModelSelection {
 		if value == nil {

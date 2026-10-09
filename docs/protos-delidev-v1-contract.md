@@ -1065,3 +1065,12 @@ an immutable optional native-default proof. Worker 39
 startup Ready RPC carries only original actual-process values; negotiation alone
 grants no default authority. No RPC or SQLite migration is added. Allocation declarations alone do not
 grant native/account support.
+## Worker-owned MCP management — issue #2129
+
+Follow the [MCP management contract](cmds-delidev-mcp-management-contract.md).
+System 64 / Worker 40 and SaveAgentWorkerRequest field 7 own complete management,
+with original Worker definitions/protected values, exact actor receipts, bounded
+server metadata fences, omission-preserving revision selections, inert portable
+rebinding and independent retained-generation cleanup. No SQLite migration is
+added. Management cannot authorize native execution; each actual harness adapter
+retains its separate process, advertisement and cleanup acceptance.

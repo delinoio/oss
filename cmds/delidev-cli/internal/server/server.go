@@ -62,6 +62,10 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	mcpMu      sync.Mutex
+	mcpReaders map[domain.ID]*mcpReader
+	delidevv1connect.UnimplementedMcpManagementServiceHandler
+	delidevv1connect.UnimplementedMcpWorkerServiceHandler
 	delidevv1connect.UnimplementedAttachmentServiceHandler
 	imageTransfersMu      sync.Mutex
 	imageTransferReaders  map[domain.ID]*imageTransferReader

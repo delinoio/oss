@@ -31,6 +31,8 @@ import (
 
 type Config struct {
 	nativeHarnessDefaults    bool
+	mcpEnabled               bool
+	mcpClient                delidevv1connect.McpWorkerServiceClient
 	imageClient              delidevv1connect.AttachmentServiceClient
 	branchReportClient       delidevv1connect.WorkerServiceClient
 	startup                  *executionStartupAttempt
@@ -258,6 +260,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 	}
 	config.network = transport.runtime
 	defer transport.CloseIdleConnections()
+	config.mcpClient = delidevv1connect.NewMcpWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(128<<10), connect.WithSendMaxBytes(256<<10))
 	config.imageClient = delidevv1connect.NewAttachmentServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2<<20), connect.WithSendMaxBytes(2<<20))
 	client := delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(8<<20), connect.WithSendMaxBytes(2<<20))
 	config.branchReportClient = delidevv1connect.NewWorkerServiceClient(httpClient, credential.Endpoint, connect.WithReadMaxBytes(2*domain.MaxRepositoryBranchesJobBytes), connect.WithSendMaxBytes(domain.MaxRepositoryBranchesJobBytes))
@@ -290,6 +293,8 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		if err == nil {
 			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
+			mcpExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1)
+			config.mcpEnabled = mcpExpected
 			revertExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
@@ -340,6 +345,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
+			}
+			if mcpExpected {
+				profile += "\x00mcp-management-v1"
 			}
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
@@ -411,6 +419,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if mcpExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
 			}
@@ -864,12 +875,20 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			watchImageTransfers(ctx, config, imageClient, credential, instance)
 		}
 	}()
+	mcpDone := make(chan struct{})
+	go func() {
+		defer close(mcpDone)
+		if config.mcpEnabled {
+			watchMcpManagement(ctx, config, config.mcpClient, credential, instance)
+		}
+	}()
 	readsDone := make(chan struct{})
 	go func() { defer close(readsDone); watchWorkspaceReads(ctx, config, client, credential, instance) }()
 	defer func() {
 		cancel(context.Canceled)
 		_ = stream.Close()
 		<-received
+		<-mcpDone
 		<-readsDone
 		<-imagesDone
 		<-forwardsDone

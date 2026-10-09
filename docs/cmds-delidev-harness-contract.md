@@ -1981,3 +1981,12 @@ values fail with a named no-input configuration error and retain independent
 original process cleanup. The original Ready receipt records bounded typed values
 for future configurations; it does not rewrite accepted history. Follow the
 [catalog provenance contract](cmds-delidev-catalog-contract.md#verified-native-default-provenance).
+## Worker-owned MCP management — issue #2129
+
+Follow the [MCP management contract](cmds-delidev-mcp-management-contract.md).
+System 64 / Worker 40 and SaveAgentWorkerRequest field 7 own complete management,
+with original Worker definitions/protected values, exact actor receipts, bounded
+server metadata fences, omission-preserving revision selections, inert portable
+rebinding and independent retained-generation cleanup. No SQLite migration is
+added. Management cannot authorize native execution; each actual harness adapter
+retains its separate process, advertisement and cleanup acceptance.

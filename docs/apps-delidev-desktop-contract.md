@@ -3571,3 +3571,12 @@ reads, and current inherited values after a successful reconnect. English/Korean
 presentation and static search targets focus the original controls. The menu does
 not change credentials, install Claude, edit host configuration files or introduce
 a second defaults store. No allocation, migration or native adapter is added.
+## Worker-owned MCP management — issue #2129
+
+Follow the [MCP management contract](cmds-delidev-mcp-management-contract.md).
+System 64 / Worker 40 and SaveAgentWorkerRequest field 7 own complete management,
+with original Worker definitions/protected values, exact actor receipts, bounded
+server metadata fences, omission-preserving revision selections, inert portable
+rebinding and independent retained-generation cleanup. No SQLite migration is
+added. Management cannot authorize native execution; each actual harness adapter
+retains its separate process, advertisement and cleanup acceptance.

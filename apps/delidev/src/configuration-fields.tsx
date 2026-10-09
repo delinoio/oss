@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { HarnessDefaultFields, HarnessSettingsScope, HarnessSettingsHarness } from "./harness-settings";
+import { McpSelectionFields } from "./mcp-selection";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -288,7 +289,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
       permissions={<AgentPermissions reviewSupported={reviewerStatus.data?.capabilities.includes(SystemCapability.CODEX_APPROVAL_REVIEW_V1) === true} active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
       reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
-      instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
+      instructions={<><OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} /><McpSelectionFields data={data} change={change} active={active} disabled={props.disabled??false}/></>}
       native={<>
         {data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <>
           <TextField label={copy("configuration-fields.subagentModel_28463c")} value={options.subagent_model} change={option("subagent_model")} unavailable />

@@ -30,6 +30,8 @@ message McpServer {
  McpAuthenticationState authentication_state = 4; repeated string agent_ids = 5;
  // Empty until an independently accepted native adapter proves support.
  repeated string supported_harnesses = 6;
+ // Original actor-owned safe recovery metadata; no callback or state bytes.
+ string authentication_attempt_id = 7; uint64 authentication_attempt_revision = 8;
 }
 message McpSecret { string name = 1; string value = 2; }
 message ListMcpServersRequest { string machine_id = 1; }
@@ -60,5 +62,10 @@ message ReportMcpManagementRequest {
  string machine_id = 1; string instance_id = 2; string command_id = 3;
  oneof result { ListMcpServersResponse list = 4; MutateMcpServerResponse mutation = 5; AuthenticateMcpServerResponse authentication = 6; }
  string problem_code = 7;
+ // Original Worker journal proves no side effect or retained ownership for this request.
+ bool rejected_without_effect = 8;
 }
 message ReportMcpManagementResponse {}
+
+message McpSelection { string machine_id = 1; string worker_device_id = 2; string server_id = 3; uint64 expected_revision = 4; }
+message McpSelectionList { repeated McpSelection selections = 1; }

@@ -70,6 +70,14 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	}
 	switch v := value.(type) {
 	case *domain.Agent:
+		if v.MCPSelections != nil && len(v.MCPSelections.Selections) > 0 {
+			v.MCPSelections.RebindingRequired = true
+			// Rebinding is an import fence, not an observed native/credential field.
+			// Preserve every imported reference while marking it non-authoritative.
+			if incoming {
+				before, _ = json.Marshal(v)
+			}
+		}
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()
 		}

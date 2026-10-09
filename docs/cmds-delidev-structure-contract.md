@@ -488,3 +488,11 @@ System/Worker allocations. Schema-4 configuration documents and portable version
 `NATIVE_HARNESS_DEFAULTS_V1`, startup-observation field 12 and the complete closed
 optional native-default observation message. Preserve all earlier startup fields,
 original process/proxy authority and unknown observations; no SQLite migration.
+## MCP management allocation closure — issue #2129
+
+The complete feature owns System `MCP_MANAGEMENT_V1 = 64`, Worker
+`MCP_MANAGEMENT_V1 = 40`, SaveAgentWorkerRequest `mcp_selections = 7`, both closed
+management/Worker services and their typed messages in `mcp_management.proto`.
+Preserve route models 5 and separate managed Skills 6. This closure adds no
+SQLite migration, consumes no reserved migration 32 and grants no native runtime
+support. Follow the [MCP management contract](cmds-delidev-mcp-management-contract.md).

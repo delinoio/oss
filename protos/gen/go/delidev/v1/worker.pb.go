@@ -26,6 +26,7 @@ type WorkerCapability int32
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1     WorkerCapability = 39
+	WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1              WorkerCapability = 40
 	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1          WorkerCapability = 29
 	WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1       WorkerCapability = 30
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1   WorkerCapability = 28
@@ -66,6 +67,7 @@ var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
 		39: "WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1",
+		40: "WORKER_CAPABILITY_MCP_MANAGEMENT_V1",
 		29: "WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1",
 		30: "WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1",
 		28: "WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1",
@@ -102,6 +104,7 @@ var (
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
 		"WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1":        39,
+		"WORKER_CAPABILITY_MCP_MANAGEMENT_V1":                 40,
 		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":             29,
 		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":          30,
 		"WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":      28,
@@ -4151,10 +4154,11 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed*\x92\r\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed*\xbb\r\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x120\n" +
-	",WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1\x10'\x12+\n" +
+	",WORKER_CAPABILITY_NATIVE_HARNESS_DEFAULTS_V1\x10'\x12'\n" +
+	"#WORKER_CAPABILITY_MCP_MANAGEMENT_V1\x10(\x12+\n" +
 	"'WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1\x10\x1d\x12.\n" +
 	"*WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1\x10\x1e\x122\n" +
 	".WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1\x10\x1c\x120\n" +

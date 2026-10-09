@@ -316,3 +316,13 @@ remains read-only; returning to the foreground cannot retry a mutation. A bounde
 Settings snapshot supplies a coherent event cursor while session/history pages
 remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
+
+## Worker-owned MCP management — issue #2129
+
+Follow the [MCP management contract](cmds-delidev-mcp-management-contract.md).
+System 64 / Worker 40 and SaveAgentWorkerRequest field 7 own complete management,
+with original Worker definitions/protected values, exact actor receipts, bounded
+server metadata fences, omission-preserving revision selections, inert portable
+rebinding and independent retained-generation cleanup. No SQLite migration is
+added. Management cannot authorize native execution; each actual harness adapter
+retains its separate process, advertisement and cleanup acceptance.

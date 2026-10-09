@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/mcp_management.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -30,6 +31,8 @@ message SaveAgentWorkerRequest {
   // Ordered selections corresponding exactly to schema-3 source routes.
   // Exclusive with model. Sources are derived from current accounts by Go.
   repeated AgentWorkerModelSelection route_models = 5;
+ // Omission preserves old clients; an explicit empty list clears selections.
+ McpSelectionList mcp_selections = 7;
 }
 
 message AgentWorkerModelSelection {

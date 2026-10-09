@@ -10270,6 +10270,876 @@
       "member": "approvals_reviewer",
       "number": 6,
       "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MCP_MANAGEMENT_V1",
+      "number": 64,
+      "status": "implemented"
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MCP_MANAGEMENT_V1",
+      "number": 40,
+      "status": "implemented"
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveAgentWorkerRequest",
+      "member": "mcp_selections",
+      "number": 7,
+      "status": "implemented"
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpTransport",
+      "member": "MCP_TRANSPORT_UNSPECIFIED",
+      "number": 0,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpTransport",
+      "member": "MCP_TRANSPORT_STDIO",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpTransport",
+      "member": "MCP_TRANSPORT_STREAMABLE_HTTP",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthentication",
+      "member": "MCP_AUTHENTICATION_UNSPECIFIED",
+      "number": 0,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthentication",
+      "member": "MCP_AUTHENTICATION_NONE",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthentication",
+      "member": "MCP_AUTHENTICATION_MANUAL",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthentication",
+      "member": "MCP_AUTHENTICATION_OAUTH",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpMutation",
+      "member": "MCP_MUTATION_UNSPECIFIED",
+      "number": 0,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpMutation",
+      "member": "MCP_MUTATION_SAVE",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpMutation",
+      "member": "MCP_MUTATION_ENABLE",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpMutation",
+      "member": "MCP_MUTATION_DELETE",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationOperation",
+      "member": "MCP_AUTHENTICATION_OPERATION_UNSPECIFIED",
+      "number": 0,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationOperation",
+      "member": "MCP_AUTHENTICATION_OPERATION_START",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationOperation",
+      "member": "MCP_AUTHENTICATION_OPERATION_COMPLETE",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationOperation",
+      "member": "MCP_AUTHENTICATION_OPERATION_CANCEL",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_UNSPECIFIED",
+      "number": 0,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_NOT_REQUIRED",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_REQUIRED",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_PENDING",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_READY",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_CANCELED",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "McpAuthenticationState",
+      "member": "MCP_AUTHENTICATION_STATE_UNCERTAIN",
+      "number": 6,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "name",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "transport",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "executable",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "arguments",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "directory",
+      "number": 6,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "endpoint",
+      "number": 7,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "environment_names",
+      "number": 8,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "header_names",
+      "number": 9,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "authentication",
+      "number": 10,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "enabled",
+      "number": 11,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpDefinition",
+      "member": "revision",
+      "number": 12,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "definition",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "machine_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "worker_device_id",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "authentication_state",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "agent_ids",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "supported_harnesses",
+      "number": 6,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "authentication_attempt_id",
+      "number": 7,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpServer",
+      "member": "authentication_attempt_revision",
+      "number": 8,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSecret",
+      "member": "name",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSecret",
+      "member": "value",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMcpServersRequest",
+      "member": "machine_id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMcpServersResponse",
+      "member": "servers",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "mutation",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "machine_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "operation",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "definition",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "enabled",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "secrets",
+      "number": 6,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerRequest",
+      "member": "confirmed",
+      "number": 7,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSecretValues",
+      "member": "environment",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSecretValues",
+      "member": "headers",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerResponse",
+      "member": "server",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerResponse",
+      "member": "request_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerResponse",
+      "member": "replayed",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMcpServerResponse",
+      "member": "deleted",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerRequest",
+      "member": "mutation",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerRequest",
+      "member": "machine_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerRequest",
+      "member": "operation",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerRequest",
+      "member": "attempt_id",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerRequest",
+      "member": "callback_url",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerResponse",
+      "member": "request_id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerResponse",
+      "member": "attempt_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerResponse",
+      "member": "state",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerResponse",
+      "member": "authorization_url",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMcpServerResponse",
+      "member": "replayed",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "WatchMcpManagementRequest",
+      "member": "machine_id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "WatchMcpManagementRequest",
+      "member": "instance_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "actor_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "machine_id",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "worker_device_id",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "worker_instance_id",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "list",
+      "number": 6,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "mutation",
+      "number": 7,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpManagementCommand",
+      "member": "authentication",
+      "number": 8,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "WatchMcpManagementResponse",
+      "member": "command",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "WatchMcpManagementResponse",
+      "member": "heartbeat",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "machine_id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "instance_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "command_id",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "list",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "mutation",
+      "number": 5,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "authentication",
+      "number": 6,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "problem_code",
+      "number": 7,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ReportMcpManagementRequest",
+      "member": "rejected_without_effect",
+      "number": 8,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSelection",
+      "member": "machine_id",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSelection",
+      "member": "worker_device_id",
+      "number": 2,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSelection",
+      "member": "server_id",
+      "number": 3,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSelection",
+      "member": "expected_revision",
+      "number": 4,
+      "status": "implemented",
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "McpSelectionList",
+      "member": "selections",
+      "number": 1,
+      "status": "implemented",
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -10405,6 +11275,51 @@
       "method": "RevertSession",
       "input": "RevertSessionRequest",
       "output": "RevertSessionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "McpManagementService",
+      "method": "ListMcpServers",
+      "input": "ListMcpServersRequest",
+      "output": "ListMcpServersResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "McpManagementService",
+      "method": "MutateMcpServer",
+      "input": "MutateMcpServerRequest",
+      "output": "MutateMcpServerResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "McpManagementService",
+      "method": "AuthenticateMcpServer",
+      "input": "AuthenticateMcpServerRequest",
+      "output": "AuthenticateMcpServerResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "McpWorkerService",
+      "method": "WatchMcpManagement",
+      "input": "WatchMcpManagementRequest",
+      "output": "WatchMcpManagementResponse",
+      "clientStreaming": false,
+      "serverStreaming": true
+    },
+    {
+      "issue": 2129,
+      "service": "McpWorkerService",
+      "method": "ReportMcpManagement",
+      "input": "ReportMcpManagementRequest",
+      "output": "ReportMcpManagementResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

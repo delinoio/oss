@@ -103,6 +103,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
 
 - [Optional current-user services](cmds-delidev-user-services-contract.md)
 - [Native subagent observations](cmds-delidev-subagents-contract.md)
+- [Worker-owned MCP management](cmds-delidev-mcp-management-contract.md)
 - [Native harness adapter contract](cmds-delidev-harness-contract.md)
 - [Direct execution startup](cmds-delidev-execution-startup-contract.md)
 - [Protected credential storage](cmds-delidev-credentials-contract.md)

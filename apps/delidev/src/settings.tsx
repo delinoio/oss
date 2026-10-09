@@ -1,3 +1,4 @@
+import { McpSettings } from "./mcp-settings";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionScope, SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
@@ -241,7 +242,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
 
 export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string; resourceId?: string; resourceKind?: EntityKind };
 export enum SettingsEntryDestination { ConnectionDiagnostics="connection-diagnostics", Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
-enum SettingsArea { Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
+enum SettingsArea { Mcp, Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
 
 enum SettingsGroup { Harnesses = "Harnesses", Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
 
@@ -255,6 +256,7 @@ export const settingsCategories: Record<SettingsCategory, { label: string; descr
   [SettingsCategory.ApiAccounts]: { get label() { return copy("settings.aiApiKeys_da1a0f"); }, get description() { return copy("settings.manageAiApiKeysAndKeyless_372629"); }, kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.Providers]: { get label() { return copy("settings.apiProviders_376855"); }, get description() { return copy("settings.providerAvailabilityIsSavedOnThe_11e7c8"); }, kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
   [SettingsCategory.AgentWorkers]: { get label() { return copy("settings.agentWorkers_e60c23"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.AGENT, area: SettingsArea.Configuration },
+  [SettingsCategory.Mcp]: { get label() { return copy("mcp.title"); }, get description() { return copy("mcp.scope"); }, area: SettingsArea.Mcp },
   [SettingsCategory.Instructions]: { get label() { return copy("settings.instructions_934652"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.TEMPLATE, area: SettingsArea.Configuration },
   [SettingsCategory.ProjectDefaults]: { get label() { return copy("configuration-fields.projectDefaults"); }, get description() { return copy("configuration-fields.inheritanceHelp"); }, kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Projects]: { get label() { return copy("settings.projects_04e2a9"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.PROJECT, area: SettingsArea.Configuration },
@@ -271,7 +273,7 @@ export const settingsCategories: Record<SettingsCategory, { label: string; descr
 
 export const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
  {label:SettingsGroup.Harnesses,categories:[SettingsCategory.CodexCLI,SettingsCategory.ClaudeCLI]},
-  { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
+  { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions, SettingsCategory.Mcp] },
   { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations, SettingsCategory.GitWorkflow] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
   { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.KeyboardShortcuts, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
@@ -289,6 +291,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.SubscriptionAccounts]: "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.ApiAccounts]: "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.AgentWorkers]: "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
+  [SettingsCategory.Mcp]: "M8 3v5m8-5v5M5 8h14v6a7 7 0 0 1-14 0V8zM12 21v-7",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
   [SettingsCategory.Repositories]: "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
@@ -533,6 +536,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           </div> : null}
         </div> : null}
         <div className="settings-panels">
+          {area === SettingsArea.Mcp ? <McpSettings active={visible} /> : null}
           {area === SettingsArea.KeyboardShortcuts ? <ShortcutSettings /> : null}
           {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}

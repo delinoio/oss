@@ -1,3 +1,4 @@
+import { McpManagementProvider } from "./mcp-management";
 import { SidebarPreference, SidebarPreferenceBoundary, SidebarPreferenceNotice, useSidebarPreference, useWideSidebar } from "./sidebar-preference";
 import { CommandMenu, applicationCommands } from "./command-menu";
 import { resourceName } from "./documents";
@@ -205,7 +206,7 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
+  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><McpManagementProvider><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></McpManagementProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
 }
 
 // The connection owns submitted drafts even while another Session is mounted.

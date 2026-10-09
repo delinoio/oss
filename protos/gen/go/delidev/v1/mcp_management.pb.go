@@ -430,8 +430,11 @@ type McpServer struct {
 	AgentIds            []string               `protobuf:"bytes,5,rep,name=agent_ids,json=agentIds,proto3" json:"agent_ids,omitempty"`
 	// Empty until an independently accepted native adapter proves support.
 	SupportedHarnesses []string `protobuf:"bytes,6,rep,name=supported_harnesses,json=supportedHarnesses,proto3" json:"supported_harnesses,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Original actor-owned safe recovery metadata; no callback or state bytes.
+	AuthenticationAttemptId       string `protobuf:"bytes,7,opt,name=authentication_attempt_id,json=authenticationAttemptId,proto3" json:"authentication_attempt_id,omitempty"`
+	AuthenticationAttemptRevision uint64 `protobuf:"varint,8,opt,name=authentication_attempt_revision,json=authenticationAttemptRevision,proto3" json:"authentication_attempt_revision,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *McpServer) Reset() {
@@ -504,6 +507,20 @@ func (x *McpServer) GetSupportedHarnesses() []string {
 		return x.SupportedHarnesses
 	}
 	return nil
+}
+
+func (x *McpServer) GetAuthenticationAttemptId() string {
+	if x != nil {
+		return x.AuthenticationAttemptId
+	}
+	return ""
+}
+
+func (x *McpServer) GetAuthenticationAttemptRevision() uint64 {
+	if x != nil {
+		return x.AuthenticationAttemptRevision
+	}
+	return 0
 }
 
 type McpSecret struct {
@@ -1263,10 +1280,12 @@ type ReportMcpManagementRequest struct {
 	//	*ReportMcpManagementRequest_List
 	//	*ReportMcpManagementRequest_Mutation
 	//	*ReportMcpManagementRequest_Authentication
-	Result        isReportMcpManagementRequest_Result `protobuf_oneof:"result"`
-	ProblemCode   string                              `protobuf:"bytes,7,opt,name=problem_code,json=problemCode,proto3" json:"problem_code,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Result      isReportMcpManagementRequest_Result `protobuf_oneof:"result"`
+	ProblemCode string                              `protobuf:"bytes,7,opt,name=problem_code,json=problemCode,proto3" json:"problem_code,omitempty"`
+	// Original Worker journal proves no side effect or retained ownership for this request.
+	RejectedWithoutEffect bool `protobuf:"varint,8,opt,name=rejected_without_effect,json=rejectedWithoutEffect,proto3" json:"rejected_without_effect,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ReportMcpManagementRequest) Reset() {
@@ -1361,6 +1380,13 @@ func (x *ReportMcpManagementRequest) GetProblemCode() string {
 	return ""
 }
 
+func (x *ReportMcpManagementRequest) GetRejectedWithoutEffect() bool {
+	if x != nil {
+		return x.RejectedWithoutEffect
+	}
+	return false
+}
+
 type isReportMcpManagementRequest_Result interface {
 	isReportMcpManagementRequest_Result()
 }
@@ -1419,6 +1445,118 @@ func (*ReportMcpManagementResponse) Descriptor() ([]byte, []int) {
 	return file_delidev_v1_mcp_management_proto_rawDescGZIP(), []int{14}
 }
 
+type McpSelection struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MachineId        string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	WorkerDeviceId   string                 `protobuf:"bytes,2,opt,name=worker_device_id,json=workerDeviceId,proto3" json:"worker_device_id,omitempty"`
+	ServerId         string                 `protobuf:"bytes,3,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *McpSelection) Reset() {
+	*x = McpSelection{}
+	mi := &file_delidev_v1_mcp_management_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *McpSelection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*McpSelection) ProtoMessage() {}
+
+func (x *McpSelection) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_mcp_management_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use McpSelection.ProtoReflect.Descriptor instead.
+func (*McpSelection) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_mcp_management_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *McpSelection) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *McpSelection) GetWorkerDeviceId() string {
+	if x != nil {
+		return x.WorkerDeviceId
+	}
+	return ""
+}
+
+func (x *McpSelection) GetServerId() string {
+	if x != nil {
+		return x.ServerId
+	}
+	return ""
+}
+
+func (x *McpSelection) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+type McpSelectionList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selections    []*McpSelection        `protobuf:"bytes,1,rep,name=selections,proto3" json:"selections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *McpSelectionList) Reset() {
+	*x = McpSelectionList{}
+	mi := &file_delidev_v1_mcp_management_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *McpSelectionList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*McpSelectionList) ProtoMessage() {}
+
+func (x *McpSelectionList) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_mcp_management_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use McpSelectionList.ProtoReflect.Descriptor instead.
+func (*McpSelectionList) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_mcp_management_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *McpSelectionList) GetSelections() []*McpSelection {
+	if x != nil {
+		return x.Selections
+	}
+	return nil
+}
+
 var File_delidev_v1_mcp_management_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_mcp_management_proto_rawDesc = "" +
@@ -1440,7 +1578,7 @@ const file_delidev_v1_mcp_management_proto_rawDesc = "" +
 	"\x0eauthentication\x18\n" +
 	" \x01(\x0e2\x1d.delidev.v1.McpAuthenticationR\x0eauthentication\x12\x18\n" +
 	"\aenabled\x18\v \x01(\bR\aenabled\x12\x1a\n" +
-	"\brevision\x18\f \x01(\x04R\brevision\"\xb4\x02\n" +
+	"\brevision\x18\f \x01(\x04R\brevision\"\xb8\x03\n" +
 	"\tMcpServer\x129\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2\x19.delidev.v1.McpDefinitionR\n" +
@@ -1450,7 +1588,9 @@ const file_delidev_v1_mcp_management_proto_rawDesc = "" +
 	"\x10worker_device_id\x18\x03 \x01(\tR\x0eworkerDeviceId\x12U\n" +
 	"\x14authentication_state\x18\x04 \x01(\x0e2\".delidev.v1.McpAuthenticationStateR\x13authenticationState\x12\x1b\n" +
 	"\tagent_ids\x18\x05 \x03(\tR\bagentIds\x12/\n" +
-	"\x13supported_harnesses\x18\x06 \x03(\tR\x12supportedHarnesses\"5\n" +
+	"\x13supported_harnesses\x18\x06 \x03(\tR\x12supportedHarnesses\x12:\n" +
+	"\x19authentication_attempt_id\x18\a \x01(\tR\x17authenticationAttemptId\x12F\n" +
+	"\x1fauthentication_attempt_revision\x18\b \x01(\x04R\x1dauthenticationAttemptRevision\"5\n" +
 	"\tMcpSecret\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"6\n" +
@@ -1515,7 +1655,7 @@ const file_delidev_v1_mcp_management_proto_rawDesc = "" +
 	"\toperation\"v\n" +
 	"\x1aWatchMcpManagementResponse\x12:\n" +
 	"\acommand\x18\x01 \x01(\v2 .delidev.v1.McpManagementCommandR\acommand\x12\x1c\n" +
-	"\theartbeat\x18\x02 \x01(\bR\theartbeat\"\xfa\x02\n" +
+	"\theartbeat\x18\x02 \x01(\bR\theartbeat\"\xb2\x03\n" +
 	"\x1aReportMcpManagementRequest\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1f\n" +
@@ -1526,9 +1666,20 @@ const file_delidev_v1_mcp_management_proto_rawDesc = "" +
 	"\x04list\x18\x04 \x01(\v2\".delidev.v1.ListMcpServersResponseH\x00R\x04list\x12A\n" +
 	"\bmutation\x18\x05 \x01(\v2#.delidev.v1.MutateMcpServerResponseH\x00R\bmutation\x12S\n" +
 	"\x0eauthentication\x18\x06 \x01(\v2).delidev.v1.AuthenticateMcpServerResponseH\x00R\x0eauthentication\x12!\n" +
-	"\fproblem_code\x18\a \x01(\tR\vproblemCodeB\b\n" +
+	"\fproblem_code\x18\a \x01(\tR\vproblemCode\x126\n" +
+	"\x17rejected_without_effect\x18\b \x01(\bR\x15rejectedWithoutEffectB\b\n" +
 	"\x06result\"\x1d\n" +
-	"\x1bReportMcpManagementResponse*i\n" +
+	"\x1bReportMcpManagementResponse\"\xa1\x01\n" +
+	"\fMcpSelection\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12(\n" +
+	"\x10worker_device_id\x18\x02 \x01(\tR\x0eworkerDeviceId\x12\x1b\n" +
+	"\tserver_id\x18\x03 \x01(\tR\bserverId\x12+\n" +
+	"\x11expected_revision\x18\x04 \x01(\x04R\x10expectedRevision\"L\n" +
+	"\x10McpSelectionList\x128\n" +
+	"\n" +
+	"selections\x18\x01 \x03(\v2\x18.delidev.v1.McpSelectionR\n" +
+	"selections*i\n" +
 	"\fMcpTransport\x12\x1d\n" +
 	"\x19MCP_TRANSPORT_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13MCP_TRANSPORT_STDIO\x10\x01\x12!\n" +
@@ -1577,7 +1728,7 @@ func file_delidev_v1_mcp_management_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_mcp_management_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_delidev_v1_mcp_management_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_delidev_v1_mcp_management_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_delidev_v1_mcp_management_proto_goTypes = []any{
 	(McpTransport)(0),                     // 0: delidev.v1.McpTransport
 	(McpAuthentication)(0),                // 1: delidev.v1.McpAuthentication
@@ -1599,7 +1750,9 @@ var file_delidev_v1_mcp_management_proto_goTypes = []any{
 	(*WatchMcpManagementResponse)(nil),    // 17: delidev.v1.WatchMcpManagementResponse
 	(*ReportMcpManagementRequest)(nil),    // 18: delidev.v1.ReportMcpManagementRequest
 	(*ReportMcpManagementResponse)(nil),   // 19: delidev.v1.ReportMcpManagementResponse
-	(*Mutation)(nil),                      // 20: delidev.v1.Mutation
+	(*McpSelection)(nil),                  // 20: delidev.v1.McpSelection
+	(*McpSelectionList)(nil),              // 21: delidev.v1.McpSelectionList
+	(*Mutation)(nil),                      // 22: delidev.v1.Mutation
 }
 var file_delidev_v1_mcp_management_proto_depIdxs = []int32{
 	0,  // 0: delidev.v1.McpDefinition.transport:type_name -> delidev.v1.McpTransport
@@ -1607,14 +1760,14 @@ var file_delidev_v1_mcp_management_proto_depIdxs = []int32{
 	5,  // 2: delidev.v1.McpServer.definition:type_name -> delidev.v1.McpDefinition
 	4,  // 3: delidev.v1.McpServer.authentication_state:type_name -> delidev.v1.McpAuthenticationState
 	6,  // 4: delidev.v1.ListMcpServersResponse.servers:type_name -> delidev.v1.McpServer
-	20, // 5: delidev.v1.MutateMcpServerRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 5: delidev.v1.MutateMcpServerRequest.mutation:type_name -> delidev.v1.Mutation
 	2,  // 6: delidev.v1.MutateMcpServerRequest.operation:type_name -> delidev.v1.McpMutation
 	5,  // 7: delidev.v1.MutateMcpServerRequest.definition:type_name -> delidev.v1.McpDefinition
 	11, // 8: delidev.v1.MutateMcpServerRequest.secrets:type_name -> delidev.v1.McpSecretValues
 	7,  // 9: delidev.v1.McpSecretValues.environment:type_name -> delidev.v1.McpSecret
 	7,  // 10: delidev.v1.McpSecretValues.headers:type_name -> delidev.v1.McpSecret
 	6,  // 11: delidev.v1.MutateMcpServerResponse.server:type_name -> delidev.v1.McpServer
-	20, // 12: delidev.v1.AuthenticateMcpServerRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 12: delidev.v1.AuthenticateMcpServerRequest.mutation:type_name -> delidev.v1.Mutation
 	3,  // 13: delidev.v1.AuthenticateMcpServerRequest.operation:type_name -> delidev.v1.McpAuthenticationOperation
 	4,  // 14: delidev.v1.AuthenticateMcpServerResponse.state:type_name -> delidev.v1.McpAuthenticationState
 	8,  // 15: delidev.v1.McpManagementCommand.list:type_name -> delidev.v1.ListMcpServersRequest
@@ -1624,21 +1777,22 @@ var file_delidev_v1_mcp_management_proto_depIdxs = []int32{
 	9,  // 19: delidev.v1.ReportMcpManagementRequest.list:type_name -> delidev.v1.ListMcpServersResponse
 	12, // 20: delidev.v1.ReportMcpManagementRequest.mutation:type_name -> delidev.v1.MutateMcpServerResponse
 	14, // 21: delidev.v1.ReportMcpManagementRequest.authentication:type_name -> delidev.v1.AuthenticateMcpServerResponse
-	8,  // 22: delidev.v1.McpManagementService.ListMcpServers:input_type -> delidev.v1.ListMcpServersRequest
-	10, // 23: delidev.v1.McpManagementService.MutateMcpServer:input_type -> delidev.v1.MutateMcpServerRequest
-	13, // 24: delidev.v1.McpManagementService.AuthenticateMcpServer:input_type -> delidev.v1.AuthenticateMcpServerRequest
-	15, // 25: delidev.v1.McpWorkerService.WatchMcpManagement:input_type -> delidev.v1.WatchMcpManagementRequest
-	18, // 26: delidev.v1.McpWorkerService.ReportMcpManagement:input_type -> delidev.v1.ReportMcpManagementRequest
-	9,  // 27: delidev.v1.McpManagementService.ListMcpServers:output_type -> delidev.v1.ListMcpServersResponse
-	12, // 28: delidev.v1.McpManagementService.MutateMcpServer:output_type -> delidev.v1.MutateMcpServerResponse
-	14, // 29: delidev.v1.McpManagementService.AuthenticateMcpServer:output_type -> delidev.v1.AuthenticateMcpServerResponse
-	17, // 30: delidev.v1.McpWorkerService.WatchMcpManagement:output_type -> delidev.v1.WatchMcpManagementResponse
-	19, // 31: delidev.v1.McpWorkerService.ReportMcpManagement:output_type -> delidev.v1.ReportMcpManagementResponse
-	27, // [27:32] is the sub-list for method output_type
-	22, // [22:27] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	20, // 22: delidev.v1.McpSelectionList.selections:type_name -> delidev.v1.McpSelection
+	8,  // 23: delidev.v1.McpManagementService.ListMcpServers:input_type -> delidev.v1.ListMcpServersRequest
+	10, // 24: delidev.v1.McpManagementService.MutateMcpServer:input_type -> delidev.v1.MutateMcpServerRequest
+	13, // 25: delidev.v1.McpManagementService.AuthenticateMcpServer:input_type -> delidev.v1.AuthenticateMcpServerRequest
+	15, // 26: delidev.v1.McpWorkerService.WatchMcpManagement:input_type -> delidev.v1.WatchMcpManagementRequest
+	18, // 27: delidev.v1.McpWorkerService.ReportMcpManagement:input_type -> delidev.v1.ReportMcpManagementRequest
+	9,  // 28: delidev.v1.McpManagementService.ListMcpServers:output_type -> delidev.v1.ListMcpServersResponse
+	12, // 29: delidev.v1.McpManagementService.MutateMcpServer:output_type -> delidev.v1.MutateMcpServerResponse
+	14, // 30: delidev.v1.McpManagementService.AuthenticateMcpServer:output_type -> delidev.v1.AuthenticateMcpServerResponse
+	17, // 31: delidev.v1.McpWorkerService.WatchMcpManagement:output_type -> delidev.v1.WatchMcpManagementResponse
+	19, // 32: delidev.v1.McpWorkerService.ReportMcpManagement:output_type -> delidev.v1.ReportMcpManagementResponse
+	28, // [28:33] is the sub-list for method output_type
+	23, // [23:28] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_mcp_management_proto_init() }
@@ -1664,7 +1818,7 @@ func file_delidev_v1_mcp_management_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_mcp_management_proto_rawDesc), len(file_delidev_v1_mcp_management_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

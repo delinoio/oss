@@ -16,6 +16,7 @@ import public "delidev/v1/installation.proto";
 import public "delidev/v1/integration.proto";
 import public "delidev/v1/interaction.proto";
 import public "delidev/v1/native_models.proto";
+import public "delidev/v1/mcp_management.proto";
 import public "delidev/v1/network.proto";
 import public "delidev/v1/pr_fix.proto";
 import public "delidev/v1/provider.proto";

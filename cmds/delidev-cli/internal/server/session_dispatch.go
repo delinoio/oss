@@ -163,6 +163,9 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	}
 	var empty domain.Installation
 	c := input.Configuration
+	if c.MCPSelections != nil && len(c.MCPSelections.Selections) > 0 {
+		return empty, domain.Fail(domain.Unsupported, "The selected MCP definitions need an accepted native adapter.", "Keep the saved selections and use a Runner with independently accepted harness support before execution.")
+	}
 	if c.BranchPrefix != nil && !slices.Contains(machine.WorkerCapabilities, domain.BranchPrefixInstructionsV1) {
 		return empty, domain.Fail(domain.Unsupported, "This Runner Device cannot preserve branch prefix instructions.", "Update and reconnect the original Runner Device before execution.")
 	}
