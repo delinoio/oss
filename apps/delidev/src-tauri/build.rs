@@ -18,6 +18,8 @@ fn main() {
             "read_appearance",
             "read_date_format",
             "update_date_format",
+            "read_shortcut_preferences",
+            "update_shortcut_preferences",
             "update_appearance",
             "read_language",
             "update_language",

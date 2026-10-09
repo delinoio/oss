@@ -80,3 +80,78 @@ fn provider_guidance_allows_only_trusted_local_webviews() {
         );
     }
 }
+
+const SHORTCUT_COMMANDS: [&str; 2] = ["read_shortcut_preferences", "update_shortcut_preferences"];
+
+#[test]
+fn shortcut_preferences_have_complete_closed_compiled_permissions() {
+    let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+    let app = &manifests[APP_ACL_KEY];
+    let permission = &app.permissions["device-shortcuts"];
+    assert_eq!(permission.commands.allow, SHORTCUT_COMMANDS);
+    assert!(permission.commands.deny.is_empty());
+    for command in SHORTCUT_COMMANDS {
+        assert!(app.commands.iter().any(|declared| declared == command));
+    }
+}
+
+#[test]
+fn shortcut_preferences_admit_product_webviews_and_deny_auxiliary_views() {
+    for target in [Target::MacOS, Target::Windows, Target::Linux] {
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(CAPABILITIES).unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
+        assert!(resolved.has_app_acl);
+        assert!(!resolved.allowed_commands.contains_key("*"));
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for command in SHORTCUT_COMMANDS {
+            for label in ["main", "local-fixture", "server-fixture"] {
+                assert!(
+                    authority
+                        .resolve_access(command, label, label, &Origin::Local)
+                        .is_some(),
+                    "{command} must admit {label} on {target}"
+                );
+                for child in [
+                    "external-fixture",
+                    "browser-fixture",
+                    "tray-actions",
+                    "tray-fixture",
+                    "widget-fixture",
+                    "auxiliary-fixture",
+                ] {
+                    assert!(
+                        authority
+                            .resolve_access(command, label, child, &Origin::Local)
+                            .is_none(),
+                        "{command} must deny child {child} on {target}"
+                    );
+                }
+                assert!(
+                    authority
+                        .resolve_access(
+                            command,
+                            label,
+                            label,
+                            &Origin::Remote {
+                                url: "https://untrusted.invalid/".parse().unwrap()
+                            }
+                        )
+                        .is_none()
+                );
+            }
+            for label in ["tray-actions", "tray-fixture", "widget-fixture", "other"] {
+                assert!(
+                    authority
+                        .resolve_access(command, label, label, &Origin::Local)
+                        .is_none()
+                );
+            }
+        }
+    }
+}
