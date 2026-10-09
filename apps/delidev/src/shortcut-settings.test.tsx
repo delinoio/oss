@@ -121,3 +121,17 @@ it("keeps the complete compact catalog separate from status and labeled final ac
  fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
  expect(f.bridge.update).not.toHaveBeenCalled();
 });
+
+it("preserves pointer focus targets until click and reveals keyboard or cancelled-pointer focus",async()=>{
+ const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");
+ const catalog=screen.getByRole("region",{name:"Shortcut catalog"});
+ const disable=screen.getByRole("button",{name:"Disable New session shortcut"});
+ const capture=screen.getByRole("button",{name:"Capture shortcut for New session"});
+ vi.spyOn(catalog,"getBoundingClientRect").mockReturnValue({top:20,bottom:120} as DOMRect);
+ for(const button of [disable,capture])vi.spyOn(button,"getBoundingClientRect").mockReturnValue({top:150,bottom:190} as DOMRect);
+ fireEvent.pointerDown(disable.querySelector("svg")!);fireEvent.focus(disable);
+ expect(catalog.scrollTop).toBe(0);fireEvent.pointerUp(disable);expect(catalog.scrollTop).toBe(0);
+ fireEvent.click(disable);expect(catalog.scrollTop).toBe(0);expect(screen.getByText("Unsaved changes")).toBeTruthy();expect(f.bridge.update).not.toHaveBeenCalled();
+ fireEvent.keyDown(disable,{key:"Tab"});fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
+ catalog.scrollTop=0;fireEvent.pointerDown(capture);fireEvent.pointerCancel(capture);fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
+});

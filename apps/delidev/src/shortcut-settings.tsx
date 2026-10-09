@@ -15,7 +15,7 @@ export function ShortcutSettings() {
   const [capturing, setCapturing] = useState<ShortcutId>(), [invalid, setInvalid] = useState(false), [saved, setSaved] = useState(false);
   const [captureState,setCaptureState]=useState<"arming"|"active"|"retiring"|"uncertain">();
   const deadline=useRef(0),captureGeneration=useRef(0);
-  const restoreFocus = useRef(false);
+  const restoreFocus = useRef(false), pointerTarget = useRef<Element|null>(null);
   const opener = useRef<HTMLButtonElement|null>(null), mounted = useRef(false), platform = shortcutPlatform();
   const dirty = serialize(draft) !== serialize(baseline.overrides), conflict = dirty && baseline.revision !== snapshot.revision;
   const locked = Boolean(operation || snapshot.problem || conflict);
@@ -66,10 +66,18 @@ export function ShortcutSettings() {
       // Reveal the exact row inside this scrollport without moving Settings.
       const target = event.target as HTMLElement, catalog = event.currentTarget;
       if (target === catalog) return;
+      // Pointer focus precedes click hit-testing. Preserve its original target
+      // until click; keyboard and independent focus still reveal the row.
+      if (pointerTarget.current && target.contains(pointerTarget.current)) return;
+      pointerTarget.current = null;
       const bounds = catalog.getBoundingClientRect(), row = target.getBoundingClientRect();
       if (row.top < bounds.top) catalog.scrollTop -= bounds.top - row.top;
       else if (row.bottom > bounds.bottom) catalog.scrollTop += row.bottom - bounds.bottom;
-    }}>
+    }} onPointerDownCapture={event=>{pointerTarget.current=event.target instanceof Element?event.target:null;}}
+      onClickCapture={()=>{pointerTarget.current=null;}}
+      onPointerCancelCapture={()=>{pointerTarget.current=null;}}
+      onKeyDownCapture={()=>{pointerTarget.current=null;}}
+      onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))pointerTarget.current=null;}}>
     {Object.values(ShortcutGroup).map(group=><section key={group}><h2>{copy(group===ShortcutGroup.Common?"shortcuts.global":group===ShortcutGroup.Session?"shortcut-settings.session":group===ShortcutGroup.Creation?"shortcut-settings.creation":"shortcut-settings.search")}</h2>
       {editableShortcutCatalog.filter(action=>action.group===group).map(action=><div className="shortcut-settings-row" key={action.id}>
         <div className="shortcut-action-description"><h3>{copy(action.label)}</h3><small>{copy("shortcut-settings.default",{binding:bindingLabel(action.defaults)})}</small></div>
