@@ -18,7 +18,7 @@ vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement) 
  return { write: async () => {}, enabled: () => {}, focus: () => field.focus(), dispose: () => host.replaceChildren() };
 } }));
 
-function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false) {
+function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false, snapshotGate?: Promise<void>) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({
     name: "Original session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "blocked", recovery: "none",
@@ -55,7 +55,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
     } });
     router.service(SessionService, { listQueue: () => ({ inputs: queueInputs(id) }), getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
-      getSnapshot: () => ({ resources: [session], cursor: "original-snapshot" }),
+      getSnapshot: async () => { await snapshotGate; return { resources: [session], cursor: "original-snapshot" }; },
       getResource: request => ({ resource: retained.get(request.id) }),
       listResources: request => terminalMode && request.filter?.kind === EntityKind.TERMINAL ? { resources: terminals } : list(request),
       async *watchEvents(_request, context) {
@@ -413,4 +413,24 @@ it("verified terminal removal skips intervening Files and selects the original l
   expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
   expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
+});
+
+
+it.each([false, true])("retains initial terminal toolbar intent until session load unless departed (%s)", async departed => {
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true, gate);
+  const view = render(f.view());
+  try {
+    const toolbar = screen.getByRole("button", { name: "Terminals" });
+    expect(screen.queryByRole("heading", { name: "Original session" })).toBeNull();
+    fireEvent.click(toolbar); fireEvent.click(toolbar);
+    expect(f.terminalWatches).not.toHaveBeenCalled(); expect(f.terminalCreate).not.toHaveBeenCalled();
+    if (departed) fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    await act(async () => release());
+    await screen.findByRole("heading", { name: "Original session" });
+    if (departed) { expect(f.terminalWatches).not.toHaveBeenCalled(); expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true"); }
+    else { await waitFor(() => expect(f.terminalWatches).toHaveBeenCalledWith(f.terminals[0]!.id)); expect(f.terminalWatches).toHaveBeenCalledOnce(); }
+    expect(f.terminalCreate).not.toHaveBeenCalled(); expect(f.terminalControl).not.toHaveBeenCalled();
+  } finally { view.unmount(); release(); f.releaseTerminal(); f.client.clear(); }
 });
