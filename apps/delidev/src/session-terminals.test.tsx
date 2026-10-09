@@ -430,3 +430,26 @@ it.each([TerminalAction.INPUT, TerminalAction.RESIZE, TerminalAction.CLOSE])("re
     expect(screen.getByText("Retained control")).toBeTruthy();
   } finally { view.unmount(); client.clear(); }
 });
+
+
+it("rejects empty nonterminal inventory pages before another gesture-owned request", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const opened = vi.fn(), createTerminal = vi.fn(), reads = vi.fn(() => ({ resources: [], nextPageToken: newRequestId() }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: reads }); router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(reads).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await screen.findByRole("button", { name: "Retry terminal inventory read" });
+    expect(reads).toHaveBeenCalledTimes(2); expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
+  } finally { view.unmount(); client.clear(); }
+});

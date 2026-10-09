@@ -85,7 +85,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
         do {
           if (!current()) return;
           const reply = await client.listResources({ filter: { kind: EntityKind.TERMINAL, sessionId: session.id, pageSize: 50, pageToken: token } }, { signal: controller.signal });
-          if (reply.resources.length > 50 || reply.nextPageToken.length > 2048 || records.length + reply.resources.length > 128) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
+          if (reply.resources.length > 50 || reply.nextPageToken.length > 2048 || records.length + reply.resources.length > 128 || reply.nextPageToken && !reply.resources.length || tokens.size >= 128) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
           for (const row of reply.resources) {
             const data = document(row);
             if (row.kind !== EntityKind.TERMINAL || row.sessionId !== session.id || row.schemaVersion !== 1 || !isEntityId(row.id) || row.revision <= 0n || seen.has(row.id) || !["starting", "running", "exited", "closed", "uncertain"].includes(text(data.state)) || data.pending != null && (typeof data.pending !== "object" || Array.isArray(data.pending))) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
