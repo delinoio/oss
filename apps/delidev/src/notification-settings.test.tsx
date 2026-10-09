@@ -247,7 +247,9 @@ it.each(["focus", "pointer"])("discards deferred Edit focus after in-panel %s in
   const independentAction = screen.getByRole("button", { name: "AI Subscription settings" });
   if (interaction === "focus") independentAction.focus();
   else fireEvent.pointerDown(independentAction);
-  await act(async () => finishRead({ preferences: create(NotificationPreferencesSchema, { ...value.save.mock.calls[0][0].preferences, revision: 2n }) }));
+  const savedPreferences = value.save.mock.calls[0][0].preferences;
+  if (!savedPreferences) throw new Error("Expected the complete saved notification preferences.");
+  await act(async () => finishRead({ preferences: create(NotificationPreferencesSchema, { ...savedPreferences, revision: 2n }) }));
   await waitFor(() => expect(edit.disabled).toBe(false));
   expect(returned).not.toHaveBeenCalled();
   if (interaction === "focus") expect(document.activeElement).toBe(independentAction);
