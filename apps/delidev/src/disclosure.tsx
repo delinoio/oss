@@ -14,6 +14,7 @@ function restoreFocus(content: Element | null, trigger: HTMLElement | null) {
 }
 const NativeDisclosure = createContext<{ contentId: string; triggerId: string; expanded: boolean } | undefined>(undefined);
 function Chevron() { return <svg className="disclosure-chevron" aria-hidden="true" focusable="false" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m5 3 4 4-4 4" /></svg>; }
+function HeaderContent({ children }: { children: ReactNode }) { return <><Chevron />{children}</>; }
 
 /** Native DOM is intentional: pagination, validation and explicit reveal use it. */
 export function Disclosure({ ref, density, className = "", onToggle, children, ...props }: ComponentPropsWithRef<"details"> & { density?: DisclosureDensity }) {
@@ -39,13 +40,13 @@ export function Disclosure({ ref, density, className = "", onToggle, children, .
 }
 export function DisclosureSummary({ children, className = "", onClick, ...props }: ComponentPropsWithRef<"summary">) {
   const owner = useContext(NativeDisclosure);
-  return <summary id={owner?.triggerId} aria-controls={owner?.contentId} aria-expanded={owner?.expanded} {...props} className={`disclosure-header ${className}`} onClick={event => { const details = event.currentTarget.parentElement; if (details instanceof HTMLDetailsElement && details.open) restoreFocus(details, event.currentTarget); onClick?.(event); }}><Chevron />{children}</summary>;
+  return <summary id={owner?.triggerId} aria-controls={owner?.contentId} aria-expanded={owner?.expanded} {...props} className={`disclosure-header ${className}`} onClick={event => { const details = event.currentTarget.parentElement; if (details instanceof HTMLDetailsElement && details.open) restoreFocus(details, event.currentTarget); onClick?.(event); }}><HeaderContent>{children}</HeaderContent></summary>;
 }
 
 /** The caller owns expansion and the content's original mount/disposal policy. */
 export function DisclosureButton({ density, className = "", children, onClick, focusWhenCollapsing, ...props }: ComponentPropsWithRef<"button"> & { density?: DisclosureDensity; focusWhenCollapsing?: (element: Element) => boolean }) {
   const inheritedDensity = useContext(Density);
-  return <button type="button" {...props} className={`disclosure-header ${className}`} data-disclosure-density={density ?? inheritedDensity} onClick={event => { if (props["aria-expanded"] === true) { const id = props["aria-controls"]; if (!focusWhenCollapsing || document.activeElement && focusWhenCollapsing(document.activeElement)) restoreFocus(id ? document.getElementById(id) : null, event.currentTarget); } onClick?.(event); }}><Chevron />{children}</button>;
+  return <button type="button" {...props} className={`disclosure-header ${className}`} data-disclosure-density={density ?? inheritedDensity} onClick={event => { if (props["aria-expanded"] === true) { const id = props["aria-controls"]; if (!focusWhenCollapsing || document.activeElement && focusWhenCollapsing(document.activeElement)) restoreFocus(id ? document.getElementById(id) : null, event.currentTarget); } onClick?.(event); }}><HeaderContent>{children}</HeaderContent></button>;
 }
 export function DisclosureContent({ ref, children, hidden, onFocusCapture, ...props }: ComponentPropsWithRef<"div">) {
   const node = useRef<HTMLDivElement>(null), focused = useRef<Element | null>(null);
