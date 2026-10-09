@@ -24,24 +24,15 @@ import (
 
 func transferEntry(kind domain.Kind, value any) domain.ConfigurationEntry {
 	raw, _ := json.Marshal(value)
-	// Historical bundle fixtures omit settings introduced in portable version 5.
-	if kind == domain.SettingsKind {
-		var fields map[string]json.RawMessage
-		_ = json.Unmarshal(raw, &fields)
-		delete(fields, "automatic_plan_approval")
-		delete(fields, "plan_mode_default")
-		delete(fields, "branch_prefix")
-		raw, _ = json.Marshal(fields)
-	}
 	return domain.ConfigurationEntry{ID: domain.NewID(), Kind: kind, Document: raw}
 }
 func transferSelection() domain.ConfigurationImportSelection {
 	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "API", Endpoint: "https://api.example.test/v1", Protocol: domain.OpenAIChat, Authentication: domain.BearerAuth})
-	model := transferEntry(domain.ModelKind, domain.Model{ProviderID: provider.ID, NativeID: "fixture", Name: "Model", Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.UserDeclared})
+	model := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: provider.ID, NativeID: "fixture"}, Name: "Model", MetadataSource: domain.UserDeclared}
 	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fresh account", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
 	template := transferEntry(domain.TemplateKind, domain.Template{Name: "Exact instructions", Contents: "Keep every line.\n한국어 <script>inert</script>\n"})
-	agent := transferEntry(domain.AgentKind, domain.Agent{Name: "Agent", Harness: domain.Codex, ModelID: model.ID, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 3}}, Templates: []domain.ID{template.ID}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
-	return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{agent, template, account, model, provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+	agent := transferEntry(domain.AgentKind, domain.Agent{Name: "Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: model, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 3}}}}, Templates: []domain.ID{template.ID}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
+	return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{agent, template, account, provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
 }
 func transferOwner() context.Context {
 	return domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
@@ -285,7 +276,7 @@ func TestConfigurationImportPreviewReadOnlyAtomicRemappingAndReplay(t *testing.T
 	}
 	id := domain.NewID()
 	report := transferApply(t, s, preview, id)
-	if report.State != domain.JobSucceeded || len(report.Resources) != 5 {
+	if report.State != domain.JobSucceeded || len(report.Resources) != 4 {
 		t.Fatal(report)
 	}
 	ids := map[domain.ID]domain.ID{}
@@ -305,7 +296,7 @@ func TestConfigurationImportPreviewReadOnlyAtomicRemappingAndReplay(t *testing.T
 			agent, _ := store.Decode[domain.Agent](row)
 			var original domain.Agent
 			domain.Decode(entry.Document, &original)
-			if agent.ModelID != ids[original.ModelID] || agent.Accounts[0].ID != ids[original.Accounts[0].ID] || agent.Templates[0] != ids[original.Templates[0]] {
+			if agent.Routes[0].Model.ProviderID != ids[original.Routes[0].Model.ProviderID] || agent.Routes[0].Model.NativeID != original.Routes[0].Model.NativeID || agent.Routes[0].Accounts[0].ID != ids[original.Routes[0].Accounts[0].ID] || agent.Templates[0] != ids[original.Templates[0]] {
 				t.Fatal("graph was not remapped")
 			}
 		case domain.TemplateKind:
@@ -361,7 +352,7 @@ func TestConfigurationImportSettingsConflictAndStalePreviewPreserveEverything(t 
 	}
 }
 func TestConfigurationImportRejectsCredentialsMissingLinksAndConflictingModels(t *testing.T) {
-	for _, name := range []string{"observation", "missing-template", "alias", "extra-machine", "unknown-field", "wrong-kind", "oversize"} {
+	for _, name := range []string{"observation", "missing-template", "legacy-model", "extra-machine", "unknown-field", "wrong-kind", "oversize"} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
 			selection := transferSelection()
@@ -373,10 +364,8 @@ func TestConfigurationImportRejectsCredentialsMissingLinksAndConflictingModels(t
 				selection.Bundle.Entries[2].Document, _ = json.Marshal(account)
 			case "missing-template":
 				selection.Bundle.Entries = append(selection.Bundle.Entries[:1], selection.Bundle.Entries[2:]...)
-			case "alias":
-				duplicate := selection.Bundle.Entries[3]
-				duplicate.ID = domain.NewID()
-				selection.Bundle.Entries = append(selection.Bundle.Entries, duplicate)
+			case "legacy-model":
+				selection.Bundle.Entries = append(selection.Bundle.Entries, transferEntry(domain.ModelKind, domain.Model{ProviderID: selection.Bundle.Entries[3].ID, NativeID: "legacy", Name: "Legacy"}))
 			case "extra-machine":
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: domain.NewID(), Name: "foreign", OS: "linux", Architecture: "amd64"})
 			case "unknown-field":
@@ -671,7 +660,7 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 		}
 	}
 	// A single newly created instruction can be removed without dependency links.
-	single := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 1, Entries: []domain.ConfigurationEntry{transferEntry(domain.TemplateKind, domain.Template{Name: "Disposable", Contents: "no retained copy"})}}}
+	single := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{transferEntry(domain.TemplateKind, domain.Template{Name: "Disposable", Contents: "no retained copy"})}}}
 	preview := transferPreview(t, s, single)
 	request := domain.NewID()
 	created := transferApply(t, s, preview, request)
@@ -702,9 +691,9 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	selection := transferSelection()
-	selection.Bundle.Version = 3
+	selection.Bundle.Version = 4
 	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "Responses fallback", Endpoint: "https://fallback.example.test/v1", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth})
-	model := transferEntry(domain.ModelKind, domain.Model{ProviderID: provider.ID, NativeID: "fallback", Name: "Fallback model", Harnesses: []domain.Harness{domain.Codex}, Manual: true, MetadataSource: domain.Unknown})
+	model := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: provider.ID, NativeID: "fallback"}, Name: "Fallback model", MetadataSource: domain.Unknown}
 	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fallback", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
 	for i, entry := range selection.Bundle.Entries {
 		if entry.Kind != domain.AgentKind {
@@ -715,18 +704,18 @@ func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 			t.Fatal(err)
 		}
 		priority := domain.Priority
-		agent.Routes = []domain.AgentSourceRoute{{ModelID: agent.ModelID, Accounts: agent.Accounts, Routing: &priority}, {ModelID: model.ID, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 7}}, Routing: &priority}}
+		agent.Routes = []domain.AgentSourceRoute{agent.Routes[0], {Model: model, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 7}}, Routing: &priority}}
 		agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
 		selection.Bundle.Entries[i].Document, _ = json.Marshal(agent)
 	}
-	selection.Bundle.Entries = append(selection.Bundle.Entries, account, model, provider)
+	selection.Bundle.Entries = append(selection.Bundle.Entries, account, provider)
 	raw, _ := json.Marshal(selection)
 	_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := selection.Bundle.Version
-	for _, version := range []uint32{1, 2} {
+	for _, version := range []uint32{1, 2, 3, 5, 6} {
 		selection.Bundle.Version = version
 		raw, _ = json.Marshal(selection)
 		_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
@@ -748,7 +737,7 @@ func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 	if err != nil || len(imported.Routes) != 2 {
 		t.Fatalf("routes: %+v %v", imported, err)
 	}
-	if imported.Routes[1].ModelID == model.ID || imported.Routes[1].Accounts[0].ID == account.ID || imported.Routes[1].Accounts[0].Weight != 7 {
+	if imported.Routes[1].Model.ProviderID == provider.ID || imported.Routes[1].Model.NativeID != "fallback" || imported.Routes[1].Accounts[0].ID == account.ID || imported.Routes[1].Accounts[0].Weight != 7 {
 		t.Fatal("route references/order were not remapped")
 	}
 }

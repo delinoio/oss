@@ -13,7 +13,7 @@ func TestOpenCodeContextRetainsOriginalMetadataWithoutInventingLegacyDefaults(t 
 		modelID, providerID, accountID := NewID(), NewID(), NewID()
 		agent := Agent{Name: "Original", Harness: OpenCode, ModelID: modelID, Accounts: []WeightedAccount{{ID: accountID, Weight: 1}}, Options: AgentOptions{Permission: PermissionDefault}}
 		model := Model{Name: "Original", NativeID: "original-model", ProviderID: providerID, Harnesses: []Harness{OpenCode}, ContextLimit: &limit, MetadataSource: source}
-		snapshot, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, model, Priority, nil)
+		snapshot, err := resolveInlineFixture(NewID(), 1, agent, 1, model, Priority, nil)
 		if err != nil || snapshot.Validate() != nil || snapshot.OpenCodeContext == nil || snapshot.OpenCodeContext.Tokens != limit || snapshot.OpenCodeContext.Source != source || snapshot.OpenCodeContext.Policy != OpenCodeNativeContextV1 {
 			t.Fatal("context metadata lost original selection", err)
 		}
@@ -26,7 +26,7 @@ func TestOpenCodeContextRetainsOriginalMetadataWithoutInventingLegacyDefaults(t 
 			t.Fatal("OpenCode context acquired another harness authority")
 		}
 		model.ContextLimit = nil
-		legacy, err := ResolveExecutionConfiguration(NewID(), 1, agent, 1, model, Priority, nil)
+		legacy, err := resolveInlineFixture(NewID(), 1, agent, 1, model, Priority, nil)
 		raw, _ := json.Marshal(legacy)
 		if err != nil || legacy.OpenCodeContext != nil || bytes.Contains(raw, []byte("opencode_context")) {
 			t.Fatal("legacy snapshot acquired a fabricated context default", err)

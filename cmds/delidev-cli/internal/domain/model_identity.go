@@ -42,6 +42,13 @@ func ParseModelKey(key ID) (ModelIdentity, error) {
 }
 func ValidateModelKey(key ID) error { _, e := ParseModelKey(key); return e }
 
+// ModelKeyMatchesSource binds an internal history index to its separately
+// retained source attribution. A valid key from another source is not evidence.
+func ModelKeyMatchesSource(key ID, provider ID, service SubscriptionService) bool {
+	m, err := ParseModelKey(key)
+	return err == nil && m.ProviderID == provider && m.SubscriptionService == service
+}
+
 // InlineModel retains only explicit non-secret execution metadata in its route.
 type InlineModel struct {
 	ModelIdentity

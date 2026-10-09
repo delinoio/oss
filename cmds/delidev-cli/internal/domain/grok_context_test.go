@@ -19,7 +19,7 @@ func TestGrokContextSnapshotPreservesSourceAndRejectsInventedDefaults(t *testing
 		limit := uint64(48000)
 		a := Agent{Name: "Original", Harness: GrokBuild, ModelID: c.ModelID, Options: c.Options}
 		m := Model{Name: "Original", NativeID: c.NativeModel, ProviderID: c.ProviderID, Harnesses: []Harness{GrokBuild}, ContextLimit: &limit, MetadataSource: source}
-		selected, err := ResolveExecutionConfiguration(c.AgentID, 1, a, 2, m, Priority, nil)
+		selected, err := resolveInlineFixture(c.AgentID, 1, a, 2, m, Priority, nil)
 		if err != nil || selected.GrokContext == nil || selected.GrokContext.Source != source {
 			t.Fatal("missing original context source", err)
 		}

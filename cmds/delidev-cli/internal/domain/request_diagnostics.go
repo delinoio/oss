@@ -118,7 +118,7 @@ func (d RequestDiagnostic) Validate() error {
 			return invalidObservation()
 		}
 	}
-	if (d.Attribution == "" && ValidateModelKey(d.ModelID) != nil) || d.Attribution != "" && (d.Attribution != BuiltinReviewerAttribution || d.ModelID != "" || d.Harness != Codex || d.Source != DiagnosticProxyHTTP) {
+	if (d.Attribution == "" && !ModelKeyMatchesSource(d.ModelID, d.ProviderID, d.SubscriptionService)) || d.Attribution != "" && (d.Attribution != BuiltinReviewerAttribution || d.ModelID != "" || d.Harness != Codex || d.Source != DiagnosticProxyHTTP) {
 		return invalidObservation()
 	}
 	if d.SubscriptionService == "" {

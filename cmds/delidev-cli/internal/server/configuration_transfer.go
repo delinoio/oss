@@ -310,7 +310,10 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if bundle.Version != domain.ConfigurationBundleVersion || len(bundle.Entries) == 0 {
+	if bundle.Version != domain.ConfigurationBundleVersion {
+		return plan, domain.Fail(domain.Unsupported, "Earlier portable configuration versions are retired.", "Preserve the original bundle and use current source-native configuration.")
+	}
+	if len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {

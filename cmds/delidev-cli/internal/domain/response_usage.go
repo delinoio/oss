@@ -96,7 +96,7 @@ func (u ResponseUsageRecord) Validate() error {
 			return invalidObservation()
 		}
 	}
-	if u.Attribution == "" && ValidateModelKey(u.ModelID) != nil || u.Attribution != "" && (!u.Attribution.Valid() || u.ModelID != "" || u.Purpose == SessionTitleUsage) {
+	if u.Attribution == "" && !ModelKeyMatchesSource(u.ModelID, u.ProviderID, u.SubscriptionService) || u.Attribution != "" && (!u.Attribution.Valid() || u.ModelID != "" || u.Purpose == SessionTitleUsage) {
 		return invalidObservation()
 	}
 	if u.SubscriptionService == "" {

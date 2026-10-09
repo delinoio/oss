@@ -140,7 +140,7 @@ func (c ExecutionConfiguration) Validate() error {
 	if c.Harness == Codex && ValidateCodexSubagentOptions(c.Options) != nil {
 		return ValidateCodexSubagentOptions(c.Options)
 	}
-	if c.SubagentModel != nil && (c.Harness != Codex || ValidateModelKey(c.SubagentModel.ModelID) != nil || c.SubagentModel.ModelRevision == 0 || c.SubagentModel.NativeModel != c.Options.SubagentModel || Text(c.SubagentModel.NativeModel, "saved child model", 256, true) != nil) {
+	if c.SubagentModel != nil && (c.Harness != Codex || (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.SubagentModel.NativeModel}).Key() != c.SubagentModel.ModelID || c.SubagentModel.ModelRevision == 0 || c.SubagentModel.NativeModel != c.Options.SubagentModel || Text(c.SubagentModel.NativeModel, "saved child model", 256, true) != nil) {
 		return Fail(RecoveryRequired, "Invalid retained child model identity.", "Preserve the immutable original child model snapshot.")
 	}
 	if c.SubscriptionService != "" && (!c.Subscription || !c.SubscriptionService.Valid() || c.SubscriptionService.Harness() != c.Harness || c.ProviderID != "") {

@@ -42,6 +42,7 @@ func TestAuxiliaryTitleResultAllowsMissingUsageButRejectsMisattribution(t *testi
 		AccountID: NewID(), ConnectionID: NewID(), ProviderID: NewID(), ProviderProtocol: OpenAIResponses,
 		ModelID: NewID(), NativeModel: "fixture-model", Prompt: "first message",
 	}
+	input.ModelID = (ModelIdentity{ProviderID: input.ProviderID, NativeID: input.NativeModel}).Key()
 	result := AuxiliaryTitleResult{Version: 1, OperationID: input.OperationID, NameGeneration: input.NameGeneration, Title: "A concise title", CleanupVerified: true}
 	if err := result.Validate(input); err != nil {
 		t.Fatalf("valid title without usage telemetry failed: %v", err)

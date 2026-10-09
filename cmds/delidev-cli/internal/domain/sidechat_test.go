@@ -10,11 +10,11 @@ import (
 func TestSidechatSnapshotPreservesSelectionAndFreezesNativeAuthority(t *testing.T) {
 	id := NewID()
 	options := AgentOptions{ApprovalsReviewer: CodexReviewerAuto, Permission: PermissionWorkspaceWrite, ApprovalPolicy: "on-request", SubagentModel: "child", SubagentEffort: "low", MaxConcurrency: 4, ServiceTier: "fast"}
-	c, err := ResolveExecutionConfiguration(NewID(), 3, Agent{Name: "Parent", Harness: Codex, ModelID: NewID(), Effort: "high", Options: options, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Templates: []ID{id}}, 7, Model{Name: "Parent", NativeID: "native-parent", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}, Priority, []AppliedTemplate{{ID: id, Revision: 5, Contents: "Original parent instructions\n"}})
+	c, err := resolveInlineFixture(NewID(), 3, Agent{Name: "Parent", Harness: Codex, ModelID: NewID(), Effort: "high", Options: options, Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Templates: []ID{id}}, 7, Model{Name: "Parent", NativeID: "native-parent", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}, Priority, []AppliedTemplate{{ID: id, Revision: 5, Contents: "Original parent instructions\n"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.SubagentModel = &ExecutionSubagentModel{ModelID: NewID(), ModelRevision: 6, NativeModel: "child"}
+	c.SubagentModel = &ExecutionSubagentModel{ModelID: (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: "child"}).Key(), ModelRevision: 6, NativeModel: "child"}
 	digest, _ := c.Digest()
 	parent := InitialExecution{ID: NewID(), InputID: NewID(), Configuration: c, ConfigurationDigest: digest, InitialAccountID: NewID(), ConnectionID: NewID(), AcceptedAt: time.Now().UTC()}
 	before, _ := json.Marshal(parent)
