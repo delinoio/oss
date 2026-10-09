@@ -1056,6 +1056,17 @@ Authenticated Session progress and primary-user Message resources may include op
 
 Protocol 2 preserves the `delidev.v1` package and all original numeric ownership. System42/Worker22 identify inline source models separately from direct startup43/23. Exact `ModelIdentity` values use Provider UUID or service plus native ID; obsolete Model UUID fields are not reinterpreted as source keys. Current endpoint and price RPC declarations activate the original #964 reservations; price mode, freshness/provenance and refresh fields retain their recorded owning issue. The legacy monolithic public import and aggregate Go/TypeScript/query facades are retired. Current canonical split descriptors register once. `SetTokenPricingModeRequest.expected_revision = 6` carries the original displayed active price revision, independently of existing policy field 3 and Provider field 5. Check all three atomically before changing policy; zero means that the original active price was unavailable. Preserve these exact values in accepted and uncertain-retry receipts. Breaking comparison projects only the empty retired import file out of its baseline and preserves all other FILE checks plus original declaration semantics.
 
+## Session startup progress — issue #2120
+
+System 74 / Worker 50 and the complete `ReportSessionStartupProgress` closed
+request/response and workspace-operation/progress-state enum profiles are
+allocated and activated together. Preserve System 43/Worker 23 and all
+`ExecutionStartupObservation` fields. Descriptive negotiation grants no native,
+account, input, cleanup or execution support. Original authenticated
+assignment/revision and bounded Session-summary ownership follow the
+[startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+Regenerate bindings from reconciled sources; no migration is introduced.
+
 ## Waiting queue order — issue #2142
 
 System capability `WAITING_QUEUE_ORDER_V1 = 75` owns the owner/client `MoveQueuedInput` and `ListWaitingQueue` declarations. Preserve all older numbers, especially System 53 managed Fork and System 54 OpenCode Go; no Worker capability or database migration is added. Movement fields are mutation 1, session 2, optional expected queue generation 3, before-input ID 4 and before-input revision 5. Presence of generation is required; zero is valid. Response fields are SessionChange 1 and current queue generation 2. Waiting list request fields are session 1, page size 2 and opaque page token 3; response fields are resources 1, next token 2, current generation 3 and exact waiting count 4. Existing Queue JSON and legacy ListQueue remain compatible. Allocation declarations alone grant no execution/native authority.
