@@ -139,6 +139,10 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if command == "integration" && len(rest) > 0 && rest[0] == "replace-token" && o.tokenStdin {
 		return emit(nil, domain.Fail(domain.InvalidArgument, "Server authentication and a PAT cannot share stdin.", "Use a paired client or local owner connection before supplying --pat-stdin."))
 	}
+	// Retired Model catalogs must not load a server scope or consume credentials.
+	if command == "model" && (len(rest) == 0 || rest[0] != "native-discover" && rest[0] != "native-observation" && rest[0] != "native-list" && rest[0] != "native-cancel") {
+		return emit(nil, retiredModelCatalog())
+	}
 	// Unknown commands, including retired commands, cannot select a server or consume authentication input.
 	switch command {
 	case "project", "snapshot", "update", "storage", "service-control", "usage", "search", "schedule", "notification", "inbox", "interaction", "session", "queue", "provider", "model", "github", "network", "integration", "browser-profile", "account", "machine", "device", "repository", "server", "doctor", "configuration", "backup", "events":

@@ -27,7 +27,7 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 	f.StringVar(&requestBody.ProjectId, "project-id", "", "original project filter")
 	f.StringVar(&requestBody.AccountId, "account-id", "", "event-time account filter")
 	f.StringVar(&requestBody.ProviderId, "provider-id", "", "event-time provider filter")
-	f.StringVar(&requestBody.ModelId, "model-id", "", "event-time model filter")
+	native := f.String("native-id", "", "exact event-time native model; requires original provider or subscription service")
 	f.BoolVar(&requestBody.GeneralChat, "general-chat", false, "projectless General Chat only")
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
@@ -51,6 +51,13 @@ func usageCommand(ctx context.Context, c client, args []string) (any, error) {
 			return nil, domain.Fail(domain.Unsupported, "This server does not support independent subscription identity.", "Update the selected server before filtering subscription service usage.")
 		}
 		requestBody.SubscriptionService = rpc.WireSubscriptionService(identity)
+	}
+	if *native != "" {
+		identity := domain.ModelIdentity{ProviderID: domain.ID(requestBody.ProviderId), SubscriptionService: domain.SubscriptionService(*service), NativeID: *native}
+		if err := identity.Validate(); err != nil {
+			return nil, err
+		}
+		requestBody.Model = &pb.ModelIdentity{ProviderId: requestBody.ProviderId, SubscriptionService: requestBody.SubscriptionService, NativeId: *native}
 	}
 	if *profile != "" {
 		if *profile != "native-units-v1" {

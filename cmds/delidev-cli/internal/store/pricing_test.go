@@ -20,9 +20,6 @@ func preparePrice(t *testing.T, s *Store, record domain.ResponseUsageRecord) Pri
 		if _, err := tx.Put(domain.ProviderKind, record.ProviderID, 0, "", "", domain.Provider{Name: "Fixture"}); err != nil {
 			return nil, err
 		}
-		if _, err := tx.Put(domain.ModelKind, record.ModelID, 0, "", "", domain.Model{Name: "Fixture", ProviderID: record.ProviderID, NativeID: "fixture", Manual: true}); err != nil {
-			return nil, err
-		}
 		var err error
 		price, err = tx.PutPricing(record.ModelID, 0, domain.NewID(), pricingFixture())
 		return nil, err
@@ -138,6 +135,7 @@ func TestPricingPublicationRollbackProviderIsolationAndConfigurationDeletion(t *
 	}
 	other := record
 	other.ProviderID = domain.NewID()
+	other.ModelID = domain.ModelIdentity{ProviderID: other.ProviderID, NativeID: "fixture"}.Key()
 	other.Usage.ResponseDigest = strings.Repeat("c", 64)
 	otherID := domain.NewID()
 	if _, _, err := writeResponse(s, otherID, other); err != nil {
@@ -147,7 +145,9 @@ func TestPricingPublicationRollbackProviderIsolationAndConfigurationDeletion(t *
 	if basis != nil || unpriced.KnownAmount != "" {
 		t.Fatal("another provider's basis repriced immutable execution")
 	}
-	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.remove-priced-model", nil, func(tx *Tx) (any, error) { return nil, tx.Delete(domain.ModelKind, record.ModelID, 1) })
+	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.remove-priced-model", nil, func(tx *Tx) (any, error) {
+		return nil, tx.ClearActivePricing(domain.ModelIdentity{ProviderID: record.ProviderID, NativeID: "fixture"})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestPricingPublicationRollbackProviderIsolationAndConfigurationDeletion(t *
 	if basis == nil || basis.ID != price.ID || retained.KnownAmount != "0.000065" {
 		t.Fatal("configuration deletion lost historical basis")
 	}
-	if err = s.db.QueryRow("SELECT COUNT(*) FROM active_pricing WHERE model_id=?", record.ModelID).Scan(&count); err != nil || count != 0 {
+	if err = s.db.QueryRow("SELECT COUNT(*) FROM active_pricing WHERE model_key=?", record.ModelID).Scan(&count); err != nil || count != 0 {
 		t.Fatal("removed model kept active selection", err)
 	}
 	_, err = s.Mutate(context.Background(), domain.NewID(), "fixture.remove-priced-session", nil, func(tx *Tx) (any, error) { return nil, tx.Delete(domain.SessionKind, record.SessionID, 1) })

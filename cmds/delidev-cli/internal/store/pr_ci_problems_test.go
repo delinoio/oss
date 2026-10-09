@@ -2,11 +2,10 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
 func ciStoreObservationFixture() domain.RepositoryQueryResult {
@@ -308,52 +307,5 @@ func TestPRConflictHistoryIsIndependentOfFeedbackAndCIEvaluation(t *testing.T) {
 		if v.Kind == domain.PRFeedbackProblem && !v.Current {
 			t.Fatal("conflict read invalidated independent feedback")
 		}
-	}
-}
-
-func TestPRProblemV18MigrationPreservesOriginalBytesAndDismissal(t *testing.T) {
-	s, root := openTest(t)
-	set := collectProblemFixture(t, s, 0, problemObservationFixture())
-	rows := readProblemFixture(t, s, set.ID)
-	value, _ := Decode[domain.PRProblem](rows[0])
-	_, err := s.Mutate(notificationOwner(), domain.NewID(), "fixture.legacy-dismiss", nil, func(tx *Tx) (any, error) {
-		return tx.DismissPRProblem(rows[0].ID, rows[0].Revision, value.ContentVersion)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := readProblemFixture(t, s, set.ID)
-	// Recreate the exact v18 typed index around otherwise unchanged resources.
-	_, err = historicalSchema(s.db, "018")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Close()
-	s, err = Open(notificationOwner(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	after := readProblemFixture(t, s, set.ID)
-	if len(before) != len(after) {
-		t.Fatal("migration lost feedback")
-	}
-	for i := range before {
-		if before[i].ID != after[i].ID || before[i].Revision != after[i].Revision || string(before[i].Data) != string(after[i].Data) {
-			t.Fatal("migration rewrote original evidence or local handling")
-		}
-	}
-	backups, err := filepath.Glob(filepath.Join(root, "backups", "*.sqlite"))
-	if err != nil || len(backups) != 1 {
-		t.Fatal("missing synchronized v18 backup", err)
-	}
-	db, err := sql.Open("sqlite", databaseURI(backups[0], true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	var version int
-	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 18 {
-		t.Fatal("backup is not original schema", version, err)
 	}
 }

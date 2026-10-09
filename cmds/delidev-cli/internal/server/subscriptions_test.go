@@ -62,16 +62,8 @@ func newSubscriptionFixture(t *testing.T) *subscriptionFixture {
 		if _, err := tx.Put(domain.AccountKind, ar.ID, ar.Revision, "", "", a); err != nil {
 			return nil, err
 		}
-		modelRecord, err := tx.Get(domain.ModelKind, f.input.Configuration.ModelID)
+		f.input.Configuration.ModelID, err = fixtureInlineSource(tx, f.input.Configuration.AgentID, "", domain.SubscriptionChatGPT)
 		if err != nil {
-			return nil, err
-		}
-		model, err := store.Decode[domain.Model](modelRecord)
-		if err != nil {
-			return nil, err
-		}
-		model.ProviderID, model.SourceKind, model.SubscriptionService = "", domain.SubscriptionModel, domain.SubscriptionChatGPT
-		if _, err := tx.Put(domain.ModelKind, modelRecord.ID, modelRecord.Revision, "", "", model); err != nil {
 			return nil, err
 		}
 		f.input.Configuration.ProviderID, f.input.Configuration.SubscriptionService, f.input.Configuration.Subscription = "", domain.SubscriptionChatGPT, true
@@ -500,7 +492,7 @@ func TestSubscriptionCapabilityNegotiatesWithExistingWorkerCapabilities(t *testi
 	f := newSubscriptionFixture(t)
 	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.http.URL)
 	capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1}
-	request := &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: capabilities}
+	request := &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(f.input.MachineID), InstanceId: string(f.instance), Version: rpc.Version, Capabilities: capabilities}
 	response, err := client.AttachWorker(context.Background(), subscriptionRequest(f.workerToken, request))
 	if err != nil {
 		t.Fatal(err)

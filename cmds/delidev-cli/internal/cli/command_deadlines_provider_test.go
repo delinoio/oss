@@ -93,6 +93,17 @@ func TestCLIUnaryDeadlineRealProviderBodyAndReceipt(t *testing.T) {
 				started := time.Now()
 				code, value = cliRun(t, root, args, "")
 				elapsed := time.Since(started)
+				if discover {
+					failure, _ := value["error"].(map[string]any)
+					if code == 0 || failure["code"] != "unsupported" || requests.Load() != 0 {
+						t.Fatal("retired discovery gained HTTP authority", value, requests.Load())
+					}
+					code, value = cliRun(t, root, args, "")
+					if code == 0 || value["error"].(map[string]any)["code"] != "unsupported" || requests.Load() != 0 {
+						t.Fatal("retired discovery retry gained authority", value)
+					}
+					return
+				}
 				if value["request_id"] != original || requests.Load() != 1 {
 					t.Fatal("original inspection replaced/repeated", value, requests.Load())
 				}

@@ -10,6 +10,8 @@ import (
 func sourceFixture() (ID, Agent, []SourceRouteInput) {
 	id, agent, apiModel, accounts := routeFixture()
 	agent.Name = "Source Worker"
+	apiModel.NativeID = "api-native"
+	apiModel.Name = "API"
 	agent.Options.Permission = PermissionWorkspaceWrite
 	subscription := Model{SourceKind: SubscriptionModel, SubscriptionService: SubscriptionChatGPT, NativeID: "subscription-model", Name: "Subscription", Harnesses: []Harness{Codex}}
 	subAccounts := map[ID]Account{}
@@ -20,7 +22,7 @@ func sourceFixture() (ID, Agent, []SourceRouteInput) {
 		subAccounts[accountID] = Account{Type: SubscriptionAccount, SubscriptionService: SubscriptionChatGPT, Enabled: true, Health: AccountReady, Connection: &AccountConnection{ID: NewID(), Authentication: SubscriptionAuth, ConnectedAt: time.Now().UTC()}}
 	}
 	priority := Priority
-	agent.Routes = []AgentSourceRoute{{ModelID: NewID(), Accounts: links, Routing: &priority}, {ModelID: NewID(), Accounts: agent.Accounts, Routing: &priority}}
+	agent.Routes = []AgentSourceRoute{{Model: &InlineModel{ModelIdentity: ModelIdentity{SubscriptionService: SubscriptionChatGPT, NativeID: subscription.NativeID}, MetadataSource: Unknown}, Accounts: links, Routing: &priority}, {Model: &InlineModel{ModelIdentity: ModelIdentity{ProviderID: apiModel.ProviderID, NativeID: "api-native"}, MetadataSource: Unknown}, Accounts: agent.Accounts, Routing: &priority}}
 	agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
 	return id, agent, []SourceRouteInput{{Model: subscription, ModelRevision: 1, Source: "subscription:chatgpt", Accounts: subAccounts}, {Model: apiModel, ModelRevision: 1, Source: "api:" + string(apiModel.ProviderID), Accounts: accounts}}
 }

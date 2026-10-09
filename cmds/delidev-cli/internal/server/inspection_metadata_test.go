@@ -33,7 +33,7 @@ func TestRepositoryMetadataNegotiationAndReportValidation(t *testing.T) {
 	instance := string(domain.NewID())
 	metadata := pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1
 	attach := func(capabilities []pb.WorkerCapability) (*connect.Response[pb.AttachWorkerResponse], error) {
-		return client.AttachWorker(ctx, ownerRequest(credential, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: capabilities}))
+		return client.AttachWorker(ctx, ownerRequest(credential, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: device.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: capabilities}))
 	}
 	initial, err := attach([]pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1})
 	if err != nil || !slices.Contains(initial.Msg.SupportedWorkerCapabilities, metadata) {

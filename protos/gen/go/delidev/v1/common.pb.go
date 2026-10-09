@@ -828,6 +828,67 @@ func (x *SessionDeletionJob) GetReclaimedBytesKnown() bool {
 	return false
 }
 
+// Exact source identity; no independent Model resource exists in protocol 2.
+type ModelIdentity struct {
+	state               protoimpl.MessageState      `protogen:"open.v1"`
+	ProviderId          string                      `protobuf:"bytes,1,opt,name=provider_id,json=providerId,proto3" json:"provider_id,omitempty"`
+	SubscriptionService SubscriptionServiceIdentity `protobuf:"varint,2,opt,name=subscription_service,json=subscriptionService,proto3,enum=delidev.v1.SubscriptionServiceIdentity" json:"subscription_service,omitempty"`
+	NativeId            string                      `protobuf:"bytes,3,opt,name=native_id,json=nativeId,proto3" json:"native_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ModelIdentity) Reset() {
+	*x = ModelIdentity{}
+	mi := &file_delidev_v1_common_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModelIdentity) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModelIdentity) ProtoMessage() {}
+
+func (x *ModelIdentity) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_common_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModelIdentity.ProtoReflect.Descriptor instead.
+func (*ModelIdentity) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_common_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ModelIdentity) GetProviderId() string {
+	if x != nil {
+		return x.ProviderId
+	}
+	return ""
+}
+
+func (x *ModelIdentity) GetSubscriptionService() SubscriptionServiceIdentity {
+	if x != nil {
+		return x.SubscriptionService
+	}
+	return SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+}
+
+func (x *ModelIdentity) GetNativeId() string {
+	if x != nil {
+		return x.NativeId
+	}
+	return ""
+}
+
 var File_delidev_v1_common_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_common_proto_rawDesc = "" +
@@ -874,7 +935,12 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x10database_removed\x18\b \x01(\bR\x0fdatabaseRemoved\x12'\n" +
 	"\x0fbackups_removed\x18\t \x01(\bR\x0ebackupsRemoved\x122\n" +
 	"\x15reclaimed_bytes_known\x18\n" +
-	" \x01(\bR\x13reclaimedBytesKnown*\x91\x01\n" +
+	" \x01(\bR\x13reclaimedBytesKnown\"\xa9\x01\n" +
+	"\rModelIdentity\x12\x1f\n" +
+	"\vprovider_id\x18\x01 \x01(\tR\n" +
+	"providerId\x12Z\n" +
+	"\x14subscription_service\x18\x02 \x01(\x0e2'.delidev.v1.SubscriptionServiceIdentityR\x13subscriptionService\x12\x1b\n" +
+	"\tnative_id\x18\x03 \x01(\tR\bnativeId*\x91\x01\n" +
 	"\vApiProtocol\x12\x1c\n" +
 	"\x18API_PROTOCOL_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dAPI_PROTOCOL_OPENAI_RESPONSES\x10\x01\x12\x1c\n" +
@@ -951,7 +1017,7 @@ func file_delidev_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_delidev_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_delidev_v1_common_proto_goTypes = []any{
 	(ApiProtocol)(0),                 // 0: delidev.v1.ApiProtocol
 	(ApiAuthentication)(0),           // 1: delidev.v1.ApiAuthentication
@@ -964,6 +1030,7 @@ var file_delidev_v1_common_proto_goTypes = []any{
 	(*Mutation)(nil),                 // 8: delidev.v1.Mutation
 	(*ForwardChange)(nil),            // 9: delidev.v1.ForwardChange
 	(*SessionDeletionJob)(nil),       // 10: delidev.v1.SessionDeletionJob
+	(*ModelIdentity)(nil),            // 11: delidev.v1.ModelIdentity
 }
 var file_delidev_v1_common_proto_depIdxs = []int32{
 	0, // 0: delidev.v1.ProviderApiFormat.protocol:type_name -> delidev.v1.ApiProtocol
@@ -971,11 +1038,12 @@ var file_delidev_v1_common_proto_depIdxs = []int32{
 	2, // 2: delidev.v1.Resource.kind:type_name -> delidev.v1.EntityKind
 	7, // 3: delidev.v1.ForwardChange.forward:type_name -> delidev.v1.Resource
 	4, // 4: delidev.v1.SessionDeletionJob.state:type_name -> delidev.v1.SessionDeletionState
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	5, // 5: delidev.v1.ModelIdentity.subscription_service:type_name -> delidev.v1.SubscriptionServiceIdentity
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_common_proto_init() }
@@ -989,7 +1057,7 @@ func file_delidev_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_common_proto_rawDesc), len(file_delidev_v1_common_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

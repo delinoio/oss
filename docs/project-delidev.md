@@ -281,8 +281,10 @@ and historical Usage attribution remain immutable. Reservation PR #1371 precedes
 activation; schema-3 Agents and portable version 3 add no SQLite migration.
 
 The owner-approved [pre-release compatibility reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
-reserves database baseline 32, protocol 2 and Worker attach field 10 with its
-complete implementation. Reservations leave current runtime behavior unchanged.
+records database baseline 32, protocol 2 and Worker attach field 10 in the
+complete inline source/pricing implementation. Current initialization uses schema
+32; earlier DBs/backups are rejected unchanged. Historical reservations retain
+their original ownership and alone grant no support.
 
 ## Native Claude subscriptions
 
@@ -310,8 +312,9 @@ reservation prerequisite activates no support and adds no migration. Follow
 The approved inline-Worker-model replacement composes the current-only DB 32 /
 protocol 2 reset. Its complete recorded declarations and ownership are defined
 in the catalog, structure, storage, desktop, protocol, usage, transfer and
-subagent contracts. Independent Models and persistent API catalogs are removed
-only with complete activation. Earlier DB retention is waived by the owner;
+subagent contracts. The complete current implementation removes independent Models and persistent
+API catalogs. Worker schema 4 and current-only portable bundle 4 preserve all
+newer activated API profiles and project/session defaults. Earlier DB retention is waived by the owner;
 explicit reset does not convert history or grant native/credential cleanup.
 Earlier backups remain unsupported.
 

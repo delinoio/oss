@@ -79,7 +79,7 @@ func TestTerminalReplacementReadsOnlyCommittedOriginalReportReceipt(t *testing.T
 				t.Fatal("expired Worker authority acknowledged receipt")
 			}
 			replacement := string(domain.NewID())
-			if _, err := worker.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: replacement, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}})); err != nil {
+			if _, err := worker.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: replacement, Version: "0.1.0", Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}})); err != nil {
 				t.Fatal(err)
 			}
 			if !purged {

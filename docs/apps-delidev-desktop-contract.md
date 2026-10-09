@@ -3569,6 +3569,20 @@ notification permission request, new settings surface or persisted count.
 
 Accepted retained Inbox read-state mutations invalidate unread-count metadata through the connection-owned badge observer, including after detail-pane disposal. Retired connections and rejected/uncertain outcomes do not invalidate a successor.
 
+### Current source-native model and price consumers — issue #2138
+
+Follow the [source-specific pricing contract](cmds-delidev-usage-contract.md#automatic-source-specific-token-prices--issue-2138) and the current-only schema-4 Worker/protocol-2 boundary. Keep the approved Overview / Usage history / Model prices navigation. Model prices uses one exact source/native-ID picker, compact Automatic/Manual, Refresh and Edit controls, and three rate columns. Preserve missing versus zero, freshness, the daily cadence, collapsed reference/history evidence and the existing staged manual editor. Do not add a Model UUID header. A retired API source retains historical read-only evidence without current edit authority.
+
+Usage filters, charts, diagnostics, routing previews, execution details and prerequisite displays consume the retained typed source/native identity. They do not resolve a global Model registry, infer aliases or treat advisory endpoint/native metadata as execution proof. Worker source selection keeps optional endpoint suggestions separate from direct native-ID entry and atomically saves inline routes with their original Accounts. Model hints do not create resources or observations. Preserve original permissions, account profiles, routing order, settings-task receipts, uncertainty and connection generation checks.
+
+Account verification retains its original immutable validation receipt. Its
+follow-up model read and explicit Refresh models use owner/client endpoint hints
+with the captured Account, Provider, connection and revisions. Opening the
+connection panel does not read the endpoint. Cancellation and late-result checks
+preserve the original source; a hint response does not persist an Account catalog,
+create a Model resource or alter validation, credentials or execution eligibility.
+
+
 ### Explicit Quit confirmation
 
 Issue #2144 admits every normal explicit user Quit through one native process-owned attempt before panel/window admission, browser presentation, supervision, updater, notifications, tray or sidecar fences. Cmd+Q, native application/Dock Quit and both tray Quit paths reach this same ExitRequested gate. Coalesce repeated requests, retain the original registered product-window instance and Local/Saved scope, and deduplicate only an authenticated original server ID across open windows. Never open an unopened saved profile. Obtain a fresh authenticated renderer GetOverview through the existing Connect boundary, with a five-second aggregate deadline and exact retained active-execution ownership counts. Waiting for input/approval and uncertain cleanup remain counted; the count does not claim that every process is generating. Failed, unsupported, disconnected, missing-renderer or incomplete/replaced-scope observations are unknown. Cached zero does not admit Quit. Only complete fresh zero coverage of the current open scope set proceeds without a warning.
