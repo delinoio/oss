@@ -207,7 +207,7 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 			return e
 		}
 		p, e := tx.RetainedActivePricing(m.Key())
-		if p == nil || p.Revision != 3 || p.ID == original || p.ID == manual {
+		if p == nil || p.Revision != 4 || p.ID == original || p.ID == manual {
 			t.Fatal("retained revision reused")
 		}
 		return e
