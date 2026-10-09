@@ -54,6 +54,8 @@ func automaticCreditFixture(t *testing.T, enabled, stale bool) (*subscriptionFix
 		}
 		input := f.input
 		input.ConnectionID = a.Connection.ID
+		input.Configuration.Subscription = true
+		input.ConfigurationDigest, _ = input.Configuration.Digest()
 		job.Input, _ = json.Marshal(input)
 		if _, e = tx.PutJob(jr.ID, jr.Revision, f.input.SessionID, "", job); e != nil {
 			return nil, e
@@ -63,6 +65,8 @@ func automaticCreditFixture(t *testing.T, enabled, stale bool) (*subscriptionFix
 			return nil, e
 		}
 		session.InitialExecution.ConnectionID = a.Connection.ID
+		session.InitialExecution.Configuration = input.Configuration
+		session.InitialExecution.ConfigurationDigest = input.ConfigurationDigest
 		session.Execution = &domain.ExecutionProgress{JobID: f.job, InputID: f.input.InputID, ExecutionID: f.input.ExecutionID, NativeThreadID: string(block.NativeThreadID), NativeTurnID: string(block.NativeTurnID), Outcome: domain.ExecutionFailed}
 		_, e = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.SessionID, "", session)
 		return nil, e
@@ -193,5 +197,136 @@ func TestAutomaticCreditConsentExactConfirmationAndLogout(t *testing.T) {
 	_, a = f.record()
 	if a.Subscription.AutomaticCreditConsent != nil {
 		t.Fatal("logout retained consent")
+	}
+}
+
+func TestAutomaticCreditPublicationOriginalOwnerAndDisableAfterAdmission(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, false)
+	_, a := f.record()
+	lease := a.Subscription.Lease
+	f.publishObservation("", &pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)}, domain.SubscriptionObservationResult{QuotaBlock: &b})
+	r, a := f.record()
+	op := a.Subscription.Observation.ID
+	_, err := f.client.SetAutomaticResetCreditConsent(context.Background(), subscriptionRequest(f.service.Identity.Token, &pb.SetAutomaticResetCreditConsentRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(r.ID), ExpectedRevision: r.Revision}, ConnectionId: string(a.Connection.ID), GenerationId: string(a.Subscription.Generation)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.claimObservation(string(op), &pb.TakeSubscriptionResponse{LeaseId: string(lease.ID), LeaseRevision: lease.Revision, GenerationId: string(lease.Generation)})
+	_, a = f.record()
+	if a.Subscription.AutomaticCreditConsent != nil || a.Subscription.Observation.Phase != domain.SubscriptionObservationSending {
+		t.Fatal("disable cancelled admitted settlement")
+	}
+}
+func TestAutomaticCreditRejectsForeignAndRetiredProof(t *testing.T) {
+	for _, change := range []string{"turn", "epoch", "cleanup", "mode"} {
+		t.Run(change, func(t *testing.T) {
+			f, b := automaticCreditFixture(t, true, false)
+			automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+				switch change {
+				case "epoch":
+					a.Subscription.Lease.Epoch = domain.NewID()
+				case "turn":
+					b.NativeTurnID = domain.NativeIdentity(domain.NewID())
+				case "cleanup":
+					sr, s, e := sessionRecord(tx, b.SessionID)
+					if e != nil {
+						return e
+					}
+					s.Execution.CleanupVerified = true
+					_, e = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.SessionID, "", s)
+					return e
+				case "mode":
+					jr, e := tx.Get(domain.JobKind, f.job)
+					if e != nil {
+						return e
+					}
+					j, e := store.Decode[domain.Job](jr)
+					if e != nil {
+						return e
+					}
+					var input domain.ExecutionJobInput
+					if e = domain.Decode(j.Input, &input); e != nil {
+						return e
+					}
+					input.Input.Mode = domain.PlanMode
+					j.Input, _ = json.Marshal(input)
+					_, e = tx.PutJob(jr.ID, jr.Revision, b.SessionID, "", j)
+					return e
+				}
+				return nil
+			})
+			_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.reject", nil, func(tx *store.Tx) (any, error) {
+				_, a, e := accountFromTx(tx, f.input.AccountID, 0)
+				if e != nil {
+					return nil, e
+				}
+				return nil, f.service.admitAutomaticCredit(tx, f.input.AccountID, &a, &b, "")
+			})
+			if err == nil {
+				t.Fatal("foreign or retired authority accepted")
+			}
+			_, a := f.record()
+			if a.Subscription.Observation != nil {
+				t.Fatal("rejection persisted spending")
+			}
+		})
+	}
+}
+func TestAutomaticCreditFailedRefreshAndFreshRateLimitProof(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, true)
+	admitFixture(t, f, &b, "")
+	_, a := f.record()
+	op := a.Subscription.Observation.ID
+	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+		a.Subscription.Observation.Phase = domain.SubscriptionObservationFailed
+		return f.service.admitAutomaticCredit(tx, f.input.AccountID, a, nil, op)
+	})
+	_, a = f.record()
+	if a.Subscription.Observation.ID != op || a.Subscription.AutomaticCreditEpisode.OperationID != "" {
+		t.Fatal("failed refresh spent or replaced its key")
+	}
+	f, b = automaticCreditFixture(t, true, false)
+	b.Reason = domain.CodexRateLimitExceeded
+	automaticFixtureMutation(t, f, func(tx *store.Tx, a *domain.Account) error {
+		now := tx.ObservationTime()
+		zero := 0.0
+		a.ConfirmedExhausted = true
+		a.Subscription.QuotaState = domain.Observed
+		a.Subscription.QuotaObservedAt = &now
+		a.Quota = []domain.QuotaWindow{{ID: "codex:primary", ComparisonGroup: "chatgpt", Blocking: true, Remaining: &zero, State: domain.Observed, ObservedAt: now}}
+		return nil
+	})
+	admitFixture(t, f, &b, "")
+	_, a = f.record()
+	if a.Subscription.Observation == nil || a.Subscription.Observation.Action != domain.SubscriptionResetCredit {
+		t.Fatal("fresh subscription proof did not qualify rate limit")
+	}
+}
+
+func TestAutomaticCreditPortableExcludesStandingAuthority(t *testing.T) {
+	f, b := automaticCreditFixture(t, true, false)
+	admitFixture(t, f, &b, "")
+	r, a := f.record()
+	raw, e := portableDocument(domain.AccountKind, r.Data)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var imported domain.Account
+	if e = domain.Decode(raw, &imported); e != nil {
+		t.Fatal(e)
+	}
+	if imported.Subscription != nil || imported.Connection != nil {
+		t.Fatal("portable transfer retained spending authority")
+	}
+	omitted := a
+	copyState := *a.Subscription
+	omitted.Subscription = &copyState
+	omitted.Subscription.AutomaticCreditConsent = nil
+	omitted.Alias = "Old client edit"
+	_, e = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.old-client", nil, func(tx *store.Tx) (any, error) {
+		return nil, validateRelationships(tx, domain.AccountKind, r.ID, r.Revision, &omitted)
+	})
+	if e == nil {
+		t.Fatal("legacy omission erased consent")
 	}
 }

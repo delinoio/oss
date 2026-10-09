@@ -1160,3 +1160,14 @@ The native connection lane separately owns a protected per-original-connection p
 ## Atomic turn timing retention (issue #2052)
 
 Existing Session and Message JSON retains optional server-owned accepted/terminal UTC observations with no schema or migration. The existing mutation clock is captured once after receipt lookup; exact retries do not recapture time. Primary acceptance, and later matching terminal publication, share their original receipts and resource/event transaction. Terminal retention selects bounded primary-user records through the existing execution index, checks original session/execution/input/native thread/turn and accepted observation, then updates only timing with their original content and index ownership intact. Any mismatch rolls back all Message, progress, outcome, Inbox and receipt writes. Legacy omissions are never backfilled. Backups preserve retained observations; deletion uses original resource ownership. Native assignment/checkpoint/digest projections omit display timing.
+
+### Automatic reset-credit state — issue #2123
+
+Standing consent, bounded original-turn fences, exhaustion episode and original
+observation operation share protected account JSON and the existing mutation
+receipt transaction. No migration is added. Managed restore explicitly clears
+consent while retaining required original credential/episode/operation references
+under recovery quarantine; retained references grant only independent cleanup.
+Portable transfer removes the entire subscription state. Generic configuration
+writes must preserve server-owned fields, including omitted legacy consent and
+episode fields; old clients cannot erase or manufacture spending authority.

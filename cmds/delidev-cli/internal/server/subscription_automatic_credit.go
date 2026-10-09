@@ -80,7 +80,7 @@ func (s *Service) originalQuotaBlock(tx *store.Tx, account domain.ID, a domain.A
 	}
 	job, err := store.Decode[domain.Job](jr)
 	var input domain.ExecutionJobInput
-	if err != nil || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.AccountID != account || input.ConnectionID != a.Connection.ID || input.ExecutionID != block.ExecutionID || input.SessionID != block.SessionID || input.Configuration.Harness != domain.Codex || input.Input.Mode != domain.ExecuteMode {
+	if err != nil || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.MachineID != lease.MachineID || job.InstanceID != lease.InstanceID || job.AssignedDeviceID != lease.DeviceID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.AccountID != account || input.ConnectionID != a.Connection.ID || input.ExecutionID != block.ExecutionID || input.SessionID != block.SessionID || input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || input.Input.Mode != domain.ExecuteMode {
 		return subscriptionDenied()
 	}
 	_, session, err := sessionRecord(tx, block.SessionID)
@@ -123,6 +123,11 @@ func (s *Service) admitAutomaticCredit(tx *store.Tx, account domain.ID, a *domai
 			return nil
 		}
 		st.AutomaticCreditEpisode = &domain.AutomaticResetCreditEpisode{ID: domain.NewID(), Generation: st.Generation, SessionID: block.SessionID, LeaseID: st.Lease.ID, ExecutionID: block.ExecutionID, NativeThreadID: block.NativeThreadID, NativeTurnID: block.NativeTurnID, Block: block.Reason, ObservedAt: now}
+		if !a.ConfirmedExhausted {
+			if _, err := tx.CreateOperationalInbox(st.AutomaticCreditEpisode.ID, domain.InboxOperational{Kind: domain.QuotaExhaustedNotification, AccountID: account, ConnectionID: a.Connection.ID, ObservedAt: now}); err != nil {
+				return err
+			}
+		}
 		a.ConfirmedExhausted = true
 	}
 	episode := st.AutomaticCreditEpisode

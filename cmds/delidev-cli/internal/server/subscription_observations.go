@@ -428,7 +428,7 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 		return nil, rpc.Error(err, c)
 	}
 	var observed domain.SubscriptionObservationResult
-	if len(req.Msg.ObservationJson) > 32<<10 || domain.Decode(req.Msg.ObservationJson, &observed) != nil || observed.QuotaBlock != nil && observed.QuotaBlock.Validate() != nil || !domain.ValidSubscriptionObservationCode(observed.QuotaError) || observed.Quota != nil && observed.Quota.Validate(time.Now().UTC()) != nil || observed.Quota != nil && observed.QuotaError != "" || observed.Outcome != "" && !observed.Outcome.Valid() {
+	if len(req.Msg.ObservationJson) > 32<<10 || domain.Decode(req.Msg.ObservationJson, &observed) != nil || observed.QuotaBlock != nil && (observed.QuotaBlock.Validate() != nil || observed.Quota != nil || observed.QuotaError != "" || observed.Outcome != "" || observed.ConsumeUncertain) || !domain.ValidSubscriptionObservationCode(observed.QuotaError) || observed.Quota != nil && observed.Quota.Validate(time.Now().UTC()) != nil || observed.Quota != nil && observed.QuotaError != "" || observed.Outcome != "" && !observed.Outcome.Valid() {
 		return nil, rpc.Error(domain.InvalidSubscriptionObservation(), c)
 	}
 	input := struct {
@@ -516,6 +516,6 @@ func (s *Service) PublishSubscriptionObservation(ctx context.Context, req *conne
 	if err != nil {
 		return nil, rpc.Error(err, c)
 	}
-	s.logger.InfoContext(ctx, "subscription_observation_published", "account_id", input.Account, "operation_id", input.Operation, "generation", input.Generation, "quota_code", observed.QuotaError, "consume_uncertain", observed.ConsumeUncertain, "replayed", result.Replayed)
+	s.logger.InfoContext(ctx, "subscription_observation_published", "account_id", input.Account, "operation_id", input.Operation, "generation", input.Generation, "quota_code", observed.QuotaError, "consume_uncertain", observed.ConsumeUncertain, "outcome", observed.Outcome, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.PublishSubscriptionObservationResponse{Account: rpc.Resource(r), Replayed: result.Replayed}), nil
 }
