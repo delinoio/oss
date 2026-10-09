@@ -144,6 +144,13 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 			return incompatible()
 		}
 	}
+	if c.imageGeneration {
+		var features map[string]json.RawMessage
+		var enabled bool
+		if json.Unmarshal(result.Config["features"], &features) != nil || json.Unmarshal(features["image_generation"], &enabled) != nil || !enabled {
+			return incompatible()
+		}
+	}
 	return nil
 }
 

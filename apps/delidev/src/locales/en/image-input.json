@@ -29,5 +29,17 @@
   "image-input.creation-limits": "Up to 8 images per message, 10 MiB each, 40 MiB total.",
   "image-input.creation-pixels": "Up to 40 million pixels per image.",
   "image-input.creation-requires": "Requires a Codex Agent Worker with an image-capable model and a Runner Device that supports image inputs.",
-  "image-input.creation-unsupported": "Claude Code, OpenCode and Grok Build image inputs are not supported in DeliDev."
+  "image-input.creation-unsupported": "Claude Code, OpenCode and Grok Build image inputs are not supported in DeliDev.",
+  "image-input.generatedHeading": "Generated image",
+  "image-input.generatedRunning": "Native image generation is in progress.",
+  "image-input.generatedCompleted": "Native image generation completed.",
+  "image-input.generatedFailed": "Native image generation failed.",
+  "image-input.generatedLimit": "The original account reached its native image usage limit.",
+  "image-input.exportGenerated": "Export original image {{number}}",
+  "image-input.exportSaved": "Original image saved.",
+  "image-input.exportFailed": "The image was not saved. Choose a new filename and try again.",
+  "image-input.exportUncertain": "The save result is unknown. Check the original save before exporting again.",
+  "image-input.checkExport": "Check original save",
+  "image-input.exportPending": "Saving original image…",
+  "image-input.generatedUnsettled": "The original native image call has no confirmed completion."
 }

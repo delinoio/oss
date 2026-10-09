@@ -10187,6 +10187,20 @@
       "number": 1,
       "status": "implemented",
       "newDeclaration": true
+    },
+    {
+      "issue": 2018,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
+      "number": 61
+    },
+    {
+      "issue": 2018,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1",
+      "number": 35
     }
   ],
   "rpcReservations": [

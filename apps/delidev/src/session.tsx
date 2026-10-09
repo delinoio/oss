@@ -14,6 +14,7 @@ import { SessionHarness } from "./session-harness";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
 import { imageMime } from "./image-input";
+import { NativeImageGeneration } from "./native-image-generation";
 import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./image-attachments";
 import { useImageDraft, useImageRoute } from "./image-drafts";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
@@ -235,7 +236,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
       {items(tool.patches).map((patch, index) => <Disclosure key={index}><DisclosureSummary><LocalizedText id="session.patchObservation_8b886e" components={{ s0: <>{index + 1}</> }} /></DisclosureSummary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</Disclosure>)}
       {items(tool.inputs).map((input, index) => <pre key={index}>Tool input: {text(object(object(input).input).text)}</pre>)}
     </Disclosure> : null}
-    {started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <Disclosure open><DisclosureSummary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</DisclosureSummary>
+    {started.kind === "image-generation" ? <NativeImageGeneration artifact={artifact} sessionId={resource.sessionId} active={active} state={text(data.state)} /> : started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <Disclosure open><DisclosureSummary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</DisclosureSummary>
       {text(started.text) ? <pre>{text(started.text)}</pre> : null}
       {[...items(started.summary), ...items(started.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}
       {items(artifact.deltas).length ? <Disclosure><DisclosureSummary>{copy("session.streamedObservations_589dae")}</DisclosureSummary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</Disclosure> : null}

@@ -24,9 +24,10 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
-	ManagedForkHistory bool
-	OrdinaryTools      executionenv.Ordinary `json:"-"`
-	RevertHistory      bool                  `json:"-"`
+	ManagedForkHistory    bool
+	OrdinaryTools         executionenv.Ordinary `json:"-"`
+	RevertHistory         bool                  `json:"-"`
+	EnableImageGeneration bool
 
 	SkillsRoot       string
 	ImageRoot        string
@@ -68,6 +69,7 @@ type Client struct {
 	api                *apiBinding
 	managedHome        string
 	revertHistory      bool
+	imageGeneration    bool
 }
 
 type ProtocolMode string
@@ -162,6 +164,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
 	}
+	if err := configureImageGeneration(&config); err != nil {
+		return nil, err
+	}
 	api, err := configureAPI(&config)
 	if err != nil {
 		return nil, err
@@ -176,7 +181,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
-	wire, err := nativewire.Start(ctx, config.Process)
+	var wire *nativewire.Connection
+	if config.Mode == ThreadProtocol && config.ManagedAuthentication && config.ImageRoot != "" {
+		wire, err = nativewire.StartImageObservations(ctx, config.Process)
+	} else {
+		wire, err = nativewire.Start(ctx, config.Process)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +262,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

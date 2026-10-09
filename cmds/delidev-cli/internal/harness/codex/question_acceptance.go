@@ -21,7 +21,7 @@ func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (E
 		Usage         json.RawMessage `json:"usage,omitempty"`
 		UsageMetadata json.RawMessage `json:"usageMetadata,omitempty"`
 	}
-	if domain.Decode(native.Params, &envelope) != nil || envelope.ThreadID.Validate() != nil || envelope.TurnID.Validate() != nil {
+	if domain.DecodeBounded(native.Params, &envelope, c.nativeFrameLimit()) != nil || envelope.ThreadID.Validate() != nil || envelope.TurnID.Validate() != nil {
 		return Event{}, incompatible()
 	}
 	if envelope.ThreadID != c.thread {

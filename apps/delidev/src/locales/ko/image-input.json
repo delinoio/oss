@@ -29,5 +29,17 @@
   "image-input.creation-limits": "메시지당 최대 8개, 이미지당 10 MiB, 총 40 MiB.",
   "image-input.creation-pixels": "이미지당 최대 4천만 픽셀.",
   "image-input.creation-requires": "이미지 입력을 지원하는 모델을 사용하는 Codex Agent Worker와 이미지 입력을 지원하는 Runner Device가 필요합니다.",
-  "image-input.creation-unsupported": "DeliDev에서는 Claude Code, OpenCode, Grok Build의 이미지 입력을 지원하지 않습니다."
+  "image-input.creation-unsupported": "DeliDev에서는 Claude Code, OpenCode, Grok Build의 이미지 입력을 지원하지 않습니다.",
+  "image-input.generatedHeading": "생성된 이미지",
+  "image-input.generatedRunning": "네이티브 이미지 생성이 진행 중입니다.",
+  "image-input.generatedCompleted": "네이티브 이미지 생성이 완료되었습니다.",
+  "image-input.generatedFailed": "네이티브 이미지 생성에 실패했습니다.",
+  "image-input.generatedLimit": "원래 계정이 네이티브 이미지 사용 한도에 도달했습니다.",
+  "image-input.exportGenerated": "원본 이미지 {{number}} 내보내기",
+  "image-input.exportSaved": "원본 이미지를 저장했습니다.",
+  "image-input.exportFailed": "이미지를 저장하지 못했습니다. 새 파일 이름을 선택하고 다시 시도하세요.",
+  "image-input.exportUncertain": "저장 결과를 알 수 없습니다. 다시 내보내기 전에 원래 저장 결과를 확인하세요.",
+  "image-input.checkExport": "원래 저장 결과 확인",
+  "image-input.exportPending": "원본 이미지 저장 중…",
+  "image-input.generatedUnsettled": "원래 네이티브 이미지 호출의 완료가 확인되지 않았습니다."
 }

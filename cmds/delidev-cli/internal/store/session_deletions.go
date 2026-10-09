@@ -544,6 +544,21 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 				}
 				return v, s.persistSessionDeletionAck(ctx, v, w, true)
 			}
+			if w.Work.GeneratedImageCleanup {
+				if err := s.readLocked(ctx, func(tx *Tx) error {
+					r, err := tx.Get(domain.MachineKind, actor.MachineID)
+					if err != nil {
+						return err
+					}
+					m, err := Decode[domain.Machine](r)
+					if err != nil || !slices.Contains(m.WorkerCapabilities, domain.NativeImageGenerationV1) {
+						return domain.SessionDeletionPending()
+					}
+					return nil
+				}); err != nil {
+					return v, err
+				}
+			}
 			v.Workers[i].Acknowledged = true
 			v.Workers[i].RequestID = request
 			v.Revision++
@@ -957,6 +972,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 				return v, domain.SessionDeletionPending()
 			}
 			copy.ExecutionID = input.ExecutionID
+			w.GeneratedImageCleanup = w.GeneratedImageCleanup || input.NativeImageGeneration
 		}
 		if j.Type == domain.WorkspaceStorageJob {
 			var input workspace.StorageRequest

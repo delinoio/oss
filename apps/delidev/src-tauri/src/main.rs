@@ -36,6 +36,8 @@ impl Drop for DesktopLifetime {
         {
             return;
         }
+        IMAGE_EXPORTS.request_stop();
+        IMAGE_EXPORTS.join();
         self.supervision.stop();
         self.worker_supervision.stop();
         if let Err(code) = self.connector.shutdown_owned() {
@@ -185,6 +187,109 @@ async fn choose_repository_folder(
     .await;
     recheck_authority(&response_window, &original_authority)?;
     result
+}
+
+// Export accepts only already authenticated, digest-checked original image
+// bytes. Paths come exclusively from the native dialog; exported copies have no
+// cleanup owner.
+static IMAGE_EXPORTS: std::sync::LazyLock<delidev_desktop::image_export::Controller> =
+    std::sync::LazyLock::new(delidev_desktop::image_export::Controller::default);
+
+#[tauri::command]
+async fn export_generated_image(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    request: delidev_desktop::image_export::Request,
+) -> Result<delidev_desktop::image_export::Outcome, NativeFailure> {
+    use delidev_desktop::image_export::Outcome;
+    let authority = capture_authority(&window)?;
+    let binding = if is_local(&window) {
+        trusted_local(&window)?;
+        None
+    } else {
+        Some(saved_binding(&window, &windows)?)
+    };
+    let scope = format!(
+        "{}:{}:{}",
+        authority.entry.label, authority.entry.instance, authority.local_revision
+    );
+    let bytes = request.bytes()?;
+    if let Some(outcome) = IMAGE_EXPORTS.begin(&scope, &request)? {
+        return Ok(outcome);
+    }
+    tracing::info!(operation = "generated_image_export", phase = "choosing");
+    let chosen = rfd::AsyncFileDialog::new()
+        .set_title(delidev_desktop::localization::text(
+            delidev_desktop::localization::Message::ExportGeneratedImage,
+        ))
+        .set_file_name("generated-image.png")
+        .add_filter("PNG image", &["png"])
+        .set_parent(&window)
+        .save_file()
+        .await;
+    let valid = recheck_authority(&window, &authority).and_then(|_| {
+        if let Some(original) = &binding {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance || current.profile != original.profile {
+                return Err(NativeFailure::PermissionDenied);
+            }
+        } else {
+            trusted_local(&window)?;
+        }
+        Ok(())
+    });
+    let outcome = if valid.is_err() {
+        Outcome::Canceled
+    } else if let Some(handle) = chosen {
+        let path = handle.path().to_path_buf();
+        let owned_scope = scope.clone();
+        let operation = request.operation_id.clone();
+        let dispatch_window = window.clone();
+        let dispatch_authority = authority.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if recheck_registered(dispatch_window.app_handle(), &dispatch_authority).is_err() {
+                return IMAGE_EXPORTS
+                    .finish(&owned_scope, &operation, Outcome::Canceled)
+                    .unwrap_or(Outcome::Uncertain);
+            }
+            IMAGE_EXPORTS
+                .publish(&owned_scope, &operation, &path, &bytes)
+                .unwrap_or(Outcome::Uncertain)
+        })
+        .await
+        .unwrap_or(Outcome::Uncertain)
+    } else {
+        Outcome::Canceled
+    };
+    let outcome = IMAGE_EXPORTS.finish(&scope, &request.operation_id, outcome)?;
+    tracing::info!(
+        operation = "generated_image_export",
+        phase = "finished",
+        ?outcome
+    );
+    recheck_authority(&window, &authority)?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+async fn read_generated_image_export(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    operation_id: String,
+) -> Result<delidev_desktop::image_export::Outcome, NativeFailure> {
+    let authority = capture_authority(&window)?;
+    if is_local(&window) {
+        trusted_local(&window)?;
+    } else {
+        saved_binding(&window, &windows)?;
+    }
+    let scope = format!(
+        "{}:{}:{}",
+        authority.entry.label, authority.entry.instance, authority.local_revision
+    );
+    let outcome = IMAGE_EXPORTS.read(&scope, &operation_id)?;
+    recheck_authority(&window, &authority)?;
+    Ok(outcome)
 }
 
 #[tauri::command]
@@ -1778,6 +1883,8 @@ fn run() -> Result<(), NativeFailure> {
                 account_oauth_native,
                 desktop_credential_access,
                 choose_repository_folder,
+                export_generated_image,
+                read_generated_image_export,
                 read_appearance,
                 read_shortcut_preferences,
                 update_shortcut_preferences,
@@ -2024,6 +2131,7 @@ fn run() -> Result<(), NativeFailure> {
             if !quit_started.swap(true, std::sync::atomic::Ordering::AcqRel) {
                 // Fence fresh starts synchronously. Browser discovery keeps its
                 // separate observer until its final bounded read pass joins.
+                IMAGE_EXPORTS.request_stop();
                 exiting_supervision.request_stop();
                 exiting_updates.request_stop();
                 worker_supervision.request_stop();
@@ -2041,6 +2149,7 @@ fn run() -> Result<(), NativeFailure> {
                 let app = _app.clone();
                 *quit_task.lock().unwrap_or_else(|e| e.into_inner()) =
                     Some(std::thread::spawn(move || {
+                        IMAGE_EXPORTS.join();
                         oauth.stop();
                         windows.join();
                         updates.join(&sidecar);
@@ -2081,6 +2190,8 @@ fn run() -> Result<(), NativeFailure> {
         }
     });
     tracing::info!(operation = "desktop_exit", state = "runtime-returned");
+    IMAGE_EXPORTS.request_stop();
+    IMAGE_EXPORTS.join();
     window_actions.stop();
     window_actions.join();
     if let Some(task) = joining_quit

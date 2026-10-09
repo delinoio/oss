@@ -35,18 +35,22 @@ type SessionDeletionFork struct {
 }
 
 type SessionDeletionWork struct {
-	RetryForks         []SessionDeletionFork `json:"retry_forks,omitempty"`
-	SkillSnapshots     []SkillBinding        `json:"skill_snapshots,omitempty"`
-	Fork               *SessionDeletionFork  `json:"fork,omitempty"`
-	Version            uint32                `json:"version"`
-	DeletionID         ID                    `json:"deletion_id"`
-	ServerID           ID                    `json:"server_id"`
-	SessionID          ID                    `json:"session_id"`
-	MachineID          ID                    `json:"machine_id"`
-	DeviceID           ID                    `json:"device_id"`
-	Copies             []SessionDeletionCopy `json:"copies"`
-	Images             []ImageAttachment     `json:"images,omitempty"`
-	PreparationDigests []string              `json:"preparation_digests"`
+	RetryForks []SessionDeletionFork `json:"retry_forks,omitempty"`
+	// Frozen original execution admission requires all generation intents, even
+	// when publication failed before the server acquired output references.
+	GeneratedImageCleanup    bool                  `json:"generated_image_cleanup,omitempty"`
+	SkillSnapshots           []SkillBinding        `json:"skill_snapshots,omitempty"`
+	Fork                     *SessionDeletionFork  `json:"fork,omitempty"`
+	Version                  uint32                `json:"version"`
+	DeletionID               ID                    `json:"deletion_id"`
+	ServerID                 ID                    `json:"server_id"`
+	SessionID                ID                    `json:"session_id"`
+	MachineID                ID                    `json:"machine_id"`
+	DeviceID                 ID                    `json:"device_id"`
+	Copies                   []SessionDeletionCopy `json:"copies"`
+	Images                   []ImageAttachment     `json:"images,omitempty"`
+	PreparationDigests       []string              `json:"preparation_digests"`
+	PreservedGeneratedImages []ImageAttachment     `json:"preserved_generated_images,omitempty"`
 }
 
 func (w SessionDeletionWork) Validate() error {
@@ -57,6 +61,16 @@ func (w SessionDeletionWork) Validate() error {
 		if ValidateSkills([]SkillBinding{binding}) != nil || binding.WorkerDeviceID != w.DeviceID {
 			return SessionDeletionPending()
 		}
+	}
+	if len(w.PreservedGeneratedImages) > MaxSessionImageAttachments || len(w.PreservedGeneratedImages) > 0 && !w.GeneratedImageCleanup {
+		return SessionDeletionPending()
+	}
+	preserved := make(map[ID]bool, len(w.PreservedGeneratedImages))
+	for _, ref := range w.PreservedGeneratedImages {
+		if ref.Validate() != nil || ref.MachineID != w.MachineID || preserved[ref.ID] {
+			return SessionDeletionPending()
+		}
+		preserved[ref.ID] = true
 	}
 	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0 && len(w.RetryForks) == 0) || len(w.Copies) > 4096 || len(w.Images) > MaxSessionImageAttachments || len(w.PreparationDigests) > 4096 {
 		return SessionDeletionPending()
@@ -120,7 +134,7 @@ func (w SessionDeletionWork) Validate() error {
 	}
 	images := make(map[ID]bool, len(w.Images))
 	for _, image := range w.Images {
-		if image.Validate() != nil || image.MachineID != w.MachineID || images[image.ID] {
+		if image.Validate() != nil || image.MachineID != w.MachineID || images[image.ID] || preserved[image.ID] {
 			return SessionDeletionPending()
 		}
 		images[image.ID] = true

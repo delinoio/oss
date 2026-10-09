@@ -19,7 +19,7 @@ type turnWire struct {
 
 func decodeTurn(raw json.RawMessage) (Turn, error) {
 	var wire turnWire
-	if domain.Decode(raw, &wire) != nil || wire.ID.Validate() != nil || wire.Items == nil {
+	if domain.DecodeBounded(raw, &wire, 16<<20) != nil || wire.ID.Validate() != nil || wire.Items == nil {
 		return Turn{}, incompatible()
 	}
 	if wire.Status != TurnRunning && !wire.Status.terminal() {

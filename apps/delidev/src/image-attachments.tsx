@@ -9,6 +9,8 @@ import { copy, useLocale, type MessageKey } from "./localization";
 import { imageDigest, imageLimits, imageMime, ImageInputError, ImageProblem, retainedImages } from "./image-input";
 import type { useImageDraft } from "./image-drafts";
 import "./image-attachments.css";
+import { isTauri } from "@tauri-apps/api/core";
+import { GeneratedImageExport } from "./generated-image-export";
 
 const problemKeys: Record<ImageProblem, MessageKey> = { [ImageProblem.Invalid]: "image-input.invalid", [ImageProblem.Limits]: "image-input.limits", [ImageProblem.Unsupported]: "image-input.unsupported", [ImageProblem.Transfer]: "image-input.transferFailed", [ImageProblem.Cleanup]: "image-input.cleanupFailed" };
 export function imageEntryHandlers(draft: ReturnType<typeof useImageDraft>, disabled: boolean) {
@@ -83,7 +85,7 @@ export function ImageAttachmentInput({ draft, disabled, available, routeReady, r
     {draft.cleanupPending ? <div className="image-cleanup"><p role="status">{copy("image-input.cleanupPending")}</p><button type="button" disabled={disabled || draft.busy} onClick={() => void draft.controller.retryCleanup()}>{copy("image-input.retryCleanup")}</button></div> : null}
   </section>;
 }
-function RetainedImage({ sessionId, reference, number, active }: { sessionId: string; reference: ImageAttachment; number: number; active: boolean }) {
+function RetainedImage({ sessionId, reference, number, active, exportable = false }: { sessionId: string; reference: ImageAttachment; number: number; active: boolean; exportable?: boolean }) {
   const preferences=useAppearancePreferences();
   const [revealed,setRevealed]=useState(false);
   const visible=preferences.inline_images||revealed;
@@ -98,7 +100,7 @@ function RetainedImage({ sessionId, reference, number, active }: { sessionId: st
     observer.observe(element.current); return () => observer.disconnect();
   }, [active]);
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<{ url?: string; failed?: boolean }>({});
+  const [state, setState] = useState<{ url?: string; bytes?: Uint8Array; failed?: boolean }>({});
   useEffect(() => {
     if (!active || !nearViewport || !visible) { setState({}); return; }
     const client = createClient(AttachmentService, transport), controller = new AbortController();
@@ -116,17 +118,17 @@ function RetainedImage({ sessionId, reference, number, active }: { sessionId: st
       if (await imageDigest(bytes) !== reference.sha256) throw new ImageInputError(ImageProblem.Transfer);
       if (controller.signal.aborted) return;
       url = URL.createObjectURL(new Blob([bytes], { type: imageMime[reference.mediaType] }));
-      setState({ url });
+      setState({ url, bytes: exportable ? bytes : undefined });
     })().catch(error => { if (!controller.signal.aborted) { console.warn("delidev.image_input.readback_failed", { phase: "readback", classification: clientFailure(error).code }); setState({ failed: true }); } });
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [attempt, active, nearViewport, visible, transport, sessionId, reference.id, reference.byteLength, reference.mediaType, reference.sha256]);
-  return <li ref={element}>{!visible?<button type="button" disabled={!active} onClick={()=>setRevealed(true)}>{copy("appearance.v2.revealImage")} {number}</button>:state.url ? <img src={state.url} alt={copy("image-input.image", { number })} /> : <p role="status">{copy(state.failed ? "image-input.readFailed" : "image-input.loading")}</p>}{state.failed ? <button type="button" disabled={!active} onClick={() => setAttempt(value => value + 1)}>{copy("image-input.retryRead")}</button> : null}</li>;
+  }, [attempt, active, nearViewport, visible, exportable, transport, sessionId, reference.id, reference.byteLength, reference.mediaType, reference.sha256]);
+  return <li ref={element}>{exportable && state.url && state.bytes ? isTauri() ? <GeneratedImageExport bytes={state.bytes} reference={reference} sessionId={sessionId} number={number} active={active} /> : <a href={state.url} download={`generated-image-${number}.png`}>{copy("image-input.exportGenerated", { number })}</a> : null}{!visible ? <button type="button" disabled={!active} onClick={() => setRevealed(true)}>{copy("appearance.v2.revealImage")} {number}</button> : state.url ? <img src={state.url} alt={copy("image-input.image", { number })} /> : <p role="status">{copy(state.failed ? "image-input.readFailed" : "image-input.loading")}</p>}{state.failed ? <button type="button" disabled={!active} onClick={() => setAttempt(value => value + 1)}>{copy("image-input.retryRead")}</button> : null}</li>;
 }
-export function RetainedImages({ value, sessionId, active = true }: { value: unknown; sessionId: string; active?: boolean }) {
+export function RetainedImages({ value, sessionId, active = true, exportable = false }: { value: unknown; sessionId: string; active?: boolean; exportable?: boolean }) {
   useLocale();
   const key = JSON.stringify(value);
   const references = useMemo(() => retainedImages(key === undefined ? undefined : JSON.parse(key)), [key]);
   if (!references) return <p role="status">{copy("image-input.evidenceUnavailable")}</p>;
   if (!references.length) return null;
-  return <ol className="image-retained-list" aria-label={copy("image-input.heading")}>{references.map((reference, index) => <RetainedImage key={reference.id} sessionId={sessionId} reference={reference} number={index + 1} active={active} />)}</ol>;
+  return <ol className="image-retained-list" aria-label={copy("image-input.heading")}>{references.map((reference, index) => <RetainedImage key={reference.id} sessionId={sessionId} reference={reference} number={index + 1} active={active} exportable={exportable} />)}</ol>;
 }

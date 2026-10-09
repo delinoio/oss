@@ -228,7 +228,7 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 		NextCursor      *string           `json:"nextCursor"`
 		BackwardsCursor *string           `json:"backwardsCursor"`
 	}
-	if domain.Decode(raw, &page) != nil || len(page.Data) != 1 {
+	if domain.DecodeBounded(raw, &page, 16<<20) != nil || len(page.Data) != 1 {
 		return Turn{}, nil, incompatible()
 	}
 	for _, cursor := range []*string{page.NextCursor, page.BackwardsCursor} {
@@ -241,7 +241,7 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 		return Turn{}, nil, incompatible()
 	}
 	var wire turnWire
-	if domain.Decode(page.Data[0], &wire) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || len(wire.Items) > maxTrackedTurns {
+	if domain.DecodeBounded(page.Data[0], &wire, 16<<20) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || len(wire.Items) > maxTrackedTurns {
 		return Turn{}, nil, incompatible()
 	}
 	var inputs []HistoricalInput

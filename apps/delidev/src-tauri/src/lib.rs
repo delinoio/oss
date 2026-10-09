@@ -20,6 +20,7 @@ use zeroize::{Zeroize, Zeroizing};
 pub mod appearance;
 mod browser_opener;
 pub mod date_format;
+pub mod image_export;
 pub mod language;
 pub mod oauth;
 pub mod provider_guidance;

@@ -26,6 +26,10 @@ func (t *Tx) ImageUploadRecord(id domain.ID) (Record, domain.ImageUpload, error)
 }
 
 func validateImageUpload(v domain.ImageUpload) error {
+	if v.GeneratedExecutionID != "" && (v.GeneratedExecutionID.Validate() != nil || v.State == domain.ImageUploading || v.State == domain.ImageReady || v.InputID == "" || v.SessionID == "") {
+		return domain.InvalidImageInput()
+	}
+
 	if v.Version != 1 || v.Attachment.Validate() != nil || v.WorkerDeviceID.Validate() != nil || v.DraftID.Validate() != nil || v.OperationID.Validate() != nil || v.MachineRevision == 0 || v.UploadedBytes > v.Attachment.ByteLength || len(v.Owners) > 4096 || (v.Actor.Type != domain.OwnerDevice && v.Actor.Type != domain.ClientDevice) || v.Actor.MachineID != "" || v.Actor.DeviceID != "" && v.Actor.DeviceID.Validate() != nil || v.Actor.Type == domain.ClientDevice && v.Actor.DeviceID.Validate() != nil || v.SessionID != "" && v.SessionID.Validate() != nil || v.InputID != "" && v.InputID.Validate() != nil {
 		return domain.InvalidImageInput()
 	}
@@ -199,7 +203,7 @@ func (t *Tx) forkImageUploads(input domain.ForkJobInput) ([]domain.ImageUpload, 
 		if err != nil || row.SessionID != v.SessionID {
 			return nil, domain.SessionDeletionPending()
 		}
-		if value.Delivery == domain.InputAccepted && value.Sequence <= boundary && slices.Contains(value.Attachments, v.Attachment) {
+		if value.Delivery == domain.InputAccepted && value.Sequence <= boundary && (v.GeneratedExecutionID != "" || slices.Contains(value.Attachments, v.Attachment)) {
 			result = append(result, v)
 		}
 	}
@@ -304,7 +308,8 @@ func (t *Tx) planImageSessionDeletion(v SessionDeletion) (SessionDeletion, error
 		}
 		owned := slices.Contains(upload.Owners, v.SessionID)
 		staging := upload.InputID == "" && upload.SessionID == v.SessionID && upload.State != domain.ImageDeleted
-		if !staging && (!owned || len(upload.Owners) > 1) {
+		preserved := upload.GeneratedExecutionID != "" && owned && len(upload.Owners) > 1
+		if !staging && (!owned || len(upload.Owners) > 1) && !preserved {
 			continue
 		}
 		index := -1
@@ -320,7 +325,14 @@ func (t *Tx) planImageSessionDeletion(v SessionDeletion) (SessionDeletion, error
 			v.Workers = append(v.Workers, SessionDeletionWorker{Work: domain.SessionDeletionWork{Version: 1, DeletionID: v.ID, ServerID: v.ServerID, SessionID: v.SessionID, MachineID: upload.Attachment.MachineID, DeviceID: upload.WorkerDeviceID, Copies: []domain.SessionDeletionCopy{}, PreparationDigests: []string{}}})
 			index = len(v.Workers) - 1
 		}
-		v.Workers[index].Work.Images = append(v.Workers[index].Work.Images, upload.Attachment)
+		if upload.GeneratedExecutionID != "" {
+			v.Workers[index].Work.GeneratedImageCleanup = true
+		}
+		if preserved {
+			v.Workers[index].Work.PreservedGeneratedImages = append(v.Workers[index].Work.PreservedGeneratedImages, upload.Attachment)
+		} else {
+			v.Workers[index].Work.Images = append(v.Workers[index].Work.Images, upload.Attachment)
+		}
 	}
 	return v, nil
 }
