@@ -628,6 +628,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 					return nil, err
 				}
 				st.Generation = o.FinishID
+				st.PaidCredits = nil
 				st.IdentityCommitment = commitment
 				st.OwnerMachineID = ""
 				if a.Connection == nil {
@@ -644,6 +645,7 @@ func (s *Service) finishServerSubscription(ctx context.Context, id domain.ID, o 
 				st.Generation = ""
 				st.IdentityCommitment = ""
 				st.OwnerMachineID = ""
+				st.PaidCredits = nil
 				st.ResetCredits = nil
 				st.QuotaObservedAt = nil
 				st.QuotaState = domain.ObservationUnknown
