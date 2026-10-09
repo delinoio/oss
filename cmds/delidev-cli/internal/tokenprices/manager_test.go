@@ -140,3 +140,95 @@ func TestExactSnapshotIsIndependentAndBounded(t *testing.T) {
 		t.Fatal("non-exact fallback")
 	}
 }
+
+func TestScheduledStartupDailyAndFailureBackoff(t *testing.T) {
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC).Unix())
+	var failure atomic.Bool
+	calls := make(chan bool, 8)
+	m := New(private(t), transport(func(*http.Request) (*http.Response, error) {
+		fail := failure.Load()
+		calls <- fail
+		if fail {
+			return nil, errors.New("fixture failure")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(fixture))}, nil
+	}), nil, nil)
+	m.now = func() time.Time { return time.Unix(clock.Load(), 0).UTC() }
+	ctx, cancel := context.WithCancel(context.Background())
+	joined := make(chan struct{})
+	go func() { defer close(joined); m.Run(ctx) }()
+	defer func() {
+		cancel()
+		select {
+		case <-joined:
+		case <-time.After(time.Second):
+			t.Fatal("scheduled refresh did not join")
+		}
+	}()
+	await := func(want bool) {
+		t.Helper()
+		select {
+		case got := <-calls:
+			if got != want {
+				t.Fatal("wrong scheduled outcome", got)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("due refresh did not run")
+		}
+	}
+	awaitPublished := func(ready func(Snapshot) bool) {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for !ready(m.Snapshot()) {
+			if time.Now().After(deadline) {
+				t.Fatal("scheduled publication did not settle")
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	await(false)
+	// Wait until publication finishes before waking the next scheduler decision.
+	awaitPublished(func(s Snapshot) bool { return !s.Checked.IsZero() })
+	m.wake <- struct{}{}
+	select {
+	case <-calls:
+		t.Fatal("successful refresh ignored daily interval")
+	case <-time.After(10 * time.Millisecond):
+	}
+	clock.Add(int64(SuccessInterval / time.Second))
+	m.wake <- struct{}{}
+	await(false)
+	awaitPublished(func(s Snapshot) bool { return s.Checked.Unix() == clock.Load() })
+	failure.Store(true)
+	clock.Add(int64(SuccessInterval / time.Second))
+	m.wake <- struct{}{}
+	await(true)
+	awaitPublished(func(s Snapshot) bool { return s.Failure != "" })
+	if err := m.Refresh(context.Background()); err == nil {
+		t.Fatal("explicit refresh bypassed failure interval")
+	}
+	select {
+	case <-calls:
+		t.Fatal("failure backoff made another request")
+	default:
+	}
+	clock.Add(int64(FailureInterval / time.Second))
+	m.wake <- struct{}{}
+	await(true)
+}
+
+func TestFixedUpstreamRejectsRedirectWithoutSecondRequest(t *testing.T) {
+	var calls atomic.Int32
+	m := New(private(t), transport(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if r.URL.String() != URL {
+			t.Fatal("redirect changed upstream")
+		}
+		return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": []string{"https://unreviewed.example/prices"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+	}), nil, nil)
+	defer m.Close()
+	if err := m.Refresh(context.Background()); err == nil || calls.Load() != 1 || m.Snapshot().State != Unavailable {
+		t.Fatal("redirect granted price authority", err, calls.Load())
+	}
+}
