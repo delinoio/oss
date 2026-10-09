@@ -566,3 +566,5 @@ references with explicit binding and atomic import. Versions 1–4 retain their
 original defaults and cannot carry the new settings. Project remediation machine
 references contribute to the existing complete machine bound. Credentials and
 native ownership do not enter portable documents.
+
+The once-only automatic plan policy decision stays in the original server-owned interaction record. Public schema-1 Interaction JSON omits that private provenance so strict legacy Worker decoders continue to read the unchanged native request and queued response. Restart receipts retain the private first decision and original response ID.

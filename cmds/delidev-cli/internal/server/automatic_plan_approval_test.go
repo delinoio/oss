@@ -57,6 +57,28 @@ func TestAutomaticPlanApprovalRetainsFirstPublicationAndOriginalResponse(t *test
 			if enabled && (v.ApprovalResponse == nil || v.ApprovalResponse.ID != original.ID) || !enabled && v.ApprovalResponse != nil {
 				t.Fatal("receipt replay changed first decision")
 			}
+			f.service.executionAuthority.close()
+			f.http.Close()
+			root := f.service.Store.Root()
+			if err := f.service.Store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := store.Open(context.Background(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { reopened.Close() })
+			f.service = &Service{Store: reopened, Identity: f.service.Identity, logger: f.service.logger, accountSecrets: f.service.accountSecrets}
+			f.http = httptest.NewServer(f.service.Handler(nil, true))
+			f.client = delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.http.URL)
+			if reply, err := f.call(request); err != nil || !reply.Msg.Replayed {
+				t.Fatalf("restart receipt failed: %v", err)
+			}
+			_, v = readPublishedInteraction(t, f, u.ID)
+			if enabled && (v.PlanApprovalPolicy != domain.PlanApprovalAutomatic || v.ApprovalResponse == nil || v.ApprovalResponse.ID != original.ID) || !enabled && (v.PlanApprovalPolicy != domain.PlanApprovalManual || v.ApprovalResponse != nil) {
+				t.Fatal("restart changed original decision or response")
+			}
+
 		})
 	}
 }
