@@ -38,3 +38,16 @@ it("ignores an old failed native read after a newer attempt succeeds",async()=>{
  await act(async()=>reject(new Error("retired read")));
  expect(screen.queryByRole("alert")).toBeNull();
 });
+
+it("includes the error disclosure in the dialog keyboard cycle",async()=>{
+ const f=fixture();native.view={...native.view!,checking:false,unknown:true};
+ const original=native.invoke.getMockImplementation()!;
+ native.invoke.mockImplementation(async(method:string,input?:unknown)=>{if(method==="decide_quit_attempt")throw new Error("fixture failure");return original(method,input);});
+ render(f.view());fireEvent.click(await screen.findByRole("button",{name:"Cancel"}));await screen.findByRole("alert");
+ const dialog=screen.getByRole("alertdialog"),summary=dialog.querySelector("summary")!;
+ const cancel=screen.getByRole("button",{name:"Cancel"}),quit=screen.getByRole("button",{name:"Quit"});
+ for(const control of [summary,cancel,quit])vi.spyOn(control,"getClientRects").mockReturnValue({length:1} as DOMRectList);
+ cancel.focus();expect(fireEvent.keyDown(dialog,{key:"Tab",shiftKey:true})).toBe(true);
+ summary.focus();expect(fireEvent.keyDown(dialog,{key:"Tab",shiftKey:true})).toBe(false);expect(document.activeElement).toBe(quit);
+ quit.focus();expect(fireEvent.keyDown(dialog,{key:"Tab"})).toBe(false);expect(document.activeElement).toBe(summary);
+});
