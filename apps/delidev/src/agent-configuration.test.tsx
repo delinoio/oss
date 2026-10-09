@@ -247,7 +247,8 @@ it("shows unsupported stored enums and native options without changing them", as
   render(value.view(<ConfigurationEditor kind={EntityKind.AGENT} initial={agent} active saved={() => {}} cancel={() => {}} />)); await ready(value);
   expect(screen.getByText("Customized · unknown options retained")).toBeTruthy(); expect(screen.getByText("future-effort")).toBeTruthy(); expect(screen.getByText("0 accounts · future-routing")).toBeTruthy();
   expect(screen.getByRole("combobox", { name: "Claude permission mode" }).textContent).toBe("Unsupported selection · future-mode");
-  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1)); expect(decoded(value.save.mock.calls[0][0])).toEqual(JSON.parse(new TextDecoder().decode(agent.documentJson)));
+  change("Name", "Future renamed");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1)); expect(decoded(value.save.mock.calls[0][0])).toEqual({ ...JSON.parse(new TextDecoder().decode(agent.documentJson)), name: "Future renamed" });
 });
 
 it("keeps the byte-identical uncertain request through disclosure and resize", async () => {
