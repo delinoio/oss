@@ -53,15 +53,16 @@ type Config struct {
 	Logger          *slog.Logger
 }
 type Handle struct {
-	native     *managedProcess
-	mu         sync.Mutex
-	resumed    bool
-	done       chan struct{}
-	result     error
-	logger     *slog.Logger
-	controller *security.Lock
-	closeOnce  sync.Once
-	closeErr   error
+	startContext context.Context
+	native       *managedProcess
+	mu           sync.Mutex
+	resumed      bool
+	done         chan struct{}
+	result       error
+	logger       *slog.Logger
+	controller   *security.Lock
+	closeOnce    sync.Once
+	closeErr     error
 }
 type commandExitError int
 
@@ -146,7 +147,7 @@ func Start(ctx context.Context, config Config) (*Handle, error) {
 		_ = controller.Close()
 		return nil, err
 	}
-	h := &Handle{native: p, done: make(chan struct{}), logger: logger, controller: controller}
+	h := &Handle{startContext: ctx, native: p, done: make(chan struct{}), logger: logger, controller: controller}
 	logger.InfoContext(ctx, "native process prepared", "pid", p.snapshot().PID)
 	go func() {
 		h.result = p.wait()
@@ -207,10 +208,23 @@ func prepareController(scope string, lock func(string) (*security.Lock, error), 
 func (h *Handle) Identity() Process { return h.native.snapshot() }
 func (h *Handle) Resume() error {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if h.resumed {
+		h.mu.Unlock()
 		return domain.Fail(domain.Conflict, "The native start barrier was already released.", "Continue the existing execution instead of restarting it.")
 	}
+	if err := h.startContext.Err(); err != nil {
+		// Cancellation already observed at admission cannot transmit a Unix
+		// command or resume a suspended Windows child. Join the original owner
+		// outside the input mutex; uncertain cleanup takes precedence.
+		h.mu.Unlock()
+		h.logger.Info("native process start refused", "code", domain.SafeError(err).Code)
+		if cleanup := h.Close(); cleanup != nil {
+			return ownershipError()
+		}
+		<-h.done
+		return domain.SafeError(err)
+	}
+	defer h.mu.Unlock()
 	select {
 	case <-h.done:
 		return ownershipError()

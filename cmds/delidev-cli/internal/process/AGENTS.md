@@ -7,3 +7,5 @@
 - Keep safe phase/code logs separate from PID, birth, paths and native contents. Record platform acceptance separately from temporary-process fixtures, race tests, cross-compilation and packaging.
 
 - Unpublished Fork owner retirement requires joined completed native scopes, the retained directory identity when available, an exclusive recovery lock, empty-index removal and synchronized parent/absence checks. A path or arbitrary empty index cannot reconstruct original ownership; foreign and uncertain evidence stays preserved. Callers retain their original job admission fence.
+
+- The shared Resume barrier checks the original Start context synchronously before command transmission or suspended-child resume. Observable cancellation/deadline refuses launch and joins the original owner; unconfirmed cleanup remains RecoveryRequired. Preserve once-only successful admission and post-admission cancellation semantics.
