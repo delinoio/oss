@@ -261,8 +261,8 @@ it("shows the complete grouped navigation once and keeps its selected category i
   const value = fixture([]);
   render(value.view(<Settings visible />));
   const navigation = screen.getByRole("navigation", { name: "Settings categories" });
-  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Git", "Runner Devices", "Paired devices", "Appearance", "Keyboard shortcuts", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
-  const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "project-defaults", "projects", "repositories", "integrations", "git-workflow", "execution-workers", "paired-devices", "appearance", "keyboard-shortcuts", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
+  const labels = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Runner Devices", "Paired devices", "Appearance", "Keyboard shortcuts", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
+  const values = ["subscription-accounts", "api-accounts", "providers", "agent-workers", "instructions", "project-defaults", "projects", "repositories", "integrations", "execution-workers", "paired-devices", "appearance", "keyboard-shortcuts", "server-preferences", "diagnostics", "notifications", "transfer", "backups"];
   expect(Array.from(navigation.querySelectorAll(".settings-nav-group h2"), (heading) => heading.textContent)).toEqual(["AI", "Coding", "Device management", "System"]);
   expect(within(navigation).getAllByRole("button").map((button) => button.textContent?.trim().replace(/\s+/g, " "))).toEqual(labels);
   const buttons = within(navigation).getAllByRole("button");
@@ -681,7 +681,7 @@ it("saves remediation switches, exact reviewer IDs and explicit execution choice
   fireEvent.click(screen.getByRole("button", { name: "Add reviewer selector" }));
   fireEvent.change(screen.getByLabelText("Selector 2 type"), { target: { value: "minimum-permission" } });
   fireEvent.change(screen.getByLabelText("Selector 2 minimum permission"), { target: { value: "MAINTAIN" } });
-  fireEvent.click(screen.getByRole("button", { name: "Save Server preferences" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Project defaults" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   const saved = JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson));
   expect(saved.remediation).toEqual({ ci_failure: true, review_feedback: true, merge_conflict: true, conflict_strategy: "rebase", session_strategy: "dedicated", attempt_limit: 7, agent_id: agent.id, machine_id: machine.id, reviewer_selectors: [{ kind: "bot", id: "9007199254740993", node_id: "BOT_exact" }, { kind: "minimum-permission", permission: "MAINTAIN" }] });
@@ -1114,12 +1114,12 @@ it("retains Connection controls without mounting or reading Settings Doctor", as
 
 it("Settings search keeps the active draft on typing and same-category selection, and discards query on departure", async()=>{
  const value=fixture([]);const view=render(value.view(<Settings/>));
- fireEvent.click(screen.getByRole('button',{name:'Git'}));
+ fireEvent.click(screen.getByRole('button',{name:'Project defaults'}));
  const attempts=await screen.findByRole('spinbutton',{name:'Consecutive automatic attempt limit'});
  fireEvent.change(attempts,{target:{value:'8'}});
  const input=screen.getByRole('searchbox');fireEvent.change(input,{target:{value:'attempt limit'}});
  expect(screen.getByRole('spinbutton',{name:'Consecutive automatic attempt limit'})).toBe(attempts);expect((attempts as HTMLInputElement).value).toBe('8');
- fireEvent.click(screen.getByRole('button',{name:'Git › Consecutive automatic attempt limit'}));
+ fireEvent.click(screen.getByRole('button',{name:'Project defaults › Consecutive automatic attempt limit'}));
  await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('remediation-attempts'));
  expect(screen.getByRole('spinbutton',{name:'Consecutive automatic attempt limit'})).toBe(attempts);expect((attempts as HTMLInputElement).value).toBe('8');
  expect(value.save).not.toHaveBeenCalled();expect(value.remove).not.toHaveBeenCalled();expect(value.inspect).not.toHaveBeenCalled();
@@ -1134,15 +1134,15 @@ it("Settings search focuses Network and SSH entry sections without opening their
 });
 it("Settings search respects malformed singleton admission and never starts a write",async()=>{
  const value=fixture([{...resource(EntityKind.SETTINGS,{default_routing:'remaining-quota',remediation:{}}),schemaVersion:99}]);render(value.view(<Settings/>));
- fireEvent.change(screen.getByRole('searchbox'),{target:{value:'account routing'}});fireEvent.click(screen.getByRole('button',{name:'Server preferences › Account routing'}));
- await screen.findByText('This setting is unavailable here.');expect(document.activeElement).toBe(screen.getByRole('heading',{level:1,name:'Server preferences'}));expect(screen.queryByRole('combobox',{name:'Default account routing'})).toBeNull();expect(value.save).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByRole('searchbox'),{target:{value:'account routing'}});fireEvent.click(screen.getByRole('button',{name:'Project defaults › Account routing'}));
+ await screen.findByText('This setting is unavailable here.');expect(document.activeElement).toBe(screen.getByRole('heading',{level:1,name:'Project defaults'}));expect(screen.queryByRole('combobox',{name:'Default account routing'})).toBeNull();expect(value.save).not.toHaveBeenCalled();
 });
 it("Settings search preserves the original uncertain server-preference request until explicit retry",async()=>{
  const value=fixture([]);value.save.mockRejectedValueOnce(new ConnectError('Original unavailable save',Code.Unavailable));render(value.view(<Settings/>));
- fireEvent.click(screen.getByRole('button',{name:'Git'}));const fetch=await screen.findByRole('checkbox',{name:'Allow automatic fetch before Worktree preparation'});fireEvent.click(fetch);const submittedFetch=(fetch as HTMLInputElement).checked;
+ fireEvent.click(screen.getByRole('button',{name:'Project defaults'}));const fetch=await screen.findByRole('checkbox',{name:'Allow automatic fetch before Worktree preparation'});fireEvent.click(fetch);const submittedFetch=(fetch as HTMLInputElement).checked;
  fireEvent.click(screen.getByRole('button',{name:'Save changes'}));const retry=await screen.findByRole('button',{name:'Retry the same configuration'});
  const original=input(value.save.mock.calls[0][0]);const search=screen.getByRole('searchbox');fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.change(search,{target:{value:''}});
- fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Git › Allow automatic fetch before Worktree preparation'}));
+ fireEvent.change(search,{target:{value:'automatic fetch'}});fireEvent.click(screen.getByRole('button',{name:'Project defaults › Allow automatic fetch before Worktree preparation'}));
  await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('automatic-fetch'));expect(screen.getByRole('button',{name:'Retry the same configuration'})).toBe(retry);expect((fetch as HTMLInputElement).checked).toBe(submittedFetch);expect(value.save).toHaveBeenCalledTimes(1);
  fireEvent.click(retry);await waitFor(()=>expect(value.save).toHaveBeenCalledTimes(2));const retried=input(value.save.mock.calls[1][0]);expect(retried.mutation.requestId).toBe(original.mutation.requestId);expect(retried.documentJson).toEqual(original.documentJson);
 });
