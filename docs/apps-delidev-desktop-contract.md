@@ -3397,3 +3397,9 @@ Never reuse accepted attachment claims, automatically submit text, reset files
 or change historical execution attribution. Earlier-context rows remain visible
 with a context cue. Dialog focus/keyboard ownership, hidden-pane guards, bounded
 prompt wrapping and 200% reflow retain their normal desktop contracts.
+
+### Rolling Usage range presets
+
+The Time range fieldset offers equal-width 24 hours, 7 days and 30 days buttons with native keyboard behavior and an explicit pressed state. Each selection captures one clock instant and applies an exact BigInt half-open UTC interval atomically through the existing filter owner. Preserve the pinned display timezone and every non-date draft filter, replace both date drafts, clear errors and cancel obsolete date validation. The original endpoints retain milliseconds and later DST-fold instants across subsequent non-date selections.
+
+Refresh reads the captured interval again; choosing the same preset captures a new interval. Manual date edits immediately clear the indicator while retaining the last valid selection during the existing 300ms validation delay. Reset and newly consumed Usage entries clear the indicator; Reset retains server-relative default bounds. Navigation preserves mounted drafts and active-only reads. The localized helper says the rolling range ends when selected. Keep semantic selected/focus styling, wrapping controls, independent filter scrolling and the fixed Reset footer. No polling, new wire fields, aggregation or native/account authority is added.

@@ -113,5 +113,9 @@
   "usage.coverageDetails": "Coverage details",
   "usage.rowDetails": "Details",
   "usage.missingExecutions": "{{count}} executions without response usage",
-  "usage.missingContextActions": "{{count}} context actions without response usage"
+  "usage.missingContextActions": "{{count}} context actions without response usage",
+  "usage.preset24Hours": "24 hours",
+  "usage.preset7Days": "7 days",
+  "usage.preset30Days": "30 days",
+  "usage.rollingRangeHelp": "Rolling range ending when selected."
 }
