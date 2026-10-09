@@ -26,6 +26,15 @@ import { RepositoryCloneFields, repositoryCloneURL, repositoryCloneDirectory, re
 
 import { RepositoryGitHubPicker, type GitHubCloneSelection } from "./repository-github-picker";
 
+export enum RepositoryWorkerHeartbeat { Live = "live", Offline = "offline", Unknown = "unknown" }
+// Status is presentation only; inspection/save keep their original Worker claims.
+export function repositoryWorkerHeartbeat(resource: Resource | undefined, machine: string, stale = false, now = Date.now()): RepositoryWorkerHeartbeat {
+  if (stale || !resource || resource.kind !== EntityKind.MACHINE || resource.id !== machine || !supportsResourceSchema(resource)) return RepositoryWorkerHeartbeat.Unknown;
+  const seen = Date.parse(text(document(resource).last_seen));
+  if (!Number.isFinite(seen) || seen <= 0 || seen > now + 1000) return RepositoryWorkerHeartbeat.Unknown;
+  return now - seen > 45_000 ? RepositoryWorkerHeartbeat.Offline : RepositoryWorkerHeartbeat.Live;
+}
+
 export type ChooseRepositoryFolder = () => Promise<string | null>;
 enum Computer { Local = "local", Remote = "remote" }
 enum SelectionStage { Picker, Worker }
@@ -154,9 +163,11 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
     else setSaveJob("unknown");
   });
   const serverMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: source?.machine ?? "" }, { enabled: active && Boolean(source), refetchInterval: active && source ? 5000 : false, refetchOnWindowFocus: false, refetchOnReconnect: false });
-  const workerData = document(serverMachine.data?.resource);
-  const lastSeen = Date.parse(text(workerData.last_seen));
-  const offline = Boolean(serverMachine.data?.resource && Number.isFinite(lastSeen) && Date.now() - lastSeen > 45_000);
+  // Successful read time also reevaluates a structurally shared lease. Failed
+  // refreshes stay unknown; this clock never replaces the original last_seen.
+  const heartbeat = repositoryWorkerHeartbeat(serverMachine.data?.resource, source?.machine ?? "", Boolean(serverMachine.error), serverMachine.dataUpdatedAt || Date.now());
+  const offline = heartbeat === RepositoryWorkerHeartbeat.Offline;
+  const heartbeatUnknown = Boolean(source && !serverMachine.isLoading && heartbeat === RepositoryWorkerHeartbeat.Unknown);
   const blocked = runnerRemediationPending || busy || clone.busy || clone.uncertain || Boolean(cloneJob) || inspect.busy || inspect.uncertain || Boolean(inspection) || unknown || save.busy || save.uncertain || Boolean(saveJob) || childPending;
   useEffect(() => { if (active && !runnerTouched.current && !blocked && computer === Computer.Remote && !machine && runner.suggestion) { setMachine(runner.suggestion.id); setMachineName(resourceName(runner.suggestion)); } }, [active, runner.suggestion, blocked, computer, machine]);
   const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
@@ -317,8 +328,9 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {inspection ? <TrackedJob initial={inspection.job} active={active}>{(state, output) => <><InspectionCompletion state={state} output={output} completed={completeInspection} />{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setInspection(undefined)}>{copy("repository-registration.returnToSelectedFolder_275370")}</SettingsActionButton> : null}</>}</TrackedJob> : null}
       {busy || inspect.busy ? <p role="status">{busy ? copy("repository-registration.selectingFolderAndVerifyingThisComputer_88e910") : copy("repository-registration.inspectingRepository_ca1086")}</p> : null}
       {offline ? <p role="status">{copy("repository-registration.workerOffline")}</p> : null}
+      {heartbeatUnknown ? <p role="status">{copy("repository-registration.workerHeartbeatUnknown")}</p> : null}
       {serverMachine.error ? <Problem error={serverMachine.error} /> : null}
-      {offline || serverMachine.error ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={blocked || serverMachine.isFetching} onClick={() => void serverMachine.refetch()}>{copy("repository-registration.recheckHeartbeat")}</SettingsActionButton> : null}
+      {offline || heartbeatUnknown || serverMachine.error ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={blocked || serverMachine.isFetching} onClick={() => void serverMachine.refetch()}>{copy("repository-registration.recheckHeartbeat")}</SettingsActionButton> : null}
       {workerProblem ? <section aria-label={copy("repository-registration.workerRecovery")}><p>{copy("repository-registration.workerManual")}</p><LocalConnectionHelp active={active && taskVisible} />{verifiedMachine ? <Disclosure density={DisclosureDensity.Settings}><DisclosureSummary>{copy("repository-registration.originalRunner")}</DisclosureSummary><p>{verifiedMachine}</p></Disclosure> : null}<SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={blocked || !readLocalWorker} onClick={() => void recheckWorker()}>{copy("repository-registration.recheckWorker")}</SettingsActionButton></section> : null}
       {verifiedAgain ? <p role="status">{copy("repository-registration.workerRechecked")}</p> : null}
       {unknown ? <p role="alert">{copy("repository-registration.inspectionWasAcknowledgedWithoutAReadable_28ee95")}</p> : null}

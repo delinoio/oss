@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -249,8 +248,27 @@ func TestDiscoveryRevisionReceiptsAuthorizationAndAtomicPublication(t *testing.T
 	// Reconnect uses the original attachment request. It must observe refreshed
 	// discovery without another Machine revision or replacing its receipt.
 	reconnected, err := client.AttachWorker(ctx, ownerRequest(worker, originalAttach))
-	if err != nil || reconnected.Msg.Machine.Revision != current.Msg.Resource.Revision || !bytes.Equal(reconnected.Msg.Machine.DocumentJson, current.Msg.Resource.DocumentJson) {
-		t.Fatalf("original attachment hid current discovery or repeated its write: %v %v", reconnected, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Generic reads independently project current lease metadata; attachment
+	// replay retains its stored document. Only last_seen may differ here.
+	configurationOnly := func(resource *pb.Resource) *pb.Resource {
+		copy := proto.Clone(resource).(*pb.Resource)
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(copy.DocumentJson, &fields); err != nil {
+			t.Fatal(err)
+		}
+		delete(fields, "last_seen")
+		raw, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		copy.DocumentJson = raw
+		return copy
+	}
+	if !proto.Equal(configurationOnly(reconnected.Msg.Machine), configurationOnly(current.Msg.Resource)) {
+		t.Fatal("original attachment hid current discovery or repeated its write")
 	}
 	afterReplay, err := resources.GetResource(ctx, ownerRequest(owner, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, Id: device.Machine.Id}))
 	if err != nil || afterReplay.Msg.Resource.Revision != current.Msg.Resource.Revision {

@@ -60,6 +60,7 @@
   "repository-registration.workerExited": "This computer's Worker exited. Restore its original local connection, then recheck here.",
   "repository-registration.workerStopped": "This computer's Worker is stopped. Restore its original local connection, then recheck here.",
   "repository-registration.workerCloneUnsupported": "Update and reconnect this computer's Worker to clone repositories. Existing folder registration remains available.",
+  "repository-registration.workerHeartbeatUnknown": "The selected Worker's current server heartbeat is unavailable. Keep this folder and recheck the selected Worker's heartbeat here.",
   "repository-registration.workerOffline": "The selected Worker is registered; its server heartbeat is offline. Keep this folder. Restore the selected computer's network connection and recheck its heartbeat here.",
   "repository-registration.inline.296ac69de7": "The clone was acknowledged without a readable job. Inspect its original request before another clone.",
   "repository-registration.inline.a0600eeb9e": "Checkout preserved at",

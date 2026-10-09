@@ -60,6 +60,7 @@
   "repository-registration.workerExited": "이 컴퓨터의 Worker가 종료되었습니다. 원래 로컬 연결을 복원한 뒤 여기서 다시 확인하세요.",
   "repository-registration.workerStopped": "이 컴퓨터의 Worker가 중지되었습니다. 원래 로컬 연결을 복원한 뒤 여기서 다시 확인하세요.",
   "repository-registration.workerCloneUnsupported": "저장소를 복제하려면 이 컴퓨터의 Worker를 업데이트하고 다시 연결하세요. 기존 폴더 등록은 계속 사용할 수 있습니다.",
+  "repository-registration.workerHeartbeatUnknown": "선택한 Worker의 현재 서버 하트비트를 확인할 수 없습니다. 이 폴더를 유지하고 여기에서 선택한 Worker의 하트비트를 다시 확인하세요.",
   "repository-registration.workerOffline": "선택한 Worker는 등록되어 있지만 서버 연결이 끊겼습니다. 폴더를 유지하세요. 선택한 컴퓨터의 네트워크 연결을 복원한 뒤 여기서 연결을 다시 확인하세요.",
   "repository-registration.inline.296ac69de7": "복제가 승인되었지만 작업을 읽을 수 없습니다. 다른 복제 전에 원래 요청을 확인하세요.",
   "repository-registration.inline.a0600eeb9e": "체크아웃 보존 위치",

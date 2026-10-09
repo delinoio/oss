@@ -1,5 +1,18 @@
 # DeliDev v1 Connect contract
 
+## Machine heartbeat read projection
+
+Machine Get, List and Snapshot Resources project the exact Machine's current
+`worker_instances.last_seen` into the existing `last_seen` document field.
+Missing, malformed or implausibly future leases omit that observation; the
+attachment-time entity timestamp is not a fallback. All other document fields,
+entity revisions and schemas stay unchanged. These read-only observations can
+advance independently of durable event cursors and grant no Worker admission,
+replacement, inspection or execution authority. Heartbeats and reads write no
+entity revisions, events or mutation receipts. Portable configuration continues
+to exclude heartbeat/instance runtime observations. No allocation or migration
+is added.
+
 ## Key-preserving API format change reservations
 
 PR #1666 established the complete reservations on main before activation.

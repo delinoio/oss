@@ -12,8 +12,8 @@ import { SettingsTasks, SettingsTaskDialog, SettingsDialogSize } from "./setting
 import { Settings, SettingsEntryDestination } from "./settings";
 import { resourceName, encode, document as resourceDocument, type Document } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
-import { RepositoryRegistration, validRepositoryInspection, selectedInspectionRemote, confirmedRepository } from "./repository-registration";
-import { i18n, SupportedLanguage } from "./localization";
+import { RepositoryRegistration, validRepositoryInspection, selectedInspectionRemote, confirmedRepository, repositoryWorkerHeartbeat, RepositoryWorkerHeartbeat } from "./repository-registration";
+import { i18n, SupportedLanguage, copy } from "./localization";
 
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
 function row(kind: EntityKind, value: Document): Resource { return create(ResourceSchema, { id: newRequestId(), kind, revision: 1n, schemaVersion: 1, documentJson: encode(value) }); }
@@ -616,4 +616,76 @@ it("publishes the original confirmed clone identity once across repeated success
  const submit=screen.getByRole("button",{name:"Clone & add repository"});await waitFor(()=>expect(submit.hasAttribute("disabled")).toBe(false));fireEvent.click(submit);await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
  f.resources.set(f.jobs[0].id,{...f.jobs[0],revision:2n,documentJson:encode({type:"clone-repository",machine_id:f.machine.id,state:"succeeded",output:{repository_id:id,repository_revision:7}})});
  await f.client.invalidateQueries();await waitFor(()=>expect(saved).toHaveBeenCalledExactlyOnceWith({id,revision:7n}));await f.client.invalidateQueries();expect(saved).toHaveBeenCalledOnce();expect(f.clone).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
+});
+
+
+it("uses the exact greater-than-45-second boundary and leaves unavailable observations unknown", () => {
+  const now = Date.parse("2026-10-09T09:00:00Z"), machine = row(EntityKind.MACHINE, { last_seen: new Date(now - 45_000).toISOString() });
+  expect(repositoryWorkerHeartbeat(machine, machine.id, false, now)).toBe(RepositoryWorkerHeartbeat.Live);
+  expect(repositoryWorkerHeartbeat(machine, machine.id, false, now + 1)).toBe(RepositoryWorkerHeartbeat.Offline);
+  expect(repositoryWorkerHeartbeat(machine, machine.id, true, now)).toBe(RepositoryWorkerHeartbeat.Unknown);
+  expect(repositoryWorkerHeartbeat(machine, newRequestId(), false, now)).toBe(RepositoryWorkerHeartbeat.Unknown);
+  expect(repositoryWorkerHeartbeat(undefined, machine.id, false, now)).toBe(RepositoryWorkerHeartbeat.Unknown);
+  for (const last_seen of [undefined, "invalid", "0001-01-01T00:00:00Z", new Date(now + 2000).toISOString()]) {
+    const invalid = create(ResourceSchema, { ...machine, documentJson: encode({ last_seen }) });
+    expect(repositoryWorkerHeartbeat(invalid, machine.id, false, now)).toBe(RepositoryWorkerHeartbeat.Unknown);
+  }
+  expect(repositoryWorkerHeartbeat(create(ResourceSchema, { ...machine, schemaVersion: 99 }), machine.id, false, now)).toBe(RepositoryWorkerHeartbeat.Unknown);
+});
+
+it.each([SupportedLanguage.English, SupportedLanguage.Korean])("%s rechecks the original authoritative heartbeat without replaying inspection or losing canonical-root drafts", async language => {
+  await i18n.changeLanguage(language);
+  // The initial projection is stale. A later read returns the fresh lease with
+  // the same entity revision, as the server's read-only projection does.
+  const f = fixture();
+  f.machine.documentJson = encode({ ...resourceDocument(f.machine), last_seen: new Date(Date.now() - 60_000).toISOString() });
+  f.mount();
+  // The shared fixture uses English navigation labels; restore only navigation,
+  // then change the mounted presentation without new business operations.
+  await i18n.changeLanguage(SupportedLanguage.English);
+  await f.chooseAndReview();
+  await i18n.changeLanguage(language);
+  await screen.findByText(copy("repository-registration.workerOffline"));
+  const inspections = f.inspected.mock.calls.length, proofs = f.proof.mock.calls.length, controls = f.control.mock.calls.length;
+  f.resources.set(f.machine.id, create(ResourceSchema, { ...f.machine, documentJson: encode({ ...resourceDocument(f.machine), last_seen: new Date().toISOString() }) }));
+  fireEvent.click(screen.getByRole("button", { name: copy("repository-registration.recheckHeartbeat") }));
+  await waitFor(() => expect(screen.queryByText(copy("repository-registration.workerOffline"))).toBeNull());
+  expect(screen.getByText("/canonical/oss")).toBeTruthy();
+  expect(screen.getByText("delinoio/oss")).toBeTruthy();
+  expect((screen.getByRole("textbox", { name: copy("repository-registration.inline.cd01c2ef6a") }) as HTMLInputElement).value).toBe("https://github.com/delinoio/oss.git");
+  expect(f.inspected).toHaveBeenCalledTimes(inspections); expect(f.proof).toHaveBeenCalledTimes(proofs); expect(f.control).toHaveBeenCalledTimes(controls); expect(f.save).not.toHaveBeenCalled();
+  await i18n.changeLanguage(SupportedLanguage.English);
+});
+
+it.each(["missing", "failed-refresh"])("keeps %s heartbeat unknown and preserves accepted folder readiness", async kind => {
+  const f = fixture();
+  if (kind === "missing") f.machine.documentJson = encode({ name: "Runner" });
+  f.mount(); await f.chooseAndReview();
+  if (kind === "failed-refresh") {
+    f.getResource.mockImplementation(request => { if (request.id === f.machine.id) throw new ConnectError("heartbeat unavailable", Code.Unavailable); return { resource: f.resources.get(request.id) }; });
+    await act(async () => { await f.client.refetchQueries({ predicate: query => JSON.stringify(query.queryKey).includes(f.machine.id) }); });
+  }
+  await screen.findByText(copy("repository-registration.workerHeartbeatUnknown"));
+  expect(screen.queryByText(copy("repository-registration.workerOffline"))).toBeNull();
+  expect(screen.getByRole("button", { name: copy("repository-registration.recheckHeartbeat") })).toBeTruthy();
+  const dialog = screen.getByRole("dialog", { name: "Add repository" });
+  expect((within(dialog).getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText("/canonical/oss")).toBeTruthy(); expect(f.inspected).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+});
+
+
+it("reevaluates the exact lease age on a successful identical-resource read without a second inspection", async () => {
+  const f = fixture(); f.mount(); await f.chooseAndReview();
+  const original = resourceDocument(f.machine), seen = Date.parse(original.last_seen as string);
+  expect(screen.queryByText(copy("repository-registration.workerOffline"))).toBeNull();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(seen + 45_001);
+  try {
+    // The server returns the same immutable resource/revision and original lease.
+    await act(async () => { await f.client.refetchQueries({ predicate: query => JSON.stringify(query.queryKey).includes(f.machine.id) }); });
+    await screen.findByText(copy("repository-registration.workerOffline"));
+    expect(f.resources.get(f.machine.id)).toBe(f.machine);
+    expect(resourceDocument(f.machine)).toEqual(original);
+    expect(screen.getByText("/canonical/oss")).toBeTruthy();
+    expect(f.inspected).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+  } finally { clock.mockRestore(); }
 });
