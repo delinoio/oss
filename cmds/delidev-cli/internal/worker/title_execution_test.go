@@ -112,6 +112,7 @@ func TestTitleSendClaimPrecedesNativeProfileVerification(t *testing.T) {
 		ConnectionID: domain.NewID(), ProviderID: domain.NewID(), ProviderProtocol: domain.OpenAIResponses,
 		ModelID: domain.NewID(), NativeModel: "fixture-model", Prompt: "private first message",
 	}
+	input.ModelID = (domain.ModelIdentity{ProviderID: input.ProviderID, NativeID: input.NativeModel}).Key()
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +206,8 @@ func TestOptInInstalledCodexTitleInference(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	providerID, modelID := domain.NewID(), domain.NewID()
+	providerID := domain.NewID()
+	modelID := (domain.ModelIdentity{ProviderID: providerID, NativeID: "fixture-title-model"}).Key()
 	accountID, connectionID := domain.NewID(), domain.NewID()
 	sessionID, executionID, projectID := domain.NewID(), domain.NewID(), domain.NewID()
 	parentJobID, jobID, machineID, instanceID := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
