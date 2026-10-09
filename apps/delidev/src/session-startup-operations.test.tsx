@@ -70,3 +70,13 @@ it("keeps independent workspace and native attempt sequence domains", () => {
  expect(operations.native.find(row=>row.operation===2)?.state).toBe("running");
  expect(operations.workspace.every(row=>row.state==="completed")).toBe(true);
 });
+
+
+it("binds continuation summaries to their selected execution rather than preceding startup", () => {
+ const nextExecution=newRequestId(),nextJob=newRequestId();
+ const nextNative={...native,job_id:nextJob,execution_id:nextExecution,last_sequence:1,steps:[{native_phase:1,state:1,sequence:1},{native_phase:2}]};
+ const continuing=resource({native:nextNative},{execution:undefined,current_execution:{id:nextExecution}});
+ expect(startupOperations(continuing,SessionProgressPhase.Starting)?.native.find(row=>row.operation===1)?.state).toBe("running");
+ const mismatched=resource({native:nextNative},{execution:undefined,current_execution:{id:nextExecution},startup:{job_id:nativeJob,execution_id:nextExecution}});
+ expect(startupOperations(mismatched,SessionProgressPhase.Starting)).toBeUndefined();
+});
