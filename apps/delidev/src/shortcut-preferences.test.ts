@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it } from "vitest";
-import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
+import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}} as const;
@@ -28,3 +28,8 @@ it("capture requires the renderer primary and rejects unsafe input without match
 });
 
 it("rejects fixed native menu chords throughout the complete editable map",()=>{for(const action of editableShortcutCatalog)for(const key of ["q","h","m","t","w"]){expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key,shift:false}}})).toThrow();expect(validShortcutChord({key,shift:true})).toBe(true);}});
+
+it("keeps native menu bindings in a typed read-only catalog separate from seven editable IDs",()=>{
+ expect(editableShortcutCatalog).toHaveLength(7);expect(fixedNativeShortcutCatalog.map(action=>action.key)).toEqual(["t","w","q","h","m"]);
+ for(const native of fixedNativeShortcutCatalog){expect(editableShortcutCatalog.some(action=>String(action.id)===String(native.id))).toBe(false);for(const action of editableShortcutCatalog)expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:native.key,shift:false}}})).toThrow();}
+});

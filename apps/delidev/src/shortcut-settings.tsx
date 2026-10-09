@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
-import { bindingKeys, ShortcutId, shortcutPlatform, type ShortcutBinding } from "./shortcuts";
-import { captureShortcut, customizationBindings, ShortcutGroup, ShortcutOverrideState, shortcutCatalog, editableShortcutCatalog, readOnlyShortcutCatalog, shortcutConflicts, type ShortcutOverrides } from "./shortcut-preferences";
+import { bindingKeys, ShortcutId, ShortcutPlatform, shortcutPlatform, type ShortcutBinding } from "./shortcuts";
+import { captureShortcut, fixedNativeShortcutCatalog, customizationBindings, ShortcutGroup, ShortcutOverrideState, shortcutCatalog, editableShortcutCatalog, readOnlyShortcutCatalog, shortcutConflicts, type ShortcutOverrides } from "./shortcut-preferences";
 import { ShortcutPreferenceOperation, useShortcutPreferences } from "./shortcut-preference-controller";
 import "./shortcut-settings.css";
 import { shortcutCapture } from "./shortcut-capture";
@@ -69,7 +69,7 @@ export function ShortcutSettings() {
       </div>)}
       <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(action.defaults)}</dd></div>)}</dl>
     </section>)}
-    <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p></section>
+    <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p><dl>{fixedNativeShortcutCatalog.filter(action=>!action.macOnly||platform===ShortcutPlatform.Mac).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel([{key:action.key,primary:true}])}</dd></div>)}</dl></section>
     {capturing?<div role="status"><p>{copy(captureState==="active"?"shortcut-settings.captureHelp":captureState==="uncertain"?"shortcut-settings.captureUncertain":"shortcut-settings.capturePending")}</p>{invalid?<p role="alert">{copy("shortcut-settings.invalid")}</p>:null}<button type="button" onClick={cancelCapture}>{copy("shortcut-settings.cancelCapture")}</button></div>:null}
     {conflicts.map(([a,b])=><p role="alert" key={`${a}:${b}`}>{copy("shortcut-settings.conflict",{first:copy(shortcutCatalog.find(action=>action.id===a)!.label),second:copy(shortcutCatalog.find(action=>action.id===b)!.label)})}</p>)}
     {conflict?<p role="alert">{copy("shortcut-settings.changed")}</p>:null}

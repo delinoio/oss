@@ -61,5 +61,10 @@
   "shortcut-settings.problem.outcome-unknown": "The save outcome is unknown. Reinspect without repeating the save.",
   "shortcut-settings.problem.changed": "The saved revision changed. Reinspect and discard the old draft before saving.",
   "shortcut-settings.capturePending": "Preparing or ending native capture…",
-  "shortcut-settings.captureUncertain": "Capture could not be confirmed. Cancel to inspect and end the original capture before trying again."
+  "shortcut-settings.captureUncertain": "Capture could not be confirmed. Cancel to inspect and end the original capture before trying again.",
+  "shortcuts.nativeNewWindow": "New Window",
+  "shortcuts.nativeCloseWindow": "Close Window",
+  "shortcuts.nativeQuit": "Quit (macOS menu)",
+  "shortcuts.nativeHide": "Hide (macOS menu)",
+  "shortcuts.nativeMinimize": "Minimize (macOS menu)"
 }

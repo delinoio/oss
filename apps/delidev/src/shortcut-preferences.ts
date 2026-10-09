@@ -26,13 +26,23 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   ...[ShortcutId.FilesClose, ShortcutId.DiffClose, ShortcutId.DiagnosticsClose].map((id, index) => ({ target: ([ShortcutTargetContext.Files, ShortcutTargetContext.Diff, ShortcutTargetContext.Diagnostics] as const)[index]!, id, label: (["shortcuts.closeFiles", "shortcuts.closeDiff", "shortcuts.closeDiagnostics"] as const)[index]!, group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Escape" }] })),
 ];
 export const shortcutCatalog = [...editableShortcutCatalog, ...readOnlyShortcutCatalog];
+// Native menu bindings are read-only and never enter the seven override IDs.
+export enum NativeShortcutId { NewWindow="native-new-window", CloseWindow="native-close-window", Quit="native-quit", Hide="native-hide", Minimize="native-minimize" }
+export const fixedNativeShortcutCatalog: readonly {id:NativeShortcutId;label:MessageKey;key:string;macOnly:boolean}[]=[
+ {id:NativeShortcutId.NewWindow,label:"shortcuts.nativeNewWindow",key:"t",macOnly:false},
+ {id:NativeShortcutId.CloseWindow,label:"shortcuts.nativeCloseWindow",key:"w",macOnly:false},
+ {id:NativeShortcutId.Quit,label:"shortcuts.nativeQuit",key:"q",macOnly:true},
+ {id:NativeShortcutId.Hide,label:"shortcuts.nativeHide",key:"h",macOnly:true},
+ {id:NativeShortcutId.Minimize,label:"shortcuts.nativeMinimize",key:"m",macOnly:true},
+];
+const nativeReservedKeys=new Set(fixedNativeShortcutCatalog.map(action=>action.key));
 const editableIds = new Set(editableShortcutCatalog.map(action => action.id));
 export function validShortcutChord(chord: unknown): chord is ShortcutChord {
   if (!chord || typeof chord !== "object" || Array.isArray(chord)) return false;
   const value = chord as Record<string, unknown>;
   if (Object.keys(value).sort().join(",") !== "key,shift" || typeof value.shift !== "boolean" || typeof value.key !== "string" || !/^(?:[a-z0-9]|Enter)$/.test(value.key)) return false;
   // Fixed product and native editing chords remain unavailable for rebinding.
-  return value.shift ? !/^[vz]$/.test(value.key) : !/^[knwqhmt1-9acvxyz]$/.test(value.key);
+  return value.shift ? !/^[vz]$/.test(value.key) : !nativeReservedKeys.has(value.key) && !/^[kn1-9acvxyz]$/.test(value.key);
 }
 export function customizationBindings(id: ShortcutId, overrides: ShortcutOverrides): readonly ShortcutBinding[] {
   const override = overrides[id];

@@ -128,3 +128,7 @@ it("preserves help for excluded events, repeated help and background input actio
   const other = document.createElement("dialog"); other.showModal(); document.body.append(other);
   fireEvent.keyDown(close, { key: "i", ctrlKey: true }); expect(run).not.toHaveBeenCalled(); expect(screen.getAllByRole("dialog")).toHaveLength(2); other.remove();
 });
+
+it("lists native window bindings as read-only help without adding dispatch actions",()=>{
+ const run=vi.fn();render(<ShortcutProvider><Consumer enabled run={run}/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Help opener"}));const dialog=screen.getByRole("dialog");expect(within(dialog).getByText("New Window")).toBeTruthy();expect(within(dialog).getByText("Close Window")).toBeTruthy();expect(run).not.toHaveBeenCalled();
+});

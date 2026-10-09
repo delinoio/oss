@@ -27,7 +27,7 @@ export class ShortcutCapture {
  async end(expectedToken?:string):Promise<void>{
   const owner=this.owned;if(!owner||expectedToken&&owner.token!==expectedToken)return;
 
-  const inspected=receipt(await bounded(this.bridge(CaptureOperation.Inspect,owner.token,owner.revision)),owner.token);
+  receipt(await bounded(this.bridge(CaptureOperation.Inspect,owner.token,owner.revision)),owner.token);
   {const ended=receipt(await bounded(this.bridge(CaptureOperation.End,owner.token,owner.revision)),owner.token);if(ended.status!==CaptureStatus.Released)throw Error("Capture retirement unavailable");}
   if(this.owned===owner)this.owned=undefined;
  }
