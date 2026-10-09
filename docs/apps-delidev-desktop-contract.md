@@ -1817,18 +1817,19 @@ Schedules have a dedicated desktop surface that remains mounted across navigatio
 
 Pause/resume changes future scheduling only. Run now explicitly confirms one independent occurrence, works while paused under ordinary server eligibility, and retains the original request after uncertain acknowledgment without enabling the future timer. Accepted occurrences are shown independently from native execution and current session state. Delete confirms future configuration removal, while the independent paginated history remains visible, refreshable and accessible by retained schedule ID. Every configuration/control mutation uses its captured revision, and stale edits preserve their draft. History and status reads do not replay side effects.
 
-### New schedule creation (issue #1152)
+### New schedule creation (issues #1152 and #2135)
 
 The creation presentation owns `apps/delidev/src/schedule-creation.tsx` and
 `apps/delidev/src/schedule-creation.css`; shared schedule state and mutations
 remain in the existing schedule editor.
 
-Only creation without an initial resource uses the one-page Task, Execution and
-Repeat schedule presentation. Editing, list/detail/history, the icon rail,
-context pane and scheduling operations retain their existing contracts. At CSS
-viewport widths of at least 1280px, center a grid capped at 1080px, with Task then
-Execution in a flexible left column, a 320px Repeat column, and a 24px gap. Below
-1280px use Task -> Execution -> Repeat. The main-content creation form owns a
+Only creation without an initial resource uses the Task → Execution → Repeat → Review wizard in one centered column capped at 760px. Editing, list/detail/history, the icon rail, context pane and scheduling operations retain their existing contracts. A noninteractive wrapped indicator announces completed/current/future steps. Keep authoring steps mounted, hidden, unfocusable and excluded from native constraint validation while inactive. Suspend their inventory reads while retaining pagination; the original parent Runner preference remains independent. Step and all existing drafts remain connection-owned across Back/Next, navigation and same-identity reconnect; replacement starts fresh.
+
+Step 1 has Cancel/Next, steps 2–3 Cancel/Back/Next, and Review Cancel/Back/Create schedule, with a step count. Next validates only its step and focuses the first invalid control; Back and distinctly named Review Edit controls retain drafts without writes. User changes focus the step heading; fresh entry focuses Name once, and refresh/reconnect never steals focus. Enter in single-line inputs follows Next; prompt Enter remains newline. Only Review submits. Final creation validates all authoring steps, reveals the first invalid step/disclosure and focuses correction before calling the original save path. Local proof/save/uncertain states lock editing and all navigation/dismissal, with the original identical-request retry retained.
+
+Review displays the complete name/prompt, exact selected Project/Agent Worker/Runner Device IDs and available labels, workspace/mode, full starting overrides, recurrence/raw cron/timezone, overlap and enabled/paused state. It reports configured selections rather than execution readiness, preserves server next-run authority and never truncates prompts or explicit references. Safe server failures remain visible without invented field attribution.
+
+The main-content creation form owns a
 scrolling body and a separate white, top-bordered persistent action row; its
 actual wrapped height reserves space without covering errors, pagination, final
 controls or focus outlines. Keep scrolling at 960×640, narrow effective widths
