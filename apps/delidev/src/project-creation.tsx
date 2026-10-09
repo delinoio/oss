@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { ProjectRepositoryOrder, RepositorySecondaryID } from "./project-repository-order";
-import { SettingsTaskDismissButton } from "./settings-task";
+import { SettingsTaskDismissButton, ProjectRepositoryRegistrationDialog } from "./settings-task";
 import { useCallback, useContext, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EntityKind } from "@delinoio/delidev-api-client";
@@ -18,7 +18,15 @@ import { SettingsTaskContext } from "./settings-task-context";
 import { Problem } from "./ui";
 import { ScrollContinuation, useScrollRoot } from "./scroll-continuation";
 import { usePaginationChain } from "./scroll-pagination-query";
+import { RepositoryRegistration, type RegisteredRepository, type ChooseRepositoryFolder } from "./repository-registration";
+import type { ReadLocalWorkerProof } from "./local-worker";
+import type { ControlLocalWorker } from "./local-worker-controls";
 import "./project-creation.css";
+export interface ProjectRegistrationAdapters { readLocalWorker?: ReadLocalWorkerProof; controlLocalWorker?: ControlLocalWorker; chooseFolder?: ChooseRepositoryFolder }
+function ProjectRegistration({ active, adapters, close, saved }: { active: boolean; adapters?: ProjectRegistrationAdapters; close: () => void; saved: (value: RegisteredRepository) => void }) {
+  const task = useContext(SettingsTaskContext)!;
+  return <RepositoryRegistration active={active} {...adapters} cancel={close} saved={value => task.dismissWithClose(() => saved(value), true)} />;
+}
 
 enum Step { Repositories = 1, Configure, Restrictions }
 const steps = [Step.Repositories, Step.Configure, Step.Restrictions];
@@ -30,14 +38,18 @@ function focusControl(form: HTMLFormElement | null, field: string) {
   control?.scrollIntoView?.({ block: "nearest" });
 }
 
-export function ProjectCreationWizard({ data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children }: {
+export function ProjectCreationWizard({ data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children, registrationAdapters }: {
   data: Document; change: (value: Document) => void; active: boolean; visible: boolean; blocked: boolean; saveDisabled: boolean;
-  busy: boolean; submit: () => void; cancel: () => void; cancelDisabled: boolean; uncertain: boolean; retry: () => void; children?: ReactNode;
+  busy: boolean; submit: () => void; cancel: () => void; cancelDisabled: boolean; uncertain: boolean; retry: () => void; children?: ReactNode; registrationAdapters?: ProjectRegistrationAdapters;
 }) {
   useLocale();
   const [step, setStep] = useState(Step.Repositories);
   const [nameEdited, setNameEdited] = useState(Boolean(text(data.name)));
   const [search, setSearch] = useState("");
+  const [registration, setRegistration] = useState(false);
+  const [confirmed, setConfirmed] = useState<RegisteredRepository>();
+  const registrationOpener = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (!active || !visible) setRegistration(false); }, [active, visible]);
   const resultsRoot = useRef<HTMLDivElement>(null);
   const root = useScrollRoot(resultsRoot);
   const [focusAttempt, setFocusAttempt] = useState(0);
@@ -83,6 +95,13 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     change({ ...data, repositories: values, primary_repository: !ids.length && values.length ? values[0] : values.includes(text(data.primary_repository)) ? data.primary_repository : "", ...(!nameEdited && (!values.length || names.has(values[0]!)) ? { name: values.length ? names.get(values[0]!) : "" } : {}) });
     setProblem("");
   };
+  useEffect(() => {
+    if (!confirmed || !active || !visible || blocked || catalog.loading || !catalog.complete) return;
+    const row = catalog.rows.find(row => row.id === confirmed.id && row.supported && row.revision >= confirmed.revision);
+    if (!row || (!ids.includes(row.id) && ids.length >= 1000)) return;
+    if (!ids.includes(row.id)) repositories([...ids, row.id]);
+    setConfirmed(undefined);
+  }, [confirmed, active, visible, blocked, catalog.loading, catalog.complete, catalog.rows, data]);
   const validRepositories = ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length;
   const configured = validName(text(data.name)) && ids.includes(text(data.primary_repository));
   const validate = () => {
@@ -97,7 +116,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     setProblem(""); setValidationField(undefined); setStep(step + 1);
   };
   const selected = (editable: boolean) => <ProjectRepositoryOrder ids={ids} names={names} editable={editable} active={active && visible && !blocked && step === Step.Repositories} change={repositories} />;
-  return <form id={formId} ref={form} className="project-editor project-creation" onSubmit={event => {
+  return <><form id={formId} ref={form} className="project-editor project-creation" onSubmit={event => {
     event.preventDefault();
     // Enter in search/name fields must never bypass the explicit wizard steps.
     if (step === Step.Restrictions && !saveDisabled && validate()) submit();
@@ -106,7 +125,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
       {steps.map(value => <li key={value} aria-current={value === step ? "step" : undefined} data-complete={value < step}><span aria-hidden="true">{value < step ? "✓" : value}</span>{stepName(value)}</li>)}
     </ol>
     <section hidden={step !== Step.Repositories}>
-      <h3>{stepName(Step.Repositories)}</h3><p>{copy("project-creation.selectHelp")}</p>
+      <div className="project-repository-heading"><h3>{stepName(Step.Repositories)}</h3><SettingsActionButton icon={SettingsActionIcon.Add} ref={registrationOpener} type="button" disabled={blocked || !active || !visible} aria-disabled={Boolean(confirmed) || undefined} aria-haspopup="dialog" onClick={event => { if (confirmed) return; event.currentTarget.focus({ preventScroll: true }); setRegistration(true); }}>{copy("project-creation.addRepository")}</SettingsActionButton></div><p>{copy("project-creation.selectHelp")}</p>
       <fieldset disabled={blocked || step !== Step.Repositories}>
         <label className="project-repository-search" htmlFor={inputId}>{copy("project-creation.search")}<input id={inputId} data-project-focus="search" type="search" autoComplete="off" maxLength={256} value={search} placeholder={copy("project-creation.search")} aria-controls={`${inputId}-results`} onChange={event => { setSearch(event.target.value); }} /></label>
         <div ref={resultsRoot} id={`${inputId}-results`} className="project-repository-results" role="group" aria-label={copy("project-creation.repositoryChoices")}>
@@ -117,6 +136,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
         {catalog.loading ? <p role="status">{copy(catalog.rows.length ? "project-creation.loadingMore" : "project-creation.loading")}</p> : null}
         {catalog.complete && !matches.length ? <p role="status">{copy(catalog.rows.length ? "project-creation.noMatches" : "project-creation.empty")}</p> : null}
         {catalog.error ? <><p role="status">{copy("project-creation.incomplete")}</p>{catalog.error instanceof ProductError ? <p role="alert">{copy(catalog.error.productMessage.key)}</p> : <Problem error={catalog.error} />}<div className="actions"><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={catalog.retry}>{copy("project-creation.retryRead")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" onClick={catalog.reload}>{copy("project-creation.reload")}</SettingsActionButton></div></> : null}
+        {confirmed ? <div className="project-registration-resolution"><p role="status">{copy(catalog.loading ? "project-creation.registrationReading" : "project-creation.registrationUnresolved")}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={catalog.loading} onClick={catalog.reload}>{copy("project-creation.retryRegisteredRead")}</SettingsActionButton></div> : null}
         <h4>{copy("project-creation.selectedCount", { count: ids.length })}</h4>{selected(true)}<p>{copy("project-creation.orderHelp")}</p>
       </fieldset>
     </section>
@@ -147,27 +167,29 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
           action after React turns the clicked Next button into a submit button. */}
       {step === Step.Restrictions ? <SettingsActionButton icon={SettingsActionIcon.Save} key="save" type="submit" className="primary" disabled={saveDisabled}>{copy("project-creation.save")}</SettingsActionButton> : <SettingsActionButton icon={SettingsActionIcon.Next} key="next" type="button" className="primary" disabled={blocked || (step === Step.Repositories ? !validRepositories : !configured)} onClick={event => { event.preventDefault(); next(); }}>{copy("project-creation.next")}</SettingsActionButton>}
     </SettingsTaskActions>
-  </form>;
+  </form>
+    {registration && active && visible ? <ProjectRepositoryRegistrationDialog title={copy("project-creation.addRepository")} size={SettingsDialogSize.Form} close={() => setRegistration(false)} fallbackFocus={() => registrationOpener.current}><ProjectRegistration active={active} adapters={registrationAdapters} close={() => setRegistration(false)} saved={value => { setRegistration(false); setConfirmed(value); catalog.reload(); }} /></ProjectRepositoryRegistrationDialog> : null}
+  </>;
 }
 export const ProjectCreation = ProjectCreationWizard;
 
-export function ProjectCreationDialog({ activation, close, fallbackFocus }: { activation: number; close: () => void; fallbackFocus: () => HTMLElement | null }) {
-  return <SettingsLifetime>{() => <MutationIntents><ProjectCreationTask activation={activation} close={close} fallbackFocus={fallbackFocus} /></MutationIntents>}</SettingsLifetime>;
+export function ProjectCreationDialog({ activation, close, fallbackFocus, registrationAdapters }: { activation: number; close: () => void; fallbackFocus: () => HTMLElement | null; registrationAdapters?: ProjectRegistrationAdapters }) {
+  return <SettingsLifetime>{() => <MutationIntents><ProjectCreationTask activation={activation} close={close} fallbackFocus={fallbackFocus} registrationAdapters={registrationAdapters} /></MutationIntents>}</SettingsLifetime>;
 }
 
-function ProjectCreationTask({ activation, close, fallbackFocus }: { activation: number; close: () => void; fallbackFocus: () => HTMLElement | null }) {
+function ProjectCreationTask({ activation, close, fallbackFocus, registrationAdapters }: { activation: number; close: () => void; fallbackFocus: () => HTMLElement | null; registrationAdapters?: ProjectRegistrationAdapters }) {
   useLocale();
   const client = useQueryClient();
   const saved = useCallback(() => { close(); void client.invalidateQueries({ refetchType: "active" }); }, [client, close]);
   return <SettingsTasks>
     <SettingsTaskStatusOutlet className="page" />
     <SettingsTaskDialog title={`${copy("settings.new_18fdd5")} ${kindNames[EntityKind.PROJECT]}`} size={SettingsDialogSize.Form} focus={SettingsDialogFocus.Input} activation={activation} fallbackFocus={fallbackFocus} close={close}>
-      <ProjectCreationEditor active saved={saved} cancel={close} />
+      <ProjectCreationEditor active saved={saved} cancel={close} registrationAdapters={registrationAdapters} />
     </SettingsTaskDialog>
   </SettingsTasks>;
 }
 
-function ProjectCreationEditor({ active, saved, cancel }: { active: boolean; saved: () => void; cancel: () => void }) {
+function ProjectCreationEditor({ active, saved, cancel, registrationAdapters }: { active: boolean; saved: () => void; cancel: () => void; registrationAdapters?: ProjectRegistrationAdapters }) {
   const task = useContext(SettingsTaskContext);
   const onSaved = useCallback(() => {
     // A successful save refreshes the Home inventory and can remove the empty-state
@@ -175,5 +197,5 @@ function ProjectCreationEditor({ active, saved, cancel }: { active: boolean; sav
     task?.retireOpener(() => true);
     if (task) task.dismissWithClose(saved, true); else saved();
   }, [saved, task]);
-  return <ConfigurationEditor kind={EntityKind.PROJECT} active={active} saved={onSaved} cancel={cancel} />;
+  return <ConfigurationEditor kind={EntityKind.PROJECT} active={active} saved={onSaved} cancel={cancel} registrationAdapters={registrationAdapters} />;
 }

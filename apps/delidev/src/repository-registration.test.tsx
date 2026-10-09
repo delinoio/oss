@@ -8,10 +8,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { SettingsTasks, SettingsTaskDialog, SettingsDialogSize } from "./settings-task";
 import { Settings, SettingsEntryDestination } from "./settings";
 import { resourceName, encode, document as resourceDocument, type Document } from "./documents";
 import { LocalWorkerState } from "./local-worker-controls";
-import { validRepositoryInspection, selectedInspectionRemote } from "./repository-registration";
+import { RepositoryRegistration, validRepositoryInspection, selectedInspectionRemote, confirmedRepository } from "./repository-registration";
 import { i18n, SupportedLanguage } from "./localization";
 
 const metadata = { root: "/canonical/oss", name: "oss", remotes: ["origin", "upstream"], default_refs: { origin: "main" }, github_repositories: { origin: { owner: "delinoio", name: "oss" }, upstream: { owner: "another", name: "repo" } } };
@@ -26,7 +27,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
     const job = row(EntityKind.JOB, { state: "succeeded", machine_id: request.machineId, output }); resources.set(job.id, job); jobs.push(job); return { job };
   });
   const save = vi.fn(async (_request: { documentJson: Uint8Array }) => {
-    const job = row(EntityKind.JOB, { state: "succeeded" }); resources.set(job.id, job); return { job };
+    const job = row(EntityKind.JOB, { state: "succeeded", output: { id: newRequestId(), revision: 1 } }); resources.set(job.id, job); return { job };
   });
   const choose = vi.fn(async (): Promise<string | null> => "/alias/repo");
   const proof = vi.fn(async () => ({ machineId: machine.id, token: "A".repeat(43) }));
@@ -59,7 +60,7 @@ function fixture(output: Document = metadata, cloneCapabilities = false, remoteC
     if (local) fireEvent.click(screen.getByRole("button", { name: "Connect a Local folder (optional)" }));
   };
   const chooseAndReview = async () => { await add(); fireEvent.click(screen.getByRole("button", { name: "Choose folder" })); await screen.findByRole("region", { name: "Repository detected" }); await waitFor(() => expect((within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }) as HTMLButtonElement).disabled).toBe(false)); };
-  return { machine, resources, jobs, clone, repositories, listResources, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource, clearStatusError: () => { currentStatusError = undefined; } };
+  return { machine, resources, jobs, clone, repositories, listResources, inspected, save, choose, proof, control, client, mount, add, chooseAndReview, getResource, transport, clearStatusError: () => { currentStatusError = undefined; } };
 }
 
 it("retries a transient capability read without losing the registration draft", async () => {
@@ -599,4 +600,20 @@ it("shows safe original verification guidance instead of native error content", 
   expect(screen.queryByText(/private\/token/)).toBeNull();
   expect(screen.getByRole("button", { name: "Recheck original Worker" })).toBeTruthy();
   expect(f.inspected).not.toHaveBeenCalled(); expect(f.clone).not.toHaveBeenCalled();
+});
+
+it("validates exact save and clone repository confirmation identities", () => {
+ const id = newRequestId();
+ expect(confirmedRepository({ id, revision: 7 })).toEqual({ id, revision: 7n });
+ expect(confirmedRepository({ repository_id: id, repository_revision: "8" }, true)).toEqual({ id, revision: 8n });
+ for (const output of [{ id: "same name", revision: 1 }, { id, revision: 0 }, { id, revision: 9007199254740992 }, { id, revision: "18446744073709551616" }, { repository_id: id, repository_revision: 1 }]) expect(confirmedRepository(output)).toBeUndefined();
+});
+
+it("publishes the original confirmed clone identity once across repeated successful observations",async()=>{
+ const f=fixture(metadata,true),saved=vi.fn(),id=newRequestId();
+ render(<StrictMode><TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><SettingsTasks><SettingsTaskDialog size={SettingsDialogSize.Form} title="Add repository" close={()=>{}}><RepositoryRegistration active readLocalWorker={f.proof} chooseFolder={f.choose} saved={saved} cancel={()=>{}} /></SettingsTaskDialog></SettingsTasks></QueryClientProvider></TransportProvider></StrictMode>);
+ fireEvent.change(await screen.findByRole("textbox",{name:"Git URL"}),{target:{value:"https://github.com/delinoio/oss.git"}});cloneInputs();
+ const submit=screen.getByRole("button",{name:"Clone & add repository"});await waitFor(()=>expect(submit.hasAttribute("disabled")).toBe(false));fireEvent.click(submit);await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+ f.resources.set(f.jobs[0].id,{...f.jobs[0],revision:2n,documentJson:encode({type:"clone-repository",machine_id:f.machine.id,state:"succeeded",output:{repository_id:id,repository_revision:7}})});
+ await f.client.invalidateQueries();await waitFor(()=>expect(saved).toHaveBeenCalledExactlyOnceWith({id,revision:7n}));await f.client.invalidateQueries();expect(saved).toHaveBeenCalledOnce();expect(f.clone).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
 });

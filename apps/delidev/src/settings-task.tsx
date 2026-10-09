@@ -55,8 +55,8 @@ function available(node: HTMLElement | null) {
   const style = getComputedStyle(node);
   return style.display !== "none" && style.visibility !== "hidden";
 }
-function anotherModal(dialog: HTMLDialogElement) {
-  return [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].some(other => other !== dialog && other.getAttribute("role") !== "region");
+function anotherModal(dialog: HTMLDialogElement, ancestors: readonly HTMLDialogElement[] = []) {
+  return [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].some(other => other !== dialog && !ancestors.includes(other) && other.getAttribute("role") !== "region");
 }
 
 function containTab(event: KeyboardEvent<HTMLDialogElement>) {
@@ -67,6 +67,19 @@ function containTab(event: KeyboardEvent<HTMLDialogElement>) {
   if (!first) { event.preventDefault(); dialog.querySelector<HTMLElement>("h2")?.focus(); return; }
   if (event.shiftKey && (active === first || !controls.includes(active as HTMLElement))) { event.preventDefault(); last?.focus(); }
   else if (!event.shiftKey && (active === last || !controls.includes(active as HTMLElement))) { event.preventDefault(); first.focus(); }
+}
+
+// Only New Project registration owns this independent mutation child. Ordinary
+// nested workflows continue to use internal steps and their original owner.
+export function ProjectRepositoryRegistrationDialog(props: DialogProps) {
+  const ancestors = useRef([...document.querySelectorAll<HTMLDialogElement>("dialog[open]:not([role=region])")]);
+  const parent = ancestors.current.at(-1);
+  useLayoutEffect(() => {
+    if (!parent) return;
+    const retained = parent.hasAttribute("inert"); parent.setAttribute("inert", "");
+    return () => { if (!retained) parent.removeAttribute("inert"); };
+  }, [parent]);
+  return <SettingsTaskContext.Provider value={undefined}><SettingsTaskScope><SettingsTaskWindow {...props} ancestorDialogs={ancestors.current} /></SettingsTaskScope></SettingsTaskContext.Provider>;
 }
 
 interface DialogProps extends SettingsTaskPresentation { close: () => void; children: ReactNode; retained?: boolean; onDismiss?: () => void; activation?: number; fallbackFocus?: () => HTMLElement | null }
@@ -87,7 +100,7 @@ function SettingsTaskStep({ title, subtitle, size, focus, children, onDismiss }:
   const context = useMemo(() => ({ ...task, stepId: id }), [task, id]);
   return task.stepTarget ? createPortal(<SettingsTaskContext.Provider value={context}><div data-settings-task-step hidden={task.activeStep !== id}>{children}</div></SettingsTaskContext.Provider>, task.stepTarget) : null;
 }
-function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed, fallbackFocus }: DialogProps) {
+function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, focus = SettingsDialogFocus.Input, close, children, onDismiss: dismissed, fallbackFocus, ancestorDialogs = [] }: DialogProps & { ancestorDialogs?: readonly HTMLDialogElement[] }) {
   useLocale();
   const opening = useSettingsOpening()!, client = useQueryClient();
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
@@ -137,8 +150,14 @@ function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, f
     let live = true;
     queueMicrotask(() => { if (live) committed.current = true; });
     node.showModal();
+    const initialFocus = document.activeElement;
     const frame = requestAnimationFrame(() => {
-      if (!node.open || anotherModal(node)) return;
+      if (!node.open || anotherModal(node, ancestorDialogs)) return;
+      // A nested chooser can open and restore its trigger before this frame.
+      // Preserve newer focus inside this original task instead of replaying its
+      // initial focus policy over the user's accepted destination.
+      const focused = document.activeElement;
+      if (focused !== initialFocus && focused?.isConnected && node.contains(focused)) return;
       const target = current.focus === SettingsDialogFocus.Heading ? heading.current
         : current.focus === SettingsDialogFocus.Close ? node.querySelector<HTMLElement>(".settings-task-close")
         : current.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>("[data-settings-task-cancel]:not(:disabled)") ?? node.querySelector<HTMLElement>(".settings-task-close")
@@ -152,9 +171,9 @@ function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, f
       // Strict Mode's simulated cleanup must not unlock or steal focus.
       if (!closeRequested.current && !committed.current) return;
       // A category departure or replacement dialog cannot restore a stale opener.
-      if (anotherModal(node)) return;
+      if (anotherModal(node, ancestorDialogs)) return;
       const restoreFocus = () => {
-        if (anotherModal(node)) return null;
+        if (anotherModal(node, ancestorDialogs)) return null;
         const focused = document.activeElement;
         if (focused !== document.body && focused !== document.documentElement && focused !== opener.current && !node.contains(focused)) return null;
         const openerDialog = opener.current?.closest("dialog");
@@ -189,14 +208,14 @@ function SettingsTaskWindow({ title, subtitle, size = SettingsDialogSize.Form, f
   }, [host?.outlet]);
   useLayoutEffect(() => {
     const node = dialog.current;
-    if (!presentation || !node?.open || anotherModal(node)) return;
+    if (!presentation || !node?.open || anotherModal(node, ancestorDialogs)) return;
     const target = presentation.focus === SettingsDialogFocus.Close ? node.querySelector<HTMLElement>(".settings-task-close") : presentation.focus === SettingsDialogFocus.Cancel ? node.querySelector<HTMLElement>(".settings-task-footer [data-settings-task-cancel]:not(:disabled)") ?? node.querySelector<HTMLElement>(".settings-task-close") : presentation.focus === SettingsDialogFocus.Input ? node.querySelector<HTMLElement>(".settings-task-body [data-settings-task-step]:not([hidden]) input:not(:disabled)") : heading.current;
     (target ?? heading.current)?.focus({ preventScroll: true });
   }, [presentation]);
   const content = <SettingsTaskContext.Provider value={context}>
     {(!host || host.outlet) ? createPortal(<>
 
-    <DialogSurface ref={dialog} onKeyDown={containTab} className="settings-task-dialog" data-size={current.size} aria-modal="true" aria-labelledby={`${id}-title`} onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss(); }}>
+    <DialogSurface ref={dialog} onKeyDown={event => { containTab(event); if (ancestorDialogs.length) event.stopPropagation(); }} className="settings-task-dialog" data-size={current.size} aria-modal="true" aria-labelledby={`${id}-title`} onCancel={event => { event.preventDefault(); event.stopPropagation(); dismiss(); }}>
       <header className="settings-task-header"><div><h2 ref={heading} tabIndex={-1} id={`${id}-title`}>{current.title}</h2><p>{current.subtitle ?? copy("settings.savedOnTheSelectedServer_93dbee")}</p></div><button type="button" className="settings-task-close" aria-label={`${copy("settings-task.close")} ${current.title}`} onClick={dismiss}>×</button></header>
       <div className="settings-task-body settings-content-column"><div hidden={Boolean(activeStep)}>{children}</div><div ref={setStepTarget} /></div>
       <div ref={setActions} className="settings-task-footer" />

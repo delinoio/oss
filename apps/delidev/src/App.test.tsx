@@ -580,6 +580,12 @@ it.each(["New project", "Create a project"])("opens a fresh New Project dialog f
   const name = screen.getByRole("searchbox", { name: "Search repository names" });
   await waitFor(() => expect(window.document.activeElement).toBe(name));
   fireEvent.change(name, { target: { value: "Retained project" } });
+  const addRepository = within(dialog).getByRole("button", { name: "Add repository" }); fireEvent.click(addRepository);
+  const registration = await screen.findByRole("dialog", { name: "Add repository" });
+  expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
+  fireEvent(registration, new Event("cancel", { cancelable: true }));
+  await waitFor(() => expect(document.activeElement).toBe(addRepository));
+  expect((name as HTMLInputElement).value).toBe("Retained project");
   expect(value.saveConfiguration).not.toHaveBeenCalled();
   expect(value.enqueues).not.toHaveBeenCalled();
   expect(value.controls).not.toHaveBeenCalled();

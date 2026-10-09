@@ -84,5 +84,6 @@
   "repository-registration.inline.57dbb8a56f": "복제 모드는 저장소 폴더 이름과 URL을 사용합니다. 먼저 저장소를 추가한 뒤 선택 설정을 구성하세요.",
   "repository-registration.inline.3f0ac0a40a": "동일한 복제 요청 재시도",
   "repository-registration.boundedCheckoutPath": "길이가 제한된 절대 체크아웃 경로를 입력하세요.",
-  "repository-registration.selectCheckoutComputer": "이 체크아웃을 소유한 컴퓨터를 선택하세요."
+  "repository-registration.selectCheckoutComputer": "이 체크아웃을 소유한 컴퓨터를 선택하세요.",
+  "repository-registration.confirmationUnavailable": "등록은 성공했지만 유효한 저장소 식별자가 없습니다. 저장된 저장소를 다시 확인하세요. 등록을 반복하지 마세요."
 }

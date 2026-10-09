@@ -295,7 +295,10 @@ it("focuses inspection only at activation and restores the opener or list-headin
   fireEvent.click(opener);
   const heading = screen.getByRole("heading", { name: `Inspection: ${f.id}` });
   expect(document.activeElement).toBe(heading);
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Backup integrity inspection" })));
+  // The inspection intentionally focuses its own heading after modal mount.
+  // Initial dialog layout must preserve that newer focus inside the task.
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+  expect(document.activeElement).toBe(heading);
   const stableAction = screen.getByRole("button", { name: "Close Backup integrity inspection" });
   stableAction.focus();
   await waitFor(() => expect(f.inspect).toHaveBeenCalledTimes(1));

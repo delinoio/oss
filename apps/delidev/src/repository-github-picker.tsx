@@ -45,6 +45,7 @@ function GitHubRepositoryDialog({ opener, close, children }: { opener: RefObject
   const id = useId(), dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
     const node = dialog.current!, trigger = opener.current, parent = trigger?.closest("dialog");
+    const ancestors = new Set(document.querySelectorAll("dialog[open]:not([role=region])"));
     let live = true, committed = false;
     // Strict Mode's first cleanup must not move focus back into the parent.
     queueMicrotask(() => { if (live) committed = true; });
@@ -55,7 +56,7 @@ function GitHubRepositoryDialog({ opener, close, children }: { opener: RefObject
       live = false;
       const ownedFocus = node.contains(document.activeElement);
       node.close();
-      const replacement = [...document.querySelectorAll("dialog[open]:not([role=region])")].some(other => other !== parent && other !== node);
+      const replacement = [...document.querySelectorAll("dialog[open]:not([role=region])")].some(other => !ancestors.has(other) && other !== node);
       if (!committed || !ownedFocus || replacement || (parent && !parent.open) || !trigger?.isConnected || trigger.matches(":disabled") || trigger.closest("[hidden],[inert],[aria-hidden=true]")) return;
       const style = getComputedStyle(trigger);
       if (style.display !== "none" && style.visibility !== "hidden") trigger.focus({ preventScroll: true });
