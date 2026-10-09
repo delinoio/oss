@@ -58,8 +58,7 @@ function fixture() {
   const start = async () => {
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
     fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repositoryId}` }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
-    fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+    expect(screen.queryByRole("button", { name: "Load pull requests" })).toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
     fireEvent.click(await screen.findByRole("button", { name: "Show retained PR problems" }));
     fireEvent.click(await screen.findByRole("button", { name: "Fix now" }));
@@ -74,7 +73,7 @@ function fixture() {
   return { transport, query, fix, capabilities, history, receipt, start, leave, back, pending, set, problem, projectId, repositoryId, removeRepository: () => { repositoryAvailable = false; }, removeRow: () => { rowAvailable = false; } };
 }
 
-it("retries the original Fix after App navigation before another GitHub Load", async () => {
+it("keeps original Fix recovery available before the automatic return read", async () => {
   const f = fixture(); f.fix.mockRejectedValueOnce(new ConnectError("Lost receipt", Code.Unavailable));
   render(<App transport={f.transport} />); await f.start();
   await f.pending().findByRole("button", { name: "Retry original fix request" });
@@ -88,7 +87,9 @@ it("retries the original Fix after App navigation before another GitHub Load", a
   await f.pending().findByText("No pending PR actions.");
   expect(f.fix.mock.calls[1][0]).toEqual(f.fix.mock.calls[0][0]);
   expect(JSON.parse(new TextDecoder().decode(f.fix.mock.calls[1][0].documentJson))).toEqual({ set_id: f.set.id, set_revision: "9007199254740993", project_id: f.projectId, repository_id: f.repositoryId, problems: [{ id: f.problem.id, revision: "9007199254740995", content_version: "c".repeat(64) }] });
-  expect(f.query).toHaveBeenCalledTimes(queries); expect(f.history).toHaveBeenCalledTimes(history); expect(f.capabilities).toHaveBeenCalledTimes(capabilities);
+  await waitFor(() => expect(f.query).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls[2][0].queryJson))).toMatchObject({ operation: "list", page: 1 });
+  expect(f.history).toHaveBeenCalledTimes(history); expect(f.capabilities).toHaveBeenCalledTimes(capabilities);
 });
 
 it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps original Fix recovery available with %s", async state => {
@@ -102,8 +103,7 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
   f.back();
   if (state !== "removed repository") {
     if (state === "removed PR row") fireEvent.click(screen.getByRole("radio", { name: "All" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Load pull requests" }).hasAttribute("disabled")).toBe(false));
-    fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
+    expect(screen.queryByRole("button", { name: "Load pull requests" })).toBeNull();
     if (state === "failed GitHub reload") await waitFor(() => expect(screen.getAllByRole("alert").some(alert => !screen.getByRole("region", { name: "Pending PR actions" }).contains(alert) && alert.textContent?.includes("server_unavailable"))).toBe(true));
     else await screen.findByText("No pull requests were returned on page 1.");
   }
@@ -149,7 +149,8 @@ it.each(["missing", "request", "remote repository", "PR", "number", "local repos
   fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));
   await f.pending().findByText("No pending PR actions.");
   expect(f.fix.mock.calls[1][0]).toEqual(f.fix.mock.calls[0][0]); expect(f.fix.mock.calls[2][0]).toEqual(f.fix.mock.calls[0][0]);
-  expect(f.query).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(f.query).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls[2][0].queryJson))).toMatchObject({ operation: "list", page: 1 });
 });
 
 it("clears a valid late receipt after leaving the row without replaying it", async () => {
@@ -158,7 +159,8 @@ it("clears a valid late receipt after leaving the row without replaying it", asy
   render(<App transport={f.transport} />); await f.start(); f.leave();
   complete(f.receipt(f.fix.mock.calls[0][0])); f.back();
   await f.pending().findByText("No pending PR actions.");
-  expect(f.fix).toHaveBeenCalledOnce(); expect(f.query).toHaveBeenCalledTimes(2); expect(f.history).toHaveBeenCalledOnce();
+  expect(f.fix).toHaveBeenCalledOnce(); await waitFor(() => expect(f.query).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls[2][0].queryJson))).toMatchObject({ operation: "list", page: 1 }); expect(f.history).toHaveBeenCalledOnce();
 });
 
 it.each([Code.PermissionDenied, Code.Unauthenticated, Code.FailedPrecondition, Code.NotFound])("keeps an already uncertain Fix after rejected replay %s", async code => {
@@ -174,5 +176,6 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.FailedPrecondition, C
   fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));
   await f.pending().findByText("No pending PR actions.");
   expect(f.fix.mock.calls[1][0]).toEqual(f.fix.mock.calls[0][0]); expect(f.fix.mock.calls[2][0]).toEqual(f.fix.mock.calls[0][0]);
-  expect(f.query).toHaveBeenCalledTimes(2); expect(f.capabilities).toHaveBeenCalledOnce();
+  await waitFor(() => expect(f.query).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(new TextDecoder().decode(f.query.mock.calls[2][0].queryJson))).toMatchObject({ operation: "list", page: 1 }); expect(f.capabilities).toHaveBeenCalledOnce();
 });
