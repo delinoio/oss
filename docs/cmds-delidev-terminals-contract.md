@@ -321,6 +321,16 @@ contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 
 ## Atomic toolbar terminal admission — issue #2112 / PR #2260
 
+`CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
+session candidate preference under the same #2112 / PR #2260 ownership. Every
+toolbar gesture uses atomic admission after complete inventory inspection;
+inventory alone cannot select a terminal. Admission prefers that ID only if it
+remains eligible in the same original session and current Worker instance, then
+uses the first eligible terminal. Empty, missing, foreign or retired preferences
+grant no authority and fall back to ordinary eligibility. Unknown IDs are not
+read outside the original session; malformed IDs and preferences on additional
+creation are rejected. Exact receipts retain the preference bytes.
+
 `CreateTerminalRequest.creation_mode = 5` owns the closed
 `TerminalCreationMode` enum: `UNSPECIFIED = 0` preserves explicit additional
 creation, including existing clients and +; `REUSE_OR_CREATE = 1` resolves

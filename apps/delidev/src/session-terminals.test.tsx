@@ -346,7 +346,8 @@ it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit o
       expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: session.id, expectedRevision: 7n }, rows: 24, columns: 80, shellOverride: "", creationMode: TerminalCreationMode.REUSE_OR_CREATE });
       await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
     } else if (scenario === "later-page") {
-      await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id)); expect(pages).toContain("next"); expect(createTerminal).not.toHaveBeenCalled();
+      await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id)); expect(pages).toContain("next"); expect(createTerminal).toHaveBeenCalledOnce();
+      expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: terminal.id });
     } else {
       await screen.findByRole("button", { name: "Retry terminal inventory read" });
       expect(createTerminal).not.toHaveBeenCalled();
@@ -383,7 +384,7 @@ it.each([{}, [], 12, true, "invalid-id"])("rejects malformed close-request metad
 it("reopens the last content-tab selection instead of the first inventory terminal", async () => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
   const terminals = [1, 2].map(() => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) }));
-  const opened = vi.fn(), createTerminal = vi.fn();
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal: terminals[1] }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
     router.service(ResourceService, { listResources: () => ({ resources: terminals }) });
@@ -400,7 +401,7 @@ it("reopens the last content-tab selection instead of the first inventory termin
     fireEvent.click(screen.getByRole("button", { name: "Select second content tab" }));
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(terminals[1]!.id));
-    expect(createTerminal).not.toHaveBeenCalled();
+    expect(createTerminal).toHaveBeenCalledOnce();
   } finally { view.unmount(); client.clear(); }
 });
 
@@ -408,7 +409,7 @@ it("reopens the last content-tab selection instead of the first inventory termin
 it.each([TerminalAction.INPUT, TerminalAction.RESIZE, TerminalAction.CLOSE])("reopens non-close uncertain controls while retaining exact ownership (action %s)", async action => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
   const terminal = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.TERMINAL, sessionId: session.id, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "running" }) });
-  const opened = vi.fn(), createTerminal = vi.fn(), controlTerminal = vi.fn(() => { throw new ConnectError("Original acknowledgment lost", Code.Unavailable); });
+  const opened = vi.fn(), createTerminal = vi.fn(() => ({ terminal })), controlTerminal = vi.fn(() => { throw new ConnectError("Original acknowledgment lost", Code.Unavailable); });
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
     router.service(ResourceService, { listResources: () => ({ resources: [terminal] }) });
@@ -427,7 +428,7 @@ it.each([TerminalAction.INPUT, TerminalAction.RESIZE, TerminalAction.CLOSE])("re
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     if (action === TerminalAction.CLOSE) { await screen.findByRole("button", { name: "Retry terminal inventory read" }); expect(opened).not.toHaveBeenCalled(); }
     else await waitFor(() => expect(opened).toHaveBeenCalledWith(terminal.id));
-    expect(createTerminal).not.toHaveBeenCalled(); expect(controlTerminal).toHaveBeenCalledOnce();
+    expect(createTerminal).toHaveBeenCalledTimes(action === TerminalAction.CLOSE ? 0 : 1); expect(controlTerminal).toHaveBeenCalledOnce();
     expect(screen.getByText("Retained control")).toBeTruthy();
   } finally { view.unmount(); client.clear(); }
 });
@@ -479,7 +480,34 @@ it.each([false, true])("does not revive a hidden terminal from stale running inv
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
     expect(opened).not.toHaveBeenCalledWith(stale.id);
-    expect(createTerminal).toHaveBeenCalledTimes(otherEligible ? 0 : 1);
+    expect(createTerminal).toHaveBeenCalledOnce();
     if (!otherEligible) expect(createTerminal.mock.calls[0]).toBeTruthy();
+  } finally { view.unmount(); client.clear(); }
+});
+
+
+it("selects only the atomically admitted replacement after a listed terminal retires", async () => {
+  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
+  const stale = create(ResourceSchema, { id: newRequestId(), sessionId: session.id, kind: EntityKind.TERMINAL, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "running" }) });
+  const replacement = create(ResourceSchema, { ...stale, id: newRequestId() });
+  const opened = vi.fn(), createTerminal = vi.fn((_request: unknown) => ({ terminal: replacement }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.SESSION_TERMINALS_V1] }) });
+    router.service(ResourceService, { listResources: () => ({ resources: [stale] }) });
+    router.service(TerminalService, { createTerminal });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function View() {
+    const [intent, setIntent] = useState<{ requestId: string; revision: bigint }>();
+    return <><button onClick={() => setIntent({ requestId: newRequestId(), revision: session.revision })}>Open fixture</button><SessionTerminals session={session} selectedId="" tabbed openIntent={intent} finishOpenIntent={() => setIntent(undefined)} openTerminal={opened} close={() => {}} /></>;
+  }
+  const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
+  try {
+    await screen.findByRole("button", { name: /Terminal 1/ });
+    fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
+    await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
+    expect(opened).not.toHaveBeenCalledWith(stale.id);
+    expect(createTerminal).toHaveBeenCalledOnce();
+    expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: stale.id });
   } finally { view.unmount(); client.clear(); }
 });

@@ -415,6 +415,16 @@ func TestTerminalAtomicReuseOrCreateAcrossClients(t *testing.T) {
 	if err != nil || additional.Msg.Terminal.Id == first.response.Msg.Terminal.Id {
 		t.Fatal("unspecified explicit additional creation stopped creating", err)
 	}
+	preferred := &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80, CreationMode: pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE, PreferredTerminalId: additional.Msg.Terminal.Id}
+	chosen, err := product.CreateTerminal(ctx, ownerRequest(f.identity, preferred))
+	if err != nil || chosen.Msg.Terminal.Id != additional.Msg.Terminal.Id {
+		t.Fatal("atomic admission lost eligible original preference", err)
+	}
+	missing := &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80, CreationMode: pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE, PreferredTerminalId: string(domain.NewID())}
+	fallback, err := product.CreateTerminal(ctx, ownerRequest(f.identity, missing))
+	if err != nil || fallback.Msg.Terminal.Id != first.response.Msg.Terminal.Id {
+		t.Fatal("foreign preference gained authority or lost ordered fallback", err)
+	}
 	for _, row := range []*pb.Resource{first.response.Msg.Terminal, additional.Msg.Terminal} {
 		if _, err := product.ControlTerminal(ctx, ownerRequest(f.identity, &pb.ControlTerminalRequest{Mutation: acctMutation(row, domain.NewID()), Action: pb.TerminalAction_TERMINAL_ACTION_CLOSE})); err != nil {
 			t.Fatal(err)

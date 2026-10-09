@@ -97,6 +97,14 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 	default:
 		return fail(domain.Fail(domain.InvalidArgument, "Unknown terminal creation mode.", "Select additional creation or reuse-or-create."))
 	}
+	if req.Msg.PreferredTerminalId != "" {
+		if req.Msg.CreationMode != pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE {
+			return fail(domain.Fail(domain.InvalidArgument, "Terminal preference requires reuse admission.", "Use the explicit toolbar operation."))
+		}
+		if err := domain.ID(req.Msg.PreferredTerminalId).Validate(); err != nil {
+			return fail(err)
+		}
+	}
 	meta := req.Msg.Mutation
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "terminal.create", req.Msg, func(tx *store.Tx) (any, error) {
 		sr, session, err := sessionRecord(tx, domain.ID(meta.Id))
@@ -131,17 +139,24 @@ func (s *Service) CreateTerminal(ctx context.Context, req *connect.Request[pb.Cr
 		// independent clients; returning a reference never dispatches native work.
 		if req.Msg.CreationMode == pb.TerminalCreationMode_TERMINAL_CREATION_MODE_REUSE_OR_CREATE {
 			settled := true
+			var reusable domain.ID
 			for _, r := range records {
 				t, err := store.Decode[domain.Terminal](r)
 				if err != nil {
 					return nil, err
 				}
 				if (t.State == domain.TerminalStarting || t.State == domain.TerminalRunning) && t.CloseRequestID == "" && (t.Pending == nil || t.Pending.Action != domain.TerminalClose) && t.MachineID == session.MachineID && t.InstanceID == instance && t.Live() {
-					return terminalReceipt{TerminalID: r.ID}, nil
+					if reusable == "" || string(r.ID) == req.Msg.PreferredTerminalId {
+						reusable = r.ID
+					}
+					continue
 				}
 				if (t.State != domain.TerminalExited && t.State != domain.TerminalClosed) || !t.CleanupVerified || t.Pending != nil || t.CloseRequestID != "" && t.Live() {
 					settled = false
 				}
+			}
+			if reusable != "" {
+				return terminalReceipt{TerminalID: reusable}, nil
 			}
 			if !settled {
 				return nil, domain.Fail(domain.Conflict, "Original terminal cleanup is unconfirmed.", "Inspect and reconcile the original terminal before opening another.")

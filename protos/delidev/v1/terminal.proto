@@ -29,6 +29,8 @@ message CreateTerminalRequest {
   uint32 columns = 4;
   // Unspecified preserves explicit additional creation for existing clients.
   TerminalCreationMode creation_mode = 5;
+  // Optional original session terminal preference; admission revalidates it.
+  string preferred_terminal_id = 6;
 }
 message ControlTerminalRequest {
   // Mutation targets the original terminal and its current revision.

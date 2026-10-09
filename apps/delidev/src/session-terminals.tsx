@@ -101,12 +101,13 @@ export function SessionTerminals({ session, close, active = true, presentationCh
         for (const row of retained) if (!seen.has(row.id)) records.push(row);
         const eligible = (row: Resource) => { const data = document(row); return !presentationRecords.hidden(row.id) && ["starting", "running"].includes(text(data.state)) && !data.close_request_id && object(data.pending).action !== "close" && !closing.has(row.id); };
         const reused = records.find(row => row.id === internalSelected && eligible(row)) ?? records.find(eligible);
-        if (reused) { setSelectedTerminal(reused); setSelected(reused.id); latest.current.openTerminal?.(reused.id); return; }
-        if (records.some(row => { if (presentationRecords.hidden(row.id)) return unsettled.has(row.id); const data = document(row); return !["exited", "closed"].includes(text(data.state)) || data.cleanup_verified !== true || Object.keys(object(data.pending)).length > 0 || unsettled.has(row.id); })) throw new ConnectError("Original terminal cleanup is unconfirmed.", Code.FailedPrecondition);
+        // Inventory chooses only a preference. The receipt transaction must
+        // revalidate current Worker ownership and reuse before selecting a tab.
+        if (!reused && records.some(row => { if (presentationRecords.hidden(row.id)) return unsettled.has(row.id); const data = document(row); return !["exited", "closed"].includes(text(data.state)) || data.cleanup_verified !== true || Object.keys(object(data.pending)).length > 0 || unsettled.has(row.id); })) throw new ConnectError("Original terminal cleanup is unconfirmed.", Code.FailedPrecondition);
         const original = latest.current.session;
         if (original.revision !== openIntent.revision || text(document(original).archive) !== "active") throw new ConnectError("The session changed before opening a terminal.", Code.Aborted);
         sent = true;
-        void create.send({ mutation: { requestId: openIntent.requestId, id: session.id, expectedRevision: openIntent.revision }, creationMode: TerminalCreationMode.REUSE_OR_CREATE, shellOverride: shell, rows: 24, columns: 80 });
+        void create.send({ mutation: { requestId: openIntent.requestId, id: session.id, expectedRevision: openIntent.revision }, creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: reused?.id ?? "", shellOverride: shell, rows: 24, columns: 80 });
       } catch (error) { if (current()) setOpenError(error); }
       finally { if (current()) latest.current.finishOpenIntent?.(); }
     };

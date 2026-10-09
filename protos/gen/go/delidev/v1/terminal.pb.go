@@ -127,9 +127,11 @@ type CreateTerminalRequest struct {
 	Rows          uint32    `protobuf:"varint,3,opt,name=rows,proto3" json:"rows,omitempty"`
 	Columns       uint32    `protobuf:"varint,4,opt,name=columns,proto3" json:"columns,omitempty"`
 	// Unspecified preserves explicit additional creation for existing clients.
-	CreationMode  TerminalCreationMode `protobuf:"varint,5,opt,name=creation_mode,json=creationMode,proto3,enum=delidev.v1.TerminalCreationMode" json:"creation_mode,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CreationMode TerminalCreationMode `protobuf:"varint,5,opt,name=creation_mode,json=creationMode,proto3,enum=delidev.v1.TerminalCreationMode" json:"creation_mode,omitempty"`
+	// Optional original session terminal preference; admission revalidates it.
+	PreferredTerminalId string `protobuf:"bytes,6,opt,name=preferred_terminal_id,json=preferredTerminalId,proto3" json:"preferred_terminal_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CreateTerminalRequest) Reset() {
@@ -195,6 +197,13 @@ func (x *CreateTerminalRequest) GetCreationMode() TerminalCreationMode {
 		return x.CreationMode
 	}
 	return TerminalCreationMode_TERMINAL_CREATION_MODE_UNSPECIFIED
+}
+
+func (x *CreateTerminalRequest) GetPreferredTerminalId() string {
+	if x != nil {
+		return x.PreferredTerminalId
+	}
+	return ""
 }
 
 type ControlTerminalRequest struct {
@@ -999,13 +1008,14 @@ var File_delidev_v1_terminal_proto protoreflect.FileDescriptor
 const file_delidev_v1_terminal_proto_rawDesc = "" +
 	"\n" +
 	"\x19delidev/v1/terminal.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\xe5\x01\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\"\x99\x02\n" +
 	"\x15CreateTerminalRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12%\n" +
 	"\x0eshell_override\x18\x02 \x01(\tR\rshellOverride\x12\x12\n" +
 	"\x04rows\x18\x03 \x01(\rR\x04rows\x12\x18\n" +
 	"\acolumns\x18\x04 \x01(\rR\acolumns\x12E\n" +
-	"\rcreation_mode\x18\x05 \x01(\x0e2 .delidev.v1.TerminalCreationModeR\fcreationMode\"\xc2\x01\n" +
+	"\rcreation_mode\x18\x05 \x01(\x0e2 .delidev.v1.TerminalCreationModeR\fcreationMode\x122\n" +
+	"\x15preferred_terminal_id\x18\x06 \x01(\tR\x13preferredTerminalId\"\xc2\x01\n" +
 	"\x16ControlTerminalRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x122\n" +
 	"\x06action\x18\x02 \x01(\x0e2\x1a.delidev.v1.TerminalActionR\x06action\x12\x14\n" +
