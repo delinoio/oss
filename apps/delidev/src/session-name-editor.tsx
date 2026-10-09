@@ -15,7 +15,7 @@ export function SessionNameEditorProvider({ children }: { children: ReactNode })
   const [selected, setSelected] = useState<string>();
   const alive = useRef(true);
   useLayoutEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  return <Editor.Provider value={(id, opener) => { setRecords(values => new Map(values).set(id, opener)); setSelected(id); }}>{children}{[...records].map(([id, opener]) => <SessionNameController key={id} id={id} visible={selected === id} opener={opener} alive={alive} close={() => setSelected(undefined)} />)}</Editor.Provider>;
+  return <Editor.Provider value={(id, opener) => { setRecords(values => new Map(values).set(id, opener)); setSelected(id); }}>{children}{[...records].map(([id, opener]) => <SessionNameController key={id} id={id} visible={selected === id} opener={opener} alive={alive} close={() => setSelected(current => current === id ? undefined : current)} />)}</Editor.Provider>;
 }
 function SessionNameController({ id, visible, opener, alive, close }: { id: string; visible: boolean; opener: HTMLElement; alive: { current: boolean }; close: () => void }) {
   useLocale();
