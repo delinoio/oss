@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { messageTurn, type TurnProjection } from "./turn-timing";
+import { messageTurn, messageTurnOwner, type TurnProjection } from "./turn-timing";
 import { responseEvidence, type ResponseEvidence } from "./session-progress";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
 import { claudeToolReference } from "./native-claude-tool";
 import { validGrokTool } from "./native-grok-interactions";
 
-export interface ConversationProjection { id: string; revision: bigint; turn?: TurnProjection; executionId?: string; inputId?: string; role?: string; inherited?: boolean; response?: ResponseEvidence; tool?: { owner: string; name: string; state: string } }
+export interface ConversationProjection { id: string; revision: bigint; turnOwner?: string; turn?: TurnProjection; executionId?: string; inputId?: string; role?: string; inherited?: boolean; response?: ResponseEvidence; tool?: { owner: string; name: string; state: string } }
 enum NativeToolName { Read = "read", Shell = "bash", Todo = "todowrite" }
 // These closed adapters preserve exactly these native names in the Worker;
 // other tools retain their recorded name/kind without reconstruction.
@@ -16,7 +16,7 @@ const identity = (value: unknown): value is string => typeof value === "string" 
 const label = (value: unknown) => identity(value) && value.length <= 256 ? value : "";
 /** Retain only bounded owner/display metadata, never arguments or output. */
 export function conversationProjection(row: Resource, sessionId: string): ConversationProjection {
-  const projection: ConversationProjection = { id: row.id, revision: row.revision, turn: messageTurn(row, sessionId), response: responseEvidence(row, sessionId) };
+  const projection: ConversationProjection = { id: row.id, revision: row.revision, turnOwner: messageTurnOwner(row, sessionId), turn: messageTurn(row, sessionId), response: responseEvidence(row, sessionId) };
   const d = readDocument(row);
   if(row.kind===EntityKind.MESSAGE&&row.sessionId===sessionId&&uuid(d.execution_id)){projection.executionId=d.execution_id;projection.inputId=uuid(d.input_id)?d.input_id:undefined;projection.role=typeof d.role==="string"&&["user","assistant","tool"].includes(d.role)?d.role:undefined;projection.inherited=Boolean(d.inherited);}
   if (row.kind !== EntityKind.MESSAGE || row.sessionId !== sessionId || !uuid(row.id) || !uuid(sessionId) || !uuid(d.execution_id) || !identity(d.native_thread_id) || !identity(d.native_turn_id) || d.role !== "tool") return projection;

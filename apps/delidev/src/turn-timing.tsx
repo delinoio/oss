@@ -24,6 +24,12 @@ export function retainedTurnTiming(value: unknown): TurnTiming | undefined {
   return { accepted, terminal };
 }
 function owner(session: string, execution: string, thread: string, turn: string) { return JSON.stringify([session, execution, thread, turn]); }
+/** Original native owner only, retained before a late primary-user record. */
+export function messageTurnOwner(row: Resource, sessionId: string): string | undefined {
+  const d = readDocument(row);
+  if (row.kind !== EntityKind.MESSAGE || row.sessionId !== sessionId || row.schemaVersion !== 1 || row.revision <= 0n || row.documentJson.byteLength > 1 << 20 || !uuid(row.id) || !uuid(sessionId) || !uuid(d.execution_id) || !identity(d.native_thread_id) || !identity(d.native_turn_id) || !["user", "assistant", "tool", "artifact", "progress"].includes(String(d.role)) || !["streaming", "complete"].includes(String(d.state)) || d.inherited != null || !Number.isSafeInteger(d.first_sequence) || Number(d.first_sequence) <= 0 || !Number.isSafeInteger(d.last_sequence) || Number(d.last_sequence) < Number(d.first_sequence)) return;
+  return owner(sessionId, d.execution_id, d.native_thread_id, d.native_turn_id);
+}
 /** Bounded identity/timestamp metadata only; no prompt/native content retention. */
 export function messageTurn(row: Resource, sessionId: string): TurnProjection | undefined {
   const d = readDocument(row), inherited = object(d.inherited);

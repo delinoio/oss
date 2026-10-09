@@ -49,12 +49,18 @@ function timingSessionEvent() {
 }
 Object.assign(window, { __turnTimingFixture: {
   get reads() { return timingReads; },
+  early() {
+    const original = JSON.parse(new TextDecoder().decode(session.documentJson)); original.execution.last_sequence = 3;
+    session = create(ResourceSchema, { ...session, revision: session.revision + 1n, documentJson: encode(original) }); timingSessionEvent();
+    const row = transcriptResource({ role: "assistant", state: "complete", text: "Original native output before late user publication", execution_id: timingIds.execution, native_thread_id: "timing-thread", native_turn_id: "timing-turn", first_sequence: 3, last_sequence: 3 }, 49);
+    resources.set(row.id,row); historical.push(row); events.push(createEvent(row.id,row.revision)); wake?.();
+  },
   parts() {
     const original = JSON.parse(new TextDecoder().decode(session.documentJson));
     original.execution.accepted_inputs.push({ input_id: timingIds.steer, prompt_digest: "b".repeat(64) }); original.execution.last_sequence = 8;
     session = create(ResourceSchema, { ...session, revision: session.revision + 1n, documentJson: encode(original) }); timingSessionEvent();
     for (const [index, input] of [timingIds.input, timingIds.input, timingIds.steer].entries()) {
-      const row = transcriptResource({ role: "user", state: "complete", text: index === 2 ? "Same-turn original accepted Steer" : "Original accepted primary part", execution_id: timingIds.execution, input_id: input, native_thread_id: "timing-thread", native_turn_id: "timing-turn", first_sequence: 3 + index, last_sequence: 3 + index, ...(index === 2 ? {} : { turn_timing: { accepted_at: timingStart } }) }, 50 + index);
+      const row = transcriptResource({ role: "user", state: "complete", text: index === 2 ? "Same-turn original accepted Steer" : "Original accepted primary part", execution_id: timingIds.execution, input_id: input, native_thread_id: "timing-thread", native_turn_id: "timing-turn", first_sequence: 4 + index, last_sequence: 4 + index, ...(index === 2 ? {} : { turn_timing: { accepted_at: timingStart } }) }, 50 + index);
       resources.set(row.id, row); historical.push(row); events.push(createEvent(row.id, row.revision));
     }
     wake?.();

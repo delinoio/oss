@@ -65,3 +65,16 @@ it("rejects queued/pre-acceptance/foreign selected generations and terminal outc
  for (const extra of [{last_sequence:1,accepted_inputs:undefined,turn_timing:{accepted_at:start}},{outcome:"not-started",native_turn_id:undefined,accepted_inputs:undefined,turn_timing:{accepted_at:start}},{native_turn_id:undefined,turn_timing:{accepted_at:start}}]) { const prior=currentTurn(session(extra),sessionId); expect(prior?.timing).toBeUndefined(); }
  const projected=conversationProjection(message({text:"DO NOT RETAIN original input"}),sessionId);expect(JSON.stringify(projected,(_,v)=>typeof v==="bigint"?String(v):v)).not.toContain("DO NOT RETAIN");
 });
+
+it("anchors pre-user timing before the first original native row and relocates only to its late primary",()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date(start));
+ const prior=message({role:"assistant",input_id:undefined,turn_timing:undefined,execution_id:newRequestId(),text:"Earlier execution"});
+ const foreign=message({role:"assistant",input_id:undefined,turn_timing:undefined,native_turn_id:"foreign-turn",text:"Foreign turn"});
+ const early=message({role:"assistant",input_id:undefined,turn_timing:undefined,text:"Early native output"});
+ const p=view(query([[prior,foreign],[early]])); const {container,rerender}=render(<ToolTurnTranscript {...p}/>);
+ expect(container.querySelectorAll(".turn-time")).toHaveLength(1);
+ const before=container.querySelector(".turn-time")!;expect(before.nextElementSibling?.textContent).toContain(early.id);expect(before.parentElement?.previousElementSibling).toBeNull();
+ act(()=>vi.advanceTimersByTime(12000));expect(before.textContent).toContain("12s");
+ const primary=message({first_sequence:8,last_sequence:9});rerender(<ToolTurnTranscript {...p} query={query([[prior,foreign],[early,primary]])}/>);
+ expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(container.querySelector(".turn-time")?.nextElementSibling?.textContent).toContain(primary.id);expect(container.querySelector(".turn-time")?.textContent).toContain("12s");expect(vi.getTimerCount()).toBe(1);
+});

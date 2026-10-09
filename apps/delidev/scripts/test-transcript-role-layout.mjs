@@ -167,6 +167,10 @@ try {
     await page.waitForFunction(ko => document.querySelector(".turn-time")?.textContent.includes(ko ? "1분 23초" : "1m 23s"),language==="ko");
     assert.equal(await line.count(),1); assert.equal(await page.locator(".message-user").count(),0);
     const composer=page.locator(".composer textarea"); await composer.focus(); const draft=await composer.inputValue();
+    await page.evaluate(()=>window.__turnTimingFixture.early());
+    await page.locator(".message-assistant").waitFor();
+    assert.equal(await line.count(),1); assert(await line.evaluate(node=>node.nextElementSibling?.classList.contains("message-assistant")),"pre-user timing precedes original native output");
+    assert.equal(await composer.evaluate(node=>node===document.activeElement),true);
     await page.evaluate(()=>window.__turnTimingFixture.parts()); await page.waitForFunction(()=>document.querySelectorAll(".message-user").length===3);
     assert.equal(await line.count(),1); assert(await line.evaluate(node=>node.nextElementSibling?.classList.contains("message-user")));
     assert.equal(await composer.evaluate(node=>node===document.activeElement),true);assert.equal(await composer.inputValue(),draft);

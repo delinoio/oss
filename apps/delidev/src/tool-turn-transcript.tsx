@@ -78,11 +78,16 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     if (current?.owner === row.turn.owner && current.inputId !== row.turn.inputId) continue;
     if (!prior || row.turn.captured && !prior.turn?.captured) turnStarts.set(row.turn.owner, row);
   }
+  const pendingTurn = current && !turnStarts.has(current.owner) ? current : undefined;
+  // Grok and other original native profiles can publish assistant/tool records
+  // before the primary user. Retain a metadata-only first-record anchor, never
+  // attach the current estimate to another execution or inherited history.
+  const pendingAnchor = pendingTurn ? projections.find(row => row.turnOwner === pendingTurn.owner)?.id : undefined;
   const byId = new Map(projections.map(row => [row.id, row]));
   const presented = (row: ConversationProjection) => {
     const result = item(row, payloads.get(row.id));
-    const turn = row.turn && turnStarts.get(row.turn.owner)?.id === row.id ? row.turn : undefined;
+    const turn = row.turn && turnStarts.get(row.turn.owner)?.id === row.id ? row.turn : pendingAnchor === row.id ? pendingTurn : undefined;
     return result || turn ? <div className="turn-transcript-item" key={row.id}>{turn ? <TurnTime turn={turn} current={current} confirmed={confirmed} /> : null}{result}</div> : null;
   };
-  return <TurnTimingProvider current={current} active={active} confirmed={confirmed}><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}{current && !turnStarts.has(current.owner) ? <TurnTime turn={current} current={current} confirmed={confirmed} /> : null}</TurnTimingProvider>;
+  return <TurnTimingProvider current={current} active={active} confirmed={confirmed}><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}{pendingTurn && !pendingAnchor ? <TurnTime turn={pendingTurn} current={current} confirmed={confirmed} /> : null}</TurnTimingProvider>;
 }
