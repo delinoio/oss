@@ -270,10 +270,9 @@ impl State {
                 .scopes
                 .values()
                 .any(|v| v.connection.as_ref() == Some(key))
+                && let Some(cancel) = observer.cancel.take()
             {
-                if let Some(cancel) = observer.cancel.take() {
-                    let _ = cancel.send(());
-                }
+                let _ = cancel.send(());
             }
         }
     }
@@ -408,19 +407,19 @@ impl NotificationHost {
                 let edge = edge.filter(|kind| {
                     !(suppress_restoration && *kind == NotificationKind::ServerRestored)
                 });
-                if let Some(kind) = edge {
-                    if host.current(&validated_target.label, &validated_target.scope) {
-                        let target = validated_target;
-                        match ledger.reserve(kind) {
-                            Ok(Some(notice)) => {
-                                let _ = host.start(app.clone(), target, notice);
-                            }
-                            Ok(None) => {}
-                            Err(_) => tracing::warn!(
-                                operation = "notification_connection_reservation",
-                                code = "unconfirmed"
-                            ),
+                if let Some(kind) = edge
+                    && host.current(&validated_target.label, &validated_target.scope)
+                {
+                    let target = validated_target;
+                    match ledger.reserve(kind) {
+                        Ok(Some(notice)) => {
+                            let _ = host.start(app.clone(), target, notice);
                         }
+                        Ok(None) => {}
+                        Err(_) => tracing::warn!(
+                            operation = "notification_connection_reservation",
+                            code = "unconfirmed"
+                        ),
                     }
                 }
             }
@@ -740,7 +739,7 @@ mod tests {
     #[test]
     fn disposed_connection_cancels_all_original_windows_and_retains_other_authority() {
         let host = NotificationHost::default();
-        let mut originals = vec![target("main", None), target("saved", Some("original"))];
+        let mut originals = [target("main", None), target("saved", Some("original"))];
         let mut unrelated = target("other", Some("other"));
         unrelated.connection = Some("unrelated".into());
         let mut completed = Vec::new();
