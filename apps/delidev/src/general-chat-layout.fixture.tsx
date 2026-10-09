@@ -32,7 +32,7 @@ const transport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, ...(skillCompletion ? [SystemCapability.NATIVE_SKILLS_V1] : [])] }) });
   router.service(SkillService, { listSkills: () => ({ skills }) });
   router.service(ResourceService, { getResource: request => ({ resource: rows.find(row => row.id === request.id && row.kind === request.kind) }), listResources: request => ({ resources: rows.filter(row => row.kind === request.filter?.kind) }) });
-  router.service(SessionService, { createSession: request => {
+  router.service(SessionService, { editQueuedInput: request => { creates.push({ forbiddenQueueSubmit: request.prompt }); report?.(); return { change: { input: queued } }; }, createSession: request => {
     const data = JSON.parse(new TextDecoder().decode(request.documentJson)); creates.push(data); report?.();
     const session = make(EntityKind.SESSION, "Synthetic accepted conversation"); session.sessionId = session.id;
     return { change: { session } };
