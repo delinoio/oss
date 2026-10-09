@@ -35,11 +35,22 @@ try {
 
   const catalogs={};
   for(const language of ["en","ko"])catalogs[language]=JSON.parse(await readFile(join(app,`src/locales/${language}/shortcuts.json`)));
-  for(const language of ["en","ko"])for(const theme of ["light","dark"])for(const [width,height]of [[960,640],[480,320]]){
+  for(const language of ["en","ko"])for(const theme of ["light","dark"])for(const [width,height]of [[1440,900],[960,640],[640,480],[480,320]]){
     const t=(key)=>catalogs[language][key];
     await page.setViewportSize({width,height});await page.goto(`${origin}/?language=${language}&theme=${theme}`);
     await page.getByText(t("shortcut-settings.saved"),{exact:true}).waitFor();
     const action=page.locator("[data-shortcut-action]");const original=await action.getAttribute("aria-keyshortcuts");
+    assert.equal(await page.getByText(t("shortcut-settings.scope"), { exact: true }).count(), 1);
+    const catalog = page.getByRole("region", { name: t("shortcut-settings.catalog"), exact: true });
+    assert.equal(await catalog.getAttribute("tabindex"), "0");
+    const iconActions = await catalog.locator(".shortcut-settings-row button").evaluateAll(nodes => nodes.map(node => ({ presentation: node.dataset.settingsActionPresentation, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height })));
+    assert(iconActions.every(node => node.presentation === "icon" && node.width >= 40 && node.height >= 40));
+    const beforeScroll = await page.locator(".shortcut-settings-footer").boundingBox();
+    await catalog.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    assert(await catalog.evaluate(node => node.scrollTop > 0));
+    const afterScroll = await page.locator(".shortcut-settings-footer").boundingBox();
+    assert.equal(afterScroll.y, beforeScroll.y, "Catalog scrolling preserves footer position");
+    await catalog.evaluate(node => { node.scrollTop = 0; });
     const capture=page.getByRole("button",{name:t("shortcut-settings.captureAction").replace("{{name}}",t("shortcuts.newSession")),exact:true});
     await capture.click();
     const primary=await page.evaluate(()=>/mac/i.test(navigator.platform)?"Meta":"Control");

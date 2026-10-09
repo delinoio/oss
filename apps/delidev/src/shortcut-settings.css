@@ -1,13 +1,30 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.shortcut-settings { min-width: 0; max-width: 1040px; }
-.shortcut-settings > section { margin-block: 24px; }
-.shortcut-settings h2 { font-size: 16px; line-height: 24px; }
-.shortcut-settings-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.settings-content.settings-shortcuts { height: 100%; min-height: 420px; }
+.settings-shortcuts > .settings-task-background, .settings-shortcuts .settings-content-column, .settings-shortcuts .settings-content-column > div { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.settings-shortcuts .settings-category-heading { flex: 0 0 auto; }
+.settings-shortcuts .settings-panels { flex: 1; min-height: 0; display: flex; }
+.shortcut-settings { min-width: 0; max-width: 1040px; width: 100%; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+.shortcut-catalog { min-height: 80px; flex: 1; overflow-y: auto; scrollbar-gutter: stable; border: 1px solid var(--border); border-radius: 8px; container: shortcut-catalog / inline-size; }
+.shortcut-catalog > section { margin: 0; }
+.shortcut-catalog h2 { min-height: 40px; display: flex; align-items: center; padding: 8px 16px; margin: 0; background: var(--surface-muted); font-size: 14px; line-height: 20px; }
+.shortcut-settings-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items: center; gap: 16px; min-height: 56px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .shortcut-settings-row > div { min-width: 0; }
-.shortcut-settings h3 { font-size: 14px; line-height: 20px; margin: 0; }
-.shortcut-settings-row p { margin: 4px 0; overflow-wrap: anywhere; }
-.shortcut-settings small { color: var(--muted); }
+.shortcut-catalog .shortcut-settings-row h3, .settings-content.settings-shortcuts[aria-label] .shortcut-catalog .shortcut-settings-row h3 { font-size: 14px; line-height: 20px; margin: 0; }
+.shortcut-catalog small { color: var(--muted); font-size: 12px; line-height: 18px; }
+.shortcut-current-binding { overflow-wrap: anywhere; }
+.shortcut-current-binding kbd { display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-muted); font: inherit; }
 .shortcut-settings .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .shortcut-settings button { min-height: 40px; border-radius: 8px; }
-.shortcut-settings dl > div { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-block: 8px; }
-.shortcut-settings dd { margin: 0; }
+.shortcut-catalog dl { margin: 0; }
+.shortcut-catalog dl > div { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); min-height: 40px; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.shortcut-catalog dd { margin: 0; }
+.shortcut-catalog > section > p { margin: 8px 16px; }
+.shortcut-operation-guidance, .shortcut-settings-footer { flex: 0 0 auto; }
+.shortcut-operation-guidance:empty { display: none; }
+.shortcut-settings-footer > button:first-child { margin-right: auto; }
+@container shortcut-catalog (max-width: 639px) {
+ .shortcut-settings-row { grid-template-columns: minmax(0,1fr); gap: 8px; }
+ .shortcut-catalog dl > div { grid-template-columns: minmax(0,1fr); gap: 4px; }
+}
+
+.settings-content.settings-shortcuts[aria-label] .shortcut-catalog h2 { font-size: 14px; line-height: 20px; }

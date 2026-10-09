@@ -35,7 +35,7 @@ const capture = async(name="New session",key="j")=>{
 it("keeps draft bindings inactive until Save and updates dispatch and ARIA without remount",async()=>{
  const f=fixture(),run=vi.fn();render(<StrictMode><Owner bridge={f.bridge} run={run}/></StrictMode>);await screen.findByText("Current saved shortcuts");
  expect(screen.getByRole("button",{name:"Save changes"}).getAttribute("data-settings-action")).toBe("save");
- expect(screen.getByRole("button",{name:"Capture shortcut for New session"}).getAttribute("data-settings-action-presentation")).toBe("label");
+ expect(screen.getByRole("button",{name:"Capture shortcut for New session"}).getAttribute("data-settings-action-presentation")).toBe("icon");
  const action=screen.getByRole("button",{name:"Ordinary action"});await capture();expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");fireEvent.keyDown(action,{key:"j",ctrlKey:true,shiftKey:true});expect(run).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Save changes"}));await waitFor(()=>expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+J"));expect(f.bridge.update).toHaveBeenCalledOnce();fireEvent.keyDown(action,{key:"j",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();expect(screen.getByRole("button",{name:"Ordinary action"})).toBe(action);
 });
@@ -103,4 +103,21 @@ it("shows fixed New Window N and permits saving former T without changing native
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"t",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"n",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  expect(screen.getByText("New Window").closest("div")?.querySelector("dd")?.textContent).toBe("Ctrl + N");
+});
+
+it("keeps the complete compact catalog separate from status and labeled final actions", async () => {
+ const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");
+ const catalog=screen.getByRole("region",{name:"Shortcut catalog"});
+ expect(catalog.tabIndex).toBe(0);
+ expect(catalog.querySelectorAll('.shortcut-settings-row')).toHaveLength(7);
+ const actions=catalog.querySelectorAll('.shortcut-settings-row button');expect(actions).toHaveLength(21);
+ for(const action of actions)expect(action.getAttribute('data-settings-action-presentation')).toBe('icon');
+ expect(catalog.contains(screen.getByRole('button',{name:'Save changes'}))).toBe(false);
+ expect(catalog.contains(screen.getByText('Current saved shortcuts'))).toBe(false);
+ expect(screen.queryByText('Saved on this computer.')).toBeNull();
+ const capture=screen.getByRole('button',{name:'Capture shortcut for New session'});
+ vi.spyOn(catalog,'getBoundingClientRect').mockReturnValue({top:20,bottom:120} as DOMRect);
+ vi.spyOn(capture,'getBoundingClientRect').mockReturnValue({top:150,bottom:190} as DOMRect);
+ fireEvent.focus(capture);expect(catalog.scrollTop).toBe(70);
+ expect(f.bridge.update).not.toHaveBeenCalled();
 });
