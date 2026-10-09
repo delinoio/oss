@@ -7,32 +7,17 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+func retiredModelsError() error {
+	return domain.Fail(domain.Unsupported, "Saved Models are retired.", "Save an exact inline model in its Agent Worker source route.")
+}
+
 const recordColumns = "id,kind,revision,session_id,project_id,body,created_at,updated_at"
 
 func (t *Tx) ValidateModelIdentity(id domain.ID, model domain.Model) error {
-	query := "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND id<>? AND ((json_extract(body,'$.provider_id')=? AND json_extract(body,'$.native_id')=?) OR (COALESCE(json_extract(body,'$.alias'),'')<>'' AND json_extract(body,'$.alias')=?)"
-	args := []any{id, model.ProviderID, model.NativeID, model.NativeID}
-	if model.SourceKind == domain.SubscriptionModel {
-		query = "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND id<>? AND ((json_extract(body,'$.subscription_service')=? AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.native_id')=?) OR (COALESCE(json_extract(body,'$.alias'),'')<>'' AND json_extract(body,'$.alias')=?)"
-		args[1] = model.SubscriptionService
-	}
-	if model.Alias != "" {
-		query += " OR id=? OR json_extract(body,'$.alias')=? OR json_extract(body,'$.native_id')=?"
-		args = append(args, model.Alias, model.Alias, model.Alias)
-	}
-	rows, err := t.modelRecords(query+") LIMIT 1", args...)
-	if err != nil {
-		return err
-	}
-	if len(rows) > 0 {
-		return domain.Fail(domain.Conflict, "The canonical model or CLI alias collides with another model.", "Choose a unique alias and provider/model identity.")
-	}
-	return nil
+	return retiredModelsError()
 }
 func (t *Tx) ModelSuppressed(provider domain.ID, native string) (bool, error) {
-	var found bool
-	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM model_suppressions WHERE provider_id=? AND native_id=?)", provider, native).Scan(&found)
-	return found, storageError(err)
+	return false, retiredModelsError()
 }
 
 func (t *Tx) ProviderPresetExists(preset domain.ProviderPresetID, except domain.ID) (bool, error) {
@@ -44,10 +29,7 @@ SELECT 1 FROM entities WHERE kind='provider' AND id<>? AND json_extract(body,'$.
 }
 
 func (t *Tx) ModelsForProvider(id domain.ID) ([]Record, error) {
-	if err := id.Validate(); err != nil {
-		return nil, err
-	}
-	return t.modelRecords("SELECT "+recordColumns+" FROM entities WHERE kind='model' AND json_extract(body,'$.provider_id')=? ORDER BY id LIMIT 10001", id)
+	return nil, retiredModelsError()
 }
 func (t *Tx) modelRecords(query string, args ...any) ([]Record, error) {
 	rows, err := t.tx.QueryContext(t.ctx, query, args...)
@@ -101,114 +83,11 @@ func (f ModelSearch) Validate() error {
 // edit or catalog publication expires pagination rather than skipping/repeating
 // results from a changed order. Unrelated account/stream events do not expire it.
 func (s *Store) SearchModels(ctx context.Context, f ModelSearch) ([]Record, []Record, uint64, error) {
-	if err := f.Validate(); err != nil {
-		return nil, nil, 0, err
-	}
-	var models, providers []Record
-	var epoch uint64
-	err := s.Read(ctx, func(tx *Tx) error {
-		if err := tx.Authorize(); err != nil {
-			return err
-		}
-		if err := tx.tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(value),0) FROM (SELECT MAX(sequence) AS value FROM events WHERE kind='model' UNION ALL SELECT MAX(sequence) FROM events WHERE kind='provider')").Scan(&epoch); err != nil {
-			return storageError(err)
-		}
-		if f.After != "" && f.Epoch != epoch {
-			return domain.Fail(domain.CursorExpired, "The model catalog changed during pagination.", "Restart model search to use the current display order.")
-		}
-		query := "SELECT " + recordColumns + " FROM entities WHERE kind='model'"
-		args := []any{}
-		if f.EnabledProvidersOnly {
-			query += " AND (json_extract(body,'$.source_kind')='subscription' OR EXISTS(SELECT 1 FROM entities p WHERE p.kind='provider' AND p.id=json_extract(entities.body,'$.provider_id') AND COALESCE(json_extract(p.body,'$.enabled'),1)=1 AND json_extract(p.body,'$.protocol')<>'native-subscription'))"
-		}
-		if f.ProviderID != "" {
-			query += " AND json_extract(body,'$.provider_id')=?"
-			args = append(args, f.ProviderID)
-		}
-		if f.SubscriptionService != "" {
-			query += " AND json_extract(body,'$.source_kind')='subscription' AND json_extract(body,'$.subscription_service')=?"
-			args = append(args, f.SubscriptionService)
-		}
-		if !f.IncludeHidden {
-			query += " AND COALESCE(json_extract(body,'$.hidden'),0)=0"
-		}
-		if f.Query != "" {
-			query += " AND (instr(lower(json_extract(body,'$.name')),lower(?))>0 OR instr(lower(json_extract(body,'$.native_id')),lower(?))>0 OR instr(lower(COALESCE(json_extract(body,'$.alias'),'')),lower(?))>0)"
-			args = append(args, f.Query, f.Query, f.Query)
-		}
-		const order = "COALESCE(json_extract(body,'$.provider_id'),json_extract(body,'$.subscription_service'),''),COALESCE(json_extract(body,'$.order'),0),lower(json_extract(body,'$.name')),id"
-		if f.After != "" {
-			if _, err := tx.Get(domain.ModelKind, f.After); err != nil {
-				return domain.Fail(domain.CursorExpired, "The model page anchor is no longer available.", "Restart model search.")
-			}
-			query += " AND (" + order + ")>(SELECT " + order + " FROM entities WHERE kind='model' AND id=?)"
-			args = append(args, f.After)
-		}
-		query += " ORDER BY " + order + " LIMIT ?"
-		args = append(args, f.Limit)
-		var err error
-		models, err = tx.modelRecords(query, args...)
-		if err != nil {
-			return err
-		}
-		seen := map[domain.ID]bool{}
-		providers = []Record{}
-		for _, record := range models {
-			model, err := Decode[domain.Model](record)
-			if err != nil {
-				return err
-			}
-			if model.SourceKind != domain.SubscriptionModel && !seen[model.ProviderID] {
-				provider, err := tx.Get(domain.ProviderKind, model.ProviderID)
-				if err != nil {
-					return err
-				}
-				providers = append(providers, provider)
-				seen[model.ProviderID] = true
-			}
-		}
-		return nil
-	})
-	return models, providers, epoch, err
+	return nil, nil, 0, retiredModelsError()
 }
 
 func (s *Store) ResolveModel(ctx context.Context, selector string, provider domain.ID) (Record, error) {
-	if err := domain.Text(selector, "model selector", 256, true); err != nil {
-		return Record{}, err
-	}
-	if provider != "" {
-		if err := provider.Validate(); err != nil {
-			return Record{}, err
-		}
-	}
-	var result Record
-	err := s.Read(ctx, func(tx *Tx) error {
-		if err := tx.Authorize(); err != nil {
-			return err
-		}
-		query := "SELECT " + recordColumns + " FROM entities WHERE kind='model' AND (id=? OR json_extract(body,'$.native_id')=? OR json_extract(body,'$.alias')=?)"
-		args := []any{selector, selector, selector}
-		if provider != "" {
-			query += " AND json_extract(body,'$.provider_id')=?"
-			args = append(args, provider)
-		}
-		// A native provider ID cannot shadow an explicit DeliDev UUID. Aliases
-		// cannot use UUID syntax, and ambiguous native/alias selectors still fail.
-		args = append(args, selector)
-		rows, err := tx.modelRecords(query+" ORDER BY (id=?) DESC,id LIMIT 2", args...)
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return domain.Fail(domain.NotFound, "No model matches the selector.", "Use model search or register the exact native model ID.")
-		}
-		if len(rows) != 1 && string(rows[0].ID) != selector {
-			return domain.Fail(domain.Conflict, "The model selector is ambiguous across providers.", "Select the canonical model UUID or supply its provider ID.")
-		}
-		result = rows[0]
-		return nil
-	})
-	return result, err
+	return Record{}, retiredModelsError()
 }
 
 // Model identity and alias lookup uses the indexes introduced in schema v3.

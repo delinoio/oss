@@ -733,6 +733,9 @@ func (t *Tx) event(r Record, action Action) error {
 	return storageError(err)
 }
 func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
+	if kind == domain.ModelKind {
+		return retiredModelsError()
+	}
 	if t.readOnly {
 		return domain.Fail(domain.PermissionDenied, "Read transactions cannot mutate state.", "Use a product mutation.")
 	}
@@ -789,17 +792,7 @@ func (t *Tx) Delete(kind domain.Kind, id domain.ID, expected uint64) error {
 			return domain.Fail(domain.RecoveryRequired, "The terminal still owns native resources.", "Close and join the original terminal before deleting its record.")
 		}
 	}
-	if kind == domain.ModelKind {
-		model, err := Decode[domain.Model](r)
-		if err != nil {
-			return err
-		}
-		if model.ProviderID != "" {
-			if _, err = t.tx.ExecContext(t.ctx, "INSERT OR IGNORE INTO model_suppressions(provider_id,native_id) VALUES(?,?)", model.ProviderID, model.NativeID); err != nil {
-				return storageError(err)
-			}
-		}
-	}
+
 	if _, err = t.tx.ExecContext(t.ctx, "INSERT INTO tombstones(id,kind,created_at) VALUES(?,?,?)", id, kind, t.now.UnixMilli()); err != nil {
 		return storageError(err)
 	}

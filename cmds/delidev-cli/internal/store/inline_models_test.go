@@ -89,3 +89,41 @@ func TestEarlierDatabaseIsRejectedWithoutChangingOriginalBytes(t *testing.T) {
 		})
 	}
 }
+
+func TestCurrentInlineRejectsRetiredModelResourceAuthority(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	identity := domain.ModelIdentity{ProviderID: domain.NewID(), NativeID: "exact/native"}
+	assertUnsupported := func(err error) {
+		t.Helper()
+		if domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatalf("retired resource accepted: %v", err)
+		}
+	}
+	err := s.Read(ctx, func(tx *Tx) error {
+		_, err := tx.Get(domain.ModelKind, identity.Key())
+		if err != nil {
+			return err
+		}
+		assertUnsupported(tx.ValidateModelIdentity(identity.Key(), domain.Model{ProviderID: identity.ProviderID, NativeID: identity.NativeID}))
+		_, err = tx.ModelSuppressed(identity.ProviderID, identity.NativeID)
+		assertUnsupported(err)
+		_, err = tx.ModelsForProvider(identity.ProviderID)
+		assertUnsupported(err)
+		assertUnsupported(tx.Delete(domain.ModelKind, identity.Key(), 1))
+		_, err = tx.Put(domain.ModelKind, identity.Key(), 0, "", "", domain.Model{ProviderID: identity.ProviderID, NativeID: identity.NativeID})
+		assertUnsupported(err)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = s.SearchModels(ctx, ModelSearch{Limit: 10})
+	assertUnsupported(err)
+	_, err = s.ResolveModel(ctx, identity.NativeID, identity.ProviderID)
+	assertUnsupported(err)
+	var count int
+	if err = s.db.QueryRow("SELECT count(*) FROM entities WHERE kind='model'").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("registry mutation: %d %v", count, err)
+	}
+}
