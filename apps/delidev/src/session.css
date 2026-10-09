@@ -213,8 +213,6 @@
 .composer-toolbar .composer-attach { font-size: 24px; }
 .composer-toolbar .composer-submit { border-radius: 50%; margin-left: auto; }
 .composer-toolbar .plan-mode { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface-subtle); font-size: 12px; margin: 0; }
-.composer-toolbar .composer-attachment-help { display: grid; place-items: center; width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 8px; }
-.composer-attachment-guidance { margin: 0; padding: 8px 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .composer-original-retry { margin-top: 8px; }
 @media (max-height: 480px) {
   .session-workspace .composer textarea { max-height: 64px; }

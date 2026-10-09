@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
 import { AttachmentService, clientFailure, type ImageAttachment } from "@delinoio/delidev-api-client";
@@ -16,20 +17,60 @@ export function imageEntryHandlers(draft: ReturnType<typeof useImageDraft>, disa
     onDrop: (event: DragEvent<HTMLElement>) => { const files = [...event.dataTransfer.files]; if (!files.length) return; event.preventDefault(); if (!disabled) void draft.controller.add(files); },
   };
 }
-export function ImageAttachmentInput({ draft, disabled, available, routeReady, routeLoading, machineId, compact = false, children, controls, creationToolbar }: { creationToolbar?: (attach: ReactNode) => ReactNode; compact?: boolean; children?: ReactNode; controls?: ReactNode; draft: ReturnType<typeof useImageDraft>; disabled: boolean; available: boolean; routeReady: boolean; routeLoading: boolean; machineId: string }) {
+// The portal escapes the composer's bounded scrollport without moving its contents.
+function AttachmentGuidance({ children, id }: { children: ReactNode; id: string }) {
+  const trigger = useRef<HTMLSpanElement>(null), tooltip = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [hover, setHover] = useState(false), [focus, setFocus] = useState(false), [dismissed, setDismissed] = useState(false);
+  const [position, setPosition] = useState({ left: 8, top: 8, width: 280, maxHeight: 100 });
+  const open = (hover || focus) && !dismissed;
+  const cancelLeave = () => { clearTimeout(timer.current); };
+  const enter = () => { cancelLeave(); setHover(true); };
+  const enterTrigger = () => { enter(); setDismissed(false); };
+  const leave = () => { cancelLeave(); timer.current = setTimeout(() => setHover(false), 100); };
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = trigger.current?.getBoundingClientRect(); if (!rect) return;
+      const zoom = Number.parseFloat(getComputedStyle(document.body).zoom) || 1;
+      const width = Math.min(320 * zoom, Math.max(0, window.innerWidth - 16));
+      const height = tooltip.current?.getBoundingClientRect().height ?? 64;
+      const above = Math.max(0, rect.top - 16);
+      const below = Math.max(0, window.innerHeight - rect.bottom - 16);
+      const useAbove = above >= Math.min(height, 100) || above >= below;
+      const maxHeight = useAbove ? above : below;
+      setPosition({ width: width / zoom, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) / zoom, top: (useAbove ? Math.max(8, rect.top - 8 - Math.min(height, maxHeight)) : rect.bottom + 8) / zoom, maxHeight: maxHeight / zoom });
+    };
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(place);
+    if (tooltip.current) observer?.observe(tooltip.current);
+    place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(true); } };
+    document.addEventListener("keydown", escape, true);
+    return () => document.removeEventListener("keydown", escape, true);
+  }, [open]);
+  return <span ref={trigger} className="composer-attach-trigger" onPointerEnter={enterTrigger} onPointerLeave={leave} onFocus={() => { if (!focus) setDismissed(false); setFocus(true); }} onBlur={() => setFocus(false)}>
+    {children}
+    {/* Keep the description associated even when its visual presentation is dismissed. */}
+    <span id={id} className="attachment-description">{copy("image-input.help")}</span>
+    {open ? createPortal(<div ref={tooltip} className="composer-attachment-tooltip" role="tooltip" onPointerEnter={enter} onPointerLeave={leave} style={position}>{copy("image-input.help")}</div>, document.body) : null}
+  </span>;
+}
+export function ImageAttachmentInput({ draft, disabled, available, routeReady, routeLoading, machineId, compact = false, active = true, children, controls, creationToolbar }: { creationToolbar?: (attach: ReactNode) => ReactNode; compact?: boolean; active?: boolean; children?: ReactNode; controls?: ReactNode; draft: ReturnType<typeof useImageDraft>; disabled: boolean; available: boolean; routeReady: boolean; routeLoading: boolean; machineId: string }) {
   useLocale();
   const input = useRef<HTMLInputElement>(null);
-  const help = useRef<HTMLButtonElement>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpId = useId();
-  const attach = <button className={creationToolbar ? "new-session-attach" : compact ? "composer-attach" : undefined} type="button" aria-label={copy("image-input.attach")} title={copy("image-input.attach")} disabled={disabled || draft.busy || !available} onClick={() => input.current?.click()}>{compact || creationToolbar ? <span aria-hidden="true">+</span> : copy("image-input.attach")}</button>;
-  return <section className={compact ? "image-attachments image-attachments-compact" : "image-attachments"} onKeyDown={event => { if (compact && event.key === "Escape" && helpOpen) { event.preventDefault(); event.stopPropagation(); setHelpOpen(false); help.current?.focus(); } }} aria-label={copy("image-input.heading")}>
+  const guidanceId = useId();
+  const attach = <button className={creationToolbar ? "new-session-attach" : compact ? "composer-attach" : undefined} type="button" aria-label={copy("image-input.attach")} title={compact ? undefined : copy("image-input.attach")} aria-describedby={compact ? guidanceId : undefined} disabled={disabled || draft.busy || !available} onClick={() => input.current?.click()}>{compact || creationToolbar ? <span aria-hidden="true">+</span> : copy("image-input.attach")}</button>;
+  return <section className={compact ? "image-attachments image-attachments-compact" : "image-attachments"} aria-label={copy("image-input.heading")}>
     <input ref={input} className="image-file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple tabIndex={-1} aria-label={copy("image-input.select")} disabled={disabled || draft.busy || !available} onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ""; void draft.controller.add(files); }} />
     {!compact && !creationToolbar ? attach : null}
     {draft.images.length ? <ol className="image-preview-list">{draft.images.map((image, index) => <li key={image.key}><img src={image.preview} alt={copy("image-input.image", { number: index + 1 })} /><span>{copy(image.ready && image.reference?.machineId === machineId ? "image-input.staged" : "image-input.pending", { number: index + 1 })}</span><button type="button" aria-label={copy("image-input.remove", { number: index + 1 })} disabled={disabled || draft.busy} onClick={() => void draft.controller.remove(image.key)}>×</button></li>)}</ol> : null}
     {children}
-    {creationToolbar ? creationToolbar(attach) : compact ? <div className="composer-toolbar">{attach}<button ref={help} type="button" className="composer-attachment-help" title={copy("image-input.helpLabel")} aria-label={copy("image-input.helpLabel")} aria-expanded={helpOpen} aria-controls={helpOpen ? helpId : undefined} onClick={() => setHelpOpen(value => !value)}><span aria-hidden="true">?</span></button>{controls}</div> : <small>{copy("image-input.help")}</small>}
-    {compact && helpOpen ? <p className="composer-attachment-guidance" id={helpId}>{copy("image-input.help")}</p> : null}
+    {creationToolbar ? creationToolbar(attach) : compact ? <div className="composer-toolbar">{active ? <AttachmentGuidance id={guidanceId}>{attach}</AttachmentGuidance> : attach}{controls}</div> : <small>{copy("image-input.help")}</small>}
     {!available ? <p role="status">{copy("image-input.update")}</p> : draft.images.length && !routeReady ? <p role="status">{copy(routeLoading ? "image-input.checkingRoute" : "image-input.unsupported")}</p> : null}
     {draft.busy ? <p role="status">{copy("image-input.processing")}</p> : null}
     {draft.error ? <p role="alert">{copy(problemKeys[draft.error])}</p> : null}

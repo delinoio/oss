@@ -2,7 +2,7 @@
 import { webcrypto } from "node:crypto";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AttachmentService, newRequestId } from "@delinoio/delidev-api-client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RetainedImages, imageEntryHandlers } from "./image-attachments";
@@ -38,16 +38,22 @@ it("does not read retained originals outside the active viewport",async()=>{
  mounted.rerender(view(false)); await act(async()=>observe([{isIntersecting:true}])); expect(read).toHaveBeenCalledOnce();
 });
 
-it("keeps compact attachment help local, restores Escape focus and retains inline recovery", async () => {
+it("keeps compact guidance local, preserves Escape focus and retains inline recovery", async () => {
  const { ImageAttachmentInput } = await import("./image-attachments");
  const remove=vi.fn(), retryCleanup=vi.fn();
  const draft={images:[{key:"original",preview:"blob:verified",ready:false}],busy:false,error:undefined,cleanupPending:1,controller:{remove,retryCleanup,add:vi.fn()}} as unknown as Parameters<typeof ImageAttachmentInput>[0]["draft"];
  render(<ImageAttachmentInput compact draft={draft} disabled={false} available routeReady={false} routeLoading machineId="original-machine" controls={<button type="button">Original queue</button>}><textarea aria-label="Retained input" defaultValue="Original draft" /></ImageAttachmentInput>);
- const help=screen.getByRole("button",{name:"Attachment help"});
- expect(screen.queryByText(/PNG, JPEG or WebP · Up to/)).toBeNull();
- help.focus();fireEvent.click(help);expect(screen.getByText(/Up to 8 images, 10 MiB each, 40 MiB total/)).toBeTruthy();
- fireEvent.keyDown(screen.getByRole("textbox",{name:"Retained input"}),{key:"Escape"});
- expect(screen.queryByText(/PNG, JPEG or WebP · Up to/)).toBeNull();expect(document.activeElement).toBe(help);
+ const plus=screen.getByRole("button",{name:"Attach images"});
+ expect(screen.queryByRole("button",{name:"Attachment help"})).toBeNull();
+ expect(screen.queryByRole("tooltip")).toBeNull();expect(plus.hasAttribute("title")).toBe(false);
+ expect(document.getElementById(plus.getAttribute("aria-describedby")!)?.textContent).toBe("PNG, JPEG or WebP · Up to 8 images, 10 MiB each, 40 MiB total.");
+ act(()=>plus.focus());expect(screen.getByRole("tooltip").textContent).toContain("40 MiB total");
+ fireEvent.keyDown(plus,{key:"Escape"});
+ expect(screen.queryByRole("tooltip")).toBeNull();expect(document.activeElement).toBe(plus);
+ fireEvent.pointerEnter(plus.parentElement!);expect(screen.getByRole("tooltip")).toBeTruthy();
+ const textarea=screen.getByRole("textbox",{name:"Retained input"});act(()=>textarea.focus());
+ fireEvent.keyDown(textarea,{key:"Escape"});expect(screen.queryByRole("tooltip")).toBeNull();expect(document.activeElement).toBe(textarea);
+ expect(draft.controller.add).not.toHaveBeenCalled();
  expect(screen.getByRole("img",{name:"Image 1"})).toBeTruthy();
  expect(screen.getByText("Checking the selected image route…")).toBeTruthy();
  fireEvent.click(screen.getByRole("button",{name:"Retry image cleanup"}));expect(retryCleanup).toHaveBeenCalledOnce();
@@ -67,4 +73,26 @@ it("places the original gated plus in the creation toolbar without help or submi
  fireEvent.click(plus);expect(click).toHaveBeenCalledOnce();expect(submit).not.toHaveBeenCalled();
  mounted.rerender(view(true));expect(plus).toHaveProperty("disabled",true);fireEvent.click(plus);expect(click).toHaveBeenCalledOnce();
  mounted.rerender(view(false,false));expect(plus).toHaveProperty("disabled",true);expect(screen.getByText(/Update the server and Runner Device/)).toBeTruthy();
+});
+
+it("retains tooltip hover/focus, disabled gates and inactive disposal", async () => {
+ const { ImageAttachmentInput } = await import("./image-attachments");
+ const add=vi.fn(), picker=vi.spyOn(HTMLInputElement.prototype,"click");
+ const draft={images:[],busy:false,cleanupPending:0,controller:{add,remove:vi.fn(),retryCleanup:vi.fn()}} as unknown as Parameters<typeof ImageAttachmentInput>[0]["draft"];
+ const submit=vi.fn();
+ const view=(active=true,disabled=false,available=true,busy=false)=><form onSubmit={submit}><ImageAttachmentInput compact active={active} draft={{...draft,busy}} disabled={disabled} available={available} routeReady routeLoading={false} machineId="original" /></form>;
+ const mounted=render(view());const plus=screen.getByRole("button",{name:"Attach images"}), trigger=plus.parentElement!;
+ fireEvent.pointerEnter(trigger);fireEvent.pointerLeave(trigger);fireEvent.pointerEnter(screen.getByRole("tooltip"));
+ await new Promise(resolve=>setTimeout(resolve,120));expect(screen.getByRole("tooltip")).toBeTruthy();
+ act(()=>plus.focus());fireEvent.pointerLeave(screen.getByRole("tooltip"));
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,120));});expect(screen.getByRole("tooltip")).toBeTruthy();
+ act(()=>plus.blur());expect(screen.queryByRole("tooltip")).toBeNull();
+ fireEvent.pointerEnter(trigger);fireEvent.click(plus);expect(picker).toHaveBeenCalledOnce();expect(submit).not.toHaveBeenCalled();expect(add).not.toHaveBeenCalled();
+ mounted.rerender(view(false));expect(screen.queryByRole("tooltip")).toBeNull();
+ for(const [disabled,available,busy] of [[true,true,false],[false,false,false],[false,true,true]]) {
+  mounted.rerender(view(true,disabled,available,busy));const button=screen.getByRole("button",{name:"Attach images"});expect(button).toHaveProperty("disabled",true);
+  fireEvent.pointerEnter(button.parentElement!);expect(screen.getByRole("tooltip")).toBeTruthy();fireEvent.click(button);expect(picker).toHaveBeenCalledOnce();
+  mounted.rerender(view(false,disabled,available,busy));expect(screen.queryByRole("tooltip")).toBeNull();
+ }
+ mounted.unmount();expect(screen.queryByRole("tooltip")).toBeNull();
 });

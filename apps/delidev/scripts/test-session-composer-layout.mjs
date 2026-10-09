@@ -15,6 +15,7 @@ const directory = await mkdtemp(join(tmpdir(), "delidev-composer-layout-"));
 const screenshots = process.env.DELIDEV_COMPOSER_SCREENSHOTS === "1" ? await mkdtemp(join(tmpdir(), "delidev-composer-preview-")) : null;
 const catalogs = { en: {}, ko: {} };
 for (const file of await readdir(join(app, "src/locales/en"))) if (file.endsWith(".json")) for (const language of ["en", "ko"]) Object.assign(catalogs[language], JSON.parse(await readFile(join(app, "src/locales", language, file))));
+const guidanceOnly = process.env.DELIDEV_COMPOSER_GUIDANCE_ONLY === "1";
 let browser, server, cases = 0;
 const errors = [];
 try {
@@ -63,8 +64,15 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 0);
   await input.click({ timeout: 5000 }); await input.press("End"); await input.press("!");
   assert.equal(await input.inputValue(), "Retained short workspace draft!");
-  await page.getByRole("button", { name: c("image-input.helpLabel"), exact: true }).click({ timeout: 5000 });
-  await page.keyboard.press("Escape"); assert(await page.locator(".composer-attachment-help").evaluate(node => document.activeElement === node));
+  const plus = page.getByRole("button", { name: c("image-input.attach"), exact: true });
+  assert.equal(await page.locator(".composer-attachment-help").count(), 0);
+  await plus.focus();
+  const tooltip = page.getByRole("tooltip"); await tooltip.waitFor();
+  assert.equal(await tooltip.textContent(), c("image-input.help"));
+  const tooltipBounds = await tooltip.boundingBox();
+  assert(tooltipBounds.x >= 0 && tooltipBounds.y >= 0 && tooltipBounds.x + tooltipBounds.width <= 480 * zoom + 1 && tooltipBounds.y + tooltipBounds.height <= 320 * zoom + 1);
+  await page.keyboard.press("Escape"); assert(await plus.evaluate(node => document.activeElement === node));
+  assert.equal(await tooltip.count(), 0);
   await page.getByRole("button", { name: c("session.queueMessage_891d4e"), exact: true }).click({ timeout: 5000 });
   await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 1);
   const bounds = await page.evaluate(() => { const workspace = document.querySelector(".session-workspace"), region = document.querySelector("[data-nested-composer-fixture]"); return { workspace: workspace.clientHeight, region: region.clientHeight, contents: region.scrollHeight, overflow: getComputedStyle(region).overflowY }; });
@@ -82,12 +90,32 @@ try {
   assert(await submit.isDisabled());
   assert.equal(await page.locator(".composer").evaluate(node => getComputedStyle(node).borderRadius), "24px");
   assert.equal(await input.evaluate(node => getComputedStyle(node).resize), "none");
-  assert.equal((await geometry()).input, 48);
+  assert.equal(await input.evaluate(node => node.clientHeight), 48);
+  if (!guidanceOnly) await geometry();
   if (screenshots && width === 1440) await page.screenshot({ path: join(screenshots, `${language}-${theme}-empty.png`) });
-  assert.equal(await page.locator(".composer-attachment-guidance").count(), 0);
-  const help = page.getByRole("button", { name: c("image-input.helpLabel"), exact: true }); await help.focus(); await page.keyboard.press("Enter");
-  assert(await page.getByText(c("image-input.help"), { exact: true }).isVisible()); await page.keyboard.press("Escape");
-  assert.equal(await page.locator(".composer-attachment-guidance").count(), 0); assert(await help.evaluate(node => node === document.activeElement));
+  assert.equal(await page.locator(".composer-attachment-help").count(), 0);
+  const plus = page.getByRole("button", { name: c("image-input.attach"), exact: true });
+  for (const key of ["Enter", "Space"]) {
+   const picker = page.waitForEvent("filechooser"); await plus.press(key); await (await picker).setFiles([]);
+  }
+  const picker = page.waitForEvent("filechooser"); await plus.click(); await (await picker).setFiles([]);
+  assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "picker activation cannot submit");
+  await input.focus();
+  const inputLayout = node => ({ top: node.offsetTop, left: node.offsetLeft, width: node.offsetWidth, height: node.offsetHeight, composerHeight: node.closest(".composer").clientHeight });
+  const before = await input.evaluate(inputLayout);
+  await plus.hover();
+  const tooltip = page.getByRole("tooltip"); await tooltip.waitFor();
+  assert.equal(await tooltip.textContent(), c("image-input.help"));
+  assert.deepEqual(await input.evaluate(inputLayout), before, "guidance cannot displace input layout; natural pointer scrolling is independent");
+  await tooltip.hover(); await page.waitForTimeout(150); assert(await tooltip.isVisible());
+  await page.mouse.move(1, 1); await tooltip.waitFor({ state: "detached" });
+  await plus.focus(); await tooltip.waitFor();
+  const bounds = await tooltip.boundingBox();
+  assert(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width + 1 && bounds.y + bounds.height <= height + 1);
+  await page.keyboard.press("Escape"); assert.equal(await tooltip.count(), 0); assert(await plus.evaluate(node => node === document.activeElement));
+  await input.focus(); await plus.focus(); await tooltip.waitFor();
+  await input.focus(); await tooltip.waitFor({state: "detached"});
+  if (guidanceOnly) { cases++; continue; }
   await input.fill("First line"); await input.press("End"); await input.press("Enter"); assert.equal(await input.inputValue(), "First line\n");
   await input.fill("A long multiline message\n".repeat(30)); const growing = await geometry(); assert(growing.input <= growing.max && growing.inputScroll > growing.input);
   await input.fill(""); assert.equal((await geometry()).input, 48);
@@ -114,5 +142,5 @@ try {
   cases++;
  }
  assert.deepEqual(errors, []);
- console.log(JSON.stringify({ operation: "session_composer_layout", result: "passed", cases, languages: 2, themes: 2, effectiveZoom: "200% at480x320", nativeAcceptance: "not-performed", screenshots }));
+ console.log(JSON.stringify({ operation: "session_composer_layout", result: "passed", cases, languages: 2, themes: 2, effectiveZoom: "200% at480x320", nativeAcceptance: "not-performed", guidanceOnly, screenshots }));
 } finally { await browser?.close(); if (server?.listening) await new Promise(done => server.close(done)); await rm(directory, { recursive: true, force: true }); }

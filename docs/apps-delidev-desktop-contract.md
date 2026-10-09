@@ -1935,12 +1935,9 @@ a bounded vertical fallback scroll; retain the original transcript/tray scrollpo
 and avoid document overflow or remounting drafts. Ordered 64px
 image thumbnails precede the input in a horizontally scrolling strip with original
 numbered descriptions, staging state and independent 40px removal controls. The
-bottom wrapping toolbar has a 40px Attach images plus, keyboard-accessible
-Attachment help, the native Plan Mode checkbox in a compact pill and a 40px
+bottom wrapping toolbar has a 40px Attach images plus, the native Plan Mode checkbox in a compact pill and a 40px
 circular accent upward-arrow Queue message button with its original accessible
-name/tooltip. Guidance exposes PNG/JPEG/WebP and the unchanged eight-image,
-10MiB-each/40MiB-total limits only when explicitly opened; Escape closes it and
-restores its opener. Route loading/unavailability, processing, overflow/errors,
+name/tooltip. The plus retains its localized accessible name and an aria-describedby association with the complete localized PNG/JPEG/WebP and unchanged eight-image, 10MiB-each/40MiB-total guidance. One noninteractive tooltip exposes this guidance on pointer hover or keyboard focus, without a competing native title or separate help button. Pointer movement into the tooltip retains it; departure and blur hide it when neither condition remains. Escape dismisses it without moving focus until a fresh hover or focus entry. Disabled plus controls remain disabled and untabbable but may expose guidance on hover. Inactive composers dispose tooltip presentation. Position guidance outside the bounded composer scrollport, constrain it to the viewport with wrapping/internal scrolling, and preserve composer geometry, file-picker activation and original gates. Tooltip presentation adds no mutation or reads. Route loading/unavailability, processing, overflow/errors,
 cleanup retry and the original uncertain-request retry remain inline. Preserve
 connection-owned drafts, immutable references, skills/IME, plain Enter newline,
 primary-modifier Enter submission and receipt-proven clearing. Queue never
