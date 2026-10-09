@@ -327,6 +327,11 @@
 }
 @media (max-height: 720px) { .session-input-tray > .queue-compact-list, .session-input-tray > .queue-read-state { flex-basis: 100%; } }
 
+.queue-drag-handle { flex: 0 0 24px; cursor: grab; padding: 4px; color: var(--muted); touch-action: none; }
+.queue-drag-handle:disabled { cursor: default; }
+.queue-insertion { border-top: 2px solid var(--accent); }
+.queue-drop-end { min-height: 8px; }
+
 .session-information-section { padding:12px 0; border-bottom:1px solid var(--border-subtle); }
 .session-information-section > h3, .session-diagnostics h3, .session-diagnostics h4, .session-information-section h3, .session-information-section h4 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--muted); }
 .session-information-section[hidden] { display:none; }

@@ -17,5 +17,10 @@
   "queue.uncertainOriginal": "The original input action acknowledgment is uncertain.",
   "queue.more": "More input actions",
   "queue.waitingInputs": "Waiting inputs",
-  "queue.steer": "Steer"
+  "queue.steer": "Steer",
+  "queue.drag": "Move waiting input",
+  "queue.moveUp": "Move up",
+  "queue.moveDown": "Move down",
+  "queue.retryMove": "Retry the same movement",
+  "queue.moved": "Waiting input moved."
 }

@@ -240,3 +240,18 @@ it("reveals the complete compact input during pending and uncertain removal with
   expect(value.remove.mock.calls[1]![0]).toEqual(value.remove.mock.calls[0]![0]);
   expect(value.edit).not.toHaveBeenCalled();
 });
+
+
+it("keeps movement locked when inspecting an input with an uncertain removal", async () => {
+  const value = fixture(), up = vi.fn(), down = vi.fn();
+  value.remove.mockRejectedValueOnce(new ConnectError("Lost original removal", Code.Unavailable));
+  render(<TransportProvider transport={value.transport}><QueryClientProvider client={value.client}><MutationIntents><QueuedInput compact resource={value.resource} session={value.session} refresh={() => {}} movement={{ disabled: false, up, down, start: () => {}, end: () => {} }} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Remove input" }));
+  await screen.findByRole("button", { name: "Retry the same removal" });
+  fireEvent.click(screen.getByRole("button", { name: "More input actions" }));
+  expect(screen.getByRole("menuitem", { name: "Edit input" })).toHaveProperty("disabled", false);
+  expect(screen.getByRole("menuitem", { name: "Move up" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("menuitem", { name: "Move down" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Move up" }));
+  expect(up).not.toHaveBeenCalled(); expect(down).not.toHaveBeenCalled();
+});
