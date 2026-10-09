@@ -64,7 +64,7 @@ it("uses only the native-pinned saved authority and direct product RPCs without 
   expect(await screen.findByText("Remote fixture · Connected")).toBeTruthy();
   expect(bridge.createTransport).toHaveBeenCalledWith(expect.objectContaining({ origin: value.profile.endpoint }));
   expect(value.status).toHaveBeenCalled();
-  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications", "read_sidebar_preference"].includes(command))).toBe(true);
+  expect(bridge.invoke.mock.calls.every(([command]) => ["connection_context", "connect_saved", "begin_tray", "publish_tray", "read_tray_action", "notification_permission", "begin_notifications", "end_notifications", "read_sidebar_preference", "begin_inbox_badge", "read_inbox_badge_selection", "publish_inbox_badge"].includes(command))).toBe(true);
   expect(JSON.stringify(bridge.invoke.mock.calls)).not.toContain(value.connection.token);
   expect(screen.queryByText(value.connection.token)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
