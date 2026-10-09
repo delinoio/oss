@@ -23,9 +23,8 @@ function fixture() {
   const capabilities = [ProviderInventoryCapability.PROVIDER_ACTIVATION, ProviderInventoryCapability.ACTIVE_API_MODEL_FILTER, ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER, ProviderInventoryCapability.ACCOUNT_TYPE_FILTER];
   const resources = [create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Sibling project" }) })];
   const provider = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROVIDER, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Provider", enabled: true, protocol: "openai-responses", authentication: "keyless", endpoint: "http://127.0.0.1:1234/v1" }) });
-  const model = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MODEL, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Fixture Model", native_id: "fixture-native", provider_id: provider.id }) });
   const account = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.ACCOUNT, revision: 1n, schemaVersion: 1, documentJson: encode({ alias: "Fixture account", type: "api", provider_id: provider.id, enabled: true, health: "unverified", connection: { id: newRequestId(), authentication: "keyless" } }) });
-  resources.push(provider, model, account);
+  resources.push(provider, account);
   const save = vi.fn((request: { kind: EntityKind; documentJson: Uint8Array }) => {
     const resource = create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: request.kind === EntityKind.AGENT ? 4 : 1, documentJson: request.documentJson });
     resources.push(resource);
@@ -33,7 +32,7 @@ function fixture() {
   });
   const base = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ protocolVersion: 2, capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }) });
-    router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, displayName: "Fixture Provider", enabled: true }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => ({ models: [model], providers: [provider] }) });
+    router.service(ProviderService, { listProviderInventory: () => ({ entries: [{ provider, providerId: provider.id, displayName: "Fixture Provider", enabled: true }], capabilities }), listProviderPresets: () => ({ presetsJson: encode([]) }), searchModels: () => { throw new Error("Retired Model discovery must not be requested"); } });
     router.service(ResourceService, { getResource: request => ({ resource: resources.find(row => row.id === request.id) }), listResources: (request) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }) });
     router.service(ConfigurationService, { saveConfiguration: save, saveAgentWorker: request => ({ ...save({ kind: EntityKind.AGENT, documentJson: request.documentJson }), requestId: request.mutation!.requestId }) });
   });
