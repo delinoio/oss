@@ -1968,13 +1968,13 @@ cef::wrap_keyboard_handler! {struct ExternalKeyboard{host:Arc<BrowserHost>,app:A
  fn on_pre_key_event(&self,browser:Option<&mut Browser>,event:Option<&KeyEvent>,_os_event:ExternalOsEvent<'_>,_shortcut:Option<&mut i32>)->i32{
   let Some(event)=event else{return 0;};
   if event.type_==cef::sys::cef_key_event_type_t::KEYEVENT_KEYUP.into() {
-    if let Ok(mut pressed)=self.pressed.lock() { if *pressed==Some(event.windows_key_code) { *pressed=None;return 1; } }
+    if let Ok(mut pressed)=self.pressed.lock() && *pressed==Some(event.windows_key_code) { *pressed=None;return 1; }
     return 0;
   }
   if self.pressed.lock().is_ok_and(|pressed|*pressed==Some(event.windows_key_code)) {return 1;}
   if self.app.state::<Arc<crate::shortcut_capture_host::CaptureHost>>().fenced(){return 0;}
   let raw=event.type_==cef::sys::cef_key_event_type_t::KEYEVENT_RAWKEYDOWN.into();
-  let Some(position)=delidev_desktop::session_tab_shortcuts::numeric_intent(event.windows_key_code,event.modifiers as u32,cfg!(target_os="macos"),raw,event.windows_key_code==229)else{return 0;};
+  let Some(position)=delidev_desktop::session_tab_shortcuts::numeric_intent(event.windows_key_code,event.modifiers,cfg!(target_os="macos"),raw,event.windows_key_code==229)else{return 0;};
   if !browser.as_deref().is_some_and(native_composition_clear) {return 0;}
   let Some((view_id,token))=self.host.numeric_selection(&self.profile,&self.request,position)else{return 0;};
   let Some(window)=self.app.get_webview_window(&self.request.window)else{return 0;};

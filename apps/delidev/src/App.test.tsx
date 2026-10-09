@@ -850,10 +850,11 @@ it("keeps the draft and session mounted across settings and navigation, and rend
   fireEvent.change(composer, { target: { value: "Keep my unsent input" } });
   fireEvent.click(screen.getByRole("button", { name: "Browser" }));
   expect(screen.getByRole("region", { name: "Session browser" })).toBeTruthy();
-  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(composer.isConnected).toBe(true);
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect((composer as HTMLTextAreaElement).value).toBe("Keep my unsent input");
-  fireEvent.click(screen.getByRole("button", { name: "Close browser" }));
-  expect(window.document.activeElement).toBe(screen.getByRole("button", { name: "Browser" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
+  expect(window.document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
 
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
@@ -1066,9 +1067,10 @@ it.each(["Files", "Diff"])("opens and closes workspace %s without replacing or s
   const files = screen.getByRole("button", { name: panel });
   fireEvent.click(files);
   expect(await screen.findByRole("complementary", { name: panel === "Files" ? "Session files" : "Session Git diff" })).toBeTruthy();
-  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-  fireEvent.click(screen.getByRole("button", { name: panel === "Files" ? "Close session files" : "Close session diff" }));
-  expect(document.activeElement).toBe(files);
+  expect(composer.isConnected).toBe(true);
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: `Close ${panel} tab` }));
+  expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Conversation" }));
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect((composer as HTMLTextAreaElement).value).toBe("Keep while browsing files");
   expect(f.enqueues).not.toHaveBeenCalled();
