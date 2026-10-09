@@ -1,0 +1,6 @@
+{
+  "session-progress.preparing": "작업공간 준비 중",
+  "session-progress.queued": "시작 대기 중",
+  "session-progress.starting": "에이전트 시작 중",
+  "session-progress.response": "응답 대기 중"
+}

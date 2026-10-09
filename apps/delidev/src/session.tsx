@@ -1,6 +1,8 @@
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
+import { sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
+import { SessionProgressStatus } from "./session-progress-status";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { SessionHarness } from "./session-harness";
@@ -462,6 +464,27 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     { panel: SessionPanel.Browser, icon: SessionIconKind.Browser, label: copy("session.browser_d31de1") },
     { panel: SessionPanel.Diagnostics, icon: SessionIconKind.Diagnostics, label: copy("session.diagnostics_268f14") },
   ] as const;
+  const progressRevision = useRef({ id, revision: 0n });
+  const progressResponse = useRef<{ owner?: string; seen: boolean }>({ seen: false });
+  const progressRows = progressMessages(messages.rows, live.resources, live.removed, id);
+  const progressOwner = progressResponseOwner(session, id);
+  useLayoutEffect(() => {
+    if (!progressOwner || session && progressRevision.current.id === id && session.revision < progressRevision.current.revision) return;
+    if (progressResponse.current.owner !== progressOwner.key) progressResponse.current = { owner: progressOwner.key, seen: false };
+    if (responseSuppressesProgress(progressRows, progressOwner)) progressResponse.current.seen = true;
+  });
+  useLayoutEffect(() => {
+    if (progressRevision.current.id !== id) progressRevision.current = { id, revision: 0n };
+    if (session?.id === id && session.revision > progressRevision.current.revision) progressRevision.current.revision = session.revision;
+  }, [id, session]);
+  const progress = sessionProgress({ session, sessionId: id,
+    current: (progressRevision.current.id !== id || Boolean(session && session.revision >= progressRevision.current.revision)) && conversationActive && live.state === ConnectionState.Live && !live.error && !queue.error && !interactions.error && !messages.error && !messages.isPending,
+    complete: Boolean(messages.data) && !messages.nextPageToken,
+    blocked: Boolean(progressOwner && progressResponse.current.owner === progressOwner.key && progressResponse.current.seen) || budgetBlocked || runnerRemediationPending || control.busy || control.uncertain || Boolean(control.error) || requests.some(row => readDocument(row).closure === "open") || pending.some(row => readDocument(row).delivery === "uncertain") || projectedSubmissions.some(row => row.observationUnavailable || row.phase === SubmissionPhase.Uncertain),
+    messages: progressRows,
+    queueCurrent: Boolean(queue.data) && !queue.error && !queue.isPending && !queue.nextPageToken,
+    queue: pending,
+  });
   return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
       event.stopPropagation(); if (event.target instanceof Element && event.target.closest(".terminal-dock")) closeTerminal(); else if (panel !== SessionPanel.Closed) closePanel(); else closeTerminal();
@@ -509,7 +532,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} />} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {progress ? <SessionProgressStatus phase={progress} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />
         {session ? <SidechatFindings key={id} session={session} messages={rows} /> : null}
         {projectedSubmissions.map(row => <article key={row.requestId} data-submission={row.requestId} className="message message-user" aria-label={copy("session.submittedMessage")}>
