@@ -102,8 +102,17 @@ func assertManualPRFixDispatchBackoff(t *testing.T, f *firstDispatchFixture, id 
 	var calls atomic.Int32
 	var stall atomic.Bool
 	joined := make(chan struct{})
+	secondReleased := make(chan struct{})
 	f.service.githubQueries = queryFunc(func(ctx context.Context, _ []byte, _, _ string, _ domain.RepositoryQuery) (gh.RepositoryQueryObservation, error) {
-		calls.Add(1)
+		if calls.Add(1) == 2 {
+			// Callback entry is not completion. Keep the original second query
+			// pending through the last explicit tick and Resume operation.
+			select {
+			case <-secondReleased:
+			case <-ctx.Done():
+				return gh.RepositoryQueryObservation{}, ctx.Err()
+			}
+		}
 		if stall.Load() {
 			defer close(joined)
 			<-ctx.Done()
@@ -131,10 +140,12 @@ func assertManualPRFixDispatchBackoff(t *testing.T, f *firstDispatchFixture, id 
 		}
 	}()
 	start := time.Now()
+	current := start
 	tick := func(at time.Time) {
 		t.Helper()
 		select {
 		case ticks <- at:
+			current = at
 		case <-time.After(5 * time.Second):
 			t.Fatal("dispatch scan stalled")
 		}
@@ -146,6 +157,9 @@ func assertManualPRFixDispatchBackoff(t *testing.T, f *firstDispatchFixture, id 
 			if time.Now().After(deadline) {
 				t.Fatal("dispatch observation did not settle")
 			}
+			// Reconcile asynchronous completions at the latest supplied clock.
+			// Observation must not advance the automatic backoff deadline.
+			tick(current)
 			time.Sleep(time.Millisecond)
 		}
 	}
@@ -176,7 +190,7 @@ func assertManualPRFixDispatchBackoff(t *testing.T, f *firstDispatchFixture, id 
 	}
 	tick(start.Add(31 * time.Second))
 	wait(func() bool { return calls.Load() == 2 })
-	// Drain the second completion before testing the next automatic deadline.
+	// The held second query cannot complete merely because its entry was observed.
 	tick(start.Add(32 * time.Second))
 	tick(start.Add(33 * time.Second))
 	if calls.Load() != 2 {
@@ -197,6 +211,7 @@ func assertManualPRFixDispatchBackoff(t *testing.T, f *firstDispatchFixture, id 
 	}
 	resume()
 	tick(start.Add(34 * time.Second))
+	close(secondReleased)
 	wait(func() bool { return calls.Load() == 3 && read().Problem != nil })
 	if read().PendingInputs != 1 || read().ActiveExecutionID != "" {
 		t.Fatal("explicit retry bypassed the remote gate or consumed input")
