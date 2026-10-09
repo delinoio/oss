@@ -227,3 +227,63 @@ original child ID and read-only/native restrictions. Closing a presentation does
 not delete the child or its dependent ownership; retained drafts and controllers
 survive and sidebar reopening selects the child under its parent. Independent
 Fork lifetime and deletion ownership remain separate.
+
+## Same-question retry — issue #2061
+
+System capability 57 and Worker capability 31 implement same-question retry
+through `RetrySidechatQuestion` and `GetSidechatQuestionRetry`. Compose them with
+original Sidechat 27/16 and, for managed ChatGPT, 47/26 plus protected Worker 3.
+Old peers receive unavailable guidance. Allocation records are recorded in the
+owning feature alongside closed declarations and bindings; no migration or flag
+is introduced.
+
+Eligibility comes from exactly one distinct directly submitted child queue
+record: accepted text with no images or selected skills and a succeeded,
+cleanup-confirmed answer. Inherited parent questions and generated retry inputs
+are excluded; a second direct question removes eligibility. Reject unsettled
+parent/child execution, queued input, Steer, compaction, cleanup, recovery,
+archive, deletion, stale revisions, unsupported profiles and exhausted existing
+history/deletion bounds before native admission. No deferred retry is reserved.
+
+The actor-bound UUID-v7 receipt freezes child/question revisions, parent revision
+and the exact latest completed parent native turn. Receipt replay and observation
+retain that generation after parent advancement, restart or a later direct
+question. Serialize unresolved generations; uncertainty never authorizes another
+Fork or input. Recheck original actor, account, connection, immutable model and
+instructions, original Worker device/current captured instance, workspace
+reference and native read-only enforcement before claim and publication.
+
+Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
+entry immutable. Each retry owns one fresh private native Fork of its accepted
+prefix. Verify the original metadata-only child reference without preparing it
+again or creating another child. Import the fresh native history independently
+from the completed predecessor that owns the existing child workspace lease.
+Submit the retained question once through the existing native/protected execution
+controller. Managed Fork still requires exact Take/Finish receipts and joined
+original-process/plaintext cleanup before publication.
+
+Add strict bounded JSON generation records, a current-answer execution pointer
+and one active retry owner. The previous answer stays selected until atomic
+verified successful completion. Settled failure keeps it; recovery and uncertain
+publication retain the original owner. Previous answers, failed attempts, jobs,
+usage and revision-bound findings remain immutable. Stop/Archive fence claims;
+permanent parent/child deletion freezes and joins original plus every successful,
+failed, unpublished and uncertain retry runtime before dependency retirement.
+Independent Forks and parent files retain their separate ownership. Preserve the
+4 MiB outer deletion envelope and 4,096-copy bounds; never evict history or expand
+an envelope to admit another retry.
+
+The question action uses the issue's exact English/Korean explanation. Its
+noninteractive popover opens after 300 ms hover or immediately on focus, shares
+`aria-describedby`, stays open across its button and popover, and closes on
+Escape, departure, inactive presentation or unmount without moving focus.
+Disabled actions remain focusable with localized guidance. Previous generations
+use a read-only history disclosure over the original bounded transcript payload
+window; the active answer remains visible during work. Capability uncertainty
+retains the original request controller across presentation changes. There is no
+new pending Cancel action or automatic findings transfer.
+
+Log operation/generation IDs, closed phases and stable errors only. Synthetic
+RPC/native-process fixtures and builds do not establish real-account,
+installed-native or platform acceptance; report their actual limits in PR/CI
+records rather than repository evidence files.

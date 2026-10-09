@@ -103,6 +103,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.Configuration.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities)) {
 		return empty, executionDenied()
 	}
+	if input.SidechatRetry != nil && (!slices.Contains(machine.WorkerCapabilities, domain.SidechatQuestionRetryV1) || session.SidechatActiveRetry != input.SidechatRetry.GenerationID || session.AutomaticRemediationStopped || grant.InstanceID != input.SidechatRetry.WorkerInstanceID || grant.DeviceID != input.SidechatRetry.WorkerDeviceID) {
+		return empty, executionDenied()
+	}
 	if !session.OwnsExecution(input) {
 		return empty, executionDenied()
 	}

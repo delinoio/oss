@@ -34,7 +34,7 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
 
 /** One reached-record list per original owner, including evicted page anchors.
  * Full resources stay in the caller's original three-page window/live tail. */
-export function ToolTurnTranscript({ sessionId, active = true, query, live, removed, arrivals, root, render }: { sessionId: string; active?: boolean; query: PayloadWindowQuery<ConversationProjection, Resource> & { nextPageToken: string }; live: ReadonlyMap<string, Resource>; removed: ReadonlySet<string>; arrivals: readonly string[]; root: RefObject<HTMLElement | null>; render: (row: Resource) => ReactNode }) {
+export function ToolTurnTranscript({ sessionId, active = true, query, live, removed, arrivals, root, render, include }: { sessionId: string; active?: boolean; query: PayloadWindowQuery<ConversationProjection, Resource> & { nextPageToken: string }; live: ReadonlyMap<string, Resource>; removed: ReadonlySet<string>; arrivals: readonly string[]; root: RefObject<HTMLElement | null>; render: (row: Resource) => ReactNode; include?: (row: ConversationProjection) => boolean }) {
   useLocale();
   const preferences=useAppearancePreferences();
   const [choices] = useState<Choices>(() => ({ groups: new Map(), entries: new Map(), details: new Map() }));
@@ -58,6 +58,7 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     const projected = conversationProjection(row, sessionId);
     seen.add(id); tail.push(row); payloads.set(id, row); projections.push(projected);
   }
+  if(include){for(let i=projections.length-1;i>=0;i--)if(!include(projections[i]))projections.splice(i,1);}
   const groups = new Map<string, ConversationProjection[]>();
   for (const row of projections) if (row.tool) { const group = groups.get(row.tool.owner) ?? []; group.push(row); groups.set(row.tool.owner, group); }
   const item = (projection: ConversationProjection, resource?: Resource): ReactNode => {
@@ -73,5 +74,5 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     const result = item(row, payloads.get(row.id));
     return result ? <div key={row.id}>{result}</div> : null;
   };
-  return <><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.map(row => presented(byId.get(row.id)!))}</>;
+  return <><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}</>;
 }

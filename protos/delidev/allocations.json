@@ -9671,6 +9671,108 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1",
       "number": 29
+    },
+    {
+      "issue": 2061,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1",
+      "number": 57
+    },
+    {
+      "issue": 2061,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1",
+      "number": 31
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionRequest",
+      "member": "question_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionRequest",
+      "member": "expected_question_revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionRequest",
+      "member": "expected_parent_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionRequest",
+      "member": "expected_parent_turn_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionResponse",
+      "member": "document_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "RetrySidechatQuestionResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "GetSidechatQuestionRetryRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "GetSidechatQuestionRetryRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2061,
+      "kind": "message",
+      "declaration": "GetSidechatQuestionRetryResponse",
+      "member": "document_json",
+      "number": 1,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -9779,6 +9881,24 @@
       "method": "DiscoverRepositoryBranches",
       "input": "DiscoverRepositoryBranchesRequest",
       "output": "DiscoverRepositoryBranchesResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2061,
+      "service": "SessionService",
+      "method": "RetrySidechatQuestion",
+      "input": "RetrySidechatQuestionRequest",
+      "output": "RetrySidechatQuestionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2061,
+      "service": "SessionService",
+      "method": "GetSidechatQuestionRetry",
+      "input": "GetSidechatQuestionRetryRequest",
+      "output": "GetSidechatQuestionRetryResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

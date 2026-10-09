@@ -103,6 +103,7 @@ const (
 	BranchPrefixInstructionsV1    WorkerCapability = "branch-prefix-instructions-v1"
 
 	OpenCodeGoSubscriptionsV1      WorkerCapability = "opencode-go-subscriptions-v1"
+	SidechatQuestionRetryV1        WorkerCapability = "sidechat-question-retry-v1"
 	RepositoryBranchDiscoveryV1    WorkerCapability = "repository-branch-discovery-v1"
 	RepositoryCloneV1              WorkerCapability = "repository-clone-v1"
 	SignedWorkerUpdatesV1          WorkerCapability = "signed-worker-updates-v1"

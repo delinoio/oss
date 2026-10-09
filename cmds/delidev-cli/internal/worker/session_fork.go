@@ -68,6 +68,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || config.execution == nil || config.execution.Credential.MachineID != job.MachineID {
 		return nil, executionCheckpointUncertain()
 	}
+	if input.Retry != nil && (config.execution.Instance != input.Retry.WorkerInstanceID || config.execution.Credential.DeviceID != input.Retry.WorkerDeviceID) {
+		return nil, executionCheckpointUncertain()
+	}
 	logger := config.Logger
 	if logger == nil {
 		return nil, executionCheckpointUncertain()
@@ -222,7 +225,12 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	var childPreparation workspace.PrepareRequest
 	var childManifest workspace.Manifest
 	var workspaceSnapshot *workspace.ForkSnapshot
-	if input.Purpose == domain.SidechatFork {
+	if input.Retry != nil {
+		if domain.Decode(input.Retry.ChildPreparation, &childPreparation) != nil || domain.Decode(input.Retry.ChildManifest, &childManifest) != nil || childPreparation.SessionID != input.ChildSessionID || childPreparation.MachineID != job.MachineID || childPreparation.ForkSourceID != input.SourceSessionID {
+			return nil, executionCheckpointUncertain()
+		}
+		err = manager.VerifySidechatReference(ctx, childPreparation, childManifest)
+	} else if input.Purpose == domain.SidechatFork {
 		childPreparation, childManifest, err = manager.PrepareSidechatReference(ctx, owner, input.ChildSessionID, preparation, manifest)
 		if err == nil {
 			unpublishedSidechatInput = childPreparation

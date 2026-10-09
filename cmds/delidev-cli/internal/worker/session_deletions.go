@@ -86,7 +86,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		return proof, domain.SessionDeletionPending()
 	}
 	for _, copy := range w.Copies {
-		if copy.Type == domain.ForkSessionJob && copy.ExecutionID != "" && copy.UnpublishedSidechatID == "" && copy.UnpublishedChildProcessID == "" {
+		if copy.Type == domain.ForkSessionJob && copy.ExecutionID != "" && copy.UnpublishedSidechatID == "" && copy.UnpublishedChildProcessID == "" && !copy.SidechatRetry {
 			return proof, domain.SessionDeletionPending()
 		}
 	}
@@ -186,6 +186,15 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		if !valid {
 			return proof, domain.SessionDeletionPending()
+		}
+	}
+	if !proof.RemovalStarted {
+		for _, f := range w.RetryForks {
+			raw, err := security.ReadPrivate(filepath.Join(root, "runtimes", string(f.RuntimeID), "fork-completion.json"), maxExecutionCheckpointBytes)
+			var checkpoint ForkCheckpoint
+			if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.Decode(raw, &checkpoint) != nil || checkpoint.Version != 3 || checkpoint.SidechatPolicy != domain.CodexReadOnlySidechatV1 || checkpoint.JobID != f.JobID || checkpoint.JobInputDigest != f.JobInputDigest || checkpoint.RuntimeID != f.RuntimeID || checkpoint.SessionID != w.SessionID || checkpoint.MachineID != w.MachineID || checkpoint.Native.Effective.Sandbox.Type != codex.ReadOnly || checkpoint.Native.Effective.ApprovalPolicy != codex.ApprovalNever || string(mustForkJSON(checkpoint)) != string(raw) {
+				return proof, domain.SessionDeletionPending()
+			}
 		}
 	}
 	for _, copy := range w.Copies {
@@ -407,6 +416,9 @@ func sessionDeletionCopyPaths(ctx context.Context, root string, w domain.Session
 		// The source job journal may be shared with a live parent or already gone.
 		// Only the child-bound immutable checkpoint grants ownership of this runtime.
 		paths = append(paths, filepath.Join(root, "runtimes", string(w.Fork.RuntimeID)))
+	}
+	for _, f := range w.RetryForks {
+		paths = append(paths, filepath.Join(root, "runtimes", string(f.RuntimeID)))
 	}
 	titlePrefixes := map[string]bool{}
 	for _, copy := range w.Copies {

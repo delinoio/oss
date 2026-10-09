@@ -409,6 +409,9 @@ func (s *Service) EnqueueInput(ctx context.Context, req *connect.Request[pb.Enqu
 		if err != nil {
 			return nil, err
 		}
+		if value.SidechatActiveRetry != "" {
+			return nil, retryConflict()
+		}
 		if value.Archive != domain.NotArchived {
 			return nil, domain.Fail(domain.Conflict, "Archived or archiving sessions cannot accept new input.", "Restore the session first; restoration keeps execution paused.")
 		}
@@ -719,11 +722,19 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 			}
 		}
 		titleCleanupPending := false
+		if action == domain.ResumeSession && value.SidechatActiveRetry != "" {
+			return nil, retryConflict()
+		}
 		if action == domain.StopSession || action == domain.ArchiveSession {
+			retryPending, err := cancelSidechatRetry(tx, &value)
+			if err != nil {
+				return nil, err
+			}
 			titleCleanupPending, err = cancelSessionTitleJob(tx, value.TitleJobID)
 			if err != nil {
 				return nil, err
 			}
+			titleCleanupPending = titleCleanupPending || retryPending
 			if value.NameOwner == domain.AutomaticNameOwner && (value.TitleState == domain.TitleWaiting || value.TitleState == domain.TitleQueued || value.TitleState == domain.TitleRunning || value.TitleState == domain.TitleUncertain) {
 				if value.NameGeneration == ^uint64(0) {
 					return nil, domain.Fail(domain.ResourceExhausted, "Session title ownership reached its generation limit.", "Preserve the current title and inspect the original operation.")

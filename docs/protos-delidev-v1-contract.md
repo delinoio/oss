@@ -1013,3 +1013,7 @@ The complete owning feature records System `CODEX_APPROVAL_REVIEW_V1 = 55` and W
 ## OpenCode Go subscriptions — issue #2097
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Same-question Sidechat retry
+
+Issue #2061 owns System `SIDECHAT_QUESTION_RETRY_V1 = 57`, Worker `SIDECHAT_QUESTION_RETRY_V1 = 31`, and closed authenticated SessionService `RetrySidechatQuestion` / `GetSidechatQuestionRetry` declarations. The mutation receipt binds actor, child/question revisions and captured parent revision/native turn; the metadata-only observation can name the original receipt. Implemented negotiation composes original API Sidechat 27/16 and managed 47/26 plus protected Worker 3. Old peers receive unavailable guidance. Preserve canonical allocations and regenerate bindings from reconciled sources. JSON generation ownership is additive with no migration; follow [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061).

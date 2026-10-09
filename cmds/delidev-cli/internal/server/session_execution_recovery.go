@@ -315,6 +315,26 @@ func finishExecutionRecovery(tx *store.Tx, record store.Record, job domain.Job) 
 		if _, err := tx.PutJob(original.ID, original.Revision, original.SessionID, original.ProjectID, previous); err != nil {
 			return err
 		}
+		var retryInput domain.ExecutionJobInput
+		if domain.Decode(previous.Input, &retryInput) != nil {
+			return domain.ExecutionRecoveryUncertain()
+		}
+		if retryInput.SidechatRetry != nil {
+			canceled, err := tx.JobCancellationRequested(original.ID)
+			if err != nil {
+				return err
+			}
+			for i := range session.SidechatRetries {
+				g := &session.SidechatRetries[i]
+				if g.ID == retryInput.SidechatRetry.GenerationID && g.ExecutionID == evidence.Completion.ExecutionID && g.ExecutionJobID == original.ID {
+					if evidence.Completion.Outcome == domain.ExecutionSucceeded && !canceled && !session.AutomaticRemediationStopped && session.Archive == domain.NotArchived {
+						g.Completed = true
+						session.SidechatCurrentAnswer = g.ExecutionID
+					}
+					session.SidechatActiveRetry = ""
+				}
+			}
+		}
 		session.Execution.CleanupVerified = true
 		session.Recovery, session.ActiveExecutionID = domain.NoRecovery, ""
 		if session.Problem != nil && session.Problem.Code == domain.RecoveryRequired {

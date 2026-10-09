@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
 	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
 	Startup             *ExecutionStartupSelection `json:"startup,omitempty"`
 	Fork                *ForkExecution             `json:"fork,omitempty"`
@@ -87,6 +88,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
+	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
+		return SidechatUnavailable()
+	}
 	if len(i.Input.Attachments) > 0 {
 		if i.Configuration.Harness != Codex || !i.Configuration.ImageInputDeclared || i.Configuration.SidechatPolicy != "" {
 			return UnsupportedImageInput()

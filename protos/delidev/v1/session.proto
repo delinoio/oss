@@ -11,6 +11,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
   rpc ListRequestDiagnostics(ListRequestDiagnosticsRequest) returns (ListRequestDiagnosticsResponse);
+  rpc RetrySidechatQuestion(RetrySidechatQuestionRequest) returns (RetrySidechatQuestionResponse);
+  rpc GetSidechatQuestionRetry(GetSidechatQuestionRetryRequest) returns (GetSidechatQuestionRetryResponse);
   rpc SendSidechatFindings(SendSidechatFindingsRequest) returns (SendSidechatFindingsResponse);
   rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
   rpc GetSessionFork(GetSessionForkRequest) returns (GetSessionForkResponse);
@@ -520,4 +522,26 @@ message SendSidechatFindingsRequest {
 }
 message SendSidechatFindingsResponse {
   SessionChange change = 1;
+}
+
+// Same public child and immutable question; parent boundary is frozen once.
+message RetrySidechatQuestionRequest {
+  Mutation mutation = 1;
+  string question_id = 2;
+  uint64 expected_question_revision = 3;
+  uint64 expected_parent_revision = 4;
+  string expected_parent_turn_id = 5;
+}
+message RetrySidechatQuestionResponse {
+  bytes document_json = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetSidechatQuestionRetryRequest {
+  string session_id = 1;
+  // Omitted for current eligibility; otherwise observes only this generation.
+  string request_id = 2;
+}
+message GetSidechatQuestionRetryResponse {
+  bytes document_json = 1;
 }

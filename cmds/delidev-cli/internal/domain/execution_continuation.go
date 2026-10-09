@@ -72,6 +72,14 @@ func (s Session) OwnsExecution(i ExecutionJobInput) bool {
 		return s.CurrentExecution != nil && s.NativeExecutionRoot() == i.ExecutionID && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID
 	}
 	if i.Continuation == nil {
+		if i.SidechatRetry != nil && i.Fork != nil {
+			for _, g := range s.SidechatRetries {
+				if g.ID == i.SidechatRetry.GenerationID && g.Fork != nil && g.ExecutionID == i.ExecutionID && g.RuntimeID == i.Fork.RuntimeID && g.Fork.JobID == i.Fork.JobID && g.Fork.CheckpointDigest == i.Fork.CheckpointDigest && s.NativeExecutionRoot() == g.RuntimeID && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID {
+					return true
+				}
+			}
+			return false
+		}
 		if i.Fork != nil {
 			return s.Fork != nil && s.CurrentExecution != nil && initial.ID == i.Fork.RuntimeID && s.Fork.JobID == i.Fork.JobID && s.Fork.CheckpointDigest == i.Fork.CheckpointDigest && initial.InitialAccountID == selected.AccountID && initial.ConnectionID == selected.ConnectionID
 		}

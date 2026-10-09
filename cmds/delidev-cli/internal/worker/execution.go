@@ -106,10 +106,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil || !filepath.IsAbs(executable) || resolved != executable {
 		return nil, domain.Fail(domain.RecoveryRequired, "The selected native executable identity changed.", "Review the selected executable path and recover original history; no PATH fallback is used.")
 	}
+	if input.SidechatRetry != nil && (config.execution == nil || config.execution.Instance != input.SidechatRetry.WorkerInstanceID || config.execution.Credential.DeviceID != input.SidechatRetry.WorkerDeviceID) {
+		return nil, executionCheckpointUncertain()
+	}
 	manager := &workspace.Manager{Root: config.Root, Logger: config.Logger}
 	var lease *workspace.ExecutionLease
 	if retry := input.Retry; retry != nil {
 		lease, err = manager.ClaimUnsentRetry(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.JobID, ExecutionID: retry.ExecutionID}, preparation, manifest, retryOriginalWorkspace(input)...)
+	} else if retry := input.SidechatRetry; retry != nil {
+		lease, err = manager.ClaimContinuation(ctx, owner, input.ExecutionID, workspace.ExecutionPredecessor{JobID: retry.PreviousJobID, ExecutionID: retry.PreviousExecutionID}, preparation, manifest)
 	} else if c := input.Continuation; c != nil {
 		previous := workspace.ExecutionPredecessor{JobID: c.Previous.JobID, ExecutionID: c.Previous.ExecutionID}
 		if c.Compaction != nil {
