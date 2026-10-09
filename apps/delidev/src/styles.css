@@ -128,7 +128,8 @@ summary { cursor: pointer; padding: 3px; }
 .page { max-width: 1000px; padding: 32px; margin-inline: auto; }
 .new-session-page { display: grid; min-height: 100%; place-items: center; padding: 24px; }
 .new-session-page:has(.new-session-options) { align-items: start; }
-.new-session-content { width: min(100%, 820px); margin-top: -20px; }
+.new-session-fieldset { min-width: 0; }
+.new-session-content { min-width: 0; width: min(100%, 820px); margin-top: -20px; }
 .new-session-header { display: flex; align-items: flex-start; flex-direction: column; gap: 18px; margin-bottom: 28px; }
 .new-session-header h2 { margin: 0; font-size: 30px; line-height: 1.2; letter-spacing: -.035em; font-weight: 650; }
 /* Keep General Chat's initial primary placement independent of Options height. */
