@@ -132,6 +132,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if proof.Complete {
+		if err := cleanupGeneratedCopies(root, w, true); err != nil {
+			return proof, err
+		}
 		for _, ref := range w.Images {
 			if err := (imageinput.Manager{Root: root}).Removed(w.MachineID, ref); err != nil {
 				return proof, err
@@ -346,6 +349,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return proof, domain.SessionDeletionPending()
 		}
 	}
+	if err := cleanupGeneratedCopies(root, w, false); err != nil {
+		return proof, err
+	}
 	images := imageinput.Manager{Root: root}
 	for _, ref := range w.Images {
 		if _, err := images.Transfer(w.MachineID, &pb.AttachmentTransfer{Id: string(domain.NewID()), Attachment: imageinput.ToProto(ref), Operation: pb.AttachmentTransferOperation_ATTACHMENT_TRANSFER_OPERATION_DELETE}); err != nil {
@@ -496,4 +502,20 @@ func retiringAssignment(ctx context.Context, config Config, client delidevv1conn
 		}
 	}
 	return false
+}
+
+// Original retained copies already passed process, workspace and generation
+// checks above. Their durable output intents include never-published bytes.
+func cleanupGeneratedCopies(root string, w domain.SessionDeletionWork, observe bool) error {
+	manager := imageinput.Manager{Root: root}
+	for _, copy := range w.Copies {
+		if copy.Type != domain.ExecuteSessionJob || copy.ExecutionID == "" {
+			continue
+		}
+		owner := imageinput.GenerationOwner{JobID: copy.JobID, ExecutionID: copy.ExecutionID, InstanceID: copy.InstanceID, MachineID: w.MachineID}
+		if err := manager.CleanupGenerated(owner, w.PreservedGeneratedImages, observe); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -88,36 +88,38 @@ func validationStage(method string) eventValidationStage {
 }
 
 const (
-	AutoReviewEvent           EventKind = "auto-review"
-	CompactionEvent           EventKind = "compaction"
-	SubagentEvent             EventKind = "subagent"
-	SubagentActivityEvent     EventKind = "subagent-activity"
-	TurnStartedEvent          EventKind = "turn-started"
-	TurnCompletedEvent        EventKind = "turn-completed"
-	ThreadStatusEvent         EventKind = "thread-status"
-	TextDeltaEvent            EventKind = "text-delta"
-	MessageStartedEvent       EventKind = "message-started"
-	MessageCompletedEvent     EventKind = "message-completed"
-	LateTurnResponseEvent     EventKind = "late-turn-response"
-	NativeExtensionEvent      EventKind = "native-extension"
-	MetadataEvent             EventKind = "metadata"
-	UsageEvent                EventKind = "usage"
-	ResponseUsageEvent        EventKind = "response-usage"
-	NoticeEvent               EventKind = "notice"
-	ToolStartedEvent          EventKind = "tool-started"
-	ToolCompletedEvent        EventKind = "tool-completed"
-	ToolOutputEvent           EventKind = "tool-output"
-	ToolPatchEvent            EventKind = "tool-patch"
-	ToolInputEvent            EventKind = "tool-input"
-	ArtifactStartedEvent      EventKind = "artifact-started"
-	ArtifactCompletedEvent    EventKind = "artifact-completed"
-	ArtifactDeltaEvent        EventKind = "artifact-delta"
-	TurnPlanEvent             EventKind = "turn-plan"
-	TurnDiffEvent             EventKind = "turn-diff"
-	InteractionRequestedEvent EventKind = "interaction-requested"
-	InteractionClosedEvent    EventKind = "interaction-closed"
-	QuestionAcceptedEvent     EventKind = "question-accepted"
-	ApprovalAcceptedEvent     EventKind = "approval-accepted"
+	AutoReviewEvent               EventKind = "auto-review"
+	CompactionEvent               EventKind = "compaction"
+	SubagentEvent                 EventKind = "subagent"
+	SubagentActivityEvent         EventKind = "subagent-activity"
+	TurnStartedEvent              EventKind = "turn-started"
+	TurnCompletedEvent            EventKind = "turn-completed"
+	ThreadStatusEvent             EventKind = "thread-status"
+	TextDeltaEvent                EventKind = "text-delta"
+	MessageStartedEvent           EventKind = "message-started"
+	MessageCompletedEvent         EventKind = "message-completed"
+	LateTurnResponseEvent         EventKind = "late-turn-response"
+	NativeExtensionEvent          EventKind = "native-extension"
+	MetadataEvent                 EventKind = "metadata"
+	UsageEvent                    EventKind = "usage"
+	ResponseUsageEvent            EventKind = "response-usage"
+	NoticeEvent                   EventKind = "notice"
+	ToolStartedEvent              EventKind = "tool-started"
+	ToolCompletedEvent            EventKind = "tool-completed"
+	ToolOutputEvent               EventKind = "tool-output"
+	ToolPatchEvent                EventKind = "tool-patch"
+	ToolInputEvent                EventKind = "tool-input"
+	ArtifactStartedEvent          EventKind = "artifact-started"
+	ArtifactCompletedEvent        EventKind = "artifact-completed"
+	ArtifactDeltaEvent            EventKind = "artifact-delta"
+	TurnPlanEvent                 EventKind = "turn-plan"
+	TurnDiffEvent                 EventKind = "turn-diff"
+	InteractionRequestedEvent     EventKind = "interaction-requested"
+	InteractionClosedEvent        EventKind = "interaction-closed"
+	QuestionAcceptedEvent         EventKind = "question-accepted"
+	ApprovalAcceptedEvent         EventKind = "approval-accepted"
+	ImageGenerationStartedEvent   EventKind = "image-generation-started"
+	ImageGenerationCompletedEvent EventKind = "image-generation-completed"
 )
 
 type MessageRole string
@@ -146,6 +148,7 @@ type Message struct {
 
 type Event struct {
 	AutoReview       *domain.AutoReviewObservation
+	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
 	AgentThreadID    domain.ID
 	Subagents        []domain.SubagentObservation
@@ -508,7 +511,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		CompletedAtMS *int64          `json:"completedAtMs,omitempty"`
 		DurationMS    *int64          `json:"durationMs,omitempty"`
 	}
-	if domain.Decode(native.Params, &params) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil {
+	if domain.DecodeBounded(native.Params, &params, c.nativeFrameLimit()) != nil || params.ThreadID.Validate() != nil || params.TurnID.Validate() != nil {
 		return Event{}, incompatible()
 	}
 	if native.Method == "item/started" {
@@ -522,7 +525,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		return privateNative(native), nil
 	}
 	var fields map[string]json.RawMessage
-	if domain.Decode(params.Item, &fields) != nil {
+	if domain.DecodeBounded(params.Item, &fields, c.nativeFrameLimit()) != nil {
 		return Event{}, incompatible()
 	}
 	var kind string
@@ -531,6 +534,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "imageGeneration":
+		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":
 		return c.observeCompactionLocked(native, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "collabAgentToolCall":

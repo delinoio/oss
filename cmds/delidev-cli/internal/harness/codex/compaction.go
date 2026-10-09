@@ -405,13 +405,13 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 			Next *string           `json:"nextCursor"`
 			Back *string           `json:"backwardsCursor"`
 		}
-		if err != nil || reply.ErrorCode != nil || domain.Decode(reply.Result, &page) != nil || page.Data == nil || len(page.Data) > 50 {
+		if err != nil || reply.ErrorCode != nil || domain.DecodeBounded(reply.Result, &page, c.nativeFrameLimit()) != nil || page.Data == nil || len(page.Data) > 50 {
 			return nil, compactionUncertain()
 		}
 		for _, raw := range page.Data {
 			turn, err := decodeTurn(raw)
 			var wire turnWire
-			if err != nil || !turn.Status.terminal() || domain.Decode(raw, &wire) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || seen[string(turn.ID)] {
+			if err != nil || !turn.Status.terminal() || domain.DecodeBounded(raw, &wire, c.nativeFrameLimit()) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || seen[string(turn.ID)] {
 				return nil, compactionUncertain()
 			}
 			seen[string(turn.ID)] = true

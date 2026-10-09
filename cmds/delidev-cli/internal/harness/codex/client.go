@@ -176,7 +176,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
-	wire, err := nativewire.Start(ctx, config.Process)
+	var wire *nativewire.Connection
+	if config.Mode == ThreadProtocol && config.ManagedAuthentication && config.Sidechat == "" && config.ImageRoot != "" {
+		wire, err = nativewire.StartImageObservations(ctx, config.Process)
+	} else {
+		wire, err = nativewire.Start(ctx, config.Process)
+	}
 	if err != nil {
 		return nil, err
 	}

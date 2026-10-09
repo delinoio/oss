@@ -1,10 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"reflect"
+	"slices"
 	"strings"
+	"time"
 )
 
 func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
@@ -12,9 +15,17 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.ImageGenerationArtifact {
+		if err := publishGeneratedImageMetadata(tx, input, session, event); err != nil {
+			return err
+		}
+	}
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionArtifactStarted {
+		if update.Snapshot.Kind == domain.ImageGenerationArtifact && update.Snapshot.ImageGeneration.Status != domain.ImageGenerationRunning {
+			return executionEventConflict()
+		}
 		value = domain.ExecutionMessage{ContextRevision: input.ContextRevision, ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: domain.ArtifactMessage, State: domain.MessageStreaming, FirstSequence: event.Sequence, Artifact: &domain.ExecutionArtifact{Started: *update.Snapshot}}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
@@ -153,6 +164,50 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		progress.LatestDiffID = update.ID
 	default:
 		return executionEventConflict()
+	}
+	return nil
+}
+
+func publishGeneratedImageMetadata(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
+	if input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || input.Configuration.SidechatPolicy != "" {
+		return domain.Fail(domain.Unsupported, "The selected native provider does not support generated image publication.", "Retain the original account; no generation bridge or provider substitution is available.")
+	}
+	machineRow, machine, err := activeMachine(tx, input.MachineID)
+	if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1) {
+		return executionEventConflict()
+	}
+	v := event.Artifact.Snapshot.ImageGeneration
+	if v == nil || v.Validate() != nil || event.Artifact.NativeParentID != "" {
+		return executionEventConflict()
+	}
+	if event.Kind == domain.ExecutionArtifactStarted {
+		if v.Status != domain.ImageGenerationRunning {
+			return executionEventConflict()
+		}
+		return nil
+	}
+	if event.Kind != domain.ExecutionArtifactCompleted || v.Status == domain.ImageGenerationRunning {
+		return executionEventConflict()
+	}
+	device, err := tx.InstallationWorkerDevice(input.MachineID)
+	if err != nil {
+		return err
+	}
+	for _, ref := range v.Outputs {
+		if ref.MachineID != input.MachineID {
+			return executionEventConflict()
+		}
+		value := domain.ImageUpload{Version: 1, GeneratedExecutionID: input.ExecutionID, WorkerDeviceID: device, Actor: domain.Principal{Type: domain.OwnerDevice}, Attachment: ref, DraftID: event.Artifact.ID, OperationID: event.Artifact.ID, MachineRevision: machineRow.Revision, SessionID: session.ID, InputID: input.InputID, State: domain.ImageClaimed, UploadedBytes: ref.ByteLength, Owners: []domain.ID{session.ID}}
+		if _, _, err := tx.ImageUploadRecord(ref.ID); domain.SafeError(err).Code != domain.NotFound {
+			return executionEventConflict()
+		}
+		if err = tx.ValidateImageCapacity(value); err != nil {
+			return err
+		}
+		raw, _ := json.Marshal(value)
+		if _, err = tx.PutJob(ref.ID, 0, "", "", domain.Job{Type: domain.ImageAttachmentJob, State: domain.JobSucceeded, MachineID: input.MachineID, Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
+			return err
+		}
 	}
 	return nil
 }

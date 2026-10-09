@@ -86,7 +86,7 @@ func contextMatchesHistory(p ContinuationContextCheckpoint, turns []json.RawMess
 	count := 0
 	for _, raw := range turns {
 		var turn turnWire
-		if domain.Decode(raw, &turn) != nil || !turn.Status.terminal() {
+		if domain.DecodeBounded(raw, &turn, 16<<20) != nil || !turn.Status.terminal() {
 			return compactionUncertain()
 		}
 		for _, rawItem := range turn.Items {
@@ -179,7 +179,7 @@ func (c *Client) RetainContinuationContext(ctx context.Context, source Continuat
 	}
 	for _, raw := range turns {
 		var wire turnWire
-		_ = domain.Decode(raw, &wire)
+		_ = domain.DecodeBounded(raw, &wire, 16<<20)
 		live, owned := current[wire.ID]
 		if !owned {
 			continue

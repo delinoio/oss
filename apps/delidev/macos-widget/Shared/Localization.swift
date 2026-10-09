@@ -122,6 +122,7 @@ enum WidgetMessage: String {
     case scheduleWorkerOfflineNotice
     case serverLostNotice
     case serverRestoredNotice
+    case exportGeneratedImage
 }
 private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
     .english: [
@@ -244,6 +245,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "scheduleWorkerOfflineNotice": "Schedule skipped: Worker offline",
         "serverLostNotice": "Server connection lost",
         "serverRestoredNotice": "Server connection restored",
+        "exportGeneratedImage": "Export original image",
     ],
     .korean: [
         "show": "DeliDev 표시",
@@ -365,6 +367,7 @@ private let widgetCatalogs: [WidgetLanguage: [String: String]] = [
         "scheduleWorkerOfflineNotice": "Worker 오프라인으로 일정 건너뜀",
         "serverLostNotice": "서버 연결 끊김",
         "serverRestoredNotice": "서버 연결 복구",
+        "exportGeneratedImage": "원본 이미지 내보내기",
     ],
 ]
 func widgetCopy(_ key: WidgetMessage, _ language: WidgetLanguage, _ values: [String: String] = [:]) -> String {

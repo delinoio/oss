@@ -117,5 +117,6 @@
   "scheduleServerOfflineNotice": "Schedule skipped: server offline",
   "scheduleWorkerOfflineNotice": "Schedule skipped: Worker offline",
   "serverLostNotice": "Server connection lost",
-  "serverRestoredNotice": "Server connection restored"
+  "serverRestoredNotice": "Server connection restored",
+  "exportGeneratedImage": "Export original image"
 }

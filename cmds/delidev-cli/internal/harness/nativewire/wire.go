@@ -71,24 +71,26 @@ type incoming struct {
 }
 
 type Connection struct {
-	protected  security.ProtectedJSON
-	jsonrpc    string
-	process    *process.Handle
-	cancel     context.CancelFunc
-	done       chan struct{}
-	writeGate  chan struct{}
-	events     chan Event
-	mu         sync.Mutex
-	pending    map[string]*pending
-	seen       map[domain.ID]bool
-	incoming   map[string]incoming
-	eventBytes int
-	problem    *domain.Error
-	cleanup    error
-	closing    bool
-	eofOnce    sync.Once
-	eofDone    chan struct{}
-	logger     *slog.Logger
+	inputFrameLimit int
+	eventByteLimit  int
+	protected       security.ProtectedJSON
+	jsonrpc         string
+	process         *process.Handle
+	cancel          context.CancelFunc
+	done            chan struct{}
+	writeGate       chan struct{}
+	events          chan Event
+	mu              sync.Mutex
+	pending         map[string]*pending
+	seen            map[domain.ID]bool
+	incoming        map[string]incoming
+	eventBytes      int
+	problem         *domain.Error
+	cleanup         error
+	closing         bool
+	eofOnce         sync.Once
+	eofDone         chan struct{}
+	logger          *slog.Logger
 }
 
 func protocolFailure() *domain.Error {
@@ -110,9 +112,18 @@ func StartJSONRPC(ctx context.Context, config process.Config) (*Connection, erro
 	return start(ctx, config, "2.0")
 }
 
+// StartImageObservations admits bounded native base64 image notifications only
+// for the explicitly selected original image adapter. Ordinary profiles retain
+// their one-MiB frame and eight-MiB aggregate queue bounds.
+func StartImageObservations(ctx context.Context, config process.Config) (*Connection, error) {
+	return startBounded(ctx, config, "", 16<<20, 32<<20)
+}
 func start(ctx context.Context, config process.Config, version string) (*Connection, error) {
+	return startBounded(ctx, config, version, MaxFrame, maxEventBytes)
+}
+func startBounded(ctx context.Context, config process.Config, version string, frameLimit, queueLimit int) (*Connection, error) {
 	life, cancel := context.WithCancel(ctx)
-	c := &Connection{jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
+	c := &Connection{inputFrameLimit: frameLimit, eventByteLimit: queueLimit, jsonrpc: version, cancel: cancel, done: make(chan struct{}), writeGate: make(chan struct{}, 1), events: make(chan Event, maxEvents), pending: map[string]*pending{}, seen: map[domain.ID]bool{}, incoming: map[string]incoming{}}
 	c.logger = config.Logger
 	if c.logger == nil {
 		c.logger = slog.Default()
@@ -247,7 +258,7 @@ func (c *Connection) Next(ctx context.Context) (Event, error) {
 	}
 }
 func (c *Connection) queueLocked(event Event) error {
-	if len(c.events) >= maxEvents || c.eventBytes+event.size > maxEventBytes {
+	if len(c.events) >= maxEvents || c.eventBytes+event.size > c.eventLimit() {
 		return domain.Fail(domain.ResourceExhausted, "Native event buffering reached its bound.", "Reconcile the native session before reconnecting; reduce consumer lag.")
 	}
 	c.eventBytes += event.size
@@ -488,7 +499,7 @@ func (c *Connection) receive(raw []byte) error {
 		return domain.Fail(domain.PermissionDenied, "The native protocol reflected protected runtime authority.", "Stop and reconcile the original runtime without publishing its private output.")
 	}
 	var message envelope
-	if err := domain.Decode(raw, &message); err != nil {
+	if err := domain.DecodeBounded(raw, &message, c.frameLimit()); err != nil {
 		return protocolFailure()
 	}
 	var fields map[string]json.RawMessage
@@ -606,7 +617,7 @@ func (w *frameWriter) Write(data []byte) (int, error) {
 		if end >= 0 {
 			size = end
 		}
-		if len(w.buffer)+size > MaxFrame {
+		if len(w.buffer)+size > w.connection.frameLimit() {
 			w.stopped = true
 			w.buffer = nil
 			w.connection.fail(domain.Fail(domain.ResourceExhausted, "A native protocol frame exceeds its bound.", "Use a supported harness output size and reconcile the interrupted session."))
@@ -631,3 +642,16 @@ func (w *frameWriter) Write(data []byte) (int, error) {
 // OmittedParams is an explicit adapter-owned no-parameter protocol profile.
 // Ordinary nil/scalar parameters remain invalid; this never changes inbound validation.
 type OmittedParams struct{}
+
+func (c *Connection) frameLimit() int {
+	if c.inputFrameLimit == 0 {
+		return MaxFrame
+	}
+	return c.inputFrameLimit
+}
+func (c *Connection) eventLimit() int {
+	if c.eventByteLimit == 0 {
+		return maxEventBytes
+	}
+	return c.eventByteLimit
+}

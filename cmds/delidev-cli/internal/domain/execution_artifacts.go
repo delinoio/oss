@@ -12,6 +12,7 @@ type PlanStepStatus string
 
 const (
 	OpenCodeRevisionArtifact ArtifactKind = "opencode-revision"
+	ImageGenerationArtifact  ArtifactKind = "image-generation"
 	PlanArtifact             ArtifactKind = "plan"
 	ReasoningArtifact        ArtifactKind = "reasoning"
 	ReasoningTextArtifact    ArtifactKind = "reasoning-text"
@@ -37,27 +38,29 @@ const (
 const MaxArtifactParts = 1024
 
 type ArtifactSnapshot struct {
-	Revision *OpenCodeRevision `json:"revision,omitempty"`
-	Kind     ArtifactKind      `json:"kind"`
-	Text     string            `json:"text"`
-	Summary  []string          `json:"summary"`
-	Content  []string          `json:"content"`
+	ImageGeneration *ImageGenerationObservation `json:"image_generation,omitempty"`
+	Revision        *OpenCodeRevision           `json:"revision,omitempty"`
+	Kind            ArtifactKind                `json:"kind"`
+	Text            string                      `json:"text"`
+	Summary         []string                    `json:"summary"`
+	Content         []string                    `json:"content"`
 }
 
 func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	// encoding/json otherwise turns null string elements into empty strings,
 	// which would manufacture native content at an observed reasoning index.
 	var wire struct {
-		Revision *OpenCodeRevision `json:"revision,omitempty"`
-		Kind     ArtifactKind      `json:"kind"`
-		Text     *string           `json:"text"`
-		Summary  []*string         `json:"summary"`
-		Content  []*string         `json:"content"`
+		ImageGeneration *ImageGenerationObservation `json:"image_generation,omitempty"`
+		Revision        *OpenCodeRevision           `json:"revision,omitempty"`
+		Kind            ArtifactKind                `json:"kind"`
+		Text            *string                     `json:"text"`
+		Summary         []*string                   `json:"summary"`
+		Content         []*string                   `json:"content"`
 	}
 	if Decode(raw, &wire) != nil || wire.Text == nil {
 		return invalidArtifact()
 	}
-	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision}
+	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision, ImageGeneration: wire.ImageGeneration}
 	for _, pair := range []struct {
 		source []*string
 		target *[]string
@@ -87,6 +90,16 @@ func invalidArtifact() error {
 }
 
 func (s ArtifactSnapshot) Validate() error {
+	if s.Kind == ImageGenerationArtifact {
+		if s.ImageGeneration == nil || s.ImageGeneration.Validate() != nil || s.Revision != nil || s.Text != "" || s.Summary != nil || s.Content != nil {
+			return invalidArtifact()
+		}
+		return nil
+	}
+	if s.ImageGeneration != nil {
+		return invalidArtifact()
+	}
+
 	if s.Kind == OpenCodeRevisionArtifact {
 		if s.Revision == nil || s.Text != "" || s.Summary != nil || s.Content != nil || s.Revision.Validate() != nil {
 			return invalidArtifact()
