@@ -240,6 +240,11 @@ func (s *Service) readSidechatRetry(ctx context.Context, childID, generationID d
 		if observed == "" {
 			observed = child.SidechatActiveRetry
 		}
+		if observed == "" && len(child.SidechatRetries) != 0 {
+			// Reopened presentations retain the last attempt's localized outcome;
+			// this is observation only, never authority for another native send.
+			observed = child.SidechatRetries[len(child.SidechatRetries)-1].ID
+		}
 		if observed != "" {
 			for _, g := range child.SidechatRetries {
 				if g.ID == observed {

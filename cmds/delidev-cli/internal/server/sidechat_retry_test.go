@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"google.golang.org/protobuf/proto"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -182,6 +183,9 @@ func TestSidechatQuestionRetryFailureRetainsAnswerAndCleanupGenerations(t *testi
 	if view.CurrentAnswer != baseline || view.Generations[0].Completed || !view.Eligible {
 		t.Fatal("settled failure lost previous answer or cleanup", view.Problem)
 	}
+	if retryViewFixture(t, child, "").Phase != domain.JobFailed {
+		t.Fatal("reopened presentation lost last retry failure")
+	}
 	before := child.refresh(t)
 	deleted, err := sessionClient(child.accountFixture).DeleteSession(context.Background(), ownerRequest(child.identity, &pb.DeleteSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}}))
 	if err != nil {
@@ -278,5 +282,83 @@ func TestSidechatQuestionRetryRejectsStaleRevisionsAndOldWorkers(t *testing.T) {
 	}
 	if retryViewFixture(t, child, "").Eligible {
 		t.Fatal("old Worker activated retry")
+	}
+}
+
+func TestSidechatQuestionRetryCapturedWorkerChangeFencesPublicationAndDeletionRetainsOwner(t *testing.T) {
+	_, child := completedRetrySidechatFixture(t)
+	request := retryRequestFixture(t, child)
+	if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+		t.Fatal(err)
+	}
+	view := retryViewFixture(t, child, request.Mutation.RequestId)
+	g := view.Generations[0]
+	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "test.retry-worker-generation", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.SetWorkerInstance(domain.ID(child.machine.Id), domain.NewID(), time.Now().UTC())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = child.service.Store.Read(context.Background(), func(tx *store.Tx) error {
+		r, e := tx.Get(domain.JobKind, g.ForkJobID)
+		if e != nil {
+			return e
+		}
+		j, e := store.Decode[domain.Job](r)
+		if e != nil {
+			return e
+		}
+		var input domain.ForkJobInput
+		if domain.Decode(j.Input, &input) != nil {
+			t.Fatal("lost original input")
+		}
+		if validateSidechatRetryForkAuthority(tx, input) == nil {
+			t.Fatal("replacement Worker adopted captured generation")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := child.refresh(t)
+	if _, err = sessionClient(child.accountFixture).DeleteSession(context.Background(), ownerRequest(child.identity, &pb.DeleteSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(before.ID), ExpectedRevision: before.Revision}})); err != nil {
+		t.Fatal(err)
+	}
+	deletion, err := child.service.Store.GetSessionDeletion(context.Background(), domain.ID(child.change.Session.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range deletion.Workers {
+		for _, c := range w.Work.Copies {
+			if c.JobID == g.ForkJobID {
+				found = c.SidechatRetry && c.ExecutionID == g.RuntimeID && c.UnpublishedSidechatID == ""
+			}
+		}
+	}
+	if !found {
+		t.Fatal("unpublished retry owner escaped frozen deletion")
+	}
+}
+func TestSidechatQuestionRetryRetentionBoundRejectsBeforeNativeAdmission(t *testing.T) {
+	_, child := completedRetrySidechatFixture(t)
+	request := retryRequestFixture(t, child)
+	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "test.retry-capacity", nil, func(tx *store.Tx) (any, error) {
+		for n := 0; n < 4094; n++ {
+			if _, e := tx.PutJob(domain.NewID(), 0, domain.ID(child.change.Session.Id), "", domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobCanceled, MachineID: domain.ID(child.machine.Id), Input: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()}); e != nil {
+				return nil, e
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Mutation.ExpectedRevision = child.refresh(t).Revision
+	if _, err = sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err == nil {
+		t.Fatal("history capacity granted fresh native work")
+	}
+	if len(retryViewFixture(t, child, "").Generations) != 0 {
+		t.Fatal("exhausted retention admitted a generation")
 	}
 }
