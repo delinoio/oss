@@ -6,12 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"google.golang.org/protobuf/proto"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
 func completedRetrySidechatFixture(t *testing.T) (*continuationFixture, *continuationFixture) {
@@ -360,5 +363,117 @@ func TestSidechatQuestionRetryRetentionBoundRejectsBeforeNativeAdmission(t *test
 	}
 	if len(retryViewFixture(t, child, "").Generations) != 0 {
 		t.Fatal("exhausted retention admitted a generation")
+	}
+}
+
+func TestManagedSidechatQuestionRetryUsesChildOwnedProtectedForkReceipt(t *testing.T) {
+	parent, _, _ := managedSidechatFixture(t)
+	client := delidevv1connect.NewSubscriptionServiceClient(http.DefaultClient, parent.endpoint.URL)
+	protected := func(f *continuationFixture, job *pb.Resource) domain.ID {
+		t.Helper()
+		taken, err := client.TakeSubscription(context.Background(), ownerRequest(f.workerIdentity, &pb.TakeSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(parent.input.AccountID), ExpectedRevision: job.Revision}, MachineId: f.machine.Id, InstanceId: f.workerInstance, OperationId: job.Id, Action: pb.SubscriptionAction_SUBSCRIPTION_ACTION_EXECUTE}))
+		if err != nil {
+			t.Fatal("managed retry Take", err)
+		}
+		finish := domain.NewID()
+		_, err = client.FinishSubscription(context.Background(), ownerRequest(f.workerIdentity, &pb.FinishSubscriptionRequest{Mutation: &pb.Mutation{RequestId: string(finish), Id: string(parent.input.AccountID), ExpectedRevision: taken.Msg.LeaseRevision}, LeaseId: taken.Msg.LeaseId, GenerationId: taken.Msg.GenerationId, MachineId: f.machine.Id, InstanceId: f.workerInstance, Bundle: bytes.Clone(taken.Msg.Bundle), Succeeded: true, CleanupConfirmed: true}))
+		if err != nil {
+			t.Fatal("managed retry Finish", err)
+		}
+		return finish
+	}
+	job, input, _ := acceptManagedSidechat(t, parent)
+	finish := protected(parent, job)
+	if _, err := parent.workerClient.ReportWork(context.Background(), ownerRequest(parent.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: parent.machine.Id, InstanceId: parent.workerInstance, OutputJson: managedSidechatResult(t, input, finish)})); err != nil {
+		t.Fatal(err)
+	}
+	observed, err := sessionClient(parent.accountFixture).GetSessionFork(context.Background(), ownerRequest(parent.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
+	if err != nil || observed.Msg.Session == nil {
+		t.Fatal("original managed child", err)
+	}
+	base := *parent.firstDispatchFixture
+	base.change = &pb.SessionChange{Session: observed.Msg.Session}
+	child := &continuationFixture{firstDispatchFixture: &base}
+	_, err = parent.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-retry-support", nil, func(tx *store.Tx) (any, error) {
+		r, m, e := activeMachine(tx, domain.ID(parent.machine.Id))
+		if e != nil {
+			return nil, e
+		}
+		m.WorkerCapabilities = append(m.WorkerCapabilities, domain.SidechatQuestionRetryV1)
+		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child.enqueue(t, "What is the current state?", domain.ExecuteMode)
+	child.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	for {
+		if !child.workerStream.Receive() {
+			t.Fatal("missing original managed child assignment", child.workerStream.Err())
+		}
+		if child.workerStream.Msg().Job != nil {
+			break
+		}
+	}
+	child.job = child.workerStream.Msg().Job
+	var firstJob domain.Job
+	if domain.Decode(child.job.DocumentJson, &firstJob) != nil || domain.Decode(firstJob.Input, &child.input) != nil || child.input.Validate() != nil {
+		t.Fatal("invalid first managed child assignment")
+	}
+	// This fixture's initial child question is a settled owned execution. Synthetic
+	// record edits establish its native observations, never a real account claim.
+	_, err = child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.managed-first-question", nil, func(tx *store.Tx) (any, error) {
+		sr, s, e := sessionRecord(tx, domain.ID(child.change.Session.Id))
+		if e != nil {
+			return nil, e
+		}
+		completion := domain.ExecutionCompletion{Version: 2, ExecutionID: child.input.ExecutionID, InputID: child.input.InputID, NativeThreadID: domain.NativeIdentity(child.input.Fork.NativeThreadID), NativeTurnID: domain.NativeIdentity(domain.NewID()), LastSequence: 3, Outcome: domain.ExecutionSucceeded, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
+		s.Execution = &domain.ExecutionProgress{JobID: domain.ID(child.job.Id), ExecutionID: child.input.ExecutionID, InputID: child.input.InputID, LastSequence: 3, NativeThreadID: string(completion.NativeThreadID), NativeTurnID: string(completion.NativeTurnID), Outcome: domain.ExecutionSucceeded, CleanupVerified: true}
+		s.Outcome, s.ActiveExecutionID, s.Dispatch, s.PendingInputs = domain.ExecutionSucceeded, "", domain.DispatchReady, 0
+		if _, e = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, s); e != nil {
+			return nil, e
+		}
+		qr, e := tx.Get(domain.QueueKind, child.input.InputID)
+		if e != nil {
+			return nil, e
+		}
+		q, e := store.Decode[domain.QueuedInput](qr)
+		if e != nil {
+			return nil, e
+		}
+		q.Delivery, q.NativeRequestID = domain.InputAccepted, child.input.TurnRequestID
+		if _, e = tx.Put(domain.QueueKind, qr.ID, qr.Revision, sr.ID, sr.ProjectID, q); e != nil {
+			return nil, e
+		}
+		jr, e := tx.Get(domain.JobKind, domain.ID(child.job.Id))
+		if e != nil {
+			return nil, e
+		}
+		j, e := store.Decode[domain.Job](jr)
+		if e != nil {
+			return nil, e
+		}
+		j.State, j.Output = domain.JobSucceeded, mustForkValueJSON(completion)
+		return tx.PutJob(jr.ID, jr.Revision, jr.SessionID, jr.ProjectID, j)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := retryRequestFixture(t, child)
+	if _, err = sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+		t.Fatal(err)
+	}
+	g := retryViewFixture(t, child, request.Mutation.RequestId).Generations[0]
+	retryJob, retryInput := forkClaimFixture(t, child, string(g.ForkJobID))
+	finish = protected(child, retryJob)
+	output := forkResultFixture(t, retryInput)
+	output.Version, output.ManagedFinish = 3, finish
+	output.Preparation, output.Manifest = retryInput.Retry.ChildPreparation, retryInput.Retry.ChildManifest
+	if _, err = child.workerClient.ReportWork(context.Background(), ownerRequest(child.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(retryJob, domain.NewID()), MachineId: child.machine.Id, InstanceId: child.workerInstance, OutputJson: mustForkValueJSON(output)})); err != nil {
+		t.Fatal(err)
+	}
+	result := retryViewFixture(t, child, request.Mutation.RequestId)
+	if result.Generations[0].ExecutionJobID == "" || result.CurrentAnswer != child.input.ExecutionID {
+		t.Fatal("managed protected Finish did not queue same-child question while retaining answer", result)
 	}
 }
