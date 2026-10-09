@@ -198,8 +198,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			v.Problem = restoreQuarantined().(*domain.Error)
 			value = v
 		case domain.JobKind:
-			var v domain.Job
-			if err := domain.Decode(raw, &v); err != nil {
+			// Restore supported history with the same closed type-aware limits
+			// as ordinary storage reads, without enlarging generic documents.
+			v, err := Decode[domain.Job](Record{ID: id, Kind: kind, Data: raw})
+			if err != nil {
 				rows.Close()
 				return err
 			}

@@ -1118,3 +1118,15 @@ Issue #1828 uses immutable `project_prompt_history` entities with the exact proj
 Live history removal emits deletion metadata without native/configuration tombstones or source-receipt redaction. This permits captured-history restoration while project tombstones retain their original authority.
 
 Managed backups capture history. Open and backup validation check closed documents, project ownership, unique acceptance sequences and the 100-entry bound. Restore follows captured history, except current project deletion tombstones remain authoritative. Portable configuration exports exclude history. Clear removes live history only, without securely erasing immutable older backups. Restoring a backup may restore its captured history. Logs contain operation/project/correlation IDs and safe codes, never prompt text.
+
+## Typed Job history during backup restore
+
+The private restore candidate uses the owning storage Job decoder for retained
+history. Supported compaction and workspace recovery Jobs retain their closed
+type-specific document bounds; ordinary Jobs retain the generic 1 MiB bound.
+This does not enlarge other documents or the aggregate transformation bounds of
+100,000 documents and 256 MiB. Preserve original input, output and attribution,
+and quarantine nonterminal historical Jobs without granting native authority.
+Unknown fields, duplicate keys, invalid UTF-8, trailing JSON and oversized typed
+documents remain rejected before candidate publication. Source backup bytes and
+the live database remain unchanged on rejection.
