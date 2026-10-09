@@ -842,3 +842,10 @@ to the exact historical predecessor and independently validated replacement
 history. Success, failure and Stop outcomes remain attributed to that predecessor.
 Manual Resume and one fresh input do not replay an old turn. Original Fork and
 Sidechat snapshots retain their own lifetimes and contexts.
+## Accepted-turn elapsed observations (issue #2052)
+
+The server captures `turn_timing.accepted_at` once from the UTC clock of the original validated primary-input acceptance transaction. Queuing, preparation, READY/thread binding and pre-send rejection capture no accepted-turn timing. Matching success, failure or confirmed interruption captures `terminal_at` once in the original terminal publication transaction. Exact actor-bound receipt replay retains both original observations. Tool work and approval/user waits remain inside this interval; provider/native elapsed values and usage remain independent.
+
+Session progress and every original primary-input user Message carry the same accepted observation. Late user parts copy it; terminal publication updates all matching primary-input records atomically with progress, outcome, Inbox, events and receipt. Indexed execution/input selection remains bounded and rejects changed session/execution/thread/turn ownership or accepted observations. Same-turn Steer does not reset timing or give its user records another interval. Legacy records omit timing and receive no backfill. Completed inherited Fork Messages retain original immutable timing and source attribution; fresh child executions capture independent observations.
+
+Timing is server-owned display metadata only. Worker publication documents cannot supply it. Strip it from native assignments, continuation/Fork/compaction projections, checkpoints and native digest inputs, including older closed Worker documents. It grants no execution, outcome, cleanup, recovery, permission or continuation authority. No RPC, allocation, migration or native adapter changes are added.

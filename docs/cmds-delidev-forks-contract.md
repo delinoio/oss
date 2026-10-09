@@ -399,3 +399,6 @@ The child privately retains a complete inherited-history digest and count. Its f
 Existing workspace ownership applies unchanged: Worktree copies actual HEAD and dirty contents, General Chat copies owned files, and Local preserves its original machine rules. Publish paused with an empty queue. Independent parent deletion preserves child-owned checkpoint, runtime and workspace; later turns retain the original account and immutable reviewer/branch-prefix provenance. Parent-dependent read-only Sidechat remains a separate overlay and deletion profile.
 
 Automated fixtures and builds validate these boundaries. Installed native, real-account, remote-machine, platform and manual visual acceptance remain owner-assigned and are not claimed by those checks.
+## Inherited elapsed observations (issue #2052)
+
+Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.

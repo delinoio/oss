@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useAppearancePreferences } from "./appearance";
 import { DisclosureDefault } from "./appearance-preferences";
+import { TurnTime, TurnTimingProvider, type CurrentTurn } from "./turn-timing";
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { Disclosure, DisclosureDensity, DisclosureSummary } from "./disclosure";
@@ -34,7 +35,7 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
 
 /** One reached-record list per original owner, including evicted page anchors.
  * Full resources stay in the caller's original three-page window/live tail. */
-export function ToolTurnTranscript({ sessionId, active = true, query, live, removed, arrivals, root, render, include }: { sessionId: string; active?: boolean; query: PayloadWindowQuery<ConversationProjection, Resource> & { nextPageToken: string }; live: ReadonlyMap<string, Resource>; removed: ReadonlySet<string>; arrivals: readonly string[]; root: RefObject<HTMLElement | null>; render: (row: Resource) => ReactNode; include?: (row: ConversationProjection) => boolean }) {
+export function ToolTurnTranscript({ sessionId, active = true, query, live, removed, arrivals, root, render, include, current, confirmed = true }: { current?: CurrentTurn; confirmed?: boolean; sessionId: string; active?: boolean; query: PayloadWindowQuery<ConversationProjection, Resource> & { nextPageToken: string }; live: ReadonlyMap<string, Resource>; removed: ReadonlySet<string>; arrivals: readonly string[]; root: RefObject<HTMLElement | null>; render: (row: Resource) => ReactNode; include?: (row: ConversationProjection) => boolean }) {
   useLocale();
   const preferences=useAppearancePreferences();
   const [choices] = useState<Choices>(() => ({ groups: new Map(), entries: new Map(), details: new Map() }));
@@ -69,10 +70,19 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     if(!choices.groups.has(owner))choices.groups.set(owner,preferences.tool_disclosure===DisclosureDefault.Expanded);
     return <Disclosure key={owner} className="tool-turn" density={DisclosureDensity.Compact} open={choices.groups.get(owner) ?? false} onToggle={event => { choices.groups.set(owner, event.currentTarget.open); changed(); }}><DisclosureSummary>{copy("session.toolCalls")}</DisclosureSummary><p className="tool-turn-coverage">{copy("session.reachedTools")}</p><ol>{entries.map(row => <ToolEntry key={row.id} active={active} row={row} payload={payloads.get(row.id)} token={tokens.get(row.id)} query={query} choices={choices} changed={changed} render={render} />)}</ol></Disclosure>;
   };
+  const turnStarts = new Map<string, ConversationProjection>();
+  for (const row of projections) if (row.turn) {
+    const prior = turnStarts.get(row.turn.owner);
+    // Same-turn Steer is never the primary timer when its original acceptance
+    // or a captured primary-input record is retained in reached metadata.
+    if (current?.owner === row.turn.owner && current.inputId !== row.turn.inputId) continue;
+    if (!prior || row.turn.captured && !prior.turn?.captured) turnStarts.set(row.turn.owner, row);
+  }
   const byId = new Map(projections.map(row => [row.id, row]));
   const presented = (row: ConversationProjection) => {
     const result = item(row, payloads.get(row.id));
-    return result ? <div key={row.id}>{result}</div> : null;
+    const turn = row.turn && turnStarts.get(row.turn.owner)?.id === row.id ? row.turn : undefined;
+    return result || turn ? <div className="turn-transcript-item" key={row.id}>{turn ? <TurnTime turn={turn} current={current} confirmed={confirmed} /> : null}{result}</div> : null;
   };
-  return <><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}</>;
+  return <TurnTimingProvider current={current} active={active} confirmed={confirmed}><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}{current && !turnStarts.has(current.owner) ? <TurnTime turn={current} current={current} confirmed={confirmed} /> : null}</TurnTimingProvider>;
 }

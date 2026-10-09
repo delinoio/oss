@@ -225,7 +225,7 @@ func TestContinuationFIFOFreezesSelectionAndRetainsPredecessor(t *testing.T) {
 	if f.input.Input.Prompt != "edited second input" {
 		t.Fatal("continuation ignored the latest queued edit")
 	}
-	if f.input.InputID != domain.ID(second.Id) || f.input.ExecutionID == firstInput.ExecutionID || f.input.ThreadRequestID == firstInput.ThreadRequestID || f.input.TurnRequestID == firstInput.TurnRequestID || f.input.Version != 4 || f.input.ConfigurationDigest != firstInput.ConfigurationDigest || f.input.Continuation == nil || f.input.Continuation.Previous.JobID != domain.ID(firstJob.Id) || f.input.Continuation.Previous.LastSequence != previous.LastSequence || f.input.Continuation.Intent != domain.ContinueAutomatically || f.input.AccountID != firstInput.AccountID || f.input.ConnectionID != firstInput.ConnectionID {
+	if f.input.InputID != domain.ID(second.Id) || f.input.ExecutionID == firstInput.ExecutionID || f.input.ThreadRequestID == firstInput.ThreadRequestID || f.input.TurnRequestID == firstInput.TurnRequestID || f.input.Version != 4 || f.input.ConfigurationDigest != firstInput.ConfigurationDigest || f.input.Continuation == nil || f.input.Continuation.Previous.TurnTiming != nil || f.input.Continuation.Previous.JobID != domain.ID(firstJob.Id) || f.input.Continuation.Previous.LastSequence != previous.LastSequence || f.input.Continuation.Intent != domain.ContinueAutomatically || f.input.AccountID != firstInput.AccountID || f.input.ConnectionID != firstInput.ConnectionID {
 		t.Fatal("continuation replaced FIFO, snapshot or predecessor ownership")
 	}
 	var original domain.Job

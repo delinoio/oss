@@ -100,6 +100,17 @@ func TestDirectStartupGatesRelayAndRetainsExactReplay(t *testing.T) {
 	if err != nil || !second.Msg.Replayed {
 		t.Fatalf("exact replay: %v", err)
 	}
+	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Execution != nil && session.Execution.TurnTiming != nil {
+		t.Fatal("acknowledged READY fabricated accepted-turn timing")
+	}
 	lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +190,9 @@ func TestDirectStartupRejectsForeignReportsAndSettlesNoInputFailure(t *testing.T
 		_, s, err := sessionRecord(tx, f.input.SessionID)
 		if err != nil {
 			return err
+		}
+		if s.Execution != nil && s.Execution.TurnTiming != nil {
+			t.Fatal("confirmed pre-send rejection fabricated accepted-turn timing")
 		}
 		if s.ActiveExecutionID != "" || s.PendingInputs != 0 || s.Recovery != domain.NoRecovery || s.Dispatch != domain.DispatchPaused {
 			t.Fatal("positive no-send proof was not settled")

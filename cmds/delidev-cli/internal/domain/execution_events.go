@@ -1,6 +1,9 @@
 package domain
 
-import "slices"
+import (
+	"slices"
+	"time"
+)
 
 type ExecutionEventKind string
 
@@ -472,9 +475,17 @@ func (e ExecutionEvent) Validate() error {
 // ExecutionProgress tracks current native publication separately from the
 // original immutable account/configuration selection. Only a separately
 // verified completion report may set CleanupVerified after terminal publication.
+// TurnTiming retains only server observations from the original publication
+// receipts. It grants no native completion, cleanup or execution authority.
+type TurnTiming struct {
+	AcceptedAt time.Time  `json:"accepted_at"`
+	TerminalAt *time.Time `json:"terminal_at,omitempty"`
+}
+
 type ExecutionProgress struct {
 	AutoReviews              AutoReviewState             `json:"auto_reviews,omitempty"`
 	ContextRevision          uint64                      `json:"context_revision,omitempty"`
+	TurnTiming               *TurnTiming                 `json:"turn_timing,omitempty"`
 	NativeCompactions        NativeCompactionState       `json:"native_compactions,omitempty"`
 	LatestNativeCompactionID ID                          `json:"latest_native_compaction_id,omitempty"`
 	Subagents                SubagentState               `json:"subagents,omitempty"`
@@ -519,6 +530,13 @@ type ExecutionProgress struct {
 	UnconfirmedResponses     uint32                      `json:"unconfirmed_responses,omitempty"`
 }
 
+// NativePublication excludes server display observations from assignment and
+// checkpoint shapes. Timing cannot affect native proofs or their digests.
+func (p ExecutionProgress) NativePublication() ExecutionProgress {
+	p.TurnTiming = nil
+	return p
+}
+
 type ForkMessageOrigin struct {
 	SessionID     ID     `json:"session_id"`
 	MessageID     ID     `json:"message_id"`
@@ -530,6 +548,7 @@ type ForkMessageOrigin struct {
 
 type ExecutionMessage struct {
 	ContextRevision    uint64                     `json:"context_revision,omitempty"`
+	TurnTiming         *TurnTiming                `json:"turn_timing,omitempty"`
 	Attachments        []ImageAttachment          `json:"attachments,omitempty"`
 	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
 	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`

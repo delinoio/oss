@@ -8,3 +8,7 @@
 .tool-entry-payload [data-tool-primary] { border: 0; background: transparent; }
 .tool-entry-payload [data-tool-primary] > summary { display: none; }
 .tool-entry-payload pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.turn-time { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+.turn-transcript-item { display: flex; flex-direction: column; min-width: 0; }

@@ -6,6 +6,7 @@ import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
 import { sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
 import { SessionProgressStatus } from "./session-progress-status";
+import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
@@ -499,6 +500,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     if (progressRevision.current.id !== id) progressRevision.current = { id, revision: 0n };
     if (session?.id === id && session.revision > progressRevision.current.revision) progressRevision.current.revision = session.revision;
   }, [id, session]);
+  const timing = currentTurn(session, id);
+  const timingConfirmed = live.state === ConnectionState.Live && !live.error && !messages.error && !queue.error && !interactions.error && !control.uncertain && !control.error && data.recovery !== "required" && !Number(object(data.execution).unconfirmed_responses);
   const progress = sessionProgress({ session, sessionId: id,
     current: (progressRevision.current.id !== id || Boolean(session && session.revision >= progressRevision.current.revision)) && conversationActive && live.state === ConnectionState.Live && !live.error && !queue.error && !interactions.error && !messages.error && !messages.isPending,
     complete: Boolean(messages.data) && !messages.nextPageToken,
@@ -554,7 +557,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div ref={transcriptRoot} className="transcript" aria-label={copy("session.conversation_ccca18")}>
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
-        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length || timing ? null : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
+        {rows.length || messages.rows.length || timing ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} current={timing} confirmed={timingConfirmed} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : null}
         {progress ? <SessionProgressStatus phase={progress} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         {items(data.sidechat_retries).length ? <Disclosure className="sidechat-answer-history"><DisclosureSummary>{copy("sidechat.retry.history")}</DisclosureSummary><p>{copy("sidechat.retry.retainedHistory")}</p><div className="sidechat-history-content" ref={historyRoot}><ToolTurnTranscript sessionId={id} active={conversationActive} query={{...messages,pages:messages.pages.map(page=>({...page,height:historyHeights.current.get(page.token)})),measure:(token,height)=>{historyHeights.current.set(token,height);}}} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={historyRoot} include={sidechatAnswerFilter(session,true)} render={row=><TranscriptItem resource={row} active={conversationActive}/>} /></div></Disclosure> : null}
         <ScrollContinuation query={messages} root={transcriptRoot} active={conversationActive && live.generation > 0} label={copy("session.conversationPages_72b1b9")} />

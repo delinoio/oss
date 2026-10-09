@@ -35,7 +35,7 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", error => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const sizes = [{ width: 1680, height: 1000 }, { width: 980, height: 640 }, { width: 979, height: 640 }, { width: 560, height: 640 }, { width: 560, height: 480 }, { width: 1120, height: 960, zoom: 2 }];
+  const sizes = process.argv.includes("--short-height-baseline") ? [{width:560,height:480}] : [{ width: 1680, height: 1000 }, { width: 980, height: 640 }, { width: 979, height: 640 }, { width: 560, height: 640 }, { width: 1120, height: 960, zoom: 2 }];
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const size of sizes) {
     await page.emulateMedia({ colorScheme: "dark" });
     process.stdout.write(JSON.stringify({ operation: "transcript-role-case", language, theme, ...size }) + "\n");
@@ -52,7 +52,7 @@ try {
       const rows = [...root.querySelectorAll("article.message")];
       return { width, left, right, scale, overflow: root.scrollWidth > root.clientWidth + 1, rows: rows.map(node => {
         const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
-        return { left: rect.left, right: rect.right, width: rect.width, top: rect.top, bottom: rect.bottom, role: node.className, background: style.backgroundColor, border: style.borderTopWidth, padding: style.paddingTop, radius: style.borderTopLeftRadius, color: style.color };
+        return { left: rect.left, right: rect.right, width: rect.width, top: rect.top, bottom: rect.bottom, timingInset: node.previousElementSibling?.classList.contains("turn-time") ? rect.top - node.parentElement.getBoundingClientRect().top : 0, role: node.className, background: style.backgroundColor, border: style.borderTopWidth, padding: style.paddingTop, radius: style.borderTopLeftRadius, color: style.color };
       }) };
     });
     // Visit all content-visibility roots before taking the complete geometry.
@@ -73,7 +73,7 @@ try {
           assert.equal(row.background, "rgba(0, 0, 0, 0)");
         } else { assert.equal(row.border, "1px", "Other roots retain card treatment"); }
       }
-      for (let index = 1; index < m.rows.length; index++) assert(Math.abs(m.rows[index].top - m.rows[index - 1].bottom - 16 * m.scale) <= 1, "Historical and live item spacing is 16px");
+      for (let index = 1; index < m.rows.length; index++) assert(Math.abs(m.rows[index].top - m.rows[index - 1].bottom - 16 * m.scale - m.rows[index].timingInset) <= 1, "Historical and live item spacing is 16px");
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "No horizontal page overflow");
     };
     await assertGeometry();
@@ -123,28 +123,23 @@ try {
     await page.getByRole("button", { name: "Fixture stream revision", exact: true }).evaluate(node => node.click());
     await page.getByText("Synthetic complete text", { exact: true }).waitFor({ state: "attached" });
     assert.equal(await page.getByText("Synthetic streaming text", { exact: true }).count(), 0);
-    assert.equal(await transcript.locator(":scope > .message-assistant").count(), 1, "Streaming revision replaces one direct tail root");
-    await transcript.locator(":scope > .message-assistant").scrollIntoViewIfNeeded();
+    assert.equal(await transcript.locator(":scope > .turn-transcript-item > .message-assistant").count(), 1, "Streaming revision replaces one direct tail root");
+    await transcript.locator(":scope > .turn-transcript-item > .message-assistant").scrollIntoViewIfNeeded();
     await assertGeometry();
-    await page.getByRole("button", { name: language === "en" ? "Info" : "정보", exact: true }).click();
     await assertGeometry();
     await assertCard();
+    // Current tab-owned tools retain hidden roots; test visibility and original
+    // focus rather than the obsolete Info action/aria-expanded contract.
     for (const name of language === "en" ? ["Files", "Diff", "Terminals", "Browser", "Diagnostics"] : ["파일", "변경 사항", "터미널", "브라우저", "진단"]) {
-      const opener = page.getByRole("button", { name, exact: true });
-      await opener.click();
-      assert.equal(await opener.getAttribute("aria-expanded"), "true");
-      assert.equal(await page.locator(".session-app-panel").count(), 1);
-      const panel = await page.locator(".session-app-panel").boundingBox();
-      const m = await cardGeometry();
-      assert(panel.x + panel.width <= m.region.right + 1 && panel.x >= m.region.left - 1, "Temporary tool remains inside conversation width");
-      for (const r of [m.info, m.tray, m.composer]) assert(!(panel.x < r.right - 1 && panel.x + panel.width > r.left + 1 && panel.y < r.bottom - 1 && panel.y + panel.height > r.top + 1), "Temporary tool excludes Info/tray/composer");
-      await page.getByRole("button", { name: language === "en" ? "Info" : "정보", exact: true }).click();
-      assert.equal(await opener.getAttribute("aria-expanded"), "true", "Info focus keeps temporary tool");
-      await page.keyboard.press("Escape");
-      assert.equal(await opener.getAttribute("aria-expanded"), "false");
-      assert(await opener.evaluate(node => node === document.activeElement), "Escape restores exact opener");
-      assert(await page.evaluate(() => fixtureInfo === document.querySelector(".session-information") && fixtureComposer === document.querySelector(".composer textarea")), "Tool switches preserve original DOM");
-      await assertCard();
+      const opener=page.getByRole("button",{name,exact:true}); await opener.click();
+      const panel=page.locator(".session-app-panel:visible"); assert.equal(await panel.count(),1);
+      const card=await panel.boundingBox(), m=await cardGeometry();
+      assert(card.x+card.width<=m.region.right+1&&card.x>=m.region.left-1);
+      for(const r of [m.info,m.tray,m.composer])assert(!(card.x<r.right-1&&card.x+card.width>r.left+1&&card.y<r.bottom-1&&card.y+card.height>r.top+1));
+      await panel.evaluate(node=>{node.setAttribute("tabindex","-1");node.focus();}); await page.keyboard.press("Escape");
+      assert.equal(await page.locator(".session-app-panel:visible").count(),0);
+      await page.waitForFunction(()=>document.activeElement?.getAttribute("role")==="tab"&&document.activeElement?.getAttribute("aria-selected")==="true");
+      assert(await page.evaluate(()=>fixtureInfo===document.querySelector(".session-information")&&fixtureComposer===document.querySelector(".composer textarea")));
     }
     await composer.scrollIntoViewIfNeeded();
     assert(await composer.isVisible(), "Composer remains reachable with tool panel open");
@@ -157,13 +152,51 @@ try {
     await assertCard();
     if (screenshots && size.width !== 480 && theme !== "system") {
       await mkdir(screenshots, { recursive: true });
-      await page.getByRole("button", { name: language === "en" ? "Info" : "정보", exact: true }).click();
-      await transcript.evaluate(node => { node.scrollTop = 0; });
+        await transcript.evaluate(node => { node.scrollTop = 0; });
       // Allow content-visibility to paint the restored top range before capture.
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       await page.screenshot({ path: join(screenshots, `${language}-${theme}-${size.width}.png`) });
     }
     cases++;
+  }
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width,height,zoom] of [[1440,900,1],[390,844,1],[1440,900,2]]) for (const workspace of ["general-chat","worktree"]) {
+    await page.setViewportSize({width,height});
+    await page.addInitScript(() => { Date.now = () => Date.parse("2026-10-09T10:01:23.123Z"); });
+    await page.goto(`${origin}/?timing=active&language=${language}&theme=${theme}&workspace=${workspace}&zoom=${zoom}`);
+    const line=page.locator(".turn-time"); await line.waitFor();
+    await page.waitForFunction(ko => document.querySelector(".turn-time")?.textContent.includes(ko ? "1분 23초" : "1m 23s"),language==="ko");
+    assert.equal(await line.count(),1); assert.equal(await page.locator(".message-user").count(),0);
+    const composer=page.locator(".composer textarea"); await composer.focus(); const draft=await composer.inputValue();
+    await page.evaluate(()=>window.__turnTimingFixture.parts()); await page.waitForFunction(()=>document.querySelectorAll(".message-user").length===3);
+    assert.equal(await line.count(),1); assert(await line.evaluate(node=>node.nextElementSibling?.classList.contains("message-user")));
+    assert.equal(await composer.evaluate(node=>node===document.activeElement),true);assert.equal(await composer.inputValue(),draft);
+    const reads=await page.evaluate(()=>window.__turnTimingFixture.reads);
+    await page.evaluate(()=>{Date.now=()=>Date.parse("2026-10-09T10:01:24.123Z");});
+    await page.waitForFunction(ko=>document.querySelector(".turn-time")?.textContent.includes(ko?"1분 24초":"1m 24s"),language==="ko");
+    assert.equal(await page.evaluate(()=>window.__turnTimingFixture.reads),reads,"ticks are read-only local display work");
+    await page.evaluate(()=>window.__turnTimingFixture.fail());
+    await page.waitForFunction(ko=>document.querySelector(".turn-time")?.textContent.includes(ko?"미확인":"Unconfirmed"),language==="ko");
+    const frozen=await line.textContent(); await page.evaluate(()=>{Date.now=()=>Date.parse("2026-10-09T10:03:24.123Z");});
+    await page.waitForTimeout(1100);assert.equal(await line.textContent(),frozen);
+    await page.evaluate(()=>window.__turnTimingFixture.reconnect());
+    // Original stream synchronization needs a validated event before Live;
+    // opening an idle transport alone cannot confirm the retained observation.
+    await page.getByRole("button",{name:"Fixture stream revision",exact:true}).evaluate(node=>node.click());
+    await page.waitForFunction(ko=>document.querySelector(".turn-time")?.textContent.includes(ko?"3분 24초":"3m 24s"),language==="ko");
+    await page.evaluate(()=>window.__turnTimingFixture.terminal("failed"));
+    await page.waitForFunction(ko=>document.querySelector(".turn-time")?.textContent.includes(ko?"소요 시간 · 12초":"Elapsed · 12s"),language==="ko");
+    await page.evaluate(()=>{Date.now=()=>Date.parse("2026-10-09T12:03:24.123Z");});await page.waitForTimeout(1100);
+    assert((await line.textContent()).includes(language==="ko"?"12초":"12s"));assert.equal(await line.getAttribute("aria-live"),"off");assert.equal(await line.getAttribute("role"),null);
+    assert(await line.evaluate(node=>node.scrollWidth<=node.clientWidth+1));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+    cases++;console.log(JSON.stringify({operation:"turn-timing-layout",language,theme,width,height,zoom,workspace,result:"passed"}));
+  }
+  for (const language of ["en","ko"]) for (const mode of ["legacy","invalid","zero","inherited"]) {
+    await page.setViewportSize({width:390,height:844});await page.goto(`${origin}/?timing=${mode}&language=${language}`);await page.locator(".turn-time").first().waitFor();
+    const text=await page.locator(".transcript").textContent();
+    if(mode==="zero")assert(text.includes(language==="ko"?"소요 시간 · 0초":"Elapsed · 0s"));
+    else if(mode==="inherited"){assert.equal(await page.locator(".turn-time").count(),2);assert(text.includes(language==="ko"?"상속된 턴":"Inherited turn"));assert(text.includes(language==="ko"?"1일 1시간":"1d 1h"));}
+    else assert(text.includes(language==="ko"?"시간 정보 없음":"Time unavailable"));
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);cases++;console.log(JSON.stringify({operation:"turn-timing-history-layout",language,mode,result:"passed"}));
   }
   assert.deepEqual(errors, []);
   process.stdout.write(JSON.stringify({ operation: "transcript-role-layout", ...source, cases, screenshots, effectiveZoom: "CSS zoom 2 plus narrow viewport reflow", nativeAcceptance: "not-performed" }) + "\n");

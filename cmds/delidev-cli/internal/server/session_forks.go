@@ -77,7 +77,7 @@ func forkBoundary(tx *store.Tx, id domain.ID, expected domain.NativeIdentity) (s
 		selected.ExecutableSHA256 = job.Startup.Ready.ExecutableSHA256
 		input.Startup = &selected
 	}
-	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, *session.Execution, *session.InitialExecution
+	input.SourceJobID, input.Progress, input.Snapshot = prior.ID, session.Execution.NativePublication(), *session.InitialExecution
 	return r, session, input, nil
 }
 

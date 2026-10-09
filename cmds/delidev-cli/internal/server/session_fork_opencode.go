@@ -50,11 +50,7 @@ func prepareOpenCodeForkTranscript(tx *store.Tx, input domain.ForkJobInput, outp
 			return nil, forkConflict()
 		}
 		used[value.NativeID] = true
-		value.Inherited = &domain.ForkMessageOrigin{SessionID: input.SourceSessionID, MessageID: row.ID, ExecutionID: value.ExecutionID, InputID: value.InputID, FirstSequence: value.FirstSequence, LastSequence: value.LastSequence}
-		value.ExecutionID, value.InputID = input.RuntimeID, ""
-		value.NativeThreadID, value.NativeTurnID = string(output.NativeThreadID), messages[value.NativeTurnID]
-		value.NativeID, value.NativeParentID = parts[value.NativeID], messages[value.NativeParentID]
-		value.FirstSequence, value.LastSequence = 0, 0
+		value = inheritOpenCodeForkMessage(value, input.SourceSessionID, row.ID, input.RuntimeID, string(output.NativeThreadID), messages[value.NativeTurnID], parts[value.NativeID], messages[value.NativeParentID])
 		result = append(result, forkCanonicalMessage{ID: domain.NewID(), Value: value})
 	}
 	if len(result) < 2 {
@@ -123,4 +119,24 @@ func validateOpenCodeForkTranscript(tx *store.Tx, source domain.ID, thread domai
 		return forkConflict()
 	}
 	return nil
+}
+
+// Admission above independently validates all native mappings. This copy keeps
+// server display observations under their source attribution, never as child
+// input authority or native checkpoint data.
+func inheritOpenCodeForkMessage(value domain.ExecutionMessage, source, message, runtime domain.ID, thread, turn, item, parent string) domain.ExecutionMessage {
+	value.Inherited = &domain.ForkMessageOrigin{SessionID: source, MessageID: message, ExecutionID: value.ExecutionID, InputID: value.InputID, FirstSequence: value.FirstSequence, LastSequence: value.LastSequence}
+	if value.TurnTiming != nil {
+		timing := *value.TurnTiming
+		if timing.TerminalAt != nil {
+			terminal := *timing.TerminalAt
+			timing.TerminalAt = &terminal
+		}
+		value.TurnTiming = &timing
+	}
+	value.ExecutionID, value.InputID = runtime, ""
+	value.NativeThreadID, value.NativeTurnID = thread, turn
+	value.NativeID, value.NativeParentID = item, parent
+	value.FirstSequence, value.LastSequence = 0, 0
+	return value
 }

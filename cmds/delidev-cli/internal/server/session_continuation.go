@@ -208,7 +208,7 @@ func continuationAssignment(session domain.Session, assignment domain.ExecutionJ
 	input.Fork = nil
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.AccountID, input.ConnectionID = account, connection
-	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: *session.Execution, Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, Intent: intent}
+	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: session.Execution.NativePublication(), Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, Intent: intent}
 	// A switch back may select the same account after its connection rotated.
 	// The checkpoint still belongs to the complete original account/connection.
 	if account != assignment.AccountID || connection != assignment.ConnectionID {
