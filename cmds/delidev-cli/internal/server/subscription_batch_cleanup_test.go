@@ -176,7 +176,7 @@ func TestFailedSubscriptionCleanupRetainsChangedAndReferencedAccounts(t *testing
 					if err != nil {
 						return nil, err
 					}
-					a.Accounts = append(a.Accounts, domain.WeightedAccount{ID: f.input.AccountID, Weight: 1})
+					a.Routes[0].Accounts = append(a.Routes[0].Accounts, domain.WeightedAccount{ID: f.input.AccountID, Weight: 1})
 					return tx.Put(domain.AgentKind, r.ID, r.Revision, "", "", a)
 				})
 				if err != nil {
