@@ -294,6 +294,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		if err == nil {
 			openCodeForkExpected := runtime.GOOS != "windows" && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1)
 			openCodeCompactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1)
+			directoryExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_DIRECTORY_V1)
 			revertExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)
 			compactionExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1) && slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 			networkExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1)
@@ -352,6 +353,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				profile += "\x00signed-worker-updates-v1"
+			}
+			if directoryExpected {
+				profile += "\x00session-directory-v1"
 			}
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
@@ -448,6 +452,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if compactionExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1)
 
+			}
+			if directoryExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_DIRECTORY_V1)
 			}
 			if revertExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1)

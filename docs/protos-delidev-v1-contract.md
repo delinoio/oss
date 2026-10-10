@@ -1422,7 +1422,7 @@ The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. T
 
 `SessionDirectoryService` reserves `ChangeSessionDirectory` and read-only
 `GetSessionDirectoryOperation`. System `SESSION_DIRECTORY_V1 = 95` and Worker
-`SESSION_DIRECTORY_V1 = 63` remain unadvertised until full owner integration.
+`SESSION_DIRECTORY_V1 = 63` advertise the integrated typed controller and Worker adapter. The actual original native process still proves the pinned version, settled source, closed ownership and complete directory reload before effects; capability advertisement alone grants no native readiness or input authority.
 Change request fields are mutation 1, repository_id 2 and relative_path 3;
 operation reads bind session_id 1 and request_id 2. Generation fields retain
  generation_id 1, job_id 2, request_id 3, source_execution_id 4, repository_id 5,
