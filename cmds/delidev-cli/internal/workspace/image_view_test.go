@@ -24,12 +24,19 @@ func imageViewInput(t *testing.T) domain.ExecutionJobInput {
 }
 
 func TestImageViewReferenceUsesOriginalLocalRepositoryAndWorkerPathGrammar(t *testing.T) {
-	for _, workerOS := range []string{"linux", "darwin", "windows"} {
+	for _, workerOS := range []string{"linux", "darwin", "windows", "windows-unc"} {
 		t.Run(workerOS, func(t *testing.T) {
 			input := imageViewInput(t)
+			unc := workerOS == "windows-unc"
+			if unc {
+				workerOS = "windows"
+			}
 			paths := []string{"/source/one", "/source/two"}
 			if workerOS == "windows" {
 				paths = []string{`C:\source\one`, `C:\source\two`}
+			}
+			if unc {
+				paths = []string{`\\server\share\repo`, `\\server\share\other`}
 			}
 			p := PrepareRequest{SessionID: input.SessionID, MachineID: input.MachineID, OriginMachineID: input.MachineID, Type: domain.Local}
 			m := Manifest{Version: 1, SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.Local, State: Ready, CreatedAt: time.Now().UTC(), PrimaryPath: paths[0]}
@@ -51,6 +58,20 @@ func TestImageViewReferenceUsesOriginalLocalRepositoryAndWorkerPathGrammar(t *te
 			ref, err := ObserveImageViewLocation(input, workerOS, location, domain.NewID())
 			if err != nil || ref.RepositoryID != p.Repositories[1].ID || ref.Location != "images/original.png" || ValidateImageViewReference(input, workerOS, ref) != nil {
 				t.Fatalf("original repository/path grammar lost: %v", err)
+			}
+
+			if unc {
+				for _, location := range []string{paths[0] + `\image.png`, strings.ReplaceAll(paths[0], `\`, "/") + "/image.png"} {
+					ref, err := ObserveImageViewLocation(input, workerOS, location, domain.NewID())
+					if err != nil || ref.RepositoryID != p.Repositories[0].ID || ref.Location != "image.png" || ValidateImageViewReference(input, workerOS, ref) != nil {
+						t.Fatalf("UNC original identity did not round trip: %v", err)
+					}
+				}
+				for _, bad := range []string{`\\\share\repo\image.png`, `\\server\\repo\image.png`, `\\?\share\repo\image.png`, `\\.\share\repo\image.png`, `\\server\share\repo\..\image.png`, `\\server\other\repo\image.png`, `\\server\share\repository\image.png`, `\\server\share\repo`, `\\Server\share\repo\image.png`} {
+					if _, err := ObserveImageViewLocation(input, workerOS, bad, domain.NewID()); err == nil {
+						t.Fatalf("foreign/noncanonical UNC accepted: %q", bad)
+					}
+				}
 			}
 		})
 	}

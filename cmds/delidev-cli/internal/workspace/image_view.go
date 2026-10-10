@@ -4,7 +4,6 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"path"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -35,7 +34,7 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 		return value
 	}
 	location = normalize(location)
-	if domain.Text(location, "native image location", 4096, true) != nil || path.Clean(location) != location || strings.Contains(location, "://") {
+	if !canonicalWorkerPath(location, workerOS) || strings.Contains(location, "://") {
 		return domain.ImageViewObservation{}, ResultUncertain()
 	}
 	roots := manifest.Repositories
