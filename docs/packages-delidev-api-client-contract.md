@@ -446,3 +446,7 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Session-native Apps bindings
+
+Generated `SessionNativeAppsQuery` exports the original-session availability and explicit selection/revocation RPCs. Consumers preserve exact scope, inventory and request identities, bigint revisions and the immutable configuration digest. Treat discovered, installed, enabled and callable as separate observations. An explicit empty selection revokes; a missing selection does not imply permission. Reads and passive notifications never invoke tools, refresh connectors implicitly or grant native/account authority. Keep original uncertain mutation bytes and render safe app names rather than product UUIDs. The native owner alone correlates original tool calls, approvals and results under the [Apps authority contract](cmds-delidev-harness-contract.md#session-native-apps-authority).

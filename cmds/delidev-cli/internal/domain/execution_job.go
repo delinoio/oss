@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	NativeApps          *SessionNativeAppSelection `json:"native_apps,omitempty"`
 	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
 	ContextRevision     uint64                     `json:"context_revision,omitempty"`
 	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
@@ -117,6 +118,9 @@ func (i ExecutionJobInput) Validate() error {
 		if err := id.Validate(); err != nil {
 			return err
 		}
+	}
+	if i.NativeApps != nil && ValidateNativeAppsAssignment(i, *i.NativeApps) != nil {
+		return NativeAppsUnavailable()
 	}
 	if err := i.Configuration.Validate(); err != nil {
 		return err

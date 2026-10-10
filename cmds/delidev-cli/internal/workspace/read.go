@@ -22,6 +22,7 @@ import (
 )
 
 type ReadRequest struct {
+	NativeApps  *NativeAppsReadRequest    `json:"native_apps,omitempty"`
 	Skills      *domain.SkillReadRequest  `json:"skills,omitempty"`
 	PRCandidate *domain.PRGitTarget       `json:"pr_candidate,omitempty"`
 	ID          domain.ID                 `json:"id"`
