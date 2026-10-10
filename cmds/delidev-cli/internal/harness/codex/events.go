@@ -153,41 +153,42 @@ type Message struct {
 }
 
 type Event struct {
-	NativeError      *NativeErrorObservation `json:"-"`
-	AutoReview       *domain.AutoReviewObservation
-	ImageGeneration  *ImageGeneration `json:"-"`
-	Compaction       *CompactionObservation
-	AgentThreadID    domain.ID
-	Subagents        []domain.SubagentObservation
-	Kind             EventKind
-	ThreadID         domain.ID
-	TurnID           domain.ID
-	Turn             *Turn
-	Status           *ThreadStatus
-	Message          *Message
-	TextDelta        string
-	ItemID           string
-	RequestID        domain.ID
-	InputID          domain.ID
-	Action           TurnAction
-	Problem          *domain.Error
-	Late             bool
-	Correlated       bool
-	EmittedAtMS      *int64
-	Metadata         MetadataKind
-	Usage            *domain.NativeTokenUsage
-	ResponseUsage    *domain.NativeResponseUsage
-	Notice           domain.NativeNotice
-	ToolOutputKind   ToolKind
-	Tool             *Tool
-	ToolInput        *ToolInput
-	Artifact         *Artifact
-	ArtifactDelta    *ArtifactDelta
-	Plan             *PlanUpdate
-	Diff             *string
-	Interaction      *Interaction
-	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	GatewayOAuthStatus GatewayOAuthStatus      `json:"-"`
+	NativeError        *NativeErrorObservation `json:"-"`
+	AutoReview         *domain.AutoReviewObservation
+	ImageGeneration    *ImageGeneration `json:"-"`
+	Compaction         *CompactionObservation
+	AgentThreadID      domain.ID
+	Subagents          []domain.SubagentObservation
+	Kind               EventKind
+	ThreadID           domain.ID
+	TurnID             domain.ID
+	Turn               *Turn
+	Status             *ThreadStatus
+	Message            *Message
+	TextDelta          string
+	ItemID             string
+	RequestID          domain.ID
+	InputID            domain.ID
+	Action             TurnAction
+	Problem            *domain.Error
+	Late               bool
+	Correlated         bool
+	EmittedAtMS        *int64
+	Metadata           MetadataKind
+	Usage              *domain.NativeTokenUsage
+	ResponseUsage      *domain.NativeResponseUsage
+	Notice             domain.NativeNotice
+	ToolOutputKind     ToolKind
+	Tool               *Tool
+	ToolInput          *ToolInput
+	Artifact           *Artifact
+	ArtifactDelta      *ArtifactDelta
+	Plan               *PlanUpdate
+	Diff               *string
+	Interaction        *Interaction
+	InteractionState   *InteractionStatus
+	Steer              *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -278,6 +279,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	if c.logger != nil && (event.Metadata == AuthRecoveryStartedObserved || event.Metadata == AuthRecoveryCompletedObserved) {
 		c.logger.InfoContext(ctx, "Codex native authentication recovery observed", "owner_id", c.ownerID, "phase", event.Metadata)
 	}
+	if c.logger != nil && event.Metadata == GatewayOAuthStatusDiscarded {
+		c.logger.InfoContext(ctx, "Codex gateway OAuth policy observed", "owner_id", c.ownerID, "stage", validationGateway, "status", event.GatewayOAuthStatus, "policy", "observed-only")
+	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
 }
@@ -290,6 +294,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	}
 	if native.Kind == nativewire.ServerRequest && c.execution != nil {
 		return c.observeInteractionLocked(native)
+	}
+	if native.Kind == nativewire.Notification && native.Method == "account/gatewayOAuth/changed" {
+		return c.observeGatewayOAuthLocked(native)
 	}
 	if native.Kind != nativewire.Notification || c.execution == nil {
 		return privateNative(native), nil

@@ -12,6 +12,7 @@ import (
 type MetadataKind string
 
 const (
+	GatewayOAuthStatusDiscarded      MetadataKind = "gateway-oauth-status-discarded"
 	AuthRecoveryStartedObserved      MetadataKind = "auth-recovery-started-observed"
 	AuthRecoveryCompletedObserved    MetadataKind = "auth-recovery-completed-observed"
 	AutoReviewReplayChecked          MetadataKind = "auto-review-replay-checked"

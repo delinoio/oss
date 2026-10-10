@@ -180,11 +180,14 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		c.children = next
 		return true, nil
 	case codex.MetadataEvent:
+		if event.Metadata == codex.GatewayOAuthStatusDiscarded && !event.GatewayOAuthStatus.Valid() {
+			return false, publicationUncertain()
+		}
 		if (event.Metadata == codex.AuthRecoveryStartedObserved || event.Metadata == codex.AuthRecoveryCompletedObserved) && (c.finished || event.TurnID != c.turn) {
 			return false, publicationUncertain()
 		}
 		switch event.Metadata {
-		case codex.StrictReviewReplayChecked, codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded, codex.FilesystemChangedDiscarded, codex.AuthRecoveryStartedObserved, codex.AuthRecoveryCompletedObserved, codex.ThreadMetadataDiscarded, codex.ThreadContextSupplementDiscarded:
+		case codex.GatewayOAuthStatusDiscarded, codex.StrictReviewReplayChecked, codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded, codex.FilesystemChangedDiscarded, codex.AuthRecoveryStartedObserved, codex.AuthRecoveryCompletedObserved, codex.ThreadMetadataDiscarded, codex.ThreadContextSupplementDiscarded:
 			// These validated observations grant no new product authority.
 			return true, nil
 		default:
