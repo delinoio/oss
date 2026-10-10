@@ -11,6 +11,13 @@ export const layout = JSON.parse(readFileSync(new URL('./proto-layout.json', imp
 // Canonical service modules and immutable wire ownership stay independent.
 export function retireCompatibility() {
   const directory = resolve(root, 'packages/delidev-api-client/src/gen/delidev/v1');
+  // The pinned protoc-gen-es emits a blank EOF line for this new schema.
+  // Normalize only this owned output; preserve legacy generated formatting.
+  // Remove this workaround when the generator emits a single final newline.
+  const nativeConfiguration = resolve(directory, 'native_configuration_pb.ts');
+  const nativeSource = readFileSync(nativeConfiguration, 'utf8');
+  writeFileSync(nativeConfiguration, nativeSource.replace(/\n+$/, '\n'));
+
   for (const filename of readdirSync(directory)) {
     if (filename === 'delidev_pb.ts' || /^delidev-.*_connectquery\.ts$/.test(filename)) rmSync(resolve(directory, filename), { force: true });
   }

@@ -150,4 +150,3 @@ export type ApplyCodexConfigurationImportResponse = Message<"delidev.v1.ApplyCod
  */
 export const ApplyCodexConfigurationImportResponseSchema: GenMessage<ApplyCodexConfigurationImportResponse> = /*@__PURE__*/
   messageDesc(file_delidev_v1_native_configuration, 5);
-
