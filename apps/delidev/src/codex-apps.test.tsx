@@ -117,3 +117,11 @@ it("requires native catalog refresh and original claim proof in inventory metada
   const f = fixture();
   for (const patch of [{ native_catalog_refresh_verified: false }, { claim_id: undefined }, { operation_id: newRequestId(), claim_id: "foreign" }]) expect(codexAppsView({ inventory: f.metadata({ ...f.inventory, ...patch }) }, f.session.id, f.account.id).invalid).toBe(true);
 });
+it("keeps a changed account revision from silently reauthorizing removal", async () => {
+  const f = fixture({ live: true }); const rendered = render(f.render());
+  await screen.findByRole("region", { name: "Calendar" });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Calendar" }));
+  rendered.rerender(f.render(f.session, create(ResourceSchema, { ...f.account, revision: 9n })));
+  expect((screen.getByRole("button", { name: "Remove chosen Apps" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(f.revoke).not.toHaveBeenCalled();
+});
