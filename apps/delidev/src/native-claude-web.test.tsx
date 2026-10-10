@@ -63,3 +63,37 @@ test.each(timestampVectors)("preserves timestamp readability parity: $name", ({ 
     expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
   }
 });
+
+test.each(["<", ">", "&", "\u2028", "\u2029"])("rejects overbound Go-escaped web metadata for %j before rendering", (character) => {
+  const data = fixture("web_fetch");
+  data.blocks[1]!.block.web.result!.fetch!.document.text = character.repeat(50000);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(false);
+  render(<NativeClaudeMessage content={data} state="complete" />);
+  expect(screen.getByLabelText("Claude message unavailable")).toBeTruthy();
+  expect(screen.queryByText("Original document")).toBeNull();
+});
+
+test.each([-1, 0, 1])("applies the mixed Go-escaped aggregate boundary at offset %i", (offset) => {
+  const data = fixture("web_fetch");
+  const document = data.blocks[1]!.block.web.result!.fetch!.document;
+  document.text = "";
+  // This empty fixture has ASCII-only metadata. Each of the five added Go
+  // escapes is six bytes; the remaining ASCII payload fills the exact bound.
+  const overhead = data.blocks.reduce((sum, entry) => sum + JSON.stringify(entry.block.web).length, 0);
+  const mixed = "<>&\u2028\u2029".repeat(1000);
+  document.text = mixed + "a".repeat(256 * 1024 - overhead - 30 * 1000 + offset);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(offset <= 0);
+});
+
+test("aggregates Go-escaped metadata across independently valid web blocks", () => {
+  const data = fixture("web_fetch"), second = fixture("web_fetch");
+  for (const value of [data, second]) value.blocks[1]!.block.web.result!.fetch!.document.text = "<".repeat(22000);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(true);
+  expect(validNativeClaudeMessage(second, "complete")).toBe(true);
+  for (const entry of second.blocks) {
+    entry.index += data.blocks.length;
+    entry.block.web.native_id = "srvtool_second";
+  }
+  data.blocks.push(...second.blocks);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(false);
+});

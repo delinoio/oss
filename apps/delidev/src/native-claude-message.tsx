@@ -1,3 +1,4 @@
+import { claudeRetainedJSONBytes } from "./native-claude-json";
 import { ClaudeWebKind, NativeClaudeWeb, validClaudeWeb } from "./native-claude-web";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -37,7 +38,7 @@ function message(value: unknown, state: string): { blocks: Block[]; reason: stri
  if(block.kind===BlockKind.WebCall) {if(webCalls.has(id)) return undefined;webCalls.set(id,{name:String(w.name),stopped:entry.state===BlockState.Stopped});
  if(entry.state!==BlockState.Streaming) {const call=object(w.call);try {const input=object(JSON.parse(String(call.input_delta || call.initial_input))),key=w.name==="web_search"?"query":"url";if(!keys(input,[key])||!validText(input[key],256*1024)||!input[key])return undefined;}catch{return undefined;} }
  }else {const call=webCalls.get(id);if(!call||!call.stopped||call.name!==w.name||webResults.has(id))return undefined;webResults.add(id);}
- bytes+=new TextEncoder().encode(JSON.stringify(w)).length;
+ bytes+=claudeRetainedJSONBytes(w);
  }
     if (Object.hasOwn(entry,"citations")) {
       if (interrupted || block.kind !== BlockKind.Text || !validClaudeCitationHistory(entry.citations, String(entry.state))) return undefined;
