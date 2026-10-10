@@ -80,3 +80,16 @@ it("does not mistake an accepted receipt presentation failure for a rejected req
  fireEvent.click(screen.getByRole("button", { name: "Retry fixture" }));
  expect(calls).toBe(1);
 });
+
+it("settles an uncertain original request from a matching read without replay", async () => {
+  const id = newRequestId(), requestId = newRequestId(); let sends = 0;
+  const transport = createRouterTransport(router => router.service(SessionService, { enqueueInput: () => { sends++; throw new ConnectError("Lost response", Code.Unavailable); } }));
+  function Sender() {
+    const request = useRetainedMutation(`read-recovery:${id}`, SessionQuery.enqueueInput, undefined, (result, original) => result.change?.requestId === original.requestId);
+    return <><button onClick={() => void request.send({ requestId, sessionId: id })}>Send once</button><button onClick={() => request.observe({ $typeName: "delidev.v1.EnqueueInputResponse", change: { $typeName: "delidev.v1.MutationResponse", requestId: newRequestId(), replayed: false } } as never)}>Foreign read</button><button onClick={() => request.observe({ $typeName: "delidev.v1.EnqueueInputResponse", change: { $typeName: "delidev.v1.MutationResponse", requestId, replayed: false } } as never)}>Original read</button><p>{request.uncertain ? "Original uncertain" : "Original settled"}</p></>;
+  }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><MutationIntents><Sender /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Send once"));await screen.findByText("Original uncertain");
+  fireEvent.click(screen.getByText("Foreign read"));expect(screen.getByText("Original uncertain")).toBeTruthy();
+  fireEvent.click(screen.getByText("Original read"));await screen.findByText("Original settled");expect(sends).toBe(1);
+});

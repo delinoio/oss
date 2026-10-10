@@ -70,6 +70,14 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	}
 	switch v := value.(type) {
 	case *domain.Agent:
+		if v.ManagedMCP != nil {
+			for i := range v.ManagedMCP.Selections {
+				if incoming && !v.ManagedMCP.Selections[i].Unresolved {
+					return nil, transferInvalid()
+				}
+				v.ManagedMCP.Selections[i].Unresolved = true
+			}
+		}
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()
 		}
@@ -143,6 +151,9 @@ func exportConfiguration(tx *store.Tx) (domain.ConfigurationBundle, error) {
 		for _, row := range rows {
 			if len(bundle.Entries) >= domain.MaxConfigurationEntries {
 				return bundle, transferLimit()
+			}
+			if hasManagedMCP(kind, row.Data) && bundle.Version < managedMCPBundleVersion {
+				bundle.Version = managedMCPBundleVersion
 			}
 			value, err := portableValue(kind, row.Data, false)
 			if err != nil {
@@ -310,9 +321,10 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if bundle.Version != domain.ConfigurationBundleVersion {
+	if bundle.Version != domain.ConfigurationBundleVersion && bundle.Version != managedMCPBundleVersion {
 		return plan, domain.Fail(domain.Unsupported, "Earlier portable configuration versions are retired.", "Preserve the original bundle and use current source-native configuration.")
 	}
+	plan.Version = bundle.Version
 	if len(bundle.Entries) == 0 {
 		return plan, transferInvalid()
 	}
@@ -324,6 +336,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	bindings := map[domain.ID]domain.ConfigurationBinding{}
 	for _, entry := range bundle.Entries {
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
+			return plan, transferInvalid()
+		}
+		if bundle.Version < managedMCPBundleVersion && hasManagedMCP(entry.Kind, entry.Document) {
 			return plan, transferInvalid()
 		}
 		if _, err := portableValue(entry.Kind, entry.Document, true); err != nil {
@@ -558,7 +573,7 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 	if err != nil {
 		return err
 	}
-	if plan.Version != domain.ConfigurationBundleVersion || len(plan.Changes) == 0 || len(plan.Changes) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationPlanBytes || len(plan.Machines) > domain.MaxConfigurationCheckouts {
+	if (plan.Version != domain.ConfigurationBundleVersion && plan.Version != managedMCPBundleVersion) || len(plan.Changes) == 0 || len(plan.Changes) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationPlanBytes || len(plan.Machines) > domain.MaxConfigurationCheckouts {
 		return transferLimit()
 	}
 	current, err := configurationSnapshot(tx)
@@ -739,4 +754,18 @@ func (s *Service) PreviewConfigurationImport(ctx context.Context, req *connect.R
 	response := connect.NewResponse(&pb.PreviewConfigurationImportResponse{PreviewJson: raw})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
+}
+
+const managedMCPBundleVersion uint32 = 8
+
+func hasManagedMCP(kind domain.Kind, raw []byte) bool {
+	if kind != domain.AgentKind {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
+	}
+	_, present := fields["managed_mcp"]
+	return present
 }

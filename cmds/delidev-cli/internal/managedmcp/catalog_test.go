@@ -3,6 +3,8 @@ package managedmcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -195,3 +198,83 @@ func TestManagedMCPOAuthOriginalScopeAndNoExchangeReplay(t *testing.T) {
 		t.Fatal("OAuth plaintext retained in metadata")
 	}
 }
+
+func TestManagedMCPOAuthExpiryCancellationAndLostExchange(t *testing.T) {
+	for _, mode := range []string{"expired", "cancel", "cleanup-failed", "lost-exchange"} {
+		t.Run(mode, func(t *testing.T) {
+			m, q, d := fixture(t)
+			d.Transport = domain.MCPStreamableHTTP
+			d.Command = ""
+			d.Cwd = ""
+			d.Endpoint = "https://fixture.test/mcp"
+			d.Authentication = domain.MCPOAuthAuthentication
+			d.OAuth = &domain.MCPOAuthProfile{ClientID: "public", AuthorizationURL: "https://fixture.test/auth", TokenURL: "https://fixture.test/token", RedirectURI: "http://localhost/callback"}
+			q.Definition = &d
+			must(t, m, q)
+			attempt := domain.NewID()
+			now := time.Now().UTC()
+			m.Now = func() time.Time { return now }
+			state := sha256.Sum256([]byte("original-state"))
+			expires := now.Add(time.Minute)
+			if mode == "expired" {
+				expires = now.Add(-time.Minute)
+			}
+			path := filepath.Join(m.Root, "managed-mcp", string(m.ServerID), string(m.WorkerDeviceID), "catalog.json")
+			raw, _ := os.ReadFile(path)
+			var c catalog
+			if json.Unmarshal(raw, &c) != nil {
+				t.Fatal("bad fixture catalog")
+			}
+			c.Attempts[attempt] = oauthAttempt{ActorID: q.ActorID, DefinitionID: d.ID, Revision: 1, State: domain.MCPOperationAwaiting, ExpiresAt: expires, StateDigest: hex.EncodeToString(state[:])}
+			raw, _ = json.Marshal(c)
+			if os.WriteFile(path, raw, 0600) != nil {
+				t.Fatal("fixture write")
+			}
+			secret, _ := json.Marshal(oauthPrivate{Verifier: strings.Repeat("x", 43)})
+			m.Secrets.Put(context.Background(), credentials.Ref{Owner: d.ID, ID: attempt, Purpose: credentials.ManagedMCP}, secret)
+			q.Definition = nil
+			q.DefinitionID = d.ID
+			q.RequestID = domain.NewID()
+			q.ExpectedRevision = 1
+			q.AttemptID = attempt
+			q.Action = domain.MCPOAuthComplete
+			q.CallbackURL = "http://localhost/callback?state=original-state&code=private-code"
+			exchanges := 0
+			m.HTTP = &http.Client{Transport: fixtureTransport(func(*http.Request) (*http.Response, error) {
+				exchanges++
+				return nil, errors.New("lost exchange response")
+			})}
+			if mode == "cancel" || mode == "cleanup-failed" {
+				q.Action = domain.MCPOAuthCancel
+				q.Confirmed = true
+				m.Secrets.(*fixtureSecrets).failDelete = mode == "cleanup-failed"
+			}
+			result, err := m.Execute(context.Background(), q)
+			if mode == "cancel" {
+				if err != nil || result.Operation.State != domain.MCPOperationCanceled || len(m.Secrets.(*fixtureSecrets).values) != 0 {
+					t.Fatal("cancellation not confirmed")
+				}
+			} else if err == nil {
+				t.Fatal("failed operation claimed acceptance")
+			}
+			if mode == "lost-exchange" {
+				if exchanges != 1 {
+					t.Fatal("exchange missing")
+				}
+				if _, err = m.Execute(context.Background(), q); err == nil || exchanges != 1 {
+					t.Fatal("uncertain exchange replayed")
+				}
+			}
+			if mode == "expired" && exchanges != 0 {
+				t.Fatal("expired authorization exchanged")
+			}
+			if mode == "cleanup-failed" && len(m.Secrets.(*fixtureSecrets).values) != 1 {
+				t.Fatal("failed cleanup erased ownership")
+			}
+		})
+	}
+}
+
+type fixtureTransport func(*http.Request) (*http.Response, error)
+
+func (f fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

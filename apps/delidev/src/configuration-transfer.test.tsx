@@ -288,7 +288,7 @@ it("sanitizes untyped export errors and preserves local document validation mess
  const mounted=render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
  await screen.findByRole("alert");fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText("The DeliDev request could not complete.")).toBeTruthy();expect(document.body.textContent).not.toMatch(/private-token|private\/user|provider response/);expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
  value.exported.mockResolvedValueOnce({documentJson:encode({version:999,entries:[],machines:[]})});fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
- await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a current version 4 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
+ await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a current version 4 or 8 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
  mounted.unmount();
 });
 
@@ -363,4 +363,11 @@ it("fences a late export failure after an import draft event without releasing t
  expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText("Technical details")).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Load configuration document"}));
  expect(screen.getByRole("button",{name:"Preview configuration changes"})).toBeTruthy();expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("accepts managed MCP format 8 while refusing its authority in legacy format 4", async () => {
+ const value=fixture();render(value.view());
+ const bundle={...value.bundle,version:8,entries:[{id:newRequestId(),kind:"agent",document:{name:"Imported",managed_mcp:{selections:[]}}}]};
+ load({...bundle,version:4});expect(value.preview).not.toHaveBeenCalled();
+ load(bundle);fireEvent.click(screen.getByRole("button",{name:"Preview configuration changes"}));await waitFor(()=>expect(value.preview).toHaveBeenCalledTimes(1));
 });

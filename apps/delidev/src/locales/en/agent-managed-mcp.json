@@ -1,0 +1,15 @@
+{
+  "agent-managed-mcp.title": "MCP",
+  "agent-managed-mcp.help": "Select only enabled definitions that this Runner and harness have independently accepted. Changes apply to new executions.",
+  "agent-managed-mcp.retained": "Retained MCP selection",
+  "agent-managed-mcp.unresolved": "Rebind required",
+  "agent-managed-mcp.bound": "Original Worker binding",
+  "agent-managed-mcp.remove": "Remove selection",
+  "agent-managed-mcp.unsupported": "MCP management is unavailable on this server. Existing selections are preserved.",
+  "agent-managed-mcp.runner": "Runner",
+  "agent-managed-mcp.loading": "Reading the selected Runner…",
+  "agent-managed-mcp.add": "Add MCP selection",
+  "agent-managed-mcp.choose": "Choose a supported definition",
+  "agent-managed-mcp.eligible": "Eligible",
+  "agent-managed-mcp.noNative": "Native support unavailable"
+}
