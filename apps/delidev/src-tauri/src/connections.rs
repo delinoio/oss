@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::{
-    Connection, Connector, DeviceMetadata, DeviceType, NativeFailure, Result, read_bounded,
-    validated_connection,
+    Connection, Connector, DeviceMetadata, DeviceType, NativeFailure, Result,
+    SERVER_PROTOCOL_VERSION, read_bounded, validated_connection,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -378,7 +378,7 @@ impl Connector {
         .map_err(|_| NativeFailure::InvalidEvidence)?;
         if !value.profile.same_authority(expected)
             || value.server_version != env!("CARGO_PKG_VERSION")
-            || value.protocol_version != 1
+            || u64::from(value.protocol_version) != SERVER_PROTOCOL_VERSION
             || value.observed_at.is_empty()
         {
             return Err(NativeFailure::Incompatible);
