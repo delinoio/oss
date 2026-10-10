@@ -222,3 +222,36 @@ func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T
 		t.Fatal("unknown completion issued another operation")
 	}
 }
+
+func TestDedicatedReviewRejectsIncompatibleAuthorityBeforeLaunch(t *testing.T) {
+	for _, kind := range []string{"original", "sidechat", "image-generation", "revert", "fork", "skills", "images", "model-observer", "probe"} {
+		t.Run(kind, func(t *testing.T) {
+			config := Config{CodeReviewModel: "original-selected-model", Mode: ThreadProtocol}
+			switch kind {
+			case "sidechat":
+				config.Sidechat = ReadOnlySidechatV1
+			case "image-generation":
+				config.EnableImageGeneration = true
+			case "revert":
+				config.RevertHistory = true
+			case "fork":
+				config.ManagedForkHistory = true
+			case "skills":
+				config.SkillsRoot = "foreign-skills"
+			case "images":
+				config.ImageRoot = "foreign-images"
+			case "model-observer":
+				config.ModelObservation = true
+			case "probe":
+				config.Mode = ProbeProtocol
+			}
+			err := configureCodeReview(&config)
+			if (err == nil) != (kind == "original") {
+				t.Fatal("review admitted unrelated authority", err)
+			}
+			if err == nil && (config.Sidechat != ReadOnlySidechatV1 || len(config.Process.Args) != 2 || config.Process.Args[1] != `review_model="original-selected-model"`) {
+				t.Fatal("original model and read-only overlay not retained")
+			}
+		})
+	}
+}

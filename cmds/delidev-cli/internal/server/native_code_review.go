@@ -243,6 +243,9 @@ func finishNativeCodeReview(tx *store.Tx, row store.Record, job domain.Job, revi
 	}
 	var rejected domain.NativeCodeReviewRejectedProof
 	if problem == nil && domain.Decode(raw, &rejected) == nil && rejected.Validate() == nil && rejected.ActionID == input.ActionID {
+		if found && progress.State != domain.NativeReviewReady {
+			return nil, domain.NativeCodeReviewUnavailable()
+		}
 		job.Output = append(json.RawMessage(nil), raw...)
 		job.State = domain.JobFailed
 		job.Problem = domain.Fail(domain.Unsupported, "The original native review was rejected before sending.", "Its original no-send and cleanup proofs are verified; refresh the selected target or native profile before a new explicit review.")

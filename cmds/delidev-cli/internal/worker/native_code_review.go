@@ -87,6 +87,9 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 	}
 	home := filepath.Join(root, string(input.ActionID))
 	if _, err := os.Lstat(home); !errors.Is(err, os.ErrNotExist) {
+		// Retained original runtime evidence can represent an earlier send.
+		// This invocation's absence of sending cannot prove original no-send.
+		nativeSent = true
 		return nil, publicationUncertain()
 	}
 	env, err := harness.PrivateRuntimeEnvironment(home)

@@ -46,3 +46,18 @@ func TestNativeCodeReviewFindingsRejectForeignLocationAndMalformedConfidence(t *
 		}
 	}
 }
+
+func TestNativeReviewMachineCapabilityIsClosedAndUnique(t *testing.T) {
+	machine := Machine{Name: "Original Worker", OS: "linux", Architecture: "amd64", WorkerCapabilities: []WorkerCapability{NativeCodexReviewV1}}
+	if err := machine.Validate(); err != nil {
+		t.Fatal("own negotiated capability refused", err)
+	}
+	machine.WorkerCapabilities = append(machine.WorkerCapabilities, NativeCodexReviewV1)
+	if machine.Validate() == nil {
+		t.Fatal("duplicate native review support accepted")
+	}
+	machine.WorkerCapabilities = []WorkerCapability{"foreign-native-review"}
+	if machine.Validate() == nil {
+		t.Fatal("unknown review capability accepted")
+	}
+}
