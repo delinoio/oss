@@ -33,7 +33,7 @@ func newContinuationFixtureProfile(t *testing.T, outcome domain.ExecutionOutcome
 	t.Helper()
 	var base *firstDispatchFixture
 	if harness == domain.OpenCode {
-		base = newFirstDispatchFixtureForHarness(t, harness, domain.ExecuteMode)
+		base = newSupportedOpenCodeFirstDispatchFixture(t)
 	} else {
 		base = newFirstDispatchFixtureForHarness(t, harness)
 	}

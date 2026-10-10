@@ -3,9 +3,11 @@ package claude
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +18,7 @@ import (
 func TestOrdinaryGhConfigurationAfterAdapterRebuild(t *testing.T) {
 	cfg, _ := apiFixtureConfig(t, "valid")
 	directory := filepath.Join(t.TempDir(), "user-gh")
-	cfg.OrdinaryTools = executionenv.Resolve("linux", []string{"GH_CONFIG_DIR=" + directory}, t.TempDir())
+	cfg.OrdinaryTools = executionenv.Resolve(runtime.GOOS, []string{"GH_CONFIG_DIR=" + directory}, t.TempDir())
 	cfg.Process.Env = append(cfg.Process.Env, "GH_TOKEN=foreign", "GH_CONFIG_DIR=foreign")
 	prepared, err := prepareAPIStream(cfg)
 	if err != nil {
@@ -54,7 +56,12 @@ func assertOrdinaryGhTool(t *testing.T, env []string, directory string) {
 	}
 	output, err := run(env)
 	if err != nil || strings.TrimSpace(string(output)) != token {
-		t.Fatal("ordinary tool did not locate its synthetic configuration")
+		var exited *exec.ExitError
+		exitCode := -1
+		if errors.As(err, &exited) {
+			exitCode = exited.ExitCode()
+		}
+		t.Fatalf("ordinary tool did not locate its synthetic configuration: platform=%s exit_code=%d output_matches=%t", runtime.GOOS, exitCode, strings.TrimSpace(string(output)) == token)
 	}
 	// gh may migrate its own file during an explicitly invoked command.
 	baseline, err := os.ReadFile(file)

@@ -3,12 +3,16 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -69,6 +73,16 @@ func newFirstDispatchFixtureProfile(t *testing.T, harness domain.Harness, mode d
 }
 
 func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType, projects ...openCodeProjectFixtureKind) *firstDispatchFixture {
+	return newFirstDispatchFixtureWorkspaceProfileForWorkerOS(t, harness, mode, executable, upstreamURL, nativeModel, workspaceType, runtime.GOOS, projects...)
+}
+
+// A controlled remote Linux Worker fixture remains independent of the server
+// host. It performs no native execution and does not enable Windows OpenCode Fork.
+func newSupportedOpenCodeFirstDispatchFixture(t *testing.T) *firstDispatchFixture {
+	return newFirstDispatchFixtureWorkspaceProfileForWorkerOS(t, domain.OpenCode, domain.ExecuteMode, "/fixture/opencode", "", "fixture-model", domain.GeneralChat, "linux")
+}
+
+func newFirstDispatchFixtureWorkspaceProfileForWorkerOS(t *testing.T, harness domain.Harness, mode domain.SessionMode, executable, upstreamURL, nativeModel string, workspaceType domain.WorkspaceType, workerOS string, projects ...openCodeProjectFixtureKind) *firstDispatchFixture {
 	t.Helper()
 	protocol, permission, version := domain.OpenAIResponses, domain.PermissionReadOnly, domain.CodexProtocolVersion
 	if harness == domain.OpenCode {
@@ -92,6 +106,28 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 	base.resources = delidevv1connect.NewResourceServiceClient(http.DefaultClient, server.URL)
 	identity, paired := pairedWorker(t, context.Background(), base.endpoint, base.identity)
 	f := &firstDispatchFixture{accountFixture: base, service: service, machine: paired.Machine, workerDevice: domain.ID(paired.Device.Id)}
+	if workerOS != runtime.GOOS {
+		if workspaceType != domain.GeneralChat || harness != domain.OpenCode || workerOS != "linux" {
+			t.Fatal("unsupported synthetic remote fixture profile")
+		}
+		_, err = service.Store.Mutate(context.Background(), domain.NewID(), "fixture.remote-worker-os", nil, func(tx *store.Tx) (any, error) {
+			row, err := tx.Get(domain.MachineKind, domain.ID(f.machine.Id))
+			if err != nil {
+				return nil, err
+			}
+			machine, err := store.Decode[domain.Machine](row)
+			if err != nil {
+				return nil, err
+			}
+			machine.OS = workerOS
+			return tx.Put(row.Kind, row.ID, row.Revision, row.SessionID, row.ProjectID, machine)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.machine = currentCatalogResource(t, base, f.machine)
+	}
+
 	if upstreamURL == "" {
 		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet || r.URL.Path != "/models" || r.Header.Get("Authorization") != "" {
@@ -212,7 +248,19 @@ func newFirstDispatchFixtureWorkspaceProfile(t *testing.T, harness domain.Harnes
 		}
 		manager.Git.Executable = testgit.Executable(t, sources)
 	}
-	manifest, err := manager.Prepare(ctx, request)
+	var manifest workspace.Manifest
+	if workerOS == runtime.GOOS {
+		manifest, err = manager.Prepare(ctx, request)
+	} else {
+		// This remote metadata fixture never opens its Linux namespace on the
+		// Windows server. The report still passes exact preparation validation.
+		inputRaw, marshalErr := json.Marshal(request)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		inputDigest := sha256.Sum256(inputRaw)
+		manifest = workspace.Manifest{Version: 1, SessionID: request.SessionID, MachineID: request.MachineID, Type: request.Type, State: workspace.Ready, InputDigest: hex.EncodeToString(inputDigest[:]), PrimaryPath: path.Join("/fixture/worker/workspaces", string(request.SessionID), "chat"), Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}
+	}
 	f.workerRoot = manager.Root
 	if err != nil {
 		t.Fatal(err)

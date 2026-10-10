@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -72,7 +73,7 @@ func newImageViewPublicationFixture(t *testing.T) (*publicationFixture, string) 
 	t.Helper()
 	root := t.TempDir()
 	location := ""
-	authority := newConfiguredAuthorityFixture(t, "http://127.0.0.1:1", func(input *domain.ExecutionJobInput) {
+	authority := newProfileAuthorityFixtureForWorkerOS(t, "http://127.0.0.1:1", domain.Codex, domain.OpenAIResponses, func(input *domain.ExecutionJobInput) {
 		p := workspace.PrepareRequest{SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
 		raw, _ := json.Marshal(p)
 		digest := sha256.Sum256(raw)
@@ -80,7 +81,7 @@ func newImageViewPublicationFixture(t *testing.T) (*publicationFixture, string) 
 		m := workspace.Manifest{Version: 1, SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(digest[:]), PrimaryPath: location, Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}
 		input.Preparation = raw
 		input.Manifest, _ = json.Marshal(m)
-	}, false)
+	}, false, runtime.GOOS)
 	if err := os.MkdirAll(location, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +214,7 @@ func TestExecutionImageViewRejectsChangedScopeAndReference(t *testing.T) {
 			f.registerGrant(t)
 			f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 			f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
-			ref, err := workspace.ObserveImageViewLocation(f.input, "linux", location, domain.NewID())
+			ref, err := workspace.ObserveImageViewLocation(f.input, runtime.GOOS, location, domain.NewID())
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -576,3 +576,9 @@ existing original cleanup and recovery ownership; a foreign directory or
 unproved process cleanup remains uncertain. Sidechat keeps metadata-only parent
 references. Original Local sharing and legacy accepted linked-worktree lifetimes
 keep their existing ownership boundaries.
+
+Directory identity rejection logs a closed predicate for named shape, canonical
+path, original open, open-handle stat, native file identity, final named stat or
+original identity mismatch. These private structured diagnostics include no path,
+file index or native error text. A diagnostic does not weaken canonical admission,
+adopt a replacement directory or prove successful cleanup.

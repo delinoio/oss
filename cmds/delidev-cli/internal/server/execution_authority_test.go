@@ -56,6 +56,12 @@ func newConfiguredAuthorityFixture(t *testing.T, upstream string, configure func
 }
 
 func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Harness, protocol domain.APIProtocol, configure func(*domain.ExecutionJobInput), queued bool, nativeModels ...string) *authorityFixture {
+	return newProfileAuthorityFixtureForWorkerOS(t, upstream, harness, protocol, configure, queued, "linux", nativeModels...)
+}
+
+// Native mapper fixtures name their actual executing Worker OS; remote fixtures
+// retain their explicit Linux identity independently of the server host.
+func newProfileAuthorityFixtureForWorkerOS(t *testing.T, upstream string, harness domain.Harness, protocol domain.APIProtocol, configure func(*domain.ExecutionJobInput), queued bool, workerOS string, nativeModels ...string) *authorityFixture {
 	t.Helper()
 	s, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state"))
 	if err != nil {
@@ -121,7 +127,7 @@ func newProfileAuthorityFixture(t *testing.T, upstream string, harness domain.Ha
 			{domain.ProviderKind, providerID, domain.Provider{Name: "Fixture", Endpoint: upstream, Protocol: protocol, Authentication: domain.BearerAuth}},
 			{domain.AgentKind, agentID, agent},
 			{domain.AccountKind, accountID, domain.Account{Alias: "Fixture", ProviderID: providerID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountReady, Connection: &domain.AccountConnection{ID: connectionID, Authentication: domain.BearerAuth, ConnectedAt: time.Now().UTC()}}},
-			{domain.MachineKind, f.input.MachineID, domain.Machine{Name: "Fixture", OS: "linux", Architecture: "arm64"}},
+			{domain.MachineKind, f.input.MachineID, domain.Machine{Name: "Fixture", OS: workerOS, Architecture: "arm64"}},
 			{domain.DeviceKind, f.device, domain.Device{Name: "Fixture Worker", Type: domain.WorkerDevice, MachineID: f.input.MachineID}},
 		} {
 			if err := put(row.kind, row.id, "", row.value); err != nil {

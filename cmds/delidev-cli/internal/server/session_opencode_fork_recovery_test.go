@@ -2,6 +2,7 @@
 package server
 
 import (
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -417,5 +418,30 @@ func TestOpenCodeForkForeignCreationRejectedBeforeAdmission(t *testing.T) {
 				t.Fatal("rejected foreign marker admitted recovery work or mutated original session", err, listErr)
 			}
 		})
+	}
+}
+
+func TestOpenCodeForkFixtureRetainsWindowsNativeRefusal(t *testing.T) {
+	f := newContinuationFixtureProfile(t, domain.ExecutionSucceeded, domain.OpenCode)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.unsupported-worker-os", nil, func(tx *store.Tx) (any, error) {
+		row, err := tx.Get(domain.MachineKind, domain.ID(f.machine.Id))
+		if err != nil {
+			return nil, err
+		}
+		machine, err := store.Decode[domain.Machine](row)
+		if err != nil {
+			return nil, err
+		}
+		machine.OS = "windows"
+		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1)
+		return tx.Put(row.Kind, row.ID, row.Revision, row.SessionID, row.ProjectID, machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := f.refresh(t)
+	response, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, &pb.ForkSessionRequest{Mutation: acctMutation(resourceForTest(source), domain.NewID()), ExpectedTurnId: string(f.turn), Name: "Unsupported Windows fixture", Workspace: pb.ForkWorkspace_FORK_WORKSPACE_GENERAL_CHAT}))
+	if err == nil || connect.CodeOf(err) != connect.CodeUnimplemented || response != nil {
+		t.Fatal("unsupported Windows native profile acquired fork authority", err)
 	}
 }

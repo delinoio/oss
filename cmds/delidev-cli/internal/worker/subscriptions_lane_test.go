@@ -241,7 +241,10 @@ func TestManagedLifecycleExactTakeRefusalKeepsLaneWithoutCompletion(t *testing.T
 			deadline := time.Now().Add(3 * time.Second)
 			for {
 				var journal managedSubscriptionJournal
-				raw, err := os.ReadFile(paths[0])
+				// Read the same private original through its shared no-follow handle.
+				// Windows atomic replacement may coexist with observation; contention
+				// never proves a completed or newly admitted operation.
+				raw, err := security.ReadPrivate(paths[0], 64<<10)
 				if err != nil {
 					t.Fatal(err)
 				}

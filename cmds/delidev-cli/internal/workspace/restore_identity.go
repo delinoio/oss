@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -35,25 +36,52 @@ func restoredDirectoryIdentity(root string, manifest Manifest) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+type directoryIdentityStage string
+
+const (
+	identityNamedShape directoryIdentityStage = "named-shape"
+	identityCanonical  directoryIdentityStage = "canonical-path"
+	identityOpen       directoryIdentityStage = "open-original"
+	identityOpenedStat directoryIdentityStage = "opened-stat"
+	identityNative     directoryIdentityStage = "native-file-identity"
+	identityNamedStat  directoryIdentityStage = "named-stat"
+	identityMismatch   directoryIdentityStage = "original-identity-mismatch"
+)
+
+func directoryIdentityRejected(stage directoryIdentityStage) error {
+	// The private diagnostic identifies a closed predicate, never a path or
+	// self-reported identity. It grants no adoption or cleanup authority.
+	slog.Warn("workspace_directory_identity_rejected", "stage", stage)
+	return ResultUncertain()
+}
 func directoryPathIdentity(path string) (string, error) {
 	before, err := os.Lstat(path)
 	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
-		return "", ResultUncertain()
+		return "", directoryIdentityRejected(identityNamedShape)
 	}
 	canonical, err := filepath.EvalSymlinks(path)
 	if err != nil || canonical != path {
-		return "", ResultUncertain()
+		return "", directoryIdentityRejected(identityCanonical)
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return "", ResultUncertain()
+		return "", directoryIdentityRejected(identityOpen)
 	}
 	opened, statErr := file.Stat()
 	identity, identityErr := directoryFileIdentity(file)
 	file.Close()
 	after, namedErr := os.Lstat(path)
-	if statErr != nil || identityErr != nil || namedErr != nil || !os.SameFile(before, opened) || !os.SameFile(opened, after) || after.Mode()&os.ModeSymlink != 0 {
-		return "", ResultUncertain()
+	if statErr != nil {
+		return "", directoryIdentityRejected(identityOpenedStat)
+	}
+	if identityErr != nil {
+		return "", directoryIdentityRejected(identityNative)
+	}
+	if namedErr != nil {
+		return "", directoryIdentityRejected(identityNamedStat)
+	}
+	if !os.SameFile(before, opened) || !os.SameFile(opened, after) || after.Mode()&os.ModeSymlink != 0 {
+		return "", directoryIdentityRejected(identityMismatch)
 	}
 	return identity, nil
 }

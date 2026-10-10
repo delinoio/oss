@@ -271,7 +271,7 @@ func configureOpenCodeGoDispatch(t *testing.T, f *firstDispatchFixture) {
 	}
 }
 func newOpenCodeGoContinuation(t *testing.T) *continuationFixture {
-	f := &continuationFixture{firstDispatchFixture: newFirstDispatchFixtureForHarness(t, domain.OpenCode, domain.ExecuteMode), thread: "ses_01960dcbe1faabcdefghijklmn", turn: "msg_01960dcbe1faABCDEFGHIJKLMN"}
+	f := &continuationFixture{firstDispatchFixture: newSupportedOpenCodeFirstDispatchFixture(t), thread: "ses_01960dcbe1faabcdefghijklmn", turn: "msg_01960dcbe1faABCDEFGHIJKLMN"}
 	configureOpenCodeGoDispatch(t, f.firstDispatchFixture)
 	if err := f.service.dispatchExecution(context.Background(), f.refresh(t)); err != nil {
 		t.Fatal(err)

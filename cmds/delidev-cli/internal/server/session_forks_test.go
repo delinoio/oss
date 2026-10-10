@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -64,7 +65,7 @@ func forkResultFixture(t *testing.T, input domain.ForkJobInput) domain.ForkJobRe
 	preparation := workspace.PrepareRequest{SessionID: input.ChildSessionID, MachineID: input.SourceAssignment.MachineID, Type: domain.GeneralChat, ForkSourceID: input.SourceSessionID, ForkSourcePath: source.PrimaryPath, Repositories: []workspace.RepositorySpec{}}
 	raw, _ := json.Marshal(preparation)
 	digest := sha256.Sum256(raw)
-	manifest := workspace.Manifest{Version: 1, SessionID: input.ChildSessionID, MachineID: input.SourceAssignment.MachineID, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(digest[:]), PrimaryPath: filepath.Join(filepath.Dir(filepath.Dir(source.PrimaryPath)), string(input.ChildSessionID), "chat"), Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}
+	manifest := workspace.Manifest{Version: 1, SessionID: input.ChildSessionID, MachineID: input.SourceAssignment.MachineID, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(digest[:]), PrimaryPath: forkFixtureChildPath(source.PrimaryPath, input.ChildSessionID), Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}
 	manifestRaw, _ := json.Marshal(manifest)
 	return domain.ForkJobResult{Version: 1, ChildSessionID: input.ChildSessionID, RuntimeID: input.RuntimeID, NativeThreadID: domain.NativeIdentity(domain.NewID()), NativeTurnID: input.Completion.NativeTurnID, CheckpointDigest: strings.Repeat("ab", 32), Preparation: raw, Manifest: manifestRaw, CleanupVerified: true}
 }
@@ -309,4 +310,13 @@ func TestSessionForkRejectsLocalManagedSourceBeforeAcceptingJob(t *testing.T) {
 	if err != nil || len(afterJobs) != len(jobs) || after.Revision != before.Revision || !bytes.Equal(after.Data, before.Data) {
 		t.Fatal("unsupported Local request changed source or accepted work", err)
 	}
+}
+
+func forkFixtureChildPath(source string, child domain.ID) string {
+	// Synthetic Linux assignments use POSIX paths on every server host; local
+	// assignments keep their native Worker path shape independently.
+	if strings.HasPrefix(source, "/") {
+		return path.Join(path.Dir(path.Dir(source)), string(child), "chat")
+	}
+	return filepath.Join(filepath.Dir(filepath.Dir(source)), string(child), "chat")
 }
