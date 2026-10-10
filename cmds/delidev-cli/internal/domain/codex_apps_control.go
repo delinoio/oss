@@ -22,21 +22,25 @@ const (
 // Inventory is an observation of one retained original controller. It never
 // authorizes another execution, account or connector installation.
 type CodexAppsInventory struct {
-	Version                 int            `json:"version"`
-	SessionID               ID             `json:"session_id"`
-	AccountID               ID             `json:"account_id"`
-	ConfigurationGeneration ID             `json:"configuration_generation"`
-	ExecutionID             ID             `json:"execution_id"`
-	ExecutionJobID          ID             `json:"execution_job_id"`
-	MachineID               ID             `json:"machine_id"`
-	InstanceID              ID             `json:"instance_id"`
-	NativeThreadID          NativeIdentity `json:"native_thread_id"`
-	ObservedAt              time.Time      `json:"observed_at"`
-	Apps                    []CodexApp     `json:"apps"`
+	OperationID ID `json:"operation_id"`
+	ClaimID     ID `json:"claim_id"`
+	// Set only by the original Worker after a complete forced native catalog refresh.
+	NativeCatalogRefreshVerified bool           `json:"native_catalog_refresh_verified"`
+	Version                      int            `json:"version"`
+	SessionID                    ID             `json:"session_id"`
+	AccountID                    ID             `json:"account_id"`
+	ConfigurationGeneration      ID             `json:"configuration_generation"`
+	ExecutionID                  ID             `json:"execution_id"`
+	ExecutionJobID               ID             `json:"execution_job_id"`
+	MachineID                    ID             `json:"machine_id"`
+	InstanceID                   ID             `json:"instance_id"`
+	NativeThreadID               NativeIdentity `json:"native_thread_id"`
+	ObservedAt                   time.Time      `json:"observed_at"`
+	Apps                         []CodexApp     `json:"apps"`
 }
 
 func (v CodexAppsInventory) Validate() error {
-	if v.Version != 1 || v.ObservedAt.IsZero() || v.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || v.Apps == nil || len(v.Apps) > MaxCodexAppInventory {
+	if !v.NativeCatalogRefreshVerified || v.OperationID.Validate() != nil || v.ClaimID.Validate() != nil || v.Version != 1 || v.ObservedAt.IsZero() || v.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil || v.Apps == nil || len(v.Apps) > MaxCodexAppInventory {
 		return invalidCodexApps()
 	}
 	for _, id := range []ID{v.SessionID, v.AccountID, v.ConfigurationGeneration, v.ExecutionID, v.ExecutionJobID, v.MachineID, v.InstanceID} {
@@ -58,6 +62,7 @@ func (v CodexAppsInventory) Validate() error {
 // receipt is never retried. Uncertainty retains that obligation independently
 // of selection state and native process cleanup.
 type CodexAppsOperation struct {
+	ClaimID        ID                     `json:"claim_id,omitempty"`
 	Version        int                    `json:"version"`
 	ID             ID                     `json:"id"`
 	Revision       uint64                 `json:"revision,string"`
@@ -85,7 +90,7 @@ func (v CodexAppsOperation) Validate() error {
 			return invalidCodexApps()
 		}
 	}
-	if v.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil {
+	if (v.State != CodexAppsQueued && v.ClaimID.Validate() != nil) || (v.State == CodexAppsQueued && v.ClaimID != "") || v.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil {
 		return invalidCodexApps()
 	}
 	if v.Action == CodexAppsInspect {
@@ -105,7 +110,7 @@ func (v CodexAppsOperation) Validate() error {
 		if v.Next != nil && v.State == CodexAppsSucceeded {
 			expected = *v.Next
 		}
-		if i.Validate() != nil || i.SessionID != expected.SessionID || i.AccountID != expected.AccountID || i.ConfigurationGeneration != expected.Generation || i.ExecutionID != v.ExecutionID || i.ExecutionJobID != v.ExecutionJobID || i.MachineID != v.MachineID || i.InstanceID != v.InstanceID || i.NativeThreadID != v.NativeThreadID {
+		if i.Validate() != nil || i.OperationID != v.ID || i.ClaimID != v.ClaimID || i.SessionID != expected.SessionID || i.AccountID != expected.AccountID || i.ConfigurationGeneration != expected.Generation || i.ExecutionID != v.ExecutionID || i.ExecutionJobID != v.ExecutionJobID || i.MachineID != v.MachineID || i.InstanceID != v.InstanceID || i.NativeThreadID != v.NativeThreadID {
 			return invalidCodexApps()
 		}
 	}
