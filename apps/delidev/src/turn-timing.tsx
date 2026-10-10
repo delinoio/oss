@@ -6,7 +6,7 @@ import { copy } from "./localization";
 
 export interface TurnTiming { accepted: number; terminal?: number }
 export interface TurnProjection { owner: string; inputId: string; timing?: TurnTiming; captured: boolean; inherited?: { sessionId: string; executionId: string; inputId: string } }
-export interface CurrentTurn extends TurnProjection { running: boolean }
+export interface CurrentTurn extends TurnProjection { running: boolean; observation?: { revision: bigint; updated: number } }
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const identity = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && new TextEncoder().encode(value).length <= 1024 && !/[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(value);
 function utc(value: unknown): number | undefined {
@@ -56,26 +56,50 @@ export function currentTurn(row: Resource | undefined, sessionId: string): Curre
   // A terminal timestamp never fabricates a terminal outcome and a terminal
   // outcome without its retained end cannot fabricate a finished duration.
   const consistent = timing && bound && (running ? timing.terminal === undefined : timing.terminal !== undefined);
-  return { owner: owner(sessionId, e.execution_id, e.native_thread_id, e.native_turn_id), inputId: e.input_id, captured: Object.hasOwn(e, "turn_timing"), timing: consistent ? timing : undefined, running };
+  const stamp = row.updatedAt;
+  let observation: CurrentTurn["observation"];
+  if (consistent && stamp && stamp.seconds >= 0n && stamp.seconds <= 253402300799n && Number.isInteger(stamp.nanos) && stamp.nanos >= 0 && stamp.nanos < 1_000_000_000) {
+    const updated = Number(stamp.seconds) * 1000 + Math.floor(stamp.nanos / 1_000_000);
+    const acceptedText = String(object(e.turn_timing).accepted_at);
+    const acceptedNanos = BigInt(Math.floor(timing.accepted / 1000)) * 1_000_000_000n + BigInt((acceptedText.split(".")[1]?.slice(0, -1) ?? "").padEnd(9, "0"));
+    if (stamp.seconds * 1_000_000_000n + BigInt(stamp.nanos) >= acceptedNanos && Number.isSafeInteger(updated - timing.accepted)) observation = { revision: row.revision, updated };
+  }
+  return { owner: owner(sessionId, e.execution_id, e.native_thread_id, e.native_turn_id), inputId: e.input_id, captured: Object.hasOwn(e, "turn_timing"), timing: consistent ? timing : undefined, running, observation };
 }
 
 /** Exactly one mounted timer; inactive/unconfirmed observations do no clock work. */
 export function useTurnClock(turn: CurrentTurn | undefined, active: boolean, confirmed: boolean) {
-  const frame = useRef<{ owner: string; seconds?: number }>({ owner: "" });
+  const frame = useRef<{ key: string; revision: bigint; updated: number; elapsed: number; anchor?: number }>({ key: "", revision: 0n, updated: 0, elapsed: 0 });
   const [, redraw] = useState(0);
   const accepted = turn?.running ? turn.timing?.accepted : undefined;
+  const observation = turn?.observation;
+  const key = turn && accepted !== undefined ? JSON.stringify([turn.owner, turn.inputId, accepted]) : "";
   useLayoutEffect(() => {
-    if (!active || !confirmed || accepted === undefined || !turn) return;
-    const tick = () => {
-      const delta = Date.now() - accepted;
-      frame.current = { owner: turn.owner, seconds: Number.isSafeInteger(delta) && delta >= 0 ? Math.floor(delta / 1000) : undefined };
-      redraw(value => value + 1);
-    };
+    if (accepted === undefined || !observation || !key) return;
+    const now = performance.now();
+    const prior = frame.current;
+    if (prior.key === key && (observation.revision === prior.revision && observation.updated !== prior.updated || observation.revision > prior.revision && observation.updated < prior.updated)) return;
+    const advanced = prior.elapsed + (prior.anchor === undefined ? 0 : Math.max(0, now - prior.anchor));
+    if (prior.key !== key) frame.current = { key, revision: observation.revision, updated: observation.updated, elapsed: observation.updated - accepted };
+    else if (observation.revision > prior.revision && observation.updated >= prior.updated) frame.current = { key, revision: observation.revision, updated: observation.updated, elapsed: Math.max(advanced, observation.updated - accepted) };
+    if (!active || !confirmed) { redraw(value => value + 1); return; }
+    // Retained same/stale revisions cannot reset elapsed or include a hidden
+    // interval. Only local monotonic advancement belongs to this active owner.
+    frame.current.anchor = now;
+    const tick = () => redraw(value => value + 1);
     tick();
     const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [active, confirmed, turn?.owner, accepted]);
-  return turn && frame.current.owner === turn.owner ? frame.current.seconds : undefined;
+    return () => {
+      clearInterval(timer);
+      const current = frame.current;
+      if (current.anchor !== undefined) current.elapsed += Math.max(0, performance.now() - current.anchor);
+      current.anchor = undefined;
+    };
+  }, [active, confirmed, key, accepted, observation?.revision, observation?.updated]);
+  const current = frame.current;
+  if (!key || !observation || current.key !== key || observation.revision === current.revision && observation.updated !== current.updated || observation.revision > current.revision && observation.updated < current.updated) return;
+  const elapsed = current.elapsed + (current.anchor === undefined ? 0 : Math.max(0, performance.now() - current.anchor));
+  return Number.isFinite(elapsed) && elapsed >= 0 && Number.isSafeInteger(Math.floor(elapsed)) ? Math.floor(elapsed / 1000) : undefined;
 }
 export function turnDuration(seconds: number): string {
   const days = Math.floor(seconds / 86400), hours = Math.floor(seconds / 3600) % 24, minutes = Math.floor(seconds / 60) % 60, rest = seconds % 60;
