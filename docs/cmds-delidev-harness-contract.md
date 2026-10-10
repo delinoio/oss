@@ -875,6 +875,24 @@ An explicit private `APIConfig` accepts the already-paired server origin and a r
 
 Native session flags override user/project provider selections without modifying those files. Legacy managed policy can outrank session flags, so `config/read` verifies the effective configuration at process readiness and again for the exact primary directory before thread start/resume. The selected provider, endpoint, environment-key name, protocol, ephemeral auth store and transport capabilities must match. The pinned native response serializes absent optional fields as null; only absent/null command authentication, literal bearer credentials, AWS authority, extra query/headers and other unsupported provider overrides are accepted. Populated authority or unknown provider fields fail before sending input. Native retry behavior remains native; the adapter does not force retry limits, and the DeliDev relay still never retries.
 
+Original `account/gatewayOAuth/changed` notifications are decoded as a closed
+private envelope: required bounded `providerId`, status `notReady`, `started`,
+`succeeded` or `failed`, and optional nullable bounded `authUrl`/`error` strings.
+Omission, null and supplied strings remain distinct in the private decoder;
+duplicates, unknown fields, malformed values and frame/string overflow fail
+through the existing redacted account-gateway validation boundary. The adapter
+has no gateway operation owner and discards every valid payload, emitting only
+`gateway-oauth-status-discarded` metadata. Provider identities, URLs and raw errors
+never enter public receipts, logs or persisted observations. URL text remains
+inert even with unsafe schemes or callback-like parameters. No status grants
+login completion, account/provider readiness, browser/network/callback access,
+credential writes, input replay or completion evidence. Same-name server requests
+retain their separate unsupported interaction boundary. A future gateway owner
+must independently admit and correlate its own original operation; this passive
+adapter creates no such owner. Existing selected credentials, account leases,
+immutable execution settings and once-only native inputs remain unchanged.
+This boundary uses the observed envelope shape rather than a version gate.
+
 Codex API provider fields `model_catalog_url` and `gateway_oauth` follow the same absent-or-exact-null rule in ordinary, title and owned-proxy profiles. Every populated value, including an empty string or object, fails before input; these fields grant no catalog or gateway OAuth authority. Unknown and duplicate provider fields remain rejected. This compatibility boundary does not replay failed sessions or alter original cleanup/recovery ownership.
 
 Opt-in native tests verify one exact authenticated request to a scripted local proxy despite a competing private user config, and inspect the closed runtime for persisted execution tokens. A separate server composition test registers a digest through authenticated Connect, then runs installed Codex through the actual server relay into a scripted loopback provider with server-only key injection. It verifies exact model/input/output identity and owned closure. The accepted execution-readiness records in that test are simulated; the actual Worker loop now executes accepted first assignments, with the separately validated public first dispatcher now supplying that assignment; complete event normalization remains pending. The server composition additionally verifies the Worker durable core-event outbox and retained server transcript. No user account or external inference service is involved.

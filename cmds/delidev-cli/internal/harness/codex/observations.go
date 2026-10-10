@@ -12,17 +12,18 @@ import (
 type MetadataKind string
 
 const (
-	AutoReviewReplayChecked    MetadataKind = "auto-review-replay-checked"
-	ThreadIdentityChecked      MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked      MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled      MetadataKind = "remote-control-disabled"
-	QuotaUnavailable           MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded     MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent           MetadataKind = "native-goal-absent"
-	ModelVerificationAbsent    MetadataKind = "model-verification-absent"
-	CodexAppsStartupObserved   MetadataKind = "codex-apps-startup-observed"
-	SkillsChangedDiscarded     MetadataKind = "skills-changed-discarded"
-	FilesystemChangedDiscarded MetadataKind = "filesystem-changed-discarded"
+	AutoReviewReplayChecked     MetadataKind = "auto-review-replay-checked"
+	ThreadIdentityChecked       MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked       MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled       MetadataKind = "remote-control-disabled"
+	QuotaUnavailable            MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded      MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent            MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent     MetadataKind = "model-verification-absent"
+	CodexAppsStartupObserved    MetadataKind = "codex-apps-startup-observed"
+	SkillsChangedDiscarded      MetadataKind = "skills-changed-discarded"
+	FilesystemChangedDiscarded  MetadataKind = "filesystem-changed-discarded"
+	GatewayOAuthStatusDiscarded MetadataKind = "gateway-oauth-status-discarded"
 )
 
 type nativeMCPStartupState string
@@ -84,6 +85,14 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "account/gatewayOAuth/changed":
+		if _, err := decodeGatewayOAuthNotification(native.Params); err != nil {
+			return Event{}, err
+		}
+		// No independently admitted gateway operation belongs to this adapter.
+		// Validate then discard: none of these statuses acknowledges product login,
+		// changes the selected account/provider, or authorizes another native input.
+		return c.metadata(GatewayOAuthStatusDiscarded), nil
 	case "fs/changed":
 		var params struct {
 			WatchID      string   `json:"watchId"`
