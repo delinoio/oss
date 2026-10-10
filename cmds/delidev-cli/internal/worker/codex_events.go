@@ -180,6 +180,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		c.children = next
 		return true, nil
 	case codex.MetadataEvent:
+		if event.Metadata == codex.RemoteControlDisabled && event.RemoteControl != nil && (!event.RemoteControl.Valid() || event.RemoteControl.Policy != codex.RemoteControlPassive) {
+			return false, publicationUncertain()
+		}
 		if (event.Metadata == codex.AuthRecoveryStartedObserved || event.Metadata == codex.AuthRecoveryCompletedObserved) && (c.finished || event.TurnID != c.turn) {
 			return false, publicationUncertain()
 		}

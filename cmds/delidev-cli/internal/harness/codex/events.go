@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ type eventValidationStage string
 
 const (
 	validationOther          eventValidationStage = "other"
+	validationRemoteControl  eventValidationStage = "remote-control"
 	validationNativeError    eventValidationStage = "native-error"
 	validationSettings       eventValidationStage = "thread-settings"
 	validationItem           eventValidationStage = "message-item"
@@ -44,6 +46,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "remoteControl/status/changed":
+		return validationRemoteControl
 	case "error":
 		return validationNativeError
 	case "thread/settings/updated":
@@ -153,7 +157,8 @@ type Message struct {
 }
 
 type Event struct {
-	NativeError      *NativeErrorObservation `json:"-"`
+	RemoteControl    *RemoteControlObservation `json:"-"`
+	NativeError      *NativeErrorObservation   `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -254,6 +259,10 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	c.pendingEvent = nil
 	event, err := c.observeEventLocked(native)
 	if err != nil {
+		var violation *RemoteControlPolicyViolation
+		if c.logger != nil && errors.As(err, &violation) {
+			c.logger.WarnContext(ctx, "Codex remote-control policy refused", "owner_id", c.ownerID, "stage", validationRemoteControl, "native_status", violation.Observation.Status, "environment_present", violation.Observation.EnvironmentPresent, "policy", violation.Observation.Policy)
+		}
 		c.problem = turnUncertain()
 		if c.execution != nil {
 			c.execution.paused = true
@@ -277,6 +286,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && (event.Metadata == AuthRecoveryStartedObserved || event.Metadata == AuthRecoveryCompletedObserved) {
 		c.logger.InfoContext(ctx, "Codex native authentication recovery observed", "owner_id", c.ownerID, "phase", event.Metadata)
+	}
+	if c.logger != nil && event.RemoteControl != nil {
+		c.logger.DebugContext(ctx, "Codex remote-control policy observed", "owner_id", c.ownerID, "stage", validationRemoteControl, "native_status", event.RemoteControl.Status, "policy", event.RemoteControl.Policy)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil

@@ -2339,3 +2339,37 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+### Codex private remote-control policy observations
+
+The [pinned native status schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/RemoteControlStatusChangedNotification.json)
+for `remoteControl/status/changed` defines disabled, connecting, connected and
+errored statuses. Status, server name and installation ID are required and
+non-null. Environment ID is optional and nullable. Decode notification payloads
+within the native frame limit; reject duplicate/unknown fields, unknown status,
+invalid UTF-8/null bytes and identity strings longer than 4,096 bytes. Required
+identity strings may be empty, as allowed by the schema. Discard all identities
+immediately after validation, including a non-null empty environment ID.
+
+Only disabled with an omitted/null environment retains passive metadata behavior.
+The private observation keeps a closed native status, environment-presence boolean
+and disabled-only, remote-state-forbidden or environment-forbidden policy. Any
+non-null environment violates policy; all other valid states also violate policy.
+A typed private policy violation distinguishes these valid forbidden states from
+malformed protocol shapes. Structured diagnostics record only these closed values,
+never a remote identity or native payload. Private observations are not serialized
+as product data and need no protocol or storage allocation.
+
+The existing event-reader failure path pauses the original execution and returns
+recovery-required uncertainty. Original input acknowledgments, immutable receipts,
+turn ownership and independent joined cleanup remain authoritative. Repeated
+observations cannot create input, terminal or successful-cleanup evidence. Do not
+adopt remote execution, pair, enable, disable, reconnect or resend original input.
+Same-name server requests cannot acquire notification admission. The external-token
+quota reader retains its independently disabled-only profile and cleanup rules;
+these execution observations grant it no new authority.
+
+Focused decoder fixtures cover every status, nullable/omitted environment and
+strict bounds. Execution regressions retain original settings and typed refusal;
+full harness/Worker recovery and installed native/account acceptance belong to CI
+and separate acceptance records. Fixtures establish no remote-control capability.

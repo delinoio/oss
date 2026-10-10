@@ -255,6 +255,9 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		}
 		switch event.Kind {
 		case codex.MetadataEvent:
+			if event.Metadata == codex.RemoteControlDisabled && event.RemoteControl != nil && (!event.RemoteControl.Valid() || event.RemoteControl.Policy != codex.RemoteControlPassive) {
+				return nil, publicationUncertain()
+			}
 			switch event.Metadata {
 			case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent:
 			default:

@@ -212,18 +212,16 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	case "thread/settings/updated":
 		return c.observeSettingsLocked(native)
 	case "remoteControl/status/changed":
-		var params struct {
-			EnvironmentID  *string `json:"environmentId"`
-			InstallationID *string `json:"installationId"`
-			ServerName     *string `json:"serverName"`
-			Status         string  `json:"status"`
+		observation, err := decodeRemoteControlStatus(native.Params)
+		if err != nil {
+			return Event{}, err
 		}
-		if domain.Decode(native.Params, &params) != nil || params.InstallationID == nil || params.ServerName == nil || params.Status != "disabled" || params.EnvironmentID != nil {
-			return Event{}, incompatible()
+		if observation.Policy != RemoteControlPassive {
+			return Event{}, &RemoteControlPolicyViolation{Observation: observation}
 		}
-		// Remote identity is neither a product account nor a log field. The
-		// only supported private runtime state is disabled remote control.
-		return c.metadata(RemoteControlDisabled), nil
+		event := c.metadata(RemoteControlDisabled)
+		event.RemoteControl = &observation
+		return event, nil
 	case "account/rateLimits/updated":
 		var params struct {
 			Limits map[string]json.RawMessage `json:"rateLimits"`
