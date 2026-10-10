@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+import { ProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -123,7 +126,7 @@ function PendingQueueInput({ kind, inputId, sessionId, refresh }: { kind: QueueM
   const valid = operation.input && queueIntent({ key: `${kind}:${inputId}`, input: operation.input, busy: operation.busy, uncertain: operation.uncertain }, sessionId);
   const label = kind === QueueMutationKind.Edit ? copy("queue.edit_262121") : kind === QueueMutationKind.Remove ? copy("queue.removal_e57388") : copy("queue.steer_1cf39e");
   return <article className="queue-item">
-    <p><strong>{label}</strong> · {inputId}</p><p role="status">{operation.busy ? copy("queue.sendingOriginal") : copy("queue.uncertainOriginal")}</p>
+    <p><strong>{label}</strong> · <ProductIdentity id={inputId} kind={ProductIdentityKind.Request} /></p><p role="status">{operation.busy ? copy("queue.sendingOriginal") : copy("queue.uncertainOriginal")}</p>
     <Problem error={operation.error} />
     {valid && operation.uncertain ? <button disabled={operation.busy} onClick={operation.retry}><LocalizedText id="queue.retryTheSame_4cb78a" components={{ s0: <>{label}</> }} /></button> : null}
   </article>;

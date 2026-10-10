@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTransport } from "@connectrpc/connect-query";
@@ -7,7 +9,7 @@ import { useSettingsOpening } from "./settings-lifetime";
 import "./project-repository-order.css";
 
 type Movement = { id: string; original: string[]; preview: string[]; pointer?: number; authority: object };
-export function RepositorySecondaryID({ id }: { id: string }) { return <code className="project-repository-secondary-id">{id}</code>; }
+export function RepositorySecondaryID({ id }: { id: string }) { return <span className="project-repository-secondary-id"><ProductIdentity id={id} kind={ProductIdentityKind.Repository} /></span>; }
 /** Preview order belongs to this view; only an explicit commit changes the draft. */
 export function ProjectRepositoryOrder({ ids, names, active, change, editable = true }: { ids: string[]; names: ReadonlyMap<string, string>; active: boolean; change: (ids: string[]) => void; editable?: boolean }) {
   useLocale();

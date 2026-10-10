@@ -168,7 +168,7 @@ it("does not confuse duplicate names or offer unsupported schemas", async () => 
   const first = repository("Duplicate"), second = repository("Duplicate"), unsupported = create(ResourceSchema, { ...repository("Future"), schemaVersion: 2 });
   const value = fixture([first, second, unsupported]); render(value.view());
   const duplicates = await screen.findAllByRole("checkbox", { name: "Duplicate" }); fireEvent.click(duplicates[0]); fireEvent.click(duplicates[1]);
-  const identity = duplicates[0]!.getAttribute("aria-describedby"); expect(identity).toBeTruthy(); expect(document.getElementById(identity!)?.textContent).toContain(first.id);
+  const identity = duplicates[0]!.getAttribute("aria-describedby"); expect(identity).toBeTruthy(); expect(document.getElementById(identity!)?.textContent).not.toContain(first.id); expect(document.getElementById(identity!)?.textContent).toMatch(/Repository \d+/);
   expect((screen.getByRole("checkbox", { name: "Repository name unavailable" }) as HTMLInputElement).disabled).toBe(true);
   next(); expect(within(primary()).getByRole("option", { name: "Duplicate (entry 1)" }).getAttribute("value")).toBe(first.id);
   expect(within(primary()).getByRole("option", { name: "Duplicate (entry 2)" }).getAttribute("value")).toBe(second.id);

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
@@ -91,6 +93,7 @@ export function TurnTime(props: { turn: TurnProjection; current?: CurrentTurn; c
   return props.current?.owner === props.turn.owner && props.current.inputId === props.turn.inputId && props.current.timing?.terminal === undefined ? <LiveTurnTime {...props} /> : <TurnTimeLine {...props} />;
 }
 function TurnTimeLine({ turn, current, seconds, confirmed }: { turn: TurnProjection; current?: CurrentTurn; seconds?: number; confirmed: boolean }) {
+  const productIdentity = useProductIdentity();
   const matches = current?.owner === turn.owner && current.inputId === turn.inputId;
   const timing = matches ? current.timing : turn.timing;
   const terminal = timing?.terminal !== undefined;
@@ -99,5 +102,5 @@ function TurnTimeLine({ turn, current, seconds, confirmed }: { turn: TurnProject
   const unconfirmed = !terminal && (!matches || !confirmed);
   const inherited = turn.inherited;
   const displayed = `${inherited ? `${copy("turnTiming.inherited")} · ` : ""}${label}${unconfirmed && value === undefined ? ` · ${copy("turnTiming.unconfirmedLabel")}` : ""}`;
-  return <p className="turn-time" data-turn-owner={turn.owner} aria-live="off" aria-label={inherited ? `${displayed}. ${copy("turnTiming.inheritedOrigin", { v0: inherited.sessionId, v1: inherited.executionId, v2: inherited.inputId })}` : undefined}>{displayed}</p>;
+  return <p className="turn-time" data-turn-owner={turn.owner} aria-live="off" aria-label={inherited ? `${displayed}. ${copy("turnTiming.inheritedOrigin", { v0: productIdentity.label(inherited.sessionId, ProductIdentityKind.Session), v1: productIdentity.label(inherited.executionId, ProductIdentityKind.Execution), v2: productIdentity.label(inherited.inputId, ProductIdentityKind.Input) })}` : undefined}>{displayed}</p>;
 }

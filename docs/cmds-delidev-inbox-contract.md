@@ -103,3 +103,9 @@ gets a fresh uncached read, followed by ten-second background refreshes. An
 unsupported capability, Unimplemented RPC, disconnected or revoked authority,
 invalid result, failed read or initial replacement clears presentation. It must
 not substitute notification candidates or partial Inbox pages.
+
+## Product identity presentation
+
+Issue #2496 keeps generated internal notification, Inbox, session, source, claim, server and device UUIDs out of product text, expanded details, titles, tooltips, accessible names and product Copy output. Native routing tags, protected claim/profile/activation fields, durable source ownership, request/revision/receipt verification and original artifacts retain exact IDs. A presentation number grants no activation, execution, recovery or native authority.
+
+Use already observed authorized names, or a localized kind with a stable owning connection/view presentation number. Add no reads solely to replace IDs with names. Producer-owned structured metadata chooses presentation references; do not globally scrub arbitrary toast/native notification messages. Keep user names/messages, native/model/tool output and external identifiers verbatim even when they look like UUIDs. Original technical downloads, logs, API/CLI JSON, configuration exports, backups and protected pairing bytes are unchanged. The desktop/mobile/widget contracts own matching display projections and scopes; existing publication/deduplication and acknowledged original-scope preferences remain authoritative.

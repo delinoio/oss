@@ -18,5 +18,8 @@
   "operation": "Operation",
   "reference": "Reference",
   "numbered": "{{kind}} {{number}}",
-  "unavailable": "{{kind}} name unavailable"
+  "unavailable": "{{kind}} name unavailable",
+  "input": "Input",
+  "snapshot": "Snapshot",
+  "template": "Instruction"
 }

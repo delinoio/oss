@@ -6,12 +6,12 @@ export enum ProductIdentityKind {
   Account = "account", Provider = "provider", Agent = "agent", Session = "session",
   Backup = "backup", Connection = "connection", Server = "server", Device = "device",
   Worker = "worker", Execution = "execution", Request = "request", Schedule = "schedule",
-  Notification = "notification", Operation = "operation", Reference = "reference",
+  Notification = "notification", Operation = "operation", Reference = "reference", Input = "input", Snapshot = "snapshot", Template = "template",
 }
 export class ProductIdentityNumbers {
   private readonly identities = new Map<string, number>();
-  number(kind: ProductIdentityKind, originalId: string): number {
-    const key = JSON.stringify([kind, originalId]);
+  number(_kind: ProductIdentityKind, originalId: string): number {
+    const key = originalId;
     const retained = this.identities.get(key);
     if (retained !== undefined) return retained;
     const number = this.identities.size + 1;

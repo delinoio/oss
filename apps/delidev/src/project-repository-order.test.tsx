@@ -42,7 +42,7 @@ it("pointer preview shares keyboard commit order; cancellation and same-place dr
  pointer("pointerdown", 8); pointer("pointerup", 8); expect(f.change).not.toHaveBeenCalled();
  pointer("pointerdown", 9); pointer("pointermove", 9); pointer("pointerup", 9); expect(f.change).toHaveBeenCalledExactlyOnceWith(["C", "A", "B"]);
 });
-it("uses inert IDs only for duplicate or unavailable names and disables singleton", () => {
- const f = render(<TransportProvider transport={transport}><ProjectRepositoryOrder ids={original} names={new Map([["A", "same"], ["B", "same"]])} active change={vi.fn()} /></TransportProvider>); expect(document.querySelectorAll("code")).toHaveLength(3); expect(screen.queryByText("Repository details")).toBeNull();
- f.rerender(<TransportProvider transport={transport}><ProjectRepositoryOrder ids={["A"]} names={names} active change={vi.fn()} /></TransportProvider>); expect(grip("A")).toHaveProperty("disabled", true); expect(document.querySelectorAll("code")).toHaveLength(0);
+it("uses safe reference numbers only for duplicate or unavailable names and disables singleton", () => {
+ const f = render(<TransportProvider transport={transport}><ProjectRepositoryOrder ids={original} names={new Map([["A", "same"], ["B", "same"]])} active change={vi.fn()} /></TransportProvider>); expect(document.querySelectorAll(".project-repository-secondary-id")).toHaveLength(3); expect(screen.queryByText("Repository details")).toBeNull();
+ f.rerender(<TransportProvider transport={transport}><ProjectRepositoryOrder ids={["A"]} names={names} active change={vi.fn()} /></TransportProvider>); expect(grip("A")).toHaveProperty("disabled", true); expect(document.querySelectorAll(".project-repository-secondary-id")).toHaveLength(0);
 });

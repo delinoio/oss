@@ -17,7 +17,7 @@ test("numbers follow original identities across reordering and do not recycle", 
   assert.equal(scope.number(Kind.Project, "original-b"), 2);
   assert.equal(scope.number(Kind.Project, "original-c"), 3);
   assert.equal(scope.number(Kind.Project, "original-a"), 1);
-  assert.equal(scope.number(Kind.Repository, "original-a"), 4);
+  assert.equal(scope.number(Kind.Repository, "original-a"), 1);
   assert.equal(new ProductIdentityNumbers().number(Kind.Project, "original-c"), 1);
 });
 test("owned diagnostic presentation replaces UUIDs without changing its source", () => {

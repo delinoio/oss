@@ -227,13 +227,13 @@ it("keeps complete reference drafts mounted behind the disclosure and clears the
   const disclosure = screen.getByRole("button", { name: /Starting reference overrides/ }); fireEvent.click(disclosure);
   await within(screen.getByLabelText("Add repository override")).findByRole("option", { name: value.repositoryId });
   choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
-  const reference = screen.getByLabelText(`Starting ${value.repositoryId} name`); fireEvent.change(reference, { target: { value: "retained-branch" } });
+  const reference = screen.getByLabelText(/^Starting Repository \d+ name$/); fireEvent.change(reference, { target: { value: "retained-branch" } });
   expect(disclosure.textContent).toContain("1 override"); fireEvent.click(disclosure); fireEvent.click(disclosure);
-  expect(screen.getByLabelText(`Starting ${value.repositoryId} name`)).toBe(reference); expect((reference as HTMLInputElement).value).toBe("retained-branch");
+  expect(screen.getByLabelText(/^Starting Repository \d+ name$/)).toBe(reference); expect((reference as HTMLInputElement).value).toBe("retained-branch");
   fireEvent.click(screen.getByRole("button", { name: "Remove starting override" })); expect(disclosure.textContent).toContain("Using saved project references");
   choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
   goStep(0); fireEvent.click(screen.getByRole("combobox", { name: "Project" })); fireEvent.click(screen.getByRole("option", { name: "Select project" }));
-  await waitFor(() => expect(disclosure.textContent).toContain("Using saved project references")); expect(screen.queryByLabelText(`Starting ${value.repositoryId} name`)).toBeNull();
+  await waitFor(() => expect(disclosure.textContent).toContain("Using saved project references")); expect(screen.queryByLabelText(/^Starting Repository \d+ name$/)).toBeNull();
   expect(document(value.project)).toMatchObject({ base: { name: "main" } });
 });
 
@@ -358,7 +358,7 @@ it("validates each wizard step, retains drafts through Back and Edit, and only R
  fireEvent.change(name,{target:{value:""}});fireEvent.click(screen.getByRole("button",{name:"Create schedule"}));expect(globalThis.document.activeElement).toBe(name);expect(screen.queryByRole("button",{name:"Create schedule"})).toBeNull();expect(value.save).not.toHaveBeenCalled();
 });
 it("opens the Execution step and collapsed overrides for an invalid reference",async()=>{
- const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));await fillCreation(value);const disclosure=screen.getByRole("button",{name:/Starting reference overrides/});fireEvent.click(disclosure);await within(screen.getByLabelText("Add repository override")).findByRole("option",{name:value.repositoryId});choose("Add repository override",value.repositoryId);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));const field=screen.getByLabelText(`Starting ${value.repositoryId} name`);fireEvent.click(disclosure);fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(disclosure.getAttribute("aria-expanded")).toBe("true");expect(globalThis.document.activeElement).toBe(field);expect(value.save).not.toHaveBeenCalled();
+ const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));await fillCreation(value);const disclosure=screen.getByRole("button",{name:/Starting reference overrides/});fireEvent.click(disclosure);await within(screen.getByLabelText("Add repository override")).findByRole("option",{name:/^Repository \d+$/});choose("Add repository override",value.repositoryId);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));const field=screen.getByLabelText(/^Starting Repository \d+ name$/);fireEvent.click(disclosure);fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(disclosure.getAttribute("aria-expanded")).toBe("true");expect(globalThis.document.activeElement).toBe(field);expect(value.save).not.toHaveBeenCalled();
 });
 
 it("retains exact Review labels through locale changes without another choice read or save", async () => {

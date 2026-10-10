@@ -64,7 +64,7 @@ import {
   tls,
 } from "./platform";
 import { en, ko, type Labels } from "./localization";
-import { ProductIdentityNumbers as SharedProductIdentityNumbers, ProductIdentityKind } from "../../delidev/src/product-identity";
+import { ProductIdentityNumbers as SharedProductIdentityNumbers, ProductIdentityKind } from "@delinoio/delidev-api-client";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
 const owner = new ProtectedState(storage);

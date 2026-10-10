@@ -167,8 +167,9 @@ it("compacts only exact matching-name singleton metadata while retaining inert s
   expect(screen.getAllByText("Project")).toHaveLength(1);
   expect(screen.queryByText("1 repository")).toBeNull(); expect(screen.queryByText("Primary")).toBeNull();
   expect(screen.getByText("git@example.org:team/Project.git")).toBeTruthy(); expect(screen.queryByRole("link")).toBeNull();
-  const details = mounted.container.querySelector("details")!;
-  expect(details.open).toBe(false); expect(within(details).getByText(saved.id)).toBeTruthy(); expect(within(details).getByText(row.id)).toBeTruthy();
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull();
+  expect(mounted.container.textContent).not.toContain(saved.id);
+  expect(mounted.container.textContent).not.toContain(row.id);
   fireEvent.click(screen.getByRole("button", { name: "Edit Project" })); fireEvent.click(screen.getByRole("button", { name: "Delete Project" }));
   expect(edit).toHaveBeenCalledWith(saved); expect(remove).toHaveBeenCalledWith(saved);
 });
@@ -192,7 +193,7 @@ it.each([0, 2, 3])("keeps the saved count for %i references even when metadata i
   const mounted = render(<ProjectList resources={[saved]} metadata={new Map()} edit={() => {}} remove={() => {}} />);
   expect(screen.getByText(`${count} repositories`)).toBeTruthy();
   expect(mounted.container.querySelectorAll(".project-repository-rows > li")).toHaveLength(count);
-  for (const row of rows) expect(within(mounted.container.querySelector("details")!).getByText(row.id)).toBeTruthy();
+  for (const row of rows) expect(mounted.container.textContent).not.toContain(row.id);
 });
 
 it("preserves disabled schema actions and unreadable original singleton references", () => {

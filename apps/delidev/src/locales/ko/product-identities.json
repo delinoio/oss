@@ -18,5 +18,8 @@
   "operation": "작업",
   "reference": "참조",
   "numbered": "{{kind}} {{number}}",
-  "unavailable": "{{kind}} 이름을 확인할 수 없습니다"
+  "unavailable": "{{kind}} 이름을 확인할 수 없습니다",
+  "input": "입력",
+  "snapshot": "스냅샷",
+  "template": "지침"
 }
