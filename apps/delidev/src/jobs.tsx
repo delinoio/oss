@@ -1,23 +1,39 @@
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { copy, useLocale } from "./localization";
-import type { ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceQuery, supportsResourceSchema, isEntityId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 import { ServiceProblem, Problem  } from "./ui";
 
 export enum JobState { Queued = "queued", Claimed = "claimed", Succeeded = "succeeded", Failed = "failed", Canceled = "canceled", Uncertain = "uncertain" }
-const terminal = (row?: Resource) => [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(document(row).state as JobState);
-// Acknowledgment retains the original job identity. A successful RPC alone is
-// never successful Worker validation, and observing a job never resubmits it.
-export function TrackedJob({ initial, active, children }: { initial: Resource; active: boolean; children?: (state: string, output: Document, observation: { verified: boolean }) => ReactNode }) {
-  useLocale();
-  const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id: initial.id }, { enabled: active, refetchInterval: (query) => active && !terminal(query.state.data?.resource) ? 2000 : false });
+export const terminalJobState = (state: string) => [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(state as JobState);
+/** One exact-job read owner, shared with retained controllers and their views. */
+export function useJobObservation(initial: Resource | undefined, active: boolean) {
+  const retained = useRef<Resource | undefined>(initial);
+  if (retained.current?.id !== initial?.id) retained.current = initial;
+  const valid = (row?: Resource): row is Resource => Boolean(initial && initial.kind === EntityKind.JOB && initial.revision > 0n && supportsResourceSchema(initial) && row && isEntityId(row.id) && row.id === initial.id && row.kind === EntityKind.JOB && row.revision >= initial.revision && row.revision >= (retained.current?.revision ?? initial.revision) && supportsResourceSchema(row) && Object.values(JobState).includes(document(row).state as JobState));
+  const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id: initial?.id ?? "" }, { enabled: active && Boolean(initial), refetchInterval: (query) => active && initial && !(valid(query.state.data?.resource) && terminalJobState(text(document(query.state.data?.resource).state))) ? 2000 : false });
   const latest = result.data?.resource;
-  const current = latest && latest.id === initial.id && latest.kind === EntityKind.JOB && latest.revision >= initial.revision && supportsResourceSchema(latest) ? latest : initial;
+  const readable = valid(latest);
+  if (readable) retained.current = latest;
+  const current = retained.current ?? initial;
   const value = document(current), state = text(value.state), problem = object(value.problem);
-  const unreadable = Boolean(result.data && (!latest || latest !== current));
-  const verified = Boolean(latest && latest === current && !result.error && !result.isFetching);
+  const unreadable = Boolean(result.data && !readable);
+  const verified = Boolean(readable && !result.error && !result.isFetching);
+  return useMemo(() => ({ current, value, state, problem, unreadable, verified, error: result.error, loading: result.isFetching, refetch: result.refetch }), [current, state, unreadable, verified, result.error, result.isFetching, result.refetch]);
+}
+export type JobObservation = ReturnType<typeof useJobObservation>;
+// Acknowledgment retains identity; observing a job never resubmits it.
+export function TrackedJob({ initial, active, children }: { initial: Resource; active: boolean; children?: (state: string, output: Document, observation: { verified: boolean }) => ReactNode }) {
+  const observation = useJobObservation(initial, active);
+  return <ObservedJob observation={observation}>{children}</ObservedJob>;
+}
+/** Presentation and retry reuse the original owner's cache and read lifetime. */
+export function ObservedJob({ observation, children }: { observation: JobObservation; children?: (state: string, output: Document, observation: { verified: boolean }) => ReactNode }) {
+  useLocale();
+  const { state, value, problem, unreadable, verified } = observation;
+  const result = { error: observation.error, isFetching: observation.loading, refetch: observation.refetch };
   const attention = state !== JobState.Succeeded || Boolean(result.error) || unreadable || Boolean(text(problem.message));
   return <>{attention ? <section className="notice" data-job-state={state}><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={result.error} />{result.error || unreadable ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.retryStatusRead")}</SettingsActionButton> : null}</section> : null}{children?.(state, object(value.output), { verified })}</>;
 }

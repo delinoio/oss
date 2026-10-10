@@ -11,6 +11,7 @@ import { MutationIntents } from "./mutation";
 import { ScheduleDetails, ScheduleEditor, Schedules, StartingReferences } from "./schedules";
 import { i18n } from "./localization";
 import { MachineSettings } from "./machine-settings";
+import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
 
 function fixture() {
   const definition = { name: "Weekday review", enabled: false, prompt: "Retained prompt", project_id: newRequestId(), agent_id: newRequestId(), machine_id: newRequestId(), workspace: "worktree", mode: "plan", cron: "0 9 * * 1-5", timezone: "Asia/Seoul", overlap: "wait" };
@@ -605,4 +606,34 @@ it.each([
   expect(screen.getByText(guidance)).toBeTruthy();
   expect(option.checked).toBe(false);
   expect(value.save).not.toHaveBeenCalled();
+});
+
+
+it("releases actual schedule fields after original Runner settlement without Finish", async () => {
+  const f = fixture();
+  let terminal: Resource | undefined;
+  f.get.mockImplementation(async request => ({ resource: request.kind === EntityKind.JOB ? terminal ?? create(ResourceSchema, { id: request.id, kind: EntityKind.JOB, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "queued" }) }) : f.resources.find(row => row.id === request.id) }));
+  function Surface() {
+    const inspection = useRunnerRemediation();
+    return <><button onClick={() => inspection?.(f.machine)}>Inspect preferred Runner</button><ScheduleEditor initial={f.schedule} active saved={() => {}} cancel={() => {}} />{inspection?.body}</>;
+  }
+  render(f.view(<RunnerRemediationProvider active><Surface /></RunnerRemediationProvider>));
+  fireEvent.change(screen.getByLabelText("Scheduled prompt"), { target: { value: "Keep original schedule draft" } });
+  fireEvent.click(screen.getByText("Inspect preferred Runner"));
+  fireEvent.click(await screen.findByRole("button", { name: "Run optional diagnostics" }));
+  await waitFor(() => expect(f.get.mock.calls.some(([request]) => request.kind === EntityKind.JOB)).toBe(true));
+  const original = f.get.mock.calls.find(([request]) => request.kind === EntityKind.JOB)![0];
+  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+  expect(screen.getByLabelText("Scheduled prompt").matches(":disabled")).toBe(true);
+  terminal = create(ResourceSchema, { id: original.id, kind: EntityKind.JOB, revision: 2n, schemaVersion: 1, documentJson: encode({ state: "succeeded" }) });
+  await act(async () => { await f.client.invalidateQueries(); });
+  await waitFor(() => expect(screen.getByLabelText("Scheduled prompt").matches(":disabled")).toBe(false));
+  expect(screen.getByLabelText("Schedule name").matches(":disabled")).toBe(false);
+  expect(screen.getByLabelText("Scheduled prompt")).toHaveProperty("value", "Keep original schedule draft");
+  expect(screen.getByRole("button", { name: "Save schedule" })).toHaveProperty("disabled", false);
+  expect(screen.getByRole("button", { name: "Cancel schedule edit" })).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByText("Inspect preferred Runner"));
+  expect(await screen.findByRole("button", { name: "Finish inspection" })).toBeTruthy();
+  expect(f.discovery).toHaveBeenCalledOnce(); expect(f.save).not.toHaveBeenCalled(); expect(f.run).not.toHaveBeenCalled();
+  f.client.clear();
 });

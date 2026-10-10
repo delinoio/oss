@@ -17,8 +17,8 @@ interface RemediationOwner {
   authority?: PairingAuthority;
 }
 const Context = createContext<RemediationOwner | undefined>(undefined);
-function ControllerOwner({ initial, active, publish }: { initial: Resource; active: boolean; publish: (controller: MachineSettingsController) => void }) {
-  const controller = useMachineSettingsController(initial, active);
+function ControllerOwner({ initial, active, presenting, publish }: { initial: Resource; active: boolean; presenting: boolean; publish: (controller: MachineSettingsController) => void }) {
+  const controller = useMachineSettingsController(initial, active && presenting, active);
   useLayoutEffect(() => publish(controller), [controller, publish]);
   return null;
 }
@@ -45,7 +45,7 @@ export function RunnerRemediationProvider({ children, active, authority }: { chi
   const release = useCallback((source: string) => setPresenter(current => current === source ? undefined : current), []);
   useLayoutEffect(() => { if (!active) { setPresenter(undefined); setSelected(undefined); setController(undefined); } }, [active]);
   const value = useMemo(() => ({ request, release, presenter, controller, active, authority }), [request, release, presenter, controller, active, authority]);
-  return <Context.Provider value={value}>{children}{selected ? <SettingsLifetime key={selected.id}>{() => <MutationIntents><ControllerOwner initial={selected} active={active && Boolean(presenter)} publish={setController} /></MutationIntents>}</SettingsLifetime> : null}</Context.Provider>;
+  return <Context.Provider value={value}>{children}{selected ? <SettingsLifetime key={selected.id}>{() => <MutationIntents><ControllerOwner initial={selected} active={active} presenting={Boolean(presenter)} publish={setController} /></MutationIntents>}</SettingsLifetime> : null}</Context.Provider>;
 }
 export type RunnerRemediationOpener = ((resource: Resource) => void) & { body: ReactNode; close: () => void; locked: boolean; pending: boolean; pendingFor: (machineId: string) => boolean };
 /** Render `opener.body` within the caller's original task. A nested Step shares

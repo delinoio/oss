@@ -47,3 +47,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
+
+## Retained inspection ownership
+
+- Shared Runner controllers own original job observations and status-read retries across presentation close. Follow the desktop contract for verified terminal settlement, submitted draft snapshots and independent Runner eligibility. Result presentation must not add a second poller or retain consuming gates solely because a settled result remains available.

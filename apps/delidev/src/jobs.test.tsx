@@ -70,3 +70,20 @@ it("retains the original identity when a status response is foreign", async () =
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
 });
+
+it("does not verify a late terminal read for a superseded original job", async () => {
+  const f = fixture();
+  let finishOld!: (value: { resource: typeof f.initial }) => void;
+  f.read.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  const oldView = render(f.view);
+  await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
+  const replacement = create(ResourceSchema, { ...f.initial, id: newRequestId() });
+  f.read.mockResolvedValue({ resource: replacement });
+  const child = vi.fn((state: string, _output: unknown, observation: { verified: boolean }) => <output>{`${state}:${observation.verified}`}</output>);
+  oldView.rerender(<TransportProvider transport={createRouterTransport(router => router.service(ResourceService, { getResource: f.read }))}><QueryClientProvider client={f.client}><TrackedJob initial={replacement} active>{child}</TrackedJob></QueryClientProvider></TransportProvider>);
+  await waitFor(() => expect(screen.getByText("queued:true")).toBeTruthy());
+  await act(async () => { finishOld({ resource: create(ResourceSchema, { ...f.initial, revision: 872n, documentJson: encode({ state: "succeeded" }) }) }); });
+  expect(screen.getByText("queued:true")).toBeTruthy();
+  expect(child.mock.calls.some(([state]) => state === "succeeded")).toBe(false);
+  f.client.clear();
+});
