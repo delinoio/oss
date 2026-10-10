@@ -34,5 +34,5 @@
 .agent-section-note { margin: .5rem 16px 0; }
 .agent-section-problem { font-size: .8125rem; font-weight: 500; color: var(--danger-text); }
 .agent-configuration .agent-footer { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 24px; justify-content: flex-end; }
-.agent-configuration .agent-required { color: var(--accent); }
+.agent-configuration .agent-required { color: var(--text-secondary); }
 @container (width < 640px) { .agent-core-columns { grid-template-columns: minmax(0, 1fr); } }

@@ -248,7 +248,7 @@
  .session-navigation { grid-area:2 / 1; display:flex; align-items:center; gap:8px; min-width:0; min-height:52px; padding:6px 12px 6px 0; background:var(--surface-muted); border-bottom:1px solid var(--border-subtle); }
 .session-tabs { display:flex; flex:1; overflow-x:auto; gap:0; min-width:0; padding:0; background:transparent; }
 .session-tab { display:flex; flex:none; min-width:0; max-width:320px; height:40px; align-items:center; border-right:1px solid var(--border-subtle); border-bottom:2px solid transparent; }
-.session-tab.is-selected { background:var(--surface); color:var(--accent); border-radius:4px 4px 0 0; border-bottom-color:var(--accent); }
+.session-tab.is-selected { background:var(--surface); color:var(--link); border-radius:4px 4px 0 0; border-bottom-color:var(--selected-border); }
 .session-workspace .session-tab [role=tab] { height:38px; min-height:38px; min-width:40px; max-width:320px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:0; border-radius:0; background:transparent; color:inherit; }
 .session-tab [aria-selected=true] { font-weight:600; }
 .session-workspace .session-tab-close { width:40px; height:40px; min-height:40px; padding:0; flex:none; border:0; border-radius:0; background:transparent; color:inherit; }

@@ -50,7 +50,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context
 .schedule-creation-card[hidden] { display:none !important; }
 .schedule-creation-progress,.schedule-creation-step-title,.schedule-creation-review { width:100%; max-width:760px; margin-inline:auto; }
 .schedule-creation-progress { display:flex; gap:12px; flex-wrap:wrap; padding:0; margin-block:20px; list-style:none; color:var(--muted); }
-.schedule-creation-progress li[aria-current="step"] { color:var(--accent); font-weight:600; }
+.schedule-creation-progress li[aria-current="step"] { color:var(--link); font-weight:600; }
 .schedule-creation-step-title { font-size:18px; margin-bottom:12px; }
 .schedule-creation-review section + section { margin-top:24px; }
 .schedule-creation-review header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
