@@ -220,7 +220,7 @@ it("retains sparse and failed credit evidence only in its original account conne
  expect(reconcileRailCredits(replace({generation:"original"},{id:newRequestId()}),previous).paidCredits).toEqual([]);
  expect(reconcileRailCredits(replace({generation:"original",quota_state:"observed",paid_credits:[]}),previous).paidCredits).toEqual([]);
  const replacement=replace({generation:"original",quota_state:"observed",paid_credits:[credit("0")]});expect(reconcileRailCredits(replacement,previous).paidCredits[0]?.balance).toBe("0");
- expect(remainingBadge(previous.windows,now)).toBe(28);
+ expect(remainingBadge(previous.windows,Date.now())).toBe(28);
 });
 it("shows saved rounded credits before quota with exact disclosure and no additional read", async () => {
  const row=resource("Credit", "chatgpt",{subscription:{generation:"original",paid_credits:[credit()]}});const f=mount(()=>({resources:[row]}),true,true);
