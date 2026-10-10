@@ -292,7 +292,7 @@ func (t *Tx) CodexAppsQueued(machine, instance domain.ID) ([]domain.CodexAppsOpe
 			return nil, err
 		}
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT value FROM metadata WHERE key LIKE ? AND json_extract(value,'$.operation.state')='queued' AND json_extract(value,'$.operation.machine_id')=? AND json_extract(value,'$.operation.instance_id')=? ORDER BY key LIMIT 1001", codexAppsPrefix+"%", machine, instance)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT value FROM metadata WHERE key LIKE ? AND json_extract(value,'$.operation.state')='queued' AND json_extract(value,'$.operation.machine_id')=? AND json_extract(value,'$.operation.instance_id')=? ORDER BY key LIMIT ?", codexAppsPrefix+"%", machine, instance, domain.MaxExecutionInteractions+1)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -305,7 +305,7 @@ func (t *Tx) CodexAppsQueued(machine, instance domain.ID) ([]domain.CodexAppsOpe
 			return nil, codexAppsConflict()
 		}
 		values = append(values, *value.Operation)
-		if len(values) > 1000 {
+		if len(values) > domain.MaxExecutionInteractions {
 			return nil, domain.Fail(domain.ResourceExhausted, "Too many pending Codex app controls.", "Resolve original controls without truncating their ownership inventory.")
 		}
 	}
