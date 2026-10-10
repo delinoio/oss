@@ -55,8 +55,17 @@ try {
     await step(RegistrationStep.Inspect, () => page.getByRole("button", { name: "Inspect folder", exact: true }).click());
     await step(RegistrationStep.ObserveInspection, () => page.getByRole("region", { name: "Repository detected" }).waitFor({ timeout: 30_000 }));
     await step(RegistrationStep.Save, () => page.getByRole("dialog", { name: "Add repository", exact: true }).getByRole("button", { name: "Add repository", exact: true }).click());
-    await step(RegistrationStep.ObserveResource, () => until(async () => (await list(environment, run.api.EntityKind.REPOSITORY)).length === 1));
-    await step(RegistrationStep.ObserveRow, () => page.getByRole("button", { name: "Edit browser-git-fixture", exact: true }).waitFor({ timeout: 30_000 }));
+    const repository = await step(RegistrationStep.ObserveResource, () => until(async () => {
+      const resources = await list(environment, run.api.EntityKind.REPOSITORY);
+      return resources.length === 1 ? resources[0] : undefined;
+    }));
+    await step(RegistrationStep.ObserveRow, async () => {
+      assert.equal(document(repository).name, "browser-git-fixture");
+      // Settings action names include their original target identity. Bind this
+      // exact selector to the resource just observed on this environment;
+      // a name-only selector cannot match the scoped action presentation.
+      await page.getByRole("button", { name: `Edit browser-git-fixture · ${repository.id}`, exact: true }).waitFor({ timeout: 30_000 });
+    });
   }));
   checks.push("real-worker-git-inspection-and-save");
 
