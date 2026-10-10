@@ -18,7 +18,7 @@ test("the runner invokes installed Turbo through Node without package-manager sh
     import childProcess from "node:child_process";
     import { syncBuiltinESMExports } from "node:module";
     childProcess.spawnSync = (command, args, options) => {
-      console.log(JSON.stringify({ command, args, options }));
+      console.log(JSON.stringify({ command, args, options, cacheIdentity: { token: process.env.TURBO_TOKEN, team: process.env.TURBO_TEAM, authenticated: process.env.TURBO_REMOTE_CACHE_AUTH } }));
       return { status: 7 };
     };
     syncBuiltinESMExports();
@@ -27,15 +27,18 @@ test("the runner invokes installed Turbo through Node without package-manager sh
   const tasks = ["test", "test:package"];
   const base = "a".repeat(40);
   const head = "b".repeat(40);
-  for (const forced of ["false", "true"]) {
+  for (const event of ["push", "pull_request", "workflow_dispatch"]) for (const forced of ["false", "true"]) {
     const result = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, script, workspace, ...tasks], {
-      cwd, encoding: "utf8", env: { ...process.env, CI: "", TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head },
+      cwd, encoding: "utf8", env: { ...process.env, CI: "", GITHUB_EVENT_NAME: event, TURBO_TOKEN: "fixture-token", TURBO_TEAM: "fixture-team", TURBO_REMOTE_CACHE_AUTH: "true", FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head },
     });
     assert.equal(result.status, 7, result.stdout + result.stderr);
     const call = JSON.parse(result.stdout.trim().split(/\r?\n/u).at(-1));
     assert.equal(call.command, process.execPath);
-    assert.deepEqual(call.args, [createRequire(import.meta.url).resolve("turbo/bin/turbo"), "run", ...tasks, "--filter", workspace, ...(forced === "true" ? [] : ["--affected"])]);
+    assert.deepEqual(call.args, [createRequire(import.meta.url).resolve("turbo/bin/turbo"), "run", ...tasks, "--filter", workspace, ...(forced === "true" ? [] : ["--affected"]), ...(event === "workflow_dispatch" ? ["--force", "--summarize"] : [])]);
     assert.deepEqual(call.options, { stdio: "inherit", shell: false });
+    assert.deepEqual(call.cacheIdentity, event === "workflow_dispatch"
+      ? { token: "", team: "", authenticated: "false" }
+      : { token: "fixture-token", team: "fixture-team", authenticated: "true" });
   }
 });
 
@@ -65,7 +68,7 @@ test("committed Turbo honors the exact comparison, empty scopes, external forcin
   const head = commit();
   symlinkSync(join(root, "node_modules"), join(cwd, "node_modules"), process.platform === "win32" ? "junction" : "dir");
   const run = (workspace, task, forced = "false", extra = {}) => spawnSync(process.execPath, [script, workspace, task], {
-    cwd, encoding: "utf8", env: { ...process.env, TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head, TURBO_TELEMETRY_DISABLED: "1", ...extra },
+    cwd, encoding: "utf8", env: { ...process.env, GITHUB_EVENT_NAME: "push", TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: forced, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head, TURBO_TELEMETRY_DISABLED: "1", ...extra },
   });
   let result = run("second", "test");
   assert.equal(result.status, 0, result.stdout + result.stderr);

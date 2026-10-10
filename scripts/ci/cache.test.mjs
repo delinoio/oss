@@ -66,7 +66,9 @@ test("cold/warm runs restore output, invalidate owned inputs/options/tools/depen
   write("packages/data/fresh.cjs", "const fs=require('node:fs');fs.appendFileSync('fresh-ran','fresh\\n');if(fs.readFileSync('fresh-input','utf8')!=='up-to-date')process.exit(8);\n");
   git("add", "--all"); git("commit", "-m", "fixture");
   symlinkSync(join(root, "node_modules"), join(cwd, "node_modules"), process.platform === "win32" ? "junction" : "dir");
-  const run = (env = {}) => spawnSync(process.execPath, [join(root, "scripts/ci/run-affected.mjs"), "@fixture/data", "fresh"], { cwd, encoding: "utf8", env: { ...process.env, CI: "true", TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: "true", TURBO_TELEMETRY_DISABLED: "1", ...env } });
+  // This fixture proves ordinary push caching even when its parent CI run is
+  // manual. Manual fresh execution has its own warmed-result regression.
+  const run = (env = {}) => spawnSync(process.execPath, [join(root, "scripts/ci/run-affected.mjs"), "@fixture/data", "fresh"], { cwd, encoding: "utf8", env: { ...process.env, CI: "true", GITHUB_EVENT_NAME: "push", TURBO_REMOTE_CACHE_AUTH: "false", FORCE_RUN: "true", TURBO_TELEMETRY_DISABLED: "1", ...env } });
   const pass = (env) => { const result = run(env); assert.equal(result.status, 0, result.stdout + result.stderr); return result; };
   const count = (path) => readFileSync(join(cwd, `packages/data/${path}`), "utf8").trim().split("\n").length;
   pass(); assert.equal(count("ran"), 1);

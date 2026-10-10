@@ -76,10 +76,12 @@ process.exitCode = result.status ?? 1;
       let previousSummaries = new Set();
       let previousCheck;
       const receiptPath = join(cwd, ".formatter-receipt.json");
-      const run = (success, cache) => {
+      // Cold/warm restoration belongs to push policy. Manual validation must
+      // freshly execute this exact formatter and preserve its completion receipt.
+      const run = (success, cache, event = "push") => {
         rmSync(receiptPath, { force: true });
         const result = spawnSync(process.execPath, [join(root, "scripts/ci/run-affected.mjs"), manifest.name, "ci:rust:fmt"], {
-          cwd, encoding: "utf8", env: { ...process.env, CI: "true", FORCE_RUN: "true", CARGO_NET_OFFLINE: "true", TURBO_REMOTE_CACHE_AUTH: "false", TURBO_TELEMETRY_DISABLED: "1" },
+          cwd, encoding: "utf8", env: { ...process.env, CI: "true", GITHUB_EVENT_NAME: event, FORCE_RUN: "true", CARGO_NET_OFFLINE: "true", TURBO_REMOTE_CACHE_AUTH: "false", TURBO_TELEMETRY_DISABLED: "1" },
         });
         const output = result.stdout + result.stderr;
         assert.equal(result.error, undefined, output);
@@ -114,10 +116,12 @@ process.exitCode = result.status ?? 1;
       const cold = run(true, "MISS");
       const warm = run(true, "HIT");
       assert.equal(warm.hash, cold.hash);
+      assert.equal(run(true, "MISS", "workflow_dispatch").hash, cold.hash);
       write(config, 'hex_literal_case = "Upper"\n');
       assert.deepEqual(git("diff", "--name-only").split("\n"), [config]);
       const changed = run(false, "MISS");
       assert.notEqual(changed.hash, cold.hash);
+      assert.equal(run(false, "MISS", "workflow_dispatch").hash, changed.hash);
       assert.equal(run(false, "MISS").hash, changed.hash);
       write(config, 'hex_literal_case = "Lower"\n');
       assert.equal(run(true, "HIT").hash, cold.hash);
