@@ -274,3 +274,11 @@ test("a descendant-held diagnostic pipe does not change original exit ownership"
   assert.deepEqual(result, { code: 17, signal: null }); assert.equal(incomplete, true); assert.ok(descendant);
   assert.doesNotThrow(() => process.kill(descendant, 0));
 });
+
+
+test("short private values preserve unrelated diagnostic words", () => {
+  const captured = [];
+  const output = desktopDiagnosticOutput(["--mode=x"], { stdout: line => captured.push(line), stderr: line => captured.push(line) });
+  output.stderr("error: expected identifier; selected mode x\n"); output.stderr(null);
+  assert.deepEqual(captured, ["error: expected identifier; selected mode [private argument]\n"]);
+});

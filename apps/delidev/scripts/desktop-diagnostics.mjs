@@ -10,7 +10,7 @@ export function desktopDiagnosticOutput(args, destinations) {
   // Keep this filter while a launch child can print private application argv.
   const values = args.flatMap(argument => {
     const value = argument.startsWith("--") ? argument.includes("=") ? argument.slice(argument.indexOf("=") + 1) : "" : argument;
-    return value ? [value, JSON.stringify(value).slice(1, -1), ...value.split(/[\r\n]/u)] : [];
+    return [argument, value].filter(Boolean).flatMap(privateValue => [privateValue, stripVTControlCharacters(privateValue), JSON.stringify(privateValue).slice(1, -1), ...privateValue.split(/[\r\n]/u)]);
   });
   const patterns = [...new Set(values.filter(Boolean))].sort((left, right) => right.length - left.length);
   const filter = line => {
@@ -22,7 +22,14 @@ export function desktopDiagnosticOutput(args, destinations) {
       const signal = /\(signal: (\d+)(?:, [^)]*)?\)\s*$/u.exec(safe)?.[1];
       return `[desktop command failed${exit ? `: exit status: ${exit}` : signal ? `: signal: ${signal}` : ""}]\n`;
     }
-    for (const value of patterns) safe = safe.replaceAll(value, "[private argument]");
+    for (const value of patterns) {
+      // Short values must be complete words; replacing a single letter inside
+      // every ordinary diagnostic would hide unrelated build failures.
+      if (value.length <= 3) {
+        const literal = value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+        safe = safe.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${literal}(?![\\p{L}\\p{N}_])`, "gu"), "[private argument]");
+      } else safe = safe.replaceAll(value, "[private argument]");
+    }
     return safe;
   };
   return Object.fromEntries(["stdout", "stderr"].map(name => {
