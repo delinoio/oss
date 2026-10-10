@@ -35,7 +35,7 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", error => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const width of [1440, 960, 760]) {
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const width of [1440, 1100, 960, 760]) {
     await page.setViewportSize({ width, height: width === 1440 ? 900 : 640 });
     await page.goto(`${origin}/?language=${language}&theme=${theme}`);
     const primary = await page.evaluate(() => /mac/i.test(navigator.platform) ? "Meta" : "Control");
@@ -44,11 +44,29 @@ try {
     const originalWidth = width > 1100 ? 288 : 256;
     assert.equal(Math.round((await pane.boundingBox()).width), originalWidth);
     const paneHandle = await pane.elementHandle();
-    await toggle.click(); await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
+    const middle = await page.evaluate(async () => {
+      const app = document.querySelector(".app"), pane = document.querySelector(".sidebar-pane-dialog");
+      document.querySelector(".sidebar-wide-toggle").click();
+      for (let frame = 0; frame < 8 && !app.classList.contains("sidebar-motion"); frame++) await new Promise(requestAnimationFrame);
+      if (!app.classList.contains("sidebar-motion")) throw new Error("Accepted collapse must start motion");
+      const transitions = app.getAnimations({ subtree: true }).filter(animation => [app, document.querySelector(".sidebar"), pane.firstElementChild].includes(animation.effect?.target));
+      for (const animation of transitions) { animation.pause(); animation.currentTime = 90; }
+      const timing = transitions.map(animation => { const style = getComputedStyle(animation.effect.target); return { duration: Math.round(parseFloat(style.transitionDuration) * 1000), easing: style.transitionTimingFunction }; });
+      const sample = { rail: document.querySelector(".sidebar-rail").getBoundingClientRect().width, pane: pane.getBoundingClientRect().width, content: pane.firstElementChild.getBoundingClientRect().width, main: document.querySelector("#main").getBoundingClientRect().x, hidden: pane.hidden, inert: pane.inert, aria: pane.getAttribute("aria-hidden"), timing };
+      for (const animation of transitions) animation.finish();
+      return sample;
+    });
+    assert.equal(middle.rail, 52); assert.equal(middle.content, originalWidth);
+    assert.ok(middle.pane > 0 && middle.pane < originalWidth, "midpoint clips fixed-width pane content");
+    assert.ok(Math.abs(middle.main - 53 - middle.pane) < 1, "main boundary follows the pane without jumping");
+    assert.equal(middle.hidden, false); assert.equal(middle.inert, true); assert.equal(middle.aria, "true");
+    assert.ok(middle.timing.length >= 3);
+    for (const timing of middle.timing) { assert.equal(timing.duration, 180); assert.equal(timing.easing, "cubic-bezier(0.2, 0, 0, 1)"); }
+    await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
     assert.equal(Math.round((await rail.boundingBox()).width), 52);
     assert.equal(Math.round((await page.locator("#main").boundingBox()).x), 53);
     assert.equal(await pane.evaluate(node => node.inert), true);
-    await page.keyboard.press(`${primary}+b`); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    await page.keyboard.press(`${primary}+b`); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden && !document.querySelector(".app").classList.contains("sidebar-motion"));
     assert.equal(Math.round((await pane.boundingBox()).width), originalWidth);
     assert.equal(await pane.evaluate((node, retained) => node === retained, paneHandle), true);
     // A focused pane control must return to the persistent toggle before hiding.
@@ -68,7 +86,7 @@ try {
     // Supporting-surface portals retain selected resources and authoring state.
     await page.getByRole("button", { name: language === "ko" ? "풀 리퀘스트" : "Pull requests", exact: true }).click();
     assert.equal(await pane.evaluate(node => node.hidden), true);
-    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden && !document.querySelector(".app").classList.contains("sidebar-motion"));
     const repository = pane.locator(".sidebar-repository-row").first(); await repository.click();
     const draft = pane.locator(".pr-search-input input"); await draft.fill("Retained query draft");
     const draftHandle = await draft.elementHandle();
@@ -82,12 +100,18 @@ try {
     assert.equal(await toggle.evaluate(node => node === document.activeElement), true);
     await page.getByRole("button", { name: language === "ko" ? "세션" : "Sessions", exact: true }).click();
     await page.getByRole("button", { name: language === "ko" ? "풀 리퀘스트" : "Pull requests", exact: true }).click();
-    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden && !document.querySelector(".app").classList.contains("sidebar-motion"));
     assert.equal(await scroller.evaluate(node => node.scrollTop), retainedScroll, "hidden navigation cannot overwrite the original scroll snapshot");
     assert.equal(await draft.inputValue(), "Retained query draft");
     assert.equal(await draft.evaluate((node, original) => node === original, draftHandle), true);
     assert.equal(await repository.getAttribute("aria-pressed"), "true");
     assert.equal(await page.evaluate(() => window.__prSidebarFixture.github), 0);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await toggle.click(); await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
+    assert.equal(await page.locator(".app").evaluate(node => node.classList.contains("sidebar-motion")), false);
+    await toggle.click(); await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    assert.equal(Math.round((await pane.boundingBox()).width), originalWidth);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     checks++;
   }
   // Effective 200% reflow uses half the physical viewport, without claiming CEF zoom.

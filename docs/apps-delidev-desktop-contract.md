@@ -3463,7 +3463,8 @@ visible focus and `aria-expanded`; it remains available across page changes.
 
 Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
 pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
-and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does not
+and `aria-hidden` boundaries explicitly after visual settlement; logical collapse
+applies `inert` and `aria-hidden` immediately under issue #2288; closing a nonmodal dialog alone does not
 hide its CSS flex layout. Suspend Home navigation polling, hover timers,
 sidebar selectors, repository/schedule navigation refresh and continuation through
 existing activity gates. Main content observation keeps its independent owner.
@@ -3475,7 +3476,7 @@ wide toggle and deactivate primary+B. Drawer opening/closing never saves the
 wide preference. On return to wide layout, reapply the committed choice, retire
 any modal drawer and use a visible toggle/rail fallback for focus. Search initial
 focus cannot target a hidden pane; explicit Search focus may request the original
-pane opening and waits for visible committed presentation.
+pane opening and waits for settled visible committed presentation.
 
 `sidebar_preference.json` is an independent computer-local, bounded 4096-byte
 version-1 document containing only the Expanded/Collapsed enum and its document
@@ -3713,3 +3714,37 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Context-pane motion (issue #2288)
+
+Only accepted committed preference changes within a stable wide layout animate.
+Use 180ms cubic-bezier(0.2, 0, 0, 1) on both grid tracks and the content translation.
+Keep the 52px rail and divider fixed, with 288px/0 endpoints above 1100px and
+256px/0 from 760px through 1100px. Clip the changing pane viewport around content
+that retains its full expanded width; translate content left when closing and
+reverse when opening. Add no fade, bounce, blur, text scaling or continuous rewrap.
+
+Logical collapse transfers descendant focus to the persistent toggle before
+applying inert/ARIA boundaries and suspending existing hidden navigation activity.
+The mounted nonmodal pane stays visually open only through the closing interval.
+At settlement apply hidden and remove open. Opening restores that same pane and
+ordinary expansion never steals focus. Explicit Search focus waits for the current
+opening endpoint; collapse or navigation replacement retires that focus intent.
+Preserve original portals, drafts, caret/selection, filters, scroll snapshots,
+controllers, pending/uncertain identities and shortcut/preference admission.
+
+An admitted reversal uses the currently rendered CSS geometry and retires old
+completion callbacks. Transition completion checks the current generation and
+latest endpoint; a generation-fenced 240ms fallback bounds missing completion.
+Cancellation without a running successor, reduced-motion changes, breakpoint
+changes and disposal retire pending callbacks and use the latest valid endpoint.
+Reduced motion, initial preference restoration, connection/page changes and
+breakpoint restoration remain immediate. Below 760px keep the original independent
+modal drawer and make no wide preference write. Failed, pending and uncertain
+operations retain committed layout and explicit Reload sidebar preference.
+
+Component regressions cover authority/lifetime boundaries and synthetic browser
+checks cover start, intermediate and settled geometry in both languages/themes.
+Record deferred CI and unavailable browser/native evidence honestly; fixture
+geometry does not establish installed CEF/platform acceptance. No dependency,
+flag, API, protocol allocation, migration, telemetry or native interface is added.

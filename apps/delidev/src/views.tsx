@@ -1,5 +1,5 @@
-import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
+import { useSidebarPaneFocusAllowed, useSidebarPaneReady, useSidebarPaneVisible } from "./sidebar-context";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -40,23 +40,31 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
   const closeDrawer = useCloseSidebarDrawer();
   const drawerOpen = useSidebarDrawerOpen();
   const paneVisible = useSidebarPaneVisible();
+  const paneReady = useSidebarPaneReady();
+  const paneFocusAllowed = useSidebarPaneFocusAllowed();
+  const previousPaneVisible = useRef(paneVisible);
   const openDrawer = useOpenSidebarDrawer();
   const request = useCallback((token: string) => ({ ...(query ?? emptySearch), pageSize: 30, pageToken: token }), [query]);
   const reader = useConnectPaginationReader(SearchQuery.searchConversations, request, searchPage);
   const result = usePaginationChain(JSON.stringify(query), active && Boolean(query?.query.trim()), reader);
   usePaginationRefresh(SearchQuery.searchConversations, request(""), active && Boolean(query?.query.trim()), result.refresh);
   useEffect(() => {
-    if (requestedFocus.current && paneVisible) { requestedFocus.current = false; searchInput.current?.focus(); }
-  }, [drawerOpen, paneVisible]);
+    if (!active || !paneFocusAllowed || previousPaneVisible.current && !paneVisible) requestedFocus.current = false;
+    previousPaneVisible.current = paneVisible;
+    // A hidden first entry cannot queue autofocus for an ordinary later expansion.
+    if (active && !paneVisible && !requestedFocus.current) focusedOnce.current = true;
+    if (active && requestedFocus.current && paneVisible && paneReady) { requestedFocus.current = false; focusedOnce.current = true; searchInput.current?.focus(); }
+  }, [active, drawerOpen, paneVisible, paneReady, paneFocusAllowed]);
   useEffect(() => {
-    if (!active || !paneVisible || focusedOnce.current) return;
+    if (!active || !paneVisible || !paneReady || focusedOnce.current) return;
     if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches && !drawerOpen) return;
     const frame = window.requestAnimationFrame(() => { searchInput.current?.focus(); focusedOnce.current = true; });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, drawerOpen, paneVisible]);
+  }, [active, drawerOpen, paneVisible, paneReady, paneFocusAllowed]);
   const shortcuts = useShortcuts([
     { id: ShortcutId.SearchFocus, scope: Surface.Search, active, label: "shortcuts.focusSearch", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, run: () => {
-      if (!paneVisible) { requestedFocus.current = true; openDrawer(); }
+      if (!paneVisible) requestedFocus.current = openDrawer() !== false;
+      else if (!paneReady) requestedFocus.current = true;
       else searchInput.current?.focus();
     } },
     { id: ShortcutId.SearchSubmit, scope: Surface.Search, active, label: "shortcuts.searchSubmit", bindings: [{ key: "Enter" }], target: searchInput, input: ShortcutInput.Target, execution: ShortcutExecution.Native, enabled: Boolean(draft.query.trim()), unavailableReason: "shortcuts.searchRequired" },

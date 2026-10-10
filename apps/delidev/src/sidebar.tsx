@@ -1,3 +1,4 @@
+import { SidebarMotionAdmission, SidebarPaneMotion } from "./sidebar-motion";
 import { useSessionNameEditor } from "./session-name-editor";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
@@ -275,14 +276,28 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  collapsed?: boolean; paneId?: string; toggleRef?: RefObject<HTMLButtonElement | null>; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
+export function Sidebar({ preferenceSaving = false, navigationScope = "", preferenceMotionAllowed = false, preferenceRevision = 0, paneReady = () => undefined, collapsed = false, paneId, toggleRef, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  preferenceSaving?: boolean; navigationScope?: string; preferenceMotionAllowed?: boolean; preferenceRevision?: number; paneReady?: (ready: boolean) => void; collapsed?: boolean; paneId?: string; toggleRef?: RefObject<HTMLButtonElement | null>; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
   useLocale();
   const [compact, setCompact] = useState(() => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches);
   const drawer = useRef<HTMLDialogElement>(null);
+  const motion = useRef<SidebarPaneMotion | undefined>(undefined);
+  const motionReady = useRef(paneReady);
+  motionReady.current = paneReady;
+  const [reducedMotion, setReducedMotion] = useState(() => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const [narrowWide, setNarrowWide] = useState(() => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 1100px)").matches);
+  const motionAdmission = useRef(new SidebarMotionAdmission());
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)"), width = window.matchMedia("(max-width: 1100px)");
+    const update = () => { setReducedMotion(reduced.matches); setNarrowWide(width.matches); };
+    reduced.addEventListener("change", update); width.addEventListener("change", update); update();
+    return () => { reduced.removeEventListener("change", update); width.removeEventListener("change", update); };
+  }, []);
+  useLayoutEffect(() => () => { motion.current?.dispose(); motion.current = undefined; motionAdmission.current = new SidebarMotionAdmission(); }, []);
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const modalDrawer = useRef(false);
@@ -340,13 +355,17 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
   useLayoutEffect(() => {
     const element = drawer.current;
     if (!element) return;
-    const hidden = compact ? !drawerOpen : collapsed;
-    if (hidden && element.contains(document.activeElement)) {
-      (compact ? compactFocusRef : toggleRef)?.current?.focus({ preventScroll: true });
+    const { animate, changed } = motionAdmission.current.update({ collapsed, compact, narrowWide, surface, selected: selectedSessionId, connectionReady, allowed: preferenceMotionAllowed, saving: preferenceSaving, reduced: reducedMotion, navigation: navigationScope, drawer: drawerOpen });
+    // Preference admission/response bookkeeping alone cannot snap a running
+    // transition. A later admitted reversal starts at its rendered geometry.
+    if (!changed) return;
+    if (compact) {
+      motion.current?.dispose();
+      const hidden = !drawerOpen;
+      if (hidden && element.contains(document.activeElement)) compactFocusRef?.current?.focus({ preventScroll: true });
+      element.hidden = hidden; element.inert = hidden; element.setAttribute("aria-hidden", String(hidden));
+      motionReady.current(!hidden);
     }
-    element.hidden = hidden;
-    element.inert = hidden;
-    element.setAttribute("aria-hidden", String(hidden));
     if (compact) {
       if (drawerOpen) {
         if (element.open && !modalDrawer.current) element.close();
@@ -363,14 +382,24 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
       const wasModal = modalDrawer.current;
       if (wasModal && element.open) element.close();
       modalDrawer.current = false;
-      if (collapsed) element.removeAttribute("open");
-      else element.setAttribute("open", "");
+      const layout = element.closest<HTMLElement>(".app");
+      if (layout) {
+        motion.current ??= new SidebarPaneMotion(layout, element, () => toggleRef?.current, ready => motionReady.current(ready));
+        motion.current.update(collapsed, animate);
+      } else {
+        // Standalone Sidebar fixtures retain the ordinary immediate boundary.
+        const hidden = collapsed;
+        if (hidden && element.contains(document.activeElement)) toggleRef?.current?.focus({ preventScroll: true });
+        element.hidden = hidden; element.inert = hidden; element.setAttribute("aria-hidden", String(hidden));
+        if (hidden) element.removeAttribute("open"); else element.setAttribute("open", "");
+        motionReady.current(!hidden);
+      }
       if (wasModal) {
         setDrawerOpen(false);
         requestAnimationFrame(() => (collapsed ? toggleRef?.current : drawer.current?.querySelector<HTMLElement>("[aria-current='page']") ?? rail.current?.querySelector<HTMLElement>("[aria-current='page']"))?.focus());
       }
     }
-  }, [compact, drawerOpen, collapsed, setDrawerOpen, toggleRef, compactFocusRef]);
+  }, [compact, drawerOpen, collapsed, setDrawerOpen, toggleRef, compactFocusRef, surface, selectedSessionId, connectionReady, preferenceMotionAllowed, preferenceRevision, preferenceSaving, navigationScope, reducedMotion, narrowWide]);
   useLayoutEffect(() => {
     const container = list.current;
     const target = sessionNavigation ? Surface.Sessions : surface;

@@ -8,7 +8,7 @@ export enum SidebarProblem {
   Unavailable = "unavailable", ReadFailed = "read-failed", InvalidDocument = "invalid-document", UnsupportedVersion = "unsupported-version",
   WriteFailed = "write-failed", OutcomeUnknown = "outcome-unknown", Changed = "changed",
 }
-enum SidebarOperation { Reading = "reading", Saving = "saving" }
+export enum SidebarOperation { Reading = "reading", Saving = "saving" }
 export interface SidebarSnapshot { revision: number; sidebar_preference: SidebarPreference; problem: SidebarProblem | null }
 export interface SidebarBridge {
   read: () => Promise<unknown>;
