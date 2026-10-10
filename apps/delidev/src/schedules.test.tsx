@@ -432,7 +432,7 @@ it.each([
 
 function StartingFixture({project,initial=[]}:{project:string;initial:unknown[]}){
  const [starting,setStarting]=useState(initial);
- return <StartingReferences project={project} starting={starting} change={setStarting} active/>;
+ return <StartingReferences project={project} starting={starting} change={setStarting} active showRepositoryNames/>;
 }
 it("labels duplicate schedule repositories by their original positions and saves the selected UUID",async()=>{
  const value=fixture(),second=newRequestId();
