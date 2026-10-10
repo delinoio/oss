@@ -26,7 +26,7 @@ function fixture() {
     router.service(ResourceService, { getResource, listResources: () => ({ resources: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (active = true, workflow?: (ready: boolean) => void) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} onWorkflowReadyChange={workflow} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { bundle, previewBytes, exported, preview, apply, client, view, status, getResource, jobId, state: (next: string) => { state = next; } };
 }
 function load(bundle: unknown) {
@@ -297,4 +297,50 @@ it("does not publish an export failure after the original Settings controller is
  const mounted=render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await waitFor(()=>expect(value.exported).toHaveBeenCalledOnce());mounted.unmount();
  await act(async()=>reject(new ConnectError("old export generation",Code.ResourceExhausted)));
  render(value.view());expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
+});
+
+
+it("releases export-only failures while retaining error visibility, retry and import draft protection", async () => {
+  const value = fixture(), workflow = vi.fn();
+  value.exported.mockRejectedValueOnce(new ConnectError("private export failure", Code.Unavailable));
+  const mounted = render(value.view(true, workflow));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await screen.findByRole("alert");
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
+  expect(screen.queryByText("private export failure")).toBeNull();
+  mounted.rerender(value.view(false, workflow));
+  expect(screen.getByRole("alert")).toBeTruthy();
+  mounted.rerender(value.view(true, workflow));
+  expect((screen.getByRole("button", { name: "Export configuration" }) as HTMLButtonElement).disabled).toBe(false);
+  value.exported.mockResolvedValueOnce({ documentJson: encode({ version: 999, entries: [], machines: [] }) });
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await screen.findByText("Use a current version 4 DeliDev configuration export.");
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await screen.findByRole("textbox", { name: "Exported configuration" });
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "Configuration JSON" }), { target: { value: JSON.stringify(value.bundle) } });
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(true));
+  mounted.rerender(value.view(false, workflow));
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(true));
+});
+
+it("protects pending export and the original uncertain import from deferred navigation", async () => {
+  const value = fixture(), workflow = vi.fn();
+  let finish!: (result: { documentJson: Uint8Array }) => void;
+  value.exported.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  render(value.view(true, workflow));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await waitFor(() => expect(value.exported).toHaveBeenCalledOnce());
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(true));
+  await act(async () => finish({ documentJson: encode(value.bundle) }));
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
+  value.apply.mockRejectedValueOnce(new ConnectError("acknowledgment lost", Code.Unavailable));
+  load(value.bundle);
+  fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Apply reviewed configuration" }));
+  await screen.findByRole("button", { name: "Retry the same configuration import" });
+  await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(true));
+  expect(value.apply).toHaveBeenCalledOnce();
 });
