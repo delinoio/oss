@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: Apache-2.0
+import { create } from "@bufbuild/protobuf";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { ManagedMCPService, ManagedMcpAgentReferenceSchema, ManagedMcpDefinitionSchema, ManagedMcpAuthAction as Action, ManagedMcpAuthentication as Auth, ManagedMcpTransport as Transport, ManagedMcpOperationState as State, newRequestId, type SaveManagedMcpRequest, type AuthenticateManagedMcpRequest } from "@delinoio/delidev-api-client";
+import { ManagedMcpSettings } from "./managed-mcp-settings";
+import { MutationIntents } from "./mutation";
+import { SettingsLifetime } from "./settings-lifetime";
+import { SettingsTasks } from "./settings-task";
+vi.mock("./configuration-fields", () => ({ ResourceChoice: ({ label, value, change, disabled }: { label: string; value: string; change: (id: string) => void; disabled: boolean }) => <label>{label}<select value={value} disabled={disabled} onChange={event => change(event.target.value)}><option value="">Choose</option><option value={machine}>Fixture Runner</option></select></label> }));
+const machine = newRequestId(), worker = newRequestId();
+function fixture(lost = false, oauth = false) {
+  const row = create(ManagedMcpDefinitionSchema, { id: newRequestId(), revision: 2n, machineId: machine, workerDeviceId: worker, name: "Private MCP", transport: Transport.STDIO, command: "/fixture/mcp", cwd: "/fixture", enabled: true, authentication: oauth ? Auth.OAUTH : Auth.MANUAL });
+  const referenced = create(ManagedMcpDefinitionSchema, { ...row, id: newRequestId(), name: "Referenced MCP", agents: [create(ManagedMcpAgentReferenceSchema, { id: newRequestId(), name: "Review agent" })] });
+  let original: SaveManagedMcpRequest | AuthenticateManagedMcpRequest | undefined, foreign = true;
+  const saved = vi.fn((request: SaveManagedMcpRequest) => { original = request; if (lost) throw new ConnectError("Lost fixture response", Code.Unavailable); return { definition: { ...row, revision: 3n }, operation: { requestId: request.requestId, definitionId: row.id, state: State.COMPLETED } }; });
+  const authenticated = vi.fn((request: AuthenticateManagedMcpRequest) => { original = request; if (request.action === Action.OAUTH_BEGIN) return { operation: { requestId: request.requestId, definitionId: row.id, state: State.AWAITING_AUTHORIZATION, authorizationUrl: "https://oauth.example/authorize", expiresAt: "2099-01-01T00:00:00Z" } }; throw new ConnectError("Lost fixture response", Code.Unavailable); });
+  const inspected = vi.fn(request => ({ definition: { ...row, revision: 3n }, operation: { requestId: foreign ? newRequestId() : request.requestId, definitionId: row.id, state: State.COMPLETED } }));
+  const removed = vi.fn(() => ({})), listed = vi.fn(() => ({ definitions: [row, referenced] }));
+  const transport = createRouterTransport(router => router.service(ManagedMCPService, { listManagedMcp: listed, saveManagedMcp: saved, authenticateManagedMcp: authenticated, getManagedMcpOperation: inspected, deleteManagedMcp: removed }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsTasks><ManagedMcpSettings active /></SettingsTasks></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>);
+  fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: machine } });
+  return { row, saved, authenticated, inspected, removed, listed, original: () => original, match: () => { foreign = false; } };
+}
+it("shows verified unsupported status, named references, scoped search and deletion guards without identifiers", async () => {
+  const f = fixture(); await screen.findByText("Private MCP");
+  expect(screen.getAllByText("Native execution is not supported by any verified harness.")).toHaveLength(2);
+  expect(screen.getByText("Referenced by Agent Workers: Review agent")).toBeTruthy();
+  const linked = screen.getByText("Referenced MCP").closest("article")!;
+  expect((within(linked).getByRole("button", { name: /Delete/ }) as HTMLButtonElement).disabled).toBe(true);
+  expect(document.body.textContent).not.toContain(f.row.id); expect(document.body.textContent).not.toContain(worker);
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "missing" } });
+  expect(screen.getByText("No matching MCP servers.")).toBeTruthy(); expect(f.saved).not.toHaveBeenCalled(); expect(f.authenticated).not.toHaveBeenCalled();
+});
+it("observes only the retained original operation, rejects foreign receipts and never replays an uncertain save", async () => {
+  const f = fixture(true); await screen.findByText("Private MCP");
+  fireEvent.click(within(screen.getByText("Private MCP").closest("article")!).getByRole("button", { name: "Disable" }));
+  const inspect = await screen.findByRole("button", { name: "Inspect original operation" });
+  expect(f.saved).toHaveBeenCalledTimes(1);
+  expect(f.original()).toMatchObject({ machineId: machine, expectedRevision: 2n, definition: { id: f.row.id, enabled: false, authenticated: false, supportedHarnesses: [], agents: [] } });
+  expect((screen.getByRole("combobox", { name: "Runner Device" }) as HTMLSelectElement).disabled).toBe(true);
+  fireEvent.click(inspect); await waitFor(() => expect(f.inspected).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("button", { name: "Inspect original operation" })).toBeTruthy();
+  f.match(); fireEvent.click(inspect); await waitFor(() => expect(screen.queryByRole("button", { name: "Inspect original operation" })).toBeNull());
+  expect(f.saved).toHaveBeenCalledTimes(1); expect(f.inspected.mock.calls[1][0].requestId).toBe(f.original()!.requestId);
+});
+it("clears write-only credential drafts on submission while retaining their exact uncertain request", async () => {
+  const f = fixture(); await screen.findByText("Private MCP");
+  fireEvent.click(within(screen.getByText("Private MCP").closest("article")!).getByRole("button", { name: "Authenticate" }));
+  const dialog = screen.getByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Environment variable name"), { target: { value: "FIXTURE_TOKEN" } });
+  const secret = within(dialog).getByLabelText("Protected value") as HTMLInputElement;
+  expect(secret.type).toBe("password");
+  fireEvent.change(secret, { target: { value: "fixture-private-value" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Authenticate" }));
+  await waitFor(() => expect(f.authenticated).toHaveBeenCalledTimes(1));
+  expect(secret.value).toBe(""); expect(document.body.textContent).not.toContain("fixture-private-value");
+  expect(f.original()).toMatchObject({ environment: { FIXTURE_TOKEN: "fixture-private-value" }, machineId: machine, expectedRevision: 2n });
+  expect(f.saved).not.toHaveBeenCalled(); expect(f.removed).not.toHaveBeenCalled();
+  f.match(); fireEvent.click(within(dialog).getByRole("button", { name: "Inspect original operation" }));
+  await waitFor(() => expect(within(dialog).queryByRole("button", { name: "Inspect original operation" })).toBeNull());
+  expect(f.authenticated).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the original OAuth authorization after dialog dismissal and never repeats an uncertain completion", async () => {
+  const f = fixture(false, true); await screen.findByText("Private MCP");
+  const open = () => fireEvent.click(within(screen.getByText("Private MCP").closest("article")!).getByRole("button", { name: "Authenticate" }));
+  open(); fireEvent.click(screen.getByRole("button", { name: "Start OAuth authorization" }));
+  const link = await screen.findByRole("link", { name: "Open authorization page" });
+  expect(link.getAttribute("href")).toBe("https://oauth.example/authorize");
+  const attempt = f.original()!.requestId;
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close Authenticate", exact: true }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect((screen.getByRole("combobox", { name: "Runner Device" }) as HTMLSelectElement).disabled).toBe(true);
+  open(); expect(screen.getByRole("link", { name: "Open authorization page" })).toBeTruthy();
+  expect(f.authenticated).toHaveBeenCalledTimes(1);
+  const callback = screen.getByLabelText("Exact authorization callback URL") as HTMLInputElement;
+  fireEvent.change(callback, { target: { value: "http://127.0.0.1/callback?code=fixture-private-code&state=fixture" } });
+  fireEvent.click(screen.getByRole("button", { name: "Complete authorization" }));
+  await screen.findAllByRole("button", { name: "Inspect original operation" });
+  expect(callback.value).toBe("");
+  expect(f.original()).toMatchObject({ action: Action.OAUTH_COMPLETE, attemptId: attempt, callbackUrl: "http://127.0.0.1/callback?code=fixture-private-code&state=fixture" });
+  f.match(); fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Inspect original operation" }));
+  await waitFor(() => expect(within(screen.getByRole("dialog")).queryByRole("button", { name: "Inspect original operation" })).toBeNull());
+  expect(f.authenticated).toHaveBeenCalledTimes(2);
+});

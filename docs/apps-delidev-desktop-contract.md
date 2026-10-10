@@ -5102,3 +5102,28 @@ Native local startup, supervision and saved-connection verification require the 
 ## Worker-owned MCP Settings
 
 [Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns the typed catalog and authentication boundary. MCP appears after Instructions in AI Settings. A selected Runner scopes search, definitions, mutations and recovery. The approved panel provides flat rows, add/edit, enablement, separate authentication, referenced Agent names and confirmed deletion. English/Korean presentation uses existing theme tokens and Settings visit lifetimes. Unsupported native support remains visible; no management view starts a server or implies native acceptance. Original uncertain mutations remain inspectable without automatic replay.
+
+The MCP panel uses the existing 720px Settings form and confirmation surfaces,
+keyboard containment, Escape dismissal and focus return. Runner choice, scoped
+search and flat rows use the existing semantic theme tokens. Definition readback
+never becomes editable native support, authentication or Agent-reference state.
+Empty verified harness support is presented as unsupported; disabled entries use
+neutral wording. References use Agent names, with no raw identities in rows.
+
+Manual environment/header values and exact OAuth callback URLs are masked,
+write-only inputs. Submission clears visible secret drafts; only the bounded
+original retained request may keep uncertain bytes for the current Settings visit.
+OAuth begin, finish and original cancellation are separate explicit actions. An
+accepted authorization keeps its original link, expiry and attempt across dialog
+dismissal; pending work or authorization prevents replacing the selected Runner.
+Leaving the Settings scope disposes presentation without business cancellation.
+
+Every management failure retains the exact admitted request. Recovery reads only
+the original operation and validates its request/definition identity before
+acknowledging a completed, canceled, rejected or accepted authorization outcome.
+It never resends vault writes or token exchanges. Revision conflict and recovery
+remain visible; rejected outcomes preserve the form for an explicit new decision.
+Deletion requires confirmation, is disabled for current Agent references and
+explains that historical generations and protected credential cleanup remain
+independently owned. These UI fixtures do not establish native, account or
+packaged platform acceptance.

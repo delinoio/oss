@@ -35,6 +35,7 @@ import { JobState, TrackedJob } from "./jobs";
 import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker, type LocalWorkerAction } from "./local-worker-controls";
 import { SSHSetup } from "./ssh-setup";
 import { MachineSettings } from "./machine-settings";
+import { ManagedMcpSettings } from "./managed-mcp-settings";
 import { NetworkSettings } from "./network-settings";
 import { DeviceAction, DeviceRow, DeviceRevocation, DeviceRevocationExit } from "./device-settings";
 import { AccountConnection } from "./account-connection";
@@ -253,6 +254,7 @@ export const settingsCategories: Record<SettingsCategory, { label: string; descr
   [SettingsCategory.ApiAccounts]: { get label() { return copy("settings.aiApiKeys_da1a0f"); }, get description() { return copy("settings.manageAiApiKeysAndKeyless_372629"); }, kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.Providers]: { get label() { return copy("settings.apiProviders_376855"); }, get description() { return copy("settings.providerAvailabilityIsSavedOnThe_11e7c8"); }, kind: EntityKind.PROVIDER, area: SettingsArea.Configuration },
   [SettingsCategory.AgentWorkers]: { get label() { return copy("settings.agentWorkers_e60c23"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.AGENT, area: SettingsArea.Configuration },
+  [SettingsCategory.Mcp]: { get label() { return copy("managed-mcp-settings.title"); }, get description() { return copy("managed-mcp-settings.description"); }, area: SettingsArea.Configuration },
   [SettingsCategory.Instructions]: { get label() { return copy("settings.instructions_934652"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.TEMPLATE, area: SettingsArea.Configuration },
   [SettingsCategory.ProjectDefaults]: { get label() { return copy("configuration-fields.projectDefaults"); }, get description() { return copy("configuration-fields.inheritanceHelp"); }, kind: EntityKind.SETTINGS, area: SettingsArea.Configuration },
   [SettingsCategory.Projects]: { get label() { return copy("settings.projects_04e2a9"); }, get description() { return copy("settings.savedOnTheSelectedServer_93dbee"); }, kind: EntityKind.PROJECT, area: SettingsArea.Configuration },
@@ -268,7 +270,7 @@ export const settingsCategories: Record<SettingsCategory, { label: string; descr
 };
 
 export const settingsGroups: { label: SettingsGroup; categories: SettingsCategory[] }[] = [
-  { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
+  { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions, SettingsCategory.Mcp] },
   { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
   { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.KeyboardShortcuts, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
@@ -284,6 +286,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.SubscriptionAccounts]: "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.ApiAccounts]: "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.AgentWorkers]: "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
+  [SettingsCategory.Mcp]: "M8 3v5m8-5v5M5 8h14v5a7 7 0 0 1-14 0zM12 20v2",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
   [SettingsCategory.Repositories]: "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
@@ -416,7 +419,8 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const preferenceLabel = serverPreferenceLabel(preferenceSection);
   const isPairedDevices = selectedCategory === SettingsCategory.PairedDevices;
   const isRunnerDevices = selectedCategory === SettingsCategory.ExecutionWorkers;
-  const hasSpecializedPanel = isAccountCategory || isApiProviders;
+  const isMcp = selectedCategory === SettingsCategory.Mcp;
+  const hasSpecializedPanel = isAccountCategory || isApiProviders || isMcp;
   const hasOverlay = Boolean(editing || account || deleting || routing || machine || device);
   const [networkPresentationOpen, setNetworkPresentationOpen] = useState(false);
   const categoryDescription = kind === EntityKind.DEVICE
@@ -536,6 +540,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} openSubscriptions={()=>navigate(SettingsCategory.SubscriptionAccounts)} /></div> : null}
           {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
           {area === SettingsArea.Configuration ? <div>
+            {isMcp ? <ManagedMcpSettings active={visible && !hasOverlay} /> : null}
             {controlLocalWorker && isRunnerDevices ? <div data-settings-search-target="local-worker"><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}
             {isApiAccounts ? <div>
