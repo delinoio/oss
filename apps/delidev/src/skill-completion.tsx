@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { SkillQuery, SkillProvenance, isEntityId, type SkillEntry, type SkillSelection } from "@delinoio/delidev-api-client";
+import { SkillCompletionOverlay } from "./skill-completion-overlay";
 import { copy, useLocale } from "./localization";
 
 export interface SkillToken { start: number; end: number; prefix: string }
@@ -108,9 +109,9 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
     if (row.top < top) container.scrollTop += (row.top - top) / scale;
     else if (row.bottom > bottom) container.scrollTop += (row.bottom - bottom) / scale;
   }, [validIndex, visible, query.isFetching]);
-  const list = visible ? <div ref={completion} className="skill-completion">
+  const list = visible ? <SkillCompletionOverlay anchor={textarea} panel={completion} dismiss={() => setDismissed(true)}>
     {enabled ? query.isFetching ? <p role="status">{copy("skills.loading")}</p> : !inventoryKnown ? <><p role="status">{copy("skills.unavailable")}</p><button type="button" onClick={() => { if (canEdit() && enabled && machineId && agentId && !contextChanged) void query.refetch(); }}>{copy("skills.retry")}</button></> : candidates.length ? <ul role="listbox" id={id} aria-label={copy("skills.available")}>{candidates.map((entry, index) => <li key={entry.selection!.skillId} id={`${id}-${index}`} role="option" aria-selected={index === validIndex} aria-disabled={entry.availability === SkillAvailability.Unavailable || undefined} data-availability={entry.availability} onMouseDown={event => event.preventDefault()} onClick={() => accept(entry)}><strong className="skill-completion-name">{entry.name}</strong><span className="skill-completion-description">{entry.description}</span>{entry.availability === SkillAvailability.Unavailable ? <span className="skill-completion-status">{copy("skills.entryUnavailable")}</span> : null}<span className="skill-completion-provenance">{entry.provenance === SkillProvenance.PROJECT ? copy("skills.project") : copy("skills.user")}</span></li>)}</ul> : <p role="status">{copy("skills.empty")}</p> : <p role="status">{copy("skills.unsupported")}</p>}
-  </div> : null;
+  </SkillCompletionOverlay> : null;
   return { selections: [...distinct.values()], blocked, list, clear: () => { if (canEdit()) setBindings([]); }, // Original receipt acceptance settles ownership before the pending render unlocks.
     replaceUnbound: (next: string, position: number) => { if (!canEdit()) return; if (change(next, []) === false) return; setBindings([]); bindingsChanged?.([]); setCaret(position); setDismissed(true); setSelected(0); },
     clearAccepted: () => { bindingsChanged?.([]); setBindings([]); }, onChange, onKeyDown,

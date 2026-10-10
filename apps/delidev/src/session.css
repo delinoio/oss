@@ -189,8 +189,8 @@
 
 .conversation-page-scroll { max-height: 400px; overflow: auto; }
 
-/* Shared creation, follow-up and queue-edit completion stays in document flow. */
-.skill-completion { min-width: 0; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 4px; }
+/* Shared manual top-layer completion reserves no composer or centering space. */
+.skill-completion { position: fixed; inset: auto; margin: 0; box-sizing: border-box; color: var(--text); min-width: 0; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 4px; }
 .skill-completion ul { list-style: none; padding: 0; margin: 0; }
 .skill-completion li { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 40px; padding: 0 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
 .skill-completion li:hover { background: var(--surface-hover); }

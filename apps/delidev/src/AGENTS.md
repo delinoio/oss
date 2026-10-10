@@ -47,3 +47,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
+
+- Shared skill completion presentation follows the [desktop explicit skill completion contract](../../../docs/apps-delidev-desktop-contract.md#explicit-skill-completion). Keep the nonmodal top-layer panel in its original composer/modal DOM, reserve no flow space, and retain the original textarea, input guards, bindings and inventory owner. Preserve project placement and General Chat centering ownership.

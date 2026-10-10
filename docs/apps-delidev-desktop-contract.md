@@ -4533,7 +4533,18 @@ use one horizontal option row: name, original description and an unshrunk neutra
 User/Project badge. Project and General Chat creation constrain both the content grid item and its
 fieldset with `min-width: 0`, so intrinsic candidate text cannot widen the
 820px-capped content or responsive composer. Keep project grid placement and
-General Chat centering independent of this shrink boundary. The in-flow panel has a 220px maximum scroll height, 4px padding,
+General Chat centering independent of this shrink boundary. One nonmodal manual
+popover stays in its original composer DOM and modal owner, reserving no normal-flow
+height or spacing. Anchor to the textarea upper edge with an 8px gap, matched width
+and 8px usable viewport/modal margin. Prefer above; fall below only when the full
+bounded panel fits there, otherwise use the larger side and scroll internally.
+Reposition on anchor/panel resize, manual textarea resize, ancestor scrolling,
+window resize and visual viewport changes. Hidden, inert, disabled, disconnected
+and unmounted original composers dispose presentation without changing draft,
+bindings, inventory authority or focus. Opening, filtering, state transitions,
+dismissal and reopening preserve surrounding geometry and ancestor scroll within
+1 CSS pixel for a constant draft and textarea size. Loading, empty, failed, retry
+and unsupported states share this overlay. The panel has a 220px maximum scroll height, 4px padding,
 a neutral border and 8px corners. Rows have a 40px minimum height, 12px horizontal
 padding, 12px gaps and 8px corners. Names use 14px/20px semibold text; descriptions
 use muted 12px/18px text. Preserve full original text in the DOM and accessible
