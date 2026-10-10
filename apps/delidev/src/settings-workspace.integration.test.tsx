@@ -169,7 +169,7 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   expect(enableBudget.checked).toBe(false);
   const saveBudget = screen.getByRole("button", { name: "Save session budget" }) as HTMLButtonElement;
   if (saveBudget.disabled) {
-    expect(screen.getByRole("alert")).toHaveTextContent("The session changed. Your budget draft is retained.");
+    expect(screen.getByRole("alert").textContent).toContain("The session changed. Your budget draft is retained.");
     const latestRevision = screen.getByRole("button", { name: "Use latest revision with this draft" });
     fireEvent.click(latestRevision);
     await waitFor(() => expect(saveBudget.disabled).toBe(false));
