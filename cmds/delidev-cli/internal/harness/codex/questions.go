@@ -109,7 +109,14 @@ func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error
 		seen[question.ID] = true
 		request.Questions = append(request.Questions, question)
 	}
-	if len(request.Questions) == 1 && strings.HasPrefix(request.Questions[0].ID, domain.CodexAppApprovalQuestionPrefix) {
+	appApproval := false
+	for _, q := range request.Questions {
+		appApproval = appApproval || strings.HasPrefix(q.ID, domain.CodexAppApprovalQuestionPrefix)
+	}
+	if appApproval {
+		if len(request.Questions) != 1 {
+			return Event{}, incompatible()
+		}
 		call, exists := trackedAppCall{}, false
 		if c.apps != nil {
 			call, exists = c.apps.calls[params.ItemID]

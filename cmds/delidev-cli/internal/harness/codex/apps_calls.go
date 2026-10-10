@@ -10,6 +10,7 @@ import (
 )
 
 type trackedAppCall struct {
+	progress  uint16
 	turn      domain.ID
 	identity  domain.CodexAppCallIdentity
 	completed bool

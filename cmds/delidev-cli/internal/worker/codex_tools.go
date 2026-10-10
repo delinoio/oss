@@ -26,7 +26,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 	update := domain.ExecutionToolUpdate{ID: retained.ID, NativeID: event.ItemID}
 	var kind domain.ExecutionEventKind
 	switch event.Kind {
-	case codex.ToolStartedEvent, codex.ToolCompletedEvent:
+	case codex.ToolStartedEvent, codex.ToolUpdatedEvent, codex.ToolCompletedEvent:
 		if event.Tool == nil || event.Tool.ID != event.ItemID {
 			return publicationUncertain()
 		}
@@ -63,6 +63,11 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			}
 			update.ID = retained.ID
 			kind = domain.ExecutionToolStarted
+		} else if event.Kind == codex.ToolUpdatedEvent {
+			if !known || retained.Completed || retained.Kind != domain.CodexAppTool || snapshot.Kind != domain.CodexAppTool || snapshot.Status != domain.ToolRunning {
+				return publicationUncertain()
+			}
+			kind = domain.ExecutionToolUpdated
 		} else {
 			if !known || retained.Completed || retained.Kind != snapshot.Kind || snapshot.Kind == domain.ImageViewTool && (retained.ImageView == nil || snapshot.ImageView == nil || *retained.ImageView != *snapshot.ImageView) {
 				return publicationUncertain()

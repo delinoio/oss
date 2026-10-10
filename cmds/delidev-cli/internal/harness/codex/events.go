@@ -105,6 +105,7 @@ const (
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
 	ToolStartedEvent              EventKind = "tool-started"
+	ToolUpdatedEvent              EventKind = "tool-updated"
 	ToolCompletedEvent            EventKind = "tool-completed"
 	ToolOutputEvent               EventKind = "tool-output"
 	ToolPatchEvent                EventKind = "tool-patch"
@@ -419,6 +420,8 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return c.observeMessageLocked(native)
 	case "thread/tokenUsage/updated":
 		return c.observeUsageLocked(native)
+	case "item/mcpToolCall/progress":
+		return c.observeAppProgressLocked(native)
 	case "item/commandExecution/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
 		return c.observeToolUpdateLocked(native)
 	default:
