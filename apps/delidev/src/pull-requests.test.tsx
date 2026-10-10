@@ -242,6 +242,36 @@ it("distinguishes initial loading from a successful empty page", async () => {
   expect(pane.queryByText("Loading repositories…")).toBeNull();
 });
 
+it.each([Code.PermissionDenied, Code.Unavailable])("preserves a verified empty repository page after failed refresh %s and retries its original range", async (code) => {
+  const value = fixture([]);
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  await pane.findByText("No repositories on this page.");
+  value.fail(code);
+  fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+  await pane.findByText("Refresh failed. Showing the previous repository page.");
+  expect(pane.getByText("No repositories on this page.")).toBeTruthy();
+  expect(pane.getByRole("alert")).toBeTruthy();
+  expect(value.query).not.toHaveBeenCalled();
+  expect(value.mutation).not.toHaveBeenCalled();
+
+  value.fail();
+  value.rows.push(repository());
+  fireEvent.click(pane.getByRole("button", { name: "Retry" }));
+  await pane.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
+  expect(pane.queryByText("No repositories on this page.")).toBeNull();
+  expect(pane.queryByText("Refresh failed. Showing the previous repository page.")).toBeNull();
+  fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
+  await waitFor(() => expect(value.list.mock.calls.some(([request]) => request.filter?.pageToken === "repository-next")).toBe(true));
+  await waitFor(() => expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull());
+  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
+  expect(pane.queryByText("No repositories on this page.")).toBeNull();
+  const tokens = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken);
+  expect(tokens).toEqual(["", "", "", "repository-next"]);
+  expect(value.query).not.toHaveBeenCalled();
+  expect(value.mutation).not.toHaveBeenCalled();
+});
+
 it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failure %s from an empty page and preserves cached rows on failed Refresh", async (code) => {
   const value = fixture(); value.fail(code);
   render(<App transport={value.transport} />); const pane = await open();
