@@ -188,3 +188,31 @@ it("opens active typed file previews through the serialized read owner and disca
  const f=fixture();const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><SessionFilePreview sessionId={f.sessionId} repository={f.primary} path="note.txt" close={()=>{}}/></QueryClientProvider></TransportProvider>);
  await screen.findByText("<script>globalThis.unsafe = true</script>");expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls[0][0].queryJson))).toMatchObject({operation:"file",repository_id:f.primary,path:"note.txt"});expect(view.container.querySelector("script,iframe,a")).toBeNull();view.unmount();await waitFor(()=>expect(f.client.getQueryCache().getAll()).toHaveLength(0));
 });
+
+it.each(["pointer", "Enter"])("hands shared File focus off and restores retained explorer scroll after %s activation", async activation => {
+ const f=fixture();
+ function View(){const[path,setPath]=useState<string>();return <TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><div className="session-workspace"><div hidden={Boolean(path)} inert={Boolean(path)}><SessionFiles sessionId={f.sessionId} active={!path} close={()=>{}} openFile={(_repository,path)=>setPath(path)}/></div>{path?<SessionFilePreview sessionId={f.sessionId} repository={f.primary} path={path} close={()=>setPath(undefined)}/>:null}</div></QueryClientProvider></TransportProvider>;}
+ const view=render(<View/>);const row=await screen.findByRole("treeitem",{name:"note.txt 42 bytes"});
+ const scroll=row.closest<HTMLElement>(".conversation-page-scroll")!;const workspace=view.container.querySelector<HTMLElement>(".session-workspace")!;
+ scroll.scrollTop=70;scroll.scrollLeft=14;workspace.scrollTop=31;workspace.scrollLeft=9;
+ row.focus();if(activation==="Enter")fireEvent.keyDown(row,{key:"Enter"});else fireEvent.click(row);
+ const heading=await screen.findByRole("heading",{name:"note.txt"});expect(document.activeElement).toBe(heading);expect(row.closest("[hidden][inert]")).not.toBeNull();
+ await screen.findByText("<script>globalThis.unsafe = true</script>");
+ const refresh=screen.getByRole("button",{name:"Refresh files"});refresh.focus();fireEvent.click(refresh);
+ await waitFor(()=>expect(f.read.mock.calls.filter(([request])=>JSON.parse(new TextDecoder().decode(request.queryJson)).operation==="file")).toHaveLength(2));
+ await screen.findByText("<script>globalThis.unsafe = true</script>");expect(document.activeElement).toBe(refresh);
+ fireEvent.click(screen.getByRole("button",{name:"Close"}));
+ await waitFor(()=>expect(document.activeElement).toBe(row));expect(scroll.scrollTop).toBe(70);expect(scroll.scrollLeft).toBe(14);expect(workspace.scrollTop).toBe(31);expect(workspace.scrollLeft).toBe(9);
+ expect(row.getAttribute("aria-selected")).toBe("true");expect(f.read.mock.calls.filter(([request])=>JSON.parse(new TextDecoder().decode(request.queryJson)).operation==="roots")).toHaveLength(1);
+});
+
+it("fences late shared File reads and does not focus hidden or replaced previews",async()=>{
+ const f=fixture();let finish!:(value:{documentJson:Uint8Array})=>void;
+ f.read.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+ const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><SessionFilePreview sessionId={f.sessionId} repository={f.primary} path="note.txt" close={()=>{}}/></QueryClientProvider></TransportProvider>);
+ await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(1));expect(document.activeElement).toBe(screen.getByRole("heading",{name:"note.txt"}));
+ view.unmount();const outside=document.createElement("button");document.body.append(outside);outside.focus();
+ finish({documentJson:encode({size:"4",binary:false,truncated:false,text:"late"})});await waitFor(()=>expect(f.client.getQueryCache().getAll()).toHaveLength(0));expect(document.activeElement).toBe(outside);expect(screen.queryByText("late")).toBeNull();
+ const hidden=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><div hidden inert><SessionFilePreview sessionId={newRequestId()} repository={f.primary} path="other.txt" close={()=>{}}/></div></QueryClientProvider></TransportProvider>);
+ expect(document.activeElement).toBe(outside);hidden.unmount();outside.remove();
+});

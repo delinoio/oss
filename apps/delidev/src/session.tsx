@@ -492,9 +492,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const closeTab = (key:string) => {
     const index=tabs.tabs.findIndex(tab=>sessionTabKey(tab)===key);
     if(index<=0)return;
-    const target=tabs.selected===key?index-1:tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected);
+    const explorer=tabs.selected===key&&tabs.tabs[index]?.kind===SessionTabKind.File?tabs.tabs.findIndex(tab=>tab.kind===SessionTabKind.Files):-1;
+    const target=tabs.selected===key?(explorer>=0?explorer:index-1):tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected);
     document.getElementById(`session-tab-${id}-${target}`)?.focus({preventScroll:true});
     tabs.store.close(id,key);
+    if(explorer>=0)tabs.store.select(id,SessionTabKind.Files);
   };
   const closePanel = () => closeTab(tabs.selected);
   const closeTerminal = closePanel;
