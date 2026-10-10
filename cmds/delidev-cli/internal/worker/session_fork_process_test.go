@@ -93,7 +93,12 @@ func TestForkChildRetirementPreservesReplacedOrUncertainOwners(t *testing.T) {
 			if err := security.PrivateDir(path); err != nil {
 				t.Fatal(err)
 			}
-			original, _ := os.Lstat(path)
+			// Freeze the original handle identity before replacement. Windows Lstat
+			// resolves identity lazily and could otherwise adopt the new path.
+			original, err := security.StableStat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
 			phase := forkRuntimeUnused
 			problem := error(domain.Fail(domain.Unsupported, "Rejected.", "Preserve the source."))
 			switch scenario {
@@ -101,8 +106,12 @@ func TestForkChildRetirementPreservesReplacedOrUncertainOwners(t *testing.T) {
 				if err := os.Rename(path, path+"-original"); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Mkdir(path, 0700); err != nil {
+				if err := security.CreatePrivateDirExclusive(path); err != nil {
 					t.Fatal(err)
+				}
+				replacement, err := security.StableStat(path)
+				if err != nil || os.SameFile(original, replacement) {
+					t.Fatal("owner replacement fixture invalid", err)
 				}
 			case "malformed":
 				if err := os.WriteFile(filepath.Join(path, "foreign"), []byte("retained"), 0600); err != nil {
@@ -119,9 +128,9 @@ func TestForkChildRetirementPreservesReplacedOrUncertainOwners(t *testing.T) {
 			case "recovery":
 				problem = executionCheckpointUncertain()
 			}
-			err := finishForkChildProcessFailure(root, owner, original, phase, problem)
+			err = finishForkChildProcessFailure(root, owner, original, phase, problem)
 			if scenario != "native-possible" && domain.SafeError(err).Code != domain.RecoveryRequired {
-				t.Fatal("uncertainty lost", err)
+				t.Fatal("uncertainty lost", scenario, err)
 			}
 			if _, err := os.Lstat(path); err != nil {
 				t.Fatal("uncertain owner removed", err)
