@@ -131,3 +131,22 @@ func TestCodexAppsControlReportsOriginalRefreshOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestAppsWatchControlRejectsIndependentKnownAndUnknownFields(t *testing.T) {
+	control := &pb.CodexAppsControl{ExecutionJobId: string(domain.NewID()), AppsOperationId: string(domain.NewID()), Revision: 1}
+	message := &pb.WatchWorkResponse{CodexAppsControl: control}
+	if !onlyCodexAppsControl(message) {
+		t.Fatal("exclusive original Apps control denied")
+	}
+	message.Heartbeat = true
+	if onlyCodexAppsControl(message) {
+		t.Fatal("mixed known control accepted")
+	}
+	message.Heartbeat = false
+	// Field 8 belongs to the independent Goals owner. This base does not yet
+	// declare it, so model its original wire bytes without borrowing its schema.
+	message.ProtoReflect().SetUnknown([]byte{0x42, 0x00})
+	if onlyCodexAppsControl(message) {
+		t.Fatal("mixed independent unknown control accepted")
+	}
+}

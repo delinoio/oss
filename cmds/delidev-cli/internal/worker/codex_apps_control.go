@@ -15,12 +15,30 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 type appsControlIdentity struct {
 	JobID       domain.ID `json:"job_id"`
 	OperationID domain.ID `json:"operation_id"`
 	Revision    uint64    `json:"revision"`
+}
+
+// Reject every other present wire field, including independently allocated
+// controls added by later schema composition. Unknown fields grant no authority.
+func onlyCodexAppsControl(message *pb.WatchWorkResponse) bool {
+	if message == nil || message.CodexAppsControl == nil {
+		return false
+	}
+	wire := message.ProtoReflect()
+	valid := len(wire.GetUnknown()) == 0
+	wire.Range(func(field protoreflect.FieldDescriptor, _ protoreflect.Value) bool {
+		if field.Name() != "codex_apps_control" {
+			valid = false
+		}
+		return valid
+	})
+	return valid
 }
 
 func appsControl(control *pb.CodexAppsControl) (appsControlIdentity, error) {

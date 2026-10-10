@@ -663,7 +663,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 			if message.CodexAppsControl != nil {
 				control := message.CodexAppsControl
 				identity, err := appsControl(control)
-				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.QuestionResponse != nil || message.ApprovalResponse != nil || message.SteerInput != nil {
+				if err != nil || !onlyCodexAppsControl(message) {
 					cancel(publicationUncertain())
 					return
 				}
