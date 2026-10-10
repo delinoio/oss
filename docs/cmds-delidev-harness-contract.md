@@ -1986,3 +1986,47 @@ Grok initialize responses confirm initialization and begin actual settings
 validation. Original successful settings publication confirms settings only.
 Preserve account/history/protocol/input claims and independent cleanup; no observer
 value grants readiness, native support, credential release or input acceptance.
+
+## Native Codex Apps (issue #2003)
+
+System 87 and Worker 59 own the explicit managed ChatGPT Apps adapter. Its native
+profile is the actual initialized Codex 0.162.0 process, checked against upstream
+revision `c1382380de69521303b416720a52f42d51af6248`. Other accounts, Sidechat,
+managed Fork, configured MCP servers and plugin installation retain their separate
+ownership. No new login, publication or synthetic connector availability is added.
+
+An explicit selection belongs to the original session, account, protected account
+generation and connection. Freeze it in `ExecutionJobInput.codex_apps` for each
+accepted assignment; never rewrite the general configuration digest or transfer
+selection through an account change. A later positive selection requires idle
+original source admission and a complete authenticated original inventory. The
+first empty selection grants no callable apps. Discovered, accessible, installed,
+enabled, callable and selected states remain separate. Unselected thread processes
+explicitly disable Apps; the actual 0.162 managed process verifies that resolved
+state. Installation alone never authorizes execution.
+
+Before original thread binding, the Worker holds the protected execution lease
+and once-only assignment intent, installs an original private Apps controller,
+and writes deny-default native policy. Selected entries require one-call user
+approval; remember/grant-all and authentication elicitation are disabled. Native
+`item/tool/requestUserInput` carries the original MCP call item and the exact
+`mcp_tool_call_approval_` question prefix. Preserve its Allow/Cancel question,
+original call identity and immutable answer intent. Only that call's confirmed
+completion can supply the dedicated result acceptance proof.
+
+Live removal changes only the retained controller's original selection subset.
+The native `config/batchWrite` file/version CAS acknowledgment is insufficient:
+check effective deny-default policy, unchanged private non-Apps configuration,
+and a complete forced original-thread installed catalog refresh. The native
+catalog revision barrier rejects prepared stale calls before effects. Removed
+IDs must have no positive enabled/callable evidence. Uncertainty retains original
+claims and fences fresh assignment or duplicate work. This does not undo external
+effects of earlier accepted calls or prove their independent cleanup.
+
+Publish closed typed MCP call identity, arguments, progress and explicit result
+data. Keep native transport `_meta`, private errors and executable MCP App UI
+private. Reject foreign server/app/account/generation observations, duplicate
+starts and substituted completions. Full original-thread history may preserve
+bounded terminal Apps shapes under this profile without admitting historical IDs
+as live selection or expanding other rich families. Original native close,
+protected bundle capture and lease cleanup remain independently joined.

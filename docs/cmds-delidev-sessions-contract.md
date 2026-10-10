@@ -859,3 +859,29 @@ Every claim, including the independent first-execution transaction primitive, us
 `ListWaitingQueue` reads dispatch order, exact uint64 generation, exact waiting count and bounded payloads from one transaction. Defaults are 50 inputs, maximum 200 and 3 MiB per payload page. Signed tokens bind server, session, generation and last reached input position. Membership/order changes return CursorExpired and require a fresh first page. Legacy ListQueue keeps its acceptance-history order and cursor meaning. Generation stays exact in Go uint64 and desktop bigint, including values above JavaScript's safe integer range.
 
 At each new Fork admission, freeze the source's already accepted image references in `fork-image-snapshot:<job-id>`, including an explicit empty set. Bind original source/child/execution/turn and immutable job-input digest. Independent inheritance and read-only Sidechat use this frozen set and recheck original image/Worker claims; later acceptance cannot enlarge it. Existing pre-cutover jobs without a snapshot retain the old verified history cutoff. Missing new snapshots require recovery. Retire snapshot metadata only after both original job and dependent child are retired; retain independent child deletion ownership and all original native/workspace restrictions.
+
+## Original Codex Apps selection and controls
+
+Issue #2003 uses System 87, Worker 59 and `WatchWorkResponse.codex_apps_control`
+field 9; field 8 remains the independent Goals owner's allocation. The closed
+CodexAppsService Get/Select/Inspect/Revoke and Worker Claim/Report declarations
+are delivered with the complete feature. Declarations alone grant no native or
+account authority. No SQLite migration is required.
+
+Selections are explicit idle changes for the next accepted assignment. Preserve
+the general session configuration digest; snapshot the original app configuration
+in the immutable execution input. Get reads saved metadata without native refresh.
+Inspect and remove-only Revoke retain the actual original account generation,
+connection, claimed job, device, Worker instance, active thread and execution lease.
+A disabled/removing account can retain negative cleanup authority without gaining
+a replacement login, source or native process.
+
+Each control has a retained original request, metadata revision and Worker claim
+before native work. WatchWork sends references only and rejects mixed controls.
+The Worker journals prepared intent, native-send intent and observed report under
+the original job. Replayed/lost claims and existing journals never repeat native
+work. Reports require exact operation/claim and complete forced native refresh
+proof; observation time and absent catalog rows alone are insufficient. A queued
+control becomes canceled only after the original terminal job's independently
+verified cleanup and positive never-claimed/no-native-send proof. Claimed or
+uncertain controls cannot be replaced, requeued or silently retried.

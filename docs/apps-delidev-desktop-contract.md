@@ -3713,3 +3713,21 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Explicit Codex Apps presentation
+
+Issue #2003 exposes Apps only for the original Codex ChatGPT subscription session
+with System 87. Resolve the original current/initial account after explicit opening;
+do not use routing candidates or issue background account reads. The connection
+owns accepted mutation intent across disposable panel openings. Freeze original
+account/session revisions and configuration generation; source changes fence drafts
+and receipt admission without adopting another account.
+
+Show discovered, installed, enabled, callable and selected observations separately.
+An absent inventory permits only explicit empty initialization. Choose existing
+original inventory IDs for the next idle execution; live changes are removal only.
+Keep queued, claimed, uncertain, canceled and succeeded outcomes distinct. Canceled
+requires positive original no-native-send proof; removal success does not claim
+external-effect rollback or independent cleanup. Closing the panel performs no
+cancellation. Typed original call results render as literal data, without native
+transport metadata, executable MCP presentation, automatic links or HTML grants.

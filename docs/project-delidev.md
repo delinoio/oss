@@ -421,3 +421,5 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+Issue #2003 composes explicit native Codex Apps under System 87 / Worker 59 with original per-assignment account/configuration selections, closed control receipts, typed call/approval/result observations and independent protected/native cleanup. The harness, sessions, storage and desktop contracts define these cross-domain boundaries. Goals Watch field 8 and configured MCP remain independently owned; no SQLite migration or new login is added.
