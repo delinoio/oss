@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 // validateRestoreImage admits only the current immutable layout. The original
@@ -21,6 +22,31 @@ func validateRestoreImage(ctx context.Context, path string) error {
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	return inspect(ctx, db, false)
+}
+
+// Historical jobs retain their owning closed input and entity limits. Apply
+// the same validation before and after quarantine, which can enlarge a body.
+func decodeRestoreJob(record Record) (domain.Job, error) {
+	job, err := Decode[domain.Job](record)
+	if err != nil {
+		return job, err
+	}
+	switch job.Type {
+	case domain.CompactSessionJob:
+		err = domain.DecodeCompactionJob(record.Data, &job)
+	case domain.WorkspaceStorageJob:
+		err = workspace.DecodeStorageJob(record.Data, &job)
+	}
+	return job, err
+}
+
+const maxRestoreTransformationBytes = 256 << 20
+
+func restoreTransformationBound(documents int, total int64) error {
+	if documents >= 100000 || total > maxRestoreTransformationBytes {
+		return domain.Fail(domain.ResourceExhausted, "Restore transformation exceeds its document bound.", "Preserve both databases and arrange offline maintenance.")
+	}
+	return nil
 }
 
 // Only the private candidate is writable. The synchronized current snapshot is
@@ -175,7 +201,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		body []byte
 	}
 	changes := []change{}
-	var total int64
+	var sourceTotal, retainedTotal int64
 	for rows.Next() {
 		var id domain.ID
 		var kind domain.Kind
@@ -185,10 +211,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			return storageError(err)
 		}
 		// Bound aggregate retained documents as well as each domain document.
-		total += int64(len(raw))
-		if len(changes) >= 100000 || total > 256<<20 {
+		sourceTotal += int64(len(raw))
+		if err := restoreTransformationBound(len(changes), sourceTotal); err != nil {
 			rows.Close()
-			return domain.Fail(domain.ResourceExhausted, "Restore transformation exceeds its document bound.", "Preserve both databases and arrange offline maintenance.")
+			return err
 		}
 		var value any
 		switch kind {
@@ -204,7 +230,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		case domain.JobKind:
 			// Restore supported history with the same closed type-aware limits
 			// as ordinary storage reads, without enlarging generic documents.
-			v, err := Decode[domain.Job](Record{ID: id, Kind: kind, Data: raw})
+			v, err := decodeRestoreJob(Record{ID: id, Kind: kind, Data: raw})
 			if err != nil {
 				rows.Close()
 				return err
@@ -294,6 +320,19 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		if err != nil {
 			rows.Close()
 			return storageError(err)
+		}
+		if kind == domain.JobKind {
+			if _, err := decodeRestoreJob(Record{ID: id, Kind: kind, Data: body}); err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		// Charge the bytes that will be retained, including quarantine metadata,
+		// before any row update. Keep the original scan bound independently.
+		retainedTotal += int64(len(body))
+		if err := restoreTransformationBound(len(changes), retainedTotal); err != nil {
+			rows.Close()
+			return err
 		}
 		changes = append(changes, change{id, body})
 	}

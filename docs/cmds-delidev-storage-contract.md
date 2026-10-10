@@ -1137,6 +1137,11 @@ type-specific document bounds; ordinary Jobs retain the generic 1 MiB bound.
 This does not enlarge other documents or the aggregate transformation bounds of
 100,000 documents and 256 MiB. Preserve original input, output and attribution,
 and quarantine nonterminal historical Jobs without granting native authority.
+Validate compaction through its owning closed 3 MiB input/4 MiB Job decoder
+before quarantine. Revalidate every transformed Job through its owning decoder
+before any row update, and count the transformed document bytes against the
+aggregate bound. Required quarantine metadata must fit without truncation or
+raising limits; otherwise reject the candidate atomically.
 Unknown fields, duplicate keys, invalid UTF-8, trailing JSON and oversized typed
 documents remain rejected before candidate publication. Source backup bytes and
 the live database remain unchanged on rejection.
