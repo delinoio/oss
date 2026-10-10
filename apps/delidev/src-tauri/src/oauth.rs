@@ -179,6 +179,9 @@ pub struct OAuthHost {
     attempts: Mutex<BTreeMap<String, Attempt>>,
     epochs: Mutex<BTreeMap<String, u64>>,
     stopped: AtomicBool,
+    // Deterministic unit scheduling after pre-admission and before attempts.
+    #[cfg(test)]
+    admission_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
 }
 
 impl OAuthHost {
@@ -328,7 +331,20 @@ impl OAuthHost {
         }
         canonical_id(&scope.server)?;
         canonical_id(&scope.opening)?;
+        #[cfg(test)]
+        {
+            let barrier = self.admission_barrier.lock().unwrap().take();
+            if let Some(barrier) = barrier {
+                barrier.wait();
+            }
+        }
         let mut attempts = self.attempts.lock().map_err(|_| NativeFailure::Busy)?;
+        // Admission may stop while this action waits. Dispose deliberately
+        // skips stale-epoch equality, so it also needs this shared
+        // post-lock fence.
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(NativeFailure::Stopped);
+        }
         if action != OAuthAction::Dispose
             && self.epoch(&scope.window, &mut attempts)? != scope.window_epoch
         {
@@ -1186,6 +1202,147 @@ mod tests {
         }
         original
     }
+    #[test]
+    fn queued_dispose_after_epoch_exhaustion_cannot_insert_or_expire() {
+        let host = Arc::new(OAuthHost::default());
+        let known = scope();
+        host.disposed.lock().unwrap().insert(known.clone());
+        for index in 0..4096 {
+            host.epochs
+                .lock()
+                .unwrap()
+                .insert(format!("window-{index}"), 0);
+        }
+        let pending = scope();
+        let expired = inert_attempt(scope(), true);
+        let callback = Arc::clone(&expired.shared);
+        let mut attempts = host.attempts.lock().unwrap();
+        attempts.insert(expired.scope.window.clone(), expired);
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        *host.admission_barrier.lock().unwrap() = Some(Arc::clone(&barrier));
+        let waiter_host = Arc::clone(&host);
+        let waiter_scope = pending.clone();
+        let waiter = thread::spawn(move || {
+            waiter_host.control(waiter_scope, OAuthAction::Dispose, "", "", "")
+        });
+        // The waiter has passed the initial stopped check and is now queued
+        // behind this exact attempts guard, rather than relying on a sleep.
+        barrier.wait();
+        assert!(matches!(
+            host.epoch("overflow", &mut attempts),
+            Err(NativeFailure::Stopped)
+        ));
+        drop(attempts);
+        assert!(matches!(
+            waiter.join().unwrap(),
+            Err(NativeFailure::Stopped)
+        ));
+        let disposed = host.disposed.lock().unwrap();
+        assert_eq!(disposed.len(), 1);
+        assert!(disposed.contains(&known));
+        assert!(!disposed.contains(&pending));
+        assert_eq!(host.epochs.lock().unwrap().len(), 4096);
+        assert!(callback.stop.load(Ordering::Acquire));
+        assert!(callback.code.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn queued_actions_after_explicit_stop_cannot_insert_or_expire() {
+        for action in [
+            OAuthAction::Dispose,
+            OAuthAction::Begin,
+            OAuthAction::BeginHuggingFace,
+            OAuthAction::BeginGoogleGemini,
+            OAuthAction::BeginBaseten,
+            OAuthAction::Profiles,
+            OAuthAction::BindOpen,
+            OAuthAction::Take,
+            OAuthAction::Reopen,
+            OAuthAction::SubscriptionOpen,
+            OAuthAction::SubscriptionReopen,
+            OAuthAction::ClaudeSubscriptionOpen,
+            OAuthAction::ClaudeSubscriptionReopen,
+        ] {
+            let host = Arc::new(OAuthHost::default());
+            let known = scope();
+            host.disposed.lock().unwrap().insert(known.clone());
+            let pending = scope();
+            let expired = inert_attempt(scope(), true);
+            let callback = Arc::clone(&expired.shared);
+            let mut attempts = host.attempts.lock().unwrap();
+            attempts.insert(expired.scope.window.clone(), expired);
+            let barrier = Arc::new(std::sync::Barrier::new(2));
+            *host.admission_barrier.lock().unwrap() = Some(Arc::clone(&barrier));
+            let waiter_host = Arc::clone(&host);
+            let waiter_scope = pending.clone();
+            let waiter = thread::spawn(move || {
+                waiter_host.control_with_opener(waiter_scope, action, "", "", "", |_, _| {
+                    panic!("stopped action cannot open a browser")
+                })
+            });
+            barrier.wait();
+            let stopper_host = Arc::clone(&host);
+            let stopper = thread::spawn(move || stopper_host.stop());
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !host.stopped.load(Ordering::Acquire) {
+                assert!(Instant::now() < deadline, "explicit Stop did not latch");
+                thread::yield_now();
+            }
+            drop(attempts);
+            assert!(matches!(
+                waiter.join().unwrap(),
+                Err(NativeFailure::Stopped)
+            ));
+            stopper.join().unwrap();
+            let disposed = host.disposed.lock().unwrap();
+            assert_eq!(disposed.len(), 1);
+            assert!(disposed.contains(&known));
+            assert!(!disposed.contains(&pending));
+            assert!(host.epochs.lock().unwrap().is_empty());
+            assert!(host.attempts.lock().unwrap().is_empty());
+            assert!(callback.stop.load(Ordering::Acquire));
+            assert!(callback.code.lock().unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn live_old_epoch_disposal_retains_replacement_and_exact_idempotency() {
+        let host = OAuthHost::default();
+        let old = scope();
+        let mut replacement = old.clone();
+        replacement.window_epoch = 1;
+        replacement.opening = uuid::Uuid::now_v7().to_string();
+        host.epochs.lock().unwrap().insert(old.window.clone(), 1);
+        let attempt = inert_attempt(replacement.clone(), false);
+        let generation = attempt.generation.clone();
+        let callback = Arc::clone(&attempt.shared);
+        host.attempts
+            .lock()
+            .unwrap()
+            .insert(replacement.window.clone(), attempt);
+        for _ in 0..2 {
+            host.control(
+                old.clone(),
+                OAuthAction::Dispose,
+                "original-generation",
+                "",
+                "",
+            )
+            .unwrap();
+        }
+        assert_eq!(host.disposed.lock().unwrap().len(), 1);
+        assert!(host.disposed.lock().unwrap().contains(&old));
+        let attempts = host.attempts.lock().unwrap();
+        assert!(attempts.get(&replacement.window).unwrap().scope == replacement);
+        assert_eq!(
+            attempts.get(&replacement.window).unwrap().generation,
+            generation
+        );
+        assert!(!callback.stop.load(Ordering::Acquire));
+        assert!(callback.code.lock().unwrap().is_some());
+        assert!(!host.stopped.load(Ordering::Acquire));
+    }
+
     #[test]
     fn disposed_capacity_is_idempotent_and_exhaustion_joins_all_callback_authority() {
         let host = OAuthHost::default();

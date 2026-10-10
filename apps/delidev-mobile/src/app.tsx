@@ -67,6 +67,8 @@ import { en, ko, type Labels } from "./localization";
 import { validateSessionName } from "./session-name";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
+import { ConversationLane } from "./conversation-pages";
+import { useConversationPages } from "./use-conversation-pages";
 const owner = new ProtectedState(storage);
 const Copy = createContext<Labels>(en);
 const useCopy = () => useContext(Copy);
@@ -1194,6 +1196,17 @@ export function NewSession({
     </form>
   );
 }
+function ConversationPageControls({ reader, copy: c }: { reader: ReturnType<typeof useConversationPages>; copy: Labels }) {
+  return <div>
+    {reader.loading ? <p role="status">{c.loading}</p> : null}
+    {reader.error ? <p role="alert">{c.readIncomplete}</p> : null}
+    {reader.nextPageToken ? <p role="status">{c.moreAvailable}</p> : null}
+    {reader.loaded && !reader.loading && !reader.error && !reader.nextPageToken && !reader.resources.length ? <p>{c.empty}</p> : null}
+    <button disabled={!reader.loaded || reader.loading} onClick={reader.refresh}>{c.refresh}</button>
+    {reader.error ? <button disabled={reader.loading} onClick={reader.retry}>{c.retryRead}</button> : null}
+    {reader.nextPageToken && !reader.error ? <button disabled={reader.loading} onClick={() => void reader.more()}>{c.more}</button> : null}
+  </div>;
+}
 function Conversation({
   id,
   draft,
@@ -1233,16 +1246,8 @@ function Conversation({
     },
     { enabled },
   );
-  const interactions = useQuery(
-    ResourceQuery.listResources,
-    { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 50 } },
-    { enabled },
-  );
-  const queue = useQuery(
-    SessionQuery.listQueue,
-    { sessionId: id, pageSize: 50 },
-    { enabled },
-  );
+  const interactions = useConversationPages(ConversationLane.Interactions, id, enabled);
+  const queue = useConversationPages(ConversationLane.Queue, id, enabled);
   useEffect(() => {
     if (messages.data)
       setHistory((previous) =>
@@ -1300,20 +1305,25 @@ function Conversation({
           {c.more}
         </button>
       ) : null}
-      {interactions.data?.resources
+      <section aria-label={c.interactions}>
+      <h3>{c.interactions}</h3>
+      <ConversationPageControls reader={interactions} copy={c} />
+      {interactions.resources.some(r => value(r).closure !== "open") ? <p>{c.closedRequests}: {interactions.resources.filter(r => value(r).closure !== "open").length}</p> : null}
+      {interactions.resources
         .filter((r) => value(r).closure === "open")
         .map((r) => (
           <RequestResponse
             key={r.id}
             resource={r}
-            enabled={available}
+            enabled={available && interactions.canWrite(r)}
             copy={c}
             send={async (question, response) => {
+              if (!interactions.canWrite(r)) throw new Error("stale-request");
               const fresh = await createClient(
                 ResourceService,
                 transport,
-              ).getResource({ kind: EntityKind.INTERACTION, id: r.id });
-              if (!fresh.resource || fresh.resource.revision !== r.revision)
+              ).getResource({ kind: EntityKind.INTERACTION, id: r.id }, { signal: interactions.signal() });
+              if (!interactions.canWrite(r) || !fresh.resource || fresh.resource.id !== r.id || !supportsResourceSchema(fresh.resource) || fresh.resource.kind !== EntityKind.INTERACTION || fresh.resource.sessionId !== id || fresh.resource.revision !== r.revision || value(fresh.resource).closure !== "open")
                 throw new Error("stale-request");
               await mutate(
                 question ? Operation.Question : Operation.Approval,
@@ -1335,6 +1345,7 @@ function Conversation({
             }}
           />
         ))}
+      </section>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1382,18 +1393,22 @@ function Conversation({
           <button disabled={!prompt.trim()}>{c.send}</button>
         </fieldset>
       </form>
+      <section aria-label={c.queue}>
       <h3>{c.queue}</h3>
-      {queue.data?.inputs.map((input) => (
+      <ConversationPageControls reader={queue} copy={c} />
+      {queue.resources.map((input) => (
         <article key={input.id}>
           <p>{text(value(input).prompt)}</p>
           <button
             disabled={
               !available ||
+              !queue.canWrite(input) ||
               data.outcome !== "running" ||
               !text(data.active_execution_id) ||
               !text(record(data.execution).native_turn_id)
             }
-            onClick={() =>
+            onClick={() => {
+              if (!queue.canWrite(input)) return;
               void mutate(
                 Operation.Steer,
                 create(SteerQueuedInputRequestSchema, {
@@ -1407,13 +1422,14 @@ function Conversation({
                   expectedTurnId: text(record(data.execution).native_turn_id),
                 }),
                 id,
-              )
-            }
+              );
+            }}
           >
             {c.steer}
           </button>
         </article>
       ))}
+      </section>
       <button
         disabled={!available}
         onClick={() => setConfirmation(SessionAction.STOP)}

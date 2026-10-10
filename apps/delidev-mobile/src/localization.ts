@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 export const en = {
+  readIncomplete: "The list is incomplete. Retry the read or refresh; current targets must be verified before acting.",
+  moreAvailable: "More items remain. Load the next page to see them.",
+  retryRead: "Retry reading",
+  closedRequests: "Loaded closed requests",
   stale:
     "The server state changed. Inspect the current original target before retrying.",
   outcome: "Outcome",
@@ -163,6 +167,10 @@ export const en = {
     "Original pairing is retained. Retry it without generating another credential.",
 } as const;
 export const ko: Record<keyof typeof en, string> = {
+  readIncomplete: "목록이 완전하지 않습니다. 읽기를 재시도하거나 새로 고침하세요. 동작 전에 현재 대상을 확인해야 합니다.",
+  moreAvailable: "항목이 더 있습니다. 다음 페이지를 불러오세요.",
+  retryRead: "읽기 재시도",
+  closedRequests: "불러온 종료된 요청",
   stale:
     "서버 상태가 변경되었습니다. 재시도하기 전에 현재 원래 대상을 확인하세요.",
   outcome: "실행 결과",
