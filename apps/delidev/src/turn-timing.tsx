@@ -15,6 +15,12 @@ function utc(value: unknown): number | undefined {
   if (!Number.isSafeInteger(parsed) || parsed < 0 || new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19)) return;
   return parsed;
 }
+function utcInstant(value: unknown): { milliseconds: number; nanoseconds: bigint } | undefined {
+  const milliseconds = utc(value);
+  if (milliseconds === undefined || typeof value !== "string") return;
+  const fraction = value.match(/\.(\d{1,9})Z$/)?.[1] ?? "";
+  return { milliseconds, nanoseconds: BigInt(Math.floor(milliseconds / 1000)) * 1_000_000_000n + BigInt(fraction.padEnd(9, "0")) };
+}
 export function retainedTurnTiming(value: unknown): TurnTiming | undefined {
   const timing = object(value), accepted = utc(timing.accepted_at);
   if (accepted === undefined || Object.keys(timing).some(key => !["accepted_at", "terminal_at"].includes(key))) return;
@@ -56,13 +62,11 @@ export function currentTurn(row: Resource | undefined, sessionId: string): Curre
   // A terminal timestamp never fabricates a terminal outcome and a terminal
   // outcome without its retained end cannot fabricate a finished duration.
   const consistent = timing && bound && (running ? timing.terminal === undefined : timing.terminal !== undefined);
-  const stamp = row.updatedAt;
+  const observationTime = utcInstant(row.updatedAt);
+  const acceptedTime = utcInstant(object(e.turn_timing).accepted_at);
   let observation: CurrentTurn["observation"];
-  if (consistent && stamp && stamp.seconds >= 0n && stamp.seconds <= 253402300799n && Number.isInteger(stamp.nanos) && stamp.nanos >= 0 && stamp.nanos < 1_000_000_000) {
-    const updated = Number(stamp.seconds) * 1000 + Math.floor(stamp.nanos / 1_000_000);
-    const acceptedText = String(object(e.turn_timing).accepted_at);
-    const acceptedNanos = BigInt(Math.floor(timing.accepted / 1000)) * 1_000_000_000n + BigInt((acceptedText.split(".")[1]?.slice(0, -1) ?? "").padEnd(9, "0"));
-    if (stamp.seconds * 1_000_000_000n + BigInt(stamp.nanos) >= acceptedNanos && Number.isSafeInteger(updated - timing.accepted)) observation = { revision: row.revision, updated };
+  if (consistent && observationTime && acceptedTime && observationTime.nanoseconds >= acceptedTime.nanoseconds && Number.isSafeInteger(observationTime.milliseconds - timing.accepted)) {
+    observation = { revision: row.revision, updated: observationTime.milliseconds };
   }
   return { owner: owner(sessionId, e.execution_id, e.native_thread_id, e.native_turn_id), inputId: e.input_id, captured: Object.hasOwn(e, "turn_timing"), timing: consistent ? timing : undefined, running, observation };
 }

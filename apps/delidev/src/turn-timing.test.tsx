@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { EntityKind, ResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
@@ -12,7 +11,7 @@ import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { currentTurn, messageTurn, retainedTurnTiming, turnDuration, type CurrentTurn } from "./turn-timing";
 const sessionId=newRequestId(),executionId=newRequestId(),inputId=newRequestId(),jobId=newRequestId();
 const start="2026-10-09T10:00:00.123Z";
-function resource(kind:EntityKind,data:object,id=newRequestId(),revision=1n):Resource{return create(ResourceSchema,{kind,id,sessionId,revision,updatedAt:timestampFromDate(new Date(start)),schemaVersion:1,documentJson:encode(data)});}
+function resource(kind:EntityKind,data:object,id=newRequestId(),revision=1n):Resource{return create(ResourceSchema,{kind,id,sessionId,revision,updatedAt:start,schemaVersion:1,documentJson:encode(data)});}
 function session(extra:object={}){return resource(EntityKind.SESSION,{initial_execution:{id:executionId,input_id:inputId},active_execution_id:executionId,execution:{execution_id:executionId,input_id:inputId,job_id:jobId,last_sequence:2,accepted_inputs:[{input_id:inputId,prompt_digest:"a".repeat(64)}],native_thread_id:"original-thread",native_turn_id:"original-turn",outcome:"running",turn_timing:{accepted_at:start},...extra}},sessionId);}
 function message(extra:object={},id=newRequestId(),revision=1n){return resource(EntityKind.MESSAGE,{role:"user",text:"Original native input",state:"complete",execution_id:executionId,input_id:inputId,native_thread_id:"original-thread",native_turn_id:"original-turn",first_sequence:3,last_sequence:4,turn_timing:{accepted_at:start},...extra},id,revision);}
 function query(pages:Resource[][]){return {pages:pages.map((rows,index)=>({token:index?`original-${index}`:"",nextPageToken:index<pages.length-1?`original-${index+1}`:"",rows:rows.map(row=>conversationProjection(row,sessionId))})),payloadPages:pages.map((payload,index)=>({token:index?`original-${index}`:"",payload})),nextPageToken:"",restore:vi.fn(),measure:vi.fn(),protect:vi.fn()};}
@@ -147,19 +146,19 @@ it.each([
 
 it.each([170000,90000])("ignores desktop wall-clock skew and jumps (%s)",wall=>{
  vi.useFakeTimers();vi.setSystemTime(wall);
- const row=session({turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});row.updatedAt=timestampFromDate(new Date(110000));
+ const row=session({turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});row.updatedAt="1970-01-01T00:01:50Z";
  const p=view(query([]),currentTurn(row,sessionId));const {container,rerender}=render(<ToolTurnTranscript {...p}/>);
  expect(container.textContent).toContain("In progress · 10s");vi.setSystemTime(wall+600000);
  act(()=>vi.advanceTimersByTime(5000));expect(container.textContent).toContain("In progress · 15s");
  rerender(<ToolTurnTranscript {...p} current={currentTurn({...row},sessionId)}/>);expect(container.textContent).toContain("15s");expect(vi.getTimerCount()).toBe(1);
- const fresh={...row,revision:2n,updatedAt:timestampFromDate(new Date(120000))};rerender(<ToolTurnTranscript {...p} current={currentTurn(fresh,sessionId)}/>);expect(container.textContent).toContain("20s");
+ const fresh={...row,revision:2n,updatedAt:"1970-01-01T00:02:00Z"};rerender(<ToolTurnTranscript {...p} current={currentTurn(fresh,sessionId)}/>);expect(container.textContent).toContain("20s");
  rerender(<ToolTurnTranscript {...p}/>);expect(container.textContent).toContain("20s");
  rerender(<ToolTurnTranscript {...p} confirmed={false}/>);act(()=>vi.advanceTimersByTime(30000));expect(container.textContent).toContain("Unconfirmed · 20s");
  rerender(<ToolTurnTranscript {...p} current={currentTurn(fresh,sessionId)}/>);act(()=>vi.advanceTimersByTime(1000));expect(container.textContent).toContain("21s");expect(vi.getTimerCount()).toBe(1);
- const foreign=session({native_turn_id:"new-original-turn",turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});foreign.updatedAt=timestampFromDate(new Date(110000));rerender(<ToolTurnTranscript {...p} current={currentTurn(foreign,sessionId)}/>);expect(container.textContent).toContain("10s");
+ const foreign=session({native_turn_id:"new-original-turn",turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});foreign.updatedAt="1970-01-01T00:01:50Z";rerender(<ToolTurnTranscript {...p} current={currentTurn(foreign,sessionId)}/>);expect(container.textContent).toContain("10s");
 });
 
-it.each([undefined,{seconds:0n,nanos:0},{seconds:1n,nanos:-1}])("requires a complete consistent server observation anchor %s",stamp=>{
+it.each([undefined,"","invalid","2026-02-30T00:00:00Z","2026-10-09T10:00:00.122Z"])("requires a valid, non-inverted RFC3339 server observation anchor %s",stamp=>{
  vi.useFakeTimers();const row=session();row.updatedAt=stamp as typeof row.updatedAt;
  const {container}=render(<ToolTurnTranscript {...view(query([]),currentTurn(row,sessionId))}/>);
  expect(container.textContent).toContain("Time unavailable");expect(vi.getTimerCount()).toBe(0);
@@ -169,9 +168,11 @@ it.each([undefined,{seconds:0n,nanos:0},{seconds:1n,nanos:-1}])("requires a comp
 it("rejects regressing observation timestamps and isolates the exact input anchor",()=>{
  vi.useFakeTimers();const row=session();const p=view(query([]),currentTurn(row,sessionId));const {container,rerender}=render(<ToolTurnTranscript {...p}/>);
  act(()=>vi.advanceTimersByTime(5000));expect(container.textContent).toContain("5s");
- const regression={...row,revision:2n,updatedAt:timestampFromDate(new Date(Date.parse(start)-1))};
+ const regression={...row,revision:2n,updatedAt:"2026-10-09T10:00:00.122Z"};
  rerender(<ToolTurnTranscript {...p} current={currentTurn(regression,sessionId)}/>);expect(container.textContent).toContain("Time unavailable");expect(vi.getTimerCount()).toBe(0);
  rerender(<ToolTurnTranscript {...p} current={{...p.current!,inputId:newRequestId()}}/>);expect(container.textContent).toContain("0s");expect(vi.getTimerCount()).toBe(1);
  const nanos=session({turn_timing:{accepted_at:"2026-10-09T10:00:00.123456789Z"}});
  expect(currentTurn(nanos,sessionId)?.observation).toBeUndefined();
+ const regressingNanos={...nanos,updatedAt:"2026-10-09T10:00:00.123456788Z"};
+ expect(currentTurn(regressingNanos,sessionId)?.observation).toBeUndefined();
 });
