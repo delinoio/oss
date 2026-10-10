@@ -282,6 +282,17 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 				if e != nil {
 					return nil, e
 				}
+				if old.Definition.MachineID != d.MachineID || old.Definition.WorkerDeviceID != d.WorkerDeviceID {
+					return nil, domain.Fail(domain.PermissionDenied, "MCP metadata cannot change its original Worker ownership.", "Inspect the original Worker generation and operation.")
+				}
+				if old.Deleted || old.Definition.Revision > d.Revision {
+					// Historical receipt reads acknowledge their original result;
+					// they never restore an older current catalog generation.
+					if q.Action == domain.MCPOperationRead || r.Replayed {
+						continue
+					}
+					return nil, mcpUnavailable()
+				}
 				if old.PendingRequestID != "" && (r.Operation == nil || r.Operation.ID != old.PendingRequestID || old.PendingActorID != q.ActorID) {
 					continue
 				}

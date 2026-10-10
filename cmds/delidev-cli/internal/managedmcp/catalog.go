@@ -112,8 +112,8 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 	if err != nil || len(key) != 32 {
 		return empty, unavailable()
 	}
-	for _, v := range c.Entries {
-		if v.Definition.Validate() != nil {
+	for id, v := range c.Entries {
+		if v.Definition.Validate() != nil || v.Definition.ID != id || v.Definition.MachineID != m.MachineID || v.Definition.WorkerDeviceID != m.WorkerDeviceID {
 			return empty, unavailable()
 		}
 	}
@@ -151,6 +151,17 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 		}
 		if !ok || r.ActorID != q.ActorID {
 			return empty, domain.Fail(domain.NotFound, "The original MCP operation was not found.", "Inspect the original request on its original Worker.")
+		}
+		if a, exists := c.Attempts[q.AttemptID]; exists && r.Result.Operation != nil {
+			if a.ActorID != q.ActorID || a.DefinitionID != r.Result.Operation.DefinitionID {
+				return empty, unavailable()
+			}
+			copy := *r.Result.Operation
+			copy.State = a.State
+			if a.State != domain.MCPOperationAwaiting {
+				copy.AuthorizationURL = ""
+			}
+			r.Result.Operation = &copy
 		}
 		// A read owns the exclusive catalog lock. A STARTED receipt surviving
 		// that acquisition therefore has no active local operation and cannot
@@ -199,6 +210,21 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 	}
 	if err = validateRequest(q, c, old, exists); err != nil {
 		return empty, err
+	}
+	if q.Action == domain.MCPSave {
+		// Keep complete catalog reads below the typed metadata response bound.
+		// Reserve room for later opaque credential/expiry observations so an
+		// authentication cannot make its original definition unlistable.
+		definitions := []domain.ManagedMCPDefinition{*q.Definition}
+		for entryID, value := range c.Entries {
+			if entryID != id && !value.Deleted {
+				definitions = append(definitions, value.Definition)
+			}
+		}
+		bounded, marshalError := json.Marshal(definitions)
+		if marshalError != nil || len(bounded) > 704<<10 {
+			return empty, domain.Fail(domain.ResourceExhausted, "The Worker MCP metadata read limit is reached.", "Reduce definition metadata while preserving the original draft.")
+		}
 	}
 	if q.Action == domain.MCPOAuthBegin {
 		if err = m.verifyOAuthMetadata(ctx, old.Definition); err != nil {

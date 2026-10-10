@@ -190,6 +190,13 @@ func TestManagedMCPOAuthOriginalScopeAndNoExchangeReplay(t *testing.T) {
 	if done.Operation.State != domain.MCPOperationCompleted || exchanges != 1 {
 		t.Fatal("OAuth did not finish once")
 	}
+	inspect := begin
+	inspect.Action = domain.MCPOperationRead
+	inspect.AttemptID = begin.RequestID
+	inspect.RequestID = domain.NewID()
+	if observed := must(t, m, inspect); observed.Operation.State != domain.MCPOperationCompleted || observed.Operation.AuthorizationURL != "" {
+		t.Fatal("original attempt did not retain current settled state")
+	}
 	if !must(t, m, complete).Replayed || exchanges != 1 {
 		t.Fatal("exchange replayed")
 	}
