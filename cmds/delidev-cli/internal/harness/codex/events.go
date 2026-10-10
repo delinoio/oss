@@ -13,6 +13,8 @@ import (
 
 type EventKind string
 
+const GoalObservedEvent EventKind = "goal-observed"
+
 type eventValidationStage string
 
 const (
@@ -147,6 +149,7 @@ type Message struct {
 }
 
 type Event struct {
+	Goal             *GoalObservation
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -284,6 +287,13 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return event, err
 	}
 	switch native.Method {
+	case "thread/goal/updated":
+		return c.observeGoalLocked(native)
+	case "thread/goal/cleared":
+		if c.nativeGoals {
+			return c.observeGoalLocked(native)
+		}
+		return c.observeMetadataLocked(native)
 	case "item/autoApprovalReview/started", "item/autoApprovalReview/completed":
 		return c.observeAutoReviewLocked(native)
 	case "rawResponse/completed":

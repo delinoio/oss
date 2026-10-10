@@ -14,6 +14,8 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc ClaimSessionGoalAction(ClaimSessionGoalActionRequest) returns (ClaimSessionGoalActionResponse);
+  rpc ReportSessionGoalAction(ReportSessionGoalActionRequest) returns (ReportSessionGoalActionResponse);
   rpc SyncWorkerNetwork(SyncWorkerNetworkRequest) returns (SyncWorkerNetworkResponse);
   rpc ReportWorkerNativeRoute(ReportWorkerNativeRouteRequest) returns (ReportWorkerNativeRouteResponse);
   rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
@@ -130,6 +132,7 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_NATIVE_CODEX_GOALS_V1 = 57;
   WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 = 52;
 
   WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 = 22;
@@ -210,6 +213,7 @@ message WatchWorkResponse {
   QuestionResponseControl question_response = 5;
   SteerInputControl steer_input = 6;
   ApprovalResponseControl approval_response = 7;
+  GoalActionControl goal_action_control = 8;
 }
 
 message SteerInputControl {
@@ -502,4 +506,37 @@ message ReportSessionStartupProgressRequest {
 }
 message ReportSessionStartupProgressResponse {
   bool replayed = 1;
+}
+
+message GoalActionControl {
+  string job_id = 1;
+  string action_id = 2;
+  uint64 revision = 3;
+}
+
+message ClaimSessionGoalActionRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+}
+
+message ClaimSessionGoalActionResponse {
+  Resource action = 1;
+  bool replayed = 2;
+}
+
+message ReportSessionGoalActionRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  // Closed original native action result; no raw native/configuration content.
+  bytes result_json = 5;
+}
+
+message ReportSessionGoalActionResponse {
+  Resource action = 1;
+  Resource session = 2;
+  bool replayed = 3;
 }

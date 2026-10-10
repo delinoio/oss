@@ -4,6 +4,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -287,4 +288,62 @@ func (c *Client) MutateGoal(ctx context.Context, request domain.ID, action GoalA
 		result.Cleared = *observed.Cleared
 	}
 	return result, nil
+}
+
+// GoalObservation is ordered native state, never a mutation receipt. A cleared
+// observation also occurs as the native resume snapshot when no goal exists.
+type GoalObservation struct {
+	Goal    *Goal
+	Cleared bool
+}
+
+func (c *Client) observeGoalLocked(native nativewire.Event) (Event, error) {
+	if !c.nativeGoals || c.sidechat != "" {
+		return privateNative(native), nil
+	}
+	if c.thread.Validate() != nil || c.execution == nil {
+		return Event{}, goalUncertain()
+	}
+	var thread domain.ID
+	var turn domain.ID
+	observed := &GoalObservation{}
+	switch native.Method {
+	case "thread/goal/updated":
+		var wire struct {
+			Thread domain.ID       `json:"threadId"`
+			Turn   json.RawMessage `json:"turnId"`
+			Goal   json.RawMessage `json:"goal"`
+		}
+		if domain.Decode(native.Params, &wire) != nil || wire.Thread != c.thread || len(wire.Turn) == 0 {
+			return Event{}, goalUncertain()
+		}
+		var nullable *domain.ID
+		if json.Unmarshal(wire.Turn, &nullable) != nil || nullable != nil && nullable.Validate() != nil {
+			return Event{}, goalUncertain()
+		}
+		if nullable != nil {
+			turn = *nullable
+			if _, known := c.execution.turns[turn]; !known {
+				return Event{}, goalUncertain()
+			}
+		}
+		goal, err := DecodeGoal(wire.Goal, c.thread)
+		if err != nil {
+			return Event{}, err
+		}
+		observed.Goal = &goal
+		thread = wire.Thread
+	case "thread/goal/cleared":
+		var wire struct {
+			Thread domain.ID `json:"threadId"`
+		}
+		if domain.Decode(native.Params, &wire) != nil || wire.Thread != c.thread {
+			return Event{}, goalUncertain()
+		}
+		observed.Cleared = true
+		thread = wire.Thread
+	default:
+		return privateNative(native), nil
+	}
+	return Event{Kind: GoalObservedEvent, ThreadID: thread, TurnID: turn, Goal: observed, Correlated: true}, nil
 }

@@ -10,6 +10,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc GetSessionGoalState(GetSessionGoalStateRequest) returns (GetSessionGoalStateResponse);
+  rpc RequestSessionGoalAction(RequestSessionGoalActionRequest) returns (RequestSessionGoalActionResponse);
   rpc ListRequestDiagnostics(ListRequestDiagnosticsRequest) returns (ListRequestDiagnosticsResponse);
   rpc RetrySidechatQuestion(RetrySidechatQuestionRequest) returns (RetrySidechatQuestionResponse);
   rpc GetSidechatQuestionRetry(GetSidechatQuestionRetryRequest) returns (GetSidechatQuestionRetryResponse);
@@ -585,4 +587,59 @@ message ListWaitingQueueResponse {
   string next_page_token = 2;
   uint64 current_queue_generation = 3;
   uint32 waiting_count = 4;
+}
+
+// Original native Codex goal control. No prompt emulation or configuration API.
+enum NativeGoalAction {
+  NATIVE_GOAL_ACTION_UNSPECIFIED = 0;
+  NATIVE_GOAL_ACTION_SET = 1;
+  NATIVE_GOAL_ACTION_READ = 2;
+  NATIVE_GOAL_ACTION_CLEAR = 3;
+}
+
+enum NativeGoalStatus {
+  NATIVE_GOAL_STATUS_UNSPECIFIED = 0;
+  NATIVE_GOAL_STATUS_ACTIVE = 1;
+  NATIVE_GOAL_STATUS_PAUSED = 2;
+  NATIVE_GOAL_STATUS_BLOCKED = 3;
+  NATIVE_GOAL_STATUS_USAGE_LIMITED = 4;
+  NATIVE_GOAL_STATUS_BUDGET_LIMITED = 5;
+  NATIVE_GOAL_STATUS_COMPLETE = 6;
+}
+
+message NativeGoalSet {
+  optional string objective = 1;
+  optional NativeGoalStatus status = 2;
+  // Omission retains the original native budget. Explicit reset must be true
+  // and sends native null, preserving its managed maximum/default semantics.
+  oneof budget {
+    int64 token_budget = 3;
+    bool reset_token_budget = 4;
+  }
+}
+
+message RequestSessionGoalActionRequest {
+  Mutation mutation = 1;
+  string expected_execution_id = 2;
+  string expected_native_thread_id = 3;
+  NativeGoalAction action = 4;
+  NativeGoalSet set = 5;
+}
+
+message RequestSessionGoalActionResponse {
+  Resource action = 1;
+  Resource session = 2;
+  string request_id = 3;
+  bool replayed = 4;
+}
+
+message GetSessionGoalStateRequest {
+  string session_id = 1;
+}
+
+message GetSessionGoalStateResponse {
+  // Joined retained native observations and original action state. This read
+  // does not send another native operation or acknowledge an uncertain action.
+  Resource session = 1;
+  Resource action = 2;
 }

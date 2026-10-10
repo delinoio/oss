@@ -5,6 +5,16 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.GetSessionGoalState
+ */
+export const getSessionGoalState = SessionService.method.getSessionGoalState;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.RequestSessionGoalAction
+ */
+export const requestSessionGoalAction = SessionService.method.requestSessionGoalAction;
+
+/**
  * @generated from rpc delidev.v1.SessionService.ListRequestDiagnostics
  */
 export const listRequestDiagnostics = SessionService.method.listRequestDiagnostics;

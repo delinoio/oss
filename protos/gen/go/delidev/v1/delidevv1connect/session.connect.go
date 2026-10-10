@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SessionServiceGetSessionGoalStateProcedure is the fully-qualified name of the SessionService's
+	// GetSessionGoalState RPC.
+	SessionServiceGetSessionGoalStateProcedure = "/delidev.v1.SessionService/GetSessionGoalState"
+	// SessionServiceRequestSessionGoalActionProcedure is the fully-qualified name of the
+	// SessionService's RequestSessionGoalAction RPC.
+	SessionServiceRequestSessionGoalActionProcedure = "/delidev.v1.SessionService/RequestSessionGoalAction"
 	// SessionServiceListRequestDiagnosticsProcedure is the fully-qualified name of the SessionService's
 	// ListRequestDiagnostics RPC.
 	SessionServiceListRequestDiagnosticsProcedure = "/delidev.v1.SessionService/ListRequestDiagnostics"
@@ -145,6 +151,8 @@ const (
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	GetSessionGoalState(context.Context, *connect.Request[v1.GetSessionGoalStateRequest]) (*connect.Response[v1.GetSessionGoalStateResponse], error)
+	RequestSessionGoalAction(context.Context, *connect.Request[v1.RequestSessionGoalActionRequest]) (*connect.Response[v1.RequestSessionGoalActionResponse], error)
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
 	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
@@ -194,6 +202,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		getSessionGoalState: connect.NewClient[v1.GetSessionGoalStateRequest, v1.GetSessionGoalStateResponse](
+			httpClient,
+			baseURL+SessionServiceGetSessionGoalStateProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetSessionGoalState")),
+			connect.WithClientOptions(opts...),
+		),
+		requestSessionGoalAction: connect.NewClient[v1.RequestSessionGoalActionRequest, v1.RequestSessionGoalActionResponse](
+			httpClient,
+			baseURL+SessionServiceRequestSessionGoalActionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RequestSessionGoalAction")),
+			connect.WithClientOptions(opts...),
+		),
 		listRequestDiagnostics: connect.NewClient[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse](
 			httpClient,
 			baseURL+SessionServiceListRequestDiagnosticsProcedure,
@@ -415,6 +435,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	getSessionGoalState      *connect.Client[v1.GetSessionGoalStateRequest, v1.GetSessionGoalStateResponse]
+	requestSessionGoalAction *connect.Client[v1.RequestSessionGoalActionRequest, v1.RequestSessionGoalActionResponse]
 	listRequestDiagnostics   *connect.Client[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse]
 	retrySidechatQuestion    *connect.Client[v1.RetrySidechatQuestionRequest, v1.RetrySidechatQuestionResponse]
 	getSidechatQuestionRetry *connect.Client[v1.GetSidechatQuestionRetryRequest, v1.GetSidechatQuestionRetryResponse]
@@ -451,6 +473,16 @@ type sessionServiceClient struct {
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
 	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
+}
+
+// GetSessionGoalState calls delidev.v1.SessionService.GetSessionGoalState.
+func (c *sessionServiceClient) GetSessionGoalState(ctx context.Context, req *connect.Request[v1.GetSessionGoalStateRequest]) (*connect.Response[v1.GetSessionGoalStateResponse], error) {
+	return c.getSessionGoalState.CallUnary(ctx, req)
+}
+
+// RequestSessionGoalAction calls delidev.v1.SessionService.RequestSessionGoalAction.
+func (c *sessionServiceClient) RequestSessionGoalAction(ctx context.Context, req *connect.Request[v1.RequestSessionGoalActionRequest]) (*connect.Response[v1.RequestSessionGoalActionResponse], error) {
+	return c.requestSessionGoalAction.CallUnary(ctx, req)
 }
 
 // ListRequestDiagnostics calls delidev.v1.SessionService.ListRequestDiagnostics.
@@ -635,6 +667,8 @@ func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *co
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	GetSessionGoalState(context.Context, *connect.Request[v1.GetSessionGoalStateRequest]) (*connect.Response[v1.GetSessionGoalStateResponse], error)
+	RequestSessionGoalAction(context.Context, *connect.Request[v1.RequestSessionGoalActionRequest]) (*connect.Response[v1.RequestSessionGoalActionResponse], error)
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
 	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
@@ -680,6 +714,18 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
+	sessionServiceGetSessionGoalStateHandler := connect.NewUnaryHandler(
+		SessionServiceGetSessionGoalStateProcedure,
+		svc.GetSessionGoalState,
+		connect.WithSchema(sessionServiceMethods.ByName("GetSessionGoalState")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceRequestSessionGoalActionHandler := connect.NewUnaryHandler(
+		SessionServiceRequestSessionGoalActionProcedure,
+		svc.RequestSessionGoalAction,
+		connect.WithSchema(sessionServiceMethods.ByName("RequestSessionGoalAction")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceListRequestDiagnosticsHandler := connect.NewUnaryHandler(
 		SessionServiceListRequestDiagnosticsProcedure,
 		svc.ListRequestDiagnostics,
@@ -898,6 +944,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceGetSessionGoalStateProcedure:
+			sessionServiceGetSessionGoalStateHandler.ServeHTTP(w, r)
+		case SessionServiceRequestSessionGoalActionProcedure:
+			sessionServiceRequestSessionGoalActionHandler.ServeHTTP(w, r)
 		case SessionServiceListRequestDiagnosticsProcedure:
 			sessionServiceListRequestDiagnosticsHandler.ServeHTTP(w, r)
 		case SessionServiceRetrySidechatQuestionProcedure:
@@ -978,6 +1028,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) GetSessionGoalState(context.Context, *connect.Request[v1.GetSessionGoalStateRequest]) (*connect.Response[v1.GetSessionGoalStateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetSessionGoalState is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) RequestSessionGoalAction(context.Context, *connect.Request[v1.RequestSessionGoalActionRequest]) (*connect.Response[v1.RequestSessionGoalActionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RequestSessionGoalAction is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListRequestDiagnostics is not implemented"))

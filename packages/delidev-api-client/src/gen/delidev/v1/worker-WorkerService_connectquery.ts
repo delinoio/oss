@@ -5,6 +5,16 @@
 import { WorkerService } from "./worker_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ClaimSessionGoalAction
+ */
+export const claimSessionGoalAction = WorkerService.method.claimSessionGoalAction;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.ReportSessionGoalAction
+ */
+export const reportSessionGoalAction = WorkerService.method.reportSessionGoalAction;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.SyncWorkerNetwork
  */
 export const syncWorkerNetwork = WorkerService.method.syncWorkerNetwork;

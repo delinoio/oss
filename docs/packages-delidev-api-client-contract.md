@@ -319,3 +319,7 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Native goal observations — issue #1996
+
+The generated `SessionQuery.getSessionGoalState` and `SessionQuery.requestSessionGoalAction` operations preserve the exact session revision and original execution/native-thread selection. `NativeGoalView` describes the session document's `native_goal` member. Its source execution/thread fields remain selection evidence, not display copy. A missing `observation` means unknown; explicit null means last observed absence. Present snapshots retain native objective/status, nullable exact decimal token budget, exact decimal token/time counters and native created/updated seconds. `observed_at` identifies the original observation time. The separate action ID/state/problem preserve accepted, claimed, acknowledged and uncertain action outcomes. A last observed snapshot cannot acknowledge an uncertain set/clear or prove current cleanup. Preserve original pending wire bytes across refresh/navigation; never replace expected revisions or automatically replay a native action.

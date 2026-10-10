@@ -13293,6 +13293,379 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalAction",
+      "member": "NATIVE_GOAL_ACTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalAction",
+      "member": "NATIVE_GOAL_ACTION_SET",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalAction",
+      "member": "NATIVE_GOAL_ACTION_READ",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalAction",
+      "member": "NATIVE_GOAL_ACTION_CLEAR",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_ACTIVE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_PAUSED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_BLOCKED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_USAGE_LIMITED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_BUDGET_LIMITED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "NativeGoalStatus",
+      "member": "NATIVE_GOAL_STATUS_COMPLETE",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "NativeGoalSet",
+      "member": "objective",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "NativeGoalSet",
+      "member": "status",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "NativeGoalSet",
+      "member": "token_budget",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "NativeGoalSet",
+      "member": "reset_token_budget",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionRequest",
+      "member": "expected_execution_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionRequest",
+      "member": "expected_native_thread_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionRequest",
+      "member": "action",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionRequest",
+      "member": "set",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionResponse",
+      "member": "session",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionResponse",
+      "member": "request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "RequestSessionGoalActionResponse",
+      "member": "replayed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "GetSessionGoalStateRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "GetSessionGoalStateResponse",
+      "member": "session",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "GetSessionGoalStateResponse",
+      "member": "action",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "GoalActionControl",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "GoalActionControl",
+      "member": "action_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "GoalActionControl",
+      "member": "revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ClaimSessionGoalActionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ClaimSessionGoalActionRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ClaimSessionGoalActionRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ClaimSessionGoalActionRequest",
+      "member": "job_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ClaimSessionGoalActionResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ClaimSessionGoalActionResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionRequest",
+      "member": "job_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionRequest",
+      "member": "result_json",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionResponse",
+      "member": "action",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionResponse",
+      "member": "session",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "ReportSessionGoalActionResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_NATIVE_CODEX_GOALS_V1",
+      "number": 85
+    },
+    {
+      "issue": 1996,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NATIVE_CODEX_GOALS_V1",
+      "number": 57
+    },
+    {
+      "issue": 1996,
+      "kind": "message",
+      "declaration": "WatchWorkResponse",
+      "member": "goal_action_control",
+      "number": 8
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13900,42 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1996,
+      "service": "SessionService",
+      "method": "GetSessionGoalState",
+      "input": "GetSessionGoalStateRequest",
+      "output": "GetSessionGoalStateResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1996,
+      "service": "SessionService",
+      "method": "RequestSessionGoalAction",
+      "input": "RequestSessionGoalActionRequest",
+      "output": "RequestSessionGoalActionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1996,
+      "service": "WorkerService",
+      "method": "ClaimSessionGoalAction",
+      "input": "ClaimSessionGoalActionRequest",
+      "output": "ClaimSessionGoalActionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1996,
+      "service": "WorkerService",
+      "method": "ReportSessionGoalAction",
+      "input": "ReportSessionGoalActionRequest",
+      "output": "ReportSessionGoalActionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

@@ -4,6 +4,7 @@ package codex
 import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"strings"
 	"testing"
 )
@@ -75,5 +76,30 @@ func TestNativeGoalObjectiveCountsUnicodeScalarsAndRetainsBudgetPresence(t *test
 		if (GoalSet{Objective: &objective, TokenBudget: json.RawMessage(budget)}).validate() == nil {
 			t.Fatalf("accepted invalid budget %s", budget)
 		}
+	}
+}
+
+func TestNativeGoalObservationsNeverSupplyClearAcknowledgment(t *testing.T) {
+	thread, turn := domain.NewID(), domain.NewID()
+	client := &Client{nativeGoals: true, thread: thread, execution: &executionState{turns: map[domain.ID]trackedTurn{turn: {Turn: Turn{ID: turn, Status: TurnRunning}}}}}
+	update := func(root domain.ID, nativeTurn any) nativewire.Event {
+		raw, _ := json.Marshal(map[string]any{"threadId": root, "turnId": nativeTurn, "goal": goalFixture(root)})
+		return nativewire.Event{Kind: nativewire.Notification, Method: "thread/goal/updated", Params: raw}
+	}
+	for _, nativeTurn := range []any{nil, turn} {
+		event, err := client.observeGoalLocked(update(thread, nativeTurn))
+		if err != nil || event.Kind != GoalObservedEvent || event.Goal == nil || event.Goal.Goal == nil || !event.Correlated || event.Goal.Cleared {
+			t.Fatal("lost original ordered native goal snapshot")
+		}
+	}
+	for _, native := range []nativewire.Event{update(domain.NewID(), nil), update(thread, domain.NewID())} {
+		if _, err := client.observeGoalLocked(native); err == nil {
+			t.Fatal("accepted foreign goal observation")
+		}
+	}
+	raw, _ := json.Marshal(map[string]any{"threadId": thread})
+	event, err := client.observeGoalLocked(nativewire.Event{Kind: nativewire.Notification, Method: "thread/goal/cleared", Params: raw})
+	if err != nil || event.Goal == nil || !event.Goal.Cleared || event.Goal.Goal != nil || event.RequestID != "" || event.Action != "" {
+		t.Fatal("cleared snapshot became an action receipt")
 	}
 }
