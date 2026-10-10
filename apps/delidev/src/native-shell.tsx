@@ -45,7 +45,7 @@ function snapshot(value: unknown): ShellSnapshot | undefined {
   };
 }
 
-function retained(tool: Record<string, unknown>, state: string): ShellSnapshot[] | undefined {
+export function validatedShellSnapshots(tool: Record<string, unknown>, state: string): ShellSnapshot[] | undefined {
   const first = snapshot(tool.started);
   if (!first || first.status !== ShellStatus.Pending || tool.output != null || tool.inputs != null || tool.patches != null) return;
   const states = tool.states ?? [];
@@ -87,7 +87,7 @@ function Arguments({ input }: { input: ShellInput }) {
 // never concatenate them into invented output or infer success from completion.
 export function NativeShell({ tool, state }: { tool: Record<string, unknown>; state: string }) {
   useLocale();
-  const snapshots = retained(tool, state), latest = snapshots?.at(-1);
+  const snapshots = validatedShellSnapshots(tool, state), latest = snapshots?.at(-1);
   if (!snapshots || !latest) return <Disclosure><DisclosureSummary>{copy("native-shell.shellUnavailable_e21cae")}</DisclosureSummary><p>{copy("native-shell.theRetainedShellOperationIsUnavailable_289f4b")}</p></Disclosure>;
   return <Disclosure>
     <DisclosureSummary><LocalizedText id="native-shell.shell_c1d0ae" components={{ s0: <>{labels[latest.status]}</> }} /></DisclosureSummary>

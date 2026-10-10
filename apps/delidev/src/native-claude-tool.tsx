@@ -20,7 +20,7 @@ function json(v: unknown, errorString = false): v is string {
 }
 type Result = { non_execution?: { id: string; non_execution_kind: "permission-rule" | "user-rejected" }; native_event_id: string; is_error: boolean | null; text: string | null; blocks: { kind: "text"; text: string }[] | null; structured: string | null };
 type Tool = { reference: ClaudeToolReference; message_id: string; native_message_id: string; index: number; caller: "direct" | null; initial_input: string; input_delta: string | null; proposal: { proposed: string; applied: string } | null; result: Result | null };
-function tool(value: unknown, state: string): Tool | undefined {
+export function validatedClaudeTool(value: unknown, state: string): Tool | undefined {
   const v = object(value), ref = claudeToolReference(v.reference);
   if (!keys(v, ["reference", "message_id", "native_message_id", "index", "caller", "initial_input", "input_delta", "proposal", "result"]) || !ref || !uuid(v.message_id) || !label(v.native_message_id, 1024) || v.native_message_id === ref.native_id || !Number.isInteger(v.index) || Number(v.index) < 0 || Number(v.index) >= 1024 || (v.caller !== null && v.caller !== "direct") || !json(v.initial_input) || (v.input_delta !== null && !text(v.input_delta)) || !Object.values(State).includes(state as State)) return undefined;
   if (new TextEncoder().encode(JSON.stringify(v)).length > 768 * 1024) return undefined;
@@ -49,7 +49,7 @@ function tool(value: unknown, state: string): Tool | undefined {
 
 export function NativeClaudeTool({ content, state, id, native, parent }: { content: unknown; state: string; id: string; native: string; parent: string }) {
   useLocale();
-  const retained = tool(content, state);
+  const retained = validatedClaudeTool(content, state);
   if (!retained || retained.reference.id !== id || retained.reference.native_id !== native || retained.native_message_id !== parent) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
   const result = retained.result;
   return <section aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}><Disclosure appearanceKind="tool_disclosure">

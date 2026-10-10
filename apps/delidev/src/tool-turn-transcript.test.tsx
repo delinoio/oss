@@ -53,3 +53,23 @@ it.each([['image-view','view_image'],['opencode-read','read'],['opencode-shell',
 it('retains expanded tool state while denying exact-page restoration in an inactive pane',()=>{
  const q=query([[row(tool('command'))]]),p=props({...q,payloadPages:[]});const view=render(<ToolTurnTranscript {...p} active={false}/>);const group=view.container.querySelector<HTMLDetailsElement>('.tool-turn')!;expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expand(entry);const restore=entry.querySelector<HTMLButtonElement>('button')!;expect(restore.disabled).toBe(true);fireEvent.click(restore);expect(q.restore).not.toHaveBeenCalled();view.rerender(<ToolTurnTranscript {...p} active/>);expect(group.open).toBe(true);expect(entry.open).toBe(true);fireEvent.click(restore);expect(q.restore).toHaveBeenCalledExactlyOnceWith('');
 });
+
+
+it('previews resident commands with direct output and preserves Details across eviction',()=>{
+ const command={command:'/bin/zsh -lc pwd',cwd:'/workspace/project',source:'agent',actions:[],aggregated_output:'/workspace/project',exit_code:0,duration_ms:1,process_id:null,plugin_id:null,script_path:null};
+ const record=row({role:'tool',state:'complete',text:'',execution_id:execution,native_thread_id:'thread',native_turn_id:'turn',tool:{started:{kind:'command',status:'running',command,changes:null},completed:{kind:'command',status:'completed',command,changes:null},output:'distinct stream'}}),q=query([[record]]);
+ const view=render(<ToolTurnTranscript {...props(q)}/>),group=view.container.querySelector<HTMLDetailsElement>('.tool-turn')!;
+ expand(group);const entry=group.querySelector<HTMLDetailsElement>('li > details')!;expand(entry);
+ expect(entry.querySelector('.tool-command-preview')?.textContent).toBe('> pwd');
+ expect(entry.querySelector('.tool-command-output code')?.textContent).toBe('/workspace/project');
+ expect(entry.querySelector('summary small')).toBeNull();
+ const details=entry.querySelector<HTMLDetailsElement>('.tool-command-details')!;expect(details.open).toBe(false);expand(details);
+ expect(details.textContent).toContain('/bin/zsh -lc pwd');expect(details.textContent).toContain('distinct stream');
+ expect(entry.querySelector('[data-tool-primary]')).toBeTruthy();
+ view.rerender(<ToolTurnTranscript {...props({...q,payloadPages:[]})}/>);
+ expect(entry.querySelector('summary span')?.textContent).toBe('command');
+ expect(JSON.stringify(q.pages,(_,value)=>typeof value==='bigint'?String(value):value)).not.toContain('pwd');
+ fireEvent.click(entry.querySelector('button')!);expect(q.restore).toHaveBeenCalledExactlyOnceWith('');
+ view.rerender(<ToolTurnTranscript {...props(q)}/>);
+ expect(entry.querySelector<HTMLDetailsElement>('.tool-command-details')?.open).toBe(true);expect(group.open).toBe(true);expect(entry.open).toBe(true);
+});

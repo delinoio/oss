@@ -9,6 +9,7 @@ import { statusLabel } from "./product-status";
 import { copy, useLocale } from "./localization";
 import { ScrollPayloadWindow, type PayloadWindowQuery } from "./scroll-payload-window";
 import { conversationProjection, type ConversationProjection } from "./tool-turn-projection";
+import { CommandOutput, commandPresentation, commandPreview } from "./tool-command";
 import "./tool-turn-transcript.css";
 
 interface Choices { groups: Map<string, boolean>; entries: Map<string, boolean>; details: Map<string, boolean[]> }
@@ -17,6 +18,7 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
   if(!choices.entries.has(row.id))choices.entries.set(row.id,preferences.tool_disclosure===DisclosureDefault.Expanded);
   const node = useRef<HTMLDivElement>(null), open = choices.entries.get(row.id) ?? false;
   const hasPayload = Boolean(payload);
+  const command = payload ? commandPresentation(payload) : undefined;
   useLayoutEffect(() => {
     const details = [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []];
     // The compact entry replaces only the original primary presentation toggle.
@@ -24,12 +26,12 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
     const remember = () => choices.details.set(row.id, [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []].map(detail => detail.open));
     const element = node.current;
     element?.addEventListener("toggle", remember, true);
-    details.forEach((detail, index) => { if (index === 0) { detail.dataset.toolPrimary = "true"; detail.open = true; } else detail.open = choices.details.get(row.id)?.[index] ?? false; });
+    details.forEach((detail, index) => { if (detail === node.current?.querySelector("[data-original-tool] details") || !command && index === 0) { detail.dataset.toolPrimary = "true"; detail.open = true; } else detail.open = choices.details.get(row.id)?.[index] ?? false; });
     return () => element?.removeEventListener("toggle", remember, true);
-  }, [hasPayload, choices, row.id]);
+  }, [hasPayload, Boolean(command), choices, row.id]);
   return <li onFocusCapture={event => { event.stopPropagation(); query.protect?.(token); }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}><Disclosure density={DisclosureDensity.Compact} open={open} onToggle={event => { choices.entries.set(row.id, event.currentTarget.open); changed(); }}>
-    <DisclosureSummary><span>{row.tool?.name || copy("session.tool_7c9bbe")}</span><small>{statusLabel(row.tool?.state ?? "")}</small></DisclosureSummary>
-    {payload ? <div className="tool-entry-payload" ref={node}>{render(payload)}</div> : <button type="button" disabled={!active || Boolean(query.loading || query.error)} onClick={() => { if (active && token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
+    <DisclosureSummary><span className={command ? "tool-command-preview" : undefined} title={command ? `> ${commandPreview(command)}` : undefined}>{command ? `> ${commandPreview(command)}` : row.tool?.name || copy("session.tool_7c9bbe")}</span>{!["complete","completed"].includes(row.tool?.state ?? "") ? <small>{statusLabel(row.tool?.state ?? "")}</small> : null}</DisclosureSummary>
+    {payload ? <div className="tool-entry-payload" ref={node}>{command ? <CommandOutput value={command}>{render(payload)}</CommandOutput> : render(payload)}</div> : <button type="button" disabled={!active || Boolean(query.loading || query.error)} onClick={() => { if (active && token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
   </Disclosure></li>;
 }
 

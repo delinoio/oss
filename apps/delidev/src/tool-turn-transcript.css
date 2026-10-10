@@ -12,3 +12,18 @@
 .turn-time { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 .turn-transcript-item { display: flex; flex-direction: column; min-width: 0; }
+
+/* Scope specificity must exceed shared disclosure chrome without changing it. */
+.tool-turn.disclosure .disclosure > .disclosure-header,
+.tool-turn.tool-turn.disclosure > .disclosure-header {
+ min-height: 36px; padding: 7px 8px; border: 0; border-radius: 0;
+ background: transparent; box-shadow: none; color: var(--muted);
+}
+.tool-turn.disclosure .disclosure > .disclosure-header:hover,
+.tool-turn.tool-turn.disclosure > .disclosure-header:hover { background: var(--surface-hover); }
+.tool-turn .tool-entry-payload .message { border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 0; }
+.tool-turn .tool-entry-payload .message > header { display: none; }
+.tool-turn .tool-entry-payload .disclosure[data-tool-primary] > .disclosure-header { display: none; }
+.tool-turn .tool-command-preview { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; color: var(--muted); }
+.tool-turn .tool-command-content { min-width: 0; padding-left: 14px; border-left: 1px solid var(--border); }
+.tool-turn .tool-command-output { margin: 8px 0; padding: 12px; border: 0; border-radius: 8px; background: var(--surface-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
