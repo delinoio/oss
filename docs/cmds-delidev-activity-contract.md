@@ -44,7 +44,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 
 ## cmds/delidev-cli/internal/worker constraints
 
-- Follow `cmds-delidev-activity-contract.md` for read-only activity. Project only original durable execution jobs, terminal inbox evidence and schedule occurrences; distinguish dispatch acceptance, native outcome, owned cleanup and current occurrence state. Preserve original account/source references and server retention times, include Archive, retain configuration-independent history, and exclude deleted-session sources. Keep content and native identities out of activity; reading cannot mark inbox entries or authorize work. Recheck revocation and bind bounded pages to actor/filter/source epoch.
+- Activity has no live Worker projection or read pagination. Preserve independent original execution jobs, terminal Inbox evidence, schedule occurrences and archived history under their owning contracts. Keep dispatch acceptance, native outcome, owned cleanup and occurrence state separate. Retain original account/source references, server retention times, authorization and deleted-session cleanup without publishing new Activity records or granting work through observation.
 
 ## References
 - [DeliDev project](project-delidev.md)

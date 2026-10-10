@@ -1,3 +1,11 @@
+## Explicit owner amendment: Activity retirement
+
+The [Activity retirement contract](cmds-delidev-activity-contract.md) supersedes only the Activity product requirements in the preserved historical snapshot below. The desktop has no Activity destination, controller, filtering, source disclosure, shortcut or dedicated stylesheet. The CLI has no Activity command, and no live chronological Activity projection or new dedicated PR Activity snapshots are published.
+
+`ActivityService.ListActivity` and generated compatibility exports retain their original protocol numbers. Authorized owners and current paired clients receive typed `UNSUPPORTED` with Connect `Unimplemented`. Missing, invalid or revoked credentials and Worker actors retain their authentication or permission refusal. Requests read no Activity sources and grant no execution or cleanup authority.
+
+Inbox, Search, usage, schedules, session/native observations and independent PR handling retain their own behavior and original authority. Preserve legacy metadata validators, exact receipts and dependent session deletion, backup restore and tombstone cleanup. This amendment adds no protocol allocation, migration or historical purge. The historical snapshot remains unchanged.
+
 ## Explicit owner amendment: app-owned sidecar Quit (2026-10-06)
 
 Normal desktop Quit stops only server processes directly admitted by that host, including explicit Start and automatic recovery. After 35 seconds without confirmed exit, force only the retained original child and observe its exit; do not claim native/session cleanup. Title-bar close-to-tray and independent CLI/service/remote servers/Workers retain their lifetimes. Desktop crash/forced termination terminates its single resident CLI and owned server through platform containment. This supersedes prior desktop-exit server preservation only for app-owned sidecars; original durable data, recovery and all other ownership remain intact. See the [desktop shutdown boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown) and CLI contract. The historical issue snapshot below is unchanged.
