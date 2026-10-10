@@ -509,3 +509,19 @@ Automated fixtures and builds validate these boundaries. Installed native, real-
 ## Inherited elapsed observations
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.
+
+## Complete independent Git inventories
+
+Independent managed Fork preserves every object, ref and reflog in the supported
+common and selected worktree administration inventory, including reset/unpushed
+reflog-only history. Copying uses bounded independent files without hardlinks,
+alternates, transport-clone reachability filtering or parent-store borrowing.
+One aggregate allowance covers the worktree, index and Git payloads. Exact
+source inventory proofs survive the pre-copy inspection, Ready verification
+and native Fork boundary; a changed source or incomplete child blocks
+publication under the original cleanup/recovery owner. The child's detached
+fork point, staged/unstaged files, ignored/untracked content and immutable
+account/native assignment retain their existing invariants. Copied history
+remains inspectable when the original common/admin directories are unavailable.
+Sidechat remains metadata-only, and original Local folder lifetimes remain
+unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-contract.md#complete-independent-fork-inventory).

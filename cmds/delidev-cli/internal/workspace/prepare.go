@@ -273,6 +273,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	if err := request.validate(); err != nil {
 		return Manifest{}, err
 	}
+	forkBudget := newForkCopyBudget(len(request.Repositories))
 	startupProgress(ctx, domain.StartupWorkspaceSetup, domain.StartupProgressRunning)
 	// Failure to inspect an existing scope or persist its ownership journal does
 	// not prove cleanup. Only the failed() path below can certify that an attempt
@@ -406,7 +407,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				return failed(domain.SafeError(err))
 			}
 			if spec.SourceKind.managed() {
-				prepared, copy, err := m.prepareIndependentRepository(repositoryCtx, git, root, spec, &manifest, write)
+				prepared, copy, err := m.prepareIndependentRepository(repositoryCtx, git, root, spec, &manifest, write, forkBudget, forkSnapshot)
 				if err != nil {
 					return failed(err)
 				}
