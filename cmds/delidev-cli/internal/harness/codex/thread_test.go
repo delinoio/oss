@@ -208,6 +208,10 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	t.Helper()
 	config := fixtureConfig(t, mode)
 	config.Mode = ThreadProtocol
+	if strings.HasPrefix(mode, "thread-directory-") {
+		config.Version = "0.162.0"
+		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")
+	}
 	if strings.HasPrefix(mode, "thread-revert-") {
 		config.RevertHistory = true
 		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")

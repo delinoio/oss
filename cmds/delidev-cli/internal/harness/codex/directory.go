@@ -97,7 +97,7 @@ func directorySettingsMatch(source EffectiveSettings, settings ThreadSettings) b
 // root while reloading destination config/trust/instructions. Keep this profile
 // until a verified standalone native update preserves those same boundaries.
 func (c *Client) ResumeDirectory(ctx context.Context, requestID domain.ID, source ContinuationCheckpoint, settings ThreadSettings, claim func(DirectoryIntent) error) (ThreadResult, error) {
-	if source.validate(ResumeAfterTerminal) != nil || source.ThreadID == "" || claim == nil || settings.Cwd == source.Effective.Cwd || !directorySettingsMatch(source.Effective, settings) {
+	if c.version != "0.162.0" || source.validate(ResumeAfterTerminal) != nil || source.ThreadID == "" || claim == nil || settings.Cwd == source.Effective.Cwd || !directorySettingsMatch(source.Effective, settings) {
 		return ThreadResult{}, directoryUncertain()
 	}
 	roots := directoryRoots(source.Effective)
@@ -116,7 +116,7 @@ func (c *Client) ResumeDirectory(ctx context.Context, requestID domain.ID, sourc
 // accepted source checkpoint. This retains the selected cwd, creates no directory
 // intent and grants no input until ordinary continuation history verification.
 func (c *Client) ResumeDirectoryContinuation(ctx context.Context, requestID domain.ID, source ContinuationCheckpoint, settings ThreadSettings) (ThreadResult, error) {
-	if source.validate(ResumeAfterTerminal) != nil || source.Effective.Cwd != settings.Cwd || !directorySettingsMatch(source.Effective, settings) || !slices.Equal(settings.WorkspaceRoots, directoryRoots(source.Effective)) || !directoryInsideOriginalRoots(settings.Cwd, settings.WorkspaceRoots) {
+	if c.version != "0.162.0" || source.validate(ResumeAfterTerminal) != nil || source.Effective.Cwd != settings.Cwd || !directorySettingsMatch(source.Effective, settings) || !slices.Equal(settings.WorkspaceRoots, directoryRoots(source.Effective)) || !directoryInsideOriginalRoots(settings.Cwd, settings.WorkspaceRoots) {
 		return ThreadResult{}, directoryUncertain()
 	}
 	settings.directorySource = &source

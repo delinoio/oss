@@ -102,7 +102,7 @@ func TestDirectoryResumePreservesOriginalRootsAndHistory(t *testing.T) {
 }
 
 func TestDirectoryResumeRejectsAuthorityDriftBeforeClaim(t *testing.T) {
-	for _, changed := range []string{"model", "provider", "effort", "tier", "approval", "permission", "roots"} {
+	for _, changed := range []string{"model", "provider", "effort", "tier", "approval", "permission", "roots", "unproven native version"} {
 		t.Run(changed, func(t *testing.T) {
 			_, _, source, _ := continuationFixture(t, "ok")
 			root := source.Effective.Cwd
@@ -128,7 +128,11 @@ func TestDirectoryResumeRejectsAuthorityDriftBeforeClaim(t *testing.T) {
 			case "roots":
 				settings.WorkspaceRoots = []string{nested}
 			}
-			c, capture := openThreadFixture(t, "thread-continuation-ok")
+			mode := "thread-directory-ok"
+			if changed == "unproven native version" {
+				mode = "thread-continuation-ok"
+			}
+			c, capture := openThreadFixture(t, mode)
 			claims := 0
 			if _, err := c.ResumeDirectory(context.Background(), domain.NewID(), source, settings, func(DirectoryIntent) error { claims++; return nil }); err == nil || claims != 0 {
 				t.Fatal("authority drift reached claim", err)
