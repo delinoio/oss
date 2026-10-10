@@ -655,6 +655,7 @@ func (x *ListManagedMcpRequest) GetMachineId() string {
 type ListManagedMcpResponse struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Definitions   []*ManagedMcpDefinition `protobuf:"bytes,1,rep,name=definitions,proto3" json:"definitions,omitempty"`
+	Operations    []*ManagedMcpOperation  `protobuf:"bytes,2,rep,name=operations,proto3" json:"operations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -692,6 +693,13 @@ func (*ListManagedMcpResponse) Descriptor() ([]byte, []int) {
 func (x *ListManagedMcpResponse) GetDefinitions() []*ManagedMcpDefinition {
 	if x != nil {
 		return x.Definitions
+	}
+	return nil
+}
+
+func (x *ListManagedMcpResponse) GetOperations() []*ManagedMcpOperation {
+	if x != nil {
+		return x.Operations
 	}
 	return nil
 }
@@ -1133,6 +1141,7 @@ type GetManagedMcpOperationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
 	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	DefinitionId  string                 `protobuf:"bytes,3,opt,name=definition_id,json=definitionId,proto3" json:"definition_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1177,6 +1186,13 @@ func (x *GetManagedMcpOperationRequest) GetMachineId() string {
 func (x *GetManagedMcpOperationRequest) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
+	}
+	return ""
+}
+
+func (x *GetManagedMcpOperationRequest) GetDefinitionId() string {
+	if x != nil {
+		return x.DefinitionId
 	}
 	return ""
 }
@@ -1277,9 +1293,12 @@ const file_delidev_v1_managed_mcp_proto_rawDesc = "" +
 	"expires_at\x18\x05 \x01(\tR\texpiresAt\"6\n" +
 	"\x15ListManagedMcpRequest\x12\x1d\n" +
 	"\n" +
-	"machine_id\x18\x01 \x01(\tR\tmachineId\"\\\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\"\x9d\x01\n" +
 	"\x16ListManagedMcpResponse\x12B\n" +
-	"\vdefinitions\x18\x01 \x03(\v2 .delidev.v1.ManagedMcpDefinitionR\vdefinitions\"\xc4\x01\n" +
+	"\vdefinitions\x18\x01 \x03(\v2 .delidev.v1.ManagedMcpDefinitionR\vdefinitions\x12?\n" +
+	"\n" +
+	"operations\x18\x02 \x03(\v2\x1f.delidev.v1.ManagedMcpOperationR\n" +
+	"operations\"\xc4\x01\n" +
 	"\x15SaveManagedMcpRequest\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
@@ -1332,12 +1351,13 @@ const file_delidev_v1_managed_mcp_proto_rawDesc = "" +
 	"definition\x18\x01 \x01(\v2 .delidev.v1.ManagedMcpDefinitionR\n" +
 	"definition\x12=\n" +
 	"\toperation\x18\x02 \x01(\v2\x1f.delidev.v1.ManagedMcpOperationR\toperation\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed\"]\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\x82\x01\n" +
 	"\x1dGetManagedMcpOperationRequest\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x02 \x01(\tR\trequestId\"\xa1\x01\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12#\n" +
+	"\rdefinition_id\x18\x03 \x01(\tR\fdefinitionId\"\xa1\x01\n" +
 	"\x1eGetManagedMcpOperationResponse\x12@\n" +
 	"\n" +
 	"definition\x18\x01 \x01(\v2 .delidev.v1.ManagedMcpDefinitionR\n" +
@@ -1416,32 +1436,33 @@ var file_delidev_v1_managed_mcp_proto_depIdxs = []int32{
 	5,  // 3: delidev.v1.ManagedMcpDefinition.agents:type_name -> delidev.v1.ManagedMcpAgentReference
 	3,  // 4: delidev.v1.ManagedMcpOperation.state:type_name -> delidev.v1.ManagedMcpOperationState
 	6,  // 5: delidev.v1.ListManagedMcpResponse.definitions:type_name -> delidev.v1.ManagedMcpDefinition
-	6,  // 6: delidev.v1.SaveManagedMcpRequest.definition:type_name -> delidev.v1.ManagedMcpDefinition
-	6,  // 7: delidev.v1.SaveManagedMcpResponse.definition:type_name -> delidev.v1.ManagedMcpDefinition
-	7,  // 8: delidev.v1.SaveManagedMcpResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
-	7,  // 9: delidev.v1.DeleteManagedMcpResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
-	2,  // 10: delidev.v1.AuthenticateManagedMcpRequest.action:type_name -> delidev.v1.ManagedMcpAuthAction
-	18, // 11: delidev.v1.AuthenticateManagedMcpRequest.environment:type_name -> delidev.v1.AuthenticateManagedMcpRequest.EnvironmentEntry
-	19, // 12: delidev.v1.AuthenticateManagedMcpRequest.headers:type_name -> delidev.v1.AuthenticateManagedMcpRequest.HeadersEntry
-	6,  // 13: delidev.v1.AuthenticateManagedMcpResponse.definition:type_name -> delidev.v1.ManagedMcpDefinition
-	7,  // 14: delidev.v1.AuthenticateManagedMcpResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
-	6,  // 15: delidev.v1.GetManagedMcpOperationResponse.definition:type_name -> delidev.v1.ManagedMcpDefinition
-	7,  // 16: delidev.v1.GetManagedMcpOperationResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
-	8,  // 17: delidev.v1.ManagedMCPService.ListManagedMcp:input_type -> delidev.v1.ListManagedMcpRequest
-	10, // 18: delidev.v1.ManagedMCPService.SaveManagedMcp:input_type -> delidev.v1.SaveManagedMcpRequest
-	12, // 19: delidev.v1.ManagedMCPService.DeleteManagedMcp:input_type -> delidev.v1.DeleteManagedMcpRequest
-	14, // 20: delidev.v1.ManagedMCPService.AuthenticateManagedMcp:input_type -> delidev.v1.AuthenticateManagedMcpRequest
-	16, // 21: delidev.v1.ManagedMCPService.GetManagedMcpOperation:input_type -> delidev.v1.GetManagedMcpOperationRequest
-	9,  // 22: delidev.v1.ManagedMCPService.ListManagedMcp:output_type -> delidev.v1.ListManagedMcpResponse
-	11, // 23: delidev.v1.ManagedMCPService.SaveManagedMcp:output_type -> delidev.v1.SaveManagedMcpResponse
-	13, // 24: delidev.v1.ManagedMCPService.DeleteManagedMcp:output_type -> delidev.v1.DeleteManagedMcpResponse
-	15, // 25: delidev.v1.ManagedMCPService.AuthenticateManagedMcp:output_type -> delidev.v1.AuthenticateManagedMcpResponse
-	17, // 26: delidev.v1.ManagedMCPService.GetManagedMcpOperation:output_type -> delidev.v1.GetManagedMcpOperationResponse
-	22, // [22:27] is the sub-list for method output_type
-	17, // [17:22] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	7,  // 6: delidev.v1.ListManagedMcpResponse.operations:type_name -> delidev.v1.ManagedMcpOperation
+	6,  // 7: delidev.v1.SaveManagedMcpRequest.definition:type_name -> delidev.v1.ManagedMcpDefinition
+	6,  // 8: delidev.v1.SaveManagedMcpResponse.definition:type_name -> delidev.v1.ManagedMcpDefinition
+	7,  // 9: delidev.v1.SaveManagedMcpResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
+	7,  // 10: delidev.v1.DeleteManagedMcpResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
+	2,  // 11: delidev.v1.AuthenticateManagedMcpRequest.action:type_name -> delidev.v1.ManagedMcpAuthAction
+	18, // 12: delidev.v1.AuthenticateManagedMcpRequest.environment:type_name -> delidev.v1.AuthenticateManagedMcpRequest.EnvironmentEntry
+	19, // 13: delidev.v1.AuthenticateManagedMcpRequest.headers:type_name -> delidev.v1.AuthenticateManagedMcpRequest.HeadersEntry
+	6,  // 14: delidev.v1.AuthenticateManagedMcpResponse.definition:type_name -> delidev.v1.ManagedMcpDefinition
+	7,  // 15: delidev.v1.AuthenticateManagedMcpResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
+	6,  // 16: delidev.v1.GetManagedMcpOperationResponse.definition:type_name -> delidev.v1.ManagedMcpDefinition
+	7,  // 17: delidev.v1.GetManagedMcpOperationResponse.operation:type_name -> delidev.v1.ManagedMcpOperation
+	8,  // 18: delidev.v1.ManagedMCPService.ListManagedMcp:input_type -> delidev.v1.ListManagedMcpRequest
+	10, // 19: delidev.v1.ManagedMCPService.SaveManagedMcp:input_type -> delidev.v1.SaveManagedMcpRequest
+	12, // 20: delidev.v1.ManagedMCPService.DeleteManagedMcp:input_type -> delidev.v1.DeleteManagedMcpRequest
+	14, // 21: delidev.v1.ManagedMCPService.AuthenticateManagedMcp:input_type -> delidev.v1.AuthenticateManagedMcpRequest
+	16, // 22: delidev.v1.ManagedMCPService.GetManagedMcpOperation:input_type -> delidev.v1.GetManagedMcpOperationRequest
+	9,  // 23: delidev.v1.ManagedMCPService.ListManagedMcp:output_type -> delidev.v1.ListManagedMcpResponse
+	11, // 24: delidev.v1.ManagedMCPService.SaveManagedMcp:output_type -> delidev.v1.SaveManagedMcpResponse
+	13, // 25: delidev.v1.ManagedMCPService.DeleteManagedMcp:output_type -> delidev.v1.DeleteManagedMcpResponse
+	15, // 26: delidev.v1.ManagedMCPService.AuthenticateManagedMcp:output_type -> delidev.v1.AuthenticateManagedMcpResponse
+	17, // 27: delidev.v1.ManagedMCPService.GetManagedMcpOperation:output_type -> delidev.v1.GetManagedMcpOperationResponse
+	23, // [23:28] is the sub-list for method output_type
+	18, // [18:23] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_managed_mcp_proto_init() }

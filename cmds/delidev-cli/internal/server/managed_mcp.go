@@ -22,12 +22,30 @@ func mcpDefinitions(q domain.ManagedMCPRequest, r domain.ManagedMCPResult) error
 	if len(r.Definitions) > 256 {
 		return mcpUnavailable()
 	}
+	if len(r.Operations) > 256 || len(r.Operations) > 0 && q.Action != domain.MCPList {
+		return mcpUnavailable()
+	}
+	operationIDs := map[domain.ID]bool{}
+	for _, op := range r.Operations {
+		if op.ID.Validate() != nil || op.DefinitionID.Validate() != nil || operationIDs[op.ID] || op.State != domain.MCPOperationAwaiting || domain.ValidateMCPURL(op.AuthorizationURL) != nil {
+			return mcpUnavailable()
+		}
+		if _, e := time.Parse(time.RFC3339Nano, op.ExpiresAt); e != nil {
+			return mcpUnavailable()
+		}
+		operationIDs[op.ID] = true
+	}
 	seen := map[domain.ID]bool{}
 	for _, d := range r.Definitions {
 		if d.Validate() != nil || d.MachineID != q.MachineID || d.WorkerDeviceID != q.WorkerDeviceID || seen[d.ID] {
 			return mcpUnavailable()
 		}
 		seen[d.ID] = true
+	}
+	for _, op := range r.Operations {
+		if !seen[op.DefinitionID] {
+			return mcpUnavailable()
+		}
 	}
 	if r.Operation != nil {
 		if r.Operation.ID.Validate() != nil || r.Operation.DefinitionID.Validate() != nil || q.Action != domain.MCPOperationRead && r.Operation.ID != q.RequestID {
@@ -147,6 +165,31 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 		return empty, e
 	}
 	if q.Action == domain.MCPOperationRead {
+		if q.DefinitionID != "" && q.DefinitionID.Validate() != nil {
+			return empty, domain.Fail(domain.InvalidArgument, "Original MCP identity is invalid.", "Preserve the original definition identity.")
+		}
+		if q.DefinitionID != "" {
+			scopeError := s.Store.Read(ctx, func(tx *store.Tx) error {
+				row, e := tx.Get(domain.ManagedMCPKind, q.DefinitionID)
+				if domain.SafeError(e).Code == domain.NotFound {
+					return nil
+				}
+				if e != nil {
+					return e
+				}
+				original, e := store.Decode[domain.ManagedMCPRecord](row)
+				if e != nil {
+					return e
+				}
+				if original.Definition.MachineID != q.MachineID || original.Definition.WorkerDeviceID != q.WorkerDeviceID {
+					return domain.Fail(domain.PermissionDenied, "The original MCP operation belongs to another Worker.", "Reconnect its original authenticated Runner Device.")
+				}
+				return nil
+			})
+			if scopeError != nil {
+				return empty, scopeError
+			}
+		}
 		if e := s.Store.Read(ctx, func(tx *store.Tx) error {
 			rows, e := all(tx, domain.ManagedMCPKind)
 			if e != nil {
@@ -158,6 +201,9 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 					return e
 				}
 				if r.PendingRequestID == q.AttemptID && r.PendingActorID == q.ActorID && r.Definition.MachineID == q.MachineID && r.Definition.WorkerDeviceID == q.WorkerDeviceID {
+					if q.DefinitionID != "" && q.DefinitionID != row.ID {
+						return domain.Fail(domain.Conflict, "The MCP request identity belongs to another definition.", "Inspect the original definition and request together.")
+					}
 					q.DefinitionID = row.ID
 				}
 			}
@@ -329,6 +375,7 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 		}
 		return nil, nil
 	})
+	r.WorkerDeviceID = q.WorkerDeviceID
 	return r, e
 }
 func mcpWire(d domain.ManagedMCPDefinition) *pb.ManagedMcpDefinition {
@@ -366,6 +413,17 @@ func (s *Service) ListManagedMcp(ctx context.Context, req *connect.Request[pb.Li
 		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
 	}
 	response := &pb.ListManagedMcpResponse{}
+	knownOperations := map[domain.ID]bool{}
+	for _, op := range r.Operations {
+		copy := op
+		response.Operations = append(response.Operations, mcpOperationWire(&copy))
+		knownOperations[op.ID] = true
+	}
+	actor, _ := domain.PrincipalFrom(ctx)
+	actorID := actor.DeviceID
+	if actorID == "" {
+		actorID = s.Identity.ServerID
+	}
 	e = s.Store.Read(ctx, func(tx *store.Tx) error {
 		for _, d := range r.Definitions {
 			v := mcpWire(d)
@@ -375,6 +433,23 @@ func (s *Service) ListManagedMcp(ctx context.Context, req *connect.Request[pb.Li
 			}
 			v.Agents = refs
 			response.Definitions = append(response.Definitions, v)
+		}
+		rows, readError := all(tx, domain.ManagedMCPKind)
+		if readError != nil {
+			return readError
+		}
+		for _, row := range rows {
+			record, decodeError := store.Decode[domain.ManagedMCPRecord](row)
+			if decodeError != nil {
+				return decodeError
+			}
+			if record.PendingRequestID != "" && record.PendingActorID == actorID && record.Definition.MachineID == q.MachineID && record.Definition.WorkerDeviceID == r.WorkerDeviceID && !knownOperations[record.PendingRequestID] {
+				op := domain.ManagedMCPOperation{ID: record.PendingRequestID, DefinitionID: row.ID, State: domain.MCPOperationRecovery}
+				response.Operations = append(response.Operations, mcpOperationWire(&op))
+			}
+		}
+		if len(response.Operations) > 256 {
+			return mcpUnavailable()
 		}
 		return nil
 	})
@@ -454,7 +529,7 @@ func (s *Service) AuthenticateManagedMcp(ctx context.Context, req *connect.Reque
 	return connect.NewResponse(response), nil
 }
 func (s *Service) GetManagedMcpOperation(ctx context.Context, req *connect.Request[pb.GetManagedMcpOperationRequest]) (*connect.Response[pb.GetManagedMcpOperationResponse], error) {
-	r, e := s.forwardManagedMCP(ctx, domain.ManagedMCPRequest{MachineID: domain.ID(req.Msg.MachineId), RequestID: domain.NewID(), Action: domain.MCPOperationRead, AttemptID: domain.ID(req.Msg.RequestId)})
+	r, e := s.forwardManagedMCP(ctx, domain.ManagedMCPRequest{MachineID: domain.ID(req.Msg.MachineId), RequestID: domain.NewID(), Action: domain.MCPOperationRead, AttemptID: domain.ID(req.Msg.RequestId), DefinitionID: domain.ID(req.Msg.DefinitionId)})
 	if e != nil {
 		return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
 	}

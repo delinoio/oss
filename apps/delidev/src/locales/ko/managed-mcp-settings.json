@@ -66,5 +66,7 @@
   "managed-mcp-settings.duplicateKeys": "보호된 값마다 다른 이름을 지정하세요.",
   "managed-mcp-settings.stdio": "표준 입출력(stdio)",
   "managed-mcp-settings.http": "스트리밍 HTTP",
-  "managed-mcp-settings.oauth": "OAuth 인증"
+  "managed-mcp-settings.oauth": "OAuth 인증",
+  "managed-mcp-settings.originalOperation": "원래 MCP 작업",
+  "managed-mcp-settings.resumeAuthorization": "원래 인증 계속하기"
 }

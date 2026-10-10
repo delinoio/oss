@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 syntax = "proto3";
 package delidev.v1;
+
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 // Management is independent of native MCP execution support.
@@ -74,8 +75,13 @@ message ManagedMcpOperation {
   string authorization_url = 4;
   string expires_at = 5;
 }
-message ListManagedMcpRequest { string machine_id = 1; }
-message ListManagedMcpResponse { repeated ManagedMcpDefinition definitions = 1; }
+message ListManagedMcpRequest {
+  string machine_id = 1;
+}
+message ListManagedMcpResponse {
+  repeated ManagedMcpDefinition definitions = 1;
+  repeated ManagedMcpOperation operations = 2;
+}
 message SaveManagedMcpRequest {
   string machine_id = 1;
   string request_id = 2;
@@ -119,6 +125,7 @@ message AuthenticateManagedMcpResponse {
 message GetManagedMcpOperationRequest {
   string machine_id = 1;
   string request_id = 2;
+  string definition_id = 3;
 }
 message GetManagedMcpOperationResponse {
   ManagedMcpDefinition definition = 1;

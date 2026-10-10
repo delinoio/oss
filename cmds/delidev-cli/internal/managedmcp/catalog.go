@@ -132,6 +132,15 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 				empty.Definitions = append(empty.Definitions, v.Definition)
 			}
 		}
+		for id, attempt := range c.Attempts {
+			current, exists := c.Entries[attempt.DefinitionID]
+			if attempt.ActorID == q.ActorID && attempt.State == domain.MCPOperationAwaiting && exists && !current.Deleted && current.Definition.Revision == attempt.Revision {
+				empty.Operations = append(empty.Operations, domain.ManagedMCPOperation{ID: id, DefinitionID: attempt.DefinitionID, State: attempt.State, AuthorizationURL: attempt.AuthorizationURL, ExpiresAt: attempt.ExpiresAt.Format(time.RFC3339Nano)})
+			}
+		}
+		if len(empty.Operations) > 256 {
+			return empty, unavailable()
+		}
 		slices.SortFunc(empty.Definitions, func(a, b domain.ManagedMCPDefinition) int {
 			if a.Name < b.Name {
 				return -1
@@ -208,6 +217,13 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 	} else if exists {
 		return empty, domain.Fail(domain.Conflict, "The MCP definition already exists.", "Use its current revision.")
 	}
+	if q.Action == domain.MCPSave || q.Action == domain.MCPDelete || q.Action == domain.MCPAuthenticate {
+		for _, a := range c.Attempts {
+			if a.DefinitionID == id && (a.State == domain.MCPOperationAwaiting || a.State == domain.MCPOperationStarted || a.State == domain.MCPOperationRecovery) {
+				return empty, domain.Fail(domain.Conflict, "The original MCP authentication is unsettled.", "Cancel or inspect the original authentication before changing its definition.")
+			}
+		}
+	}
 	if err = validateRequest(q, c, old, exists); err != nil {
 		return empty, err
 	}
@@ -231,7 +247,7 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 			return empty, err
 		}
 		for _, a := range c.Attempts {
-			if a.DefinitionID == id && (a.State == domain.MCPOperationStarted || a.State == domain.MCPOperationRecovery || a.State == domain.MCPOperationAwaiting && m.now().Before(a.ExpiresAt)) {
+			if a.DefinitionID == id && (a.State == domain.MCPOperationStarted || a.State == domain.MCPOperationRecovery || a.State == domain.MCPOperationAwaiting) {
 				return empty, domain.Fail(domain.Conflict, "MCP authentication is already pending.", "Inspect or cancel the original attempt.")
 			}
 		}

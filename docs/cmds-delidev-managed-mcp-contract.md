@@ -28,7 +28,7 @@ Deletion requires confirmation and no current Agent references. It tombstones th
 
 The Worker uses an owner-only, locked, bounded JSON journal under its existing private root, partitioned by server and Worker Device. Entries, immutable generations and request receipts survive reconnects. The server uses the existing resource store; no SQLite migration is introduced. Server placeholder metadata is not accepted until the original Worker confirms it.
 
-Receipts keep a keyed digest of the original input and safe results, never raw secret values or callback codes. Original request replay can return an already-completed receipt but cannot repeat an uncertain vault write or token exchange. A read of the original receipt can prove that no native receipt was admitted; it never resends a mutation. Uncertain effects retain recovery state.
+Receipts keep a keyed digest of the original input and safe results, never raw secret values or callback codes. Original request replay can return an already-completed receipt but cannot repeat an uncertain vault write or token exchange. A read of the original receipt can prove that no native receipt was admitted; it never resends a mutation. Uncertain effects retain recovery state. Catalog reads expose only original requesting-client/Worker pending admissions and awaiting OAuth metadata, bounded to 256 operations. This permits explicit recovery after category disposal without retaining secret form inputs, restoring an old catalog generation or replaying an effect. Expired authorization still requires explicit original-attempt cancellation before another authorization starts.
 
 ## Security
 

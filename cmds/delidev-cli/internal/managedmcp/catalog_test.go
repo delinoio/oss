@@ -172,6 +172,25 @@ func TestManagedMCPOAuthOriginalScopeAndNoExchangeReplay(t *testing.T) {
 	begin.RequestID = domain.NewID()
 	begin.Action = domain.MCPOAuthBegin
 	r := must(t, m, begin)
+	list := begin
+	list.Action = domain.MCPList
+	observed := must(t, m, list)
+	if len(observed.Operations) != 1 || observed.Operations[0].ID != begin.RequestID {
+		t.Fatal("original awaiting capture not discoverable")
+	}
+	list.ActorID = domain.NewID()
+	if len(must(t, m, list).Operations) != 0 {
+		t.Fatal("foreign client received original OAuth capture")
+	}
+	editing := q
+	editing.RequestID = domain.NewID()
+	editing.ExpectedRevision = 1
+	edited := d
+	edited.Revision = 2
+	editing.Definition = &edited
+	if _, e := m.Execute(context.Background(), editing); domain.SafeError(e).Code != domain.Conflict {
+		t.Fatal("edit stranded original OAuth generation")
+	}
 	u, e := url.Parse(r.Operation.AuthorizationURL)
 	if e != nil || u.Query().Get("resource") != d.Endpoint || u.Query().Get("code_challenge_method") != "S256" {
 		t.Fatal("invalid original authorization")

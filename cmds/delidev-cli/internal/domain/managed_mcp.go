@@ -213,7 +213,9 @@ type ManagedMCPOperation struct {
 	ExpiresAt        string            `json:"expires_at,omitempty"`
 }
 type ManagedMCPResult struct {
-	Definitions []ManagedMCPDefinition `json:"definitions"`
-	Operation   *ManagedMCPOperation   `json:"operation,omitempty"`
-	Replayed    bool                   `json:"replayed,omitempty"`
+	WorkerDeviceID ID                     `json:"-"`
+	Operations     []ManagedMCPOperation  `json:"operations,omitempty"`
+	Definitions    []ManagedMCPDefinition `json:"definitions"`
+	Operation      *ManagedMCPOperation   `json:"operation,omitempty"`
+	Replayed       bool                   `json:"replayed,omitempty"`
 }

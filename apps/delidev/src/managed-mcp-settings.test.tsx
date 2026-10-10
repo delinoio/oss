@@ -12,19 +12,20 @@ import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsTasks } from "./settings-task";
 vi.mock("./configuration-fields", () => ({ ResourceChoice: ({ label, value, change, disabled }: { label: string; value: string; change: (id: string) => void; disabled: boolean }) => <label>{label}<select value={value} disabled={disabled} onChange={event => change(event.target.value)}><option value="">Choose</option><option value={machine}>Fixture Runner</option></select></label> }));
 const machine = newRequestId(), worker = newRequestId();
-function fixture(lost = false, oauth = false) {
+function fixture(lost = false, oauth = false, recovery?: State) {
+  const retainedRequestId = newRequestId();
   const row = create(ManagedMcpDefinitionSchema, { id: newRequestId(), revision: 2n, machineId: machine, workerDeviceId: worker, name: "Private MCP", transport: Transport.STDIO, command: "/fixture/mcp", cwd: "/fixture", enabled: true, authentication: oauth ? Auth.OAUTH : Auth.MANUAL });
   const referenced = create(ManagedMcpDefinitionSchema, { ...row, id: newRequestId(), name: "Referenced MCP", agents: [create(ManagedMcpAgentReferenceSchema, { id: newRequestId(), name: "Review agent" })] });
   let original: SaveManagedMcpRequest | AuthenticateManagedMcpRequest | undefined, foreign = true;
   const saved = vi.fn((request: SaveManagedMcpRequest) => { original = request; if (lost) throw new ConnectError("Lost fixture response", Code.Unavailable); return { definition: { ...row, revision: 3n }, operation: { requestId: request.requestId, definitionId: row.id, state: State.COMPLETED } }; });
   const authenticated = vi.fn((request: AuthenticateManagedMcpRequest) => { original = request; if (request.action === Action.OAUTH_BEGIN) return { operation: { requestId: request.requestId, definitionId: row.id, state: State.AWAITING_AUTHORIZATION, authorizationUrl: "https://oauth.example/authorize", expiresAt: "2099-01-01T00:00:00Z" } }; throw new ConnectError("Lost fixture response", Code.Unavailable); });
   const inspected = vi.fn(request => ({ definition: { ...row, revision: 3n }, operation: { requestId: foreign ? newRequestId() : request.requestId, definitionId: row.id, state: State.COMPLETED } }));
-  const removed = vi.fn(() => ({})), listed = vi.fn(() => ({ definitions: [row, referenced] }));
+  const removed = vi.fn(() => ({})), listed = vi.fn(() => ({ definitions: [row, referenced], operations: recovery ? [{ requestId: retainedRequestId, definitionId: row.id, state: recovery, authorizationUrl: recovery === State.AWAITING_AUTHORIZATION ? "https://oauth.example/authorize" : "", expiresAt: "2099-01-01T00:00:00Z" }] : [] }));
   const transport = createRouterTransport(router => router.service(ManagedMCPService, { listManagedMcp: listed, saveManagedMcp: saved, authenticateManagedMcp: authenticated, getManagedMcpOperation: inspected, deleteManagedMcp: removed }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{() => <MutationIntents><SettingsTasks><ManagedMcpSettings active /></SettingsTasks></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>);
   fireEvent.change(screen.getByRole("combobox", { name: "Runner Device" }), { target: { value: machine } });
-  return { row, saved, authenticated, inspected, removed, listed, original: () => original, match: () => { foreign = false; } };
+  return { retainedRequestId, row, saved, authenticated, inspected, removed, listed, original: () => original, match: () => { foreign = false; } };
 }
 it("shows verified unsupported status, named references, scoped search and deletion guards without identifiers", async () => {
   const f = fixture(); await screen.findByText("Private MCP");
@@ -87,4 +88,16 @@ it("keeps the original OAuth authorization after dialog dismissal and never repe
   f.match(); fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Inspect original operation" }));
   await waitFor(() => expect(within(screen.getByRole("dialog")).queryByRole("button", { name: "Inspect original operation" })).toBeNull());
   expect(f.authenticated).toHaveBeenCalledTimes(2);
+});
+
+it("discovers original pending operations after a fresh category visit without replay",async()=>{
+ const f=fixture(false,false,State.RECOVERY_REQUIRED);await screen.findByRole("heading",{name:"Private MCP"});f.match();
+ fireEvent.click(screen.getByRole("button",{name:"Inspect original operation"}));await waitFor(()=>expect(f.inspected).toHaveBeenCalledTimes(1));
+ expect(f.inspected.mock.calls[0][0]).toMatchObject({machineId:machine,requestId:f.retainedRequestId,definitionId:f.row.id});expect(f.saved).not.toHaveBeenCalled();expect(f.authenticated).not.toHaveBeenCalled();expect(f.removed).not.toHaveBeenCalled();
+});
+it("restores only the original awaiting OAuth attempt after category disposal",async()=>{
+ const f=fixture(false,true,State.AWAITING_AUTHORIZATION);await screen.findByRole("heading",{name:"Private MCP"});fireEvent.click(screen.getByRole("button",{name:"Continue original authorization"}));
+ expect(await screen.findByRole("link",{name:"Open authorization page"})).toBeTruthy();expect(f.authenticated).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText("Exact authorization callback URL"),{target:{value:"http://localhost/callback?code=original"}});fireEvent.click(screen.getByRole("button",{name:"Complete authorization"}));await waitFor(()=>expect(f.authenticated).toHaveBeenCalledTimes(1));
+ expect(f.original()).toMatchObject({action:Action.OAUTH_COMPLETE,attemptId:f.retainedRequestId});
 });

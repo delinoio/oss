@@ -1421,3 +1421,7 @@ The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. T
 ## Managed MCP management service
 
 The [managed MCP contract](cmds-delidev-managed-mcp-contract.md) owns `ManagedMCPService`, its closed transport/authentication/operation enums, System capability 81, Worker capability 53 and Entity kind 36. Generated Go/Connect and TypeScript/Connect Query bindings change together with the allocation catalog. Management negotiation does not grant native execution MCP authority. Authentication values are write-only transport input; response definitions include bounded safe metadata and authentication state only.
+
+`ListManagedMcpResponse.operations` field 2 owns bounded original-client pending/awaiting recovery metadata. Category disposal cannot authorize replay; list discovery and original-operation reads disclose no credentials and grant no runtime support.
+
+`GetManagedMcpOperationRequest.definition_id` field 3 binds original absence proofs to their exact definition and authenticated original Worker. A read cannot replace that identity or create generic no-receipt authority.

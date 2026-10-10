@@ -13954,6 +13954,22 @@
       "declaration": "WorkerCapability",
       "member": "WORKER_CAPABILITY_MANAGED_MCP_V1",
       "number": 53
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListManagedMcpResponse",
+      "member": "operations",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetManagedMcpOperationRequest",
+      "member": "definition_id",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

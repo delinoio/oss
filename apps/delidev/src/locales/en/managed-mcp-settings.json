@@ -66,5 +66,7 @@
   "managed-mcp-settings.duplicateKeys": "Each protected value needs a different name.",
   "managed-mcp-settings.stdio": "stdio",
   "managed-mcp-settings.http": "Streamable HTTP",
-  "managed-mcp-settings.oauth": "OAuth"
+  "managed-mcp-settings.oauth": "OAuth",
+  "managed-mcp-settings.originalOperation": "Original MCP operation",
+  "managed-mcp-settings.resumeAuthorization": "Continue original authorization"
 }
