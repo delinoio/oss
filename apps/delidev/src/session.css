@@ -344,3 +344,64 @@
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
 .session-name-dialog button, .session-name-dialog input { min-height:40px; }
 .session-name-dialog form > .primary { align-self:flex-end; }
+
+/* Keep the original scroll owner and portal host; reflow uses the panel width. */
+.session-diagnostics-panel { container: session-diagnostics-view / inline-size; }
+.session-diagnostics {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1104px; /* 1040px of content plus the two 32px outer insets. */
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.session-diagnostics-sections { display: flex; flex-direction: column; gap: 32px; }
+.session-diagnostics .session-information-section { padding: 0; border: 0; }
+.session-diagnostics h3, .session-diagnostics h4,
+.session-workspace .session-diagnostics h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.session-diagnostics p { margin: 0; }
+.session-diagnostics dl {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px 24px;
+  margin: 0;
+}
+/* Request identity rows wrap each pair; flatten only their layout box. */
+.session-diagnostics dl > div { display: contents; }
+.session-diagnostics dt { min-width: 0; color: var(--muted); }
+.session-diagnostics dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.session-diagnostics dd p { margin-top: 4px; }
+.session-diagnostics ol { margin: 0; padding-left: 24px; }
+.session-diagnostics dl + :is(ol, p) { margin-top: 12px; }
+.session-diagnostics li + li { margin-top: 12px; }
+.session-diagnostics .session-files { padding: 0; height: auto; gap: 16px; }
+.session-diagnostics .session-files > header { align-items: flex-start; }
+.session-diagnostics .session-files > header h2 { margin-bottom: 0; }
+.session-diagnostics .result { padding: 0 0 32px; }
+.session-diagnostics .result > section { margin-top: 32px; }
+.session-diagnostics .session-files form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.session-diagnostics .session-files form label { min-width: 0; max-width: 100%; }
+.session-diagnostics input { box-sizing: border-box; max-width: 100%; }
+.session-workspace .session-diagnostics button,
+.session-diagnostics input, .session-diagnostics select,
+.session-diagnostics summary { min-height: 40px; font: inherit; }
+.session-diagnostics :is(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@container session-diagnostics-view (width < 640px) {
+  .session-diagnostics { padding: 16px; }
+  .session-diagnostics dl { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .session-diagnostics dt:not(:first-child) { margin-top: 8px; }
+  .session-diagnostics dl > div:not(:first-child) > dt { margin-top: 8px; }
+}
