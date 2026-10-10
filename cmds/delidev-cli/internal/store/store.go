@@ -225,6 +225,9 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 		return fail(err)
 	}
 	s := &Store{db: db, root: root, lock: lock, notify: make(chan struct{}), restoreReservations: reservations}
+	if err := s.upgradeHarnessInheritance(ctx); err != nil {
+		return fail(err)
+	}
 	success = true
 	return s, nil
 }

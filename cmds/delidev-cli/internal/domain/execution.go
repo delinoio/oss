@@ -21,7 +21,8 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
-	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
+	HarnessDefaults *HarnessDefaultsSelection `json:"harness_defaults,omitempty"`
+	BranchPrefix    *BranchPrefixSelection    `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
@@ -123,6 +124,16 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.HarnessDefaults != nil {
+		for _, pair := range []struct {
+			id       ID
+			revision uint64
+		}{{c.HarnessDefaults.SettingsID, c.HarnessDefaults.SettingsRevision}, {c.HarnessDefaults.ProjectID, c.HarnessDefaults.ProjectRevision}} {
+			if pair.id == "" && pair.revision != 0 || pair.id != "" && (pair.id.Validate() != nil || pair.revision == 0) {
+				return Fail(InvalidArgument, "Invalid harness default provenance.", "Retain the original configuration revision pair.")
+			}
+		}
+	}
 	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
 		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")
 	}

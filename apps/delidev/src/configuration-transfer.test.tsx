@@ -193,7 +193,7 @@ it("accepts current service-native v4 exports and preserves original preview byt
   expect(Array.from((value.apply.mock.calls[0][0] as { previewJson: Uint8Array }).previewJson)).toEqual(Array.from(preview));
 });
 
-it.each([1,2,3,5,6])("refuses portable version %s before requesting an import preview", version => {
+it.each([1,2,3,6,7])("refuses portable version %s before requesting an import preview", version => {
  const value=fixture();render(value.view());load({...value.bundle,version});expect(screen.getByText(/Use a current version 4/)).toBeTruthy();expect(value.preview).not.toHaveBeenCalled();
 });
 it("refuses retired Model entries in the current portable layout",()=>{const value=fixture();render(value.view());load({...value.bundle,entries:[{id:newRequestId(),kind:"model",document:{native_id:"retired"}}]});expect(screen.getByRole("alert")).toBeTruthy();expect(value.preview).not.toHaveBeenCalled();});
@@ -288,7 +288,7 @@ it("sanitizes untyped export errors and preserves local document validation mess
  const mounted=render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
  await screen.findByRole("alert");fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText("The DeliDev request could not complete.")).toBeTruthy();expect(document.body.textContent).not.toMatch(/private-token|private\/user|provider response/);expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
  value.exported.mockResolvedValueOnce({documentJson:encode({version:999,entries:[],machines:[]})});fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
- await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a current version 4 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
+ await waitFor(()=>expect(screen.queryByText("Technical details")).toBeNull());expect(screen.getByRole("alert").textContent).toContain("Use a current version 4 or 5 DeliDev configuration export.");expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
  mounted.unmount();
 });
 

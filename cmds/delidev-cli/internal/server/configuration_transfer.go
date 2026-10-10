@@ -310,7 +310,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if bundle.Version != domain.ConfigurationBundleVersion {
+	if bundle.Version != 4 && bundle.Version != domain.ConfigurationBundleVersion {
 		return plan, domain.Fail(domain.Unsupported, "Earlier portable configuration versions are retired.", "Preserve the original bundle and use current source-native configuration.")
 	}
 	if len(bundle.Entries) == 0 {
@@ -323,6 +323,12 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	targets := map[domain.ID]domain.ID{}
 	bindings := map[domain.ID]domain.ConfigurationBinding{}
 	for _, entry := range bundle.Entries {
+		if bundle.Version == 4 {
+			var legacy map[string]json.RawMessage
+			if json.Unmarshal(entry.Document, &legacy) != nil || legacy["harness_selection"] != nil || legacy["harness_defaults"] != nil {
+				return plan, transferInvalid()
+			}
+		}
 		if entry.ID.Validate() != nil || source[entry.ID].ID != "" || !slices.Contains(portableKinds, entry.Kind) {
 			return plan, transferInvalid()
 		}
@@ -450,6 +456,11 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 						break
 					}
 				}
+				if route.ModelSelection != nil && route.ModelSelection.Value != nil && route.ModelSelection.Value.ProviderID != "" {
+					if err = rewrite(&route.ModelSelection.Value.ProviderID, domain.ProviderKind); err != nil {
+						break
+					}
+				}
 				for j := range route.Accounts {
 					if err = rewrite(&route.Accounts[j].ID, domain.AccountKind); err != nil {
 						break
@@ -464,6 +475,16 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 
 		case *domain.Project:
+			for i := range v.HarnessDefaults {
+				if v.HarnessDefaults[i].ProviderID != "" {
+					if err = rewrite(&v.HarnessDefaults[i].ProviderID, domain.ProviderKind); err != nil {
+						return plan, err
+					}
+					if v.HarnessDefaults[i].Model != nil {
+						v.HarnessDefaults[i].Model.ProviderID = v.HarnessDefaults[i].ProviderID
+					}
+				}
+			}
 			if err = rewriteIDs(v.Repositories, domain.RepositoryKind); err == nil {
 				err = rewrite(&v.PrimaryRepository, domain.RepositoryKind)
 			}
@@ -489,6 +510,16 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 			err = rewriteRemediation(v.Remediation)
 		case *domain.Settings:
+			for i := range v.HarnessDefaults {
+				if v.HarnessDefaults[i].ProviderID != "" {
+					if err = rewrite(&v.HarnessDefaults[i].ProviderID, domain.ProviderKind); err != nil {
+						return plan, err
+					}
+					if v.HarnessDefaults[i].Model != nil {
+						v.HarnessDefaults[i].Model.ProviderID = v.HarnessDefaults[i].ProviderID
+					}
+				}
+			}
 			err = rewriteRemediation(&v.Remediation)
 		}
 		if err != nil {
@@ -603,6 +634,9 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		case domain.ConfigurationReuse, domain.ConfigurationReplace:
 			if !exists || old.Kind != change.Kind || old.Revision != change.ExpectedRevision || change.Kind == domain.AccountKind || (change.Action == domain.ConfigurationReplace && change.Kind != domain.SettingsKind) {
 				return transferConflict()
+			}
+			if rpc.ResourceSchemaVersion(old.Kind, old.Data) > rpc.ResourceSchemaVersion(change.Kind, change.After) {
+				return domain.Fail(domain.Unsupported, "Harness defaults require a current configuration bundle.", "Preserve all defaults and inheritance when replacing configuration.")
 			}
 			before, err := portableDocument(old.Kind, old.Data)
 			if err != nil {

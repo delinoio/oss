@@ -977,3 +977,15 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Harness-default snapshot ownership
+
+First-execution selection uses the inherited harness configuration in the
+[catalog contract](cmds-delidev-catalog-contract.md#inherited-harness-configuration).
+The original transaction resolves the source-specific model and native options
+before input. Its configuration digest includes optional Settings and Project
+revision pairs for inherited selections. Later default changes affect new
+executions only. Existing accepted execution, continuation, Fork and Sidechat
+configurations retain their original values and digests. Missing independent
+default-model evidence is a configuration blocker, not permission to probe,
+normalize an explicit value, change sources or retry uncertain input.

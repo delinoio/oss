@@ -1417,3 +1417,12 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Harness-default configuration capability
+
+System `HARNESS_DEFAULTS_V1 = 81` identifies typed harness inheritance and
+source-specific defaults through the existing revisioned configuration services.
+Agent schema 5 and Project/Settings schema 4 carry the complete JSON declarations
+owned by the catalog contract. Capability advertisement grants no native default
+evidence, authentication or input authority. Existing mutation receipts, schema
+checks and generated clients retain their original contracts.

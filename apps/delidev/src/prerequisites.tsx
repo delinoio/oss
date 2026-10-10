@@ -127,11 +127,11 @@ function validWeightedAccounts(value: unknown, requireOne: boolean): value is Do
 }
 export function validAgentConfiguration(value: Document, schemaVersion: number): boolean {
   if (!harnesses.has(text(value.harness))) return false;
-  if (schemaVersion !== 4 || !Array.isArray(value.routes) || value.routes.length === 0 || value.routes.length > 1000 || value.model_id !== undefined || value.accounts !== undefined || value.routing !== undefined) return false;
+  if (schemaVersion !== 4 && schemaVersion !== 5 || !Array.isArray(value.routes) || value.routes.length === 0 || value.routes.length > 1000 || value.model_id !== undefined || value.accounts !== undefined || value.routing !== undefined) return false;
   const accountIDs = new Set<string>();
   return value.routes.every(item => {
     const route = object(item);
-    if (Object.keys(route).some(key => !["model", "accounts", "routing"].includes(key)) || !validWeightedAccounts(route.accounts, true)) return false;
+    if (Object.keys(route).some(key => !["model", "model_selection", "accounts", "routing"].includes(key)) || !validWeightedAccounts(route.accounts, true)) return false;
     const model = object(route.model);
     if (Object.keys(model).some(key => !["provider_id", "subscription_service", "native_id", "name", "context_limit", "input_modalities", "metadata_source"].includes(key)) || !boundedText(model.native_id, 256) || !text(model.native_id) || Boolean(model.provider_id) === Boolean(model.subscription_service) || (model.provider_id ? !isEntityId(text(model.provider_id)) : !subscriptionService(model.subscription_service))) return false;
     if (model.name !== undefined && !boundedText(model.name, 256) || model.context_limit !== undefined && (!Number.isSafeInteger(model.context_limit) || Number(model.context_limit) < 1) || model.input_modalities !== undefined && (!Array.isArray(model.input_modalities) || model.input_modalities.some(value => !["text", "image"].includes(String(value)))) || model.metadata_source !== undefined && !["unknown", "known", "user-declared"].includes(text(model.metadata_source))) return false;

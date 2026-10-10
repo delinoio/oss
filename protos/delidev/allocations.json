@@ -13293,6 +13293,14 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "oldBranchNumber": 81,
+      "number": 81
     }
   ],
   "rpcReservations": [

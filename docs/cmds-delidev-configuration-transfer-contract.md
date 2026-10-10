@@ -138,3 +138,18 @@ Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-beha
 ## New-session defaults and branch prefix declarations
 
 Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+
+## Portable inherited harness configuration
+
+Portable version 5 carries source-specific harness defaults and typed inheritance
+in current configuration documents. Version-4 bundles retain their original
+import semantics and cannot introduce these new fields. Earlier versions keep
+the existing unsupported boundary; this feature does not adopt retired source
+model registries. Original signed preview, actor/server binding, atomic import
+and uncertain-request receipts remain unchanged.
+
+Import remaps provider references in default scopes, default models and explicit
+model selections through the same approved graph as Agent source routes. Native
+values, option overrides, instruction order and source/account ordering survive
+round trips. No credentials, native observations or current execution authority
+are exported. A legacy replacement cannot erase current defaults or inheritance.

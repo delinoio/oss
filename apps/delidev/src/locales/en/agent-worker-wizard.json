@@ -164,5 +164,7 @@
   "agent-worker-wizard.routingEmpty": "Select accounts to configure their order and weights.",
   "agent-worker-wizard.endpointModelOrigin": "Endpoint suggestion",
   "agent-worker-wizard.endpointSuggestions": "Choose a source suggestion or enter its exact native model ID.",
-  "agent-worker-wizard.endpointReadOnly": "Endpoint suggestions are read-only metadata. They do not confirm execution eligibility."
+  "agent-worker-wizard.endpointReadOnly": "Endpoint suggestions are read-only metadata. They do not confirm execution eligibility.",
+  "agent-worker-wizard.inheritModel": "Use the inherited model",
+  "agent-worker-wizard.inheritedModelHelp": "The current project or server default is resolved when a new execution starts. The retained model identifies this account source only."
 }

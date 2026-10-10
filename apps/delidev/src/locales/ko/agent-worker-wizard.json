@@ -164,5 +164,7 @@
   "agent-worker-wizard.routingEmpty": "계정을 선택하여 순서와 가중치를 설정하세요.",
   "agent-worker-wizard.endpointModelOrigin": "엔드포인트 제안",
   "agent-worker-wizard.endpointSuggestions": "소스 제안을 선택하거나 정확한 네이티브 모델 ID를 입력하세요.",
-  "agent-worker-wizard.endpointReadOnly": "엔드포인트 제안은 읽기 전용 메타데이터입니다. 실행 자격을 확인하지 않습니다."
+  "agent-worker-wizard.endpointReadOnly": "엔드포인트 제안은 읽기 전용 메타데이터입니다. 실행 자격을 확인하지 않습니다.",
+  "agent-worker-wizard.inheritModel": "상속된 모델 사용",
+  "agent-worker-wizard.inheritedModelHelp": "새 실행을 시작할 때 현재 프로젝트 또는 서버 기본값을 결정합니다. 보관된 모델은 계정 소스만 식별합니다."
 }

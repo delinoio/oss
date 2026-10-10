@@ -34,6 +34,9 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 	if e := domain.Decode(input.Document, &agent); e != nil {
 		return store.Result{}, e
 	}
+	if rpc.ResourceSchemaVersion(domain.AgentKind, input.Document) == 5 && agent.HarnessSelection == nil {
+		return store.Result{}, domain.Fail(domain.InvalidArgument, "Harness inheritance cannot be null.", "Keep an explicit typed inheritance object.")
+	}
 	if len(agent.Routes) == 0 || len(input.RouteModels) != len(agent.Routes) || input.ModelID != "" || input.NativeID != "" || input.ModelRevision != 0 {
 		return store.Result{}, domain.Fail(domain.InvalidArgument, "Inline source routes are required.", "Use schema 4 with one exact native selection per source.")
 	}
@@ -46,6 +49,15 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 		}
 	}
 	return state.Mutate(ctx, input.RequestID, "configuration.agent-worker.save", input, func(tx *store.Tx) (any, error) {
+		if input.ExpectedRevision > 0 {
+			prior, e := tx.Get(domain.AgentKind, input.ID)
+			if e != nil {
+				return nil, e
+			}
+			if rpc.ResourceSchemaVersion(domain.AgentKind, prior.Data) > rpc.ResourceSchemaVersion(domain.AgentKind, input.Document) {
+				return nil, domain.Fail(domain.Unsupported, "Harness inheritance requires a current client.", "Retain all model and native-option inheritance fields.")
+			}
+		}
 		routes := slices.Clone(agent.Routes)
 		seen := map[string]bool{}
 		for i, route := range routes {
@@ -118,7 +130,7 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 
 func (s *Service) SaveAgentWorker(ctx context.Context, req *connect.Request[pb.SaveAgentWorkerRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.Model != nil || len(req.Msg.RouteModels) == 0 || req.Msg.SchemaVersion != 4 {
+	if req.Msg.Mutation == nil || req.Msg.Model != nil || len(req.Msg.RouteModels) == 0 || req.Msg.SchemaVersion != 4 && req.Msg.SchemaVersion != 5 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported Worker document, mutation and typed model selection are required.", "Use the current Worker revision and one model selection."), correlation)
 	}
 	if rpc.ResourceSchemaVersion(domain.AgentKind, req.Msg.DocumentJson) != req.Msg.SchemaVersion {

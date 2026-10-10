@@ -4,6 +4,7 @@ package store
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"log/slog"
 	"time"
 )
 
@@ -31,8 +32,50 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	if err != nil {
 		return result, err
 	}
-	sources := make([]domain.SourceRouteInput, 0, len(agent.SourceRoutes()))
-	for _, route := range agent.SourceRoutes() {
+	_, defaults, err := t.SessionDefaultSettings()
+	if err != nil {
+		return result, err
+	}
+	var projectDefaults []domain.HarnessDefault
+	if project != nil {
+		projectDefaults = project.HarnessDefaults
+	}
+	routes := agent.SourceRoutes()
+	resolvedAgents := make([]domain.Agent, len(routes))
+	sources := make([]domain.SourceRouteInput, 0, len(routes))
+	for index, route := range routes {
+		var protocol domain.APIProtocol
+		for _, link := range route.Accounts {
+			if agent.HarnessSelection == nil && route.ModelSelection == nil {
+				break
+			}
+			_, account, e := decodeEntity[domain.Account](t, domain.AccountKind, link.ID)
+			if e != nil {
+				return result, e
+			}
+			selectedProtocol := account.APIProtocol
+			if account.Type == domain.APIAccount && selectedProtocol == "" {
+				_, provider, e := decodeEntity[domain.Provider](t, domain.ProviderKind, account.ProviderID)
+				if e != nil {
+					return result, e
+				}
+				profile, e := providers.ResolveAccountProfile(provider, account)
+				if e != nil {
+					return result, e
+				}
+				selectedProtocol = profile.Protocol
+			}
+			if protocol != "" && selectedProtocol != protocol {
+				return result, domain.Fail(domain.InvalidArgument, "Inherited defaults require one API profile per source.", "Separate account profiles before selecting their defaults.")
+			}
+			protocol = selectedProtocol
+		}
+		resolved, resolvedRoute, e := domain.ResolveHarnessSource(agent, route, protocol, defaults.HarnessDefaults, projectDefaults)
+		if e != nil {
+			slog.Warn("harness_defaults_resolution", "harness", agent.Harness, "code", domain.SafeError(e).Code)
+			return result, e
+		}
+		resolvedAgents[index], routes[index], route = resolved, resolvedRoute, resolvedRoute
 		model := route.Model.AsModel(agent.Harness)
 		mr := Record{Revision: 1}
 		err := route.Model.Validate(agent.Harness)
@@ -98,7 +141,11 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		}
 		sources = append(sources, source)
 	}
-	route, next, err := domain.RouteSources(agentID, agent, project, sources, defaultPolicy, state, t.now)
+	routingAgent := agent
+	if len(agent.Routes) > 0 {
+		routingAgent.Routes = routes
+	}
+	route, next, err := domain.RouteSources(agentID, routingAgent, project, sources, defaultPolicy, state, t.now)
 	result.Route, result.routingRecord, result.nextRouting = route, record, next
 	if err != nil {
 		return result, err
@@ -107,7 +154,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	if route.SourceIndex != nil {
 		index = int(*route.SourceIndex)
 	}
-	result.Agent = agent.WithSource(agent.SourceRoutes()[index])
+	result.Agent = resolvedAgents[index].WithSource(routes[index])
 	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
 	if sources[index].Problem != nil {
 		return result, sources[index].Problem

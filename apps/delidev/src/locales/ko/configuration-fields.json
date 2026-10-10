@@ -224,5 +224,7 @@
   "configuration-fields.projectEdit.repositories": "저장소",
   "configuration-fields.projectEdit.execution": "실행 설정",
   "configuration-fields.projectEdit.access": "사용 제한",
-  "configuration-fields.planApprovalHeading": "계획 승인"
+  "configuration-fields.planApprovalHeading": "계획 승인",
+  "configuration-fields.harnessInheritanceHelp": "네이티브 설정은 현재 프로젝트 또는 서버 기본값을 상속합니다. 설정을 변경하면 이후 실행에 적용할 재정의가 생성됩니다.",
+  "configuration-fields.resetHarnessInheritance": "상속된 네이티브 설정 사용"
 }

@@ -131,10 +131,27 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
 	if kind == domain.AgentKind {
+		var inheritance map[string]json.RawMessage
+		if json.Unmarshal(raw, &inheritance) == nil {
+			if inheritance["harness_selection"] != nil {
+				return 5
+			}
+			var routes []map[string]json.RawMessage
+			if json.Unmarshal(inheritance["routes"], &routes) == nil {
+				for _, route := range routes {
+					if route["model_selection"] != nil {
+						return 5
+					}
+				}
+			}
+		}
 		return 4
 	}
 	if kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && fields["harness_defaults"] != nil {
+			return 4
+		}
 		if json.Unmarshal(raw, &fields) == nil {
 			var behavior map[string]json.RawMessage
 			_ = json.Unmarshal(fields["settings"], &behavior)

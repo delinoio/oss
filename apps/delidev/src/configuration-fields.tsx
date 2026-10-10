@@ -256,7 +256,16 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false, supportsSessionDefaults = false } = props;
   const reviewerStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.AGENT });
-  const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
+  const field = (key: string) => (value: unknown) => {
+    const next: Document = { ...data, [key]: value };
+    if (kind === EntityKind.AGENT && data.harness_selection) {
+      const selection = { ...object(data.harness_selection) };
+      if (key === "effort") selection.effort = { state: "override", value };
+      if (key === "options") for (const [name, picked] of Object.entries(object(value))) if (picked !== object(data.options)[name]) selection[name] = { state: "override", value: picked };
+      next.harness_selection = selection;
+    }
+    change(next);
+  };
   if (kind === EntityKind.SETTINGS) return <>
  {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults && (supportsProjectBehavior || supportsSessionDefaults) ? <h3>{copy("configuration-fields.planApprovalHeading")}</h3> : null}
  {supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <section data-settings-search-target="plan-mode-default"><Check label={copy("configuration-fields.planModeDefault")} value={data.plan_mode_default} change={field("plan_mode_default")} /></section> : null}
@@ -277,11 +286,11 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
   if (kind === EntityKind.AGENT) {
     const options = object(data.options);
-    const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
+    const option = (name: string) => (value: unknown) => field("options")({ ...options, [name]: value });
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
       core={<><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /></div> : null}</>}
       permissions={<AgentPermissions reviewSupported={reviewerStatus.data?.capabilities.includes(SystemCapability.CODEX_APPROVAL_REVIEW_V1) === true} active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
-      reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
+      reasoning={<>{data.harness_selection ? <><p>{copy("configuration-fields.harnessInheritanceHelp")}</p><button type="button" disabled={props.disabled} onClick={() => change({ ...data, harness_selection: {}, effort: "", options: { permission: Permission.Default } })}>{copy("configuration-fields.resetHarnessInheritance")}</button></> : null}<ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
       native={<>

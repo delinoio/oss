@@ -224,5 +224,7 @@
   "configuration-fields.projectEdit.repositories": "Repositories",
   "configuration-fields.projectEdit.execution": "Execution",
   "configuration-fields.projectEdit.access": "Access",
-  "configuration-fields.planApprovalHeading": "Plan approval"
+  "configuration-fields.planApprovalHeading": "Plan approval",
+  "configuration-fields.harnessInheritanceHelp": "Native settings inherit current project or server defaults. Editing a setting creates an explicit override for future executions.",
+  "configuration-fields.resetHarnessInheritance": "Use inherited native settings"
 }

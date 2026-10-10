@@ -722,3 +722,50 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 
 ## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Inherited harness configuration
+
+Current Agent documents use schema 5 when `harness_selection` is present. Project
+and Settings documents use schema 4 when `harness_defaults` is present. The existing
+configuration owner stores all three scopes; project behavior settings remain
+independent. No SQLite migration is added.
+
+`harness_selection` contains typed `inherit` or `override` values for effort and
+each native option. An inherited value has no `value`; an override retains an
+explicit value, including empty strings and zero concurrency. Missing selections
+inherit. Each source route has a typed `model_selection`. Its retained inline
+model preserves source identity and old-client compatibility; an inherited model
+selection never treats that retained native selector as a default. Explicit model
+overrides must retain the same provider or subscription identity.
+
+Settings and Projects contain at most 256 `harness_defaults` entries. An entry
+selects a harness, an optional provider or subscription source and an optional
+API protocol for that provider. It holds an optional exact inline default model
+and typed native-option selections. Duplicate scopes fail. Resolution applies
+server harness, server source and server API-profile values, then project values
+in the same specificity order, then Agent overrides. Source/account order,
+weights, routing, templates and package ownership remain unchanged.
+
+On opening the current store, one atomic transaction converts all existing
+Agents without `harness_selection` to inherited effort/options/model selection.
+It changes current configuration documents and revisions only. The nonnull
+selection is the durable completion marker, so restart cannot repeat conversion.
+A malformed document, cancellation or failed publication rolls back the complete
+conversion. Sessions, execution snapshots, receipts and historical digests retain
+their exact bytes. Later explicit overrides remain valid.
+
+First-execution routing resolves configuration in its original store transaction
+and freezes exact model/native options plus Settings and Project revision pairs.
+It performs no separate native execution probe. Actual original native startup
+still verifies applied settings before input. Unspecified native effort/options
+retain native defaults. A model without a configured or independently verified
+default fails with the named inherited-model-default configuration error before
+input. Advisory model lists and old explicit model values are not default proof.
+No installed adapter currently supplies independent default-model evidence; do
+not invent one or run a probe to fill this gap.
+
+Destructive legacy Agent, Settings and Project writes fail before mutation.
+Current clients retain complete inheritance fields and original request/revision
+identity. Protected credentials, routing state, account authority and original
+cleanup remain independent. Structured upgrade and resolution logs contain phases,
+counts, harness and safe error codes only.

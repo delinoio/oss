@@ -24,6 +24,17 @@ type validatable interface{ Validate() error }
 
 func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
 	var value validatable
+	if kind == domain.AgentKind || kind == domain.ProjectKind || kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		if err := domain.Decode(raw, &fields); err != nil {
+			return nil, err
+		}
+		for _, key := range []string{"harness_selection", "harness_defaults"} {
+			if v, present := fields[key]; present && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+				return nil, domain.Fail(domain.InvalidArgument, "Harness configuration cannot be null.", "Use a typed selection or explicit empty defaults list.")
+			}
+		}
+	}
 	if kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
 		if err := domain.Decode(raw, &fields); err != nil {
@@ -105,7 +116,7 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		if id == "" {
 			id = domain.NewID()
 		}
-		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind) {
+		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind || input.Kind == domain.AgentKind) {
 			previous, err := tx.Get(input.Kind, id)
 			if err != nil {
 				return nil, err
@@ -439,6 +450,13 @@ func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
 	switch v := value.(type) {
 	case *domain.Project:
+		for _, d := range v.HarnessDefaults {
+			if d.ProviderID != "" {
+				if err := mustExist(tx, domain.ProviderKind, d.ProviderID); err != nil {
+					return err
+				}
+			}
+		}
 		if v.Settings != nil && v.Settings.Remediation != nil {
 			if err := validateRemediationRelationships(tx, *v.Settings.Remediation); err != nil {
 				return err
@@ -695,6 +713,13 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 		}
 	case *domain.Settings:
+		for _, d := range v.HarnessDefaults {
+			if d.ProviderID != "" {
+				if err := mustExist(tx, domain.ProviderKind, d.ProviderID); err != nil {
+					return err
+				}
+			}
+		}
 		records, err := tx.List(store.Filter{Kind: domain.SettingsKind, Limit: 2})
 		if err != nil {
 			return err
