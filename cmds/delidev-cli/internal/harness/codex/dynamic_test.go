@@ -271,6 +271,45 @@ func TestForkRequiresTheRetainedDynamicHistoryCommitment(t *testing.T) {
 	}
 }
 
+func TestRetainDynamicHistoryRequiresObservedItemsAfterInheritedPrefix(t *testing.T) {
+	raw := mustJSON(t, dynamicItem(ToolCompleted))
+	tool, err := decodeDynamicTool(raw, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRetainedDynamicItem(0, 1, "inherited-turn/dynamic-call", tool, nil); err != nil {
+		t.Fatal("verified inherited dynamic item was rejected", err)
+	}
+	if err := validateRetainedDynamicItem(1, 1, "new-turn/dynamic-call", tool, nil); err == nil {
+		t.Fatal("unobserved dynamic item after the inherited prefix was accepted")
+	}
+
+	client := &Client{dynamicItems: map[string]dynamicItemIdentity{}}
+	started, err := decodeDynamicTool(mustJSON(t, dynamicItem(ToolRunning)), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turnID := domain.NewID()
+	if err := client.observeDynamicIdentity(turnID, started, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.observeDynamicIdentity(turnID, tool, true); err != nil {
+		t.Fatal(err)
+	}
+	key := string(turnID) + "/" + tool.ID
+	if err := validateRetainedDynamicItem(1, 1, key, tool, client.dynamicItems); err != nil {
+		t.Fatal("observed completed dynamic item was rejected", err)
+	}
+	changedRaw := json.RawMessage(strings.ReplaceAll(string(raw), `"success":null`, `"success":false`))
+	changed, err := decodeDynamicTool(changedRaw, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRetainedDynamicItem(1, 1, key, changed, client.dynamicItems); err == nil {
+		t.Fatal("changed completed dynamic item retained its original observation")
+	}
+}
+
 func TestDynamicLostNativeResolutionRetainsOneOriginalAttempt(t *testing.T) {
 	c, capture, _, _ := boundTurnFixture(t, "dynamic-no-resolution")
 	turn, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))

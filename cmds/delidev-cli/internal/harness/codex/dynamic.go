@@ -369,6 +369,23 @@ type dynamicItemIdentity struct {
 func dynamicIdentityEqual(a, b dynamicItemIdentity) bool {
 	return a.tool == b.tool && a.argumentsDigest == b.argumentsDigest && (a.namespace == nil) == (b.namespace == nil) && (a.namespace == nil || *a.namespace == *b.namespace)
 }
+
+func validateRetainedDynamicItem(turnIndex, inheritedTurns int, key string, tool *Tool, items map[string]dynamicItemIdentity) error {
+	prior, exists := items[key]
+	if !exists {
+		if turnIndex >= inheritedTurns {
+			return continuationUncertain()
+		}
+		return nil
+	}
+	digest := sha256.Sum256([]byte(dynamicCanonical(tool.Dynamic.Arguments)))
+	identity := dynamicItemIdentity{tool: tool.Dynamic.Tool, namespace: tool.Dynamic.Namespace, argumentsDigest: hex.EncodeToString(digest[:])}
+	if !prior.completed || !dynamicIdentityEqual(prior, identity) || prior.completedDigest != dynamicToolDigest(tool) {
+		return continuationUncertain()
+	}
+	return nil
+}
+
 func dynamicRequestMatches(r DynamicRequest, item dynamicItemIdentity) bool {
 	return dynamicIdentityEqual(dynamicItemIdentity{tool: r.Tool, namespace: r.Namespace, argumentsDigest: r.ArgumentsDigest}, item)
 }
@@ -463,13 +480,15 @@ func (c *Client) RetainDynamicHistory(ctx context.Context, source ContinuationCh
 	if err != nil || !hasDynamicHistory(turns) {
 		return nil, continuationUncertain()
 	}
+	inheritedTurns := 0
 	if base := c.dynamicHistoryBase; base != nil {
 		if int(base.TurnsCount) > len(turns) || !base.matches(turns[:base.TurnsCount]) {
 			return nil, continuationUncertain()
 		}
+		inheritedTurns = int(base.TurnsCount)
 	}
 	seenItems := map[string]bool{}
-	for _, raw := range turns {
+	for turnIndex, raw := range turns {
 		var turn turnWire
 		if domain.DecodeBounded(raw, &turn, 16<<20) != nil {
 			return nil, continuationUncertain()
@@ -491,12 +510,8 @@ func (c *Client) RetainDynamicHistory(ctx context.Context, source ContinuationCh
 			}
 			key := string(turn.ID) + "/" + item.ID
 			seenItems[key] = true
-			if prior, exists := c.dynamicItems[key]; exists {
-				digest := sha256.Sum256([]byte(dynamicCanonical(tool.Dynamic.Arguments)))
-				identity := dynamicItemIdentity{tool: tool.Dynamic.Tool, namespace: tool.Dynamic.Namespace, argumentsDigest: hex.EncodeToString(digest[:])}
-				if !prior.completed || !dynamicIdentityEqual(prior, identity) || prior.completedDigest != dynamicToolDigest(tool) {
-					return nil, continuationUncertain()
-				}
+			if err := validateRetainedDynamicItem(turnIndex, inheritedTurns, key, tool, c.dynamicItems); err != nil {
+				return nil, err
 			}
 		}
 	}
