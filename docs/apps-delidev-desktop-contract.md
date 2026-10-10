@@ -1539,6 +1539,8 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Portable configuration uses generated ConfigurationService operations under `cmds-delidev-configuration-transfer-contract.md`. Preserve authoritative original JSON bytes and bigint revisions; never round-trip configuration through JavaScript numbers. Require explicit mappings and separate full change review/apply, invalidate edited previews, retain exact uncertain requests and keep acknowledged unknown outcomes blocked. Every textarea input, including an oversized paste, invalidates the preview and clears/fences prior export diagnostics before size validation; rejected oversized text leaves the last accepted draft unchanged. No implicit account/device authentication or persistent document cache.
 
+Completed export-only diagnostics remain visible with the existing Export retry, but do not retain a protected Settings workflow or defer targeted Repositories entry. Pending exports, actionable import drafts, previews, original pending/uncertain imports and acknowledged outcomes retain their existing protection. Preserve sanitized diagnostics and successful export bytes without adding a dismissal control.
+
 - Portable repository imports distinguish a successful status response without
   capability 37 from a failed status read. The failed read remains actionable
   with its typed error and retry control; do not present upgrade guidance or

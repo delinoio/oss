@@ -168,6 +168,7 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
   const githubQuery = vi.fn(async (_request: { repositoryId: string; schemaVersion: number; queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const exportConfiguration = vi.fn(async () => ({ documentJson: encode({ version: 4, entries: [], machines: [] }) }));
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
@@ -205,9 +206,9 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
     router.service(SearchService, { searchConversations: searches });
     router.service(InteractionService, { respondQuestion: responses, respondApproval: responses });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
-    router.service(ConfigurationService, { saveConfiguration });
+    router.service(ConfigurationService, { saveConfiguration, exportConfiguration });
   });
-  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, exportConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
 }
 
 it("creates an automatically named session from the first message and explicit Workers", async () => {
@@ -1528,3 +1529,21 @@ it("compact navigation never changes the retained wide collapse choice or dispat
   act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);
+
+
+it.each(["rpc", "document", "success"])("opens targeted Repositories after a completed %s export and Settings close", async outcome => {
+ const value=fixture();
+ if(outcome==="rpc")value.exportConfiguration.mockRejectedValueOnce(new ConnectError("private-export-source",Code.Unavailable));
+ if(outcome==="document")value.exportConfiguration.mockResolvedValueOnce({documentJson:encode({version:999,entries:[],machines:[]})});
+ render(<App transport={value.transport}/>);
+ fireEvent.click(await screen.findByRole("button",{name:"Settings"}));fireEvent.click(screen.getByRole("button",{name:"Import / Export"}));
+ fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ if(outcome==="success")await screen.findByRole("textbox",{name:"Exported configuration"});else await screen.findByRole("alert");
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Export configuration"}) as HTMLButtonElement).disabled).toBe(false));
+ expect(document.body.textContent).not.toContain("private-export-source");
+ fireEvent.click(screen.getByRole("button",{name:"Sessions"}));fireEvent.click(screen.getByRole("button",{name:"Pull requests"}));
+ fireEvent.click(screen.getByRole("button",{name:"Repository settings"}));
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Repositories"}).getAttribute("aria-pressed")).toBe("true"));
+ expect(screen.queryByRole("textbox",{name:"Configuration JSON"})).toBeNull();expect(value.saveConfiguration).not.toHaveBeenCalled();
+ expect(value.exportConfiguration).toHaveBeenCalledOnce();
+});

@@ -26,7 +26,7 @@ function fixture() {
     router.service(ResourceService, { getResource, listResources: () => ({ resources: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (active = true, onWorkflowReadyChange?: (active: boolean) => void) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} onWorkflowReadyChange={onWorkflowReadyChange} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { bundle, previewBytes, exported, preview, apply, client, view, status, getResource, jobId, state: (next: string) => { state = next; } };
 }
 function load(bundle: unknown) {
@@ -363,4 +363,39 @@ it("fences a late export failure after an import draft event without releasing t
  expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText("Technical details")).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Load configuration document"}));
  expect(screen.getByRole("button",{name:"Preview configuration changes"})).toBeTruthy();expect(value.apply).not.toHaveBeenCalled();
+});
+
+
+it.each(["rpc", "document"])("releases completed %s export diagnostics while retaining visible retry and exact content",async failure=>{
+ const value=fixture(), workflow=vi.fn();
+ if(failure==="rpc")value.exported.mockRejectedValueOnce(new ConnectError("private-token /private/source",Code.Unavailable));
+ else value.exported.mockResolvedValueOnce({documentJson:encode({version:999,entries:[],machines:[]})});
+ render(value.view(true,workflow));fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ await screen.findByRole("alert");await waitFor(()=>expect(workflow).toHaveBeenLastCalledWith(false));
+ expect(document.body.textContent).not.toMatch(/private-token|private\/source/);
+ const retry=screen.getByRole("button",{name:"Export configuration"});expect((retry as HTMLButtonElement).disabled).toBe(false);
+ fireEvent.click(retry);const output=await screen.findByRole("textbox",{name:"Exported configuration"});
+ expect((output as HTMLTextAreaElement).value).toBe(new TextDecoder().decode(encode(value.bundle)));
+ expect(screen.queryByRole("alert")).toBeNull();expect(value.exported).toHaveBeenCalledTimes(2);
+ await waitFor(()=>expect(workflow).toHaveBeenLastCalledWith(false));expect(value.apply).not.toHaveBeenCalled();
+ value.exported.mockRejectedValueOnce(new ConnectError("subsequent private export failure",Code.Unavailable));
+ fireEvent.click(retry);await screen.findByRole("alert");await waitFor(()=>expect(workflow).toHaveBeenLastCalledWith(false));
+ expect(screen.getByRole("textbox",{name:"Exported configuration"})).toBe(output);
+ expect((output as HTMLTextAreaElement).value).toBe(new TextDecoder().decode(encode(value.bundle)));
+ expect(document.body.textContent).not.toContain("subsequent private export failure");
+});
+
+it("protects pending exports and actionable or uncertain imports independently of export diagnostics",async()=>{
+ const value=fixture(),workflow=vi.fn();let reject!:(reason:unknown)=>void;
+ value.exported.mockImplementationOnce(()=>new Promise((_resolve,rejected)=>{reject=rejected;}));
+ render(value.view(true,workflow));fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
+ await waitFor(()=>expect(workflow).toHaveBeenLastCalledWith(true));
+ await act(async()=>reject(new ConnectError("unavailable",Code.Unavailable)));await screen.findByRole("alert");
+ await waitFor(()=>expect(workflow).toHaveBeenLastCalledWith(false));load(value.bundle);
+ await waitFor(()=>expect(workflow).toHaveBeenLastCalledWith(true));
+ fireEvent.click(screen.getByRole("button",{name:"Preview configuration changes"}));
+ value.apply.mockRejectedValueOnce(new ConnectError("original receipt unavailable",Code.Unavailable));
+ fireEvent.click(await screen.findByRole("button",{name:"Apply reviewed configuration"}));
+ await screen.findByRole("button",{name:"Retry the same configuration import"});
+ expect(workflow).toHaveBeenLastCalledWith(true);expect(value.apply).toHaveBeenCalledOnce();
 });
