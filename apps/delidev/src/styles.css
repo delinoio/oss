@@ -150,6 +150,11 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-selectors { display: flex; min-width: 0; flex: 1; align-items: flex-end; gap: 8px; }
 .new-session-attach { display: grid; flex: 0 0 40px; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 8px; font-size: 24px; }
 .new-session-selectors .resource-choice { min-width: 0; flex: 1; }
+.new-session-selectors .resource-choice-create-agent { display: grid; gap: 4px; }
+.new-session-selectors .resource-choice-create-agent > span { color: var(--text-secondary); font-size: 11px; }
+.new-session-selectors .resource-choice-create-agent > button { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-width: 0; min-height: 40px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.new-session-selectors .resource-choice-create-agent > button > svg { flex: 0 0 16px; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+.new-session-selectors .resource-choice-create-agent > button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 /* Align the attachment action with the actual picker input, not its outer margins. */
 .new-session-selectors .scroll-picker { margin: 0; gap: 4px; }
 .new-session-selectors .scroll-picker > span { color: var(--text-secondary); font-size: 11px; }

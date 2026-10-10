@@ -324,6 +324,41 @@ Named Home project rows expose an always-visible New session plus immediately le
 
 The shortcut opens the existing mounted creation page with the exact project ID, closes the compact navigation drawer and focuses First message. Bind this entry to the existing activation and consume it once, including rejected locked entries; manual edits, language changes, same-identity reconnect and later request settlement cannot replay it. A changed project clears Agent Worker, Runs on and starting references and selects Worktree, while retaining the message, mode, budget and Options. Reselecting the same project preserves all selections. The shortcut shares the Project selector's pending Local proof, pending/uncertain creation and unreadable-acknowledgment locks. Ordinary New session and Back retain their existing draft and selected-conversation behavior. Navigation alone creates no session, execution, protocol or persistent-state authority.
 
+### Empty Agent Worker creation entry — issue #2500
+
+New session and New Chat show **Create agent worker** (Korean: **에이전트 워커 생성**)
+in place of the Agent Worker picker only after the current validated unfiltered
+first inventory page contains zero resources, has no continuation and no pending
+read/refresh/error, and no retained Agent Worker selection exists. Pending saved
+choice restoration also keeps ordinary read presentation. Keep the unfiltered
+count in the existing bounded page payload before project restrictions apply;
+filtered rows, later empty pages, malformed or failed reads and stale cached
+projections cannot establish absence. Reuse the existing inventory query and
+pagination without scanning other pages. Remove the generic empty-page sentence
+and its reserved space from these two Agent Worker controls. Existing workers,
+project restrictions, continuation, loading/denied/unavailable and retained
+selection states keep their separate presentation and controls.
+
+Keep the Agent Worker label above an outlined native non-submit button with a
+40px minimum height, 8px corners, decorative plus icon and the existing selector
+width. Use semantic light/dark theme tokens, visible keyboard focus, ordinary
+Enter/Space activation, wrapping and the existing scrollable compact/reflow
+layout. The typed `NewAgentWorker` Settings destination enters **Agent Workers**
+and opens the existing creation wizard directly at **Harness**, through existing
+Settings navigation, protected-work lifetimes and destination/wizard focus.
+Navigation creates no worker/session and changes no project or execution policy.
+
+Keep both independent creation controllers mounted across Settings entry and
+return, with message, Project/workspace/starting references, Runner Device,
+Plan Mode, Options, budget and image attachments intact. Cancel/navigation cannot
+replace their drafts. Explicit wizard saving keeps the original atomic model and
+Agent Worker save plus inventory invalidation. Returning with a nonempty current
+inventory restores ordinary selection; never select the new worker or submit a
+conversation automatically. Existing eligibility and explicit submission gates
+remain required. No RPC, allocation, migration, feature flag, telemetry or native
+change is introduced. Frontend fixtures do not establish native/account/platform
+acceptance; the existing approved text specification owns the visual requirements.
+
 ### Dedicated General Chat creation
 
 Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow.

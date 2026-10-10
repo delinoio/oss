@@ -137,7 +137,7 @@ export const ResourceSelectionPending = createContext<((identity: string, pendin
 
 // Selectors accumulate bounded display projections. Exact resources are read
 // only for the retained selection and a deliberate selection callback.
-export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice, selectionResetToken = 0 }: { selectionResetToken?: number; label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
+export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind, value, change, active, disabled = false, required = false, autoFocus = false, allowed, activeApiOnly = false, showStatus = false, markRequired = false, resolvedChoice, selectionResetToken = 0, createEmptyAgent, emptyAgentPending = false }: { emptyAgentPending?: boolean; createEmptyAgent?: () => void; selectionResetToken?: number; label: string; resourceLabel?: string; kind: EntityKind; value: string; change: (id: string, data?: Document, resource?: Resource) => void; active: boolean; disabled?: boolean; required?: boolean; autoFocus?: boolean; allowed?: readonly unknown[]; activeApiOnly?: boolean; showStatus?: boolean; markRequired?: boolean; emptyLabel?: string; resolvedChoice?: Resource }) {
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
   useLocale();
@@ -159,9 +159,11 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
     });
   }, [kind, allowedKey]);
   const requestResources = useCallback((token: string) => ({ filter: { kind, pageSize: 50, pageToken: token } }), [kind]);
-  const projectList = useCallback((response: MessageShape<typeof ResourceQuery.listResources.output>) => ({ rows: projectResources(response.resources), nextPageToken: response.nextPageToken }), [projectResources]);
+  // Keep validated unfiltered evidence in the bounded page payload. Filtered
+  // rows, retained projections and an empty later page cannot prove absence.
+  const projectList = useCallback((response: MessageShape<typeof ResourceQuery.listResources.output>) => ({ rows: projectResources(response.resources), nextPageToken: response.nextPageToken, payload: [{ unfilteredCount: response.resources.length }] }), [projectResources]);
   const resourceReader = useConnectPaginationReader(ResourceQuery.listResources, requestResources, projectList);
-  const resources = usePaginationChain<ChoiceRow>(`resource-choice:${kind}:${allowedKey}`, active && !disabled && !needsProviderCapability, resourceReader);
+  const resources = usePaginationChain<ChoiceRow, { unfilteredCount: number }>(`resource-choice:${kind}:${allowedKey}`, active && !disabled && !needsProviderCapability, resourceReader);
   const requestProviders = useCallback((token: string) => ({ query: "", enabledOnly: true, pageSize: 50, pageToken: token }), []);
   const projectInventory = useCallback((response: MessageShape<typeof ProviderQuery.listProviderInventory.output>) => {
     if (response.entries.length > 50 || new Set(response.entries.map(entry => entry.providerId)).size !== response.entries.length || !providerInventoryReady(response.capabilities) || response.entries.some(entry => !entry.provider || entry.providerId !== entry.provider.id || !entry.enabled)) throw new ConnectError("Invalid provider choices", Code.DataLoss);
@@ -219,10 +221,20 @@ export function ResourceChoice({ label, resourceLabel = label, emptyLabel, kind,
   const decorate = (harness?: Harness) => kind === EntityKind.AGENT ? <HarnessMark harness={harness} /> : undefined;
   const selectedHarness = selectedResource && selectedResource.revision > 0n && supportsResourceSchema(selectedResource) && (allowedKey === "*" || (JSON.parse(allowedKey) as unknown[]).includes(value)) ? knownHarness(selectedData.harness) : undefined;
   const options = [{ id: "", decoration: decorate(), label: emptyLabel ?? copy("configuration-fields.select_586618", { v0: resourceLabel.toLowerCase() }) }, ...result.rows.map(row => ({ id: row.id, decoration: decorate(row.harness), label: (row.name || copy("documents.extra.e504e6152194")) + (kind === EntityKind.ACCOUNT ? copy("configuration-fields.message_2fa20b", { v0: statusLabel(row.health) }) : ""), disabled: row.id === value && selectedProviderOff }))];
+  const firstInventory = resources.payloadPages.find(page => page.token === "")?.payload[0];
+  const completeEmptyInventory = !emptyAgentPending && kind === EntityKind.AGENT && !needsProviderCapability && active && !disabled && !value && !selectionBusy && !failure && !readProblem && resources.loaded && !resources.loading && !resources.error && resources.pages.length === 1 && resources.pages[0].token === "" && !resources.pages[0].nextPageToken && firstInventory?.unfilteredCount === 0;
+  const creationAdmission = useRef<{ allowed: boolean; open?: () => void }>({ allowed: false });
+  creationAdmission.current = { allowed: Boolean(createEmptyAgent && completeEmptyInventory), open: createEmptyAgent };
+  if (createEmptyAgent && completeEmptyInventory) return <div className="resource-choice resource-choice-create-agent"><span>{label}</span><button type="button" onClick={event => {
+    const original = creationAdmission.current, button = event.currentTarget;
+    if (!original.allowed || !button.isConnected || button.matches(":disabled") || button.closest("[hidden], [inert]")) return;
+    original.open?.();
+  }}><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{copy("configuration-fields.createAgentWorker")}</button></div>;
   return <div className="resource-choice"><ScrollPicker label={label} options={options} value={value} selectedDecoration={decorate(selectedHarness)} selectedLabel={value ? selectedResource ? resourceName(selectedResource) : copy("configuration-fields.sentence.38798a0275ce", { v0: resourceLabel }) : undefined} placeholder={emptyLabel} change={id => void select(id)} query={result} active={active} disabled={disabled || selectionBusy} required={required} autoFocus={autoFocus} markRequired={markRequired} />
     {needsProviderCapability && active && !ready ? <p role="status">{copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}</p> : null}
     {(showStatus || reportRead || markRequired) && result.loading ? <p role="status">{copy("configuration-fields.sentence.3d9404257563", { v0: resourceLabel })}</p> : null}
-    {(showStatus || reportRead || markRequired) && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
+    {(showStatus || reportRead || markRequired) && !createEmptyAgent && result.loaded && !result.rows.length && !result.error && !result.loading ? <p role="status">{copy(result.nextPageToken ? "configuration-fields.sentence.244a41434b15" : "configuration-fields.sentence.9117e85a4bce", { v0: resourceLabel })}</p> : null}
+    {createEmptyAgent && allowed !== undefined && firstInventory && firstInventory.unfilteredCount > 0 && resources.loaded && !resources.rows.length && !resources.loading && !resources.error ? <p role="status">{copy("configuration-fields.choices.restrictedAgents")}</p> : null}
     {(showStatus || reportRead || markRequired) && value && selected.data?.resource && !result.rows.some(row => row.id === value) ? <p role="status">{copy("configuration-fields.sentence.5398fd2fa5b0", { v0: resourceLabel })}</p> : null}
     {(showStatus || reportRead || markRequired) && choiceFailure ? <p role="status">{copy(result.loaded ? "configuration-fields.sentence.054bff468121" : "configuration-fields.sentence.1ad5938a045c", { v0: result.loaded ? resourceLabel : reason, v1: reason })}</p> : null}
     {result.error ? <ServiceProblem code={result.error.failure.code} actions={<SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || disabled || Boolean(result.loading)} onClick={result.refreshExplicit}>{copy("ui.retryCurrentRead")}</SettingsActionButton>}><p>{result.error.failure.message}</p><p>{result.error.failure.guidance}</p></ServiceProblem> : null}

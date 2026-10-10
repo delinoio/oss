@@ -224,5 +224,7 @@
   "configuration-fields.projectEdit.repositories": "Repositories",
   "configuration-fields.projectEdit.execution": "Execution",
   "configuration-fields.projectEdit.access": "Access",
-  "configuration-fields.planApprovalHeading": "Plan approval"
+  "configuration-fields.planApprovalHeading": "Plan approval",
+  "configuration-fields.createAgentWorker": "Create agent worker",
+  "configuration-fields.choices.restrictedAgents": "The project restrictions exclude the Agent Workers on this page."
 }

@@ -166,8 +166,9 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: encode({ name: "Agent One", harness: "codex", routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-model" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "default" } }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
-  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
+  const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1, ...(emptyAgents ? [SystemCapability.INLINE_WORKER_MODELS_V1] : [])] : [] }));
   const githubQuery = vi.fn(async (_request: { repositoryId: string; schemaVersion: number; queryJson: Uint8Array }) => ({ schemaVersion: 1, documentJson: encode({}) }));
+  const saveAgentWorker = vi.fn(async () => ({}));
   const saveConfiguration = vi.fn(async (request: { kind: EntityKind; documentJson: Uint8Array }) => ({ resource: create(ResourceSchema, { id: newRequestId(), kind: request.kind, revision: 1n, schemaVersion: 1, documentJson: request.documentJson }) }));
   const projectRequests: string[] = [];
   const sessionRequests: { projectId: string; includeArchived: boolean; pageToken: string }[] = [];
@@ -205,9 +206,9 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
     router.service(SearchService, { searchConversations: searches });
     router.service(InteractionService, { respondQuestion: responses, respondApproval: responses });
     router.service(IntegrationService, { queryRepositoryIntegration: githubQuery });
-    router.service(ConfigurationService, { saveConfiguration });
+    router.service(ConfigurationService, { saveConfiguration, saveAgentWorker });
   });
-  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
+  return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveAgentWorker, saveConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
 }
 
 it("creates an automatically named session from the first message and explicit Workers", async () => {
@@ -542,11 +543,12 @@ it.each([
   expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
 });
 
-it("distinguishes an empty current Agent Worker page from a loading selector", async () => {
+it("offers Agent Worker creation for a confirmed complete empty inventory", async () => {
   const value = fixture([], [], [], false, true, undefined, true);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
-  expect(await screen.findByText("No selectable Agent Worker choices are on this page.")).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Create agent worker" })).toBeTruthy();
+  expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
 });
 
 it("shows selector loading while the current page has not returned", async () => {
@@ -1527,4 +1529,36 @@ it("compact navigation never changes the retained wide collapse choice or dispat
   fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
   act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+
+it.each(["New session", "New Chat"])("opens Harness from the empty %s control and retains the unsent draft", async surface => {
+  const value = fixture([], [], [], false, true, undefined, true);
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: surface }));
+  const message = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(message, { target: { value: `Original ${surface} draft` } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  if (surface === "New session") fireEvent.click(screen.getByText("Optional estimated-cost budget", { selector: "summary" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(screen.getByLabelText("Budget currency"), { target: { value: "USD" } });
+  fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), { target: { value: "12.50" } });
+  const create = await screen.findByRole("button", { name: "Create agent worker" });
+  expect(create.getAttribute("type")).toBe("button");
+  expect(screen.queryByRole("combobox", { name: "Agent Worker" })).toBeNull();
+  expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
+  fireEvent.click(create);
+  const harness = await screen.findByRole("radio", { name: "Codex" });
+  expect(harness).toBeTruthy();
+  expect(value.creates).not.toHaveBeenCalled();
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+  expect(value.saveAgentWorker).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: surface }));
+  expect((await screen.findByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe(`Original ${surface} draft`);
+  expect((screen.getByRole("checkbox", { name: "Plan Mode" }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByLabelText("Budget currency") as HTMLInputElement).value).toBe("USD");
+  expect((screen.getByLabelText("Estimated-cost threshold") as HTMLInputElement).value).toBe("12.50");
+  expect(value.creates).not.toHaveBeenCalled();
 }, fullShellTimeoutMs);
