@@ -43,7 +43,21 @@ func TestUnsuccessfulStorageRecoveryDiscardsOnlyReportReceipt(t *testing.T) {
 				root := t.TempDir()
 				config := Config{Root: root, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 				machine, instance, session, original, snapshot, recovery := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
-				input := workspace.StorageRequest{Version: 1, OperationID: recovery, Action: workspace.StorageRecover, Recovery: &workspace.StorageRecovery{Original: workspace.StorageRequest{OperationID: original, Action: workspace.StorageCleanup, SnapshotID: snapshot, Preparation: workspace.PrepareRequest{SessionID: session, MachineID: machine}}}}
+				prepare := workspace.PrepareRequest{SessionID: session, MachineID: machine, Type: domain.GeneralChat}
+				manager := workspace.Manager{Root: filepath.Join(root, "workspace"), Logger: config.Logger}
+				manifest, err := manager.Prepare(context.Background(), prepare)
+				if err != nil {
+					t.Fatal("prepare recovery fixture", err)
+				}
+				previewInput := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), PreviousState: domain.WorkspacePresent, Action: workspace.StoragePreview, Preparation: prepare, Manifest: manifest}
+				preview, err := manager.Storage(context.Background(), previewInput)
+				if err != nil {
+					t.Fatal("preview recovery fixture", err)
+				}
+				originalInput := workspace.StorageRequest{Version: 1, OperationID: original, PreviousState: domain.WorkspacePresent, Action: workspace.StorageCleanup, Preparation: prepare, Manifest: manifest, SnapshotID: snapshot, PreviewDigest: preview.PreviewDigest}
+				claimInstance, assignmentDigest := domain.NewID(), strings.Repeat("a", 64)
+				claim := workspace.StorageJournalClaim{JobID: original, InstanceID: claimInstance, Revision: 1, AssignmentDigest: assignmentDigest}
+				input := workspace.StorageRequest{Version: 1, OperationID: recovery, Action: workspace.StorageRecover, Preparation: prepare, Manifest: manifest, SnapshotID: snapshot, Recovery: &workspace.StorageRecovery{Original: originalInput, Claims: []workspace.StorageJournalClaim{claim}, InstanceID: claimInstance, Revision: claim.Revision, AssignmentDigest: assignmentDigest}}
 				raw, _ := json.Marshal(input)
 				job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: machine, InstanceID: instance, Input: raw, AcceptedAt: time.Now().UTC()}
 				document, _ := json.Marshal(job)
@@ -56,9 +70,7 @@ func TestUnsuccessfulStorageRecoveryDiscardsOnlyReportReceipt(t *testing.T) {
 				if state == domain.JobUncertain {
 					// A locally clean report was accepted as uncertain before its reply
 					// was lost. The server retained no output/removal authority.
-					input.Action, input.OperationID, input.Recovery = workspace.StorageCleanup, original, nil
-					input.Preparation = workspace.PrepareRequest{SessionID: session, MachineID: machine}
-					input.SnapshotID = snapshot
+					input = originalInput
 					recovery = original
 					raw, _ = json.Marshal(input)
 					job.Input = raw
