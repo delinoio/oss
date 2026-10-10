@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+Keep read-progress presentation separate from accepted domain authority. When hiding a retained empty list, keep background announcements outside its hidden container without normal-flow height; preserve visible initial, failure, continuation and explicit restoration/recovery controls under the desktop contract.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

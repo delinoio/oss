@@ -56,3 +56,36 @@ it("retains movement when the response has no original acknowledgement",async()=
  expect(f.move.mock.calls[1][0]).toEqual(original);
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
 });
+
+it.each([false,true])("keeps healthy retained waiting presentation stable across three rereads (populated=%s)",async populated=>{
+ const f=fixture();if(!populated)f.replace([]);
+ const owner=(revision:string)=><><textarea aria-label="Retained composer" defaultValue={"Original multiline\ndraft"}/>{f.view(revision)}</>;
+ const view=render(owner("1"));
+ const root=document.querySelector<HTMLDivElement>('.queue-compact-list')!;
+ if(populated)await screen.findByText('Third');else await waitFor(()=>expect(root.hidden).toBe(true));
+ const composer=screen.getByRole('textbox',{name:'Retained composer'}) as HTMLTextAreaElement;composer.focus();composer.setSelectionRange(3,7);
+ const original=populated?screen.getByText('Third').closest('article'):undefined;
+ for(let cycle=0;cycle<3;cycle++){
+  let settle!:()=>void;
+  const held=new Promise<void>(resolve=>{settle=resolve;});
+  f.read.mockImplementationOnce(async()=>{await held;return {inputs:populated?f.rows:[],nextPageToken:'',currentQueueGeneration:9007199254740993n,waitingCount:populated?f.rows.length:0};});
+  view.rerender(owner(String(cycle+2)));
+  await waitFor(()=>expect(document.querySelector('[data-queue-refresh]')).toBeTruthy());
+  const announcement=document.querySelector('[data-queue-refresh]')!;
+  expect(root.hidden).toBe(!populated);expect(root.contains(announcement)).toBe(false);expect(announcement.classList.contains('sidebar-sr-only')).toBe(true);
+  expect(root.querySelector('.sidebar-continuation > span')).toBeNull();
+  expect(screen.getByRole('textbox',{name:'Retained composer'})).toBe(composer);expect(document.activeElement).toBe(composer);expect([composer.selectionStart,composer.selectionEnd,composer.value]).toEqual([3,7,'Original multiline\ndraft']);
+  if(populated)expect(screen.getByText('Third').closest('article')).toBe(original);
+  await act(async()=>settle());await waitFor(()=>expect(document.querySelector('[data-queue-refresh]')).toBeNull());
+ }
+ expect(f.move).not.toHaveBeenCalled();
+});
+
+it("keeps failed empty reread and exact recovery visible, then hides confirmed emptiness again",async()=>{
+ const f=fixture();f.replace([]);const view=render(f.view());const root=document.querySelector<HTMLDivElement>('.queue-compact-list')!;
+ await waitFor(()=>expect(root.hidden).toBe(true));f.read.mockRejectedValueOnce(new ConnectError('Original read failed',Code.Unavailable));view.rerender(f.view('2'));
+ const retry=await screen.findByRole('button',{name:'Retry'});expect(root.hidden).toBe(false);
+ let settle!:()=>void;f.read.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{settle=resolve;});return {inputs:[],nextPageToken:'',currentQueueGeneration:9007199254740993n,waitingCount:0};});
+ fireEvent.click(retry);await waitFor(()=>expect(root.querySelector('.sidebar-continuation > span')).toBeTruthy());expect(root.hidden).toBe(false);expect(document.querySelector('[data-queue-refresh]')).toBeNull();
+ await act(async()=>settle());await waitFor(()=>expect(root.hidden).toBe(true));expect(f.move).not.toHaveBeenCalled();
+});

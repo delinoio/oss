@@ -27,7 +27,7 @@ try {
  await new Promise(done => server.listen(0, "127.0.0.1", done));
  browser = await chromium.launch({ headless: true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
  const page = await browser.newPage(); page.on("pageerror", error => errors.push(error.message));
- const open = async (language, theme, width, height, state = "ready", workspace = "general-chat") => { await page.setViewportSize({ width, height }); await page.goto(`http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&state=${state}&workspace=${workspace}`); await page.locator(".composer textarea").waitFor(); await page.waitForFunction(() => document.querySelector(".composer-attach") && !document.querySelector(".composer-attach").disabled); };
+ const open = async (language, theme, width, height, state = "ready", workspace = "general-chat", queue = "", queueContents = "empty") => { await page.setViewportSize({ width, height }); await page.goto(`http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&state=${state}&workspace=${workspace}&queue=${queue}&queueContents=${queueContents}`); await page.locator(".composer textarea").waitFor(); await page.waitForFunction(() => document.querySelector(".composer-attach") && !document.querySelector(".composer-attach").disabled); };
  const image = async () => { const bytes = await page.evaluate(async () => { const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 2; canvas.getContext("2d").fillRect(0, 0, 3, 2); const blob = await new Promise(done => canvas.toBlob(done, "image/png")); return Array.from(new Uint8Array(await blob.arrayBuffer())); }); return { name: "synthetic.png", mimeType: "image/png", buffer: Buffer.from(bytes) }; };
  const geometry = async () => {
   const value = await page.locator(".composer").evaluate(node => { const rect = node.getBoundingClientRect(), textarea = node.querySelector("textarea"), submit = node.querySelector(".composer-submit").getBoundingClientRect(), controls = [...node.querySelectorAll(".composer-toolbar > button, .composer-toolbar > label")].map(control => control.getBoundingClientRect()); return { left: rect.left, right: rect.right, bottom: rect.bottom, width: node.clientWidth, scrollWidth: node.scrollWidth, input: textarea.clientHeight, max: Number.parseFloat(getComputedStyle(textarea).maxHeight), inputScroll: textarea.scrollHeight, submitBottom: submit.bottom, controls: controls.map(rect => ({ width: rect.width, height: rect.height })), viewportWidth: innerWidth, viewportHeight: innerHeight }; });
@@ -142,6 +142,35 @@ try {
   if (state === "unsupported") { await page.locator('input[type="file"]').setInputFiles(await image()); await page.getByText(c("image-input.unsupported"), { exact: true }).waitFor(); assert(await submit.isDisabled()); await geometry(); }
   else { await page.locator('input[type="file"]').setInputFiles(await image()); await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 1); await input.fill("Original bound message"); await submit.click(); await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 1); assert(await input.isDisabled()); assert(await page.locator(".image-preview-list button").isDisabled()); assert(await page.locator(".composer-attach").isDisabled()); assert(await page.locator(".composer-toolbar input[type=checkbox]").isDisabled()); if (state === "uncertain") { await page.getByRole("button", { name: c("session.retryTheSameMessage_5656d9"), exact: true }).click(); await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 2); const events = await page.evaluate(() => window.__sessionComposerFixture.events); assert.deepEqual(events[0], events[1]); await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 0); assert.equal(await input.inputValue(), ""); } }
   cases++;
+ }
+ // Real queue presenters and committed CSS: unchanged accepted content must
+ // not add normal-flow progress. This matrix is CI/browser-only; component
+ // checks and fixture generation do not prove this pixel assertion.
+ const footerGeometry = () => page.evaluate(() => Object.fromEntries([
+  ["tray", ".session-input-tray"], ["requests", ".requests"], ["transcript", ".transcript"], ["composer", ".composer"],
+ ].map(([name, selector]) => { const rect = document.querySelector(selector).getBoundingClientRect(); return [name, { top: rect.top, bottom: rect.bottom, height: rect.height }]; })));
+ for (const queue of ["legacy", "waiting"]) for (const queueContents of ["empty", "populated"]) for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height, zoom] of [[1500, 900, 1], [960, 640, 1], [640, 480, 1], [1280, 960, 2]]) {
+  await open(language, theme, width, height, "ready", "general-chat", queue, queueContents);
+  await page.evaluate(zoom => { document.body.style.zoom = String(zoom); }, zoom);
+  const input = page.locator(".composer textarea");
+  await page.waitForFunction(() => window.__sessionComposerFixture.queueReads() > 0 && !document.querySelector("[data-queue-refresh]"));
+  if (queueContents === "populated") await page.locator(".queue-preview:visible").filter({ hasText: "Retained waiting input" }).waitFor();
+  else await page.waitForFunction(() => [...document.querySelectorAll(".queue-compact-list, .queue-read-state")].every(node => node.hidden));
+  await input.fill("Original multiline\ndraft"); await input.focus(); await input.evaluate(node => { window.__retainedQueueComposer = node; node.setSelectionRange(3, 7); });
+  const before = await footerGeometry();
+  for (let cycle = 0; cycle < 3; cycle++) {
+   const reads = await page.evaluate(() => window.__sessionComposerFixture.queueReads());
+   await page.evaluate(() => window.__sessionComposerFixture.beginQueueRefresh());
+   await page.waitForFunction(reads => window.__sessionComposerFixture.queueReads() > reads && document.querySelector("[data-queue-refresh]"), reads);
+   const progress = await page.locator("[data-queue-refresh]").evaluate(node => ({ position: getComputedStyle(node).position, role: node.getAttribute("role"), live: node.getAttribute("aria-live"), hiddenOwner: Boolean(node.closest("[hidden]")), text: node.textContent }));
+   assert.equal(progress.position, "absolute"); assert.equal(progress.role, "status"); assert.equal(progress.live, "polite"); assert.equal(progress.hiddenOwner, false); assert(progress.text);
+   if (queueContents === "empty") assert(await page.evaluate(() => [...document.querySelectorAll(".queue-compact-list, .queue-read-state")].every(node => node.hidden)), "retained empty queue revealed a card");
+   const during = await footerGeometry(); for (const node of Object.keys(before)) for (const edge of Object.keys(before[node])) assert(Math.abs(during[node][edge] - before[node][edge]) <= 1, JSON.stringify({ operation: "queue_refresh_geometry", queue, queueContents, language, theme, zoom, cycle, node, edge, before: before[node][edge], during: during[node][edge] }));
+   assert(await input.evaluate(node => node === window.__retainedQueueComposer && document.activeElement === node && node.selectionStart === 3 && node.selectionEnd === 7 && node.value === "Original multiline\ndraft"), "reread replaced composer or caret/draft");
+   await page.evaluate(() => window.__sessionComposerFixture.settleQueueRefresh()); await page.waitForFunction(() => !document.querySelector("[data-queue-refresh]"));
+   const after = await footerGeometry(); for (const node of Object.keys(before)) for (const edge of Object.keys(before[node])) assert(Math.abs(after[node][edge] - before[node][edge]) <= 1, "settled reread moved footer");
+  }
+  assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "read progress submitted input"); cases++;
  }
  assert.deepEqual(errors, []);
  console.log(JSON.stringify({ operation: "session_composer_layout", result: "passed", cases, languages: 2, themes: 2, effectiveZoom: "200% at480x320", nativeAcceptance: "not-performed", guidanceOnly, screenshots }));

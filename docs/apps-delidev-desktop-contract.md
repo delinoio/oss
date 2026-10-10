@@ -5079,6 +5079,21 @@ controllers and composer identity remain independent of row visibility. This
 presentation adds no movement controls, RPC, protocol, migration or native
 change. Durable reordering requires its separately negotiated feature.
 
+Healthy automatic rereads of the same legacy-history or negotiated waiting queue
+retain the accepted empty no-card presentation and populated rows. Read progress
+alone cannot insert a loading card, reserve a gap or alter footer height. Announce
+background progress outside a hidden queue with the existing screen-reader-only
+absolute presentation. This is cached presentation, never a current zero or fresh
+mutation authority. Initial loading, genuine failures and exact Retry, incomplete
+continuation, evicted payload restoration and explicit boundary recovery remain
+visible and reachable. Actual input arrivals/removals, images, editors and errors
+may change geometry. Preserve Agent requests, composer DOM/draft/focus/caret/IME,
+shortcuts and original pending/uncertain request owners. With unchanged contents
+and draft geometry, three healthy rereads keep tray, Agent requests, transcript
+boundary and composer coordinates within one CSS pixel. Validate both queue paths
+in English/Korean, both themes, wide/compact and effective-200% layouts; browser
+geometry and installed/native acceptance remain separate from component checks.
+
 ## Waiting input movement
 Only negotiated System 75 exposes six-dot drag handles, a bounded insertion line and More > Move up/Move down in the approved compact composer-adjacent queue. Keyboard/touch menu actions and drag drops share one move-before operation with the original input/anchor revisions and bigint generation. First/last actions are disabled at the actual boundary; a reached-page boundary can load the next bounded page before an explicit downward movement, retaining the original selection and generation. Never reorder optimistically. Keep the authoritative list until acknowledgment, then refresh dispatch order, restore the original row focus when resident and announce the accepted move.
 

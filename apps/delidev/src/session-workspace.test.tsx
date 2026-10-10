@@ -48,7 +48,8 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const list = vi.fn(async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[], nextPageToken: "" }));
   const getResource = vi.fn((request: { id: string; kind: EntityKind }) => ({ resource: retained.get(request.id) }));
 
-  const listQueue = vi.fn((_request: { pageToken: string }) => ({ inputs: queueInputs(id), nextPageToken: "" }));
+  type QueueReply = { inputs: ReturnType<typeof create<typeof ResourceSchema>>[]; nextPageToken: string };
+  const listQueue = vi.fn((_request: { pageToken: string }): QueueReply | Promise<QueueReply> => ({ inputs: queueInputs(id), nextPageToken: "" }));
   const transport = createRouterTransport(router => {
     router.service(SystemService, { getStatus: () => ({ capabilities: terminalMode ? [SystemCapability.SESSION_TERMINALS_V1] : [] }) });
     router.service(TerminalService, { controlTerminal: terminalControl, createTerminal: terminalCreate, watchTerminalOutput: async function* (request, context) {
@@ -522,4 +523,24 @@ it("keeps evicted waiting payload restoration reachable even after all current v
  const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original session"));
  fireEvent.change(input,{target:{value:"Receipt name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
  await screen.findByRole("heading",{name:"Receipt name"});expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it.each([false,true])("retains legacy queue and composer display through three healthy rereads (populated=%s)",async populated=>{
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{},id=>populated?[create(ResourceSchema,{id:newRequestId(),sessionId:id,kind:EntityKind.QUEUE,schemaVersion:1,revision:1n,documentJson:encode({sequence:1,delivery:'queued',prompt:'Unchanged waiting input',mode:'execute'})})]:[]);
+ render(f.view('Original multiline\ndraft'));await screen.findByRole('heading',{name:'Original session'});
+ const root=document.querySelector<HTMLDivElement>('.session-tray-content.queue-compact-list, .session-tray-content.queue-read-state')!;
+ if(populated)await screen.findByText('Unchanged waiting input');else await waitFor(()=>expect(root.hidden).toBe(true));
+ const composer=screen.getByRole('textbox',{name:'Message'}) as HTMLTextAreaElement;composer.focus();composer.setSelectionRange(3,7);
+ const original=populated?screen.getByText('Unchanged waiting input').closest('article'):undefined;
+ const reply=f.listQueue.mock.results.at(-1)!.value;
+ for(let cycle=0;cycle<3;cycle++){
+  let settle!:()=>void;const held=new Promise<void>(resolve=>{settle=resolve;});f.listQueue.mockImplementationOnce(async()=>{await held;return await reply;});
+  await act(()=>f.client.invalidateQueries({predicate:query=>query.queryKey.some(part=>part&&typeof part==='object'&&'scrollPaginationRefresh' in part)}));
+  await waitFor(()=>expect(document.querySelector('[data-queue-refresh]')).toBeTruthy());
+  const announcement=document.querySelector('[data-queue-refresh]')!;expect(root.hidden).toBe(!populated);expect(root.contains(announcement)).toBe(false);expect(announcement.classList.contains('sidebar-sr-only')).toBe(true);expect(root.querySelector('.sidebar-continuation > span')).toBeNull();
+  expect(screen.getByRole('textbox',{name:'Message'})).toBe(composer);expect(document.activeElement).toBe(composer);expect([composer.selectionStart,composer.selectionEnd,composer.value]).toEqual([3,7,'Original multiline\ndraft']);
+  if(populated)expect(screen.getByText('Unchanged waiting input').closest('article')).toBe(original);
+  await act(async()=>settle());await waitFor(()=>expect(document.querySelector('[data-queue-refresh]')).toBeNull());
+ }
+ expect(f.enqueue).not.toHaveBeenCalled();expect(f.draft).not.toHaveBeenCalled();
 });
