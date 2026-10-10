@@ -85,6 +85,15 @@ func validRecoveryMisalignment(raw json.RawMessage) bool {
 	}
 	return closedRecoveryObject(detail.Steer, []string{"message"}, nil, &steer) && steer.Message != nil && nullableRecoveryText(steer.Message)
 }
+func nativeProviderDisplayName(providerKey string) (string, bool) {
+	switch providerKey {
+	case managedOpenAIProviderKey:
+		return managedOpenAIProviderName, true
+	default:
+		return "", false
+	}
+}
+
 func (c *Client) observeRecoveryTelemetryLocked(native nativewire.Event) (Event, error) {
 	var thread, turn domain.ID
 	var retry *bool
@@ -118,7 +127,8 @@ func (c *Client) observeRecoveryTelemetryLocked(native nativewire.Event) (Event,
 		if !closedRecoveryObject(native.Params, []string{"threadId", "turnId", "provider", "message"}, nil, &params) || params.Provider == nil || domain.Text(*params.Provider, "native provider", 1024, true) != nil || params.Message == nil || !nullableRecoveryText(params.Message) {
 			return Event{}, incompatible()
 		}
-		if *params.Provider != c.execution.settings.Provider {
+		expectedProviderName, supportedProvider := nativeProviderDisplayName(c.execution.settings.Provider)
+		if !supportedProvider || *params.Provider != expectedProviderName {
 			return Event{}, incompatible()
 		}
 		thread, turn = params.ThreadID, params.TurnID

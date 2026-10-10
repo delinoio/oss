@@ -11,12 +11,24 @@ import (
 
 func recoveryObservationClient() (*Client, domain.ID) {
 	c, turn := observationClient()
+	c.execution.settings.Provider = managedOpenAIProviderKey
 	c.execution.paused = false
 	return c, turn
 }
 func retryErrorFixture(c *Client, turn domain.ID, retry bool) map[string]any {
 	return map[string]any{"threadId": c.thread, "turnId": turn, "willRetry": retry, "error": map[string]any{"message": "private native error", "codexErrorInfo": nil, "additionalDetails": nil, "misalignment": nil}}
 }
+func TestNativeAuthRecoveryProviderDisplayNameUsesClosedProviderKeyMapping(t *testing.T) {
+	if got, ok := nativeProviderDisplayName(managedOpenAIProviderKey); !ok || got != managedOpenAIProviderName {
+		t.Fatal("managed provider display name mapping changed", got, ok)
+	}
+	for _, key := range []string{"OpenAI", "foreign", ""} {
+		if _, ok := nativeProviderDisplayName(key); ok {
+			t.Fatal("unsupported provider key gained a display-name mapping", key)
+		}
+	}
+}
+
 func TestNativeRetryErrorRetainsOriginalTurnUntilActualCompletion(t *testing.T) {
 	for _, retry := range []bool{true, false} {
 		c, turn := recoveryObservationClient()
@@ -53,12 +65,12 @@ func TestNativeAuthRecoveryRetainsOriginalProviderAndNoExecutionAuthority(t *tes
 	state := c.execution
 	settings := state.settings
 	for _, method := range []string{"modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted"} {
-		event, err := observeFixture(c, method, map[string]any{"threadId": c.thread, "turnId": turn, "provider": settings.Provider, "message": "private recovery diagnostic"})
+		event, err := observeFixture(c, method, map[string]any{"threadId": c.thread, "turnId": turn, "provider": managedOpenAIProviderName, "message": "private recovery diagnostic"})
 		if err != nil || event.Kind != MetadataEvent || !event.Correlated || event.TurnID != turn || c.execution != state || state.active != turn || state.paused || c.problem != nil || state.settings.Provider != settings.Provider {
 			t.Fatal("recovery changed original authority", event, err)
 		}
 		raw, _ := json.Marshal(event)
-		if strings.Contains(string(raw), "private") || strings.Contains(string(raw), settings.Provider) {
+		if strings.Contains(string(raw), "private") || strings.Contains(string(raw), settings.Provider) || strings.Contains(string(raw), managedOpenAIProviderName) {
 			t.Fatal("private recovery text escaped")
 		}
 	}
@@ -128,9 +140,9 @@ func TestNativeErrorAndAuthRecoveryFenceForeignStoppedAndUnknownTurns(t *testing
 			t.Fatal("stale error admitted", state)
 		}
 	}
-	for _, change := range []map[string]any{{"provider": "foreign"}, {"message": nil}, {"extra": true}, {"turnId": domain.NewID()}, {"message": strings.Repeat("x", (256<<10)+1)}} {
+	for _, change := range []map[string]any{{"provider": managedOpenAIProviderKey}, {"provider": "foreign"}, {"message": nil}, {"extra": true}, {"turnId": domain.NewID()}, {"message": strings.Repeat("x", (256<<10)+1)}} {
 		c, turn := recoveryObservationClient()
-		p := map[string]any{"threadId": c.thread, "turnId": turn, "provider": c.execution.settings.Provider, "message": "private"}
+		p := map[string]any{"threadId": c.thread, "turnId": turn, "provider": managedOpenAIProviderName, "message": "private"}
 		for k, v := range change {
 			p[k] = v
 		}
@@ -142,7 +154,12 @@ func TestNativeErrorAndAuthRecoveryFenceForeignStoppedAndUnknownTurns(t *testing
 
 func TestNativeRetryErrorProcessFixtureSendsOneOriginalInput(t *testing.T) {
 	for _, retry := range []bool{true, false} {
-		c, capture, _, settings := boundTurnFixture(t, "ready")
+		c, capture := openThreadFixture(t, "thread-turn-ready")
+		settings := threadSettings(t)
+		settings.Provider = managedOpenAIProviderKey
+		if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
+			t.Fatal(err)
+		}
 		inputID := domain.NewID()
 		result, err := c.StartTurn(context.Background(), domain.NewID(), inputID, input(domain.ExecuteMode))
 		if err != nil {
@@ -150,7 +167,7 @@ func TestNativeRetryErrorProcessFixtureSendsOneOriginalInput(t *testing.T) {
 		}
 		nextKind(t, c, TurnStartedEvent)
 		for _, method := range []string{"modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted"} {
-			fixtureSignal(t, c, "notify", map[string]any{"method": method, "params": map[string]any{"threadId": c.thread, "turnId": result.TurnID, "provider": settings.Provider, "message": "private provider recovery"}})
+			fixtureSignal(t, c, "notify", map[string]any{"method": method, "params": map[string]any{"threadId": c.thread, "turnId": result.TurnID, "provider": managedOpenAIProviderName, "message": "private provider recovery"}})
 			observed := nextKind(t, c, MetadataEvent)
 			if observed.TurnID != result.TurnID || !observed.Correlated {
 				t.Fatal("original auth recovery lost")

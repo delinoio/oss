@@ -109,9 +109,11 @@ Notification-only `error`, `modelProvider/authRecoveryStarted` and
 [error schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/ErrorNotification.json)
 and [authentication recovery schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/AuthRecoveryNotification.json).
 Require the original process connection, root thread and known active running
-turn, with the immutable effective provider for authentication recovery. Paused,
-interrupted, uncertain, foreign, unknown or terminal turns cannot gain current
-observation authority. Preserve frame limits, exact field names and bounded
+turn. Authentication-recovery provider names are matched through a closed
+canonical mapping from the immutable effective provider key: managed `openai`
+uses the native display name `OpenAI`. The wire display name and provider key
+remain separate identities. Paused, interrupted, uncertain, foreign, unknown
+or terminal turns cannot gain current observation authority. Preserve frame limits, exact field names and bounded
 private text; reject unknown error union variants, mixed/extra fields and invalid
 nullable HTTP status or misalignment shapes. Private misalignment instructions
 never become a new user input or continuation action.
