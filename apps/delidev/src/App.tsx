@@ -30,7 +30,7 @@ import type { ControlLocalWorker } from "./local-worker-controls";
 import type { ReadLocalWorkerProof } from "./local-worker";
 import { Problem } from "./ui";
 import type { SkillTokenBinding } from "./skill-completion";
-import { MutationIntents, useRetainedMutationAccepted } from "./mutation";
+import { DirectoryConnectionBarrier, MutationIntents, useRetainedMutationAccepted } from "./mutation";
 import { connectionQueryClient } from "./cache";
 import type { PairingAuthority } from "./pairing-grant";
 import { TrayPresentation } from "./tray-presentation";
@@ -202,12 +202,19 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
 // identity creates a fresh query, draft and mutation scope.
 export function App({ transport, localServer, serverPresentation, connectionSettings, connectionTarget, onConnectionHelp, connectionReady = true, connectionEpoch = 0, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; readLocalWorker?: ReadLocalWorkerProof; transport: Transport; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; onConnectionHelp?: (target: HTMLElement | undefined) => void; connectionReady?: boolean; connectionEpoch?: number }) {
   useLocale();
-  const connectionIdentity = pairingAuthority && currentDeviceId ? JSON.stringify([pairingAuthority.endpoint, pairingAuthority.serverId, currentDeviceId]) : transport;
+  const [, updateDirectoryBarrier] = useState(0);
+  const directoryBarrier = useMemo(() => new DirectoryConnectionBarrier<{
+    identity: unknown; transport: Transport; pairingAuthority?: PairingAuthority; currentDeviceId?: string;
+  }>(() => updateDirectoryBarrier(value => value + 1)), []);
+  const proposedIdentity = pairingAuthority && currentDeviceId ? JSON.stringify([pairingAuthority.endpoint, pairingAuthority.serverId, currentDeviceId]) : transport;
+  const originalConnection = directoryBarrier.select(proposedIdentity, { identity: proposedIdentity, transport, pairingAuthority, currentDeviceId });
+  const connectionIdentity = originalConnection.identity;
+  const originalConnectionReady = connectionReady && connectionIdentity === proposedIdentity;
   const connection = useMemo(() => ({ id: newRequestId(), ...connectionQueryClient() }), [connectionIdentity]);
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
-  useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><SessionNameEditorProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></SessionNameEditorProvider></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
+  useEffect(() => { if (originalConnectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, originalConnectionReady, connectionEpoch]);
+  return <SidebarPreferenceBoundary><TransportProvider transport={originalConnection.transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents directoryBarrier={directoryBarrier}><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><SessionNameEditorProvider><Shell connectionReady={originalConnectionReady} pairingAuthority={originalConnection.pairingAuthority} currentDeviceId={originalConnection.currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></SessionNameEditorProvider></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
 }
 
 // The connection owns submitted drafts even while another Session is mounted.
