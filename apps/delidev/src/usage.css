@@ -35,8 +35,12 @@
 .usage-sidebar:not([hidden]) { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 0; }
 .usage-sidebar > h2, .usage-sidebar > p { flex-shrink: 0; }
 .usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
+.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
 .usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
+/* Native datetime controls must shrink with the label track, rather than widen the scroll body. */
+.usage-sidebar label { grid-template-columns: minmax(0, 1fr); min-width: 0; overflow-wrap: anywhere; }
+.usage-sidebar input:not([type=checkbox]), .usage-sidebar select, .usage-sidebar textarea { min-width: 0; max-width: 100%; }
+.usage-sidebar p, .usage-sidebar legend { overflow-wrap: anywhere; }
 .usage-sidebar legend { color: var(--muted); font-weight: 650; font-size: .8rem; }
 .usage-sidebar .actions { flex-shrink: 0; padding-block: 12px; border-top: 1px solid var(--border); background: var(--surface); }
 .usage-sidebar .actions button { width: 100%; }

@@ -11,6 +11,48 @@ import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 
 
+async function sidebarInlineBounds(browser) {
+ const page = await browser.newPage();
+ const css = await Promise.all(["themes.css", "styles.css", "usage.css"].map(file => readFile(join(app, "src", file), "utf8")));
+ try {
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const width of [288, 256]) {
+   const context = `${language}/${theme}/sidebar-${width}`;
+   await page.setViewportSize({ width: 720, height: 450 });
+   const label = language === "ko" ? "시작 (Asia/Seoul 시간)" : "From (Asia/Seoul time)";
+   await page.setContent(`<style>${css.join("\n")}</style><div class="sidebar-pane" style="width:${width}px;height:400px;display:flex;flex-direction:column" data-theme="${theme}"><div class="sidebar-list"><div class="sidebar-surface-outlet"><section class="sidebar-surface-content usage-sidebar"><form class="sidebar-form usage-sidebar-form"><div class="usage-filter-scroll"><fieldset><legend>Time range</legend><label>${label}<input type="datetime-local" step="0.001" value="2026-10-09T10:19:54.733"></label><label>Until<input type="datetime-local" step="0.001" value="2026-10-10T10:19:54.733"></label><label>Source<select><option>${"Long picker name ".repeat(20)}</option></select></label><p>${"LongHelperText".repeat(40)}</p><label class="checkbox"><input type="checkbox">General Chat only</label></fieldset></div><div class="actions"><button type="reset">Reset</button></div></form></section></div></div></div>`);
+   const scroll = page.locator(".usage-filter-scroll");
+   const bounds = await scroll.evaluate(node => {
+    node.scrollLeft = 100;
+    const rect = node.getBoundingClientRect();
+    return { width: node.clientWidth, scrollWidth: node.scrollWidth, left: node.scrollLeft, vertical: node.scrollHeight > node.clientHeight,
+     controls: [...node.querySelectorAll("input,select")].map(control => { const box = control.getBoundingClientRect(); return { left: box.left - rect.left, right: box.right - rect.left, height: box.height }; }) };
+   });
+   assert(bounds.scrollWidth <= bounds.width + 1 && bounds.left === 0, `${context}: ${JSON.stringify(bounds)}`);
+   assert(bounds.vertical, `${context}: long content still scrolls vertically`);
+   assert(bounds.controls.every(control => control.left >= 0 && control.right <= bounds.width + 1 && control.height >= 40), `${context}: controls fit without clipping`);
+   const body = await scroll.boundingBox();
+   await page.mouse.move(body.x + body.width / 2, body.y + Math.min(40, body.height / 2));
+   await page.mouse.wheel(100, 0);
+   await page.waitForTimeout(100);
+   assert.equal(await scroll.evaluate(node => node.scrollLeft), 0, `${context}: horizontal gesture does not move filters`);
+   for (const control of await page.locator(".usage-filter-scroll input,.usage-filter-scroll select").all()) {
+    await control.focus();
+    assert.equal(await scroll.evaluate(node => node.scrollLeft), 0, `${context}: focus does not shift horizontally`);
+   }
+   const date = page.locator('input[type="datetime-local"]').first();
+   await date.fill("2026-10-08T11:20:55.123");
+   assert.equal(await date.inputValue(), "2026-10-08T11:20:55.123", `${context}: precision retained`);
+   await scroll.evaluate(node => node.scrollTop = node.scrollHeight);
+   assert(await scroll.evaluate(node => node.scrollTop > 0), `${context}: vertical movement remains available`);
+   const reset = page.locator(".actions button");
+   assert(await reset.evaluate(node => { const r=node.getBoundingClientRect();return r.top>=0 && r.bottom<=innerHeight; }), `${context}: fixed Reset remains reachable`);
+   await reset.click();
+   assert.equal(await date.inputValue(), "2026-10-09T10:19:54.733", `${context}: reset retains native default`);
+   console.log(JSON.stringify({ operation: "usage-sidebar-inline-bounds", context, result: "passed" }));
+  }
+ } finally { await page.close(); }
+}
+
 async function wheelChaining(page, context) {
  const table=page.locator('.usage-detail > .usage-table'), owner=page.locator('#main');
  const before=await page.evaluate(()=>({reads:window.__usageFixture.summary, tabs:[...document.querySelectorAll('.usage-tabs [role=tab]')].map(n=>n.getAttribute('aria-selected')),details:[...document.querySelectorAll('.usage-page details')].map(n=>n.open), filters:[...document.querySelectorAll('.usage-sidebar input,.usage-sidebar select')].map(n=>n.value)}));
@@ -63,6 +105,7 @@ try {
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   browser = await chromium.launch({ headless: true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
+  await sidebarInlineBounds(browser);
   const page = await browser.newPage();
   page.on("pageerror", error => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
