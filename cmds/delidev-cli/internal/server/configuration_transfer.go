@@ -663,6 +663,11 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 			return err
 		}
 		overlay.self = change.ID
+		// Resolve dependencies from the complete graph, but compare selections
+		// against this original target record rather than its staged replacement.
+		if err = validateNewProviderSelections(overlay, ConfigurationMutation{Kind: change.Kind, ID: change.ID, ExpectedRevision: change.ExpectedRevision}, change.ID, value); err != nil {
+			return err
+		}
 		if err = validateRelationships(overlay, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
 			return err
 		}

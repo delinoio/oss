@@ -58,6 +58,9 @@ func writeConfigurationImport(tx *store.Tx, plan domain.ConfigurationImportPlan)
 			if err != nil {
 				return nil, err
 			}
+			if err = validateNewProviderSelections(tx, ConfigurationMutation{Kind: change.Kind, ID: change.ID, ExpectedRevision: change.ExpectedRevision}, change.ID, value); err != nil {
+				return nil, err
+			}
 			if err = validateRelationships(tx, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
 				return nil, err
 			}
