@@ -12,6 +12,14 @@ export const layout = JSON.parse(readFileSync(new URL('./proto-layout.json', imp
 export function retireCompatibility() {
   const directory = resolve(root, 'packages/delidev-api-client/src/gen/delidev/v1');
   for (const filename of readdirSync(directory)) {
+    // The owned directory service uses one final newline. Keep generation
+    // deterministic without reformatting unrelated historical service modules.
+    if (filename === 'session_directory_pb.ts') {
+      const path = resolve(directory, filename);
+      const source = readFileSync(path, 'utf8');
+      const normalized = source.replace(/\n+$/, '\n');
+      if (normalized !== source) writeFileSync(path, normalized);
+    }
     if (filename === 'delidev_pb.ts' || /^delidev-.*_connectquery\.ts$/.test(filename)) rmSync(resolve(directory, filename), { force: true });
   }
   for (const filename of ['delidev.pb.go', 'zz_delidev_compat.go']) rmSync(resolve(root, 'protos/gen/go/delidev/v1', filename), { force: true });

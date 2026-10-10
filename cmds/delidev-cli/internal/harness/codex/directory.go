@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -187,6 +188,10 @@ func directoryDigest(raw []byte) string {
 }
 
 func directoryInstructionEvidence(paths []string) ([]DirectoryInstructionEvidence, error) {
+	return directoryInstructionEvidenceBefore(paths, time.Time{})
+}
+
+func directoryInstructionEvidenceBefore(paths []string, resumeStarted time.Time) ([]DirectoryInstructionEvidence, error) {
 	if paths == nil || len(paths) > 100 {
 		return nil, directoryUncertain()
 	}
@@ -197,7 +202,7 @@ func directoryInstructionEvidence(paths []string) ([]DirectoryInstructionEvidenc
 			return nil, directoryUncertain()
 		}
 		before, err := os.Lstat(path)
-		if err != nil || !before.Mode().IsRegular() || before.Size() > 256<<10 {
+		if err != nil || !before.Mode().IsRegular() || before.Size() > 256<<10 || !resumeStarted.IsZero() && before.ModTime().After(resumeStarted) {
 			return nil, directoryUncertain()
 		}
 		f, err := os.Open(path)
@@ -220,7 +225,7 @@ func directoryInstructionEvidence(paths []string) ([]DirectoryInstructionEvidenc
 
 func (c *Client) ReadDirectoryReloadEvidence(ctx context.Context, requestID domain.ID, bound ThreadResult) (DirectoryReloadEvidence, error) {
 	var empty DirectoryReloadEvidence
-	if requestID.Validate() != nil || c.thread == "" || c.problem != nil || bound.Thread == nil || bound.Thread.ID != c.thread || bound.Effective == nil || bound.DirectorySources == nil {
+	if requestID.Validate() != nil || c.thread == "" || c.problem != nil || bound.Thread == nil || bound.Thread.ID != c.thread || bound.Effective == nil || bound.DirectorySources == nil || bound.DirectoryStartedAt.IsZero() {
 		return empty, directoryUncertain()
 	}
 	if err := c.acquireControl(ctx); err != nil {
@@ -248,7 +253,7 @@ func (c *Client) ReadDirectoryReloadEvidence(ctx context.Context, requestID doma
 	}
 	digest := directoryDigest(canonical)
 	clear(canonical)
-	instructions, err := directoryInstructionEvidence(bound.DirectorySources)
+	instructions, err := directoryInstructionEvidenceBefore(bound.DirectorySources, bound.DirectoryStartedAt)
 	if err != nil {
 		return empty, err
 	}

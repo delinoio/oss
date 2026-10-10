@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -255,5 +256,30 @@ func TestDirectorySettingsPreservesImplicitOriginalWriteRoot(t *testing.T) {
 	changed.Sandbox.NetworkAccess = true
 	if DirectorySettingsEqual(source, changed) {
 		t.Fatal("new network permission acquired")
+	}
+}
+
+func TestDirectoryInstructionChangeDuringResumeIsRefused(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "AGENTS.md")
+	if err := os.WriteFile(path, []byte("Original instructions"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now().Add(-time.Hour)
+	after := time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, after, after); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := directoryInstructionEvidenceBefore([]string{path}, before); err == nil {
+		t.Fatal("post-resume instruction write accepted")
+	}
+	if err := os.Chtimes(path, before, before); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := directoryInstructionEvidenceBefore([]string{path}, after); err != nil {
+		t.Fatal("stable earlier source refused", err)
 	}
 }

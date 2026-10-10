@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -105,11 +106,12 @@ type EffectiveSettings struct {
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
 	// DirectorySources is Worker-private reload evidence, never public observation.
-	DirectorySources []string          `json:"-"`
-	SkillInputs      []HistoricalInput `json:"-"`
-	RequestID        domain.ID
-	Thread           *Thread
-	Effective        *EffectiveSettings
+	DirectoryStartedAt time.Time         `json:"-"`
+	DirectorySources   []string          `json:"-"`
+	SkillInputs        []HistoricalInput `json:"-"`
+	RequestID          domain.ID
+	Thread             *Thread
+	Effective          *EffectiveSettings
 }
 
 type threadMethod string
@@ -369,6 +371,9 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		if err := settings.directoryClaim(); err != nil {
 			return result, err
 		}
+	}
+	if settings.directorySource != nil {
+		result.DirectoryStartedAt = time.Now()
 	}
 	response, err := c.wire.Call(ctx, requestID, string(method), params)
 	if err != nil {
