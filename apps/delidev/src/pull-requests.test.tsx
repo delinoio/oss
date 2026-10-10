@@ -66,6 +66,37 @@ it("shows the approved empty-page hierarchy and scopes styles only while PR is a
   expect(value.query).not.toHaveBeenCalled();
 });
 
+it("keeps repository refresh in the single title row with original fetching and inactive guards", async () => {
+  const value = fixture();
+  let release!: () => void;
+  value.defer(new Promise<void>(resolve => { release = resolve; }));
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const refresh = pane.getByRole("button", { name: "Refresh", exact: true }) as HTMLButtonElement;
+  const title = pane.getByRole("heading", { name: "Pull requests", level: 2 });
+  expect(title.parentElement).toBe(refresh.closest(".pr-sidebar-title"));
+  expect(pane.queryByRole("heading", { name: "Repositories" })).toBeNull();
+  expect(refresh.querySelector(".settings-action-name")?.textContent).toBe("Refresh");
+  expect(refresh.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  expect(refresh.disabled).toBe(true);
+  await act(async () => { value.defer(); release(); });
+  await waitFor(() => expect(refresh.disabled).toBe(false));
+  const reads = value.list.mock.calls.length;
+  fireEvent.focus(refresh);
+  expect(screen.getByRole("tooltip").textContent).toBe("Refresh");
+  expect(value.list).toHaveBeenCalledTimes(reads);
+  fireEvent.blur(refresh);
+  let finish!: () => void;
+  value.defer(new Promise<void>(resolve => { finish = resolve; }));
+  fireEvent.click(refresh);
+  await waitFor(() => expect(refresh.disabled).toBe(true));
+  expect(value.list).toHaveBeenCalledTimes(reads + 1);
+  await act(async () => { value.defer(); finish(); });
+  await waitFor(() => expect(refresh.disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect(refresh.disabled).toBe(true);
+});
+
 it("shows only the selected name and loads the selected default query automatically", async () => {
   const value = fixture(); render(<App transport={value.transport} />);
   const pane = await open(); await choose(value.rows[0]);

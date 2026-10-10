@@ -15,6 +15,7 @@ import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
 import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { usePRWorkflow } from "./pr-workflow";
 import { Icon } from "./sidebar";
+import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation, SettingsActionScope } from "./settings-action";
 
 interface LoadedPullRequests {
   repositoryId: string;
@@ -184,8 +185,9 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const cardsCurrent = resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey && (navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search);
   const filtersChanged = Boolean(loaded && (loaded.state !== state || loaded.search !== search.trim() || loaded.pageSize !== pageSize));
   return <>
-    <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")}>
-      <div ref={bindRoot}><header className="sidebar-list-heading"><h3>{copy("pull-requests.repositories_1e32af")}</h3><button type="button" disabled={!active || repositories.isFetching} onClick={repositories.refetch}><Icon name="refresh" />{copy("pull-requests.refresh_0e9161")}</button></header>
+    <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")} showHeading={false}>
+      <header className="pr-sidebar-title"><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2><SettingsActionScope><SettingsActionButton className="pr-sidebar-refresh" icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} aria-label={copy("pull-requests.refresh_0e9161")} type="button" disabled={!active || repositories.isFetching} onClick={repositories.refetch}>{copy("pull-requests.refresh_0e9161")}</SettingsActionButton></SettingsActionScope></header>
+      <div ref={bindRoot}>
       <Problem error={paginationError(repositories.error?.failure)} />
       {repositories.isPending && active ? <p role="status">{copy("pull-requests.loadingRepositories_460ca9")}</p> : null}
       {repositories.error && repositories.data ? <p className="sidebar-help">{copy("pull-requests.refreshFailedShowingThePreviousRepository_6c5a34")}</p> : null}
