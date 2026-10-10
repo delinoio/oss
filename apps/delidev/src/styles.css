@@ -900,6 +900,8 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-archive-indicator { margin: 4px 8px 8px; font-size: 12px; color: var(--muted); }
 .sidebar-continuation { min-height: 1px; font-size: 12px; color: var(--muted); }
 .sidebar-continuation > span { display: block; padding: 4px 8px; }
+/* Queue refreshes announce outside the retained (possibly hidden) surface. */
+.queue-background-read .sidebar-continuation > span[role="status"] { display: none; }
 .sidebar-project-row { position: relative; }
 .sidebar-project-tooltip { display: none; position: absolute; z-index: 20; top: 100%; left: 0; max-width: 100%; padding: 8px; border-radius: 8px; background: var(--inverse-surface); color: var(--on-inverse); font-size: 12px; overflow-wrap: anywhere; }
 .sidebar-project-row:hover .sidebar-project-tooltip, .sidebar-project-row:focus-visible .sidebar-project-tooltip { display: block; }

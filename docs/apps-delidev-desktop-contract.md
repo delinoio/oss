@@ -5194,6 +5194,17 @@ controllers and composer identity remain independent of row visibility. This
 presentation adds no movement controls, RPC, protocol, migration or native
 change. Durable reordering requires its separately negotiated feature.
 
+Healthy same-identity automatic rereads preserve the accepted empty no-card
+presentation and retained populated rows in both history and negotiated waiting
+queues. Read progress alone adds no normal-flow height; a mounted polite status
+outside the hidden queue announces background refresh in English or Korean.
+This cached presentation grants neither fresh zero-waiting proof nor mutation
+permission. Initial loading, failed reads and explicit recovery, incomplete
+continuation and payload restoration remain visible. Actual rows, attachments,
+editors and errors may change geometry; preserve the original composer, focus,
+drafts and request locks. Browser geometry and real native acceptance require
+separate validation evidence.
+
 ## Waiting input movement
 Only negotiated System 75 exposes six-dot drag handles, a bounded insertion line and More > Move up/Move down in the approved compact composer-adjacent queue. Keyboard/touch menu actions and drag drops share one move-before operation with the original input/anchor revisions and bigint generation. First/last actions are disabled at the actual boundary; a reached-page boundary can load the next bounded page before an explicit downward movement, retaining the original selection and generation. Never reorder optimistically. Keep the authoritative list until acknowledgment, then refresh dispatch order, restore the original row focus when resident and announce the accepted move.
 

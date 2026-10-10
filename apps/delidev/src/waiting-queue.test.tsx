@@ -56,3 +56,34 @@ it("retains movement when the response has no original acknowledgement",async()=
  expect(f.move.mock.calls[1][0]).toEqual(original);
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
 });
+
+it.each([false, true])("retains queue presentation through three healthy reads (populated=%s) and exposes a failed reread", async populated => {
+ const f=fixture();if(!populated)f.replace([]);
+ const view=render(f.view());
+ const surface=view.container.querySelector<HTMLDivElement>(".queue-compact-list")!;
+ await waitFor(()=>expect(f.read).toHaveBeenCalledOnce());
+ await waitFor(()=>expect(surface.hidden).toBe(!populated));
+ if(populated)await screen.findByText("Third");
+ for(let cycle=0;cycle<3;cycle++){
+  let release:()=>void=()=>{};
+  f.read.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{release=resolve;});return {inputs:populated?f.rows:[],nextPageToken:"",currentQueueGeneration:9007199254740993n,waitingCount:populated?3:0};});
+  view.rerender(f.view(String(cycle+2)));
+  await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(cycle+2));
+  expect(surface.hidden).toBe(!populated);
+  expect(surface.classList.contains("queue-background-read")).toBe(true);
+  const status=screen.getByText("Loading input queue…");
+  expect(status.getAttribute("role")).toBe("status");
+  expect(status.classList.contains("sidebar-sr-only")).toBe(true);
+  expect(surface.contains(status)).toBe(false);
+  if(populated)expect(screen.getByText("Third")).toBeDefined();
+  await act(async()=>release());
+  await waitFor(()=>expect(surface.classList.contains("queue-background-read")).toBe(false));
+  expect(surface.hidden).toBe(!populated);
+ }
+ f.read.mockRejectedValueOnce(new ConnectError("Read unavailable",Code.Unavailable));
+ view.rerender(f.view("5"));
+ await screen.findByRole("button",{name:/Retry/});
+ expect(surface.hidden).toBe(false);
+ expect(surface.classList.contains("queue-background-read")).toBe(false);
+ expect(f.move).not.toHaveBeenCalled();
+});

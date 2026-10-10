@@ -140,3 +140,39 @@ it.each([
     view.unmount();
   } finally { await i18n.changeLanguage("en"); }
 });
+
+it("keeps the legacy empty queue hidden through three automatic same-connection rereads and preserves the composer", async () => {
+  const id = newRequestId();
+  const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Stable empty queue", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "clear" }) });
+  const read = vi.fn(async () => ({ inputs: [] }));
+  const transport = createRouterTransport(router => {
+    router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+    router.service(SessionService, { listSessions: () => ({ sessions: [session] }), listQueue: read });
+    router.service(ResourceService, { getResource: () => ({ resource: session }), getSnapshot: () => ({ resources: [session], cursor: newRequestId() }), listResources: () => ({ resources: [] }), async *watchEvents(_request, context) { await new Promise<void>(resolve => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); }); } });
+    router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences: create(NotificationPreferencesSchema, { revision: 1n }) }) });
+  });
+  const view = render(<App transport={transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Stable empty queue/ }));
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  fireEvent.change(composer, { target: { value: "Retained multiline\ndraft" } });
+  composer.focus();
+  const surface = view.container.querySelector<HTMLDivElement>(".queue-read-state")!;
+  await waitFor(() => expect(surface.hidden).toBe(true));
+  for (let cycle = 0; cycle < 3; cycle++) {
+    let release: () => void = () => {};
+    const before = read.mock.calls.length;
+    read.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve; }); return { inputs: [] }; });
+    view.rerender(<App transport={transport} connectionEpoch={cycle + 1} />);
+    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(before));
+    expect(surface.hidden).toBe(true);
+    const status = screen.getByText("Loading input queue…");
+    expect(status.classList.contains("sidebar-sr-only")).toBe(true);
+    expect(surface.contains(status)).toBe(false);
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+    expect((composer as HTMLTextAreaElement).value).toBe("Retained multiline\ndraft");
+    expect(document.activeElement).toBe(composer);
+    await act(async () => release());
+    await waitFor(() => expect(surface.classList.contains("queue-background-read")).toBe(false));
+    expect(surface.hidden).toBe(true);
+  }
+});
