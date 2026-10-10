@@ -182,3 +182,15 @@ func TestNativeGeneratedImageMetadataRejectsUnavailableProvider(t *testing.T) {
 		t.Fatal("private bytes serialized")
 	}
 }
+
+func TestNativeGeneratedImageSourceRequiresNegotiatedWorkerCapability(t *testing.T) {
+	// A frozen generated-image assignment cannot acquire new source-operation
+	// authority through a peer that never negotiated generation or was downgraded.
+	// Reject before reading original native/workspace state.
+	for _, capabilities := range [][]domain.WorkerCapability{nil, {domain.ImageInputsV1}} {
+		err := checkedExecutionSource(nil, store.Record{}, domain.Session{}, domain.Machine{WorkerCapabilities: capabilities}, domain.ExecutionJobInput{NativeImageGeneration: true})
+		if domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatal("unsupported Worker admitted the original generated-image assignment", err)
+		}
+	}
+}
