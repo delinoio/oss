@@ -54,7 +54,7 @@ Each window preserves its ID, order, remaining fraction, observation time and re
 
 ## Task dialogs
 
-Keep the subscription inventory, filters and quota observations mounted in their category page. Account details uses one category-owned 768px Form SettingsTaskDialog outside virtualized rows, with Heading focus and alias/service context. Account creation, browser sign-in and management use the shared 960px Settings task shell; account preferences use 768px, and disconnect/logout confirmation uses a 480px step in the same native dialog. Preserve all fields, full identities, service capability, revision and original native/account checks. The [desktop Settings task contract](apps-delidev-desktop-contract.md#settings-task-dialogs) owns sizing, scrollable body, fixed header/footer, focus and responsive behavior.
+Keep the subscription inventory, filters and quota observations mounted in their category page. Account details uses one category-owned 768px Form SettingsTaskDialog outside virtualized rows, with Heading focus and alias/service context. Account creation and browser sign-in use the shared 720px wizard task shell; management retains the 960px task shell; account preferences use 768px, and disconnect/logout confirmation uses a 480px step in the same native dialog. Preserve all fields, full identities, service capability, revision and original native/account checks. The [desktop Settings task contract](apps-delidev-desktop-contract.md#settings-task-dialogs) owns sizing, scrollable body, fixed header/footer, focus and responsive behavior.
 
 Closing sign-in disposes its task controller, local callback/listener authority, sensitive progress, inputs and retry presentation even when a request is pending or uncertain. Keep the account inventory mounted and interactive; show no hidden-operation status or original-operation opener. Existing account creation and accepted login remain server-owned. X/Escape sends no business cancellation or logout. Remove duplicate dismissal buttons under the desktop dialog contract; preserve distinct business cancellation and internal return. A fresh task reads current state without replaying the closed task. Open-task uncertain retries remain explicit and preserve exact UUIDs, revisions and bytes. Late results cannot reopen a task, navigate, focus name entry, bind/open a browser or initiate a subsequent login/name save.
 
@@ -114,7 +114,7 @@ The approved 1280×800 preview illustrates initialization failure; it is not obs
 ## Claude account onboarding and management
 
 Claude Add account requires inventory 17, System `CLAUDE_SUBSCRIPTIONS_V1 = 38`
-and trusted native browser control. The existing wide 960px Settings task dialog
+and trusted native browser control. The existing 720px wizard Settings task dialog
 shows Runner Device → Sign in → Account name. Opening the task does not save an
 account or start authentication. Select one local/remote machine advertising
 Worker `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` with the single verified original

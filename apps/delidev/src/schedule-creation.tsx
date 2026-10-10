@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { flushSync } from "react-dom";
@@ -118,17 +119,17 @@ export function ScheduleCreation({ definition, change, active, blocked: external
   };
   const next = () => { if (!blocked && validate(step)) move(step + 1); };
   const create = () => { if (blocked || submitBlocked || step !== 3) return; for (let index=0; index<3; index++) if (!validate(index)) return; void submit(); };
-  return <ResourceSelectionPending.Provider value={reportSelectionPending}><section className="schedule-creation"><form ref={root} noValidate onSubmit={(event) => { event.preventDefault(); if (step === 3) create(); else next(); }} onKeyDown={event => {
+  return <ResourceSelectionPending.Provider value={reportSelectionPending}><section className="schedule-creation desktop-wizard"><form ref={root} noValidate onSubmit={(event) => { event.preventDefault(); if (step === 3) create(); else next(); }} onKeyDown={event => {
     if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "checkbox" && event.target.type !== "radio" && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); if (step < 3) next(); }
   }}>
 
     <div className="schedule-creation-scroll">
       <header className="schedule-creation-header"><h2>{copy("schedule-creation.newSchedule_3bfe90")}</h2><p>{copy("schedule-creation.setUpARecurringTaskFor_a7ff02")}</p></header>
-      <ol className="schedule-creation-progress" aria-label={copy("schedule-creation.progress")}>{steps.map((label,index)=><li key={index} aria-current={index===step?"step":undefined} data-completed={index<step} aria-label={copy("schedule-creation.stepStatus", { label, status: copy(index<step?"schedule-creation.completed":index===step?"schedule-creation.current":"schedule-creation.future") })}>{index<step?<span aria-hidden="true">✓</span>:index+1} {label}</li>)}</ol>
-      <h3 className="schedule-creation-step-title" ref={stepHeading} tabIndex={-1}>{steps[step]}</h3>
+      <ol className="schedule-creation-progress wizard-progress" aria-label={copy("schedule-creation.progress")}>{steps.map((label,index)=><li key={index} aria-current={index===step?"step":undefined} data-completed={index<step} aria-label={copy("schedule-creation.stepStatus", { label, status: copy(index<step?"schedule-creation.completed":index===step?"schedule-creation.current":"schedule-creation.future") })}><span className="wizard-step-number" aria-hidden="true">{index+1}</span>{label}</li>)}</ol>
+      <h3 className="schedule-creation-step-title" id={`${radios}-step-title`} ref={stepHeading} tabIndex={-1}>{steps[step]}</h3>
       <div className="schedule-creation-grid">
-        <fieldset data-authoring-step="0" hidden={step !== 0} disabled={blocked || step !== 0} className="schedule-creation-card schedule-creation-task" aria-labelledby={`${radios}-task`}>
-          <h3 id={`${radios}-task`}>{copy("schedule-creation.task_4bc74b")}</h3><p>{copy("schedule-creation.scheduleNameProjectAndScheduledPrompt_26bf44")}</p>
+        <fieldset data-authoring-step="0" hidden={step !== 0} disabled={blocked || step !== 0} className="schedule-creation-card schedule-creation-task" aria-labelledby={`${radios}-step-title`}>
+          <p>{copy("schedule-creation.scheduleNameProjectAndScheduledPrompt_26bf44")}</p>
           <label>{copy("schedule-creation.scheduleName_60918e")}<input ref={name} required maxLength={256} placeholder={copy("schedule-creation.eGWeekdayCodeReview_9d7f64")} value={text(definition.name)} onChange={(event) => field("name")(event.target.value)} /></label>
           <ResourceChoice label={copy("schedule-creation.project_985959")} kind={EntityKind.PROJECT} value={text(definition.project_id)} active={active && step === 0} required showStatus change={(project_id) => change({ ...definition, project_id, starting: [] })} />
           <label>{copy("schedule-creation.scheduledPrompt_209d2b")}<textarea required rows={3} maxLength={262144} placeholder={copy("schedule-creation.describeWhatTheAgentShouldDo_08ee20")} value={text(definition.prompt)} onChange={(event) => field("prompt")(event.target.value)} /></label>

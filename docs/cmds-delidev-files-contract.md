@@ -126,3 +126,11 @@ comparison-kind and path descriptors. Revisions remain observations, not tab
 identity. Only active previews read bytes; departure cancels publication and
 discards content through the existing read owner. Presentation Close changes no
 workspace, repository, Worker or local-review mutation ownership.
+File activation moves focus to the visible shared preview heading without scrolling
+the retained explorer. Read completion and explicit content refresh never move
+focus. Closing the selected File preview returns to its retained Files descriptor
+when available; the same active explorer restores an available selected row or tree
+and its original scroll owners. Inactive or replaced explorers and late reads cannot
+receive a focus handoff. Closing an inactive File preserves current selection and
+focus; without a retained Files descriptor the ordinary neighboring tab fallback
+remains available.

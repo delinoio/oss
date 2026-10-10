@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
@@ -543,7 +544,7 @@ function AccountCreationWizard({
     const hasCredentials = Boolean(text(object(data.connection).id));
     const validationState = text(object(data.validation).state) || copy("account-settings.extra.3bc91159cd96");
     const validationLabel = text(data.health) === "unverified" ? copy("account-settings.extra.b2c4eef1f935") : copy("account-settings.sentence.60031f8620a9", { v0: statusLabel(validationState) });
-    return <section className="account-wizard api-keys-view" aria-labelledby="api-account-created-title">
+    return <section className="account-wizard api-keys-view desktop-wizard" aria-labelledby="api-account-created-title">
       <SettingsActionButton icon={SettingsActionIcon.Back} className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</SettingsActionButton>
       <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 id="api-account-created-title">{resourceName(current)}</h2>
       <p>{copy("account-settings.apiFormat")}: {apiFormatLabels[apiFormat(data.api_protocol) ?? protocol as APIFormatId]}</p>
@@ -578,7 +579,7 @@ function AccountCreationWizard({
     </>} flow={oauth} back={returnToProviders} manual={() => { setStep(WizardStep.Account); setFocusTarget(WizardFocus.Account); }} done={resource => { saved(resource); close(); }} />;
   }
 
-  return <section ref={pickerContent} className="account-wizard api-keys-view" aria-labelledby="api-account-wizard-title">
+  return <section ref={pickerContent} className="account-wizard api-keys-view desktop-wizard" aria-labelledby="api-account-wizard-title">
     <SettingsActionButton icon={SettingsActionIcon.Back} className="api-entry-back" type="button" disabled={providerChecking || create.busy || create.uncertain || connect.busy || connect.uncertain} onClick={navigateBack}>{copy("account-settings.backToAiApiKeys_2d6214")}</SettingsActionButton>
     <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} /><h2 hidden={inTask} id="api-account-wizard-title">{copy("account-settings.addAiApiKey_2c04a8")}</h2>
     {step === WizardStep.Provider ? <>
