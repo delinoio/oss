@@ -3,6 +3,7 @@ import { WaitingQueue } from "./waiting-queue";
 import { FlatDisclosureScope } from "./disclosure";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SessionToolMenu } from "./session-tool-menu";
+import { NativeFunctionOutput } from "./native-function-output";
 import { NativeAutoReview } from "./native-auto-review";
 import { useSessionRevert } from "./session-revert";
 import { isImageStartupRejectedInput } from "./startup-rejection";
@@ -253,7 +254,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
       {items(artifact.deltas).length ? <Disclosure><DisclosureSummary>{copy("session.streamedObservations_589dae")}</DisclosureSummary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</Disclosure> : null}
       {artifact.completed ? <section aria-label={copy("session.completedArtifact_de26fd")}><h3>{copy("session.completedArtifact_de26fd")}</h3><pre>{text(completed.text)}</pre>{[...items(completed.summary), ...items(completed.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}</section> : null}
     </Disclosure> : null}
-    {progress.kind === "codex-auto-review" ? <NativeAutoReview progress={progress} state={text(data.state)} /> : progress.kind === "native-compaction" ? <NativeContextCompaction progress={progress} state={text(data.state)} /> : progress.kind === "opencode-workspace" ? <NativeWorkspaceEvent progress={progress} state={text(data.state)} /> : progress.kind === "opencode-changes" ? <NativeChanges progress={progress} state={text(data.state)} turn={text(data.native_turn_id)} /> : progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <Disclosure open><DisclosureSummary><LocalizedText id="session.progress_a4d877" components={{ s0: <>{text(progress.kind)}</> }} /></DisclosureSummary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></Disclosure> : null}
+    {progress.kind === "codex-function-output" ? <NativeFunctionOutput progress={progress} state={text(data.state)} /> : progress.kind === "codex-auto-review" ? <NativeAutoReview progress={progress} state={text(data.state)} /> : progress.kind === "native-compaction" ? <NativeContextCompaction progress={progress} state={text(data.state)} /> : progress.kind === "opencode-workspace" ? <NativeWorkspaceEvent progress={progress} state={text(data.state)} /> : progress.kind === "opencode-changes" ? <NativeChanges progress={progress} state={text(data.state)} turn={text(data.native_turn_id)} /> : progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <Disclosure open><DisclosureSummary><LocalizedText id="session.progress_a4d877" components={{ s0: <>{text(progress.kind)}</> }} /></DisclosureSummary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></Disclosure> : null}
   </article>;
 });
 

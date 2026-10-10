@@ -18,6 +18,7 @@ type CodexEventPublisher struct {
 	publisher         *ExecutionPublisher
 	thread, turn      domain.ID
 	messages          map[string]domain.ExecutionMessageUpdate
+	functionOutputs   map[string]codexFunctionOutputPublication
 	tools             map[string]codexToolPublication
 	artifacts         map[string]codexArtifactPublication
 	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
@@ -31,7 +32,7 @@ type CodexEventPublisher struct {
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
+	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, functionOutputs: map[string]codexFunctionOutputPublication{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 // The accepted authentication profile fixes native provider authority. Neither
@@ -161,6 +162,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.FunctionOutputStartedEvent, codex.FunctionOutputCompletedEvent:
+		return true, c.publishFunctionOutput(ctx, event)
 	case codex.AutoReviewEvent:
 		if event.AutoReview == nil || c.publisher.input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || event.ThreadID != c.thread || event.TurnID != c.turn || !event.Correlated {
 			return false, publicationUncertain()
@@ -302,6 +305,13 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			outcome = domain.ExecutionStopped
 		default:
 			return false, publicationUncertain()
+		}
+		if outcome == domain.ExecutionSucceeded {
+			for _, output := range c.functionOutputs {
+				if !output.Completed {
+					return false, publicationUncertain()
+				}
+			}
 		}
 		published := domain.ExecutionEvent{Kind: domain.ExecutionTurnFinished, Outcome: outcome}
 		if event.Turn.Problem != nil {

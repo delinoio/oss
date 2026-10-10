@@ -29,6 +29,7 @@ const (
 	PlanProgress                  ProgressKind = "plan"
 	DiffProgress                  ProgressKind = "diff"
 	NativeCompactionProgress      ProgressKind = "native-compaction"
+	CodexFunctionOutputProgress   ProgressKind = "codex-function-output"
 
 	PlanPending   PlanStepStatus = "pending"
 	PlanRunning   PlanStepStatus = "running"
@@ -212,17 +213,19 @@ type NativePlan struct {
 	Steps       []PlanStep `json:"steps"`
 }
 
-// Turn progress has no native item identity. A diff is only an observation,
-// not repository/file-review ownership or permission to read/write a path.
+// Turn progress normally has no native item identity. Function-call results
+// retain their original item in a separate immutable observation. Neither
+// results nor diffs grant tool, repository, media or file-read authority.
 type NativeProgress struct {
-	AutoReview *AutoReviewObservation       `json:"auto_review,omitempty"`
-	Compaction *NativeCompactionObservation `json:"compaction,omitempty"`
-	Workspace  *OpenCodeWorkspaceEvent      `json:"workspace,omitempty"`
-	Changes    *OpenCodeChanges             `json:"changes,omitempty"`
-	Todo       *OpenCodeTodoProgress        `json:"todo,omitempty"`
-	Kind       ProgressKind                 `json:"kind"`
-	Plan       *NativePlan                  `json:"plan,omitempty"`
-	Diff       *string                      `json:"diff,omitempty"`
+	FunctionOutput *CodexFunctionOutput         `json:"function_output,omitempty"`
+	AutoReview     *AutoReviewObservation       `json:"auto_review,omitempty"`
+	Compaction     *NativeCompactionObservation `json:"compaction,omitempty"`
+	Workspace      *OpenCodeWorkspaceEvent      `json:"workspace,omitempty"`
+	Changes        *OpenCodeChanges             `json:"changes,omitempty"`
+	Todo           *OpenCodeTodoProgress        `json:"todo,omitempty"`
+	Kind           ProgressKind                 `json:"kind"`
+	Plan           *NativePlan                  `json:"plan,omitempty"`
+	Diff           *string                      `json:"diff,omitempty"`
 }
 type ExecutionProgressUpdate struct {
 	ID       ID             `json:"id"`
@@ -234,6 +237,9 @@ func (u ExecutionProgressUpdate) Validate() error {
 		return invalidArtifact()
 	}
 	p := u.Progress
+	if p.FunctionOutput != nil && p.Kind != CodexFunctionOutputProgress {
+		return invalidArtifact()
+	}
 	if p.AutoReview != nil && p.Kind != AutoReviewProgress {
 		return invalidArtifact()
 	}
@@ -241,6 +247,10 @@ func (u ExecutionProgressUpdate) Validate() error {
 		return invalidArtifact()
 	}
 	switch p.Kind {
+	case CodexFunctionOutputProgress:
+		if p.FunctionOutput == nil || p.FunctionOutput.Validate() != nil || p.AutoReview != nil || p.Compaction != nil || p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan != nil || p.Diff != nil {
+			return invalidArtifact()
+		}
 	case AutoReviewProgress:
 		if p.AutoReview == nil || p.AutoReview.Validate() != nil || p.Compaction != nil || p.Workspace != nil || p.Changes != nil || p.Todo != nil || p.Plan != nil || p.Diff != nil {
 			return invalidArtifact()

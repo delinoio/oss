@@ -193,7 +193,7 @@ child cwd and runtime workspace roots. Path import may name only the exact
 validated rollout returned for the original Worker-private runtime. Reject
 incomplete, active, paginated, child, goal and unsupported histories. The initial
 profile supports complete user/assistant text and reasoning turns (at most 128
-turns / 4 MiB, with a 64 MiB rollout); API Fork and Sidechat retain the text/reasoning profile. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. Unknown
+turns / 4 MiB, with a 64 MiB rollout); API Fork and Sidechat retain the text/reasoning profile plus closed original function-call output evidence. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. Unknown
 creation or cleanup outcomes retain uncertainty and never authorize replay.
 
 Project forks default to separate detached worktrees at every actual source
@@ -525,3 +525,8 @@ account/native assignment retain their existing invariants. Copied history
 remains inspectable when the original common/admin directories are unavailable.
 Sidechat remains metadata-only, and original Local folder lifetimes remain
 unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-contract.md#complete-independent-fork-inventory).
+
+
+### Original Codex function-call output history
+
+Full original Codex history additionally admits the closed bounded `functionCallOutput` decoder in the [harness contract](cmds-delidev-harness-contract.md#codex-function-call-output-observations). Preserve original output strings, ordered structured content, encrypted bytes and canonical history digests privately across continuation, compaction and supported Fork comparisons. The public safe projection cannot replace original history or confer execution, tool dispatch, media retrieval, decryption or cleanup authority. Unknown fields/variants, ambiguous image references and excessive bounds retain recovery without input replay. Existing source eligibility, native profile, history pagination and original account/Worker ownership checks remain independent.

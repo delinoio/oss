@@ -258,6 +258,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "functionCallOutput" {
+			if _, err := decodeFunctionOutput(rawItem); err != nil {
+				return Turn{}, nil, err
+			}
+		}
 		if identity.Type == "sleep" {
 			if _, err := decodeSleep(rawItem); err != nil {
 				return Turn{}, nil, err

@@ -140,5 +140,8 @@
   "session.revertHistoricalAttachments": "Earlier images and skill selections remain in history. Select them again for a new input; the restored prompt has not been submitted.",
   "session.previousContext": "Earlier context",
   "session.startupImageInput": "Keep the original rejected input and images. Start a new session with an Agent Worker and Runner Device that explicitly support images, or start a new text-only session. Retrying this session keeps its original input, Agent Worker and Runner Device.",
-  "session.sleepDuration": "Sleep duration: <s0/> milliseconds"
+  "session.sleepDuration": "Sleep duration: <s0/> milliseconds",
+  "session.functionOutput": "Function output",
+  "session.encryptedOutput": "Encrypted content (private)",
+  "session.functionOutputUnavailable": "Function output unavailable"
 }

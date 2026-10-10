@@ -107,6 +107,11 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.Progress.Kind == domain.CodexFunctionOutputProgress {
+		if input.Configuration.Harness != domain.Codex || update.Progress.FunctionOutput == nil {
+			return executionEventConflict()
+		}
+	}
 	if update.Progress.Kind == domain.AutoReviewProgress {
 		if input.Configuration.Harness != domain.Codex || input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || input.Configuration.SidechatPolicy != "" {
 			return executionEventConflict()
@@ -128,9 +133,13 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 		}
 		progress.NativeCompactions = next
 	}
-	// Turn-level observations have their own immutable product identity and no
-	// native item. They must not occupy a fabricated native-message index entry.
+	// Turn-level observations have their own immutable product identity. Only
+	// function-call results bind a real original native item; other progress
+	// must not occupy a fabricated native-message index entry.
 	value := domain.ExecutionMessage{ContextRevision: input.ContextRevision, ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Role: domain.ProgressMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, LastSequence: event.Sequence, Progress: &update.Progress}
+	if update.Progress.Kind == domain.CodexFunctionOutputProgress {
+		value.NativeID = update.Progress.FunctionOutput.NativeItemID
+	}
 	nativeEvent := ""
 	if update.Progress.Kind == domain.OpenCodeTodoProgressKind {
 		nativeEvent = update.Progress.Todo.NativeEventID
@@ -149,7 +158,14 @@ func publishExecutionProgress(tx *store.Tx, input domain.ExecutionJobInput, sess
 	if _, err := tx.Put(domain.MessageKind, update.ID, 0, session.ID, session.ProjectID, value); err != nil {
 		return err
 	}
+	if update.Progress.Kind == domain.CodexFunctionOutputProgress {
+		if err := tx.BindExecutionMessage(session.ID, input.ExecutionID, update.ID, event.NativeThreadID, event.NativeTurnID, value.NativeID, domain.MessageComplete); err != nil {
+			return err
+		}
+	}
 	switch update.Progress.Kind {
+	case domain.CodexFunctionOutputProgress:
+		// Result evidence does not advance plan/diff/tool or turn-success cursors.
 	case domain.AutoReviewProgress:
 	// The review lifecycle remains separate from plan, diff and tool cursors.
 	case domain.NativeCompactionProgress:

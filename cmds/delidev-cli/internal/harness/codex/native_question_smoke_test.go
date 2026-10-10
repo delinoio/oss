@@ -72,6 +72,9 @@ func TestManualNativeQuestionResponse(t *testing.T) {
 			}
 			accepted = true
 		}
+		if event.Kind == FunctionOutputCompletedEvent && event.FunctionOutput != nil {
+			functionOutputs++
+		}
 		if event.Native != nil && event.Native.Method == "item/completed" {
 			var params struct{ Item struct{ Type string } }
 			if json.Unmarshal(event.Native.Params, &params) == nil && params.Item.Type == "functionCallOutput" {

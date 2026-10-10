@@ -568,3 +568,8 @@ Native session compaction for the feature follows the planned shared boundary in
 Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
+
+
+### Original Codex function-call output history
+
+Full original Codex history additionally admits the closed bounded `functionCallOutput` decoder in the [harness contract](cmds-delidev-harness-contract.md#codex-function-call-output-observations). Preserve original output strings, ordered structured content, encrypted bytes and canonical history digests privately across continuation, compaction and supported Fork comparisons. The public safe projection cannot replace original history or confer execution, tool dispatch, media retrieval, decryption or cleanup authority. Unknown fields/variants, ambiguous image references and excessive bounds retain recovery without input replay. Existing source eligibility, native profile, history pagination and original account/Worker ownership checks remain independent.

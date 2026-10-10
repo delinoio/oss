@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.native-function-output { min-width: 0; overflow-wrap: anywhere; }
+.native-function-output pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-function-output ol { min-width: 0; padding-inline-start: 24px; }
