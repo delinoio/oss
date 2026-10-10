@@ -19,8 +19,18 @@ import (
 )
 
 func shortQuotaBundle(t *testing.T) []byte {
+	return shortQuotaBundleName(t, "", "")
+}
+
+func shortQuotaBundleName(t *testing.T, claim, name string) []byte {
 	t.Helper()
-	claims, _ := json.Marshal(map[string]any{"email": "fixture@example.invalid", "https://api.openai.com/auth": map[string]string{"chatgpt_account_id": "acct", "chatgpt_user_id": "user", "chatgpt_plan_type": "plus"}})
+	values := map[string]any{"email": "fixture@example.invalid", "https://api.openai.com/auth": map[string]string{"chatgpt_account_id": "acct", "chatgpt_user_id": "user", "chatgpt_plan_type": "plus"}}
+	if claim == "name" {
+		values[claim] = name
+	} else if claim != "" {
+		values[claim] = map[string]string{"name": name}
+	}
+	claims, _ := json.Marshal(values)
 	token := "header." + base64.RawURLEncoding.EncodeToString(claims) + ".synthetic"
 	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": token, "access_token": token, "refresh_token": "tok", "account_id": "acct"}, "last_refresh": time.Now().UTC()})
 	if _, _, err := subscription.Parse(raw); err != nil {
@@ -69,7 +79,7 @@ func TestQuotaReflectionRejectsExactShortOriginalAndEncodedIDs(t *testing.T) {
 }
 
 func TestNativeQuotaShortReflectionRejectsReadsAndRollingUpdates(t *testing.T) {
-	for _, key := range []string{"acct", "YWNjdA", "user", "dXNlcg", "tok", "dG9r"} {
+	for _, key := range []string{"acct", "YWNjdA", "user", "dXNlcg", "tok", "dG9r", "Mia", "TWlh"} {
 		t.Run(key, func(t *testing.T) {
 			config := fixtureConfig(t, "managed-ready")
 			config.Mode, config.ManagedAuthentication = SubscriptionProtocol, true
@@ -95,7 +105,7 @@ func TestNativeQuotaShortReflectionRejectsReadsAndRollingUpdates(t *testing.T) {
 			if err = native.WaitManagedLogin(ctx, progress.LoginID); err != nil {
 				t.Fatal(err)
 			}
-			if err = security.WriteAtomic(filepath.Join(config.Home, "auth.json"), shortQuotaBundle(t)); err != nil {
+			if err = security.WriteAtomic(filepath.Join(config.Home, "auth.json"), shortQuotaBundleName(t, "name", "Mia")); err != nil {
 				t.Fatal(err)
 			}
 			observed, err := native.ReadManagedQuota(ctx, domain.NewID())
@@ -124,5 +134,42 @@ func TestNativeQuotaShortReflectionRejectsReadsAndRollingUpdates(t *testing.T) {
 				t.Fatal("private quota leaked or safe rejection diagnostic absent")
 			}
 		})
+	}
+}
+
+func TestQuotaReflectionIncludesProtectedDisplayName(t *testing.T) {
+	for _, claim := range []string{"name", "https://api.openai.com/profile"} {
+		t.Run(claim, func(t *testing.T) {
+			home := t.TempDir()
+			if err := security.WriteAtomic(filepath.Join(home, "auth.json"), shortQuotaBundleName(t, claim, "Al")); err != nil {
+				t.Fatal(err)
+			}
+			client := &Client{managedHome: home}
+			forms := []string{"Al"}
+			for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+				forms = append(forms, encoding.EncodeToString([]byte("Al")))
+			}
+			for _, form := range forms {
+				credits := []domain.SubscriptionResetCreditDetail{{ID: form}}
+				for _, value := range []domain.SubscriptionQuotaObservation{
+					{Windows: []domain.SubscriptionQuotaWindow{{ID: form + ":primary"}}},
+					{Credits: &domain.SubscriptionResetCredits{Credits: &credits}},
+				} {
+					if err := client.validateQuotaReflection(value); err == nil {
+						t.Fatal("protected display name reflection accepted")
+					}
+				}
+			}
+			if err := client.validateQuotaReflection(domain.SubscriptionQuotaObservation{Windows: []domain.SubscriptionQuotaWindow{{ID: "Al-extra:primary"}}}); err != nil {
+				t.Fatal("harmless short name substring rejected", err)
+			}
+		})
+	}
+	home := t.TempDir()
+	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), shortQuotaBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Client{managedHome: home}).validateQuotaReflection(domain.SubscriptionQuotaObservation{Windows: []domain.SubscriptionQuotaWindow{{ID: "Al:primary"}}}); err != nil {
+		t.Fatal("empty display name manufactured protected identity", err)
 	}
 }

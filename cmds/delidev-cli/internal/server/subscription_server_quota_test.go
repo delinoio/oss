@@ -4,6 +4,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"reflect"
@@ -46,6 +48,10 @@ func newServerQuotaFixture(t *testing.T) (*subscriptionFixture, *serverQuotaFixt
 }
 
 func newServerQuotaFixtureAccount(t *testing.T, account string) (*subscriptionFixture, *serverQuotaFixture) {
+	return newServerQuotaFixtureBundle(t, subscriptionTestBundle(account, "first", time.Now().UTC()))
+}
+
+func newServerQuotaFixtureBundle(t *testing.T, bundle []byte) (*subscriptionFixture, *serverQuotaFixture) {
 	f := newSubscriptionFixture(t)
 	// Remove the common fixture's Runner registration. This lane must work with
 	// only its server-owned account, original protected generation and receipt.
@@ -60,7 +66,7 @@ func newServerQuotaFixtureAccount(t *testing.T, account string) (*subscriptionFi
 		t.Fatal(err)
 	}
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
-	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle(account, "first", time.Now().UTC())}
+	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: bundle}
 	done := f.serverRun(login)
 	awaitServerFixture(t, login.started)
 	close(login.finish)
@@ -510,5 +516,72 @@ func TestServerQuotaRejectsShortProtectedOriginalAndEncodedIDs(t *testing.T) {
 				t.Fatal("terminal reflection retried native read or escaped diagnostic")
 			}
 		})
+	}
+}
+
+func TestServerQuotaRejectsProtectedDisplayName(t *testing.T) {
+	for _, claim := range []string{"name", "https://api.openai.com/profile"} {
+		forms := []string{"Al"}
+		for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+			forms = append(forms, encoding.EncodeToString([]byte("Al")))
+		}
+		for _, form := range forms {
+			for _, resetCredit := range []bool{false, true} {
+				t.Run(claim+"/"+form+"/"+map[bool]string{false: "window", true: "credit"}[resetCredit], func(t *testing.T) {
+					raw := subscriptionTestBundle("quota-server-account", "first", time.Now().UTC())
+					var bundle map[string]any
+					if err := json.Unmarshal(raw, &bundle); err != nil {
+						t.Fatal(err)
+					}
+					tokens := bundle["tokens"].(map[string]any)
+					parts := strings.Split(tokens["id_token"].(string), ".")
+					payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+					if err != nil {
+						t.Fatal(err)
+					}
+					var claims map[string]any
+					if err := json.Unmarshal(payload, &claims); err != nil {
+						t.Fatal(err)
+					}
+					if claim == "name" {
+						claims[claim] = "Al"
+					} else {
+						claims[claim] = map[string]string{"name": "Al"}
+					}
+					payload, err = json.Marshal(claims)
+					if err != nil {
+						t.Fatal(err)
+					}
+					parts[1] = base64.RawURLEncoding.EncodeToString(payload)
+					tokens["id_token"] = strings.Join(parts, ".")
+					raw, err = json.Marshal(bundle)
+					if err != nil {
+						t.Fatal(err)
+					}
+					f, n := newServerQuotaFixtureBundle(t, raw)
+					ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+					_, before := f.record()
+					n.observed.Windows[0].ID = form + ":primary"
+					if resetCredit {
+						items := []domain.SubscriptionResetCreditDetail{{ID: form, ResetType: domain.CodexRateLimitsReset, Status: domain.SubscriptionCreditAvailable, GrantedAt: time.Now().UTC()}}
+						n.observed.Credits = &domain.SubscriptionResetCredits{ObservationID: domain.NewID(), ObservedAt: n.observed.ObservedAt, AvailableCount: 1, Credits: &items}
+						n.observed.Windows[0].ID = "codex:primary"
+					}
+					if !strings.Contains(form, "=") {
+						if err := n.observed.Validate(time.Now().UTC()); err != nil {
+							t.Fatal("raw/unpadded fixture must be valid before private reflection checks", err)
+						}
+					}
+					if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, requestServerQuota(f))); err != nil {
+						t.Fatal(err)
+					}
+					f.service.runServerQuota(ctx, f.input.AccountID)
+					_, after := f.record()
+					if !reflect.DeepEqual(before.Quota, after.Quota) || !reflect.DeepEqual(before.Subscription.QuotaObservedAt, after.Subscription.QuotaObservedAt) || after.Subscription.ServerQuota.Phase != domain.SubscriptionObservationFailed || !after.Subscription.ServerQuota.CleanupConfirmed {
+						t.Fatal("protected display name published or changed cleanup authority")
+					}
+				})
+			}
+		}
 	}
 }

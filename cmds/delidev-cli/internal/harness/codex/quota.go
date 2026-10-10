@@ -240,7 +240,7 @@ func (c *Client) validateQuotaReflection(value domain.SubscriptionQuotaObservati
 	if err != nil {
 		return err
 	}
-	return ValidateQuotaSecrets(value, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User)
+	return ValidateQuotaSecrets(value, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User, identity.DisplayName)
 }
 
 // ValidateQuotaSecrets keeps protected credentials and original account identity
