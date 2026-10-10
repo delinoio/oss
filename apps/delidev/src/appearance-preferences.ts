@@ -51,7 +51,9 @@ export function appearanceIdentity(value: unknown): string {
 }
 
 /** Only application-owned selectors and previously validated colors reach CSSOM. */
-export function applyAppearanceColors(colors:ColorMap,selector=":root"):()=>void {
+// Repeated :root specificity keeps committed maps above the static dark and
+// OS fallback rules, regardless of stylesheet order, without changing CSP.
+export function applyAppearanceColors(colors:ColorMap,selector=":root:root:root"):()=>void {
  if(typeof CSSStyleSheet.prototype.replaceSync!=="function")return ()=>{};
  const sheet=new CSSStyleSheet();sheet.replaceSync(`${selector} {}`);const rule=sheet.cssRules[0] as CSSStyleRule;
  for(const [token,value] of Object.entries(colors))rule.style.setProperty(`--${token}`,value);
