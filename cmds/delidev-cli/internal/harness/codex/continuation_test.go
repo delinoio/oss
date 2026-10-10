@@ -21,14 +21,18 @@ type fixtureHistoryNotification struct {
 func (f *threadFixture) handleContinuation(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
 	if method == "fixture/history" {
 		var params struct {
-			Page            json.RawMessage             `json:"page"`
-			ChangeAfterRead bool                        `json:"changeAfterRead,omitempty"`
-			Notify          *fixtureHistoryNotification `json:"notify,omitempty"`
+			ExpandImageContext bool                        `json:"expandImageContext,omitempty"`
+			Page               json.RawMessage             `json:"page"`
+			ChangeAfterRead    bool                        `json:"changeAfterRead,omitempty"`
+			Notify             *fixtureHistoryNotification `json:"notify,omitempty"`
 		}
 		if domain.Decode(raw, &params) != nil || f.thread == nil {
 			os.Exit(60)
 		}
 		f.history = params.Page
+		if params.ExpandImageContext {
+			f.history = expandImageContextHistory(f.history)
+		}
 		f.historyChangeAfterRead = params.ChangeAfterRead
 		f.historyNotification = params.Notify
 		write(id, map[string]any{})

@@ -427,6 +427,16 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 				items[item.ID] = true
 				switch item.Type {
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
+				case "imageGeneration":
+					// Validate the original settled item without publishing bytes or
+					// reading its saved path. The complete JSON remains the proof.
+					image, err := decodeImageGeneration(rawItem, true)
+					if err != nil {
+						return nil, compactionUncertain()
+					}
+					if c.logger != nil {
+						c.logger.DebugContext(ctx, "Codex generated-image context history validated", "owner_id", c.ownerID, "status", image.Observation.Status)
+					}
 				case "commandExecution", "fileChange", "imageView":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
