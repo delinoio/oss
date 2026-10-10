@@ -360,6 +360,10 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	<-creationsDone
 	stopDeletions()
 	<-deletionsDone
+	// Session deletion can still own database and backup cleanup after cancellation.
+	// Join its original controller before retiring dependencies or reporting Stop.
+	stopSessionDeletions()
+	<-sessionDeletionsDone
 	service.executionAuthority.close()
 	if config.Desktop != nil && config.DesktopCredentials != nil {
 		config.DesktopCredentials.close()
