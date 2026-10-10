@@ -71,6 +71,7 @@ type Client struct {
 	revertHistory      bool
 	imageGeneration    bool
 	windowsWarnings    map[WindowsWarningKind]bool
+	imageObservations  bool
 }
 
 type ProtocolMode string
@@ -182,8 +183,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	configureOrdinaryTools(&config)
 	config.Process.Args = append(config.Process.Args, "app-server")
 	phase = launchPhase
+	imageObservations := config.imageObservationProfile()
 	var wire *nativewire.Connection
-	if config.Mode == ThreadProtocol && config.ManagedAuthentication && config.ImageRoot != "" {
+	if imageObservations {
 		wire, err = nativewire.StartImageObservations(ctx, config.Process)
 	} else {
 		wire, err = nativewire.Start(ctx, config.Process)
@@ -263,9 +265,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	process.ObserveStartup(config.Process, domain.StartupInitialize, domain.StartupProgressCompleted)
 	process.ObserveStartup(config.Process, domain.StartupSettings, domain.StartupProgressRunning)
 	if config.Process.Logger != nil {
-		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
+		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations)
 	}
-	client = &Client{imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err
