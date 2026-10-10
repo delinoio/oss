@@ -85,7 +85,7 @@ it("admits only the numeric tab definitions from terminal input and consumes onc
 
 it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("matches physical primary chords across input modes on %s", localPlatform => {
   const primary = localPlatform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
-  for (const [key, code, binding] of [["k", "KeyK", "k"], ["ㅏ", "KeyK", "k"], ["b", "KeyB", "b"], ["ㅠ", "KeyB", "b"], ["i", "KeyI", "i"], ["ㅑ", "KeyI", "i"]]) {
+  for (const [key, code, binding] of [["k", "KeyK", "k"], ["ㅏ", "KeyK", "k"], ["b", "KeyB", "b"], ["ㅠ", "KeyB", "b"], ["i", "KeyI", "i"], ["ㅑ", "KeyI", "i"]] as const) {
     expect(bindingMatches(new KeyboardEvent("keydown", { key, code, ...primary }), { key: binding!, primary: true }, localPlatform)).toBe(true);
   }
   for (const key of ["N", "ㅜ"]) expect(bindingMatches(new KeyboardEvent("keydown", { key, code: "KeyN", shiftKey: true, ...primary }), { key: "n", shift: true, primary: true }, localPlatform)).toBe(true);
