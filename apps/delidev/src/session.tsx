@@ -646,6 +646,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
             <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && !confirmedEmptyQueue} label={copy("session.queuePages_1acdd8")} />
           </div>
         {imageRejected.length ? <section className="queue-startup-recovery" aria-label={copy("session.startupImageInput")}>
+          <p role="status">{copy("queue.rejectedImageInputs", { count: imageRejected.length })}</p>
           {imageRejected.map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} active={conversationActive} readOnly />)}
         </section> : null}
       </div>
