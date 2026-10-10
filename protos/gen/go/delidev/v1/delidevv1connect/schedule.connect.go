@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ScheduleServicePreviewScheduleCalendarProcedure is the fully-qualified name of the
+	// ScheduleService's PreviewScheduleCalendar RPC.
+	ScheduleServicePreviewScheduleCalendarProcedure = "/delidev.v1.ScheduleService/PreviewScheduleCalendar"
 	// ScheduleServiceSaveScheduleProcedure is the fully-qualified name of the ScheduleService's
 	// SaveSchedule RPC.
 	ScheduleServiceSaveScheduleProcedure = "/delidev.v1.ScheduleService/SaveSchedule"
@@ -61,6 +64,8 @@ const (
 
 // ScheduleServiceClient is a client for the delidev.v1.ScheduleService service.
 type ScheduleServiceClient interface {
+	// Read-only calendar estimate; no scheduling or execution authority.
+	PreviewScheduleCalendar(context.Context, *connect.Request[v1.PreviewScheduleCalendarRequest]) (*connect.Response[v1.PreviewScheduleCalendarResponse], error)
 	SaveSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error)
 	GetSchedule(context.Context, *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error)
@@ -82,6 +87,12 @@ func NewScheduleServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	scheduleServiceMethods := v1.File_delidev_v1_schedule_proto.Services().ByName("ScheduleService").Methods()
 	return &scheduleServiceClient{
+		previewScheduleCalendar: connect.NewClient[v1.PreviewScheduleCalendarRequest, v1.PreviewScheduleCalendarResponse](
+			httpClient,
+			baseURL+ScheduleServicePreviewScheduleCalendarProcedure,
+			connect.WithSchema(scheduleServiceMethods.ByName("PreviewScheduleCalendar")),
+			connect.WithClientOptions(opts...),
+		),
 		saveSchedule: connect.NewClient[v1.SaveScheduleRequest, v1.SaveScheduleResponse](
 			httpClient,
 			baseURL+ScheduleServiceSaveScheduleProcedure,
@@ -135,6 +146,7 @@ func NewScheduleServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // scheduleServiceClient implements ScheduleServiceClient.
 type scheduleServiceClient struct {
+	previewScheduleCalendar *connect.Client[v1.PreviewScheduleCalendarRequest, v1.PreviewScheduleCalendarResponse]
 	saveSchedule            *connect.Client[v1.SaveScheduleRequest, v1.SaveScheduleResponse]
 	getSchedule             *connect.Client[v1.GetScheduleRequest, v1.GetScheduleResponse]
 	listSchedules           *connect.Client[v1.ListSchedulesRequest, v1.ListSchedulesResponse]
@@ -143,6 +155,11 @@ type scheduleServiceClient struct {
 	runScheduleNow          *connect.Client[v1.RunScheduleNowRequest, v1.RunScheduleNowResponse]
 	listScheduleOccurrences *connect.Client[v1.ListScheduleOccurrencesRequest, v1.ListScheduleOccurrencesResponse]
 	getScheduleOccurrence   *connect.Client[v1.GetScheduleOccurrenceRequest, v1.GetScheduleOccurrenceResponse]
+}
+
+// PreviewScheduleCalendar calls delidev.v1.ScheduleService.PreviewScheduleCalendar.
+func (c *scheduleServiceClient) PreviewScheduleCalendar(ctx context.Context, req *connect.Request[v1.PreviewScheduleCalendarRequest]) (*connect.Response[v1.PreviewScheduleCalendarResponse], error) {
+	return c.previewScheduleCalendar.CallUnary(ctx, req)
 }
 
 // SaveSchedule calls delidev.v1.ScheduleService.SaveSchedule.
@@ -187,6 +204,8 @@ func (c *scheduleServiceClient) GetScheduleOccurrence(ctx context.Context, req *
 
 // ScheduleServiceHandler is an implementation of the delidev.v1.ScheduleService service.
 type ScheduleServiceHandler interface {
+	// Read-only calendar estimate; no scheduling or execution authority.
+	PreviewScheduleCalendar(context.Context, *connect.Request[v1.PreviewScheduleCalendarRequest]) (*connect.Response[v1.PreviewScheduleCalendarResponse], error)
 	SaveSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error)
 	GetSchedule(context.Context, *connect.Request[v1.GetScheduleRequest]) (*connect.Response[v1.GetScheduleResponse], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.ListSchedulesResponse], error)
@@ -204,6 +223,12 @@ type ScheduleServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewScheduleServiceHandler(svc ScheduleServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	scheduleServiceMethods := v1.File_delidev_v1_schedule_proto.Services().ByName("ScheduleService").Methods()
+	scheduleServicePreviewScheduleCalendarHandler := connect.NewUnaryHandler(
+		ScheduleServicePreviewScheduleCalendarProcedure,
+		svc.PreviewScheduleCalendar,
+		connect.WithSchema(scheduleServiceMethods.ByName("PreviewScheduleCalendar")),
+		connect.WithHandlerOptions(opts...),
+	)
 	scheduleServiceSaveScheduleHandler := connect.NewUnaryHandler(
 		ScheduleServiceSaveScheduleProcedure,
 		svc.SaveSchedule,
@@ -254,6 +279,8 @@ func NewScheduleServiceHandler(svc ScheduleServiceHandler, opts ...connect.Handl
 	)
 	return "/delidev.v1.ScheduleService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ScheduleServicePreviewScheduleCalendarProcedure:
+			scheduleServicePreviewScheduleCalendarHandler.ServeHTTP(w, r)
 		case ScheduleServiceSaveScheduleProcedure:
 			scheduleServiceSaveScheduleHandler.ServeHTTP(w, r)
 		case ScheduleServiceGetScheduleProcedure:
@@ -278,6 +305,10 @@ func NewScheduleServiceHandler(svc ScheduleServiceHandler, opts ...connect.Handl
 
 // UnimplementedScheduleServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedScheduleServiceHandler struct{}
+
+func (UnimplementedScheduleServiceHandler) PreviewScheduleCalendar(context.Context, *connect.Request[v1.PreviewScheduleCalendarRequest]) (*connect.Response[v1.PreviewScheduleCalendarResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.PreviewScheduleCalendar is not implemented"))
+}
 
 func (UnimplementedScheduleServiceHandler) SaveSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.SaveScheduleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ScheduleService.SaveSchedule is not implemented"))

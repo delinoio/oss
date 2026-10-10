@@ -47,3 +47,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
+
+- Schedule Repeat/Review share one exact connection/input calendar preview owner under the desktop contract. Keep status refresh read-only and preserve original save/Local-proof/uncertain ownership; never parse arbitrary cron in the browser.

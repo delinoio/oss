@@ -225,7 +225,7 @@ it.each([["0 0 31 2 *", "UTC"], ["0 9 * * 1-5", "unknown/zone"]])("retains serve
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   await waitFor(() => expect((screen.getByRole("button", { name: "Create schedule" }) as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByLabelText("Cron expression") as HTMLInputElement).value).toBe(cron); expect((screen.getByLabelText("IANA timezone") as HTMLInputElement).value).toBe(timezone);
-  expect(screen.getAllByText("Next run is calculated by the server after saving.")[0]).toBeTruthy();
+  expect(screen.getAllByText("Saving confirms the actual next run. Scheduled times do not guarantee execution.")[0]).toBeTruthy();
   expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
 });
 

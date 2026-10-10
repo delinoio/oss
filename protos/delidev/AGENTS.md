@@ -39,3 +39,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev updates contract](../../docs/cmds-delidev-updates-contract.md)
 - [DeliDev current-user service contract](../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev v1 Connect contract](../../docs/protos-delidev-v1-contract.md)
+
+- Read-only schedule calendar declarations and generated clients follow the schedule/protocol contracts; preserve existing lifecycle numbers and keep Worker/mutation authority outside preview.

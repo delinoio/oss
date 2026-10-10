@@ -446,3 +446,15 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+
+## Schedule calendar preview bindings
+
+Generated ScheduleQuery.previewScheduleCalendar and typed ScheduleCalendar /
+ScheduleDayMatch expose the server-owned read-only calendar boundary. Preserve
+existing ScheduleService methods and System 83 advertisement. Connect Query
+consumers bind exact original connection/cron/timezone and render only supported
+sorted constraints and verified future UTC instants; Unimplemented retains the
+original draft. The client neither parses arbitrary cron nor creates schedule,
+mutation, account, native or execution authority. Follow the schedule/desktop
+and protocol contracts for debounce, refresh and compatibility.

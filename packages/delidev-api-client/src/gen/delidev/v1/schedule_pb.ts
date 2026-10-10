@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/schedule.proto.
  */
 export const file_delidev_v1_schedule: GenFile = /*@__PURE__*/
-  fileDesc("ChlkZWxpZGV2L3YxL3NjaGVkdWxlLnByb3RvEgpkZWxpZGV2LnYxIooBChNTYXZlU2NoZWR1bGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIXCg9kZWZpbml0aW9uX2pzb24YAiABKAwSFgoOc2NoZW1hX3ZlcnNpb24YAyABKA0SGgoSbG9jYWxfd29ya2VyX3Rva2VuGAQgASgJImQKFFNhdmVTY2hlZHVsZVJlc3BvbnNlEiYKCHNjaGVkdWxlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIiAKEkdldFNjaGVkdWxlUmVxdWVzdBIKCgJpZBgBIAEoCSI9ChNHZXRTY2hlZHVsZVJlc3BvbnNlEiYKCHNjaGVkdWxlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSJzChRMaXN0U2NoZWR1bGVzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhQKB2VuYWJsZWQYAiABKAhIAIgBARIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCUIKCghfZW5hYmxlZCJZChVMaXN0U2NoZWR1bGVzUmVzcG9uc2USJwoJc2NoZWR1bGVzGAEgAygLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiPwoVRGVsZXRlU2NoZWR1bGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiJKChZEZWxldGVTY2hlZHVsZVJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgibAoWQ29udHJvbFNjaGVkdWxlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SKgoGYWN0aW9uGAIgASgOMhouZGVsaWRldi52MS5TY2hlZHVsZUFjdGlvbiJnChdDb250cm9sU2NoZWR1bGVSZXNwb25zZRImCghzY2hlZHVsZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCI/ChVSdW5TY2hlZHVsZU5vd1JlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIo8BChZSdW5TY2hlZHVsZU5vd1Jlc3BvbnNlEigKCm9jY3VycmVuY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiUKB3Nlc3Npb24YAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgiXAoeTGlzdFNjaGVkdWxlT2NjdXJyZW5jZXNSZXF1ZXN0EhMKC3NjaGVkdWxlX2lkGAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoDRISCgpwYWdlX3Rva2VuGAMgASgJImUKH0xpc3RTY2hlZHVsZU9jY3VycmVuY2VzUmVzcG9uc2USKQoLb2NjdXJyZW5jZXMYASADKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSI/ChxHZXRTY2hlZHVsZU9jY3VycmVuY2VSZXF1ZXN0EhMKC3NjaGVkdWxlX2lkGAEgASgJEgoKAmlkGAIgASgJIkkKHUdldFNjaGVkdWxlT2NjdXJyZW5jZVJlc3BvbnNlEigKCm9jY3VycmVuY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlKmgKDlNjaGVkdWxlQWN0aW9uEh8KG1NDSEVEVUxFX0FDVElPTl9VTlNQRUNJRklFRBAAEhkKFVNDSEVEVUxFX0FDVElPTl9QQVVTRRABEhoKFlNDSEVEVUxFX0FDVElPTl9SRVNVTUUQAjL6BQoPU2NoZWR1bGVTZXJ2aWNlElEKDFNhdmVTY2hlZHVsZRIfLmRlbGlkZXYudjEuU2F2ZVNjaGVkdWxlUmVxdWVzdBogLmRlbGlkZXYudjEuU2F2ZVNjaGVkdWxlUmVzcG9uc2USTgoLR2V0U2NoZWR1bGUSHi5kZWxpZGV2LnYxLkdldFNjaGVkdWxlUmVxdWVzdBofLmRlbGlkZXYudjEuR2V0U2NoZWR1bGVSZXNwb25zZRJUCg1MaXN0U2NoZWR1bGVzEiAuZGVsaWRldi52MS5MaXN0U2NoZWR1bGVzUmVxdWVzdBohLmRlbGlkZXYudjEuTGlzdFNjaGVkdWxlc1Jlc3BvbnNlElcKDkRlbGV0ZVNjaGVkdWxlEiEuZGVsaWRldi52MS5EZWxldGVTY2hlZHVsZVJlcXVlc3QaIi5kZWxpZGV2LnYxLkRlbGV0ZVNjaGVkdWxlUmVzcG9uc2USWgoPQ29udHJvbFNjaGVkdWxlEiIuZGVsaWRldi52MS5Db250cm9sU2NoZWR1bGVSZXF1ZXN0GiMuZGVsaWRldi52MS5Db250cm9sU2NoZWR1bGVSZXNwb25zZRJXCg5SdW5TY2hlZHVsZU5vdxIhLmRlbGlkZXYudjEuUnVuU2NoZWR1bGVOb3dSZXF1ZXN0GiIuZGVsaWRldi52MS5SdW5TY2hlZHVsZU5vd1Jlc3BvbnNlEnIKF0xpc3RTY2hlZHVsZU9jY3VycmVuY2VzEiouZGVsaWRldi52MS5MaXN0U2NoZWR1bGVPY2N1cnJlbmNlc1JlcXVlc3QaKy5kZWxpZGV2LnYxLkxpc3RTY2hlZHVsZU9jY3VycmVuY2VzUmVzcG9uc2USbAoVR2V0U2NoZWR1bGVPY2N1cnJlbmNlEiguZGVsaWRldi52MS5HZXRTY2hlZHVsZU9jY3VycmVuY2VSZXF1ZXN0GikuZGVsaWRldi52MS5HZXRTY2hlZHVsZU9jY3VycmVuY2VSZXNwb25zZUI8WjpnaXRodWIuY29tL2RlbGlub2lvL29zcy9wcm90b3MvZ2VuL2dvL2RlbGlkZXYvdjE7ZGVsaWRldnYxYgZwcm90bzM", [file_delidev_v1_common]);
+  fileDesc("ChlkZWxpZGV2L3YxL3NjaGVkdWxlLnByb3RvEgpkZWxpZGV2LnYxIooBChNTYXZlU2NoZWR1bGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbhIXCg9kZWZpbml0aW9uX2pzb24YAiABKAwSFgoOc2NoZW1hX3ZlcnNpb24YAyABKA0SGgoSbG9jYWxfd29ya2VyX3Rva2VuGAQgASgJImQKFFNhdmVTY2hlZHVsZVJlc3BvbnNlEiYKCHNjaGVkdWxlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZRISCgpyZXF1ZXN0X2lkGAIgASgJEhAKCHJlcGxheWVkGAMgASgIIiAKEkdldFNjaGVkdWxlUmVxdWVzdBIKCgJpZBgBIAEoCSI9ChNHZXRTY2hlZHVsZVJlc3BvbnNlEiYKCHNjaGVkdWxlGAEgASgLMhQuZGVsaWRldi52MS5SZXNvdXJjZSJzChRMaXN0U2NoZWR1bGVzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhQKB2VuYWJsZWQYAiABKAhIAIgBARIRCglwYWdlX3NpemUYAyABKA0SEgoKcGFnZV90b2tlbhgEIAEoCUIKCghfZW5hYmxlZCJZChVMaXN0U2NoZWR1bGVzUmVzcG9uc2USJwoJc2NoZWR1bGVzGAEgAygLMhQuZGVsaWRldi52MS5SZXNvdXJjZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiPwoVRGVsZXRlU2NoZWR1bGVSZXF1ZXN0EiYKCG11dGF0aW9uGAEgASgLMhQuZGVsaWRldi52MS5NdXRhdGlvbiJKChZEZWxldGVTY2hlZHVsZVJlc3BvbnNlEgoKAmlkGAEgASgJEhIKCnJlcXVlc3RfaWQYAiABKAkSEAoIcmVwbGF5ZWQYAyABKAgibAoWQ29udHJvbFNjaGVkdWxlUmVxdWVzdBImCghtdXRhdGlvbhgBIAEoCzIULmRlbGlkZXYudjEuTXV0YXRpb24SKgoGYWN0aW9uGAIgASgOMhouZGVsaWRldi52MS5TY2hlZHVsZUFjdGlvbiJnChdDb250cm9sU2NoZWR1bGVSZXNwb25zZRImCghzY2hlZHVsZRgBIAEoCzIULmRlbGlkZXYudjEuUmVzb3VyY2USEgoKcmVxdWVzdF9pZBgCIAEoCRIQCghyZXBsYXllZBgDIAEoCCI/ChVSdW5TY2hlZHVsZU5vd1JlcXVlc3QSJgoIbXV0YXRpb24YASABKAsyFC5kZWxpZGV2LnYxLk11dGF0aW9uIo8BChZSdW5TY2hlZHVsZU5vd1Jlc3BvbnNlEigKCm9jY3VycmVuY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEiUKB3Nlc3Npb24YAiABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhIKCnJlcXVlc3RfaWQYAyABKAkSEAoIcmVwbGF5ZWQYBCABKAgiXAoeTGlzdFNjaGVkdWxlT2NjdXJyZW5jZXNSZXF1ZXN0EhMKC3NjaGVkdWxlX2lkGAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoDRISCgpwYWdlX3Rva2VuGAMgASgJImUKH0xpc3RTY2hlZHVsZU9jY3VycmVuY2VzUmVzcG9uc2USKQoLb2NjdXJyZW5jZXMYASADKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSI/ChxHZXRTY2hlZHVsZU9jY3VycmVuY2VSZXF1ZXN0EhMKC3NjaGVkdWxlX2lkGAEgASgJEgoKAmlkGAIgASgJIkkKHUdldFNjaGVkdWxlT2NjdXJyZW5jZVJlc3BvbnNlEigKCm9jY3VycmVuY2UYASABKAsyFC5kZWxpZGV2LnYxLlJlc291cmNlIkAKHlByZXZpZXdTY2hlZHVsZUNhbGVuZGFyUmVxdWVzdBIMCgRjcm9uGAEgASgJEhAKCHRpbWV6b25lGAIgASgJIngKH1ByZXZpZXdTY2hlZHVsZUNhbGVuZGFyUmVzcG9uc2USEAoIYm91bmRhcnkYASABKAkSEwoLbmV4dF9ydW5fYXQYAiABKAkSLgoIY2FsZW5kYXIYAyABKAsyHC5kZWxpZGV2LnYxLlNjaGVkdWxlQ2FsZW5kYXIinAEKEFNjaGVkdWxlQ2FsZW5kYXISDwoHbWludXRlcxgBIAMoDRINCgVob3VycxgCIAMoDRIVCg1kYXlzX29mX21vbnRoGAMgAygNEg4KBm1vbnRocxgEIAMoDRIQCgh3ZWVrZGF5cxgFIAMoDRIvCglkYXlfbWF0Y2gYBiABKA4yHC5kZWxpZGV2LnYxLlNjaGVkdWxlRGF5TWF0Y2gqaAoOU2NoZWR1bGVBY3Rpb24SHwobU0NIRURVTEVfQUNUSU9OX1VOU1BFQ0lGSUVEEAASGQoVU0NIRURVTEVfQUNUSU9OX1BBVVNFEAESGgoWU0NIRURVTEVfQUNUSU9OX1JFU1VNRRACKm0KEFNjaGVkdWxlRGF5TWF0Y2gSIgoeU0NIRURVTEVfREFZX01BVENIX1VOU1BFQ0lGSUVEEAASGgoWU0NIRURVTEVfREFZX01BVENIX0FORBABEhkKFVNDSEVEVUxFX0RBWV9NQVRDSF9PUhACMu4GCg9TY2hlZHVsZVNlcnZpY2UScgoXUHJldmlld1NjaGVkdWxlQ2FsZW5kYXISKi5kZWxpZGV2LnYxLlByZXZpZXdTY2hlZHVsZUNhbGVuZGFyUmVxdWVzdBorLmRlbGlkZXYudjEuUHJldmlld1NjaGVkdWxlQ2FsZW5kYXJSZXNwb25zZRJRCgxTYXZlU2NoZWR1bGUSHy5kZWxpZGV2LnYxLlNhdmVTY2hlZHVsZVJlcXVlc3QaIC5kZWxpZGV2LnYxLlNhdmVTY2hlZHVsZVJlc3BvbnNlEk4KC0dldFNjaGVkdWxlEh4uZGVsaWRldi52MS5HZXRTY2hlZHVsZVJlcXVlc3QaHy5kZWxpZGV2LnYxLkdldFNjaGVkdWxlUmVzcG9uc2USVAoNTGlzdFNjaGVkdWxlcxIgLmRlbGlkZXYudjEuTGlzdFNjaGVkdWxlc1JlcXVlc3QaIS5kZWxpZGV2LnYxLkxpc3RTY2hlZHVsZXNSZXNwb25zZRJXCg5EZWxldGVTY2hlZHVsZRIhLmRlbGlkZXYudjEuRGVsZXRlU2NoZWR1bGVSZXF1ZXN0GiIuZGVsaWRldi52MS5EZWxldGVTY2hlZHVsZVJlc3BvbnNlEloKD0NvbnRyb2xTY2hlZHVsZRIiLmRlbGlkZXYudjEuQ29udHJvbFNjaGVkdWxlUmVxdWVzdBojLmRlbGlkZXYudjEuQ29udHJvbFNjaGVkdWxlUmVzcG9uc2USVwoOUnVuU2NoZWR1bGVOb3cSIS5kZWxpZGV2LnYxLlJ1blNjaGVkdWxlTm93UmVxdWVzdBoiLmRlbGlkZXYudjEuUnVuU2NoZWR1bGVOb3dSZXNwb25zZRJyChdMaXN0U2NoZWR1bGVPY2N1cnJlbmNlcxIqLmRlbGlkZXYudjEuTGlzdFNjaGVkdWxlT2NjdXJyZW5jZXNSZXF1ZXN0GisuZGVsaWRldi52MS5MaXN0U2NoZWR1bGVPY2N1cnJlbmNlc1Jlc3BvbnNlEmwKFUdldFNjaGVkdWxlT2NjdXJyZW5jZRIoLmRlbGlkZXYudjEuR2V0U2NoZWR1bGVPY2N1cnJlbmNlUmVxdWVzdBopLmRlbGlkZXYudjEuR2V0U2NoZWR1bGVPY2N1cnJlbmNlUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_common]);
 
 /**
  * @generated from message delidev.v1.SaveScheduleRequest
@@ -405,6 +405,101 @@ export const GetScheduleOccurrenceResponseSchema: GenMessage<GetScheduleOccurren
   messageDesc(file_delidev_v1_schedule, 15);
 
 /**
+ * @generated from message delidev.v1.PreviewScheduleCalendarRequest
+ */
+export type PreviewScheduleCalendarRequest = Message<"delidev.v1.PreviewScheduleCalendarRequest"> & {
+  /**
+   * @generated from field: string cron = 1;
+   */
+  cron: string;
+
+  /**
+   * @generated from field: string timezone = 2;
+   */
+  timezone: string;
+};
+
+/**
+ * Describes the message delidev.v1.PreviewScheduleCalendarRequest.
+ * Use `create(PreviewScheduleCalendarRequestSchema)` to create a new message.
+ */
+export const PreviewScheduleCalendarRequestSchema: GenMessage<PreviewScheduleCalendarRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_schedule, 16);
+
+/**
+ * @generated from message delidev.v1.PreviewScheduleCalendarResponse
+ */
+export type PreviewScheduleCalendarResponse = Message<"delidev.v1.PreviewScheduleCalendarResponse"> & {
+  /**
+   * Canonical sampled server UTC boundary and strictly future UTC occurrence.
+   *
+   * @generated from field: string boundary = 1;
+   */
+  boundary: string;
+
+  /**
+   * @generated from field: string next_run_at = 2;
+   */
+  nextRunAt: string;
+
+  /**
+   * @generated from field: delidev.v1.ScheduleCalendar calendar = 3;
+   */
+  calendar?: ScheduleCalendar | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.PreviewScheduleCalendarResponse.
+ * Use `create(PreviewScheduleCalendarResponseSchema)` to create a new message.
+ */
+export const PreviewScheduleCalendarResponseSchema: GenMessage<PreviewScheduleCalendarResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_schedule, 17);
+
+/**
+ * @generated from message delidev.v1.ScheduleCalendar
+ */
+export type ScheduleCalendar = Message<"delidev.v1.ScheduleCalendar"> & {
+  /**
+   * Sorted allowed values. Weekdays use Sunday=0 through Saturday=6.
+   *
+   * @generated from field: repeated uint32 minutes = 1;
+   */
+  minutes: number[];
+
+  /**
+   * @generated from field: repeated uint32 hours = 2;
+   */
+  hours: number[];
+
+  /**
+   * @generated from field: repeated uint32 days_of_month = 3;
+   */
+  daysOfMonth: number[];
+
+  /**
+   * @generated from field: repeated uint32 months = 4;
+   */
+  months: number[];
+
+  /**
+   * @generated from field: repeated uint32 weekdays = 5;
+   */
+  weekdays: number[];
+
+  /**
+   * @generated from field: delidev.v1.ScheduleDayMatch day_match = 6;
+   */
+  dayMatch: ScheduleDayMatch;
+};
+
+/**
+ * Describes the message delidev.v1.ScheduleCalendar.
+ * Use `create(ScheduleCalendarSchema)` to create a new message.
+ */
+export const ScheduleCalendarSchema: GenMessage<ScheduleCalendar> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_schedule, 18);
+
+/**
  * @generated from enum delidev.v1.ScheduleAction
  */
 export enum ScheduleAction {
@@ -431,12 +526,48 @@ export const ScheduleActionSchema: GenEnum<ScheduleAction> = /*@__PURE__*/
   enumDesc(file_delidev_v1_schedule, 0);
 
 /**
+ * @generated from enum delidev.v1.ScheduleDayMatch
+ */
+export enum ScheduleDayMatch {
+  /**
+   * @generated from enum value: SCHEDULE_DAY_MATCH_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SCHEDULE_DAY_MATCH_AND = 1;
+   */
+  AND = 1,
+
+  /**
+   * @generated from enum value: SCHEDULE_DAY_MATCH_OR = 2;
+   */
+  OR = 2,
+}
+
+/**
+ * Describes the enum delidev.v1.ScheduleDayMatch.
+ */
+export const ScheduleDayMatchSchema: GenEnum<ScheduleDayMatch> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_schedule, 1);
+
+/**
  * Owner and paired-client schedule lifecycle. Workers execute derived session
  * assignments and cannot write timer state or invoke these product operations.
  *
  * @generated from service delidev.v1.ScheduleService
  */
 export const ScheduleService: GenService<{
+  /**
+   * Read-only calendar estimate; no scheduling or execution authority.
+   *
+   * @generated from rpc delidev.v1.ScheduleService.PreviewScheduleCalendar
+   */
+  previewScheduleCalendar: {
+    methodKind: "unary";
+    input: typeof PreviewScheduleCalendarRequestSchema;
+    output: typeof PreviewScheduleCalendarResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.ScheduleService.SaveSchedule
    */

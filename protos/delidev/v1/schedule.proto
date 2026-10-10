@@ -8,6 +8,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner and paired-client schedule lifecycle. Workers execute derived session
 // assignments and cannot write timer state or invoke these product operations.
 service ScheduleService {
+  // Read-only calendar estimate; no scheduling or execution authority.
+  rpc PreviewScheduleCalendar(PreviewScheduleCalendarRequest) returns (PreviewScheduleCalendarResponse);
   rpc SaveSchedule(SaveScheduleRequest) returns (SaveScheduleResponse);
   rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
   rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
@@ -114,4 +116,32 @@ message GetScheduleOccurrenceRequest {
 
 message GetScheduleOccurrenceResponse {
   Resource occurrence = 1;
+}
+
+message PreviewScheduleCalendarRequest {
+  string cron = 1;
+  string timezone = 2;
+}
+
+message PreviewScheduleCalendarResponse {
+  // Canonical sampled server UTC boundary and strictly future UTC occurrence.
+  string boundary = 1;
+  string next_run_at = 2;
+  ScheduleCalendar calendar = 3;
+}
+
+message ScheduleCalendar {
+  // Sorted allowed values. Weekdays use Sunday=0 through Saturday=6.
+  repeated uint32 minutes = 1;
+  repeated uint32 hours = 2;
+  repeated uint32 days_of_month = 3;
+  repeated uint32 months = 4;
+  repeated uint32 weekdays = 5;
+  ScheduleDayMatch day_match = 6;
+}
+
+enum ScheduleDayMatch {
+  SCHEDULE_DAY_MATCH_UNSPECIFIED = 0;
+  SCHEDULE_DAY_MATCH_AND = 1;
+  SCHEDULE_DAY_MATCH_OR = 2;
 }

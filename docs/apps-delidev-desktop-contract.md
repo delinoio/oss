@@ -3335,12 +3335,10 @@ replaces the separately retained Weekly weekday. Arbitrary, padded or otherwise
 noncanonical expressions use the last valid preset time, or 09:00 when absent.
 No general parser, browser timezone substitution or client calendar validation
 is introduced. Empty/invalid Time remains a visible draft, blocks submission and
-cannot silently submit the last valid Cron. Preset summaries show frequency,
-time, entered timezone and actual Cron only when Time is valid; Custom shows raw
-Cron/timezone without natural-language interpretation. These are selection
-summaries, not execution-eligibility proof. Display **Next run is calculated by
-the server after saving.** The server retains all calendar/timezone, DST and
-absolute next-UTC authority.
+cannot silently submit the last valid Cron. Repeat and Review share the server-owned calendar preview below. Preserve preset
+selection summaries as the compatibility fallback. The server retains all
+calendar/timezone, DST and absolute next-UTC authority; desktop does not parse
+arbitrary cron expressions or infer execution eligibility.
 
 Retain Overlap independent sessions, Skip new occurrences while prior work is
 active, and FIFO Wait until confirmed cleanup. **Enable future scheduled runs**
@@ -5220,3 +5218,35 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+
+### Unsaved schedule calendar preview
+
+Repeat and Review reuse three stacked semantic rows: Repeats, Scheduling starts,
+and First run preview. Enabled drafts explain activation after saving and show a
+provisional weekday, full date/time in the explicit IANA zone plus relative
+wording. Paused drafts explain activation after enabling and show no automatic
+run. Preserve the actual draft enabled value; add no start-date field. Saving
+confirms the actual next run, and scheduled times never guarantee execution.
+Keep exact original cron in an initially collapsed keyboard disclosure.
+
+One Connect Query owner binds the original connection and exact cron/timezone.
+Debounce admissible changed inputs by 300ms, hide obsolete dates immediately and
+reject late input/connection/disposed-task results. While Repeat or Review is
+active, refresh at least once per minute and at the estimated occurrence
+boundary; returning to active presentation refreshes the original read. Relative
+wording uses the sampled server boundary plus monotonic elapsed time, never the
+browser wall clock or implicit timezone. Updates preserve focus and do not
+announce second-by-second countdowns.
+
+Render EN/KO recurrence prose only from supported sorted server constraints and
+its closed AND/OR day rule. Simple presets have familiar sentences; complex
+calendars state time, month and day constraints explicitly. Respect device date
+preferences while always showing the schedule zone. Calculating, validation,
+unavailable and Unimplemented fallback states retain the draft and existing
+save validation. Missing/unreadable/stale estimates show no invented date; old
+servers retain preset summaries without inventing custom cron interpretation.
+Saved authoritative next_run_at supersedes this estimate. Preserve original save,
+revision, Local proof, pending and uncertain mutation bytes and authority.
+Use theme tokens, wrapping rows, contained short-height scrolling, polite status
+and native keyboard disclosure; fixtures do not establish installed acceptance.

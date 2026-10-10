@@ -34,3 +34,5 @@
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../../docs/protos-delidev-v1-contract.md)
+
+- Calendar preview normalizes the existing pinned parser values and its wildcard-origin AND/OR day rule under the schedule contract. Keep this adapter aligned with parser upgrades and preserve original NextRun DST/search behavior.

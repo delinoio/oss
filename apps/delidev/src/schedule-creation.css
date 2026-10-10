@@ -79,3 +79,11 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context
   .schedule-creation-review dd { padding:0 0 12px; }
   .schedule-creation-review .schedule-review-prompt { padding:12px; }
 }
+
+.schedule-calendar-summary dl { display:block; margin:0; }
+.schedule-calendar-summary dt { color:var(--muted); border:0; padding:0; margin:16px 0 4px; }
+.schedule-calendar-summary dt:first-child { margin-top:0; }
+.schedule-calendar-summary dd { border:0; padding:0; margin:0; overflow-wrap:anywhere; }
+.schedule-calendar-summary small { display:block; color:var(--muted); margin-top:4px; }
+.schedule-calendar-summary > p { color:var(--muted); }
+.schedule-calendar-summary code { white-space:pre-wrap; overflow-wrap:anywhere; }

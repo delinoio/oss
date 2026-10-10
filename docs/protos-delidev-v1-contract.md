@@ -1417,3 +1417,17 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+
+## Schedule calendar preview
+
+System SCHEDULE_CALENDAR_PREVIEW_V1 (83) advertises owner/client-only read-only
+ScheduleService.PreviewScheduleCalendar. Request fields are cron 1 and timezone
+2. Response fields are sampled boundary 1, next_run_at 2 and calendar 3.
+ScheduleCalendar fields are minutes 1, hours 2, days_of_month 3, months 4,
+weekdays 5 and day_match 6. Sorted uint32 values use minute 0–59, hour 0–23,
+day 1–31, month 1–12 and weekday Sunday 0–Saturday 6. ScheduleDayMatch is closed
+UNSPECIFIED 0, AND 1, OR 2; unspecified cannot support preview prose. Preserve
+all existing lifecycle RPCs and field allocations. Add no Worker capability or
+migration. The schedule contract owns parser/timezone/authorization semantics;
+older servers return Unimplemented without mutation or calendar inference.

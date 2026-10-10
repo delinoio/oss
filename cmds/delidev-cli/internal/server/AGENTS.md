@@ -38,3 +38,5 @@
 - [DeliDev native usage ledger](../../../../docs/cmds-delidev-usage-contract.md)
 - [DeliDev current-user service contract](../../../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
+
+- Calendar preview is an owner/paired-client-only read under the schedule contract. Reuse domain parser/NextRun and authorization; never create receipts, timers, occurrences or Worker/account/native work from preview.

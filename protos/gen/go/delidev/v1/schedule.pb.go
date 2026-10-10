@@ -70,6 +70,55 @@ func (ScheduleAction) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_schedule_proto_rawDescGZIP(), []int{0}
 }
 
+type ScheduleDayMatch int32
+
+const (
+	ScheduleDayMatch_SCHEDULE_DAY_MATCH_UNSPECIFIED ScheduleDayMatch = 0
+	ScheduleDayMatch_SCHEDULE_DAY_MATCH_AND         ScheduleDayMatch = 1
+	ScheduleDayMatch_SCHEDULE_DAY_MATCH_OR          ScheduleDayMatch = 2
+)
+
+// Enum value maps for ScheduleDayMatch.
+var (
+	ScheduleDayMatch_name = map[int32]string{
+		0: "SCHEDULE_DAY_MATCH_UNSPECIFIED",
+		1: "SCHEDULE_DAY_MATCH_AND",
+		2: "SCHEDULE_DAY_MATCH_OR",
+	}
+	ScheduleDayMatch_value = map[string]int32{
+		"SCHEDULE_DAY_MATCH_UNSPECIFIED": 0,
+		"SCHEDULE_DAY_MATCH_AND":         1,
+		"SCHEDULE_DAY_MATCH_OR":          2,
+	}
+)
+
+func (x ScheduleDayMatch) Enum() *ScheduleDayMatch {
+	p := new(ScheduleDayMatch)
+	*p = x
+	return p
+}
+
+func (x ScheduleDayMatch) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ScheduleDayMatch) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_schedule_proto_enumTypes[1].Descriptor()
+}
+
+func (ScheduleDayMatch) Type() protoreflect.EnumType {
+	return &file_delidev_v1_schedule_proto_enumTypes[1]
+}
+
+func (x ScheduleDayMatch) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ScheduleDayMatch.Descriptor instead.
+func (ScheduleDayMatch) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_schedule_proto_rawDescGZIP(), []int{1}
+}
+
 type SaveScheduleRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Expected revision zero creates a UUID-v7 identity; omit ID to allocate it.
@@ -949,6 +998,204 @@ func (x *GetScheduleOccurrenceResponse) GetOccurrence() *Resource {
 	return nil
 }
 
+type PreviewScheduleCalendarRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cron          string                 `protobuf:"bytes,1,opt,name=cron,proto3" json:"cron,omitempty"`
+	Timezone      string                 `protobuf:"bytes,2,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewScheduleCalendarRequest) Reset() {
+	*x = PreviewScheduleCalendarRequest{}
+	mi := &file_delidev_v1_schedule_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewScheduleCalendarRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewScheduleCalendarRequest) ProtoMessage() {}
+
+func (x *PreviewScheduleCalendarRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_schedule_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewScheduleCalendarRequest.ProtoReflect.Descriptor instead.
+func (*PreviewScheduleCalendarRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_schedule_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *PreviewScheduleCalendarRequest) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *PreviewScheduleCalendarRequest) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+type PreviewScheduleCalendarResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Canonical sampled server UTC boundary and strictly future UTC occurrence.
+	Boundary      string            `protobuf:"bytes,1,opt,name=boundary,proto3" json:"boundary,omitempty"`
+	NextRunAt     string            `protobuf:"bytes,2,opt,name=next_run_at,json=nextRunAt,proto3" json:"next_run_at,omitempty"`
+	Calendar      *ScheduleCalendar `protobuf:"bytes,3,opt,name=calendar,proto3" json:"calendar,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewScheduleCalendarResponse) Reset() {
+	*x = PreviewScheduleCalendarResponse{}
+	mi := &file_delidev_v1_schedule_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewScheduleCalendarResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewScheduleCalendarResponse) ProtoMessage() {}
+
+func (x *PreviewScheduleCalendarResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_schedule_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewScheduleCalendarResponse.ProtoReflect.Descriptor instead.
+func (*PreviewScheduleCalendarResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_schedule_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *PreviewScheduleCalendarResponse) GetBoundary() string {
+	if x != nil {
+		return x.Boundary
+	}
+	return ""
+}
+
+func (x *PreviewScheduleCalendarResponse) GetNextRunAt() string {
+	if x != nil {
+		return x.NextRunAt
+	}
+	return ""
+}
+
+func (x *PreviewScheduleCalendarResponse) GetCalendar() *ScheduleCalendar {
+	if x != nil {
+		return x.Calendar
+	}
+	return nil
+}
+
+type ScheduleCalendar struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Sorted allowed values. Weekdays use Sunday=0 through Saturday=6.
+	Minutes       []uint32         `protobuf:"varint,1,rep,packed,name=minutes,proto3" json:"minutes,omitempty"`
+	Hours         []uint32         `protobuf:"varint,2,rep,packed,name=hours,proto3" json:"hours,omitempty"`
+	DaysOfMonth   []uint32         `protobuf:"varint,3,rep,packed,name=days_of_month,json=daysOfMonth,proto3" json:"days_of_month,omitempty"`
+	Months        []uint32         `protobuf:"varint,4,rep,packed,name=months,proto3" json:"months,omitempty"`
+	Weekdays      []uint32         `protobuf:"varint,5,rep,packed,name=weekdays,proto3" json:"weekdays,omitempty"`
+	DayMatch      ScheduleDayMatch `protobuf:"varint,6,opt,name=day_match,json=dayMatch,proto3,enum=delidev.v1.ScheduleDayMatch" json:"day_match,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduleCalendar) Reset() {
+	*x = ScheduleCalendar{}
+	mi := &file_delidev_v1_schedule_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduleCalendar) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduleCalendar) ProtoMessage() {}
+
+func (x *ScheduleCalendar) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_schedule_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduleCalendar.ProtoReflect.Descriptor instead.
+func (*ScheduleCalendar) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_schedule_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ScheduleCalendar) GetMinutes() []uint32 {
+	if x != nil {
+		return x.Minutes
+	}
+	return nil
+}
+
+func (x *ScheduleCalendar) GetHours() []uint32 {
+	if x != nil {
+		return x.Hours
+	}
+	return nil
+}
+
+func (x *ScheduleCalendar) GetDaysOfMonth() []uint32 {
+	if x != nil {
+		return x.DaysOfMonth
+	}
+	return nil
+}
+
+func (x *ScheduleCalendar) GetMonths() []uint32 {
+	if x != nil {
+		return x.Months
+	}
+	return nil
+}
+
+func (x *ScheduleCalendar) GetWeekdays() []uint32 {
+	if x != nil {
+		return x.Weekdays
+	}
+	return nil
+}
+
+func (x *ScheduleCalendar) GetDayMatch() ScheduleDayMatch {
+	if x != nil {
+		return x.DayMatch
+	}
+	return ScheduleDayMatch_SCHEDULE_DAY_MATCH_UNSPECIFIED
+}
+
 var File_delidev_v1_schedule_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_schedule_proto_rawDesc = "" +
@@ -1022,12 +1269,31 @@ const file_delidev_v1_schedule_proto_rawDesc = "" +
 	"\x1dGetScheduleOccurrenceResponse\x124\n" +
 	"\n" +
 	"occurrence\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\n" +
-	"occurrence*h\n" +
+	"occurrence\"P\n" +
+	"\x1ePreviewScheduleCalendarRequest\x12\x12\n" +
+	"\x04cron\x18\x01 \x01(\tR\x04cron\x12\x1a\n" +
+	"\btimezone\x18\x02 \x01(\tR\btimezone\"\x97\x01\n" +
+	"\x1fPreviewScheduleCalendarResponse\x12\x1a\n" +
+	"\bboundary\x18\x01 \x01(\tR\bboundary\x12\x1e\n" +
+	"\vnext_run_at\x18\x02 \x01(\tR\tnextRunAt\x128\n" +
+	"\bcalendar\x18\x03 \x01(\v2\x1c.delidev.v1.ScheduleCalendarR\bcalendar\"\xd5\x01\n" +
+	"\x10ScheduleCalendar\x12\x18\n" +
+	"\aminutes\x18\x01 \x03(\rR\aminutes\x12\x14\n" +
+	"\x05hours\x18\x02 \x03(\rR\x05hours\x12\"\n" +
+	"\rdays_of_month\x18\x03 \x03(\rR\vdaysOfMonth\x12\x16\n" +
+	"\x06months\x18\x04 \x03(\rR\x06months\x12\x1a\n" +
+	"\bweekdays\x18\x05 \x03(\rR\bweekdays\x129\n" +
+	"\tday_match\x18\x06 \x01(\x0e2\x1c.delidev.v1.ScheduleDayMatchR\bdayMatch*h\n" +
 	"\x0eScheduleAction\x12\x1f\n" +
 	"\x1bSCHEDULE_ACTION_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SCHEDULE_ACTION_PAUSE\x10\x01\x12\x1a\n" +
-	"\x16SCHEDULE_ACTION_RESUME\x10\x022\xfa\x05\n" +
-	"\x0fScheduleService\x12Q\n" +
+	"\x16SCHEDULE_ACTION_RESUME\x10\x02*m\n" +
+	"\x10ScheduleDayMatch\x12\"\n" +
+	"\x1eSCHEDULE_DAY_MATCH_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16SCHEDULE_DAY_MATCH_AND\x10\x01\x12\x19\n" +
+	"\x15SCHEDULE_DAY_MATCH_OR\x10\x022\xee\x06\n" +
+	"\x0fScheduleService\x12r\n" +
+	"\x17PreviewScheduleCalendar\x12*.delidev.v1.PreviewScheduleCalendarRequest\x1a+.delidev.v1.PreviewScheduleCalendarResponse\x12Q\n" +
 	"\fSaveSchedule\x12\x1f.delidev.v1.SaveScheduleRequest\x1a .delidev.v1.SaveScheduleResponse\x12N\n" +
 	"\vGetSchedule\x12\x1e.delidev.v1.GetScheduleRequest\x1a\x1f.delidev.v1.GetScheduleResponse\x12T\n" +
 	"\rListSchedules\x12 .delidev.v1.ListSchedulesRequest\x1a!.delidev.v1.ListSchedulesResponse\x12W\n" +
@@ -1049,64 +1315,72 @@ func file_delidev_v1_schedule_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_schedule_proto_rawDescData
 }
 
-var file_delidev_v1_schedule_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_delidev_v1_schedule_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_delidev_v1_schedule_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_delidev_v1_schedule_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_delidev_v1_schedule_proto_goTypes = []any{
 	(ScheduleAction)(0),                     // 0: delidev.v1.ScheduleAction
-	(*SaveScheduleRequest)(nil),             // 1: delidev.v1.SaveScheduleRequest
-	(*SaveScheduleResponse)(nil),            // 2: delidev.v1.SaveScheduleResponse
-	(*GetScheduleRequest)(nil),              // 3: delidev.v1.GetScheduleRequest
-	(*GetScheduleResponse)(nil),             // 4: delidev.v1.GetScheduleResponse
-	(*ListSchedulesRequest)(nil),            // 5: delidev.v1.ListSchedulesRequest
-	(*ListSchedulesResponse)(nil),           // 6: delidev.v1.ListSchedulesResponse
-	(*DeleteScheduleRequest)(nil),           // 7: delidev.v1.DeleteScheduleRequest
-	(*DeleteScheduleResponse)(nil),          // 8: delidev.v1.DeleteScheduleResponse
-	(*ControlScheduleRequest)(nil),          // 9: delidev.v1.ControlScheduleRequest
-	(*ControlScheduleResponse)(nil),         // 10: delidev.v1.ControlScheduleResponse
-	(*RunScheduleNowRequest)(nil),           // 11: delidev.v1.RunScheduleNowRequest
-	(*RunScheduleNowResponse)(nil),          // 12: delidev.v1.RunScheduleNowResponse
-	(*ListScheduleOccurrencesRequest)(nil),  // 13: delidev.v1.ListScheduleOccurrencesRequest
-	(*ListScheduleOccurrencesResponse)(nil), // 14: delidev.v1.ListScheduleOccurrencesResponse
-	(*GetScheduleOccurrenceRequest)(nil),    // 15: delidev.v1.GetScheduleOccurrenceRequest
-	(*GetScheduleOccurrenceResponse)(nil),   // 16: delidev.v1.GetScheduleOccurrenceResponse
-	(*Mutation)(nil),                        // 17: delidev.v1.Mutation
-	(*Resource)(nil),                        // 18: delidev.v1.Resource
+	(ScheduleDayMatch)(0),                   // 1: delidev.v1.ScheduleDayMatch
+	(*SaveScheduleRequest)(nil),             // 2: delidev.v1.SaveScheduleRequest
+	(*SaveScheduleResponse)(nil),            // 3: delidev.v1.SaveScheduleResponse
+	(*GetScheduleRequest)(nil),              // 4: delidev.v1.GetScheduleRequest
+	(*GetScheduleResponse)(nil),             // 5: delidev.v1.GetScheduleResponse
+	(*ListSchedulesRequest)(nil),            // 6: delidev.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),           // 7: delidev.v1.ListSchedulesResponse
+	(*DeleteScheduleRequest)(nil),           // 8: delidev.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),          // 9: delidev.v1.DeleteScheduleResponse
+	(*ControlScheduleRequest)(nil),          // 10: delidev.v1.ControlScheduleRequest
+	(*ControlScheduleResponse)(nil),         // 11: delidev.v1.ControlScheduleResponse
+	(*RunScheduleNowRequest)(nil),           // 12: delidev.v1.RunScheduleNowRequest
+	(*RunScheduleNowResponse)(nil),          // 13: delidev.v1.RunScheduleNowResponse
+	(*ListScheduleOccurrencesRequest)(nil),  // 14: delidev.v1.ListScheduleOccurrencesRequest
+	(*ListScheduleOccurrencesResponse)(nil), // 15: delidev.v1.ListScheduleOccurrencesResponse
+	(*GetScheduleOccurrenceRequest)(nil),    // 16: delidev.v1.GetScheduleOccurrenceRequest
+	(*GetScheduleOccurrenceResponse)(nil),   // 17: delidev.v1.GetScheduleOccurrenceResponse
+	(*PreviewScheduleCalendarRequest)(nil),  // 18: delidev.v1.PreviewScheduleCalendarRequest
+	(*PreviewScheduleCalendarResponse)(nil), // 19: delidev.v1.PreviewScheduleCalendarResponse
+	(*ScheduleCalendar)(nil),                // 20: delidev.v1.ScheduleCalendar
+	(*Mutation)(nil),                        // 21: delidev.v1.Mutation
+	(*Resource)(nil),                        // 22: delidev.v1.Resource
 }
 var file_delidev_v1_schedule_proto_depIdxs = []int32{
-	17, // 0: delidev.v1.SaveScheduleRequest.mutation:type_name -> delidev.v1.Mutation
-	18, // 1: delidev.v1.SaveScheduleResponse.schedule:type_name -> delidev.v1.Resource
-	18, // 2: delidev.v1.GetScheduleResponse.schedule:type_name -> delidev.v1.Resource
-	18, // 3: delidev.v1.ListSchedulesResponse.schedules:type_name -> delidev.v1.Resource
-	17, // 4: delidev.v1.DeleteScheduleRequest.mutation:type_name -> delidev.v1.Mutation
-	17, // 5: delidev.v1.ControlScheduleRequest.mutation:type_name -> delidev.v1.Mutation
+	21, // 0: delidev.v1.SaveScheduleRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 1: delidev.v1.SaveScheduleResponse.schedule:type_name -> delidev.v1.Resource
+	22, // 2: delidev.v1.GetScheduleResponse.schedule:type_name -> delidev.v1.Resource
+	22, // 3: delidev.v1.ListSchedulesResponse.schedules:type_name -> delidev.v1.Resource
+	21, // 4: delidev.v1.DeleteScheduleRequest.mutation:type_name -> delidev.v1.Mutation
+	21, // 5: delidev.v1.ControlScheduleRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 6: delidev.v1.ControlScheduleRequest.action:type_name -> delidev.v1.ScheduleAction
-	18, // 7: delidev.v1.ControlScheduleResponse.schedule:type_name -> delidev.v1.Resource
-	17, // 8: delidev.v1.RunScheduleNowRequest.mutation:type_name -> delidev.v1.Mutation
-	18, // 9: delidev.v1.RunScheduleNowResponse.occurrence:type_name -> delidev.v1.Resource
-	18, // 10: delidev.v1.RunScheduleNowResponse.session:type_name -> delidev.v1.Resource
-	18, // 11: delidev.v1.ListScheduleOccurrencesResponse.occurrences:type_name -> delidev.v1.Resource
-	18, // 12: delidev.v1.GetScheduleOccurrenceResponse.occurrence:type_name -> delidev.v1.Resource
-	1,  // 13: delidev.v1.ScheduleService.SaveSchedule:input_type -> delidev.v1.SaveScheduleRequest
-	3,  // 14: delidev.v1.ScheduleService.GetSchedule:input_type -> delidev.v1.GetScheduleRequest
-	5,  // 15: delidev.v1.ScheduleService.ListSchedules:input_type -> delidev.v1.ListSchedulesRequest
-	7,  // 16: delidev.v1.ScheduleService.DeleteSchedule:input_type -> delidev.v1.DeleteScheduleRequest
-	9,  // 17: delidev.v1.ScheduleService.ControlSchedule:input_type -> delidev.v1.ControlScheduleRequest
-	11, // 18: delidev.v1.ScheduleService.RunScheduleNow:input_type -> delidev.v1.RunScheduleNowRequest
-	13, // 19: delidev.v1.ScheduleService.ListScheduleOccurrences:input_type -> delidev.v1.ListScheduleOccurrencesRequest
-	15, // 20: delidev.v1.ScheduleService.GetScheduleOccurrence:input_type -> delidev.v1.GetScheduleOccurrenceRequest
-	2,  // 21: delidev.v1.ScheduleService.SaveSchedule:output_type -> delidev.v1.SaveScheduleResponse
-	4,  // 22: delidev.v1.ScheduleService.GetSchedule:output_type -> delidev.v1.GetScheduleResponse
-	6,  // 23: delidev.v1.ScheduleService.ListSchedules:output_type -> delidev.v1.ListSchedulesResponse
-	8,  // 24: delidev.v1.ScheduleService.DeleteSchedule:output_type -> delidev.v1.DeleteScheduleResponse
-	10, // 25: delidev.v1.ScheduleService.ControlSchedule:output_type -> delidev.v1.ControlScheduleResponse
-	12, // 26: delidev.v1.ScheduleService.RunScheduleNow:output_type -> delidev.v1.RunScheduleNowResponse
-	14, // 27: delidev.v1.ScheduleService.ListScheduleOccurrences:output_type -> delidev.v1.ListScheduleOccurrencesResponse
-	16, // 28: delidev.v1.ScheduleService.GetScheduleOccurrence:output_type -> delidev.v1.GetScheduleOccurrenceResponse
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	22, // 7: delidev.v1.ControlScheduleResponse.schedule:type_name -> delidev.v1.Resource
+	21, // 8: delidev.v1.RunScheduleNowRequest.mutation:type_name -> delidev.v1.Mutation
+	22, // 9: delidev.v1.RunScheduleNowResponse.occurrence:type_name -> delidev.v1.Resource
+	22, // 10: delidev.v1.RunScheduleNowResponse.session:type_name -> delidev.v1.Resource
+	22, // 11: delidev.v1.ListScheduleOccurrencesResponse.occurrences:type_name -> delidev.v1.Resource
+	22, // 12: delidev.v1.GetScheduleOccurrenceResponse.occurrence:type_name -> delidev.v1.Resource
+	20, // 13: delidev.v1.PreviewScheduleCalendarResponse.calendar:type_name -> delidev.v1.ScheduleCalendar
+	1,  // 14: delidev.v1.ScheduleCalendar.day_match:type_name -> delidev.v1.ScheduleDayMatch
+	18, // 15: delidev.v1.ScheduleService.PreviewScheduleCalendar:input_type -> delidev.v1.PreviewScheduleCalendarRequest
+	2,  // 16: delidev.v1.ScheduleService.SaveSchedule:input_type -> delidev.v1.SaveScheduleRequest
+	4,  // 17: delidev.v1.ScheduleService.GetSchedule:input_type -> delidev.v1.GetScheduleRequest
+	6,  // 18: delidev.v1.ScheduleService.ListSchedules:input_type -> delidev.v1.ListSchedulesRequest
+	8,  // 19: delidev.v1.ScheduleService.DeleteSchedule:input_type -> delidev.v1.DeleteScheduleRequest
+	10, // 20: delidev.v1.ScheduleService.ControlSchedule:input_type -> delidev.v1.ControlScheduleRequest
+	12, // 21: delidev.v1.ScheduleService.RunScheduleNow:input_type -> delidev.v1.RunScheduleNowRequest
+	14, // 22: delidev.v1.ScheduleService.ListScheduleOccurrences:input_type -> delidev.v1.ListScheduleOccurrencesRequest
+	16, // 23: delidev.v1.ScheduleService.GetScheduleOccurrence:input_type -> delidev.v1.GetScheduleOccurrenceRequest
+	19, // 24: delidev.v1.ScheduleService.PreviewScheduleCalendar:output_type -> delidev.v1.PreviewScheduleCalendarResponse
+	3,  // 25: delidev.v1.ScheduleService.SaveSchedule:output_type -> delidev.v1.SaveScheduleResponse
+	5,  // 26: delidev.v1.ScheduleService.GetSchedule:output_type -> delidev.v1.GetScheduleResponse
+	7,  // 27: delidev.v1.ScheduleService.ListSchedules:output_type -> delidev.v1.ListSchedulesResponse
+	9,  // 28: delidev.v1.ScheduleService.DeleteSchedule:output_type -> delidev.v1.DeleteScheduleResponse
+	11, // 29: delidev.v1.ScheduleService.ControlSchedule:output_type -> delidev.v1.ControlScheduleResponse
+	13, // 30: delidev.v1.ScheduleService.RunScheduleNow:output_type -> delidev.v1.RunScheduleNowResponse
+	15, // 31: delidev.v1.ScheduleService.ListScheduleOccurrences:output_type -> delidev.v1.ListScheduleOccurrencesResponse
+	17, // 32: delidev.v1.ScheduleService.GetScheduleOccurrence:output_type -> delidev.v1.GetScheduleOccurrenceResponse
+	24, // [24:33] is the sub-list for method output_type
+	15, // [15:24] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_schedule_proto_init() }
@@ -1121,8 +1395,8 @@ func file_delidev_v1_schedule_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_schedule_proto_rawDesc), len(file_delidev_v1_schedule_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   16,
+			NumEnums:      2,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
