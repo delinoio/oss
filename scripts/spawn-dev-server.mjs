@@ -178,7 +178,7 @@ export async function spawnDevServer(
   command,
   args,
   options,
-  { terminateProcessTree = false } = {},
+  { terminateProcessTree = false, onStdout, onStderr } = {},
 ) {
   const managePosixProcessGroup = process.platform !== "win32" && terminateProcessTree;
   const child = spawn(
@@ -186,6 +186,11 @@ export async function spawnDevServer(
     args,
     managePosixProcessGroup ? { ...options, detached: true } : options,
   );
+  if (onStdout) child.stdout?.on("data", onStdout);
+  if (onStderr) child.stderr?.on("data", onStderr);
+  // Captured diagnostics must drain before the caller flushes its final line.
+  // Ordinary inherited-stdio callers retain their original exit boundary.
+  const outputClosed = onStdout || onStderr ? new Promise(resolve => child.once("close", resolve)) : undefined;
   const signalHandlers = new Map();
   let forwardedSignal = null;
   const terminationPromises = [];
@@ -235,6 +240,7 @@ export async function spawnDevServer(
   try {
     const result = await childResult;
     await Promise.all(terminationPromises);
+    await outputClosed;
     return forwardedSignal ? { code: null, signal: forwardedSignal } : result;
   } finally {
     removeSignalHandlers();

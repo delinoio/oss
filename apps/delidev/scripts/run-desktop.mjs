@@ -1,3 +1,4 @@
+import { StringDecoder } from "node:string_decoder";
 import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -50,6 +51,35 @@ export function desktopArguments(platform, args, credits) {
   ];
 }
 
+// Cargo echoes complete application argv. Capture bounded lines and remove
+// command echoes before forwarding ordinary build/runtime diagnostics.
+export function desktopDiagnostics(args, write) {
+  const decoder = new StringDecoder("utf8");
+  const values = [...new Set(args.flatMap(arg => [arg, arg.includes("=") ? arg.slice(arg.indexOf("=") + 1) : ""])
+    .flatMap(value => [value, JSON.stringify(value).slice(1, -1), ...value.split(/[\r\n]/)])
+    .filter(Boolean))].sort((a, b) => b.length - a.length);
+  let line = "", dropped = false;
+  const emit = () => {
+    const plain = line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+    if (dropped || /^\s*(?:Running\s|process didn't exit successfully:)/.test(plain)) write("[desktop command diagnostic omitted]\n");
+    else {
+      let safe = plain;
+      for (const value of values) safe = safe.replaceAll(value, "[redacted]");
+      write(`${safe}\n`);
+    }
+    line = ""; dropped = false;
+  };
+  const accept = text => {
+    const parts = text.split(/\r?\n/);
+    for (let index = 0; index < parts.length; index++) {
+      if (!dropped && line.length + parts[index].length <= 64 * 1024) line += parts[index];
+      else { line = ""; dropped = true; }
+      if (index < parts.length - 1) emit();
+    }
+  };
+  return { push: chunk => accept(decoder.write(chunk)), end: () => { accept(decoder.end()); if (line || dropped) emit(); } };
+}
+
 export async function runDesktop(args, {
   platform = process.platform,
   arch = process.arch,
@@ -60,6 +90,8 @@ export async function runDesktop(args, {
   publish = publishDevelopmentBundle,
   lock = () => acquireNativeBuildLock(root),
   log = entry => process.stderr.write(`${JSON.stringify(entry)}\n`),
+  stdout = text => process.stdout.write(text),
+  stderr = text => process.stderr.write(text),
 } = {}) {
   let stage = "prepare";
   let release;
@@ -71,7 +103,12 @@ export async function runDesktop(args, {
       return { code: 1, signal: null };
     }
     const env = desktopEnvironment(platform, environment);
-    const options = { cwd: app, env, stdio: "inherit", shell: false };
+    const options = { cwd: app, env, stdio: ["inherit", "pipe", "pipe"], shell: false };
+    const capturedRun = async (executable, argv, opts, lifecycle = {}) => {
+      const out = desktopDiagnostics(args, stdout), err = desktopDiagnostics(args, stderr);
+      try { return await run(executable, argv, opts, { ...lifecycle, onStdout: out.push, onStderr: err.push }); }
+      finally { out.end(); err.end(); }
+    };
     const lifecycle = { terminateProcessTree: true };
     const command = (executable, argv, opts) => signingCommand(executable, argv, opts, run);
     let identity;
@@ -82,7 +119,7 @@ export async function runDesktop(args, {
       stage = "prepare";
     }
     report("started");
-    const prepared = await run(process.execPath, [pnpm, "build:native"], options, lifecycle);
+    const prepared = await capturedRun(process.execPath, [pnpm, "build:native"], options, lifecycle);
     if (prepared.code !== 0 || prepared.signal !== null) {
       report("failed", prepared);
       return prepared;
@@ -96,7 +133,7 @@ export async function runDesktop(args, {
     report("started");
     const cliArguments = desktopArguments(platform, forwarded, credits);
     const invocation = platform === "darwin" ? tauriCommand(cliArguments) : ["cargo", cliArguments];
-    let result = await run(...invocation, options, lifecycle);
+    let result = await capturedRun(...invocation, options, lifecycle);
     if (platform === "darwin" && result.code === 0 && result.signal === null) {
       stage = "sign-and-publish";
       report("started");
@@ -108,7 +145,7 @@ export async function runDesktop(args, {
       report("started");
       // An interrupted launcher may leave its Go server alive. Signal only the
       // original desktop child; never group-kill its crash-surviving sidecar.
-      result = await run(executable, forwarded, { ...options, detached: true }, { terminateProcessTree: false });
+      result = await capturedRun(executable, forwarded, { ...options, detached: true }, { terminateProcessTree: false });
     }
     report(result.code === 0 && result.signal === null ? "exited" : "failed", result);
     return result;

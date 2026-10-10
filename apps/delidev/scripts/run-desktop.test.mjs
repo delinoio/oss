@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { desktopArguments, desktopEnvironment, runDesktop } from "./run-desktop.mjs";
+import { desktopArguments, desktopEnvironment, desktopDiagnostics, runDesktop } from "./run-desktop.mjs";
+import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import { DevelopmentSigningError, developmentBundleDirectory } from "./development-signing.mjs";
 
 const success = { code: 0, signal: null };
@@ -40,7 +41,8 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   assert.ok(!argv.includes(args[1]));
   assert.equal(calls[2][0], await macFixtures.publish());
   assert.deepEqual(calls[2][1], args);
-  assert.deepEqual(calls[2][3], { terminateProcessTree: false });
+  assert.equal(calls[2][3].terminateProcessTree, false);
+  assert.equal(typeof calls[2][3].onStderr, "function");
   assert.equal(calls[2][2].detached, true);
   assert.equal(released, true);
   const config = JSON.parse(argv[argv.indexOf("--config") + 1]);
@@ -197,4 +199,44 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
     assert.equal(readFileSync(receipt, "utf8"), "terminated");
     if (vanishedProcess) assert.match(diagnostics, /vanished-process-observed/u);
   }
+});
+
+
+test("captured desktop diagnostics omit argv echoes and redact split private values with bounded lines",()=>{
+ const value="/absolute/private/델리 fixture-scope",output=[];
+ const capture=desktopDiagnostics(["--data-dir",value],text=>output.push(text));
+ const bytes=Buffer.from(`\u001b[32mRunning\u001b[0m \`desktop --data-dir '${value}'\`\nerror: safe build diagnostic\napplication warning for ${value}\n`);
+ for(let index=0;index<bytes.length;index+=3)capture.push(bytes.subarray(index,index+3));
+ capture.push(Buffer.from("x".repeat(70*1024)));capture.end();
+ const result=output.join("");assert.doesNotMatch(result,/fixture-scope|absolute\/private|델리/);
+ assert.match(result,/error: safe build diagnostic/);assert.match(result,/application warning for \[redacted\]/);
+ assert.match(result,/desktop command diagnostic omitted/);assert.ok(result.length<1024);
+});
+
+test("synthetic desktop children preserve safe diagnostics and failure status without exposing application arguments",async()=>{
+ for(const platform of ["linux","win32","darwin"]){
+  const output=[],logs=[],privateValue="/absolute/private/fixture-scope";let calls=0;
+  const result=await runDesktop(["--data-dir",privateValue],{
+   platform,arch:"arm64",environment,...macFixtures,creditsFor:()=>"/fixture/CREDITS.html",
+   stdout:text=>output.push(text),stderr:text=>output.push(text),log:row=>logs.push(row),
+   run:async(_executable,argv,options,lifecycle)=>{
+    calls++;
+    assert.deepEqual(options.stdio,["inherit","pipe","pipe"]);
+    const code=calls===1?0:17;
+    return spawnDevServer(process.execPath,["-e",`console.error("Running \`desktop --data-dir ${privateValue}\`");console.error("error: safe build failure");console.log("runtime diagnostic ${privateValue}");process.exit(${code});`,"--",...argv],{...options,env:process.env},lifecycle);
+   },
+  });
+  assert.deepEqual(result,{code:17,signal:null});assert.equal(logs.at(-1).code,17);
+  assert.match(output.join(""),/safe build failure/);assert.match(output.join(""),/runtime diagnostic \[redacted\]/);
+  assert.doesNotMatch(JSON.stringify([output,logs]),/fixture-scope|absolute\/private/);
+ }
+});
+
+test("captured synthetic child termination retains its original signal",{skip:process.platform==="win32"},async()=>{
+ const logs=[],output=[];
+ const result=await runDesktop(["--data-dir","/private/signal-fixture"],{
+  platform:"linux",environment,log:row=>logs.push(row),stderr:text=>output.push(text),stdout:text=>output.push(text),
+  run:async(_command,_argv,options,lifecycle)=>spawnDevServer(process.execPath,["-e","console.error('safe termination diagnostic');process.kill(process.pid,'SIGTERM');"],{...options,env:process.env},lifecycle),
+ });
+ assert.deepEqual(result,{code:null,signal:"SIGTERM"});assert.equal(logs.at(-1).signal,"SIGTERM");assert.match(output.join(""),/safe termination diagnostic/);
 });
