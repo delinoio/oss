@@ -265,7 +265,7 @@ it.each([true,false])("negotiates row quota refresh for a server-owned account (
 it("keeps retained paid-credit rows loading while the capability read is unresolved", async () => {
  const value=fixture();render(<value.Harness/>);
  const row=await screen.findByRole("article",{name:"Existing subscription"});
- expect(within(row).getByText(/Paid credits: Unavailable/)).toBeTruthy();
+ expect(within(row).getByText(/Paid credits: Loading paid-credit support/)).toBeTruthy();
  let release: (()=>void)|undefined;
  value.status.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{release=resolve});return {capabilities:[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,SystemCapability.SERVER_SUBSCRIPTION_LOGIN_V1,SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1]};});
  const queries=value.client.getQueryCache().findAll().filter(query=>JSON.stringify(query.queryKey).toLowerCase().includes("getstatus"));
