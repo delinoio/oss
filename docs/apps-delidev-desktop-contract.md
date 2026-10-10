@@ -2819,7 +2819,34 @@ from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard contai
 and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
 #### Device styling and custom themes
 
-Appearance uses five flat sections: Theme, Composer, Status, Display and Images.
+The Appearance body alone supersedes the former 720px form cap with one fluid,
+left-aligned 880 CSS-pixel column. Other forms keep their existing caps and shared
+32px/24px/16px responsive padding. The vertically scrolling body keeps Theme,
+Composer, Session status, Display and Images in order, then independently owned
+Language and Date format. Thin semantic dividers and 24px gaps separate sections.
+The category title uses 26px/32px, headings 16px/24px, labels 14px/20px and helper
+text 12px/18px in the system font. Show computer-local storage and automatic-save
+explanations below the title; dynamic status still reflects original controller state.
+
+Ordinary rows retain at least 64px height, wrapping text, a 16px gap and 220px
+control column. Keep native 40px-minimum controls and 8px corners. Group tool,
+reasoning and compaction defaults visually while retaining three independently
+labelled selectors and values. Native System/Light/Dark radio tiles retain
+synthetic decorative miniatures and non-color selection cues. Below them keep
+light/dark palettes, color assistance, Duplicate/Import actions and all custom
+management rows. Preserve every unavailable renderer preference as a labelled,
+disabled control, with its original explanation. Short localized explanations
+supplement rather than remove behavioral, observation and recovery guidance.
+
+An Appearance-scoped container stacks rows, tiles and disclosure selectors below
+640px available body width, including when navigation reduces the body width;
+actions wrap and all sections remain vertically reachable at effective 200% reflow.
+Accessible descriptions supplement the existing names and Settings search targets.
+Keep original pending/uncertain/revision/storage states, explicit Reload, native
+radio keyboard behavior, independent language/date controllers and committed
+selection. This presentation adds no Save button, automatic retry, native storage,
+preference schema, RPC, migration, feature flag, dependency or external asset.
+
 Language and Date format retain their existing ownership. Ordinary selections
 save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.

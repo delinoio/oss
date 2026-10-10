@@ -525,6 +525,14 @@ try {
       assert.equal(layout.anchor, Number.parseInt(layout.padding), context);
       assert(layout.width <= 1040.5 && !layout.overflow && layout.controls && layout.multiline && layout.empty && layout.forms, context);
       if (category === "Appearance") assert(await page.locator(".appearance-choice-label").evaluateAll(labels => labels.every(node => node.getBoundingClientRect().width >= node.parentElement.clientWidth - 32 && node.scrollWidth <= node.clientWidth)), `${context} theme labels retain available width`);
+      if (category === "Appearance") {
+        const appearance = await page.locator(".appearance-body").evaluate(root => {
+          const body=root.getBoundingClientRect(),rows=[...root.querySelectorAll('.appearance-row')].map(row=>({height:row.getBoundingClientRect().height,columns:getComputedStyle(row).gridTemplateColumns,overflow:row.scrollWidth>row.clientWidth}));
+          return {width:body.width, rows, headings:[...root.querySelectorAll('.appearance-settings > fieldset > legend')].map(node=>node.textContent),unavailable:[...root.querySelectorAll('.appearance-settings input[type=checkbox]')].filter(node=>node.matches(':disabled')).length,selectors:root.querySelectorAll('.appearance-disclosure-selectors select').length,overflow:root.scrollWidth>root.clientWidth};
+        });
+        assert(appearance.width <= 880.5 && !appearance.overflow && appearance.rows.every(row=>row.height >= 63.5 && !row.overflow), `${context} Appearance body geometry ${JSON.stringify(appearance)}`);
+        assert.equal(appearance.headings.length,5);assert.equal(appearance.selectors,3);assert(appearance.unavailable>=4);
+      }
       checked++;
     }
     if (populated) {

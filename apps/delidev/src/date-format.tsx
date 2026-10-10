@@ -146,15 +146,14 @@ export function DateFormatSettings() {
         Keep it focusable; the controller rejects saves while busy or uncertain. */}
     <fieldset disabled={operation === DateFormatOperation.Reading} aria-disabled={Boolean(operation || snapshot.problem)} aria-busy={operation === DateFormatOperation.Saving}>
       <legend id={labelId}>{copy("date-format.title")}</legend>
-      <select aria-labelledby={labelId} value={snapshot.date_format} onChange={event => {
+      <div className="date-format-row"><p id={`${labelId}-scope`}>{copy("date-format.scope")}</p><div><select aria-describedby={`${labelId}-scope`} aria-labelledby={labelId} value={snapshot.date_format} onChange={event => {
         const next = choices.find(value => value === event.currentTarget.value);
         if (next !== undefined) select(next);
       }}>
         {choices.map(value => <option key={value} value={value}>{value === DateFormatPreference.System ? copy("date-format.system") : value === DateFormatPreference.Ymd ? "YYYY-MM-DD" : value === DateFormatPreference.Mdy ? "MM/DD/YYYY" : "DD/MM/YYYY"}</option>)}
       </select>
-      <small className="date-format-example">{formatTimestampLabel("2026-10-08T12:34:56Z", { preference: snapshot.date_format, mode: TimestampMode.Absolute })}</small>
+      <small className="date-format-example">{formatTimestampLabel("2026-10-08T12:34:56Z", { preference: snapshot.date_format, mode: TimestampMode.Absolute })}</small></div></div>
     </fieldset>
-    <p>{copy("date-format.scope")}</p>
     <p role="status" aria-live="polite">{copy(operation === DateFormatOperation.Reading ? "date-format.reading" : operation === DateFormatOperation.Saving ? "date-format.saving" : snapshot.problem ? "date-format.notSaved" : "date-format.saved")}</p>
     {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={Boolean(operation)} onClick={reload}>{copy("date-format.reload")}</SettingsActionButton></> : null}
   </section>;

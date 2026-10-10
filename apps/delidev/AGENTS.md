@@ -4,6 +4,8 @@
 - This file covers `apps/delidev/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+- Keep Appearance presentation scoped to its body styles and the owning desktop contract. Its device controllers and Settings navigation retain their existing owners.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)

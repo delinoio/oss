@@ -227,3 +227,34 @@
 :root[data-conversation-size="16"] .transcript .message { font-size: 16px; }
 
 :root[data-conversation-size="18"] .transcript .message { font-size: 18px; }
+
+/* Appearance-only geometry. Independent device controllers remain mounted. */
+.settings-content[aria-label] .settings-content-column.settings-appearance-column { width: 100%; max-width: 880px; margin-inline: 0; }
+.settings-appearance-column .settings-category-title h1 { font-size: 26px; line-height: 32px; }
+.settings-appearance-column .settings-category-title p { margin-block: 4px; }
+.settings-appearance-column .appearance-autosave-help { font-size: 12px; line-height: 18px; color: var(--muted); }
+.appearance-body { width: 100%; min-width: 0; max-width: 880px; container: appearance-body / inline-size; }
+.appearance-body .appearance-settings { width: 100%; max-width: 880px; }
+.appearance-body .appearance-settings legend, .appearance-body .date-format-settings legend { font-size: 16px; line-height: 24px; font-weight: 600; }
+.appearance-body .appearance-section-help, .appearance-body .appearance-settings > p { margin: 0 0 12px; font-size: 12px; line-height: 18px; color: var(--muted); }
+.appearance-body .appearance-settings > fieldset { border-top: 1px solid var(--border); padding-top: 24px; }
+.appearance-body .appearance-row, .appearance-body .appearance-disclosure-row, .appearance-body .date-format-row { display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: center; min-height: 64px; gap: 16px; margin: 0; padding-block: 8px; }
+.appearance-row-copy { display: flex; flex-direction: column; min-width: 0; gap: 4px; font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.appearance-row-copy small { font-size: 12px; line-height: 18px; color: var(--muted); }
+.appearance-body .appearance-row select, .appearance-body .appearance-disclosure-choice select, .appearance-body .date-format-row select { width: 100%; min-width: 0; min-height: 40px; border-radius: 8px; font-size: 14px; line-height: 20px; }
+.appearance-checkbox-target { display: flex; align-items: center; justify-content: flex-start; width: 40px; min-height: 40px; }
+.appearance-body .appearance-row input[type="checkbox"] { margin: 0; }
+.appearance-body .appearance-disclosure-selectors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.appearance-disclosure-choice { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 12px; line-height: 18px; }
+.appearance-body .appearance-actions { margin-top: 16px; }
+.appearance-body .language-settings { display: grid; grid-template-columns: minmax(0, 1fr) 220px; align-items: start; column-gap: 16px; row-gap: 8px; max-width: 880px; }
+.appearance-body .language-settings > label { min-height: 40px; display: flex; align-items: center; }
+.appearance-body .language-settings .language-picker { width: 100%; }
+.appearance-body .language-settings > p, .appearance-body .language-settings > button { grid-column: 1 / -1; }
+.appearance-body .language-settings > p:not(.language-sr-only), .appearance-body .date-format-settings p { font-size: 12px; line-height: 18px; color: var(--muted); margin-block: 0 8px; }
+.appearance-body .date-format-row p { font-size: 14px; line-height: 20px; }
+@container appearance-body (width < 640px) {
+ .appearance-body .appearance-row, .appearance-body .appearance-disclosure-row, .appearance-body .date-format-row, .appearance-body .language-settings { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+ .appearance-body .appearance-choices, .appearance-body .appearance-disclosure-selectors { grid-template-columns: minmax(0, 1fr); }
+ .appearance-body .language-settings > p, .appearance-body .language-settings > button { grid-column: 1; }
+}

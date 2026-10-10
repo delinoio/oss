@@ -66,7 +66,7 @@
 .notification-saved-row dt { flex: 1; }
 .notification-saved-row dd { margin: 0; }
 .notification-guidance { margin-top: 24px; color: var(--muted); }
-.settings-content[aria-label] .appearance-settings { max-width: 720px; container: appearance / inline-size; }
+.settings-content[aria-label] .appearance-settings { max-width: 880px; container: appearance / inline-size; }
 .appearance-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .settings-content[aria-label] .appearance-choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); margin: 0; }
 .appearance-choice-label { grid-column: 1 / -1; min-width: 0; }
@@ -91,7 +91,7 @@
 }
 
 /* Language is a device preference and follows the existing Appearance body. */
-.settings-content .language-settings { max-width: 720px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.settings-content .language-settings { max-width: 880px; margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .settings-content .language-settings label { font-size: 16px; line-height: 24px; font-weight: 600; }
 .settings-content[aria-label] .settings-breadcrumb { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }
 

@@ -205,3 +205,20 @@ test("custom theme save waits for the positively committed native map identity",
  await act(async()=>pending.resolve({theme,revision:revision+1,problem:null,preferences:sorted}));
  expect(screen.queryByRole("textbox",{name:"Theme name"})).toBeNull();expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
 });
+
+test("appearance explanatory rows retain original controls and independently labelled disclosure defaults", async () => {
+ const {defaultPreferences}=await import("./appearance-preferences");scheme(false);const value=fixture();
+ vi.mocked(value.bridge.read).mockResolvedValue({revision:1,theme:Theme.System,problem:null,preferences:defaultPreferences()});
+ const view=render(<AppearanceProvider bridge={value.bridge}><div className="appearance-body"><AppearanceSettings/></div></AppearanceProvider>);
+ const density=await screen.findByRole("combobox",{name:"Display density"});await waitFor(()=>expect((density as HTMLSelectElement).matches(":disabled")).toBe(false));
+ expect([...view.container.querySelectorAll('.appearance-settings > fieldset > legend')].map(node=>node.textContent)).toEqual(['Theme','Composer','Session status','Display','Images']);
+ const grouped=view.container.querySelector('.appearance-disclosure-selectors')!;
+ expect(within(grouped as HTMLElement).getAllByRole('combobox')).toHaveLength(3);
+ for(const name of ['Tool details default','Reasoning default','Compaction history default']) expect(within(grouped as HTMLElement).getByRole('combobox',{name})).toBeTruthy();
+ for(const control of view.container.querySelectorAll('.appearance-row input,.appearance-row select,.appearance-disclosure-choice select')) {
+  const description=control.getAttribute('aria-describedby');expect(description).toBeTruthy();expect(document.getElementById(description!)?.textContent?.trim()).toBeTruthy();
+ }
+ for(const name of ['Markdown','Mermaid diagrams','SVG visualizations','Automatic table charts']) expect((screen.getByRole('checkbox',{name}) as HTMLInputElement).matches(':disabled')).toBe(true);
+ expect(view.container.querySelectorAll('.appearance-miniature[aria-hidden=true]')).toHaveLength(3);
+ expect(value.bridge.update).not.toHaveBeenCalled();
+});
