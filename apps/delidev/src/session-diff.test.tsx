@@ -18,15 +18,16 @@ function fixture(worktree = true) {
     if (q.operation === "git-diff-options") return reply({ diff_options: {version:1,repository_id:q.repository_id,choices:[{reference:{type:"local-branch",name:"main"},available:true,configured:false}],default:{type:"local-branch",name:"main"}} });
     return reply({ diff: { comparison: q.comparison, repository_id: q.repository_id, path: q.path, base: "commit", base_object: "a".repeat(40), head_commit: "a".repeat(40), patch: "+<script>doNotRun()</script>\n", untracked: ["new.txt"], revision: "b".repeat(64), ...(q.comparison === "branch" ? {base_ref:q.base_ref,base_commit:"a".repeat(40),merge_base:"a".repeat(40)} : {}) } });
   });
+  const readContext = vi.fn(async (_request: {queryJson:Uint8Array}): Promise<{documentJson:Uint8Array}> => {throw new ConnectError("unsupported context",Code.Unimplemented);});
   const deleteLocalReviewComment = vi.fn((_request: DeleteLocalReviewCommentRequest): Promise<{ id: string; requestId: string }> => new Promise(() => {}));
-  const transport = createRouterTransport((router) => { router.service(SessionService, { readSessionWorkspace: read, deleteLocalReviewComment }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
+  const transport = createRouterTransport((router) => { router.service(SessionService, { readSessionWorkspace: read, readSessionReviewContext:readContext, deleteLocalReviewComment }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function SeedPendingDeletion() { const mutation = useRetainedMutation(`review:delete:${sessionId}:comment`, SessionQuery.deleteLocalReviewComment); useEffect(() => { void mutation.send({ sessionId, mutation: { id: "comment", expectedRevision: 1n, requestId: newRequestId() } }); }, []); return null; }
   function View({ seed = false }: { seed?: boolean } = {}) {
     const [open, setOpen] = useState(true), [draft, setDraft] = useState("unsent input");
     return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{seed ? <SeedPendingDeletion /> : null}<label>Draft<input value={draft} onChange={(e) => setDraft(e.target.value)} /></label>{open ? <SessionDiff sessionId={sessionId} worktree={worktree} close={() => setOpen(false)} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>;
   }
-  return { View, sessionId, transport, primary, other, read, client, reply, deleteLocalReviewComment };
+  return { View, sessionId, transport, primary, other, read, client, reply, deleteLocalReviewComment, readContext };
 }
 
 it("compares the selected repository and negotiated branch base with inert patch text", async () => {
@@ -156,4 +157,14 @@ it("applies the path explicitly and closes overflow before the pane with focus r
  const reads=f.read.mock.calls.length;fireEvent.change(screen.getByLabelText("Relative diff path"),{target:{value:"src"}});expect(f.read).toHaveBeenCalledTimes(reads);
  fireEvent.keyDown(screen.getByRole("dialog",{name:"Diff options"}),{key:"Escape"});
  expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(trigger);expect(screen.getByRole("complementary")).toBeTruthy();
+});
+
+it("renders validated ordinary coordinates and keeps unsupported patches inert",async()=>{
+ const f=fixture(),original=f.read.getMockImplementation()!;
+ const patch="diff --git a/file.txt b/file.txt\nindex aaaaaaa..bbbbbbb 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+<script>new</script>\n";
+ f.read.mockImplementation(async request=>{const r=await original(request),v=JSON.parse(new TextDecoder().decode(r.documentJson));if(v.diff)v.diff.patch=patch;return {documentJson:encode(v)};});
+ f.readContext.mockImplementation(async request=>{const r=await f.read(request),v=JSON.parse(new TextDecoder().decode(r.documentJson));return {documentJson:encode({diff:v.diff,files:[{path:"file.txt",kind:"text",digest:"c".repeat(64),lines:[{old:1,text:"old",newline:true,hunk:1},{new:1,text:"<script>new</script>",newline:true,hunk:1}]}]})};});
+ const view=render(<f.View/>);await screen.findByRole("table",{name:"file.txt"});
+ expect(view.container.querySelector("script")).toBeNull();expect(view.container.querySelectorAll(".diff-added")).toHaveLength(1);expect(view.container.querySelectorAll(".diff-removed")).toHaveLength(1);
+ expect([...view.container.querySelectorAll(".diff-line-number")].map(node=>node.textContent)).toEqual(["1","","","1"]);
 });
