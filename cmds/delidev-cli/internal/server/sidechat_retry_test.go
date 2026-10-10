@@ -3,10 +3,13 @@ package server
 
 import (
 	"bytes"
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
 	"google.golang.org/protobuf/proto"
 	"net/http"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -475,5 +478,277 @@ func TestManagedSidechatQuestionRetryUsesChildOwnedProtectedForkReceipt(t *testi
 	result := retryViewFixture(t, child, request.Mutation.RequestId)
 	if result.Generations[0].ExecutionJobID == "" || result.CurrentAnswer != child.input.ExecutionID {
 		t.Fatal("managed protected Finish did not queue same-child question while retaining answer", result)
+	}
+}
+
+func TestSidechatQuestionRetryPreclaimAuthorityRejection(t *testing.T) {
+	for _, scenario := range []string{"instance", "capability", "actor"} {
+		t.Run(scenario, func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			child.workerStream.Close()
+			request := retryRequestFixture(t, child)
+			actor := domain.NewID()
+			mutate := func(op string, fn func(*store.Tx) (any, error)) {
+				t.Helper()
+				_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), op, nil, fn)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "actor" {
+				mutate("test.retry-client", func(tx *store.Tx) (any, error) {
+					return tx.Put(domain.DeviceKind, actor, 0, "", "", domain.Device{Name: "Retry client", Type: domain.ClientDevice})
+				})
+				ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: actor})
+				if _, err := child.service.RetrySidechatQuestion(ctx, connect.NewRequest(request)); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := store.Decode[domain.Session](child.refresh(t))
+			generation := before.SidechatRetries[len(before.SidechatRetries)-1]
+			mutate("test.retry-authority-changed", func(tx *store.Tx) (any, error) {
+				switch scenario {
+				case "instance":
+					child.workerInstance = string(domain.NewID())
+					return nil, tx.SetWorkerInstance(domain.ID(child.machine.Id), domain.ID(child.workerInstance), time.Now().UTC())
+				case "capability":
+					r, e := tx.Get(domain.MachineKind, domain.ID(child.machine.Id))
+					if e != nil {
+						return nil, e
+					}
+					m, e := store.Decode[domain.Machine](r)
+					if e != nil {
+						return nil, e
+					}
+					m.WorkerCapabilities = slices.DeleteFunc(m.WorkerCapabilities, func(c domain.WorkerCapability) bool { return c == domain.SidechatQuestionRetryV1 })
+					return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+				default:
+					r, e := tx.Get(domain.DeviceKind, actor)
+					if e != nil {
+						return nil, e
+					}
+					d, e := store.Decode[domain.Device](r)
+					if e != nil {
+						return nil, e
+					}
+					d.Revoked = true
+					return tx.Put(domain.DeviceKind, r.ID, r.Revision, "", "", d)
+				}
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			stream, e := child.workerClient.WatchWork(ctx, ownerRequest(child.workerIdentity, &pb.WatchWorkRequest{MachineId: child.machine.Id, InstanceId: child.workerInstance}))
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer stream.Close()
+			if !stream.Receive() || !stream.Msg().Heartbeat || stream.Msg().Job != nil {
+				t.Fatal("missing preclaim heartbeat", stream.Err())
+			}
+			var failed domain.Job
+			for {
+				r, e := child.service.Store.Get(ctx, domain.JobKind, generation.ForkJobID)
+				if e != nil {
+					t.Fatal(e)
+				}
+				failed, e = store.Decode[domain.Job](r)
+				if e != nil {
+					t.Fatal(e)
+				}
+				if failed.State == domain.JobFailed {
+					break
+				}
+				if failed.State != domain.JobQueued {
+					t.Fatal("fork claimed", failed.State)
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("rejection did not settle")
+				case <-time.After(time.Millisecond):
+				}
+			}
+			if failed.InstanceID != "" || failed.AssignedDeviceID != "" || len(failed.Output) != 0 || failed.Problem == nil || failed.FinishedAt == nil {
+				t.Fatal("original failure missing")
+			}
+			after, _ := store.Decode[domain.Session](child.refresh(t))
+			if after.SidechatActiveRetry != "" || !reflect.DeepEqual(after.SidechatRetries, before.SidechatRetries) || !reflect.DeepEqual(after.Fork, before.Fork) || !reflect.DeepEqual(after.Execution, before.Execution) || after.SidechatCurrentAnswer != before.SidechatCurrentAnswer {
+				t.Fatal("history or owner incorrect")
+			}
+			view := retryViewFixture(t, child, request.Mutation.RequestId)
+			if view.Phase != domain.JobFailed || view.Problem == nil || view.ObservedGeneration != generation.ID {
+				t.Fatal("failure observation lost")
+			}
+			stream.Close()
+			if scenario != "actor" {
+				if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+					t.Fatal("accepted receipt replay failed", err)
+				}
+				replayed, _ := store.Decode[domain.Session](child.refresh(t))
+				if !reflect.DeepEqual(replayed, after) {
+					t.Fatal("receipt replay resurrected failed work")
+				}
+			}
+			mutate("test.retry-authority-restored", func(tx *store.Tx) (any, error) {
+				r, e := tx.Get(domain.MachineKind, domain.ID(child.machine.Id))
+				if e != nil {
+					return nil, e
+				}
+				m, e := store.Decode[domain.Machine](r)
+				if e != nil {
+					return nil, e
+				}
+				if !slices.Contains(m.WorkerCapabilities, domain.SidechatQuestionRetryV1) {
+					m.WorkerCapabilities = append(m.WorkerCapabilities, domain.SidechatQuestionRetryV1)
+				}
+				return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", m)
+			})
+			fresh := retryRequestFixture(t, child)
+			if _, e := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, fresh)); e != nil {
+				t.Fatal("fresh explicit retry blocked", e)
+			}
+			latest, _ := store.Decode[domain.Session](child.refresh(t))
+			if latest.SidechatActiveRetry != domain.ID(fresh.Mutation.RequestId) || len(latest.SidechatRetries) != len(before.SidechatRetries)+1 || !reflect.DeepEqual(latest.SidechatRetries[0], before.SidechatRetries[0]) {
+				t.Fatal("fresh retry lost original generation")
+			}
+		})
+	}
+}
+func TestSidechatQuestionRetryPreclaimUnknownOwnershipStaysFenced(t *testing.T) {
+	for _, scenario := range []string{"claimed", "uncertain", "terminal", "instance", "device", "output", "startup", "runtime", "job", "child", "active", "question", "parent", "execution", "fork", "completed", "missing", "duplicate"} {
+		t.Run(scenario, func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			child.workerStream.Close()
+			request := retryRequestFixture(t, child)
+			if _, e := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); e != nil {
+				t.Fatal(e)
+			}
+			before, _ := store.Decode[domain.Session](child.refresh(t))
+			generation := before.SidechatRetries[len(before.SidechatRetries)-1]
+			_, e := child.service.Store.Mutate(context.Background(), domain.NewID(), "test.retry-unknown-owner", nil, func(tx *store.Tx) (any, error) {
+				r, e := tx.Get(domain.JobKind, generation.ForkJobID)
+				if e != nil {
+					return nil, e
+				}
+				job, e := store.Decode[domain.Job](r)
+				if e != nil {
+					return nil, e
+				}
+				var input domain.ForkJobInput
+				if e := domain.Decode(job.Input, &input); e != nil {
+					return nil, e
+				}
+				cr, session, e := sessionRecord(tx, r.SessionID)
+				if e != nil {
+					return nil, e
+				}
+				g := &session.SidechatRetries[len(session.SidechatRetries)-1]
+				switch scenario {
+				case "claimed":
+					job.State = domain.JobClaimed
+				case "uncertain":
+					job.State = domain.JobUncertain
+				case "terminal":
+					job.State = domain.JobFailed
+				case "instance":
+					job.InstanceID = domain.NewID()
+				case "device":
+					job.AssignedDeviceID = domain.NewID()
+				case "output":
+					job.Output = json.RawMessage(`{}`)
+				case "startup":
+					job.Startup = &domain.ExecutionStartupRecord{}
+				case "runtime":
+					g.RuntimeID = domain.NewID()
+				case "job":
+					g.ForkJobID = domain.NewID()
+				case "child":
+					input.ChildSessionID = domain.NewID()
+				case "active":
+					session.SidechatActiveRetry = domain.NewID()
+				case "question":
+					g.QuestionID = domain.NewID()
+				case "parent":
+					g.ParentExecutionID = domain.NewID()
+				case "execution":
+					g.ExecutionID = domain.NewID()
+				case "fork":
+					g.Fork = &domain.SessionDeletionFork{}
+				case "completed":
+					g.Completed = true
+				case "missing":
+					session.SidechatRetries = nil
+				case "duplicate":
+					session.SidechatRetries = append(session.SidechatRetries, *g)
+				}
+				if _, e := tx.Put(domain.SessionKind, cr.ID, cr.Revision, cr.ID, cr.ProjectID, session); e != nil {
+					return nil, e
+				}
+				if e := releasePreclaimSidechatRetry(tx, r, job, input); e != nil {
+					return nil, e
+				}
+				_, after, e := sessionRecord(tx, cr.ID)
+				if e == nil && !reflect.DeepEqual(after, session) {
+					t.Fatal("unknown owner released")
+				}
+				return nil, e
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+		})
+	}
+}
+
+func TestSidechatQuestionRetryPreclaimSettlementRollback(t *testing.T) {
+	_, child := completedRetrySidechatFixture(t)
+	child.workerStream.Close()
+	request := retryRequestFixture(t, child)
+	if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.Decode[domain.Session](child.refresh(t))
+	generation := before.SidechatRetries[len(before.SidechatRetries)-1]
+	original, err := child.service.Store.Get(context.Background(), domain.JobKind, generation.ForkJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = child.service.Store.Mutate(context.Background(), domain.NewID(), "test.retry-settlement-rollback", nil, func(tx *store.Tx) (any, error) {
+		job, e := store.Decode[domain.Job](original)
+		if e != nil {
+			return nil, e
+		}
+		var input domain.ForkJobInput
+		if e := domain.Decode(job.Input, &input); e != nil {
+			return nil, e
+		}
+		if e := releasePreclaimSidechatRetry(tx, original, job, input); e != nil {
+			return nil, e
+		}
+		_, settled, e := sessionRecord(tx, original.SessionID)
+		if e != nil {
+			return nil, e
+		}
+		if settled.SidechatActiveRetry != "" {
+			t.Fatal("valid preclaim owner not released inside transaction")
+		}
+		now := time.Now().UTC()
+		job.State, job.Problem, job.FinishedAt = domain.JobFailed, retryConflict(), &now
+		return tx.PutJob(original.ID, original.Revision+1, original.SessionID, original.ProjectID, job)
+	})
+	if err == nil {
+		t.Fatal("expected original job revision conflict")
+	}
+	after, _ := store.Decode[domain.Session](child.refresh(t))
+	if !reflect.DeepEqual(after, before) {
+		t.Fatal("job failure rolled back without restoring owner")
+	}
+	unchanged, err := child.service.Store.Get(context.Background(), domain.JobKind, generation.ForkJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(original, unchanged) {
+		t.Fatal("original job changed after rollback")
 	}
 }

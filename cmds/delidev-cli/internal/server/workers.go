@@ -591,6 +591,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							problem = validateForkAuthority(tx, input)
 						}
 						if problem != nil {
+							if err := releasePreclaimSidechatRetry(tx, r, j, input); err != nil {
+								return nil, err
+							}
 							now := time.Now().UTC()
 							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
 							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
@@ -612,6 +615,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				if err != nil {
 					s.logger.WarnContext(ctx, "worker claim receipt rejected", "machine_id", machine, "job_id", claimID, "code", domain.SafeError(err).Code)
 					return rpc.Error(err, correlation)
+				}
+				if job.Type == domain.ForkSessionJob && job.State == domain.JobFailed && job.Problem != nil {
+					s.logger.WarnContext(ctx, "worker fork rejected before claim", "code", job.Problem.Code)
 				}
 				if claimDependencyBlocked {
 					rememberDependency()

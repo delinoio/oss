@@ -322,6 +322,15 @@ Fork or input. Recheck original actor, account, connection, immutable model and
 instructions, original Worker device/current captured instance, workspace
 reference and native read-only enforcement before claim and publication.
 
+If this authority check terminally rejects the original queued Fork before any
+assignment, fail its original job and release only its matching active retry
+owner in one transaction. Require exact child, job, generation, runtime and
+accepted-boundary identity, with no claim or native runtime evidence. Preserve
+the original receipt, failure metadata, generation history and previous answer.
+Restored authority permits a fresh explicit retry; it never replays failed work.
+Claimed, uncertain or unknown ownership remains fenced until independently
+verified original cleanup, even if its job is terminal.
+
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted
 prefix. Verify the original metadata-only child reference without preparing it

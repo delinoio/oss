@@ -341,6 +341,41 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 	return nil
 }
 
+// Preclaim rejection is positive cleanup proof only for the exact queued
+// original job with no assignment, output or native-generation evidence. Keep
+// unknown ownership fenced; a terminal job alone does not prove native cleanup.
+// The caller fails the original job in this same transaction, preserving its
+// receipt and failure metadata and leaving generation history untouched.
+func releasePreclaimSidechatRetry(tx *store.Tx, record store.Record, job domain.Job, input domain.ForkJobInput) error {
+	if job.Type != domain.ForkSessionJob || job.State != domain.JobQueued || job.InstanceID != "" || job.AssignedDeviceID != "" || job.Startup != nil || job.ParentID != "" || job.StorageReconciledBy != "" || len(job.Output) != 0 || job.FinishedAt != nil || input.Validate() != nil || input.Retry == nil || input.ChildSessionID != record.SessionID {
+		return nil
+	}
+	cr, child, err := sessionRecord(tx, input.ChildSessionID)
+	if err != nil {
+		return err
+	}
+	retry := input.Retry
+	if !child.IsSidechat() || child.Fork.Validate() != nil || cr.ProjectID != record.ProjectID || child.MachineID != job.MachineID || child.Fork.SourceSessionID != input.SourceSessionID || child.Fork.WorkerDeviceID != retry.WorkerDeviceID || child.SidechatActiveRetry != retry.GenerationID {
+		return nil
+	}
+	matches := 0
+	for _, generation := range child.SidechatRetries {
+		if generation.ID != retry.GenerationID {
+			continue
+		}
+		matches++
+		if generation.ForkJobID != record.ID || generation.RuntimeID != input.RuntimeID || generation.WorkerInstanceID != retry.WorkerInstanceID || generation.WorkerDeviceID != retry.WorkerDeviceID || generation.QuestionID != retry.QuestionID || generation.QuestionRevision != retry.QuestionRevision || generation.PreviousJobID != retry.PreviousJobID || generation.PreviousExecutionID != retry.PreviousExecutionID || generation.ParentRevision != input.SourceRevision || generation.ParentExecutionID != input.Completion.ExecutionID || generation.ParentTurnID != input.Completion.NativeTurnID || generation.ExecutionID != "" || generation.ExecutionJobID != "" || generation.Fork != nil || generation.Completed {
+			return nil
+		}
+	}
+	if matches != 1 {
+		return nil
+	}
+	child.SidechatActiveRetry = ""
+	_, err = tx.Put(domain.SessionKind, cr.ID, cr.Revision, cr.ID, cr.ProjectID, child)
+	return err
+}
+
 func finishSidechatRetryFork(tx *store.Tx, r store.Record, job domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error, input domain.ForkJobInput, output domain.ForkJobResult) (any, error) {
 	cr, child, err := sessionRecord(tx, input.ChildSessionID)
 	if err != nil {
