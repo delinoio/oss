@@ -255,7 +255,7 @@
 .session-workspace .session-tab-close:hover { background:var(--surface-hover); }
 .session-tab button:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
 .session-tool-popup { position:relative; flex:none; }
-.session-workspace .session-tool-popup > button { height:40px; min-height:40px; }
+.session-workspace .session-tool-popup > button { display:flex; align-items:center; justify-content:center; width:40px; min-width:40px; height:40px; min-height:40px; padding:0; border-radius:8px; }
 .session-tool-menu { position:absolute; right:0; top:calc(100% + 6px); z-index:20; width:220px; max-width:calc(100vw - 24px); overflow-y:auto; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--surface); box-shadow:0 4px 16px var(--shadow-soft); }
 .session-tool-menu.is-above { top:auto; bottom:calc(100% + 6px); }
 .session-tool-menu[hidden] { display:none; }
