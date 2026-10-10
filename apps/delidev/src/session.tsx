@@ -76,7 +76,7 @@ import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./s
 import "./session.css";
 import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
-import { SessionForkAction } from "./session-fork";
+import { PendingSidechatPane, SessionCreationAction, SessionForkAction } from "./session-fork";
 import { SidechatFindings } from "./sidechat";
 import { useSidechatQuestionRetry, SidechatRetryAction, sidechatAnswerFilter } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
@@ -280,7 +280,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const conversationActive = active && (embedded || tabs.tab.kind === SessionTabKind.Conversation);
   // Session metadata owns account and native presentation authority even when
   // a resource pane hides the conversation. Only transcript reads pause there.
-  const live = useSessionStream(id, active && tabs.tab.kind !== SessionTabKind.Sidechat);
+  const live = useSessionStream(id, active && ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind));
   const submissions = useSessionSubmissions();
   const [submissionError, setSubmissionError] = useState<unknown>();
   const [revealSubmission, setRevealSubmission] = useState<string>();
@@ -370,7 +370,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   });
   const observed = live.resources.get(id);
   const original = acknowledged && (!observed || acknowledged.revision > observed.revision) ? acknowledged : observed;
-  const { resource: session, control, action } = useSessionControl(id, original, active && tabs.tab.kind!==SessionTabKind.Sidechat);
+  const { resource: session, control, action } = useSessionControl(id, original, active && ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind));
   // A toolbar gesture can precede the initial session snapshot. Capture its
   // revision only after authenticated metadata arrives, while the same tool
   // remains selected; navigation cancels this unsent intent.
@@ -570,7 +570,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     observeStartupOwner && Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending && !startupMachine.isFetching,
     startupMachine.data?.observedAt, startupMachine.data ? performance.now() - startupMachine.data.startedAt : NaN);
   const progress = startupOwnerCurrent ? observedProgress : undefined;
-  return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
+  return <SessionActivityProvider active={active && ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind)}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
       event.stopPropagation(); if (event.target instanceof Element && event.target.closest(".terminal-dock")) closeTerminal(); else if (panel !== SessionPanel.Closed) closePanel(); else closeTerminal();
     }
@@ -579,7 +579,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <div className="session-heading">
         <SessionHarness resource={session}><div className="session-heading-line"><h2 tabIndex={-1} onDoubleClick={event => { if (session) editName?.(session.id, event.currentTarget); }}>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
       </div>
-      <div className="session-controls" hidden={!embedded && tabs.tab.kind===SessionTabKind.Sidechat} inert={!embedded && tabs.tab.kind===SessionTabKind.Sidechat}>
+      <div className="session-controls" hidden={!embedded && [SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind)} inert={!embedded && [SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind)}>
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
         <button type="button" disabled={!session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
@@ -588,7 +588,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}{session && tabs.tab.kind !== SessionTabKind.Sidechat && tabs.tab.kind !== SessionTabKind.PendingSidechat ? <SessionForkAction source={session} action={SessionCreationAction.Sidechat} disabled={control.busy || control.uncertain}/> : null}</SessionToolMenu></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">
@@ -607,7 +607,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       <RunnerTaskRemediation active={conversationActive} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
-      {session ? <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen diagnosticsTarget={diagnosticsTarget} target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
+      {session ? <SessionActivityProvider active={active && ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind)}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen diagnosticsTarget={diagnosticsTarget} target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
           <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
           {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
           {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
@@ -680,10 +680,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
                   document.getElementById(`session-tab-${id}-${index}`)?.focus({ preventScroll: true });
                 });
               }} active={active&&[SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)}/></div>:null}
+    {tabs.tabs.filter(tab => tab.kind === SessionTabKind.PendingSidechat).map(tab => tab.kind === SessionTabKind.PendingSidechat ? <div key={tab.requestId} hidden={!active || tabs.selected !== sessionTabKey(tab)} inert={!active || tabs.selected !== sessionTabKey(tab)} className="session-sidechat-pane"><PendingSidechatPane requestId={tab.requestId} active={active && tabs.selected === sessionTabKey(tab)}/></div> : null)}
     {tabs.store.sidechats(id).map(tab=>tab.kind===SessionTabKind.Sidechat?<div key={tab.id} hidden={!active||tabs.selected!==sessionTabKey(tab)} inert={!active||tabs.selected!==sessionTabKey(tab)} className="session-sidechat-pane"><SidechatPane id={tab.id} active={active&&tabs.selected===sessionTabKey(tab)}/></div>:null)}
     </div>
     </div>
-    <aside hidden={tabs.tab.kind===SessionTabKind.Sidechat} ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
+    <aside hidden={[SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind)} ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
       <FlatDisclosureScope><div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />
@@ -702,4 +703,6 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   </section></SessionActivityProvider>;
 }
 
-function SidechatPane({id,active}:{id:string;active:boolean}) { const[draft,setDraft]=useState("");const[bindings,setBindings]=useState<SkillTokenBinding[]>([]);return <SessionActivityProvider active={active}><SessionView id={id} active={active} embedded draft={draft} setDraft={(value,skills)=>{setDraft(value);if(skills)setBindings(skills);}} initialSkills={bindings} changeSkills={setBindings}/></SessionActivityProvider>; }
+function SidechatPane({id,active}:{id:string;active:boolean}) { const store = useSessionTabs(id).store; const initial = useRef(store.childDraft(id)); const[draft,setDraft]=useState(initial.current?.text ?? "");const[bindings,setBindings]=useState<SkillTokenBinding[]>([]);
+  useLayoutEffect(() => { const seed = initial.current; if (!seed?.focus) return; store.takeChildFocus(id); if (!active || globalThis.document.activeElement !== globalThis.document.body) return; const input = globalThis.document.getElementById(`prompt-${id}`) as HTMLTextAreaElement | null; input?.focus(); input?.setSelectionRange(seed.start, seed.end); }, [id, active, store]);
+  return <SessionActivityProvider active={active}><SessionView id={id} active={active} embedded draft={draft} setDraft={(value,skills)=>{setDraft(value);if(skills)setBindings(skills);}} initialSkills={bindings} changeSkills={setBindings}/></SessionActivityProvider>; }
