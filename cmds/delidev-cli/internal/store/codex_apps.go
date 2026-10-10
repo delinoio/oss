@@ -2,11 +2,13 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -258,17 +260,8 @@ func (t *Tx) CancelUnclaimedCodexAppsControl(jobID domain.ID) error {
 	if err != nil {
 		return err
 	}
-	job, err := Decode[domain.Job](record)
-	if err != nil {
-		return err
-	}
-	if job.Type != domain.ExecuteSessionJob || !slices.Contains([]domain.JobState{domain.JobSucceeded, domain.JobFailed, domain.JobCanceled}, job.State) {
-		return codexAppsConflict()
-	}
-	var input domain.ExecutionJobInput
-	var complete domain.ExecutionCompletion
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || domain.Decode(job.Output, &complete) != nil || complete.ValidateForHarness(input.Configuration.Harness) != nil || !complete.CleanupVerified || record.SessionID != input.SessionID || job.MachineID != input.MachineID || complete.ExecutionID != input.ExecutionID || complete.InputID != input.InputID {
-		return codexAppsConflict()
+	if record.SessionID.Validate() != nil {
+		return nil
 	}
 	value, err := t.CodexAppsSnapshot(record.SessionID)
 	if err != nil || value == nil || value.Operation == nil {
@@ -278,8 +271,19 @@ func (t *Tx) CancelUnclaimedCodexAppsControl(jobID domain.ID) error {
 	if operation.ExecutionJobID != jobID || operation.State != domain.CodexAppsQueued {
 		return nil
 	}
+	job, err := Decode[domain.Job](record)
+	if err != nil || job.Type != domain.ExecuteSessionJob || !slices.Contains([]domain.JobState{domain.JobSucceeded, domain.JobFailed, domain.JobCanceled}, job.State) {
+		return nil
+	}
+	var input domain.ExecutionJobInput
+	var complete domain.ExecutionCompletion
+	// Missing or uncertain cleanup is not a failed original completion. Keep the
+	// queued obligation unchanged until its original no-send proof is available.
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || domain.Decode(job.Output, &complete) != nil || complete.ValidateForHarness(input.Configuration.Harness) != nil || !complete.CleanupVerified || record.SessionID != input.SessionID || job.MachineID != input.MachineID || complete.ExecutionID != input.ExecutionID || complete.InputID != input.InputID {
+		return nil
+	}
 	if operation.ExecutionID != complete.ExecutionID || operation.MachineID != job.MachineID || operation.InstanceID != job.InstanceID || input.CodexApps == nil || input.CodexApps.AccountID != operation.Original.AccountID || !(input.CodexApps.Generation == operation.Original.Generation && slices.Equal(input.CodexApps.AppIDs, operation.Original.AppIDs) || input.CodexApps.RemovalOnly(operation.Original)) || operation.NativeThreadID != complete.NativeThreadID || operation.ClaimID != "" {
-		return codexAppsConflict()
+		return nil
 	}
 	operation.State, operation.PositiveNoNativeSend, operation.Revision = domain.CodexAppsCanceled, true, operation.Revision+1
 	return t.PutCodexAppsSnapshot(value.SessionID, value.Revision, *value)
@@ -310,4 +314,192 @@ func (t *Tx) CodexAppsQueued(machine, instance domain.ID) ([]domain.CodexAppsOpe
 		}
 	}
 	return values, storageError(rows.Err())
+}
+
+// RequireSettledCodexApps protects original native obligations before session
+// deletion admission and final erasure. Terminal metadata remains immutable.
+func (t *Tx) RequireSettledCodexApps(session domain.ID) error {
+	if session.Validate() != nil {
+		return codexAppsConflict()
+	}
+	value, err := t.CodexAppsSnapshot(session)
+	if err != nil {
+		return err
+	}
+	if value != nil && value.Operation != nil && codexAppsProtected(value.Operation.State) {
+		return domain.SessionDeletionPending()
+	}
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT key,value FROM metadata WHERE key LIKE ? ORDER BY key LIMIT ?", codexAppsOperationPrefix+"%", 100001)
+	if err != nil {
+		return storageError(err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		count++
+		var key, raw string
+		if rows.Scan(&key, &raw) != nil || count > 100000 {
+			return codexAppsConflict()
+		}
+		operation, err := decodeCodexAppsMetadata(key, raw)
+		if err != nil {
+			return err
+		}
+		if operation != nil && operation.Original.SessionID == session && codexAppsProtected(operation.State) {
+			return domain.SessionDeletionPending()
+		}
+	}
+	return storageError(rows.Err())
+}
+
+func codexAppsProtected(state domain.CodexAppsState) bool {
+	return slices.Contains([]domain.CodexAppsState{domain.CodexAppsQueued, domain.CodexAppsClaimed, domain.CodexAppsUncertain}, state)
+}
+
+// The closed metadata decoder also verifies key ownership. Malformed or future
+// records block destructive maintenance rather than silently losing obligations.
+func decodeCodexAppsMetadata(key, raw string) (*domain.CodexAppsOperation, error) {
+	if len(raw) > codexAppsMetadataLimit {
+		return nil, codexAppsConflict()
+	}
+	if strings.HasPrefix(key, codexAppsPrefix) {
+		var value CodexAppsSnapshot
+		if domain.DecodeBounded([]byte(raw), &value, codexAppsMetadataLimit) != nil || value.validate(domain.ID(strings.TrimPrefix(key, codexAppsPrefix))) != nil {
+			return nil, codexAppsConflict()
+		}
+		return value.Operation, nil
+	}
+	var value codexAppsOperationHistory
+	if !strings.HasPrefix(key, codexAppsOperationPrefix) || domain.DecodeBounded([]byte(raw), &value, codexAppsMetadataLimit) != nil || value.Version != 1 || value.AccountGeneration.Validate() != nil || value.ConnectionID.Validate() != nil || value.Operation.Validate() != nil || string(value.Operation.ID) != strings.TrimPrefix(key, codexAppsOperationPrefix) {
+		return nil, codexAppsConflict()
+	}
+	return &value.Operation, nil
+}
+
+// Run before the general current-state metadata overlay in prepareRestoreImage.
+// Only the current explicit account/generation/connection selection is retained;
+// historical image-only selections cannot acquire fresh authority. Unresolved
+// image-only obligations reject restore instead of being discarded or requeued.
+func restoreCodexAppsMetadata(ctx context.Context, tx *sql.Tx) error {
+	for _, schema := range []string{"main", "current_state"} {
+		rows, err := tx.QueryContext(ctx, "SELECT key,value FROM "+schema+".metadata WHERE key LIKE ? OR key LIKE ? ORDER BY key LIMIT 100001", codexAppsPrefix+"%", codexAppsOperationPrefix+"%")
+		if err != nil {
+			return storageError(err)
+		}
+		count := 0
+		for rows.Next() {
+			count++
+			var key, raw string
+			if rows.Scan(&key, &raw) != nil || count > 100000 {
+				rows.Close()
+				return codexAppsConflict()
+			}
+			if _, err := decodeCodexAppsMetadata(key, raw); err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return storageError(err)
+		}
+	}
+	// Every latest pointer must retain its original complete operation history.
+	// Missing history is not proof that the original obligation was settled.
+	for _, schema := range []string{"main", "current_state"} {
+		rows, err := tx.QueryContext(ctx, "SELECT m.key,m.value,h.value FROM "+schema+".metadata m LEFT JOIN "+schema+".metadata h ON h.key=?||json_extract(m.value,'$.operation.id') WHERE m.key LIKE ? AND json_extract(m.value,'$.operation.id') IS NOT NULL ORDER BY m.key LIMIT 100001", codexAppsOperationPrefix, codexAppsPrefix+"%")
+		if err != nil {
+			return storageError(err)
+		}
+		for rows.Next() {
+			var key, raw string
+			var historyRaw sql.NullString
+			if rows.Scan(&key, &raw, &historyRaw) != nil || !historyRaw.Valid {
+				rows.Close()
+				return codexAppsConflict()
+			}
+			operation, err := decodeCodexAppsMetadata(key, raw)
+			if err != nil || operation == nil {
+				rows.Close()
+				return codexAppsConflict()
+			}
+			history, err := decodeCodexAppsMetadata(codexAppsOperationPrefix+string(operation.ID), historyRaw.String)
+			if err != nil || history == nil || !reflect.DeepEqual(*operation, *history) {
+				rows.Close()
+				return codexAppsConflict()
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return storageError(err)
+		}
+	}
+	// A same-ID current receipt may supersede old state only for the identical
+	// original source. Revision rollback and foreign-ID collisions fail closed.
+	joined, err := tx.QueryContext(ctx, "SELECT m.key,m.value,c.value FROM metadata m JOIN current_state.metadata c ON c.key=m.key WHERE m.key LIKE ? ORDER BY m.key LIMIT 100001", codexAppsOperationPrefix+"%")
+	if err != nil {
+		return storageError(err)
+	}
+	for joined.Next() {
+		var key, oldRaw, currentRaw string
+		if joined.Scan(&key, &oldRaw, &currentRaw) != nil {
+			joined.Close()
+			return codexAppsConflict()
+		}
+		var old, current codexAppsOperationHistory
+		if domain.DecodeBounded([]byte(oldRaw), &old, codexAppsMetadataLimit) != nil || domain.DecodeBounded([]byte(currentRaw), &current, codexAppsMetadataLimit) != nil || old.AccountGeneration != current.AccountGeneration || old.ConnectionID != current.ConnectionID || !codexAppsImmutableOperation(old.Operation, current.Operation) || current.Operation.Revision < old.Operation.Revision || old.Operation.ClaimID != "" && old.Operation.ClaimID != current.Operation.ClaimID || current.Operation.Revision == old.Operation.Revision && !reflect.DeepEqual(old, current) {
+			joined.Close()
+			return codexAppsConflict()
+		}
+	}
+	err = joined.Err()
+	joined.Close()
+	if err != nil {
+		return storageError(err)
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT m.key,m.value FROM metadata m WHERE (m.key LIKE ? OR m.key LIKE ?) AND NOT EXISTS(SELECT 1 FROM current_state.metadata c WHERE c.key=m.key) ORDER BY m.key LIMIT 100001", codexAppsPrefix+"%", codexAppsOperationPrefix+"%")
+	if err != nil {
+		return storageError(err)
+	}
+	for rows.Next() {
+		var key, raw string
+		if rows.Scan(&key, &raw) != nil {
+			rows.Close()
+			return codexAppsConflict()
+		}
+		operation, err := decodeCodexAppsMetadata(key, raw)
+		if err != nil || operation != nil && codexAppsProtected(operation.State) {
+			rows.Close()
+			return codexAppsConflict()
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return storageError(err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM metadata WHERE key LIKE ? OR key LIKE ?", codexAppsPrefix+"%", codexAppsOperationPrefix+"%"); err != nil {
+		return storageError(err)
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO metadata SELECT * FROM current_state.metadata WHERE key LIKE ? OR key LIKE ?", codexAppsPrefix+"%", codexAppsOperationPrefix+"%")
+	return storageError(err)
+}
+
+// PurgeSessionCodexApps is called only inside the fully joined session purge.
+// The existing deletion tombstone and reference-only mutation receipts retain
+// identity; app names, catalogs and selected native IDs do not survive erasure.
+func (t *Tx) PurgeSessionCodexApps(session domain.ID) error {
+	if err := t.writeAllowed(); err != nil {
+		return err
+	}
+	if err := t.RequireSettledCodexApps(session); err != nil {
+		return err
+	}
+	if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key LIKE ? AND json_extract(value,'$.operation.original.session_id')=?", codexAppsOperationPrefix+"%", session); err != nil {
+		return storageError(err)
+	}
+	_, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=?", codexAppsPrefix+string(session))
+	return storageError(err)
 }

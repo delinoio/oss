@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -235,5 +236,197 @@ func TestCodexAppsCanceledHistorySurvivesFreshDeniedGeneration(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCodexAppsCancellationPreservesOrdinaryAndUncertainCompletion(t *testing.T) {
+	for _, scenario := range []string{"absent", "queued-uncertain", "foreign-job", "claimed"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, _ := openTest(t)
+			value := codexAppsStoreFixture()
+			operation := codexAppsStoreOperation(value)
+			jobID := operation.ExecutionJobID
+			_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.cancel-uncertain", scenario, func(tx *Tx) (any, error) {
+				// An ordinary completion with no positive cleanup output must not
+				// fail just because the Apps observer runs after PutJob.
+				if _, err := tx.Put(domain.JobKind, jobID, 0, value.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobFailed}); err != nil {
+					return nil, err
+				}
+				if scenario != "absent" {
+					if scenario == "foreign-job" {
+						operation.ExecutionJobID = domain.NewID()
+					}
+					value.Operation = &operation
+					if err := tx.PutCodexAppsSnapshot(value.SessionID, 0, value); err != nil {
+						return nil, err
+					}
+					if scenario == "claimed" {
+						operation.State, operation.ClaimID, operation.Revision = domain.CodexAppsClaimed, domain.NewID(), 2
+						if err := tx.PutCodexAppsSnapshot(value.SessionID, 1, value); err != nil {
+							return nil, err
+						}
+					}
+				}
+				if err := tx.CancelUnclaimedCodexAppsControl(jobID); err != nil {
+					return nil, err
+				}
+				stored, err := tx.CodexAppsSnapshot(value.SessionID)
+				if err != nil {
+					return nil, err
+				}
+				if scenario == "absent" {
+					if stored != nil {
+						t.Fatal("absent Apps metadata created")
+					}
+				} else if stored.Operation.State != operation.State || stored.Operation.PositiveNoNativeSend {
+					t.Fatal("uncertain original obligation synthesized cancellation")
+				}
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCodexAppsPurgeProtectsOriginalClaimsAndRemovesSettledContent(t *testing.T) {
+	s, _ := openTest(t)
+	value := codexAppsStoreFixture()
+	operation := codexAppsStoreOperation(value)
+	value.Operation = &operation
+	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.apps-purge", nil, func(tx *Tx) (any, error) {
+		if err := tx.PutCodexAppsSnapshot(value.SessionID, 0, value); err != nil {
+			return nil, err
+		}
+		if err := tx.PurgeSessionCodexApps(value.SessionID); err == nil {
+			t.Fatal("pending obligation purged")
+		}
+		operation.State, operation.PositiveNoNativeSend, operation.Revision = domain.CodexAppsCanceled, true, 2
+		if err := tx.PutCodexAppsSnapshot(value.SessionID, 1, value); err != nil {
+			return nil, err
+		}
+		if err := tx.PurgeSessionCodexApps(value.SessionID); err != nil {
+			return nil, err
+		}
+		stored, err := tx.CodexAppsSnapshot(value.SessionID)
+		if err != nil || stored != nil {
+			t.Fatal(stored, err)
+		}
+		history, err := tx.CodexAppsOperation(operation.ID)
+		if err != nil || history != nil {
+			t.Fatal(history, err)
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCodexAppsRestoreKeepsCurrentAuthorityAndRejectsOrphanClaims(t *testing.T) {
+	for _, scenario := range []string{"current", "orphan", "collision"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, _ := openTest(t)
+			value := codexAppsStoreFixture()
+			operation := codexAppsStoreOperation(value)
+			if scenario != "current" {
+				value.Operation = &operation
+			}
+			_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.apps-restore", scenario, func(tx *Tx) (any, error) {
+				if err := tx.PutCodexAppsSnapshot(value.SessionID, 0, value); err != nil {
+					return nil, err
+				}
+				if _, err := tx.tx.ExecContext(tx.ctx, "ATTACH DATABASE ':memory:' AS current_state"); err != nil {
+					return nil, err
+				}
+				if _, err := tx.tx.ExecContext(tx.ctx, "CREATE TABLE current_state.metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL)"); err != nil {
+					return nil, err
+				}
+				if scenario != "orphan" {
+					if _, err := tx.tx.ExecContext(tx.ctx, "INSERT INTO current_state.metadata SELECT * FROM metadata"); err != nil {
+						return nil, err
+					}
+				}
+				if scenario == "current" {
+					old := value
+					old.AccountGeneration = domain.NewID()
+					old.ConnectionID = domain.NewID()
+					old.Configuration = &domain.CodexAppConfiguration{Version: 1, SessionID: value.SessionID, AccountID: value.Configuration.AccountID, Generation: domain.NewID(), AppIDs: []string{"old-permission"}}
+					raw, _ := json.Marshal(old)
+					if _, err := tx.tx.ExecContext(tx.ctx, "UPDATE metadata SET value=? WHERE key=?", string(raw), codexAppsPrefix+string(value.SessionID)); err != nil {
+						return nil, err
+					}
+				}
+				if scenario == "collision" {
+					var history codexAppsOperationHistory
+					history.Version, history.AccountGeneration, history.ConnectionID, history.Operation = 1, value.AccountGeneration, value.ConnectionID, operation
+					history.Operation.NativeThreadID = "foreign-original-thread"
+					raw, _ := json.Marshal(history)
+					if _, err := tx.tx.ExecContext(tx.ctx, "UPDATE current_state.metadata SET value=? WHERE key=?", string(raw), codexAppsOperationPrefix+string(operation.ID)); err != nil {
+						return nil, err
+					}
+				}
+				err := restoreCodexAppsMetadata(tx.ctx, tx.tx)
+				if scenario != "current" {
+					if err == nil {
+						t.Fatal("unresolved or foreign original history restored")
+					}
+					return nil, nil
+				}
+				if err != nil {
+					return nil, err
+				}
+				stored, err := tx.CodexAppsSnapshot(value.SessionID)
+				if err != nil || stored.AccountGeneration != value.AccountGeneration || stored.ConnectionID != value.ConnectionID || !reflect.DeepEqual(stored.Configuration, value.Configuration) {
+					t.Fatal(stored, err)
+				}
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCodexAppsCancellationRequiresExactJoinedCleanup(t *testing.T) {
+	for _, verified := range []bool{false, true} {
+		t.Run(map[bool]string{false: "uncertain", true: "verified"}[verified], func(t *testing.T) {
+			s, _ := openTest(t)
+			value := codexAppsStoreFixture()
+			operation := codexAppsStoreOperation(value)
+			fixture := failedForkDeletionInput(t, value.SessionID, operation.MachineID)
+			input := fixture.SourceAssignment
+			value.Configuration.AccountID = input.AccountID
+			input.CodexApps = value.Configuration
+			operation.Original = value.Configuration.Clone()
+			operation.ExecutionID = input.ExecutionID
+			operation.NativeThreadID = fixture.Completion.NativeThreadID
+			value.Operation = &operation
+			complete := fixture.Completion
+			complete.CleanupVerified = verified
+			rawInput, _ := json.Marshal(input)
+			rawComplete, _ := json.Marshal(complete)
+			_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.apps-exact-cleanup", verified, func(tx *Tx) (any, error) {
+				if _, err := tx.Put(domain.JobKind, operation.ExecutionJobID, 0, value.SessionID, "", domain.Job{Type: domain.ExecuteSessionJob, State: domain.JobSucceeded, MachineID: operation.MachineID, InstanceID: operation.InstanceID, Input: rawInput, Output: rawComplete}); err != nil {
+					return nil, err
+				}
+				if err := tx.PutCodexAppsSnapshot(value.SessionID, 0, value); err != nil {
+					return nil, err
+				}
+				if err := tx.CancelUnclaimedCodexAppsControl(operation.ExecutionJobID); err != nil {
+					return nil, err
+				}
+				stored, err := tx.CodexAppsOperation(operation.ID)
+				if err != nil || stored == nil || stored.PositiveNoNativeSend != verified || verified && stored.State != domain.CodexAppsCanceled || !verified && stored.State != domain.CodexAppsQueued {
+					t.Fatal(stored, err)
+				}
+				return nil, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
