@@ -171,6 +171,7 @@ type Event struct {
 	Usage            *domain.NativeTokenUsage
 	ResponseUsage    *domain.NativeResponseUsage
 	Notice           domain.NativeNotice
+	ToolOutputKind   ToolKind
 	Tool             *Tool
 	ToolInput        *ToolInput
 	Artifact         *Artifact
@@ -419,7 +420,7 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return c.observeMessageLocked(native)
 	case "thread/tokenUsage/updated":
 		return c.observeUsageLocked(native)
-	case "item/commandExecution/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
+	case "item/commandExecution/outputDelta", "item/fileChange/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
 		return c.observeToolUpdateLocked(native)
 	default:
 		return c.observeMetadataLocked(native)
