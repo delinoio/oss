@@ -34,12 +34,21 @@ export interface ShortcutDefinition {
 export function shortcutPlatform(): ShortcutPlatform {
   return /mac/i.test(navigator.platform) ? ShortcutPlatform.Mac : ShortcutPlatform.Other;
 }
+// Primary alphanumeric chords follow the original physical key across input
+// modes. Named keys, logical Help and unavailable/Numpad codes retain key rules.
+export function resolveShortcutKey(event: Pick<KeyboardEvent, "key" | "code">, physicalPrimary: boolean): string {
+  if (physicalPrimary) {
+    if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
+    if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+  }
+  return event.key === "Enter" ? "Enter" : event.key.toLowerCase();
+}
 export function bindingMatches(event: KeyboardEvent, binding: ShortcutBinding, platform: ShortcutPlatform): boolean {
   if (event.altKey || event.getModifierState?.("AltGraph")) return false;
   if (event.metaKey !== Boolean(binding.primary && platform === ShortcutPlatform.Mac) || event.ctrlKey !== Boolean(binding.primary && platform === ShortcutPlatform.Other)) return false;
   // '?' is a logical character, independently of its keyboard-layout modifier.
   if (binding.key !== "?" && event.shiftKey !== Boolean(binding.shift)) return false;
-  return event.key.toLowerCase() === binding.key.toLowerCase();
+  return resolveShortcutKey(event, Boolean(binding.primary && /^[a-z0-9]$/i.test(binding.key))).toLowerCase() === binding.key.toLowerCase();
 }
 export function bindingKeys(binding: ShortcutBinding, platform: ShortcutPlatform): string[] {
   return [...(binding.primary ? [platform === ShortcutPlatform.Mac ? "⌘" : "Ctrl"] : []), ...(binding.shift ? [platform === ShortcutPlatform.Mac ? "⇧" : "Shift"] : []), binding.key.length === 1 && binding.key !== "?" ? binding.key.toUpperCase() : binding.key === "Escape" ? "Esc" : binding.key];

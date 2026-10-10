@@ -82,3 +82,43 @@ it("admits only the numeric tab definitions from terminal input and consumes onc
  const other=definition({input:ShortcutInput.Allow});expect(dispatch([tab,other],{key:"1"},input).defaultPrevented).toBe(true);expect(tab.run).toHaveBeenCalledTimes(1);
  dispatch([tab,other],{key:"1",repeat:true},input);dispatch([tab,other],{key:"1",isComposing:true},input);dispatch([tab,other],{key:"1",shiftKey:true},input);dispatch([tab,other],{},input);expect(tab.run).toHaveBeenCalledTimes(1);expect(other.run).not.toHaveBeenCalled();input.remove();
 });
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("matches physical primary chords across input modes on %s", localPlatform => {
+  const primary = localPlatform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
+  for (const [key, code, binding] of [["k", "KeyK", "k"], ["ㅏ", "KeyK", "k"], ["b", "KeyB", "b"], ["ㅠ", "KeyB", "b"], ["i", "KeyI", "i"], ["ㅑ", "KeyI", "i"]]) {
+    expect(bindingMatches(new KeyboardEvent("keydown", { key, code, ...primary }), { key: binding!, primary: true }, localPlatform)).toBe(true);
+  }
+  for (const key of ["N", "ㅜ"]) expect(bindingMatches(new KeyboardEvent("keydown", { key, code: "KeyN", shiftKey: true, ...primary }), { key: "n", shift: true, primary: true }, localPlatform)).toBe(true);
+  const mismatched = new KeyboardEvent("keydown", { key: "k", code: "KeyJ", ...primary });
+  expect(bindingMatches(mismatched, { key: "k", primary: true }, localPlatform)).toBe(false);
+  expect(bindingMatches(mismatched, { key: "j", primary: true }, localPlatform)).toBe(true);
+  for (const shift of [false, true]) for (let digit = 0; digit < 10; digit++) {
+    expect(bindingMatches(new KeyboardEvent("keydown", { key: shift ? "!" : "한", code: `Digit${digit}`, shiftKey: shift, ...primary }), { key: String(digit), primary: true, shift }, localPlatform)).toBe(true);
+  }
+  for (const code of ["", "Unidentified", "Numpad1"]) expect(bindingMatches(new KeyboardEvent("keydown", { key: "1", code, ...primary }), { key: "1", primary: true }, localPlatform)).toBe(true);
+  expect(bindingMatches(new KeyboardEvent("keydown", { key: "End", code: "Numpad1", ...primary }), { key: "1", primary: true }, localPlatform)).toBe(false);
+  expect(bindingMatches(new KeyboardEvent("keydown", { key: "Enter", code: "NumpadEnter", ...primary }), { key: "Enter", primary: true }, localPlatform)).toBe(true);
+  expect(bindingMatches(new KeyboardEvent("keydown", { key: "?", code: "KeyK", shiftKey: true }), { key: "?" }, localPlatform)).toBe(true);
+});
+
+it("dispatches Korean physical keys once and retains composition and priority fences", () => {
+  for (const options of [{}, { isComposing: true }, { keyCode: 229 }, { repeat: true }, { altKey: true }, { metaKey: true }, { shiftKey: true }]) {
+    const item = definition(); const event = dispatch([item], { key: "ㅏ", code: "KeyK", ...options });
+    expect(item.run).toHaveBeenCalledTimes(Object.keys(options).length ? 0 : 1);
+    expect(event.defaultPrevented).toBe(!Object.keys(options).length);
+  }
+  const disabled = definition({ enabled: false }); dispatch([disabled], { key: "ㅏ", code: "KeyK" }); expect(disabled.run).not.toHaveBeenCalled();
+  const first = definition(), second = definition({ id: ShortcutId.CommandMenu });
+  expect(dispatch([first, second], { key: "ㅏ", code: "KeyK" }).defaultPrevented).toBe(true);
+  expect(first.run).not.toHaveBeenCalled(); expect(second.run).not.toHaveBeenCalled();
+});
+
+it("rejects handled Korean physical chords and AltGraph before dispatch", () => {
+  const item = definition();
+  const handled = new KeyboardEvent("keydown", {key:"ㅏ",code:"KeyK",ctrlKey:true,cancelable:true});
+  handled.preventDefault(); expect(dispatchShortcut(handled,[item],Surface.Search,platform)).toBe(false);
+  const graph = new KeyboardEvent("keydown", {key:"ㅏ",code:"KeyK",ctrlKey:true,cancelable:true});
+  vi.spyOn(graph,"getModifierState").mockImplementation(name=>name==="AltGraph");
+  expect(dispatchShortcut(graph,[item],Surface.Search,platform)).toBe(false);
+  expect(graph.defaultPrevented).toBe(false);expect(item.run).not.toHaveBeenCalled();
+});
