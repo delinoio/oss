@@ -13293,6 +13293,64 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2530,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1",
+      "number": 93
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadRequest",
+      "member": "session_id",
+      "number": 2
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadResponse",
+      "member": "session_id",
+      "number": 2
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadResponse",
+      "member": "marked_count",
+      "number": 3
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadResponse",
+      "member": "observed_at",
+      "number": 4
+    },
+    {
+      "issue": 2530,
+      "kind": "message",
+      "declaration": "MarkSessionInboxReadResponse",
+      "member": "replayed",
+      "number": 5
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13585,15 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2530,
+      "service": "InboxService",
+      "method": "MarkSessionInboxRead",
+      "input": "MarkSessionInboxReadRequest",
+      "output": "MarkSessionInboxReadResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

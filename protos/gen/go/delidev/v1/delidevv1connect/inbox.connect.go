@@ -41,6 +41,9 @@ const (
 	InboxServiceGetInboxEntryProcedure = "/delidev.v1.InboxService/GetInboxEntry"
 	// InboxServiceListInboxProcedure is the fully-qualified name of the InboxService's ListInbox RPC.
 	InboxServiceListInboxProcedure = "/delidev.v1.InboxService/ListInbox"
+	// InboxServiceMarkSessionInboxReadProcedure is the fully-qualified name of the InboxService's
+	// MarkSessionInboxRead RPC.
+	InboxServiceMarkSessionInboxReadProcedure = "/delidev.v1.InboxService/MarkSessionInboxRead"
 	// InboxServiceSetInboxReadStateProcedure is the fully-qualified name of the InboxService's
 	// SetInboxReadState RPC.
 	InboxServiceSetInboxReadStateProcedure = "/delidev.v1.InboxService/SetInboxReadState"
@@ -69,6 +72,7 @@ type InboxServiceClient interface {
 	GetUnreadInboxCount(context.Context, *connect.Request[v1.GetUnreadInboxCountRequest]) (*connect.Response[v1.GetUnreadInboxCountResponse], error)
 	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
 	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
+	MarkSessionInboxRead(context.Context, *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error)
 	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
 	GetNotificationPreferences(context.Context, *connect.Request[v1.GetNotificationPreferencesRequest]) (*connect.Response[v1.GetNotificationPreferencesResponse], error)
 	SetNotificationPreferences(context.Context, *connect.Request[v1.SetNotificationPreferencesRequest]) (*connect.Response[v1.SetNotificationPreferencesResponse], error)
@@ -105,6 +109,12 @@ func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+InboxServiceListInboxProcedure,
 			connect.WithSchema(inboxServiceMethods.ByName("ListInbox")),
+			connect.WithClientOptions(opts...),
+		),
+		markSessionInboxRead: connect.NewClient[v1.MarkSessionInboxReadRequest, v1.MarkSessionInboxReadResponse](
+			httpClient,
+			baseURL+InboxServiceMarkSessionInboxReadProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("MarkSessionInboxRead")),
 			connect.WithClientOptions(opts...),
 		),
 		setInboxReadState: connect.NewClient[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse](
@@ -157,6 +167,7 @@ type inboxServiceClient struct {
 	getUnreadInboxCount        *connect.Client[v1.GetUnreadInboxCountRequest, v1.GetUnreadInboxCountResponse]
 	getInboxEntry              *connect.Client[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse]
 	listInbox                  *connect.Client[v1.ListInboxRequest, v1.ListInboxResponse]
+	markSessionInboxRead       *connect.Client[v1.MarkSessionInboxReadRequest, v1.MarkSessionInboxReadResponse]
 	setInboxReadState          *connect.Client[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse]
 	getNotificationPreferences *connect.Client[v1.GetNotificationPreferencesRequest, v1.GetNotificationPreferencesResponse]
 	setNotificationPreferences *connect.Client[v1.SetNotificationPreferencesRequest, v1.SetNotificationPreferencesResponse]
@@ -179,6 +190,11 @@ func (c *inboxServiceClient) GetInboxEntry(ctx context.Context, req *connect.Req
 // ListInbox calls delidev.v1.InboxService.ListInbox.
 func (c *inboxServiceClient) ListInbox(ctx context.Context, req *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error) {
 	return c.listInbox.CallUnary(ctx, req)
+}
+
+// MarkSessionInboxRead calls delidev.v1.InboxService.MarkSessionInboxRead.
+func (c *inboxServiceClient) MarkSessionInboxRead(ctx context.Context, req *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error) {
+	return c.markSessionInboxRead.CallUnary(ctx, req)
 }
 
 // SetInboxReadState calls delidev.v1.InboxService.SetInboxReadState.
@@ -221,6 +237,7 @@ type InboxServiceHandler interface {
 	GetUnreadInboxCount(context.Context, *connect.Request[v1.GetUnreadInboxCountRequest]) (*connect.Response[v1.GetUnreadInboxCountResponse], error)
 	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
 	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
+	MarkSessionInboxRead(context.Context, *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error)
 	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
 	GetNotificationPreferences(context.Context, *connect.Request[v1.GetNotificationPreferencesRequest]) (*connect.Response[v1.GetNotificationPreferencesResponse], error)
 	SetNotificationPreferences(context.Context, *connect.Request[v1.SetNotificationPreferencesRequest]) (*connect.Response[v1.SetNotificationPreferencesResponse], error)
@@ -253,6 +270,12 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 		InboxServiceListInboxProcedure,
 		svc.ListInbox,
 		connect.WithSchema(inboxServiceMethods.ByName("ListInbox")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceMarkSessionInboxReadHandler := connect.NewUnaryHandler(
+		InboxServiceMarkSessionInboxReadProcedure,
+		svc.MarkSessionInboxRead,
+		connect.WithSchema(inboxServiceMethods.ByName("MarkSessionInboxRead")),
 		connect.WithHandlerOptions(opts...),
 	)
 	inboxServiceSetInboxReadStateHandler := connect.NewUnaryHandler(
@@ -305,6 +328,8 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 			inboxServiceGetInboxEntryHandler.ServeHTTP(w, r)
 		case InboxServiceListInboxProcedure:
 			inboxServiceListInboxHandler.ServeHTTP(w, r)
+		case InboxServiceMarkSessionInboxReadProcedure:
+			inboxServiceMarkSessionInboxReadHandler.ServeHTTP(w, r)
 		case InboxServiceSetInboxReadStateProcedure:
 			inboxServiceSetInboxReadStateHandler.ServeHTTP(w, r)
 		case InboxServiceGetNotificationPreferencesProcedure:
@@ -338,6 +363,10 @@ func (UnimplementedInboxServiceHandler) GetInboxEntry(context.Context, *connect.
 
 func (UnimplementedInboxServiceHandler) ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.ListInbox is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) MarkSessionInboxRead(context.Context, *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.MarkSessionInboxRead is not implemented"))
 }
 
 func (UnimplementedInboxServiceHandler) SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error) {

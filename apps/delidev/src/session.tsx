@@ -1,3 +1,4 @@
+import { useSessionInboxRead } from "./session-inbox-read";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -26,7 +27,7 @@ import { NativeImageGeneration } from "./native-image-generation";
 import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./image-attachments";
 import { useImageDraft, useImageRoute } from "./image-drafts";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
-import { sessionControlEligibility, useSessionControl } from "./session-control";
+import { sessionControlEligibility, useSessionControl, validSessionActionResource } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
 import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
@@ -274,7 +275,7 @@ export function SubmissionStatus({ phase }: { phase: SubmissionPhase }) {
   return <header><small role="status">{copy(submissionLabels[phase])}</small></header>;
 }
 
-export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true, embedded = false }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; embedded?: boolean; openRunnerSettings?: () => void }) {
+export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, active = true, embedded = false, inboxAcknowledgmentReady = false }: { id: string; draft: string; setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; initialSkills?: SkillTokenBinding[]; changeSkills?: (bindings: SkillTokenBinding[]) => void; active?: boolean; embedded?: boolean; inboxAcknowledgmentReady?: boolean; openRunnerSettings?: () => void }) {
   useLocale();
   const tabs = useSessionTabs(id);
   const conversationActive = active && (embedded || tabs.tab.kind === SessionTabKind.Conversation);
@@ -384,6 +385,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const historyHeights=useRef(new Map<string,number>());
   const historyRoot=useRef<HTMLDivElement>(null);
   const data = readDocument(session);
+  useSessionInboxRead(id, conversationActive && !embedded, inboxAcknowledgmentReady && !queueStatus.isError && queueStatus.data?.capabilities.includes(SystemCapability.SESSION_INBOX_READ_V1) === true, Boolean(validSessionActionResource(session, id) && original?.id === id && supportsResourceSchema(session) && live.state === ConnectionState.Live && !live.error && messages.loaded && !messages.error && !messages.loading), session?.revision ?? 0n);
   const hasStartupOperations = Boolean(data.startup_progress);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);

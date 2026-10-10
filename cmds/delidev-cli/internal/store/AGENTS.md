@@ -35,3 +35,5 @@
 - [DeliDev Session Terminals Contract](../../../../docs/cmds-delidev-terminals-contract.md)
 - [DeliDev native usage ledger](../../../../docs/cmds-delidev-usage-contract.md)
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
+
+- [Foreground session acknowledgment](../../../../docs/cmds-delidev-inbox-contract.md#foreground-session-acknowledgment)

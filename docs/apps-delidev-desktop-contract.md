@@ -5098,3 +5098,24 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+### Foreground conversation Inbox acknowledgment
+
+Ordinary selected desktop Project and General Chat conversations acknowledge
+current session-scoped unread alerts once per successful foreground activation
+under the [Inbox acknowledgment contract](cmds-delidev-inbox-contract.md#foreground-session-acknowledgment).
+The existing native product bridge and authenticated Local/Saved connection
+admission must be current; document visibility, window focus, active conversation
+and successfully loaded current session/initial transcript are all required.
+Sidechat, embedded/hidden conversations and mobile remain excluded. A Fork uses
+its own session identity. Rerenders, polling, pagination, reconnects and newly
+arriving alerts never rearm an activation. Preflight reads remain bounded and
+preserve the existing session/projection schema and identity guards.
+
+The connection retains exact mutation input and uncertain receipt recovery
+across navigation. Accepted completion refreshes original Inbox/count queries
+after chat disposal; it never decrements presentation locally or affects a
+successor connection. Manual Mark read/unread and read-only Inbox inspection
+remain available. No setting, banner, badge control, new native adapter or
+universal Alt+Tab placement is introduced. Existing badge zero/99+ saturation,
+selection, freshness and publication fences retain their owners.

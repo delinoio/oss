@@ -282,3 +282,63 @@ func (t *Tx) UnreadInboxCount() (uint64, error) {
 	err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(body,'$.read_state')=?", domain.InboxUnread).Scan(&count)
 	return count, storageError(err)
 }
+
+// MarkSessionInboxRead scans internal pages in the original mutation transaction.
+// Public Inbox continuation tokens cannot be used across the emitted read events.
+// validate preserves the server's existing joined-source consistency boundary.
+func (t *Tx) MarkSessionInboxRead(session domain.ID, validate func(Record) error) (uint64, error) {
+	if err := t.writeAllowed(); err != nil {
+		return 0, err
+	}
+	if session.Validate() != nil || validate == nil {
+		return 0, domain.Fail(domain.InvalidArgument, "Invalid session acknowledgment.", "Use the original session identity.")
+	}
+	if _, err := t.Get(domain.SessionKind, session); err != nil {
+		return 0, err
+	}
+	var count uint64
+	var cursor string
+	for {
+		if err := t.Authorize(); err != nil {
+			return 0, err
+		}
+		rows, err := t.tx.QueryContext(t.ctx, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND session_id=? AND json_extract(body,'$.read_state')='unread' AND id>? ORDER BY id LIMIT ?", session, cursor, MaxPage)
+		if err != nil {
+			return 0, storageError(err)
+		}
+		page := make([]Record, 0, MaxPage)
+		for rows.Next() {
+			r, scanErr := scan(rows)
+			if scanErr != nil {
+				rows.Close()
+				return 0, storageError(scanErr)
+			}
+			page = append(page, r)
+		}
+		readErr := rows.Err()
+		closeErr := rows.Close()
+		if readErr != nil {
+			return 0, storageError(readErr)
+		}
+		if closeErr != nil {
+			return 0, storageError(closeErr)
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, record := range page {
+			if err := validate(record); err != nil {
+				return 0, err
+			}
+			if _, err := t.SetInboxReadState(record.ID, record.Revision, domain.InboxRead); err != nil {
+				return 0, err
+			}
+			count++
+		}
+		cursor = string(page[len(page)-1].ID)
+	}
+	if err := t.Authorize(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}

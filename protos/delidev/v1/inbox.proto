@@ -10,6 +10,7 @@ service InboxService {
   rpc GetUnreadInboxCount(GetUnreadInboxCountRequest) returns (GetUnreadInboxCountResponse);
   rpc GetInboxEntry(GetInboxEntryRequest) returns (GetInboxEntryResponse);
   rpc ListInbox(ListInboxRequest) returns (ListInboxResponse);
+  rpc MarkSessionInboxRead(MarkSessionInboxReadRequest) returns (MarkSessionInboxReadResponse);
   rpc SetInboxReadState(SetInboxReadStateRequest) returns (SetInboxReadStateResponse);
   rpc GetNotificationPreferences(GetNotificationPreferencesRequest) returns (GetNotificationPreferencesResponse);
   rpc SetNotificationPreferences(SetNotificationPreferencesRequest) returns (SetNotificationPreferencesResponse);
@@ -234,4 +235,17 @@ message GetUnreadInboxCountRequest {}
 message GetUnreadInboxCountResponse {
   uint64 unread_count = 1;
   string observed_at = 2;
+}
+
+// One actor-bound durable acknowledgment instant for all current session alerts.
+message MarkSessionInboxReadRequest {
+  string request_id = 1;
+  string session_id = 2;
+}
+message MarkSessionInboxReadResponse {
+  string request_id = 1;
+  string session_id = 2;
+  uint64 marked_count = 3;
+  string observed_at = 4;
+  bool replayed = 5;
 }

@@ -1417,3 +1417,19 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Session Inbox acknowledgment allocation
+
+System `SESSION_INBOX_READ_V1 = 93` owns authenticated owner/paired-client
+`InboxService.MarkSessionInboxRead`; System 80 remains count-only. No Worker
+allocation, EntityKind, migration or existing field change is introduced.
+`MarkSessionInboxReadRequest` owns `request_id = 1` and `session_id = 2` strings.
+`MarkSessionInboxReadResponse` owns `request_id = 1`, `session_id = 2` strings,
+`marked_count = 3` uint64, `observed_at = 4` UTC timestamp string and
+`replayed = 5` bool. Allocation ownership and the unary RPC are recorded in
+`protos/delidev/allocations.json`; canonical Go, Connect, TypeScript and query
+bindings are generated from these reconciled declarations. Older servers retain
+manual reads. UUID-v7 request/session identities use the actor-bound durable
+`inbox.session-read` receipt under the [Inbox contract](cmds-delidev-inbox-contract.md#foreground-session-acknowledgment).
+The count/time belong to the original acknowledgment transaction, including
+receipt replay; they grant no notification or execution authority.

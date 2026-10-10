@@ -129,3 +129,53 @@ gets a fresh uncached read, followed by ten-second background refreshes. An
 unsupported capability, Unimplemented RPC, disconnected or revoked authority,
 invalid result, failed read or initial replacement clears presentation. It must
 not substitute notification candidates or partial Inbox pages.
+
+## Foreground session acknowledgment
+
+System `SESSION_INBOX_READ_V1 = 93` enables authenticated owner/paired-client
+`InboxService.MarkSessionInboxRead`. System 80 remains count-only. Unsupported
+servers retain manual read controls. Request UUID-v7 `request_id` and `session_id`
+identify an actor-bound durable `inbox.session-read` mutation. The original
+session must exist; no Session revision is required or changed.
+
+One server transaction defines the acknowledgment instant. It selects every
+current unread Inbox entry for that session in internal `store.MaxPage` (200)
+pages, closes query rows before updates, validates the same retained source
+joins as explicit per-entry reads, and preserves each entry's revision/event
+behavior. There is no client-side total cap or public continuation-token loop.
+Other sessions, already-read entries and unscoped operational or subscription
+recovery alerts remain unchanged. Authorization loss, cancellation, inconsistent
+sources and storage failures roll back all marks and the receipt. The compact
+receipt atomically retains original session/count/UTC observation time. Exact
+replay returns that receipt without selecting or marking again; later alerts
+and later explicit Mark unread changes remain unread. Another actor/session
+cannot borrow a request identity. No database migration or Worker capability is
+introduced.
+
+Automatic admission is limited to an active selected ordinary desktop Project
+or General Chat conversation, including a Fork's own session. Sidechat,
+embedded or hidden conversations and mobile are excluded. The existing native
+product bridge, valid authenticated Local/Saved connection admission, visible
+document and focused product window must all remain eligible. Successful
+current session and initial transcript loading precede submission; activation
+preflight reinspects bounded initial transcript and current session using the
+same authenticated transport and existing projection/schema/identity guards.
+Failed, stale or incomplete loading cannot acknowledge.
+
+Selection or return from background defines one activation. Rerenders,
+polling, new alerts, transcript pagination and reconnects do not rearm it.
+The connection-owned mutation registry retains exact input after conversation
+navigation. Uncertainty blocks replacement for that session; a later eligible
+activation may retry only that original receipt. Accepted acknowledgments
+invalidate authoritative Inbox and unread-count queries even after conversation
+disposal, within the original connection. Never decrement the badge locally or
+change a successor connection. Failed/uncertain results preserve manual
+controls, without new settings, banners or badge controls.
+
+Reading never answers an interaction, changes execution eligibility, claims
+notification delivery or grants recovery authority. Inbox opening and inspection
+alone stay read-only; explicit Mark read/unread remain available. The existing
+zero/99+ badge treatment and native freshness/selection/publication fences remain
+unchanged, without promising universal Alt+Tab visibility. Structured diagnostics
+record bounded admission/result/failure classifications and counts, never
+transcripts, credentials, toast content or raw user data.

@@ -20,6 +20,11 @@ export const getInboxEntry = InboxService.method.getInboxEntry;
 export const listInbox = InboxService.method.listInbox;
 
 /**
+ * @generated from rpc delidev.v1.InboxService.MarkSessionInboxRead
+ */
+export const markSessionInboxRead = InboxService.method.markSessionInboxRead;
+
+/**
  * @generated from rpc delidev.v1.InboxService.SetInboxReadState
  */
 export const setInboxReadState = InboxService.method.setInboxReadState;
