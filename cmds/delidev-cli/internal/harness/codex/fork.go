@@ -66,6 +66,9 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil {
 		return nil, err
 	}
+	if !forkDynamicHistoryMatches(checkpoint, turns) {
+		return nil, continuationUncertain()
+	}
 	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
 	if err != nil || last.ID != checkpoint.TurnID || last.Status != TurnCompleted || !slices.Equal(inputs, checkpoint.Inputs) {
 		return nil, continuationUncertain()
@@ -83,6 +86,13 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 		return nil, continuationUncertain()
 	}
 	return &ForkSource{managedToolHistory: c.managedForkHistory, imageRoot: c.imageRoot, imageMachine: c.imageMachine, home: c.home, path: path, checkpoint: checkpoint, fileDigest: digest, turns: turns}, nil
+}
+
+func forkDynamicHistoryMatches(checkpoint ContinuationCheckpoint, turns []json.RawMessage) bool {
+	if checkpoint.DynamicHistory == nil {
+		return !hasDynamicHistory(turns)
+	}
+	return checkpoint.DynamicHistory.matches(turns)
 }
 
 func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {

@@ -246,6 +246,31 @@ func TestDynamicHistoryPreservesCompleteNativeJSONAndForkDigest(t *testing.T) {
 	}
 }
 
+func TestForkRequiresTheRetainedDynamicHistoryCommitment(t *testing.T) {
+	item := dynamicItem(ToolCompleted)
+	item["success"] = false
+	item["contentItems"] = []any{map[string]any{"type": "inputText", "text": "original"}}
+	turn := fixtureTurn(domain.NewID(), TurnCompleted)
+	turn["itemsView"] = "full"
+	turn["items"] = []any{item}
+	turns := []json.RawMessage{mustJSON(t, turn)}
+	checkpoint := ContinuationCheckpoint{DynamicHistory: &ForkHistoryCheckpoint{TurnsCount: uint32(len(turns)), HistoryDigest: historyDigest(turns)}}
+	if !forkDynamicHistoryMatches(checkpoint, turns) {
+		t.Fatal("matching retained dynamic history was rejected")
+	}
+	changed := []json.RawMessage{json.RawMessage(strings.ReplaceAll(string(turns[0]), "original", "changed"))}
+	if forkDynamicHistoryMatches(checkpoint, changed) {
+		t.Fatal("changed dynamic history retained the original commitment")
+	}
+	if forkDynamicHistoryMatches(ContinuationCheckpoint{}, turns) {
+		t.Fatal("dynamic history without an execution commitment was accepted")
+	}
+	plain := []json.RawMessage{mustJSON(t, fixtureTurn(domain.NewID(), TurnCompleted))}
+	if !forkDynamicHistoryMatches(ContinuationCheckpoint{}, plain) {
+		t.Fatal("legacy history without dynamic items required a dynamic commitment")
+	}
+}
+
 func TestDynamicLostNativeResolutionRetainsOneOriginalAttempt(t *testing.T) {
 	c, capture, _, _ := boundTurnFixture(t, "dynamic-no-resolution")
 	turn, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), input(domain.ExecuteMode))
