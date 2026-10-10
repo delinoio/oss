@@ -1,3 +1,4 @@
+import timestampVectors from "../../../cmds/delidev-cli/internal/domain/testdata/claude-web-timestamps.json";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 import { NativeClaudeMessage, validNativeClaudeMessage } from "./native-claude-message";
@@ -45,4 +46,20 @@ test.each(["foreign", "family", "mixed", "encrypted", "input", "duplicate", "unk
 test("rejects normalized impossible native retrieval dates", () => {
  const data=fixture("web_fetch");data.blocks[1]!.block.web.result!.fetch!.retrieved_at="2026-02-30T00:00:00Z";
  expect(validNativeClaudeMessage(data,"complete")).toBe(false);
+});
+
+// Use the backend admission vectors against complete transcript rendering.
+test.each(timestampVectors)("preserves timestamp readability parity: $name", ({ value, valid }) => {
+  const data = fixture("web_fetch");
+  const fetch = data.blocks[1]!.block.web.result!.fetch!;
+  Object.assign(fetch, { retrieved_at: value });
+  expect(validNativeClaudeMessage(data, "complete")).toBe(valid);
+  const { container } = render(<NativeClaudeMessage content={data} state="complete" />);
+  if (valid) {
+    expect(container.textContent).toContain("Original native content <script>inert()</script>");
+    if (value !== null) expect(container.textContent).toContain(value);
+    expect(fetch.retrieved_at).toBe(value);
+  } else {
+    expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  }
 });

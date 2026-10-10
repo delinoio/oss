@@ -162,7 +162,10 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     return () => onWorkflowReadyChange?.(false);
   }, [draft, exportRead.isPending, loaded, loading, mutation.busy, mutation.uncertain, onWorkflowReadyChange, preview, previewRead.isPending, problem, exportFailure, report]);
   useEffect(() => { if (state === JobState.Succeeded) void queryClient.invalidateQueries({ refetchType: "active" }); }, [state, queryClient]);
-  const invalidate = () => { generation.current++; setPreview(undefined); setProblem(""); };
+  const invalidate = () => {
+    generation.current++; exportGeneration.current++;
+    setPreview(undefined); setProblem(""); setExportFailure(undefined);
+  };
   const load = (raw: string) => {
     invalidate(); setLoaded(undefined);
     try { const bundle = readBundle(raw); setLoaded({ raw, bundle }); setBindings({}); setMachines({}); setConfirmedMachines({}); setPaths({}); }
@@ -232,7 +235,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
           void file.arrayBuffer().then((buffer) => { if (alive.current) { const raw = decoder.decode(buffer); setDraft(raw); load(raw); } }).catch(() => { if (alive.current) setProblem(ownedMessage("configuration-transfer.extra.1724f7337bd3")); }).finally(() => { gate.current = false; if (alive.current) setLoading(false); });
         }} /></label>
         <p id="transfer-file-help" className="transfer-helper">{copy("configuration-transfer.jsonUtf8UpTo384_4d57fb")}</p>
-        <label>{copy("configuration-transfer.configurationJson_1d1271")}<textarea className="transfer-json-input" value={draft} rows={6} spellCheck={false} placeholder={copy("configuration-transfer.pasteADelidevConfigurationExport_fcd57c")} onChange={(event) => { if (encoder.encode(event.target.value).byteLength > bundleLimit) { setProblem(ownedMessage("configuration-transfer.extra.0c01933238f8")); return; } invalidate(); setLoaded(undefined); setDraft(event.target.value); }} /></label>
+        <label>{copy("configuration-transfer.configurationJson_1d1271")}<textarea className="transfer-json-input" value={draft} rows={6} spellCheck={false} placeholder={copy("configuration-transfer.pasteADelidevConfigurationExport_fcd57c")} onChange={(event) => { const raw = event.target.value; invalidate(); setLoaded(undefined); if (encoder.encode(raw).byteLength > bundleLimit) { setProblem(ownedMessage("configuration-transfer.extra.0c01933238f8")); return; } setDraft(raw); }} /></label>
         <SettingsActionButton icon={SettingsActionIcon.Upload} className="primary" disabled={!draft} onClick={() => load(draft)}>{copy("configuration-transfer.loadConfigurationDocument_afae0a")}</SettingsActionButton>
       </fieldset>
       <p className="transfer-load-guidance">{copy("configuration-transfer.youWillMapResourcesAndReview_44f7cd")}</p>

@@ -70,6 +70,6 @@ func finishRevertRecovery(tx *store.Tx, row store.Record, job domain.Job, expect
 	if err != nil {
 		return err
 	}
-	_, err = finishSessionCompaction(tx, original, previous, original.Revision, raw, nil)
+	_, err = finalizeSessionCompaction(tx, original, previous, original.Revision, raw, nil, observedOriginalRevert)
 	return err
 }

@@ -235,3 +235,62 @@ func TestSubagentInventoryAfterParentCompletionFindsUnannouncedLiveChildren(t *t
 		}
 	}
 }
+
+func TestCompletedChildQuestionsPreserveOutputAndRoot(t *testing.T) {
+	for _, questions := range []string{"", `,"questions":null`, `,"questions":[]`} {
+		t.Run(questions, func(t *testing.T) {
+			c, turn := observationClient()
+			child := domain.NewID()
+			c.subagents = map[string]domain.SubagentObservation{string(child): {ID: domain.NewID(), NativeID: string(child), ParentID: string(c.thread), Status: domain.SubagentRunning}}
+			paused := c.execution.paused
+			item := json.RawMessage(`{"type":"agentMessage","id":"child-message","text":"Child output","phase":"final_answer","delivery":null` + questions + `}`)
+			event, err := observeFixture(c, "item/completed", map[string]any{"threadId": child, "turnId": turn, "item": item})
+			if err != nil || event.Kind != SubagentEvent || len(event.Subagents) != 1 {
+				t.Fatal("canonical child message rejected", err)
+			}
+			output := event.Subagents[0].Output
+			if output == nil || output.NativeMessageID != "child-message" || output.Text != "Child output" || event.Subagents[0].NativeID != string(child) || event.Subagents[0].ParentID != string(c.thread) {
+				t.Fatal("original child output or ownership changed")
+			}
+			if c.execution.active != turn || c.execution.paused != paused {
+				t.Fatal("child metadata changed healthy root")
+			}
+		})
+	}
+}
+
+func TestCompletedChildQuestionsRetainPrivateAndStrictBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name, extra      string
+		private, invalid bool
+	}{
+		{"populated", `,"questions":[{"id":"private-question"}]`, true, false},
+		{"populated-null", `,"questions":[null]`, true, false},
+		{"malformed-string", `,"questions":"invalid"`, false, true},
+		{"malformed-object", `,"questions":{}`, false, true},
+		{"unknown", `,"questions":null,"unknown":true`, false, true},
+		{"duplicate", `,"questions":null,"questions":[]`, false, true},
+		{"invalid-output", `,"questions":null,"text":42`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, turn := observationClient()
+			child := domain.NewID()
+			c.subagents = map[string]domain.SubagentObservation{string(child): {ID: domain.NewID(), NativeID: string(child), ParentID: string(c.thread), Status: domain.SubagentRunning}}
+			item := json.RawMessage(`{"type":"agentMessage","id":"child-message","text":"Child output","phase":"final_answer","delivery":null` + tc.extra + `}`)
+			event, err := observeFixture(c, "item/completed", map[string]any{"threadId": child, "turnId": turn, "item": item})
+			if tc.invalid && err == nil || tc.private && (err != nil || event.Kind != NativeExtensionEvent) {
+				t.Fatal("private or strict child boundary changed", err)
+			}
+			if event.Kind == SubagentEvent || c.subagents[string(child)].Output != nil {
+				t.Fatal("unsupported metadata published child output")
+			}
+		})
+	}
+	c, turn := observationClient()
+	child := domain.NewID()
+	c.subagents = map[string]domain.SubagentObservation{string(child): {ID: domain.NewID(), NativeID: string(child), ParentID: string(c.thread), Status: domain.SubagentRunning}}
+	event, err := observeFixture(c, "item/completed", map[string]any{"threadId": domain.NewID(), "turnId": turn, "item": map[string]any{"type": "agentMessage", "id": "foreign-message", "text": "Foreign output", "phase": "final_answer", "delivery": nil, "questions": nil}})
+	if event.Kind == SubagentEvent || c.subagents[string(child)].Output != nil || c.execution.active != turn {
+		t.Fatal("foreign message acquired child or root authority", err)
+	}
+}

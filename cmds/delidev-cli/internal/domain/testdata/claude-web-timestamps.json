@@ -1,0 +1,162 @@
+[
+  {
+    "name": "absent",
+    "value": null,
+    "valid": true
+  },
+  {
+    "name": "UTC",
+    "value": "2026-10-09T00:00:00Z",
+    "valid": true
+  },
+  {
+    "name": "positive-offset",
+    "value": "2026-10-09T00:00:00+23:59",
+    "valid": true
+  },
+  {
+    "name": "negative-offset",
+    "value": "2026-10-09T00:00:00-23:59",
+    "valid": true
+  },
+  {
+    "name": "negative-zero",
+    "value": "2026-10-09T00:00:00-00:00",
+    "valid": true
+  },
+  {
+    "name": "leap-day",
+    "value": "2024-02-29T12:34:56Z",
+    "valid": true
+  },
+  {
+    "name": "year-zero",
+    "value": "0000-01-01T00:00:00Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-1",
+    "value": "2026-10-09T00:00:00.1Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-2",
+    "value": "2026-10-09T00:00:00.12Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-3",
+    "value": "2026-10-09T00:00:00.123Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-4",
+    "value": "2026-10-09T00:00:00.1234Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-5",
+    "value": "2026-10-09T00:00:00.12345Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-6",
+    "value": "2026-10-09T00:00:00.123456Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-7",
+    "value": "2026-10-09T00:00:00.1234567Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-8",
+    "value": "2026-10-09T00:00:00.12345678Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-9",
+    "value": "2026-10-09T00:00:00.123456789Z",
+    "valid": true
+  },
+  {
+    "name": "fraction-10",
+    "value": "2026-10-09T00:00:00.1234567890Z",
+    "valid": false
+  },
+  {
+    "name": "comma-fraction",
+    "value": "2026-10-09T00:00:00,123Z",
+    "valid": false
+  },
+  {
+    "name": "offset-hour",
+    "value": "2026-10-09T00:00:00+24:00",
+    "valid": false
+  },
+  {
+    "name": "negative-offset-hour",
+    "value": "2026-10-09T00:00:00-24:00",
+    "valid": false
+  },
+  {
+    "name": "offset-minute",
+    "value": "2026-10-09T00:00:00+00:60",
+    "valid": false
+  },
+  {
+    "name": "invalid-day",
+    "value": "2026-02-30T00:00:00Z",
+    "valid": false
+  },
+  {
+    "name": "non-leap-day",
+    "value": "2026-02-29T00:00:00Z",
+    "valid": false
+  },
+  {
+    "name": "month-zero",
+    "value": "2026-00-09T00:00:00Z",
+    "valid": false
+  },
+  {
+    "name": "month-13",
+    "value": "2026-13-09T00:00:00Z",
+    "valid": false
+  },
+  {
+    "name": "day-zero",
+    "value": "2026-10-00T00:00:00Z",
+    "valid": false
+  },
+  {
+    "name": "hour-24",
+    "value": "2026-10-09T24:00:00Z",
+    "valid": false
+  },
+  {
+    "name": "minute-60",
+    "value": "2026-10-09T00:60:00Z",
+    "valid": false
+  },
+  {
+    "name": "second-60",
+    "value": "2026-10-09T00:00:60Z",
+    "valid": false
+  },
+  {
+    "name": "missing-zone",
+    "value": "2026-10-09T00:00:00",
+    "valid": false
+  },
+  {
+    "name": "empty",
+    "value": "",
+    "valid": false
+  },
+  {
+    "name": "newline",
+    "value": "2026-10-09T00:00:00Z\n",
+    "valid": false
+  }
+]

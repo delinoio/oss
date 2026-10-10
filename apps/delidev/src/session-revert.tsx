@@ -18,7 +18,7 @@ export function verifiedRevertDraft(session: Resource | undefined, action: strin
  if (p.action_id !== action || target.message_id !== message || revision(target.context_revision) !== context || revision(result.context_revision) !== context + 1n || revision(s.context_revision) !== context + 1n || s.compaction_job_id || s.recovery !== "none" || !text(p.job_id) || !Array.isArray(result.retained_turn_ids) || result.retained_turn_ids.includes(target.native_turn_id) || typeof prompt.prompt !== "string" || !["execute", "plan"].includes(text(prompt.mode))) return;
  return prompt;
 }
-export function useSessionRevert({session,active,draft,restore,composer,blocked,changed}:{session?:Resource;active:boolean;draft:string;restore:(prompt:string,mode:string)=>boolean|void;composer:RefObject<HTMLTextAreaElement|null>;blocked:boolean;changed:(resource:Resource)=>void}) {
+export function useSessionRevert({session,active,draft,restore,composer,blocked,changed}:{session?:Resource;active:boolean;draft:string;restore:(prompt:string)=>boolean|void;composer:RefObject<HTMLTextAreaElement|null>;blocked:boolean;changed:(resource:Resource)=>void}) {
  useLocale();
  const status=useQuery(SystemQuery.getStatus,{}, {enabled:active});
  const machine=useQuery(ResourceQuery.getResource,{kind:EntityKind.MACHINE,id:text(document(session).machine_id)},{enabled:active && Boolean(session)});
@@ -42,7 +42,7 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
   const prompt=verifiedRevertDraft(original,pending.action,pending.message,pending.context);if(!prompt)return;
   // Native completion cannot overwrite a draft edited while the original job
   // was pending, or restore text into an inactive conversation.
-  if(latestDraft.current===pending.draft && restore(text(prompt.prompt),text(prompt.mode))!==false){composer.current?.focus();restoredAction.current=pending.action;setReplacement(undefined);}else setReplacement(prompt);
+  if(latestDraft.current===pending.draft && restore(text(prompt.prompt))!==false){composer.current?.focus();restoredAction.current=pending.action;setReplacement(undefined);}else setReplacement(prompt);
   setPending(undefined);setSelected(undefined);
  },[original,pending,active]);
  useEffect(()=>{if(mutation.error && !mutation.uncertain && !mutation.busy)setPending(undefined);},[mutation.error,mutation.uncertain,mutation.busy]);
@@ -59,7 +59,7 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
  const content=<>
  {selected ? <Modal title={copy("session.revertAndEdit")} close={()=>setSelected(undefined)} focusClose trapFocus><p>{copy("session.revertConfirmation")}</p><pre className="revert-prompt">{text(document(selected.row).text)}</pre>{draft ? <p>{copy("session.revertDraftWarning")}</p>:null}<button type="button" disabled={blocked || mutation.busy || mutation.uncertain || Boolean(pending) || selected.source.revision!==session?.revision} onClick={confirm}>{copy("session.revertAndEdit")}</button></Modal>:null}
  {pending ? <p role="status">{copy("session.revertPending")}</p>:null}
- {replacement ? <div role="status"><p>{copy("session.revertDraftChanged")}</p><button type="button" onClick={()=>{if(restore(text(replacement.prompt),text(replacement.mode))!==false){restoredAction.current=text(object(document(original).revert).action_id);setReplacement(undefined);composer.current?.focus();}}}>{copy("session.restoreRevertedPrompt")}</button></div>:null}
+ {replacement ? <div role="status"><p>{copy("session.revertDraftChanged")}</p><button type="button" onClick={()=>{if(restore(text(replacement.prompt))!==false){restoredAction.current=text(object(document(original).revert).action_id);setReplacement(undefined);composer.current?.focus();}}}>{copy("session.restoreRevertedPrompt")}</button></div>:null}
  {object(object(document(original).revert).result).target ? <p>{copy("session.revertHistoricalAttachments")}</p>:null}
  <Problem error={mutation.error || current.error}/>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("session.retrySameRevert")}</button>:null}
  </>;
