@@ -127,6 +127,14 @@ export function execution(command) {
       throw new Error("Unknown mobile target");
   }
 }
+// The pinned Tauri Swift linker defaults to iOS 13 for direct Cargo builds.
+// Pass the app minimum explicitly until it reads the owning Tauri config itself.
+export function iosEnvironment() {
+  const config = JSON.parse(readFileSync(join(app, "src-tauri/tauri.conf.json"), "utf8"));
+  const minimum = config.bundle.iOS.minimumSystemVersion;
+  if (!/^\d+\.\d+$/.test(minimum)) throw new Error("Invalid iOS minimum version");
+  return { IPHONEOS_DEPLOYMENT_TARGET: minimum };
+}
 function build(command) {
   const e = execution(command);
   generate(e.platform);
@@ -154,6 +162,7 @@ function build(command) {
       "custom-protocol",
     ],
     root,
+    iosEnvironment(),
   );
   const target = resolve(root, process.env.CARGO_TARGET_DIR ?? "target"),
     external = join(
