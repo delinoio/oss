@@ -29,7 +29,7 @@ function fixture({ enabled = true, sidechat = false }: { enabled?: boolean; side
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const changed = vi.fn();
-  return { write, changed, original, execution, thread, client, setGoal(value: object) { data = { ...data, native_goal: value }; session = create(ResourceSchema, { ...session, revision: session.revision + 1n, documentJson: encode(data) }); }, render: () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionGoal session={original} changed={changed} /></MutationIntents></QueryClientProvider></TransportProvider> };
+  return { write, changed, original, execution, thread, client, setState(value: object) { data = { ...data, ...value }; session = create(ResourceSchema, { ...session, revision: session.revision + 1n, documentJson: encode(data) }); }, setGoal(value: object) { data = { ...data, native_goal: value }; session = create(ResourceSchema, { ...session, revision: session.revision + 1n, documentJson: encode(data) }); }, render: () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionGoal session={original} changed={changed} /></MutationIntents></QueryClientProvider></TransportProvider> };
 }
 it("preserves omitted status versus explicit managed-default budget reset", async () => {
   const f = fixture(); render(f.render());
@@ -119,7 +119,9 @@ it("keeps stopped or recovery state readable while native controls are disabled"
  const f = fixture(); render(f.render());
  await screen.findByText("The last native observation reported no goal.");
  f.setGoal({ enabled: true, source_execution_id: f.execution, source_native_thread_id: f.thread, observation: null, action_id: newRequestId(), action_state: "uncertain", problem_code: "recovery_required" });
+ f.setState({ recovery: "needs-recovery", dispatch: "paused", active_execution_id: undefined });
  await f.client.invalidateQueries({ refetchType: "active" });
+ await screen.findByText("Native controls require the original running execution. Saved state remains readable after it stops or requires recovery.");
  expect((screen.getByRole("button", { name: "Clear native goal" }) as HTMLButtonElement).disabled).toBe(true);
  fireEvent.click(screen.getByRole("button", { name: "Reload saved goal state" }));
  expect(f.write).not.toHaveBeenCalled();

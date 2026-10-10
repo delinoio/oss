@@ -650,7 +650,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					}
 				}
 			}
-			original := codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
+			original := codex.ContinuationCheckpoint{NativeGoalsEnabled: bound.NativeGoalsEnabled, PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
 			if bound.NativeGoalsEnabled {
 				bound.GoalHistory, err = client.RetainGoalHistory(ctx, original)
 				if err != nil {

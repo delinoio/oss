@@ -72,7 +72,7 @@ func continuationUncertain() *domain.Error {
 }
 
 func (p ContinuationCheckpoint) validate(intent ContinuationIntent) error {
-	if p.GoalHistory != nil && p.GoalHistory.validate(p.ThreadID) != nil {
+	if p.GoalHistory != nil && (!p.NativeGoalsEnabled || p.GoalHistory.validate(p.ThreadID) != nil) {
 		return goalUncertain()
 	}
 	for _, id := range []domain.ID{p.ThreadID, p.SessionID, p.TurnID} {

@@ -7,7 +7,7 @@ export const goalStatuses = ["active", "paused", "blocked", "usageLimited", "bud
 export const goalStatusValues = [NativeGoalStatus.ACTIVE, NativeGoalStatus.PAUSED, NativeGoalStatus.BLOCKED, NativeGoalStatus.USAGE_LIMITED, NativeGoalStatus.BUDGET_LIMITED, NativeGoalStatus.COMPLETE] as const;
 const decimal = (value: unknown): value is string => typeof value === "string" && /^(0|[1-9][0-9]{0,18})$/.test(value) && BigInt(value) <= 9223372036854775807n;
 export function goalObjective(value: string): boolean {
-  return value.trim().length > 0 && Array.from(value).length <= 4000 && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+  return value.trim().length > 0 && !value.includes("\0") && Array.from(value).length <= 4000 && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
 }
 export function goalBudget(value: string): bigint | undefined {
   return decimal(value) && BigInt(value) > 0n ? BigInt(value) : undefined;
@@ -23,7 +23,7 @@ export function nativeGoalView(value: unknown): (NativeGoalView & { readonly ena
   if (v.observation !== undefined && v.observation !== null) {
     const o = object(v.observation);
     const fields = ["objective", "status", "token_budget", "tokens_used", "time_used_seconds", "created_at", "updated_at"];
-    if (Object.keys(o).length !== fields.length || Object.keys(o).some(key => !fields.includes(key)) || typeof o.objective !== "string" || !goalObjective(o.objective) || !goalStatuses.includes(o.status as NativeGoalSnapshot["status"]) || !decimal(o.tokens_used) || !decimal(o.time_used_seconds) || !decimal(o.created_at) || !decimal(o.updated_at) || o.token_budget !== null && (!decimal(o.token_budget) || BigInt(o.token_budget) <= 0n)) return;
+    if (Object.keys(o).length !== fields.length || Object.keys(o).some(key => !fields.includes(key)) || typeof o.objective !== "string" || !goalObjective(o.objective) || !goalStatuses.includes(o.status as NativeGoalSnapshot["status"]) || !decimal(o.tokens_used) || !decimal(o.time_used_seconds) || !decimal(o.created_at) || !decimal(o.updated_at) || BigInt(o.updated_at) < BigInt(o.created_at) || o.token_budget !== null && (!decimal(o.token_budget) || BigInt(o.token_budget) <= 0n)) return;
   }
   return v as unknown as NativeGoalView & { readonly enabled: boolean };
 }
