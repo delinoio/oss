@@ -70,11 +70,11 @@ export function DisclosureButton({ density, className = "", children, onClick, f
   const inheritedDensity = useContext(Density);
   return <button type="button" {...props} className={`disclosure-header ${className}`} data-disclosure-density={density ?? inheritedDensity} onClick={event => { if (props["aria-expanded"] === true) { const id = props["aria-controls"]; if (!focusWhenCollapsing || document.activeElement && focusWhenCollapsing(document.activeElement)) restoreFocus(id ? document.getElementById(id) : null, event.currentTarget); } onClick?.(event); }}><HeaderContent>{children}</HeaderContent></button>;
 }
-export function DisclosureContent({ ref, children, hidden, onFocusCapture, ...props }: ComponentPropsWithRef<"div">) {
+export function DisclosureContent({ ref, children, hidden, onFocusCapture, restoreFocusOnHide = true, ...props }: ComponentPropsWithRef<"div"> & { restoreFocusOnHide?: boolean }) {
   const node = useRef<HTMLDivElement>(null), focused = useRef<Element | null>(null);
   const [concealed, setConcealed] = useState(Boolean(hidden));
   const focusTrigger = (content: HTMLDivElement | null) => {
-    if (!content) return;
+    if (!content || !restoreFocusOnHide) return;
     const active = document.activeElement;
     // A removed descendant loses DOM focus before layout cleanup. Restore only
     // that owner's focus; a deliberate move to another control stays intact.

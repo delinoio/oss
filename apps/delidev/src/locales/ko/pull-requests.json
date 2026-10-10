@@ -19,7 +19,7 @@
   "pull-requests.loadingRepositories_460ca9": "저장소를 불러오는 중…",
   "pull-requests.refreshFailedShowingThePreviousRepository_6c5a34": "새로 고침에 실패했습니다. 이전 저장소 페이지를 표시합니다.",
   "pull-requests.repositoryId_cfd937": "{{v0}}. 저장소 ID: {{v1}}",
-  "pull-requests.repositoryDetails": "{{name}} 상세. 저장소 ID: {{id}}",
+  "pull-requests.repositoryDetails": "{{name}} 상세",
   "pull-requests.githubRepository": "GitHub 저장소",
   "pull-requests.repositoryIdentifier": "저장소 ID",
   "pull-requests.repositoryNotConfigured": "설정되지 않음",
@@ -45,5 +45,7 @@
   "pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad": "이 저장소를 더 이상 사용할 수 없습니다. 저장소 목록을 새로 고쳐 다른 항목을 선택하세요.",
   "pull-requests.configureThisRepositorySGithubProfile_86db03": "요청을 불러오기 전에 저장소 설정에서 이 저장소의 GitHub 프로필, 소유자와 이름을 설정하세요.",
   "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "저장소 설정을 확인한 후 풀 리퀘스트를 자동으로 불러옵니다.",
-  "pull-requests.pendingFix": "수동 PR 수정 · 원격 저장소 <s0/> · PR ID <s1/>"
+  "pull-requests.pendingFix": "수동 PR 수정 · 원격 저장소 <s0/> · PR ID <s1/>",
+  "pull-requests.repositoryName": "저장소",
+  "pull-requests.repositoryPosition": "{{name}} · 저장소 {{position}}"
 }

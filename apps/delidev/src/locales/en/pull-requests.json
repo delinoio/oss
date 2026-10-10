@@ -19,7 +19,7 @@
   "pull-requests.loadingRepositories_460ca9": "Loading repositories…",
   "pull-requests.refreshFailedShowingThePreviousRepository_6c5a34": "Refresh failed. Showing the previous repository page.",
   "pull-requests.repositoryId_cfd937": "{{v0}}. Repository ID: {{v1}}",
-  "pull-requests.repositoryDetails": "Details for {{name}}. Repository ID: {{id}}",
+  "pull-requests.repositoryDetails": "Details for {{name}}",
   "pull-requests.githubRepository": "GitHub repository",
   "pull-requests.repositoryIdentifier": "Repository ID",
   "pull-requests.repositoryNotConfigured": "Not configured",
@@ -45,5 +45,7 @@
   "pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad": "This repository is no longer available. Refresh the repository catalog and choose another entry.",
   "pull-requests.configureThisRepositorySGithubProfile_86db03": "Configure this repository's GitHub profile, owner and name in Repository settings before loading requests.",
   "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "Pull requests load automatically after repository settings are validated.",
-  "pull-requests.pendingFix": "Manual PR fix · remote repository <s0/> · PR ID <s1/>"
+  "pull-requests.pendingFix": "Manual PR fix · remote repository <s0/> · PR ID <s1/>",
+  "pull-requests.repositoryName": "Repository",
+  "pull-requests.repositoryPosition": "{{name}} · Repository {{position}}"
 }

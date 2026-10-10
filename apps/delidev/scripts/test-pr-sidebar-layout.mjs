@@ -36,7 +36,6 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", error => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const id = "0195c9c0-7b13-7000-8000-000000000001";
   const enter = async language => {
     await page.getByRole("button", { name: language === "ko" ? "풀 리퀘스트" : "Pull requests", exact: true }).click();
     const opener = page.locator(".sidebar-context-trigger");
@@ -46,7 +45,7 @@ try {
   const assertLayout = async (pane, context) => {
     const geometry = await pane.evaluate(node => {
       const box = node.getBoundingClientRect();
-      return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select, .pr-repository-details")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
+      return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
     });
     assert(!geometry.overflow && !geometry.outside && geometry.targets, `${context}: ${JSON.stringify(geometry)}`);
     const titleRow = pane.locator(".pr-sidebar-title");
@@ -68,11 +67,28 @@ try {
 
     assert.deepEqual(await page.evaluate(() => window.__prSidebarFixture), { github: 0, repository: 0 }, context);
   };
+  const layoutSnapshot = pane => pane.evaluate(node => ({
+    scrolling: [node, node.closest(".sidebar-list")].filter(Boolean).map(item => ({ scrollHeight: item.scrollHeight, clientHeight: item.clientHeight, scrollTop: item.scrollTop })),
+    siblings: [...node.querySelectorAll(".pr-repository-heading, .sidebar-query-options, .pr-state-options, .pr-sidebar-title")].map(item => {
+      const { x, y, width, height } = item.getBoundingClientRect(); return { x, y, width, height };
+    }),
+  }));
+  const assertPopup = async (pane, details, before, context) => {
+    const popup = pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true });
+    const geometry = await popup.evaluate(node => {
+      const box = node.getBoundingClientRect(), style = getComputedStyle(node);
+      return { native: node.matches(":popover-open") && node.getAttribute("popover") === "manual", local: !!node.closest(".sidebar-pane"),
+        fixed: style.position === "fixed", contained: box.left >= 7 && box.top >= 7 && box.right <= innerWidth - 7 && box.bottom <= innerHeight - 7,
+        scrollable: style.overflowY === "auto", ids: /0195c9c0/.test(node.textContent) };
+    });
+    assert(geometry.native && geometry.local && geometry.fixed && geometry.contained && geometry.scrollable && !geometry.ids, `${context}: ${JSON.stringify(geometry)}`);
+    assert.deepEqual(await layoutSnapshot(pane), before, `${context}: popup must not move siblings or sidebar scrolling`);
+  };
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,900], [1100,768], [960,640], [640,480], [720,450], [480,320]]) {
     await page.setViewportSize({ width, height });
     await page.goto(`${origin}/?theme=${theme}&language=${language}`);
     const pane = await enter(language);
-    const row = pane.getByRole("button", { name: language === "ko" ? `oss. 저장소 ID: ${id}` : `oss. Repository ID: ${id}`, exact: true });
+    const row = pane.getByRole("button", { name: "oss", exact: true });
     await row.waitFor();
     assert.equal(await row.textContent(), "oss");
     await assertLayout(pane, `${language}/${theme}/${width}: unselected`);
@@ -87,12 +103,14 @@ try {
     await page.mouse.move(0, 0);
 
     if (screenshots && width === 1440) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `pr-${language}-${theme}-unselected.png`) }); }
-    const details = pane.getByRole("button", { name: language === "ko" ? `oss 상세. 저장소 ID: ${id}` : `Details for oss. Repository ID: ${id}`, exact: true });
+    const details = pane.getByRole("button", { name: language === "ko" ? "oss 상세" : "Details for oss", exact: true });
     await details.hover(); await assertLayout(pane, `${language}/${theme}/${width}: hover`);
+    const beforeDetails = await layoutSnapshot(pane);
     await details.focus(); await details.press("Enter");
     await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).waitFor();
     assert.equal(await row.getAttribute("aria-pressed"), "false");
     await assertLayout(pane, `${language}/${theme}/${width}: details`);
+    await assertPopup(pane, details, beforeDetails, `${language}/${theme}/${width}: details`);
     await details.press("Space");
     await row.click();
     const open = pane.getByRole("radio", { name: language === "ko" ? "열림" : "Open", exact: true });
@@ -111,7 +129,8 @@ try {
       await page.waitForFunction(() => !document.querySelector(".pr-sidebar-refresh").disabled);
       assert.equal(await row.getAttribute("aria-pressed"), "true", "Refresh retains selection");
       assert(await closed.isChecked(), "Refresh retains filter state");
-      assert(await detailsRegion.isVisible(), "Refresh retains Details expansion");
+      assert.equal(await detailsRegion.isVisible(), false, "Outside activation dismisses the popup without altering retained expansion memory");
+      if (!await detailsRegion.isVisible()) await details.click();
     }
     await refresh.blur();
     await page.mouse.move(0, 0);
@@ -119,7 +138,10 @@ try {
     if (screenshots && width === 1440) await page.screenshot({ path: join(resolve(screenshots), `pr-${language}-${theme}-selected.png`) });
     if (width < 760) {
       await page.keyboard.press("Escape");
-      assert.equal(await pane.isVisible(), false, "Escape dismisses the original compact drawer");
+      assert(await pane.isVisible(), "The first Escape dismisses only Details");
+      assert(await details.evaluate(node => document.activeElement === node), "Escape restores the opener");
+      await page.keyboard.press("Escape");
+      assert.equal(await pane.isVisible(), false, "The next Escape dismisses the original compact drawer");
       await page.locator(".sidebar-context-trigger").click();
       assert(await closed.isChecked(), "Drawer reopening retains draft state");
     }
@@ -130,14 +152,20 @@ try {
     await page.setViewportSize({ width: 480, height: 320 });
     await page.goto(`${origin}/?theme=dark&language=${language}&long=true`);
     const pane = await enter(language);
+    // Fixture-only long title proves that localization can wrap beside the fixed action.
+    await pane.locator(".pr-sidebar-title h2").evaluate(node => { node.textContent = node.textContent.repeat(8); });
     const last = pane.locator(".sidebar-repository-row").last();
     await last.click();
     const details = pane.locator(".pr-repository-details-toggle").last();
+    const beforeLong = await layoutSnapshot(pane);
     await details.click();
-    // Fixture-only long title proves that localization can wrap beside the fixed action.
-    await pane.locator(".pr-sidebar-title h2").evaluate(node => { node.textContent = node.textContent.repeat(8); });
+    await assertPopup(pane, details, beforeLong, `${language}: long popup`);
     await assertLayout(pane, `${language}: long name/details at effective 200%`);
-    assert.equal(await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).locator("dd").last().textContent(), "0195c9c0-7b13-7000-8000-000000000003");
+    const popup = pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true });
+    assert.equal(await popup.locator("dd").last().textContent(), await last.textContent(), "Details shows the safe repository name");
+    await popup.focus(); await page.keyboard.press("Escape");
+    assert.equal(await popup.isVisible(), false);
+    assert(await pane.isVisible());
     checks++;
   }
   await page.setViewportSize({ width: 1440, height: 900 });
