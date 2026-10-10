@@ -444,6 +444,29 @@ func validateSidechatRetryWorkspace(input domain.ForkJobInput, preparation works
 	return nil
 }
 
+// Only the unchanged initial queued job proves that no native owner was ever
+// admitted. A terminal error after claim is not a no-send or cleanup proof.
+func releasePreclaimSidechatRetry(tx *store.Tx, r store.Record, job domain.Job, input domain.ForkJobInput) error {
+	if input.Retry == nil || input.Validate() != nil || job.Type != domain.ForkSessionJob || job.State != domain.JobQueued || r.Revision != 1 || job.InstanceID != "" || job.AssignedDeviceID != "" || len(job.Output) != 0 || job.Startup != nil || job.FinishedAt != nil || job.Problem != nil || r.SessionID != input.ChildSessionID || job.MachineID != input.SourceAssignment.MachineID {
+		return nil
+	}
+	cr, child, err := sessionRecord(tx, input.ChildSessionID)
+	if err != nil {
+		return err
+	}
+	if child.SidechatActiveRetry != input.Retry.GenerationID {
+		return nil
+	}
+	for _, g := range child.SidechatRetries {
+		if g.ID == input.Retry.GenerationID && g.ForkJobID == r.ID && g.RuntimeID == input.RuntimeID && g.WorkerInstanceID == input.Retry.WorkerInstanceID && g.WorkerDeviceID == input.Retry.WorkerDeviceID && g.PreviousJobID == input.Retry.PreviousJobID && g.PreviousExecutionID == input.Retry.PreviousExecutionID && g.QuestionID == input.Retry.QuestionID && g.QuestionRevision == input.Retry.QuestionRevision && g.ExecutionJobID == "" && g.ExecutionID == "" && g.Fork == nil && !g.Completed {
+			child.SidechatActiveRetry = ""
+			_, err := tx.Put(domain.SessionKind, cr.ID, cr.Revision, cr.ID, cr.ProjectID, child)
+			return err
+		}
+	}
+	return nil
+}
+
 // Stop/Archive cancel the original owner only. A possible native send stays
 // fenced even after a terminal error until its independent cleanup is proved.
 func cancelSidechatRetry(tx *store.Tx, child *domain.Session) (bool, error) {

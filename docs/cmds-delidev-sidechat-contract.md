@@ -265,8 +265,17 @@ original-process/plaintext cleanup before publication.
 Add strict bounded JSON generation records, a current-answer execution pointer
 and one active retry owner. The previous answer stays selected until atomic
 verified successful completion. Settled failure keeps it; recovery and uncertain
-publication retain the original owner. Previous answers, failed attempts, jobs,
-usage and revision-bound findings remain immutable. Stop/Archive fence claims;
+publication retain the original owner. A terminal native Fork rejection before
+claim (#2292) may atomically fail the original job and release only its matching
+active retry generation. Proof requires the unchanged initial queued job, no
+assigned Worker instance/device, no output/startup/terminal metadata, and the
+exact retained generation with no published Fork or successor execution. Preserve
+the original failure, request receipt, generation history and selected prior
+answer. A claimed, revised, uncertain or mismatched owner remains fenced until
+original positive cleanup; an apparent authority error alone is not proof. After
+restored authority, only a fresh explicit retry admits another generation.
+Previous answers, failed attempts, jobs, usage and revision-bound findings remain
+immutable. Stop/Archive fence claims;
 permanent parent/child deletion freezes and joins original plus every successful,
 failed, unpublished and uncertain retry runtime before dependency retirement.
 Independent Forks and parent files retain their separate ownership. Preserve the

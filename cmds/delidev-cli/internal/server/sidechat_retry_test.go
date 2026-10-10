@@ -3,6 +3,7 @@ package server
 
 import (
 	"bytes"
+	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
 	"google.golang.org/protobuf/proto"
@@ -475,5 +476,215 @@ func TestManagedSidechatQuestionRetryUsesChildOwnedProtectedForkReceipt(t *testi
 	result := retryViewFixture(t, child, request.Mutation.RequestId)
 	if result.Generations[0].ExecutionJobID == "" || result.CurrentAnswer != child.input.ExecutionID {
 		t.Fatal("managed protected Finish did not queue same-child question while retaining answer", result)
+	}
+}
+
+func stopRetryFixtureStream(t *testing.T, f *continuationFixture) {
+	t.Helper()
+	f.service.connectionsMu.Lock()
+	stream, found := f.service.workerStreams[domain.ID(f.machine.Id)]
+	if found {
+		stream.Cancel()
+	}
+	f.service.connectionsMu.Unlock()
+	if found {
+		<-stream.Done
+	}
+	if err := f.workerStream.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSidechatRetryPreclaimRejectionReleasesOnlyOriginalReservation(t *testing.T) {
+	for _, change := range []string{"capability", "instance", "actor"} {
+		t.Run(change, func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			stopRetryFixtureStream(t, child)
+			baseline := child.input.ExecutionID
+			request := retryRequestFixture(t, child)
+			actor := domain.NewID()
+			if change == "actor" {
+				_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-actor", nil, func(tx *store.Tx) (any, error) {
+					return tx.Put(domain.DeviceKind, actor, 0, "", "", domain.Device{Name: "Fixture retry client", Type: domain.ClientDevice})
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.ClientDevice, DeviceID: actor})
+				if _, err := child.service.RetrySidechatQuestion(ctx, connect.NewRequest(request)); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+				t.Fatal(err)
+			}
+			before := retryViewFixture(t, child, request.Mutation.RequestId)
+			generation := before.Generations[0]
+			originalInstance := child.workerInstance
+			var originalCapabilities []domain.WorkerCapability
+			_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-authority-loss", nil, func(tx *store.Tx) (any, error) {
+				switch change {
+				case "instance":
+					child.workerInstance = string(domain.NewID())
+					return nil, tx.SetWorkerInstance(domain.ID(child.machine.Id), domain.ID(child.workerInstance), time.Now().UTC())
+				case "actor":
+					r, err := tx.Get(domain.DeviceKind, actor)
+					if err != nil {
+						return nil, err
+					}
+					device, err := store.Decode[domain.Device](r)
+					if err != nil {
+						return nil, err
+					}
+					device.Revoked = true
+					return tx.Put(r.Kind, r.ID, r.Revision, "", "", device)
+				default:
+					r, err := tx.Get(domain.MachineKind, domain.ID(child.machine.Id))
+					if err != nil {
+						return nil, err
+					}
+					machine, err := store.Decode[domain.Machine](r)
+					if err != nil {
+						return nil, err
+					}
+					originalCapabilities = machine.WorkerCapabilities
+					machine.WorkerCapabilities = nil
+					return tx.Put(r.Kind, r.ID, r.Revision, "", "", machine)
+				}
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			stream, err := child.workerClient.WatchWork(ctx, ownerRequest(child.workerIdentity, &pb.WatchWorkRequest{MachineId: child.machine.Id, InstanceId: child.workerInstance}))
+			if err != nil {
+				cancel()
+				t.Fatal(err)
+			}
+			var failed domain.Job
+			for {
+				r, err := child.service.Store.Get(ctx, domain.JobKind, generation.ForkJobID)
+				if err != nil {
+					cancel()
+					stream.Close()
+					t.Fatal(err)
+				}
+				failed, err = store.Decode[domain.Job](r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if failed.State == domain.JobFailed {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("preclaim rejection did not settle", failed.State)
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			cancel()
+			stream.Close()
+			if failed.InstanceID != "" || failed.AssignedDeviceID != "" || failed.Problem == nil || failed.FinishedAt == nil || len(failed.Output) != 0 {
+				t.Fatal("rejection lost original no-claim proof")
+			}
+			current, err := store.Decode[domain.Session](child.refresh(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.SidechatActiveRetry != "" || current.SidechatCurrentAnswer != baseline || len(current.SidechatRetries) != 1 || current.SidechatRetries[0].ID != generation.ID || current.SidechatRetries[0].Fork != nil {
+				t.Fatal("rejection lost prior answer/history or retained active reservation")
+			}
+			_, err = child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-authority-restored", nil, func(tx *store.Tx) (any, error) {
+				if change == "capability" {
+					r, err := tx.Get(domain.MachineKind, domain.ID(child.machine.Id))
+					if err != nil {
+						return nil, err
+					}
+					machine, err := store.Decode[domain.Machine](r)
+					if err != nil {
+						return nil, err
+					}
+					machine.WorkerCapabilities = originalCapabilities
+					return tx.Put(r.Kind, r.ID, r.Revision, "", "", machine)
+				}
+				child.workerInstance = originalInstance
+				return nil, tx.SetWorkerInstance(domain.ID(child.machine.Id), domain.ID(originalInstance), time.Now().UTC())
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if change != "actor" {
+				replay, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request))
+				if err != nil || !replay.Msg.Replayed {
+					t.Fatal("original admission receipt lost", err)
+				}
+			}
+			fresh := retryRequestFixture(t, child)
+			if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, fresh)); err != nil {
+				t.Fatal("fresh explicit retry remained blocked", err)
+			}
+			final := retryViewFixture(t, child, request.Mutation.RequestId)
+			if len(final.Generations) != 2 || final.ObservedGeneration != generation.ID || final.Phase != domain.JobFailed {
+				t.Fatal("new retry rewrote original failed history")
+			}
+		})
+	}
+}
+
+func TestSidechatRetryPreclaimReleasePreservesClaimedUnknownAndForeignOwners(t *testing.T) {
+	for _, change := range []string{"claimed", "uncertain", "foreign-generation", "native-proof", "revised-queued"} {
+		t.Run(change, func(t *testing.T) {
+			_, child := completedRetrySidechatFixture(t)
+			stopRetryFixtureStream(t, child)
+			request := retryRequestFixture(t, child)
+			if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+				t.Fatal(err)
+			}
+			generation := retryViewFixture(t, child, request.Mutation.RequestId).Generations[0]
+			_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-unknown", nil, func(tx *store.Tx) (any, error) {
+				r, err := tx.Get(domain.JobKind, generation.ForkJobID)
+				if err != nil {
+					return nil, err
+				}
+				job, err := store.Decode[domain.Job](r)
+				if err != nil {
+					return nil, err
+				}
+				var input domain.ForkJobInput
+				if domain.Decode(job.Input, &input) != nil {
+					return nil, retryConflict()
+				}
+				switch change {
+				case "claimed", "uncertain":
+					job.State, job.InstanceID, job.AssignedDeviceID = domain.JobClaimed, generation.WorkerInstanceID, generation.WorkerDeviceID
+					if change == "uncertain" {
+						job.State = domain.JobUncertain
+					}
+					r, err = tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+					if err != nil {
+						return nil, err
+					}
+				case "revised-queued":
+					r, err = tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+					if err != nil {
+						return nil, err
+					}
+				case "foreign-generation":
+					input.Retry.GenerationID = domain.NewID()
+				case "native-proof":
+					job.Output = json.RawMessage(`{}`)
+				}
+				return nil, releasePreclaimSidechatRetry(tx, r, job, input)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := store.Decode[domain.Session](child.refresh(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.SidechatActiveRetry != generation.ID || retryViewFixture(t, child, "").Eligible {
+				t.Fatal("unknown or foreign ownership was released")
+			}
+		})
 	}
 }
