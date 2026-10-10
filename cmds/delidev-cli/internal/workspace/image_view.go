@@ -4,7 +4,6 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"path"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -35,7 +34,7 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 		return value
 	}
 	location = normalize(location)
-	if domain.Text(location, "native image location", 4096, true) != nil || path.Clean(location) != location || strings.Contains(location, "://") {
+	if !canonicalWorkerAbsolutePath(location, workerOS) || strings.Contains(location, "://") {
 		return domain.ImageViewObservation{}, ResultUncertain()
 	}
 	roots := manifest.Repositories
@@ -46,8 +45,13 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 	relative := ""
 	for _, root := range roots {
 		base := normalize(root.Path)
-		if strings.HasPrefix(location, base+"/") && len(base) > len(normalize(selected.Path)) {
-			selected, relative = root, strings.TrimPrefix(location, base+"/")
+		prefix := base + "/"
+		matches := strings.HasPrefix(location, prefix)
+		if workerOS == "windows" && len(location) >= len(prefix) {
+			matches = strings.EqualFold(location[:len(prefix)], prefix)
+		}
+		if matches && len(base) > len(normalize(selected.Path)) {
+			selected, relative = root, location[len(prefix):]
 		}
 	}
 	digest := sha256.Sum256(input.Manifest)

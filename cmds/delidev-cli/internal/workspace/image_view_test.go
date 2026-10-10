@@ -82,3 +82,46 @@ func TestImageViewReferenceRejectsForeignScopeAndOwnership(t *testing.T) {
 		t.Fatal("different manifest generation adopted original reference")
 	}
 }
+
+func TestImageViewReferencePreservesWindowsUNCAuthority(t *testing.T) {
+	input := imageViewInput(t)
+	root := `\\server\share\repo`
+	id := domain.NewID()
+	commit := strings.Repeat("b", 40)
+	preparation := PrepareRequest{SessionID: input.SessionID, MachineID: input.MachineID, OriginMachineID: input.MachineID, Type: domain.Local, PrimaryRepository: id, Repositories: []RepositorySpec{{ID: id, Checkout: root}}}
+	input.Preparation, _ = json.Marshal(preparation)
+	digest := sha256.Sum256(input.Preparation)
+	manifest := Manifest{Version: 1, SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.Local, State: Ready, CreatedAt: time.Now().UTC(), InputDigest: hex.EncodeToString(digest[:]), PrimaryPath: root, Repositories: []PreparedRepository{{ID: id, Source: root, Path: root, LocalIdentityDigest: strings.Repeat("a", 64), Starting: domain.Reference{Type: domain.CommitReference, Name: commit}, StartingCommit: commit, BaseCommit: commit}}}
+	input.Manifest, _ = json.Marshal(manifest)
+	if err := ValidateResult(preparation, manifest, "windows"); err != nil {
+		t.Fatalf("original UNC manifest rejected: %v", err)
+	}
+	manifestDigest := sha256.Sum256(input.Manifest)
+	for _, location := range []string{root + `\image.png`, "//server/share/repo/image.png", `\\SERVER\SHARE\REPO\image.png`, `//server/share\repo/image.png`} {
+		ref, err := ObserveImageViewLocation(input, "windows", location, domain.NewID())
+		if err != nil || ref.RepositoryID != id || ref.MachineID != input.MachineID || ref.ManifestDigest != hex.EncodeToString(manifestDigest[:]) || ref.Location != "image.png" {
+			t.Fatalf("UNC observation rejected or ownership changed for %q: %+v, %v", location, ref, err)
+		}
+		if err := ValidateImageViewReference(input, "windows", ref); err != nil {
+			t.Fatalf("UNC reference failed round trip for %q: %v", location, err)
+		}
+	}
+	for _, location := range []string{`\\server\image.png`, `\\\share\repo\image.png`, `\\server\\repo\image.png`, `\\?\UNC\server\share\repo\image.png`, `\\.\server\share\repo\image.png`, root + `\..\image.png`, root + `\.\image.png`, root + `\\image.png`, `\\server\other\repo\image.png`, `\\other\share\repo\image.png`, root + `-other\image.png`, root} {
+		if _, err := ObserveImageViewLocation(input, "windows", location, domain.NewID()); err == nil {
+			t.Fatalf("malformed or unrelated UNC observation accepted: %q", location)
+		}
+	}
+}
+
+func TestCanonicalWorkerAbsolutePathRejectsMalformedUNC(t *testing.T) {
+	for _, value := range []string{"//server/share/repo", `\\server\share\repo`, "C:/repo/image.png"} {
+		if !canonicalWorkerAbsolutePath(value, "windows") {
+			t.Fatalf("valid Windows path rejected: %q", value)
+		}
+	}
+	for _, value := range []string{"//server", "//server/", "//server/share", "///share/repo", "//server//repo", "//?/UNC/server/share/repo", "//./server/share/repo", "//server/../repo", "//server/share/repo/../image.png", "//server/share/repo//image.png"} {
+		if canonicalWorkerAbsolutePath(value, "windows") {
+			t.Fatalf("malformed Windows path accepted: %q", value)
+		}
+	}
+}
