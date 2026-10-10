@@ -429,3 +429,7 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+## Worker-owned managed MCP
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns `cmds/delidev-cli/internal/managedmcp`, the typed management service and desktop MCP Settings. Worker definitions/secrets, bounded server metadata, additive Agent selections and immutable execution generations remain distinct authorities. Management and explicit OAuth never advertise native runtime acceptance.

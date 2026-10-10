@@ -722,3 +722,7 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 
 ## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Managed MCP selection metadata
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns Worker metadata and Agent bindings. Agent managed selections are optional and additive: omitted legacy updates preserve current bindings, while explicit empty selections clear them. Pending, deleted, foreign and disabled references fail admission. Management capability is separate from per-harness native eligibility.

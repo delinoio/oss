@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
+	ManagedMCP   []ManagedMCPDefinition `json:"managed_mcp,omitempty"`
 	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
@@ -123,6 +124,17 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if len(c.ManagedMCP) > 64 {
+		return Fail(ResourceExhausted, "Too many retained MCP generations.", "Keep at most 64 explicit definitions.")
+	}
+	for _, d := range c.ManagedMCP {
+		if err := d.Validate(); err != nil {
+			return err
+		}
+		if !d.Eligible(c.Harness) {
+			return Fail(Unsupported, "The original MCP generation is unavailable.", "Use independently verified native support.")
+		}
+	}
 	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
 		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")
 	}

@@ -400,6 +400,12 @@ func (s *Service) ReportWorkspaceRead(ctx context.Context, req *connect.Request[
 		if pending.request.Query.Operation == domain.WorkspaceGitDiff && code == domain.Unsupported {
 			reply.problem = domain.Fail(code, "This Git comparison is unavailable on the execution machine.", "Select a prepared Git repository and supported comparison. Working-tree comparisons cannot run configured clean/process filters; use the staged comparison to inspect stored changes.")
 		}
+	} else if pending.request.ManagedMCP != nil {
+		var value domain.ManagedMCPResult
+		if len(req.Msg.DocumentJson) > 1<<20 || domain.Decode(req.Msg.DocumentJson, &value) != nil || mcpDefinitions(*pending.request.ManagedMCP, value) != nil {
+			return fail(workspaceReadUnavailable())
+		}
+		reply.document, _ = json.Marshal(value)
 	} else if pending.request.Skills != nil {
 		var result domain.SkillReadResult
 		if len(req.Msg.DocumentJson) > 256<<10 || domain.Decode(req.Msg.DocumentJson, &result) != nil || validateSkillResult(result) != nil {

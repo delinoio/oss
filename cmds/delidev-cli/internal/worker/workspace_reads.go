@@ -4,6 +4,9 @@ import (
 	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/credentials"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/managedmcp"
+	"path/filepath"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -66,7 +69,44 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		}
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}
 		var problem error
-		if request.Skills != nil {
+		if request.ManagedMCP != nil {
+			q := request.ManagedMCP
+			if request.Deadline.IsZero() || time.Until(request.Deadline) <= 0 || time.Until(request.Deadline) > 31*time.Second {
+				return workspace.ResultUncertain()
+			}
+			operationCtx, cancel := context.WithDeadline(ctx, request.Deadline)
+			defer cancel()
+			if q.ServerID != credential.ServerID || q.MachineID != credential.MachineID || q.WorkerDeviceID != credential.DeviceID || q.WorkerInstanceID != instance || request.Skills != nil || request.PRCandidate != nil {
+				return workspace.ResultUncertain()
+			}
+			catalog := managedmcp.Manager{Root: config.Root, ServerID: credential.ServerID, MachineID: credential.MachineID, WorkerDeviceID: credential.DeviceID, Logger: config.Logger}
+			// Metadata operations never access or unlock the native credential store.
+			if q.Action == domain.MCPAuthenticate || q.Action == domain.MCPOAuthBegin || q.Action == domain.MCPOAuthComplete || q.Action == domain.MCPOAuthCancel {
+				vault, err := credentials.Open(filepath.Join(config.Root, "managed-mcp-vault"), credential.ServerID, config.Logger)
+				if err != nil {
+					problem = err
+				} else {
+					catalog.Secrets = vault
+					var result domain.ManagedMCPResult
+					result, problem = catalog.Execute(operationCtx, *q)
+					if problem == nil {
+						report.DocumentJson, _ = json.Marshal(result)
+					}
+					vault.Close()
+				}
+			} else {
+				var result domain.ManagedMCPResult
+				result, problem = catalog.Execute(operationCtx, *q)
+				if problem == nil {
+					report.DocumentJson, _ = json.Marshal(result)
+				}
+			}
+			if q.Secrets != nil {
+				clear(q.Secrets.Environment)
+				clear(q.Secrets.Headers)
+			}
+			q.CallbackURL = ""
+		} else if request.Skills != nil {
 			if request.Skills.WorkerDeviceID != credential.DeviceID || request.Skills.WorkerInstanceID != instance {
 				return workspace.ResultUncertain()
 			}

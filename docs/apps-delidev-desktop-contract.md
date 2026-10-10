@@ -5098,3 +5098,7 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Worker-owned MCP Settings
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns the typed catalog and authentication boundary. MCP appears after Instructions in AI Settings. A selected Runner scopes search, definitions, mutations and recovery. The approved panel provides flat rows, add/edit, enablement, separate authentication, referenced Agent names and confirmed deletion. English/Korean presentation uses existing theme tokens and Settings visit lifetimes. Unsupported native support remains visible; no management view starts a server or implies native acceptance. Original uncertain mutations remain inspectable without automatic replay.

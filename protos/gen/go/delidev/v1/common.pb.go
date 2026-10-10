@@ -129,6 +129,7 @@ type EntityKind int32
 
 const (
 	EntityKind_ENTITY_KIND_UNSPECIFIED            EntityKind = 0
+	EntityKind_ENTITY_KIND_MANAGED_MCP            EntityKind = 36
 	EntityKind_ENTITY_KIND_PROJECT_PROMPT_HISTORY EntityKind = 35
 	EntityKind_ENTITY_KIND_PROJECT                EntityKind = 1
 	EntityKind_ENTITY_KIND_REPOSITORY             EntityKind = 2
@@ -169,6 +170,7 @@ const (
 var (
 	EntityKind_name = map[int32]string{
 		0:  "ENTITY_KIND_UNSPECIFIED",
+		36: "ENTITY_KIND_MANAGED_MCP",
 		35: "ENTITY_KIND_PROJECT_PROMPT_HISTORY",
 		1:  "ENTITY_KIND_PROJECT",
 		2:  "ENTITY_KIND_REPOSITORY",
@@ -206,6 +208,7 @@ var (
 	}
 	EntityKind_value = map[string]int32{
 		"ENTITY_KIND_UNSPECIFIED":            0,
+		"ENTITY_KIND_MANAGED_MCP":            36,
 		"ENTITY_KIND_PROJECT_PROMPT_HISTORY": 35,
 		"ENTITY_KIND_PROJECT":                1,
 		"ENTITY_KIND_REPOSITORY":             2,
@@ -950,10 +953,11 @@ const file_delidev_v1_common_proto_rawDesc = "" +
 	"\x1eAPI_AUTHENTICATION_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19API_AUTHENTICATION_BEARER\x10\x01\x12\x1e\n" +
 	"\x1aAPI_AUTHENTICATION_API_KEY\x10\x02\x12\x1e\n" +
-	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xa1\a\n" +
+	"\x1aAPI_AUTHENTICATION_KEYLESS\x10\x03*\xbe\a\n" +
 	"\n" +
 	"EntityKind\x12\x1b\n" +
-	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12&\n" +
+	"\x17ENTITY_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ENTITY_KIND_MANAGED_MCP\x10$\x12&\n" +
 	"\"ENTITY_KIND_PROJECT_PROMPT_HISTORY\x10#\x12\x17\n" +
 	"\x13ENTITY_KIND_PROJECT\x10\x01\x12\x1a\n" +
 	"\x16ENTITY_KIND_REPOSITORY\x10\x02\x12\x15\n" +

@@ -303,3 +303,7 @@ independent cleanup and joined shutdown keep their existing ownership.
 ## cmds/delidev-cli/internal/workspace constraints
 
 - Repository Clone owns a separate original-job-bound private staging claim and has a ten-minute execution deadline. Capture the empty staging checkout's native identity before Git so completion cannot adopt its replacement. Use credential-free HTTPS/SSH URLs and the computer's existing Git credentials, with an explicit `origin` remote and no PAT, hooks or recursive submodules. Publish the validated checkout without replacing any destination. Cleanup requires the original claim, parent/staging native identities and joined process termination; uncertainty retains files for recovery. Published checkouts become user-owned Local folders and remain intact after registration failure or configuration deletion. This exception to snapshot-only scratch creation grants no snapshot/session deletion ownership.
+
+## Managed MCP credentials
+
+[Worker-owned managed MCP](cmds-delidev-managed-mcp-contract.md) owns the managed-MCP vault purpose. Original Worker definition/request identities partition manual environment/header values, PKCE verifiers and OAuth token generations. The server retains only opaque metadata. No list/export/log exposes secret values. Cancellation and retired-generation cleanup require original ownership and independently confirmed cleanup.

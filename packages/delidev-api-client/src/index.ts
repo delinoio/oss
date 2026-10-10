@@ -64,3 +64,6 @@ export * as InstallationQuery from "./gen/delidev/v1/installation-InstallationSe
 
 export * as SkillQuery from "./gen/delidev/v1/skills-SkillService_connectquery.js";
 export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService_connectquery.js";
+
+export * from "./gen/delidev/v1/managed_mcp_pb.js";
+export * as ManagedMCPQuery from "./gen/delidev/v1/managed_mcp-ManagedMCPService_connectquery.js";

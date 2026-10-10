@@ -466,6 +466,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		return nil
 	case *domain.Agent:
+		if e := preserveManagedMCPSelections(tx, id, expected, v); e != nil {
+			return e
+		}
 		if expected > 0 && len(v.Routes) == 0 {
 			previous, err := tx.Get(domain.AgentKind, id)
 			if err != nil {

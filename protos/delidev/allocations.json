@@ -13293,6 +13293,667 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpTransport",
+      "member": "MANAGED_MCP_TRANSPORT_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpTransport",
+      "member": "MANAGED_MCP_TRANSPORT_STDIO",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpTransport",
+      "member": "MANAGED_MCP_TRANSPORT_STREAMABLE_HTTP",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthentication",
+      "member": "MANAGED_MCP_AUTHENTICATION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthentication",
+      "member": "MANAGED_MCP_AUTHENTICATION_NONE",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthentication",
+      "member": "MANAGED_MCP_AUTHENTICATION_MANUAL",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthentication",
+      "member": "MANAGED_MCP_AUTHENTICATION_OAUTH",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthAction",
+      "member": "MANAGED_MCP_AUTH_ACTION_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthAction",
+      "member": "MANAGED_MCP_AUTH_ACTION_MANUAL",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthAction",
+      "member": "MANAGED_MCP_AUTH_ACTION_OAUTH_BEGIN",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthAction",
+      "member": "MANAGED_MCP_AUTH_ACTION_OAUTH_COMPLETE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpAuthAction",
+      "member": "MANAGED_MCP_AUTH_ACTION_OAUTH_CANCEL",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_STARTED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_COMPLETED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_AWAITING_AUTHORIZATION",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_CANCELED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_RECOVERY_REQUIRED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "ManagedMcpOperationState",
+      "member": "MANAGED_MCP_OPERATION_STATE_REJECTED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOAuthProfile",
+      "member": "client_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOAuthProfile",
+      "member": "authorization_url",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOAuthProfile",
+      "member": "token_url",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOAuthProfile",
+      "member": "redirect_uri",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOAuthProfile",
+      "member": "scope",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpAgentReference",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpAgentReference",
+      "member": "name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "machine_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "worker_device_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "name",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "transport",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "command",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "arguments",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "cwd",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "endpoint",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "enabled",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "authentication",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "oauth",
+      "number": 13,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "authenticated",
+      "number": 14,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "supported_harnesses",
+      "number": 15,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpDefinition",
+      "member": "agents",
+      "number": 16,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOperation",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOperation",
+      "member": "definition_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOperation",
+      "member": "state",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOperation",
+      "member": "authorization_url",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ManagedMcpOperation",
+      "member": "expires_at",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListManagedMcpRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListManagedMcpResponse",
+      "member": "definitions",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpRequest",
+      "member": "definition",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpRequest",
+      "member": "expected_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpResponse",
+      "member": "definition",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpResponse",
+      "member": "operation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "SaveManagedMcpResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpRequest",
+      "member": "definition_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpRequest",
+      "member": "expected_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpRequest",
+      "member": "confirmed",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpResponse",
+      "member": "operation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "DeleteManagedMcpResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "definition_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "expected_revision",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "action",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "environment",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "headers",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "attempt_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "callback_url",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpRequest",
+      "member": "confirmed",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpResponse",
+      "member": "definition",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpResponse",
+      "member": "operation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateManagedMcpResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetManagedMcpOperationRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetManagedMcpOperationRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetManagedMcpOperationResponse",
+      "member": "definition",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetManagedMcpOperationResponse",
+      "member": "operation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "EntityKind",
+      "member": "ENTITY_KIND_MANAGED_MCP",
+      "number": 36
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_MCP_V1",
+      "number": 81
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MANAGED_MCP_V1",
+      "number": 53
     }
   ],
   "rpcReservations": [
@@ -13527,6 +14188,51 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "ManagedMCPService",
+      "method": "ListManagedMcp",
+      "input": "ListManagedMcpRequest",
+      "output": "ListManagedMcpResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "ManagedMCPService",
+      "method": "SaveManagedMcp",
+      "input": "SaveManagedMcpRequest",
+      "output": "SaveManagedMcpResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "ManagedMCPService",
+      "method": "DeleteManagedMcp",
+      "input": "DeleteManagedMcpRequest",
+      "output": "DeleteManagedMcpResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "ManagedMCPService",
+      "method": "AuthenticateManagedMcp",
+      "input": "AuthenticateManagedMcpRequest",
+      "output": "AuthenticateManagedMcpResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "ManagedMCPService",
+      "method": "GetManagedMcpOperation",
+      "input": "GetManagedMcpOperationRequest",
+      "output": "GetManagedMcpOperationResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }
