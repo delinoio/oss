@@ -34,5 +34,5 @@ export function remainingBadge(windows: readonly RailWindow[], now: number): num
  * A new account connection or credential generation must never inherit it. */
 export function reconcileRailCredits(current: RailAccount, previous?: RailAccount): RailAccount {
   if (!previous || current.id !== previous.id || current.service !== previous.service || current.creditScope !== previous.creditScope || !current.connected || current.paidCreditsComplete && current.paidCreditState !== PaidCreditState.Failed) return current;
-  return { ...current, paidCredits: current.paidCredits.length ? current.paidCredits : previous.paidCredits };
+  return { ...current, paidCredits: current.paidCreditState === PaidCreditState.Failed ? previous.paidCredits : current.paidCredits.length ? current.paidCredits : previous.paidCredits };
 }

@@ -213,7 +213,7 @@ it("retains sparse and failed credit evidence only in its original account conne
  const original = resource("Credit", "chatgpt", {subscription:{generation:"original",quota_state:"observed",paid_credits:[credit()]}});
  const previous = railAccount(original);
  const replace = (subscription: object, connection?: object) => railAccount(create(ResourceSchema,{...original,revision:2n,documentJson:encode({...JSON.parse(new TextDecoder().decode(original.documentJson)),subscription,...(connection?{connection}:{})})}));
- for (const current of [replace({generation:"original"}),replace({generation:"original",paid_credits:[credit("invalid")]}),replace({generation:"original",quota_state:"failed",paid_credits:[]})]) {
+ for (const current of [replace({generation:"original"}),replace({generation:"original",paid_credits:[credit("invalid")]}),replace({generation:"original",quota_state:"failed",paid_credits:[credit("1")]}),replace({generation:"original",quota_state:"failed",paid_credits:[]})]) {
   const retained = reconcileRailCredits(current,previous);expect(retained.paidCredits).toEqual(previous.paidCredits);expect(retained.paidCreditState).not.toBe(PaidCreditState.Observed);
  }
  expect(reconcileRailCredits(replace({generation:"replacement"}),previous).paidCredits).toEqual([]);
