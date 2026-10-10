@@ -2265,3 +2265,43 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+
+### Codex Windows advisory observations
+
+The original execution connection accepts notification-only
+`windows/worldWritableWarning` with exactly required `samplePaths: string[]`,
+`extraCount: usize` and `failedScan: bool`. Strict JSON rejects unknown and
+duplicate fields, null/missing required values, malformed types and oversized
+input. The existing 1 MiB frame bound applies; samples contain at most 1,000
+nonempty paths of at most 4,096 bytes each. Extra counts preserve the exact
+unsigned 64-bit range without addition, narrowing or numeric overflow.
+
+Discard all sample paths immediately after validation. Retain only a private
+closed writable-path, scan-failure or combined classification and bounded sample
+and extra counts. A currently admitted running original turn publishes the
+existing generic native warning notice; a failed scan can warn with no samples.
+Neither paths nor native diagnostics enter public events, history or logs.
+An empty successful scan is discarded metadata. Because these process-wide
+advisories have no native event identity, the original connection publishes at
+most one generic notice per classification; repeated observations become typed
+replay-checked metadata. Paused, failed, completed or unbound execution cannot
+gain warning publication authority from arrival.
+
+`windowsSandbox/setupCompleted` requires exactly `mode: elevated|unelevated`,
+`success: bool` and `error: string|null`. Bound private error text to 4,096 bytes
+and discard mode, result and error after validation. No dedicated Windows setup
+operation owner exists, so valid completion is explicitly discarded metadata.
+It never proves readiness, privilege, successful input/turn execution, recovery
+or cleanup. A future setup owner must bind its exact original admitted operation
+and independently verify readiness before consuming the completion. This adapter
+never initiates setup, privilege prompts, ACL repair or sandbox policy changes.
+
+Same-name server requests cannot enter notification handlers or acquire a reply.
+Stopped connection, account, immutable settings, original thread/turn/input,
+retained receipts and independent process cleanup/recovery remain owned by their
+existing boundaries. Unsupported or malformed observations fail explicitly;
+validation logs use only the closed `windows-sandbox` stage and safe code.
+These private decoders and existing generic notices need no RPC, capability,
+entity or database migration. Controlled fixtures do not prove Windows native,
+account or platform acceptance.

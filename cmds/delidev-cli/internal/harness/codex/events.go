@@ -38,11 +38,14 @@ const (
 	validationThreadMetadata eventValidationStage = "thread-metadata"
 	validationLegacy         eventValidationStage = "legacy-notification"
 	validationStatus         eventValidationStage = "thread-status"
+	validationWindows        eventValidationStage = "windows-sandbox"
 )
 
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return validationWindows
 	case "thread/settings/updated":
 		return validationSettings
 	case "item/started", "item/completed":
@@ -150,6 +153,7 @@ type Message struct {
 }
 
 type Event struct {
+	WindowsWarning   *windowsWarningObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation

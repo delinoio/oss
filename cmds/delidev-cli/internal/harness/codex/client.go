@@ -44,6 +44,7 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	windowsWarnings    map[windowsWarningClass]bool
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string

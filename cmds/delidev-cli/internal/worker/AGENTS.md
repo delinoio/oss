@@ -41,3 +41,5 @@
 - [DeliDev native usage ledger](../../../../docs/cmds-delidev-usage-contract.md)
 - [DeliDev current-user service contract](../../../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev Worker workspace contract](../../../../docs/cmds-delidev-workspace-contract.md)
+
+- [Codex Windows advisory support boundary](../../../../docs/cmds-delidev-harness-contract.md#codex-windows-advisory-observations)

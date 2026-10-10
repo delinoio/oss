@@ -20,3 +20,5 @@
 - [DeliDev native subagent observations](../../../../../docs/cmds-delidev-subagents-contract.md)
 - [DeliDev native subscriptions](../../../../../docs/cmds-delidev-subscription-contract.md)
 - [DeliDev Session Terminals Contract](../../../../../docs/cmds-delidev-terminals-contract.md)
+
+- [Codex Windows advisory support boundary](../../../../../docs/cmds-delidev-harness-contract.md#codex-windows-advisory-observations)
