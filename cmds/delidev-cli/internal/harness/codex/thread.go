@@ -102,10 +102,11 @@ type EffectiveSettings struct {
 // ThreadResult retains a proven native identity even when effective settings
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
-	SkillInputs []HistoricalInput `json:"-"`
-	RequestID   domain.ID
-	Thread      *Thread
-	Effective   *EffectiveSettings
+	DynamicHistory *ForkHistoryCheckpoint `json:"-"`
+	SkillInputs    []HistoricalInput      `json:"-"`
+	RequestID      domain.ID
+	Thread         *Thread
+	Effective      *EffectiveSettings
 }
 
 type threadMethod string

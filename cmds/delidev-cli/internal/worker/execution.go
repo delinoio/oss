@@ -554,6 +554,17 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			event = activity
 		}
+		if event.Kind == codex.DynamicRequestedEvent || event.Kind == codex.DynamicResolvedEvent {
+			if err := mapper.handleDynamic(readContext, event, client); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if event.Kind == codex.TurnCompletedEvent {
+			if err := mapper.endDynamicReplies(); err != nil {
+				return nil, err
+			}
+		}
 		handled, err := mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			logger.WarnContext(publicationContext, "native_execution_publication_failed", "event_kind", event.Kind, "correlated", event.Correlated, "late", event.Late, "code", domain.SafeError(err).Code)
@@ -613,6 +624,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 			original := codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
+			bound.DynamicHistory, err = client.RetainDynamicHistory(ctx, original)
+			if err != nil {
+				return nil, err
+			}
 			contextProof, err = client.RetainContinuationContext(ctx, original)
 			if err != nil {
 				return nil, err

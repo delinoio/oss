@@ -20,6 +20,9 @@ func (s *ForkSource) Checkpoint() ContinuationCheckpoint {
 	if s.managedToolHistory {
 		result.ForkHistory = &ForkHistoryCheckpoint{TurnsCount: uint32(len(s.turns)), HistoryDigest: historyDigest(s.turns)}
 	}
+	if hasDynamicHistory(s.turns) {
+		result.DynamicHistory = &ForkHistoryCheckpoint{TurnsCount: uint32(len(s.turns)), HistoryDigest: historyDigest(s.turns)}
+	}
 	return result
 }
 

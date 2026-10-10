@@ -44,7 +44,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	}
 	defer func() { <-c.control }()
 	state := c.execution
-	if state == nil || c.problem != nil || state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || state.compaction != nil || len(state.pending) != 0 || len(c.subagents) != 0 || state.interactions.blocksInput() || source.ThreadID != c.thread || source.SessionID != state.thread.SessionID || !sameEffectiveSettings(source.Effective, state.settings) {
+	if state == nil || c.problem != nil || state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || state.compaction != nil || len(state.pending) != 0 || len(c.subagents) != 0 || (state.interactions.blocksInput() || c.dynamicBlocksInput()) || source.ThreadID != c.thread || source.SessionID != state.thread.SessionID || !sameEffectiveSettings(source.Effective, state.settings) {
 		return result, compactionUncertain()
 	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
@@ -56,6 +56,9 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	history, err := c.contextTurnsLocked(ctx, "asc", nil, false)
 	if err != nil {
 		return result, err
+	}
+	if source.DynamicHistory != nil && !source.DynamicHistory.matches(history) {
+		return result, compactionUncertain()
 	}
 	index := -1
 	for n, raw := range history {
@@ -149,7 +152,7 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 	}
 	defer func() { <-c.control }()
 	s := c.execution
-	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || s.interactions.blocksInput() || c.problem != nil || c.thread != p.Source.ThreadID || !sameEffectiveSettings(s.settings, p.Source.Effective) {
+	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || (s.interactions.blocksInput() || c.dynamicBlocksInput()) || c.problem != nil || c.thread != p.Source.ThreadID || !sameEffectiveSettings(s.settings, p.Source.Effective) {
 		return Turn{}, compactionUncertain()
 	}
 	fail := func() (Turn, error) { c.problem = compactionUncertain(); s.paused = true; return Turn{}, c.problem }
@@ -184,6 +187,7 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 		s.turns[last.ID] = tracked
 	}
 	s.continuationPending, s.paused = false, false
+	c.bindDynamicHistoryBase(turns)
 	return last, nil
 }
 

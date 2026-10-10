@@ -21,6 +21,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			return executionEventConflict()
 		}
 	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.CodexDynamicTool && (input.Configuration.Harness != domain.Codex || input.Configuration.SidechatPolicy != "" || update.NativeParentID != "") {
+		return executionEventConflict()
+	}
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
@@ -104,6 +107,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 				}
 			}
 			if tool.Started.Kind == domain.ImageViewTool && (tool.Started.ImageView == nil || update.Snapshot.ImageView == nil || *tool.Started.ImageView != *update.Snapshot.ImageView) {
+				return executionEventConflict()
+			}
+			if tool.Started.Kind == domain.CodexDynamicTool && domain.ValidateCodexDynamicTransition(tool.Started, *update.Snapshot) != nil {
 				return executionEventConflict()
 			}
 			tool.Completed = update.Snapshot

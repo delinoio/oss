@@ -859,3 +859,15 @@ Every claim, including the independent first-execution transaction primitive, us
 `ListWaitingQueue` reads dispatch order, exact uint64 generation, exact waiting count and bounded payloads from one transaction. Defaults are 50 inputs, maximum 200 and 3 MiB per payload page. Signed tokens bind server, session, generation and last reached input position. Membership/order changes return CursorExpired and require a fresh first page. Legacy ListQueue keeps its acceptance-history order and cursor meaning. Generation stays exact in Go uint64 and desktop bigint, including values above JavaScript's safe integer range.
 
 At each new Fork admission, freeze the source's already accepted image references in `fork-image-snapshot:<job-id>`, including an explicit empty set. Bind original source/child/execution/turn and immutable job-input digest. Independent inheritance and read-only Sidechat use this frozen set and recheck original image/Worker claims; later acceptance cannot enlarge it. Existing pre-cutover jobs without a snapshot retain the old verified history cutoff. Missing new snapshots require recovery. Retire snapshot metadata only after both original job and dependent child are retired; retain independent child deletion ownership and all original native/workspace restrictions.
+
+### Codex dynamic-tool lifecycle — issue #2397
+
+The existing original tool publication carries the closed `codex-dynamic` snapshot
+under the [harness profile](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-unavailable-replies--issue-2397).
+Preserve immutable native item/thread/turn and execution/account/Worker attribution,
+original tool/namespace/arguments, status, nullable success/duration and ordered
+safe content. Image/audio references are inert digests, never fetch or attachment
+authority. Completion cannot substitute the original operation. Existing
+transactional receipts and native-item indexing prevent duplicate lifecycle
+records; search indexes retained text only. Native false, unavailable reply,
+request resolution, root outcome and joined cleanup remain independent.

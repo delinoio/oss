@@ -183,7 +183,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					seen["item:"+identity.ID] = true
 				}
 				if !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
-					if !c.managedForkHistory || !settledForkTool(item, identity.Type) {
+					if (identity.Type == "dynamicToolCall" && c.sidechat != "") || (!c.managedForkHistory && identity.Type != "dynamicToolCall") || !settledForkTool(item, identity.Type) {
 						return nil, unsupportedFork()
 					}
 				}
@@ -430,7 +430,7 @@ func optionalForkString(a, b *string) bool {
 
 // Preserve complete native tool JSON; decoding establishes eligibility only and never executes history.
 func settledForkTool(raw json.RawMessage, kind string) bool {
-	if kind != "commandExecution" && kind != "fileChange" {
+	if kind != "commandExecution" && kind != "fileChange" && kind != "dynamicToolCall" {
 		return false
 	}
 	tool, err := decodeTool(raw, kind, true)
@@ -450,7 +450,7 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
-	if kind == "commandExecution" || kind == "fileChange" {
+	if kind == "commandExecution" || kind == "fileChange" || kind == "dynamicToolCall" {
 		return settledForkTool(raw, kind)
 	}
 	if kind == "reasoning" || kind == "agentMessage" {

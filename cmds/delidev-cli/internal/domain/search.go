@@ -50,6 +50,15 @@ func (m ExecutionMessage) SearchText() string {
 		}
 	}
 	tool := func(value ToolSnapshot) {
+		if value.Dynamic != nil {
+			parts = append(parts, value.Dynamic.Tool, value.Dynamic.ArgumentsJSON)
+			add(value.Dynamic.Namespace)
+			for _, item := range value.Dynamic.ContentItems {
+				if item.Kind == DynamicText {
+					add(item.Text)
+				}
+			}
+		}
 		if value.Command != nil {
 			parts = append(parts, value.Command.Command, value.Command.Cwd)
 			add(value.Command.AggregatedOutput)

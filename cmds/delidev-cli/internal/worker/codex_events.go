@@ -13,6 +13,7 @@ import (
 // must route them to another typed adapter or stop with an unsupported result.
 // This component never sends prompts, answers interactions or owns cleanup.
 type CodexEventPublisher struct {
+	dynamicReplies    map[domain.ID]dynamicReplyJournal
 	children          domain.SubagentState
 	mu                sync.Mutex
 	publisher         *ExecutionPublisher
@@ -31,7 +32,7 @@ type CodexEventPublisher struct {
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
+	return &CodexEventPublisher{dynamicReplies: map[domain.ID]dynamicReplyJournal{}, publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 // The accepted authentication profile fixes native provider authority. Neither

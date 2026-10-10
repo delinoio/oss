@@ -1133,3 +1133,16 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. Issue #2138 records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. Issue #2112 owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+### Codex dynamic-tool JSON publication — issue #2397
+
+The existing `PublishExecution` tool lifecycle JSON additionally admits the closed
+`codex-dynamic` snapshot described by the [harness contract](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-unavailable-replies--issue-2397).
+Use existing original execution/thread/turn/native-item, sequence and receipt
+ownership. Preserve immutable tool/namespace/argument identity, native status,
+nullable success/duration and ordered text or inert media commitments. The server
+rejects changed completions, foreign harness/child and Sidechat ownership.
+Unknown older peers retain publication uncertainty; there is no fallback or native
+reply resend. The unavailable response is a private original Worker/native
+controller, separate from owner/client question/approval RPCs and outbox replay.
+No protobuf member, RPC, capability allocation or database migration changes.

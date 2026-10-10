@@ -13,6 +13,7 @@ type codexToolPublication struct {
 	ID        domain.ID
 	Kind      domain.ToolKind
 	Completed bool
+	Dynamic   *domain.CodexDynamicObservation
 	ImageView *domain.ImageViewObservation
 }
 
@@ -32,6 +33,9 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 		}
 		var snapshot domain.ToolSnapshot
 		var err error
+		if event.Tool.Kind == codex.DynamicTool && c.publisher.input.Configuration.SidechatPolicy != "" {
+			return publicationUncertain()
+		}
 		if event.Tool.Kind == codex.ImageViewTool {
 			reference := domain.NewID()
 			if known && retained.ImageView != nil {
@@ -57,7 +61,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			if c.itemKnown(event.ItemID) || c.itemLimitReached() {
 				return publicationUncertain()
 			}
-			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView}
+			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView, Dynamic: snapshot.Dynamic}
 			if snapshot.ImageView != nil {
 				retained.ID = snapshot.ImageView.ReferenceID
 			}
@@ -65,6 +69,9 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			kind = domain.ExecutionToolStarted
 		} else {
 			if !known || retained.Completed || retained.Kind != snapshot.Kind || snapshot.Kind == domain.ImageViewTool && (retained.ImageView == nil || snapshot.ImageView == nil || *retained.ImageView != *snapshot.ImageView) {
+				return publicationUncertain()
+			}
+			if snapshot.Kind == domain.CodexDynamicTool && domain.ValidateCodexDynamicTransition(domain.ToolSnapshot{Kind: retained.Kind, Status: domain.ToolRunning, Dynamic: retained.Dynamic}, snapshot) != nil {
 				return publicationUncertain()
 			}
 			retained.Completed = true
@@ -103,6 +110,20 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 }
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
+	if native.Kind == codex.DynamicTool {
+		if native.Dynamic == nil || native.Command != nil || native.Changes != nil || native.ImagePath != "" {
+			return domain.ToolSnapshot{}, publicationUncertain()
+		}
+		observed, err := native.Dynamic.Projection(native.Status)
+		snapshot := domain.ToolSnapshot{Kind: domain.CodexDynamicTool, Status: map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed}[native.Status], Dynamic: &observed}
+		if err != nil {
+			return snapshot, err
+		}
+		return snapshot, snapshot.Validate()
+	}
+	if native.Dynamic != nil {
+		return domain.ToolSnapshot{}, publicationUncertain()
+	}
 	result := domain.ToolSnapshot{
 		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool}[native.Kind],
 		Status:  map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],

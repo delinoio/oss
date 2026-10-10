@@ -1986,3 +1986,42 @@ Grok initialize responses confirm initialization and begin actual settings
 validation. Original successful settings publication confirms settings only.
 Preserve account/history/protocol/input claims and independent cleanup; no observer
 value grants readiness, native support, credential release or input acceptance.
+
+## Codex dynamic-tool observations and unavailable replies — issue #2397
+
+The closed ordinary root profile accepts `dynamicToolCall` lifecycle and
+`item/tool/call` requests defined by the official Codex `rust-v0.162.0` schemas
+at `c1382380de69521303b416720a52f42d51af6248`. Require original thread/turn/call,
+explicit nullable namespace, tool, JSON arguments and the exact native lifecycle
+fields. Preserve null versus empty content, native success false versus null,
+status and nullable nonnegative integer duration independently. Reject duplicate
+keys, unknown fields and substituted ownership. Each native item/request is
+bounded to 256 KiB; ordered content has at most 128 items, with at most 4,096
+retained original request/item identities. Existing full-history limits remain
+128 turns / 4 MiB. No numeric version gate, registry or dispatch is added.
+
+No namespaced backend is selected in this profile. Only the original root request
+with explicit null namespace may own the unavailable reply. Preserve its arrival
+token and numeric-versus-text wire ID, exact tool/argument commitment and original
+execution/Worker/device/server/instance/assignment. Synchronize an exclusive
+private Worker claim and send intent before replying once with exactly
+`{"success":false,"contentItems":[{"type":"inputText","text":"This dynamic tool is unavailable in DeliDev."}]}`.
+The native controller exposes original-attempt inspection; a prior journal,
+duplicate arrival, uncertain send or failed journal never authorizes a resend.
+Question and approval controllers keep their original separate authority.
+
+The existing tool outbox publishes safe original lifecycle with immutable
+argument identity, ordered text and inert image/audio type/digest metadata.
+Media URLs/bytes remain in protected native history; never fetch, render or adopt
+them as attachments. Public native content retains its existing authenticated
+scope and protected-content checks. Outbox receipt replay cannot call a responder.
+Unavailable outcome, pipe delivery, native request resolution, item completion,
+root completion and original process/workspace cleanup are separate facts.
+
+Continuation retains a private complete native-history count/digest before
+shutdown, compares the original prefix on later retention, and validates dynamic
+items without dispatch. Context, compaction and independent API/managed Fork
+read the same closed settled dynamic profile and preserve complete original JSON
+and digests. Native Fork still compares the exact inherited history. Sidechat,
+title, discovery, login and other auxiliary profiles gain no dynamic request,
+backend or execution authority. No RPC, capability number or migration is added.

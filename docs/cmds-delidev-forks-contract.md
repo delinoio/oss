@@ -93,7 +93,7 @@ child cwd and runtime workspace roots. Path import may name only the exact
 validated rollout returned for the original Worker-private runtime. Reject
 incomplete, active, paginated, child, goal and unsupported histories. The initial
 profile supports complete user/assistant text and reasoning turns (at most 128
-turns / 4 MiB, with a 64 MiB rollout); API Fork and Sidechat retain the text/reasoning profile. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. Unknown
+turns / 4 MiB, with a 64 MiB rollout); API Fork additionally permits the separately closed settled dynamic history under issue #2397; Sidechat retains the text/reasoning profile. Managed independent Fork separately admits the closed settled-tool profile below; other rich auxiliary histories remain unsupported. Unknown
 creation or cleanup outcomes retain uncertainty and never authorize replay.
 
 Project forks default to separate detached worktrees at every actual source
@@ -408,3 +408,15 @@ Automated fixtures and builds validate these boundaries. Installed native, real-
 ## Inherited elapsed observations (issue #2052)
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.
+
+### Settled Codex dynamic history — issue #2397
+
+Independent API and managed Fork additionally accept the closed settled
+`dynamicToolCall` history from the [harness profile](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-unavailable-replies--issue-2397).
+Retain complete original native JSON, ordered content, explicit null values and
+original history digest across inherited history and continuation. This observation
+exception does not broaden other API rich-item eligibility or Sidechat. Pending,
+malformed, foreign and changed histories remain rejected. Reading/forking a
+settled dynamic item never dispatches its tool, constructs a backend or resends
+its original unavailable response. Existing account, immutable snapshot, native
+creation, path remapping, cleanup and independent-child ownership remain required.

@@ -114,6 +114,8 @@ const (
 	ArtifactDeltaEvent            EventKind = "artifact-delta"
 	TurnPlanEvent                 EventKind = "turn-plan"
 	TurnDiffEvent                 EventKind = "turn-diff"
+	DynamicRequestedEvent         EventKind = "dynamic-requested"
+	DynamicResolvedEvent          EventKind = "dynamic-resolved"
 	InteractionRequestedEvent     EventKind = "interaction-requested"
 	InteractionClosedEvent        EventKind = "interaction-closed"
 	QuestionAcceptedEvent         EventKind = "question-accepted"
@@ -147,6 +149,8 @@ type Message struct {
 }
 
 type Event struct {
+	DynamicRequest   *DynamicRequest
+	DynamicReply     *DynamicReplyState
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -557,7 +561,10 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
-	case "commandExecution", "fileChange", "imageView":
+	case "commandExecution", "fileChange", "imageView", "dynamicToolCall":
+		if kind == "dynamicToolCall" && c.sidechat != "" {
+			return privateNative(native), nil
+		}
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {
 			return Event{}, err
@@ -565,6 +572,14 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		turn, known := c.execution.turns[params.TurnID]
 		if !known && c.problem == nil {
 			return Event{}, incompatible()
+		}
+		if tool.Kind == DynamicTool {
+			if !known || turn.Turn.Status.terminal() || c.execution.active != params.TurnID {
+				return Event{}, incompatible()
+			}
+			if err := c.observeDynamicIdentity(params.TurnID, tool, native.Method == "item/completed"); err != nil {
+				return Event{}, err
+			}
 		}
 		eventKind := ToolStartedEvent
 		if native.Method == "item/completed" {

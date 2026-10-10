@@ -130,7 +130,7 @@ func (c *Client) retainInteractionLocked(native nativewire.Event, turn domain.ID
 	// The pinned server allocates monotonically increasing request IDs. Refuse
 	// reuse even after closure: resolved notifications contain no arrival token
 	// and could otherwise retire a replacement request with the same wire ID.
-	if s.native[key] != "" || s.arrivals[interaction.ID] != nil {
+	if s.native[key] != "" || c.dynamicNative[key] != "" || s.arrivals[interaction.ID] != nil {
 		return incompatible()
 	}
 	if len(s.arrivals) >= maxTrackedInteractions {
@@ -200,6 +200,13 @@ func (c *Client) closeInteractionLocked(owned *trackedInteraction, closure Inter
 }
 
 func (c *Client) endInteractionsLocked(turn domain.ID) error {
+	for _, owned := range c.dynamicRequests {
+		if owned.state.Request.TurnID == turn {
+			if err := c.closeDynamicLocked(owned, InteractionTurnEnded); err != nil {
+				return err
+			}
+		}
+	}
 	for _, owned := range c.execution.interactions.arrivals {
 		if owned.status.TurnID == turn {
 			if err := c.closeInteractionLocked(owned, InteractionTurnEnded); err != nil {
@@ -224,6 +231,9 @@ func (c *Client) observeInteractionClosedLocked(native nativewire.Event) (Event,
 	id, err := decodeNativeRequestID(params.RequestID)
 	if err != nil {
 		return Event{}, err
+	}
+	if event, handled, err := c.dynamicResolutionLocked(native, id); handled {
+		return event, err
 	}
 	s := &c.execution.interactions
 	arrival := s.native[requestKey(id)]

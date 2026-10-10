@@ -52,6 +52,7 @@ func (p ForkHistoryCheckpoint) matches(turns []json.RawMessage) bool {
 }
 
 type ContinuationCheckpoint struct {
+	DynamicHistory   *ForkHistoryCheckpoint         `json:",omitempty"`
 	PaginatedHistory bool                           `json:",omitempty"`
 	ContextRevision  uint64                         `json:",omitempty"`
 	Context          *ContinuationContextCheckpoint `json:",omitempty"`
@@ -74,6 +75,9 @@ func (p ContinuationCheckpoint) validate(intent ContinuationIntent) error {
 		if err := id.Validate(); err != nil {
 			return err
 		}
+	}
+	if p.DynamicHistory != nil && (p.DynamicHistory.TurnsCount == 0 || p.DynamicHistory.TurnsCount > maxForkTurns || !contextDigest(p.DynamicHistory.HistoryDigest)) {
+		return continuationUncertain()
 	}
 	if !p.Status.terminal() || !p.Mode.Valid() || len(p.Inputs) == 0 || len(p.Inputs) >= maxTrackedTurns || (intent != ContinueAfterSuccess && intent != ResumeAfterTerminal) {
 		return domain.Fail(domain.InvalidArgument, "Invalid native continuation checkpoint.", "Use the exact retained terminal turn, ordered input digests and continuation intent.")
@@ -114,7 +118,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 		return result, c.problem
 	}
 	state := c.execution
-	if !state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || len(state.turns) != 0 || len(state.inputs) != 0 || len(state.pending) != 0 || state.interactions.blocksInput() {
+	if !state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || len(state.turns) != 0 || len(state.inputs) != 0 || len(state.pending) != 0 || (state.interactions.blocksInput() || c.dynamicBlocksInput()) {
 		return result, turnConflict()
 	}
 	defer func() {
@@ -140,6 +144,12 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	if checkpoint.ForkHistory != nil {
 		turns, err := c.forkTurnsLocked(ctx, c.thread)
 		if err != nil || !c.managedForkHistory || !checkpoint.ForkHistory.matches(turns) {
+			return mismatch()
+		}
+	}
+	if checkpoint.DynamicHistory != nil {
+		turns, err := c.compactionTurnsLocked(ctx)
+		if err != nil || c.sidechat != "" || !hasDynamicHistory(turns) || !checkpoint.DynamicHistory.matches(turns) {
 			return mismatch()
 		}
 	}
@@ -181,6 +191,12 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	state.turns[turn.ID] = retained
 	state.continuationPending, state.paused = false, false
 	state.contextBase = cloneContinuationContext(checkpoint.Context)
+	c.dynamicHistoryRequired = checkpoint.DynamicHistory != nil
+	c.dynamicHistoryBase = nil
+	if checkpoint.DynamicHistory != nil {
+		proof := *checkpoint.DynamicHistory
+		c.dynamicHistoryBase = &proof
+	}
 	return turn, nil
 }
 
@@ -258,6 +274,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "dynamicToolCall" {
+			if _, err := decodeDynamicTool(rawItem, true); err != nil {
+				return Turn{}, nil, incompatible()
+			}
+		}
 		if identity.Type != "userMessage" {
 			continue
 		}

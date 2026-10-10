@@ -94,6 +94,9 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 		return err
 	}
 	if previous == nil {
+		if source.DynamicHistory != nil && !source.DynamicHistory.matches(before) {
+			return compactionUncertain()
+		}
 		if source.Context != nil && contextMatchesHistory(*source.Context, before) != nil {
 			return compactionUncertain()
 		}
@@ -133,6 +136,10 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 
 func cloneCompactionSource(p ContinuationCheckpoint) ContinuationCheckpoint {
 	p.Context = cloneContinuationContext(p.Context)
+	if p.DynamicHistory != nil {
+		proof := *p.DynamicHistory
+		p.DynamicHistory = &proof
+	}
 	p.Inputs = slices.Clone(p.Inputs)
 	p.Effective.WorkspaceRoots = slices.Clone(p.Effective.WorkspaceRoots)
 	p.Effective.Sandbox.WritableRoots = slices.Clone(p.Effective.Sandbox.WritableRoots)
@@ -211,7 +218,7 @@ func (c *Client) RetainCompactedCheckpoint(ctx context.Context) (diagnosticResul
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	a := c.execution.compaction
-	if c.problem != nil || a == nil || !a.acknowledged || !a.terminal || a.turnID == "" || a.itemID == "" || c.execution.active != "" || c.execution.paused || c.execution.interactions.blocksInput() || len(c.execution.pending) != 0 || len(c.subagents) != 0 {
+	if c.problem != nil || a == nil || !a.acknowledged || !a.terminal || a.turnID == "" || a.itemID == "" || c.execution.active != "" || c.execution.paused || (c.execution.interactions.blocksInput() || c.dynamicBlocksInput()) || len(c.execution.pending) != 0 || len(c.subagents) != 0 {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	item, ok := c.execution.compactionItems[string(a.turnID)+"/"+a.itemID]
@@ -294,7 +301,7 @@ func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain
 	}
 	defer func() { <-c.control }()
 	s := c.execution
-	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || s.interactions.blocksInput() || c.problem != nil {
+	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || (s.interactions.blocksInput() || c.dynamicBlocksInput()) || c.problem != nil {
 		return Turn{}, compactionUncertain()
 	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
@@ -338,6 +345,7 @@ func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain
 		return Turn{}, c.problem
 	}
 	s.contextBase = base
+	c.bindDynamicHistoryBase(turns)
 	return turn, nil
 }
 
@@ -427,7 +435,7 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 				items[item.ID] = true
 				switch item.Type {
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
-				case "commandExecution", "fileChange", "imageView":
+				case "commandExecution", "fileChange", "imageView", "dynamicToolCall":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
 					}

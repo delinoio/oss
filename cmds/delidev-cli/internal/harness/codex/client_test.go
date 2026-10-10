@@ -187,6 +187,12 @@ func init() {
 			if strings.HasPrefix(mode, "models-") && modelFixture(request.ID, request.Method, request.Params, mode, write) {
 				continue
 			}
+			if request.Method == "" && (mode == "thread-turn-dynamic" || mode == "thread-turn-dynamic-no-resolution") {
+				if !threads.dynamicReply(request.ID, request.Result) {
+					os.Exit(34)
+				}
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-approvals" {
 				if !threads.approvalReply(request.ID, request.Result) {
 					os.Exit(34)

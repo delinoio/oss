@@ -71,6 +71,7 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
+	Dynamic   *CodexDynamicObservation    `json:"dynamic,omitempty"`
 	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
 	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
 	Todo      *OpenCodeTodoObservation    `json:"todo,omitempty"`
@@ -173,6 +174,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == CodexDynamicTool {
+		if s.Dynamic == nil || s.ImageView != nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
+			return invalidTool()
+		}
+		return s.Dynamic.Validate(s.Status)
+	}
+	if s.Dynamic != nil {
+		return invalidTool()
+	}
 	if s.Kind == ImageViewTool {
 		if s.ImageView == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
 			return invalidTool()
