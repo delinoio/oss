@@ -91,8 +91,6 @@ export function PRWorkspacePage({ selected, data, query, reading, previous, chan
   useLocale();
   const context = usePRWorkspaceContext(), transport = useTransport(), seeds = items(data.items).map(raw => text(object(raw).number));
   useSyncExternalStore(context?.queue.subscribe ?? (() => () => undefined), context?.queue.snapshot ?? (() => 0));
-  const seedKey = JSON.stringify(seeds);
-  useEffect(() => { context?.queue.page(query.page!, seeds); return () => context?.queue.page(query.page!); }, [context?.queue, query.page, seedKey]);
   const options = createQueryOptions(IntegrationQuery.getPullRequestWorkspace, { repositoryId: selected.id, expectedRevision: selected.revision, seeds: seeds.map(Number) }, { transport });
   const result = useQuery({ ...options, queryFn: args => context!.queue.run(args.signal, async signal => options.queryFn!({ ...args, signal })), enabled: Boolean(context?.supported && !reading && seeds.length), retry: false, staleTime: Infinity, gcTime: 0, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const value = result.data?.schemaVersion === 1 ? scopedPRDocument(result.data.documentJson, selected) : undefined;
@@ -102,6 +100,7 @@ export function PRWorkspacePage({ selected, data, query, reading, previous, chan
   // Failed seed enrichment never hides accepted matching rows.
   for (const raw of items(data.items)) { const item = object(raw); if (!rows.some(row => object(row.item).number === item.number)) rows.push({ item, seed: true }); }
   const edges = items(workspace?.edges).map(object);
+  const matching = new Set([...context?.queue.pages.values() ?? []].flat());
   const earlier = new Set([...context?.queue.pages ?? []].filter(([page]) => page < query.page!).flatMap(([, numbers]) => numbers));
   const hidden = new Set<string>();
   if (workspace?.state === "complete") {
@@ -122,7 +121,7 @@ export function PRWorkspacePage({ selected, data, query, reading, previous, chan
     {context?.supported && (result.error || !workspace || workspace.state !== "complete") ? <button type="button" disabled={reading || context.busy || result.isFetching} onClick={() => void result.refetch()}>{copy("pr-workspace.retryContext")}</button> : null}
     {ordered.map(({ row, depth, stack }) => { const item = object(row.item), author = object(item.author); return <article className="pr-workspace-row" key={text(item.number)} style={{ marginInlineStart: depth * 12 }}>
       <button type="button" className="pr-workspace-select" disabled={reading || context?.busy} data-pr-number={text(item.number)} onClick={() => change({ kind: ItemKind.PullRequest, operation: QueryOperation.Detail, number: text(item.number) })}>
-        <span><span>{copy(item.state === "closed" ? "pull-requests.closed_c21ead" : "pull-requests.open_ed077f")}</span>{item.draft ? <span> · <span>{copy("pr-cards.draft")}</span></span> : ""}{stack ? <span className="pr-stack-badge">{copy("pr-workspace.stack")}</span> : null}{row.seed ? null : <span>{copy("pr-workspace.stackContext")}</span>}</span>
+        <span><span>{copy(item.state === "closed" ? "pull-requests.closed_c21ead" : "pull-requests.open_ed077f")}</span>{item.draft ? <span> · <span>{copy("pr-cards.draft")}</span></span> : ""}{stack ? <span className="pr-stack-badge">{copy("pr-workspace.stack")}</span> : null}{matching.has(text(item.number)) || row.seed ? null : <span>{copy("pr-workspace.stackContext")}</span>}</span>
         <span>#{text(item.number)} <strong role="heading" aria-level={3}>{text(item.title)}</strong></span>
         <span className="pr-workspace-meta"><PRAvatar reference={text(row.avatar_reference)} />{text(author.login) || copy("github-items.extra.a326f4758492")}{author.kind === "unknown" ? ` · ${copy("pr-cards.unverifiedAuthor")}` : ""} <PRCounts value={row.counts} /></span>
         <Timestamp value={text(item.updated_at)} mode={TimestampMode.Exact} />

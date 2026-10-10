@@ -9,7 +9,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { useStablePageRevisions, paginationError, invalidGitHubPage, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useEffect, type ReactNode } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { FailureCode, IntegrationQuery, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text, type Document } from "./documents";
@@ -92,12 +92,13 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
       else if (binding.head !== head) invalidGitHubPage();
     }
     const source = observation ? items(object(data[observation])[observation === "checks" ? "runs" : "contexts"]) : items(data.items);
-    const rows = source.map(raw => { const row = object(raw); return { id: observation ? observation + ":" + text(row.id) : text(row.identity_source) + ":" + text(row.id), revision: BigInt(Date.parse(text(row.updated_at) || text(item.updated_at))) }; });
+    const rows = source.map(raw => { const row = object(raw); return { id: observation ? observation + ":" + text(row.id) : text(row.identity_source) + ":" + text(row.id), revision: BigInt(Date.parse(text(row.updated_at) || text(item.updated_at))), prNumber: props.standaloneCards && !observation ? text(row.number) : "" }; });
     validateBoundary(token, rows);
     return { rows, nextPageToken: data.next_page ? String(data.next_page) : "", payload: [{ data, query }] };
   }, [props.selected, props.query, props.standaloneCards, validateBoundary, binding]);
   const reader = useConnectPaginationReader(IntegrationQuery.queryRepositoryIntegration, request, project);
   const chain = usePaginationChain(scope, active, reader);
+  useEffect(() => { if (props.standaloneCards) workspace?.queue.setPages(chain.pages.map(page => [page.token ? Number(page.token) : props.query.page!, page.rows.map(row => row.prNumber).filter(Boolean)])); }, [chain.pages, workspace?.queue, props.standaloneCards, props.query.page]);
   usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
   return <div ref={bindRoot} role={props.standaloneCards ? "region" : undefined} aria-label={props.standaloneCards ? copy("github-items.githubQueryResults_66fac2") : undefined}>
     {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading) || Boolean(workspace?.busy)} reloadRequired={Boolean(chain.error?.stalled || chain.error?.failure.code === FailureCode.CursorExpired)} refresh={chain.refreshExplicit} /> : null}

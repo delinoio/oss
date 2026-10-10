@@ -6,7 +6,11 @@ export class PRBackgroundQueue {
   private controllers = new Set<AbortController>();
   readonly avatars = new Map<string, string>();
   readonly pages = new Map<number, string[]>();
-  page(number: number, seeds?: string[]) { if (seeds) this.pages.set(number, seeds); else this.pages.delete(number); this.version++; for (const listener of this.listeners) listener(); }
+  setPages(pages: [number, string[]][]) {
+    if (JSON.stringify([...this.pages]) === JSON.stringify(pages)) return;
+    this.pages.clear(); for (const [number, seeds] of pages) this.pages.set(number, seeds);
+    this.version++; for (const listener of this.listeners) listener();
+  }
   readonly rows = new Map<string, Record<string, unknown>>();
   private version = 0;
   private listeners = new Set<() => void>();
