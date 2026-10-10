@@ -2315,11 +2315,8 @@ mod tests {
                 platform::Target,
             },
         };
-        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(include_str!(concat!(
-            env!("OUT_DIR"),
-            "/acl-manifests.json"
-        )))
-        .unwrap();
+        let manifests_source = include_str!(concat!(env!("OUT_DIR"), "/acl-manifests.json"));
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(manifests_source).unwrap();
         let app = &manifests[APP_ACL_KEY];
         let commands = ["desktop_update_context", "desktop_update_native"];
         assert_eq!(app.permissions["desktop-update"].commands.allow, commands);
@@ -2367,9 +2364,13 @@ mod tests {
             capability.webviews.retain(|label| label != "main");
         }
         let denied = Resolved::resolve(&manifests, without_main, Target::current()).unwrap();
+        // RuntimeAuthority owns its manifest map, and Manifest is not Clone.
+        #[cfg(debug_assertions)]
+        let denied_manifests: BTreeMap<String, Manifest> =
+            serde_json::from_str(manifests_source).unwrap();
         let denied_authority = RuntimeAuthority::new(
             #[cfg(debug_assertions)]
-            manifests.clone(),
+            denied_manifests,
             denied,
         );
         for command in commands {
