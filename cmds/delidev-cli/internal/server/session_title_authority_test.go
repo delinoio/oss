@@ -146,3 +146,112 @@ func TestSuccessfulTitleReportsRequireBothDurableRelayClaims(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomaticTitleQueueRejectsContinuation(t *testing.T) {
+	f := recoveredAutomaticTitleFixture(t)
+	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.continuation-title", nil, func(tx *store.Tx) (any, error) {
+		sr, session, err := sessionRecord(tx, f.input.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		original, err := tx.Get(domain.JobKind, f.job)
+		if err != nil {
+			return nil, err
+		}
+		continuation := f.input
+		continuation.ExecutionID, continuation.InputID = domain.NewID(), domain.NewID()
+		if err := queueAutomaticSessionTitle(tx, sr, &session, original, continuation, true); err != nil {
+			return nil, err
+		}
+		if session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || session.TitleJobID != "" {
+			t.Fatal("continuation created a title operation for the initial input")
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAutomaticTitleSettlesUnsuccessfulInitialCompletion(t *testing.T) {
+	for _, test := range []struct {
+		outcome domain.ExecutionOutcome
+		state   domain.SessionTitleState
+		reason  domain.SessionTitleReason
+	}{
+		{domain.ExecutionFailed, domain.TitleFailed, domain.TitleReasonInferenceFailed},
+		{domain.ExecutionStopped, domain.TitleSkipped, domain.TitleReasonCanceled},
+	} {
+		t.Run(string(test.outcome), func(t *testing.T) {
+			f := newPublicationFixture(t)
+			setAutomaticTitleWaiting(t, f)
+			f.registerGrant(t)
+			f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+			f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+			terminal := f.event(domain.ExecutionTurnFinished, 3)
+			terminal.Outcome = test.outcome
+			f.publish(t, terminal)
+			completion := f.completion()
+			completion.Outcome = test.outcome
+			f.reportCompletion(t, completion)
+			sr, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.Decode[domain.Session](sr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if session.TitleState != test.state || session.TitleReason != test.reason || session.TitleJobID != "" || session.TitleOperationID == "" {
+				t.Fatalf("initial outcome left doomed title work: state=%s reason=%s", session.TitleState, session.TitleReason)
+			}
+		})
+	}
+}
+
+func TestExecutionRecoverySettlesUnsuccessfulAutomaticTitle(t *testing.T) {
+	for _, outcome := range []domain.ExecutionOutcome{domain.ExecutionFailed, domain.ExecutionStopped} {
+		t.Run(string(outcome), func(t *testing.T) {
+			f := recoveryFixture(t, outcome)
+			setAutomaticTitleWaiting(t, f)
+			_, change := acceptRecovery(t, f)
+			completeRecovery(t, f, change.ExecutionRecoveryJob)
+			sr, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := store.Decode[domain.Session](sr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if session.TitleState == domain.TitleWaiting || session.TitleJobID != "" || session.TitleOperationID == "" {
+				t.Fatal("recovered unsuccessful initial turn left title waiting or queued")
+			}
+		})
+	}
+}
+
+func TestAutomaticTitleWaitsForInitialCleanupProof(t *testing.T) {
+	f := newPublicationFixture(t)
+	setAutomaticTitleWaiting(t, f)
+	f.registerGrant(t)
+	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
+	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
+	terminal := f.event(domain.ExecutionTurnFinished, 3)
+	terminal.Outcome = domain.ExecutionFailed
+	f.publish(t, terminal)
+	completion := f.completion()
+	completion.Outcome, completion.CleanupVerified = domain.ExecutionFailed, false
+	f.reportCompletion(t, completion)
+	sr, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := store.Decode[domain.Session](sr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || session.TitleJobID != "" || session.Recovery != domain.NeedsRecovery {
+		t.Fatal("unverified cleanup settled title or lost original recovery")
+	}
+}

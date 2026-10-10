@@ -140,6 +140,9 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 			}
 		}
 	}
+	if verified {
+		settleInitialSessionTitleFailure(&session, input, completion.Outcome)
+	}
 	if verified && completion.Outcome == domain.ExecutionSucceeded {
 		if err := queueAutomaticSessionTitle(tx, sr, &session, record, input, false); err != nil {
 			return store.Record{}, err

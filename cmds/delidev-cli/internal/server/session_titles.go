@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log/slog"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -78,7 +79,7 @@ func hasTitleCapability(values []domain.WorkerCapability) bool {
 // The durable operation identity is retained even when the frozen profile is
 // unsupported, so reconnects and later configuration changes cannot reroute it.
 func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.Session, sourceRecord store.Record, input domain.ExecutionJobInput, recovered bool) error {
-	if session.NameOwner != domain.AutomaticNameOwner || session.NameMode != domain.AutomaticSessionName || session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || session.InitialExecution == nil {
+	if session.NameOwner != domain.AutomaticNameOwner || session.NameMode != domain.AutomaticSessionName || session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || !matchesInitialTitleExecution(*session, input) {
 		return nil
 	}
 	session.TitleOperationID = domain.NewID()
@@ -168,6 +169,20 @@ func queueAutomaticSessionTitle(tx *store.Tx, sr store.Record, session *domain.S
 	}
 	session.TitleJobID, session.TitleState, session.TitleReason = jobID, domain.TitleQueued, domain.TitleReasonNone
 	return nil
+}
+
+// A verified unsuccessful initial turn settles naming without auxiliary work.
+// Cleanup uncertainty stays waiting until the original execution is reconciled.
+func settleInitialSessionTitleFailure(session *domain.Session, input domain.ExecutionJobInput, outcome domain.ExecutionOutcome) {
+	if outcome == domain.ExecutionSucceeded || session.NameOwner != domain.AutomaticNameOwner || session.NameMode != domain.AutomaticSessionName || session.TitleState != domain.TitleWaiting || session.TitleOperationID != "" || !matchesInitialTitleExecution(*session, input) {
+		return
+	}
+	session.TitleOperationID = domain.NewID()
+	session.TitleState, session.TitleReason = titleFailureOutcome(session.Problem)
+	if outcome == domain.ExecutionStopped {
+		session.TitleState, session.TitleReason = domain.TitleSkipped, domain.TitleReasonCanceled
+	}
+	slog.Info("automatic session title settled without inference", "operation", "session_title", "session_id", input.SessionID, "state", session.TitleState, "reason", session.TitleReason)
 }
 
 func titleFailureReason(err *domain.Error) domain.SessionTitleReason {
