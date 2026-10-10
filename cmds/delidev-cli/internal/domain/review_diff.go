@@ -105,7 +105,7 @@ func reviewMode(raw string) bool {
 // produced by the workspace reader. Unknown/ambiguous forms never get guessed
 // anchors. Non-line changes retain a file anchor, without synthetic lines.
 func (v WorkspaceDiff) ReviewFiles() ([]ReviewFile, error) {
-	q := WorkspaceReadQuery{Operation: WorkspaceGitDiff, RepositoryID: v.RepositoryID, Path: v.Path, Comparison: v.Comparison}
+	q := WorkspaceReadQuery{Operation: WorkspaceGitDiff, RepositoryID: v.RepositoryID, Path: v.Path, Comparison: v.Comparison, BaseRef: v.BaseRef}
 	if err := v.Validate(q); err != nil {
 		return nil, err
 	}

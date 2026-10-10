@@ -93,9 +93,11 @@ func (m *Manager) ReadWorkspace(ctx context.Context, request ReadRequest) (domai
 	if request.PRCandidate != nil || request.Query.Validate() != nil || request.Query.Operation == domain.WorkspaceRoots {
 		return result, readUnsupported()
 	}
-	err := m.observeWorkspace(ctx, request, request.Query.RepositoryID, request.Query.Operation == domain.WorkspaceGitDiff, func(ctx context.Context, git Git, retained Manifest, root *os.Root, _ string) error {
+	err := m.observeWorkspace(ctx, request, request.Query.RepositoryID, request.Query.Operation == domain.WorkspaceGitDiff || request.Query.Operation == domain.WorkspaceGitDiffOptions, func(ctx context.Context, git Git, retained Manifest, root *os.Root, _ string) error {
 		var err error
-		if request.Query.Operation == domain.WorkspaceGitDiff {
+		if request.Query.Operation == domain.WorkspaceGitDiffOptions {
+			result, err = git.readDiffOptions(ctx, request, retained)
+		} else if request.Query.Operation == domain.WorkspaceGitDiff {
 			result, err = git.readDiff(ctx, request, retained)
 		} else {
 			result, err = readRoot(ctx, root, request)

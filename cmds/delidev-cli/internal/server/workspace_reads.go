@@ -171,12 +171,27 @@ func (s *Service) ReadSessionWorkspace(ctx context.Context, req *connect.Request
 func (s *Service) observeWorkerWorkspace(ctx context.Context, id domain.ID, input workspace.PrepareRequest, manifest workspace.Manifest, query domain.WorkspaceReadQuery, target *domain.PRGitTarget) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	var negotiatedReader *workspaceReader
+	// Renegotiate against the original current Worker/preparation before sending
+	// branch fields, including durable review reobservations after replacement.
+	if query.Operation == domain.WorkspaceGitDiff && query.Comparison == domain.DiffBranch {
+		s.workspaceReadsMu.Lock()
+		negotiatedReader = s.workspaceReaders[input.MachineID]
+		s.workspaceReadsMu.Unlock()
+		if negotiatedReader == nil {
+			return nil, workspaceReadUnavailable()
+		}
+		options := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiffOptions, RepositoryID: query.RepositoryID, Path: query.Path}
+		if _, err := s.observeWorkerWorkspace(ctx, id, input, manifest, options, nil); err != nil {
+			return nil, err
+		}
+	}
 	deadline, _ := ctx.Deadline()
 	deadline = deadline.UTC()
 	observation := &workspaceObservation{request: workspace.ReadRequest{ID: domain.NewID(), Deadline: deadline, Preparation: input, Manifest: manifest, Query: query, PRCandidate: target}, result: make(chan workspaceReadReply, 1)}
 	s.workspaceReadsMu.Lock()
 	reader := s.workspaceReaders[input.MachineID]
-	if reader == nil {
+	if reader == nil || negotiatedReader != nil && reader != negotiatedReader {
 		s.workspaceReadsMu.Unlock()
 		return nil, workspaceReadUnavailable()
 	}

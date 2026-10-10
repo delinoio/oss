@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +78,25 @@ func reviewWithObservation[T any](t *testing.T, f *localReviewFixture, invoke fu
 	if err := domain.Decode(f.reader.Msg().RequestJson, &read); err != nil {
 		t.Fatal(err)
 	}
+	if f.diff.Comparison == domain.DiffBranch {
+		if read.Query.Operation != domain.WorkspaceGitDiffOptions || read.Query.BaseRef != nil || read.Query.Comparison != "" {
+			t.Fatal("branch fields sent before negotiation")
+		}
+		options := domain.WorkspaceDiffOptions{Version: 1, RepositoryID: f.diff.RepositoryID, Path: f.diff.Path, Choices: []domain.DiffBaseChoice{{Reference: *f.diff.BaseRef, Configured: true}}, Default: f.diff.BaseRef, DefaultAvailable: true}
+		raw, _ := json.Marshal(domain.WorkspaceReadResult{DiffOptions: &options})
+		if _, err := f.f.workerClient.ReportWorkspaceRead(f.ctx, ownerRequest(f.f.workerIdentity, &pb.ReportWorkspaceReadRequest{MachineId: f.f.machine.Id, InstanceId: f.f.workerInstance, ReadId: string(read.ID), DocumentJson: raw})); err != nil {
+			t.Fatal(err)
+		}
+		if !f.reader.Receive() {
+			t.Fatal("missing negotiated branch read", f.reader.Err())
+		}
+		if err := domain.Decode(f.reader.Msg().RequestJson, &read); err != nil {
+			t.Fatal(err)
+		}
+		if !domain.SameReference(read.Query.BaseRef, f.diff.BaseRef) {
+			t.Fatal("review original base changed")
+		}
+	}
 	if read.Query.RepositoryID != f.diff.RepositoryID || read.Query.Comparison != f.diff.Comparison || read.Query.Path != f.diff.Path {
 		t.Fatal("unexpected comparison")
 	}
@@ -100,7 +120,7 @@ func reviewWithObservation[T any](t *testing.T, f *localReviewFixture, invoke fu
 
 func createLocalReviewFixtureComment(t *testing.T, f *localReviewFixture) *pb.Resource {
 	t.Helper()
-	v := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: f.diff.RepositoryID, Path: f.diff.Path, Comparison: f.diff.Comparison}, DiffRevision: f.diff.Revision, Selection: domain.ReviewSelection{Path: "file.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "Preserved original request"}
+	v := domain.CreateReviewComment{Query: domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: f.diff.RepositoryID, Path: f.diff.Path, Comparison: f.diff.Comparison, BaseRef: f.diff.BaseRef}, DiffRevision: f.diff.Revision, Selection: domain.ReviewSelection{Path: "file.txt", Kind: domain.ReviewLineAnchor, Side: domain.ReviewNewSide, Start: 1, End: 1}, Body: "Preserved original request"}
 	raw, _ := json.Marshal(v)
 	r, err := reviewWithObservation(t, f, func() (*connect.Response[pb.CreateLocalReviewCommentResponse], error) {
 		return sessionClient(f.f.accountFixture).CreateLocalReviewComment(f.ctx, ownerRequest(f.f.identity, &pb.CreateLocalReviewCommentRequest{RequestId: string(domain.NewID()), SessionId: f.f.change.Session.Id, DocumentJson: raw}))
@@ -281,5 +301,64 @@ func TestLocalReviewCapacityDoesNotPreventCommentRemoval(t *testing.T) {
 	}
 	if err := f.f.service.Store.Read(f.ctx, func(tx *store.Tx) error { return tx.CheckReviewCapacity(session) }); err != nil {
 		t.Fatal("deletion did not release review capacity", err)
+	}
+}
+
+func TestBranchReviewGroupsOriginalBaseAndRequiresStaleConsentWithoutReanchoring(t *testing.T) {
+	f := newLocalReviewFixture(t)
+	original := domain.Reference{Type: domain.LocalBranch, Name: "base-A"}
+	f.diff.Comparison, f.diff.BaseRef, f.diff.BaseCommit, f.diff.MergeBase = domain.DiffBranch, &original, f.diff.BaseObject, f.diff.BaseObject
+	f.diff.Revision = f.diff.Digest()
+	first := createLocalReviewFixtureComment(t, f)
+	second := createLocalReviewFixtureComment(t, f)
+	var retained domain.LocalReview
+	if domain.Decode(first.DocumentJson, &retained) != nil || !domain.SameReference(retained.Comment.Anchor.BaseRef, &original) {
+		t.Fatal("original comment base lost")
+	}
+	initialAnchor := retained.Comment.Anchor
+	// The current UI may select base B, but submission has no current UI base.
+	// It reconstructs A from each original durable anchor. Moving A is stale.
+	f.diff.BaseCommit = strings.Repeat("d", 40)
+	f.diff.Revision = f.diff.Digest()
+	input := domain.SubmitReviewComments{Mode: domain.PlanMode, Comments: []domain.ReviewCommentRef{{ID: domain.ID(first.Id), Revision: first.Revision}, {ID: domain.ID(second.Id), Revision: second.Revision}}}
+	invoke := func() (*connect.Response[pb.SubmitLocalReviewResponse], error) {
+		raw, _ := json.Marshal(input)
+		return sessionClient(f.f.accountFixture).SubmitLocalReview(f.ctx, ownerRequest(f.f.identity, &pb.SubmitLocalReviewRequest{RequestId: string(domain.NewID()), SessionId: f.f.change.Session.Id, DocumentJson: raw}))
+	}
+	if _, err := reviewWithObservation(t, f, invoke, nil); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("stale base accepted without consent", err)
+	}
+	input.AllowStale = true
+	accepted, err := reviewWithObservation(t, f, invoke, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot domain.LocalReview
+	if domain.Decode(accepted.Msg.Submission.DocumentJson, &snapshot) != nil || len(snapshot.Submission.Comments) != 2 {
+		t.Fatal("grouped original snapshots lost")
+	}
+	for _, comment := range snapshot.Submission.Comments {
+		if comment.Freshness != domain.ReviewStale || !domain.SameReference(comment.Anchor.BaseRef, &original) || comment.Anchor.DiffRevision != initialAnchor.DiffRevision {
+			t.Fatal("submission reanchored original comment")
+		}
+	}
+}
+func TestBranchReadNegotiatesOldWorkerWithoutSpeculativeFields(t *testing.T) {
+	f := newLocalReviewFixture(t)
+	base := domain.Reference{Type: domain.LocalBranch, Name: "base-A"}
+	done := startWorkspaceRead(t, f.ctx, f.f, domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: f.diff.RepositoryID, Comparison: domain.DiffBranch, Path: ".", BaseRef: &base})
+	if !f.reader.Receive() {
+		t.Fatal(f.reader.Err())
+	}
+	var read workspace.ReadRequest
+	if domain.Decode(f.reader.Msg().RequestJson, &read) != nil || read.Query.Operation != domain.WorkspaceGitDiffOptions || read.Query.Comparison != "" || read.Query.BaseRef != nil {
+		t.Fatal("old Worker received speculative fields")
+	}
+	if _, err := f.f.workerClient.ReportWorkspaceRead(f.ctx, ownerRequest(f.f.workerIdentity, &pb.ReportWorkspaceReadRequest{MachineId: f.f.machine.Id, InstanceId: f.f.workerInstance, ReadId: string(read.ID), ProblemCode: string(domain.Unsupported)})); err != nil {
+		t.Fatal(err)
+	}
+	reply := <-done
+	if connect.CodeOf(reply.err) != connect.CodeUnimplemented {
+		t.Fatal("old Worker support was inferred", reply.err)
 	}
 }

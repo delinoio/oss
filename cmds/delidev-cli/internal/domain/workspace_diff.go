@@ -14,12 +14,13 @@ const (
 	DiffWorkingTree WorkspaceDiffComparison = "working-tree"
 	DiffStaged      WorkspaceDiffComparison = "staged"
 	DiffCreation    WorkspaceDiffComparison = "creation"
+	DiffBranch      WorkspaceDiffComparison = "branch"
 	DiffCommit      WorkspaceDiffBase       = "commit"
 	DiffEmptyTree   WorkspaceDiffBase       = "empty-tree"
 )
 
 func (v WorkspaceDiffComparison) Valid() bool {
-	return v == DiffWorkingTree || v == DiffStaged || v == DiffCreation
+	return v == DiffWorkingTree || v == DiffStaged || v == DiffCreation || v == DiffBranch
 }
 
 // Revision identifies these exact observed bytes, not an atomic filesystem
@@ -34,6 +35,9 @@ type WorkspaceDiff struct {
 	Patch        string                  `json:"patch"`
 	Untracked    []string                `json:"untracked"`
 	Revision     string                  `json:"revision"`
+	BaseRef      *Reference              `json:"base_ref,omitempty"`
+	BaseCommit   string                  `json:"base_commit,omitempty"`
+	MergeBase    string                  `json:"merge_base,omitempty"`
 }
 
 func (v WorkspaceDiff) Digest() string {
@@ -54,9 +58,14 @@ func (v WorkspaceDiff) Validate(q WorkspaceReadQuery) error {
 		// Git object identity follows the repository format; this is not the
 		// SHA-256 integrity digest used for the returned observation revision.
 		legacy, modern := sha1.Sum([]byte("tree 0\x00")), sha256.Sum256([]byte("tree 0\x00"))
-		valid = valid && v.HeadCommit == "" && v.Comparison != DiffCreation && (v.BaseObject == hex.EncodeToString(legacy[:]) || v.BaseObject == hex.EncodeToString(modern[:]))
+		valid = valid && v.HeadCommit == "" && v.Comparison != DiffCreation && v.Comparison != DiffBranch && (v.BaseObject == hex.EncodeToString(legacy[:]) || v.BaseObject == hex.EncodeToString(modern[:]))
 	} else {
-		valid = valid && v.Base == DiffCommit && gitObjectID(v.HeadCommit) && len(v.BaseObject) == len(v.HeadCommit) && (v.Comparison == DiffCreation || v.BaseObject == v.HeadCommit)
+		valid = valid && v.Base == DiffCommit && gitObjectID(v.HeadCommit) && len(v.BaseObject) == len(v.HeadCommit) && (v.Comparison == DiffCreation || v.Comparison == DiffBranch || v.BaseObject == v.HeadCommit)
+	}
+	if v.Comparison == DiffBranch {
+		valid = valid && SameReference(v.BaseRef, q.BaseRef) && v.BaseRef != nil && v.BaseRef.Validate(false) == nil && gitObjectID(v.BaseCommit) && gitObjectID(v.MergeBase) && v.MergeBase == v.BaseObject && len(v.BaseCommit) == len(v.HeadCommit) && len(v.MergeBase) == len(v.HeadCommit)
+	} else {
+		valid = valid && v.BaseRef == nil && v.BaseCommit == "" && v.MergeBase == ""
 	}
 	last, size := "", 0
 	for _, path := range v.Untracked {

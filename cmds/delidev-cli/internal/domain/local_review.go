@@ -31,7 +31,7 @@ func reviewDigest(value string) bool {
 }
 
 func (a ReviewAnchor) Validate() error {
-	valid := a.RepositoryID.Validate() == nil && a.Comparison.Valid() && WorkspacePath(a.QueryPath) && reviewDigest(a.DiffRevision) && reviewDigest(a.FileDigest) && a.Selection.Validate() == nil && Text(a.Context, "review context", 8192, false) == nil
+	valid := (a.Comparison == DiffBranch && a.BaseRef != nil && a.BaseRef.Validate(false) == nil || a.Comparison != DiffBranch && a.BaseRef == nil) && a.RepositoryID.Validate() == nil && a.Comparison.Valid() && WorkspacePath(a.QueryPath) && reviewDigest(a.DiffRevision) && reviewDigest(a.FileDigest) && a.Selection.Validate() == nil && Text(a.Context, "review context", 8192, false) == nil
 	valid = valid && (a.QueryPath == "." || a.Selection.Path == a.QueryPath || strings.HasPrefix(a.Selection.Path, a.QueryPath+"/")) && (a.Selection.Kind != ReviewFileAnchor || a.Context == "")
 	if !valid {
 		return Fail(InvalidArgument, "Invalid retained review anchor.", "Use the original validated Git review location.")

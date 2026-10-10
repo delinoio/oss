@@ -13,6 +13,7 @@ const (
 	WorkspaceDirectory      WorkspaceReadOperation = "directory"
 	WorkspaceFile           WorkspaceReadOperation = "file"
 	WorkspaceGitDiff        WorkspaceReadOperation = "git-diff"
+	WorkspaceGitDiffOptions WorkspaceReadOperation = "git-diff-options"
 	WorkspacePageSize                              = 100
 	WorkspaceDirectoryLimit                        = 10000
 	WorkspacePreviewLimit                          = 64 << 10
@@ -24,6 +25,7 @@ type WorkspaceReadQuery struct {
 	Path         string                  `json:"path,omitempty"`
 	PageToken    string                  `json:"page_token,omitempty"`
 	Comparison   WorkspaceDiffComparison `json:"comparison,omitempty"`
+	BaseRef      *Reference              `json:"base_ref,omitempty"`
 }
 
 // A single portable namespace prevents alternate streams and platform-specific
@@ -53,7 +55,7 @@ func WorkspacePath(value string) bool {
 }
 
 func (q WorkspaceReadQuery) Validate() error {
-	valid := (q.RepositoryID == "" || q.RepositoryID.Validate() == nil) && (q.Operation == WorkspaceGitDiff || q.Comparison == "")
+	valid := (q.RepositoryID == "" || q.RepositoryID.Validate() == nil) && (q.Operation == WorkspaceGitDiff || q.Comparison == "") && (q.BaseRef == nil || q.Operation == WorkspaceGitDiff && q.Comparison == DiffBranch && q.BaseRef.Validate(false) == nil) && (q.Comparison != DiffBranch || q.BaseRef != nil)
 	switch q.Operation {
 	case WorkspaceRoots:
 		valid = valid && q.RepositoryID == "" && q.Path == "" && q.PageToken == ""
@@ -61,6 +63,8 @@ func (q WorkspaceReadQuery) Validate() error {
 		valid = valid && WorkspacePath(q.Path) && len(q.PageToken) <= 256
 	case WorkspaceFile:
 		valid = valid && q.Path != "." && WorkspacePath(q.Path) && q.PageToken == ""
+	case WorkspaceGitDiffOptions:
+		valid = valid && q.RepositoryID.Validate() == nil && WorkspacePath(q.Path) && q.PageToken == ""
 	case WorkspaceGitDiff:
 		valid = valid && q.RepositoryID.Validate() == nil && WorkspacePath(q.Path) && q.PageToken == "" && q.Comparison.Valid()
 	default:
@@ -93,20 +97,25 @@ type WorkspaceEntry struct {
 	ModifiedAt string             `json:"modified_at"`
 }
 type WorkspaceReadResult struct {
-	Roots         []WorkspaceRoot  `json:"roots,omitempty"`
-	Entries       []WorkspaceEntry `json:"entries,omitempty"`
-	NextPageToken string           `json:"next_page_token,omitempty"`
-	Text          string           `json:"text,omitempty"`
-	Size          int64            `json:"size,string"`
-	Binary        bool             `json:"binary"`
-	Truncated     bool             `json:"truncated"`
-	Diff          *WorkspaceDiff   `json:"diff,omitempty"`
+	Roots         []WorkspaceRoot       `json:"roots,omitempty"`
+	Entries       []WorkspaceEntry      `json:"entries,omitempty"`
+	NextPageToken string                `json:"next_page_token,omitempty"`
+	Text          string                `json:"text,omitempty"`
+	Size          int64                 `json:"size,string"`
+	Binary        bool                  `json:"binary"`
+	Truncated     bool                  `json:"truncated"`
+	Diff          *WorkspaceDiff        `json:"diff,omitempty"`
+	DiffOptions   *WorkspaceDiffOptions `json:"diff_options,omitempty"`
 }
 
 // Validate every observation before crossing the Worker-to-client boundary.
 func (r WorkspaceReadResult) Validate(q WorkspaceReadQuery) error {
 	valid := q.Validate() == nil && len(r.Text) <= WorkspacePreviewLimit && utf8.ValidString(r.Text) && r.Size >= 0 && len(r.NextPageToken) <= 256
-	if q.Operation == WorkspaceGitDiff {
+	if q.Operation == WorkspaceGitDiffOptions {
+		valid = valid && r.DiffOptions != nil && r.DiffOptions.Validate(q) == nil && r.Diff == nil && len(r.Roots) == 0 && len(r.Entries) == 0 && r.NextPageToken == "" && r.Text == "" && r.Size == 0 && !r.Binary && !r.Truncated
+	} else if r.DiffOptions != nil {
+		valid = false
+	} else if q.Operation == WorkspaceGitDiff {
 		valid = valid && r.Diff != nil && r.Diff.Validate(q) == nil && len(r.Roots) == 0 && len(r.Entries) == 0 && r.NextPageToken == "" && r.Text == "" && r.Size == 0 && !r.Binary && !r.Truncated
 	} else if r.Diff != nil {
 		valid = false

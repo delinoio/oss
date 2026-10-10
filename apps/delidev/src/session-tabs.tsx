@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
 import { terminalFallback, TerminalPresentation } from "./terminal-presentation";
-import { Comparison } from "./session-diff-model";
+import { Comparison, referenceKey, type Reference } from "./session-diff-model";
 
 export enum SessionTabKind {
   Conversation = "conversation", Files = "files", File = "file", Diff = "diff",
@@ -11,7 +11,7 @@ export enum SessionTabKind {
 export type SessionTab =
   | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Browser | SessionTabKind.Diagnostics }
   | { kind: SessionTabKind.File; repository: string; path: string }
-  | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string }
+  | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string; base_ref?: Reference }
   | { kind: SessionTabKind.Terminal; id: string }
   | { kind: SessionTabKind.Page; profile: string; id: string; title: string; label?: string }
   | { kind: SessionTabKind.Sidechat; id: string; name: string };
@@ -19,7 +19,7 @@ export const conversationTab: SessionTab = { kind: SessionTabKind.Conversation }
 export function sessionTabKey(tab: SessionTab): string {
   switch (tab.kind) {
     case SessionTabKind.File: return JSON.stringify([tab.kind, tab.repository, tab.path]);
-    case SessionTabKind.Comparison: return JSON.stringify([tab.kind, tab.repository, tab.comparison, tab.path]);
+    case SessionTabKind.Comparison: return JSON.stringify([tab.kind, tab.repository, tab.comparison, tab.path, ...(tab.base_ref ? [referenceKey(tab.base_ref)] : [])]);
     case SessionTabKind.Terminal:
     case SessionTabKind.Sidechat: return JSON.stringify([tab.kind, tab.id]);
     case SessionTabKind.Page: return JSON.stringify([tab.kind, tab.profile, tab.id]);

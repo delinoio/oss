@@ -12,7 +12,7 @@ import { EntityKind, ResourceQuery, SessionQuery, newRequestId, type Resource } 
 import { Mode, encode } from "./documents";
 import { useRetainedMutation, useRetainedMutationAccepted, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
 import { workspaceReadOptions } from "./session-files";
-import { type Diff } from "./session-diff-model";
+import { diffQuery, type Diff } from "./session-diff-model";
 import { AnchorKind, ReviewContextError, ReviewSide, freshness, readComment, readSubmission, readReviewContext, selectedContext, type Comment, type Selection } from "./local-review-model";
 import { Failure, Problem } from "./ui";
 
@@ -53,7 +53,7 @@ function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff
   useLocale();
   const [filePath, setFilePath] = useState<string>(), [kind, setKind] = useState(AnchorKind.File), [side, setSide] = useState(ReviewSide.New);
   const [start, setStart] = useState("1"), [end, setEnd] = useState("1"), [body, setBody] = useState("");
-  const query = { operation: "git-diff", repository_id: diff.repository_id, comparison: diff.comparison, path: diff.path };
+  const query = diffQuery(diff);
   const context = useQuery(SessionQuery.readSessionReviewContext, { sessionId, queryJson: encode(query) }, { ...workspaceReadOptions, select: (r) => readReviewContext(r.documentJson, diff) });
   const mutation = useRetainedMutation(`review:create:${sessionId}`, SessionQuery.createLocalReviewComment, (r) => { saved(r.comment ? copy("local-reviews.extra.22c97ed3217b") : copy("local-reviews.extra.29ba3bbaf8fc")); close(); });
   const blocked = mutation.busy || mutation.uncertain;

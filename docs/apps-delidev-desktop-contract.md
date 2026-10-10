@@ -2351,7 +2351,7 @@ Execution configuration displays the original interrupted or raced-success Stop 
 
 ### Session Git diff
 
-The Diff control selects the same session application area without replacing the composer. It uses the shared [files and Git comparisons contract](cmds-delidev-files-contract.md), selects the primary prepared repository, defaults Worktree to its creation commit and Local to current HEAD, and exposes explicit staged/path/refresh choices. Validate complete scope, object identities, bounded patch and untracked paths; render text inertly and show empty-tree, Gitlink-only submodule and stale/error distinctions. Closing returns focus to Diff and discards its inactive cache. Raw diff observation alone grants no mutation authority; local review actions use the dedicated operations below.
+The Diff control selects the same session application area without replacing the composer. It uses the shared [files and Git comparisons contract](cmds-delidev-files-contract.md), selects the primary prepared repository, defaults to Branch changes after local options negotiation for Worktree and Local, and exposes explicit base/ordinary comparison/path/refresh choices in the compact navbar. Validate complete scope, object identities, bounded patch and untracked paths; render text inertly and show empty-tree, Gitlink-only submodule and stale/error distinctions. Closing returns focus to Diff and discards its inactive cache. Raw diff observation alone grants no mutation authority; local review actions use the dedicated operations below.
 
 
 ## Local agent review
@@ -3713,3 +3713,7 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Session Branch Diff — Issue #2526
+
+Follow `docs/cmds-delidev-files-contract.md#compact-branch-comparison--issue-2526` for the compact branch-default Diff presentation and negotiated version-1 local options. Original accepted Base is distinct from Starting and captured Local HEAD. Preserve prepared workspace/Worker ownership, offline merge-base observations, original selected-base durable reviews, legacy omitted serialization, bounded joined children and independent execution/cleanup. This feature grants no remote discovery, fetch, checkout mutation, new native capability or migration.

@@ -66,13 +66,14 @@ func (s *Service) SubmitLocalReview(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return fail(err)
 		}
-		observations := map[domain.WorkspaceReadQuery]domain.WorkspaceDiff{}
+		observations := map[string]domain.WorkspaceDiff{}
 		submission := domain.ReviewSubmission{Mode: input.Mode, Comments: []domain.SubmittedReviewComment{}}
 		for _, item := range selected {
 			comment := item.Value.Comment
 			anchor := comment.Anchor
-			query := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: anchor.RepositoryID, Comparison: anchor.Comparison, Path: anchor.QueryPath}
-			diff, ok := observations[query]
+			query := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: anchor.RepositoryID, Comparison: anchor.Comparison, Path: anchor.QueryPath, BaseRef: anchor.BaseRef}
+			identity, _ := json.Marshal(query)
+			diff, ok := observations[string(identity)]
 			if !ok {
 				if len(observations) >= 8 {
 					return fail(domain.Fail(domain.ResourceExhausted, "A review submission spans too many comparisons.", "Select comments from at most eight repository/path/comparison groups."))
@@ -81,7 +82,7 @@ func (s *Service) SubmitLocalReview(ctx context.Context, req *connect.Request[pb
 				if err != nil {
 					return fail(err)
 				}
-				observations[query] = diff
+				observations[string(identity)] = diff
 			}
 			freshness := domain.ReviewCurrent
 			if !anchor.Matches(diff) {

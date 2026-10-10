@@ -1,14 +1,14 @@
 import { ProductError, copy } from "./localization";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { encode, object, document, Mode, type Document } from "./documents";
-import { Comparison, readDiff, type Diff } from "./session-diff-model";
+import { Comparison, readDiff, readReference, referenceKey, type Reference, type Diff } from "./session-diff-model";
 
 export class ReviewContextError extends ProductError {}
 
 export enum AnchorKind { File = "file", Lines = "lines" }
 export enum ReviewSide { Old = "old", New = "new" }
 export type Selection = { path: string; kind: AnchorKind; side?: ReviewSide; start?: number; end?: number };
-export type Anchor = { repository_id: string; comparison: Comparison; query_path: string; diff_revision: string; selection: Selection; file_digest: string; context: string };
+export type Anchor = { repository_id: string; comparison: Comparison; query_path: string; diff_revision: string; selection: Selection; file_digest: string; context: string; base_ref?: Reference };
 export type Comment = { anchor: Anchor; body: string; content_revision: string; last_submission_id?: string; last_submitted_content_revision?: string };
 export type ReviewLine = { old?: number; new?: number; text: string; newline: boolean; hunk: number };
 export type ReviewFile = { path: string; kind: "text" | "non-line"; digest: string; lines: ReviewLine[] };
@@ -28,7 +28,7 @@ function selection(value: unknown): value is Selection {
 }
 export function readAnchor(value: unknown): Anchor | undefined {
   const v = object(value);
-  if (!exact(v, ["repository_id", "comparison", "query_path", "diff_revision", "selection", "file_digest", "context"]) || !uuid(v.repository_id) || !Object.values(Comparison).includes(v.comparison as Comparison) || !(v.query_path === "." || path(v.query_path)) || !digest(v.diff_revision) || !digest(v.file_digest) || !selection(v.selection) || !bounded(v.context, 8192) || (v.selection.kind === AnchorKind.File && v.context !== "") || (v.query_path !== "." && v.selection.path !== v.query_path && !v.selection.path.startsWith(`${v.query_path}/`))) return;
+  if (!exact(v, ["repository_id", "comparison", "query_path", "diff_revision", "selection", "file_digest", "context"], ["base_ref"]) || (v.comparison===Comparison.Branch ? !readReference(v.base_ref) : v.base_ref!==undefined) || !uuid(v.repository_id) || !Object.values(Comparison).includes(v.comparison as Comparison) || !(v.query_path === "." || path(v.query_path)) || !digest(v.diff_revision) || !digest(v.file_digest) || !selection(v.selection) || !bounded(v.context, 8192) || (v.selection.kind === AnchorKind.File && v.context !== "") || (v.query_path !== "." && v.selection.path !== v.query_path && !v.selection.path.startsWith(`${v.query_path}/`))) return;
   return v as Anchor;
 }
 export function readComment(resource: Resource, session: string): Comment | undefined {
@@ -44,7 +44,7 @@ export function readReviewContext(raw: Uint8Array, expected: Diff): ReviewContex
   let value: Document;
   try { value = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))); } catch { return invalid(); }
   if (!exact(value, ["diff", "files"]) || !Array.isArray(value.files) || value.files.length > 256) return invalid();
-  const diff = readDiff(encode({ size: "0", binary: false, truncated: false, diff: value.diff }), expected.repository_id, expected.comparison, expected.path);
+  const diff = readDiff(encode({ size: "0", binary: false, truncated: false, diff: value.diff }), expected.repository_id, expected.comparison, expected.path, expected.base_ref);
   if (diff.revision !== expected.revision) throw new ReviewContextError("validation.376b1888b589");
   const seen = new Set<string>();
   for (const item of value.files) {
@@ -77,6 +77,6 @@ export function selectedContext(file: ReviewFile | undefined, pick: Selection): 
   return bounded(result, 8192) ? result : undefined;
 }
 export function freshness(anchor: Anchor, diff: Diff): string {
-  if (anchor.repository_id !== diff.repository_id || anchor.comparison !== diff.comparison || anchor.query_path !== diff.path) return copy("local-review-model.extra.a05610ae5f5f");
+  if (anchor.repository_id !== diff.repository_id || anchor.comparison !== diff.comparison || anchor.query_path !== diff.path || referenceKey(anchor.base_ref)!==referenceKey(diff.base_ref)) return copy("local-review-model.extra.a05610ae5f5f");
   return anchor.diff_revision === diff.revision ? copy("local-review-model.extra.85c996c70928") : copy("local-review-model.extra.01167438c368");
 }

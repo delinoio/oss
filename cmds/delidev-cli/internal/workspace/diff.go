@@ -30,6 +30,16 @@ func (g Git) readDiff(ctx context.Context, request ReadRequest, manifest Manifes
 		return result, err
 	}
 	value := domain.WorkspaceDiff{Comparison: q.Comparison, RepositoryID: repo.ID, Path: q.Path, Base: domain.DiffCommit, BaseObject: head, HeadCommit: head, Untracked: []string{}}
+	if q.Comparison == domain.DiffBranch {
+		if headState == LocalHEADUnborn {
+			return result, branchUnavailable()
+		}
+		base, merge, err := g.branchBase(ctx, repo, q.BaseRef, head)
+		if err != nil {
+			return result, err
+		}
+		value.BaseRef, value.BaseCommit, value.MergeBase, value.BaseObject = q.BaseRef, base, merge, merge
+	}
 	if headState == LocalHEADUnborn {
 		// Hashing empty stdin does not write an object, index, branch or commit.
 		// Git recognizes its canonical empty tree for both object formats.
@@ -98,6 +108,24 @@ func (g Git) readDiff(ctx context.Context, request ReadRequest, manifest Manifes
 	}
 	if freshState != headState || freshHead != head {
 		return result, domain.Fail(domain.Conflict, "The Git HEAD changed during comparison.", "Refresh the comparison after the commit or checkout finishes.")
+	}
+	if q.Comparison == domain.DiffBranch {
+		base, merge, err := g.branchBase(ctx, repo, q.BaseRef, head)
+		if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
+			return result, err
+		}
+		if err != nil || base != value.BaseCommit || merge != value.MergeBase {
+			return result, domain.Fail(domain.Conflict, "The selected base changed during comparison.", "Refresh the original selected base.")
+		}
+	}
+	if q.Comparison == domain.DiffBranch {
+		finalState, finalHead, err := g.localHEAD(ctx, repo.Path)
+		if err != nil {
+			return result, err
+		}
+		if finalState != headState || finalHead != head {
+			return result, domain.Fail(domain.Conflict, "The Git HEAD changed during comparison.", "Refresh the comparison after the commit or checkout finishes.")
+		}
 	}
 	value.Revision = value.Digest()
 	result.Diff = &value

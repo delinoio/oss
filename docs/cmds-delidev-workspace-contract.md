@@ -383,3 +383,7 @@ missing earlier observation. Callbacks carry no paths, remote URLs or Git output
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+
+## Session Branch Diff — Issue #2526
+
+Follow `docs/cmds-delidev-files-contract.md#compact-branch-comparison--issue-2526` for the compact branch-default Diff presentation and negotiated version-1 local options. Original accepted Base is distinct from Starting and captured Local HEAD. Preserve prepared workspace/Worker ownership, offline merge-base observations, original selected-base durable reviews, legacy omitted serialization, bounded joined children and independent execution/cleanup. This feature grants no remote discovery, fetch, checkout mutation, new native capability or migration.
