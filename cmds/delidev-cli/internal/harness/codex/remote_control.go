@@ -2,7 +2,6 @@
 package codex
 
 import (
-	"encoding/json"
 	"errors"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
