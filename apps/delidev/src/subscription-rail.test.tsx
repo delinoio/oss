@@ -7,7 +7,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { freshWindow, remainingBadge, railAccount, type RailWindow } from "./subscription-rail-data";
+import { freshWindow, remainingBadge, railAccount, reconcileRailCredits, type RailWindow } from "./subscription-rail-data";
+import { PaidCreditState } from "./subscription-paid-credits";
 import { SubscriptionRail } from "./subscription-rail";
 const now = Date.now();
 const window = (remaining: number, extra: Partial<RailWindow> = {}): RailWindow => ({ id: "weekly", remaining, state: "observed", observedAt: new Date(now).toISOString(), resetAt: "", comparisonGroup: "weekly", blocking: true, ...extra });
@@ -22,10 +23,10 @@ it("uses only complete fresh blocking evidence, preserving measured endpoints", 
 it("projects safe independent identities and excludes disconnected/removal/recovery accounts", () => {
  const a=resource("Personal"), b=resource("Personal"); expect(railAccount(a).id).not.toBe(railAccount(b).id);
  for(const extra of [{connection:{}},{removal:{}},{subscription:{recovery_required:true}}]) expect(railAccount(resource("Hidden","chatgpt",extra)).connected).toBe(false);
- expect(Object.keys(railAccount(a)).sort()).toEqual(["alias","connected","disabled","id","revision","service","windows"]);
+ expect(Object.keys(railAccount(a)).sort()).toEqual(["alias","connected","creditScope","disabled","id","paidCreditState","paidCredits","paidCreditsComplete","revision","service","windows"]);
 });
-function mount(read: (token:string)=>{resources:Resource[];nextPageToken?:string}|Promise<{resources:Resource[];nextPageToken?:string}>, capable=true) {
- const requests=vi.fn(read), manage=vi.fn(), focusFallback=vi.fn(); const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:capable?[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]:[]})});router.service(ResourceService,{listResources:r=>{expect(r.accountType).toBe(2);expect(r.filter?.pageSize).toBe(50);return requests(r.filter!.pageToken);}});});
+function mount(read: (token:string)=>{resources:Resource[];nextPageToken?:string}|Promise<{resources:Resource[];nextPageToken?:string}>, capable=true, credits=false) {
+ const requests=vi.fn(read), manage=vi.fn(), focusFallback=vi.fn(); const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:capable?[SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,...(credits?[SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1]:[])]:[]})});router.service(ResourceService,{listResources:r=>{expect(r.accountType).toBe(2);expect(r.filter?.pageSize).toBe(50);return requests(r.filter!.pageToken);}});});
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}}); const view=(enabled=true)=><QueryClientProvider client={client}><TransportProvider transport={transport}><SubscriptionRail enabled={enabled} manage={manage} focusFallback={focusFallback}/></TransportProvider></QueryClientProvider>; return {...render(view()),view,requests,manage,focusFallback,client};
 }
 it("shows separate accounts, read-only selected details, manages and restores opener focus",async()=>{
@@ -205,4 +206,41 @@ it("close and outside dismissal retain the original opener without another read"
  const row=resource("Original opener"),f=mount(()=>({resources:[row]}));const opener=await screen.findByRole("button",{name:new RegExp(row.id)});
  fireEvent.click(opener);fireEvent.click(screen.getByRole("button",{name:"Close quota details"}));expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(opener);
  fireEvent.click(opener);fireEvent.pointerDown(document.body);expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(opener);expect(f.requests).toHaveBeenCalledOnce();
+});
+
+const credit = (balance: string | null = "60961.1135370000", extra = {}) => ({id:"codex",has_credits:true,unlimited:false,balance,observed_at:new Date(now).toISOString(),...extra});
+it("retains sparse and failed credit evidence only in its original account connection and credential generation", () => {
+ const original = resource("Credit", "chatgpt", {subscription:{generation:"original",quota_state:"observed",paid_credits:[credit()]}});
+ const previous = railAccount(original);
+ const replace = (subscription: object, connection?: object) => railAccount(create(ResourceSchema,{...original,revision:2n,documentJson:encode({...JSON.parse(new TextDecoder().decode(original.documentJson)),subscription,...(connection?{connection}:{})})}));
+ for (const current of [replace({generation:"original"}),replace({generation:"original",paid_credits:[credit("invalid")]}),replace({generation:"original",quota_state:"failed",paid_credits:[]})]) {
+  const retained = reconcileRailCredits(current,previous);expect(retained.paidCredits).toEqual(previous.paidCredits);expect(retained.paidCreditState).not.toBe(PaidCreditState.Observed);
+ }
+ expect(reconcileRailCredits(replace({generation:"replacement"}),previous).paidCredits).toEqual([]);
+ expect(reconcileRailCredits(replace({generation:"original"},{id:newRequestId()}),previous).paidCredits).toEqual([]);
+ expect(reconcileRailCredits(replace({generation:"original",quota_state:"observed",paid_credits:[]}),previous).paidCredits).toEqual([]);
+ const replacement=replace({generation:"original",quota_state:"observed",paid_credits:[credit("0")]});expect(reconcileRailCredits(replacement,previous).paidCredits[0]?.balance).toBe("0");
+ expect(remainingBadge(previous.windows,now)).toBe(28);
+});
+it("shows saved rounded credits before quota with exact disclosure and no additional read", async () => {
+ const row=resource("Credit", "chatgpt",{subscription:{generation:"original",paid_credits:[credit()]}});const f=mount(()=>({resources:[row]}),true,true);
+ const opener=await screen.findByRole("button",{name:/Credit · 28% remaining/});fireEvent.click(opener);
+ const dialog=screen.getByRole("dialog");expect(dialog.textContent!.indexOf("Paid credits")).toBeLessThan(dialog.textContent!.indexOf("weekly"));expect(screen.getByText("60,961.11")).toBeTruthy();
+ fireEvent.focus(screen.getByRole("button",{name:"Exact balance"}));expect(screen.getByRole("tooltip").textContent).toContain("60961.1135370000");
+ fireEvent.keyDown(screen.getByRole("button",{name:"Exact balance"}),{key:"Escape"});expect(screen.queryByRole("tooltip")).toBeNull();expect(screen.getByRole("dialog")).toBeTruthy();
+ expect(screen.getByRole("button",{name:"Recheck saved quota evidence"})).toBeTruthy();expect(screen.getByRole("button",{name:"Manage subscriptions"})).toBeTruthy();expect(f.requests).toHaveBeenCalledOnce();
+ fireEvent.keyDown(dialog,{key:"Escape"});expect(document.activeElement).toBe(opener);
+});
+it("independently gates credit support without changing quota admission or other services", async () => {
+ const row=resource("Old server","chatgpt",{subscription:{paid_credits:[credit()]}}),claude=resource("Claude","claude");const f=mount(()=>({resources:[row,claude]}));
+ fireEvent.click(await screen.findByRole("button",{name:/Old server · 28% remaining/}));expect(screen.getByText("Paid credits")).toBeTruthy();expect(screen.queryByText("60,961.11")).toBeNull();expect(f.requests).toHaveBeenCalledOnce();
+ fireEvent.keyDown(screen.getByRole("dialog"),{key:"Escape"});fireEvent.click(screen.getByRole("button",{name:/Claude · 28% remaining/}));expect(screen.queryByText("Paid credits")).toBeNull();
+});
+it("renders independent buckets without totals and preserves failed/sparse evidence until replacement", async () => {
+ const row=resource("Retained","chatgpt",{subscription:{generation:"original",paid_credits:[credit(),credit(null,{id:"secondary",unlimited:true})]}});
+ let mode="ready";const f=mount(()=>{if(mode==="failed")throw new ConnectError("saved read failed",Code.Unavailable);const data=JSON.parse(new TextDecoder().decode(row.documentJson));if(mode==="sparse")data.subscription={generation:"original"};if(mode==="replacement")data.subscription={generation:"original",paid_credits:[credit("0")]};return {resources:[create(ResourceSchema,{...row,documentJson:encode(data)})]};},true,true);
+ fireEvent.click(await screen.findByRole("button",{name:/Retained/}));expect(screen.getByText("60,961.11")).toBeTruthy();expect(screen.getByText("Unlimited credits")).toBeTruthy();expect(screen.getByText("secondary")).toBeTruthy();
+ mode="failed";fireEvent.click(screen.getByRole("button",{name:"Recheck saved quota evidence"}));await waitFor(()=>expect(screen.getByRole("button",{name:/Retained · Quota unavailable/})).toBeTruthy());expect(screen.getByText("60,961.11")).toBeTruthy();
+ mode="sparse";fireEvent.click(screen.getByRole("button",{name:"Recheck saved quota evidence"}));await waitFor(()=>expect(f.requests).toHaveBeenCalledTimes(3));await waitFor(()=>expect(screen.getByRole("button",{name:/Retained · 28% remaining/})).toBeTruthy());expect(screen.getByText("60,961.11")).toBeTruthy();
+ mode="replacement";fireEvent.click(screen.getByRole("button",{name:"Recheck saved quota evidence"}));await screen.findByText("0.00");expect(screen.queryByText("60,961.11")).toBeNull();expect(screen.queryByText("Unlimited credits")).toBeNull();
 });

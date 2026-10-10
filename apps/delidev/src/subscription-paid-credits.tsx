@@ -34,7 +34,7 @@ export function PaidCredits({buckets=[],state,compact=false,active=true,now:give
  useEffect(()=>{if(!active||givenNow!==undefined)return;const due=buckets.map(b=>Date.parse(b.observedAt)+300001).filter(t=>t>now);if(!due.length)return;const timer=setTimeout(tick,Math.min(2147483647,Math.max(1,Math.min(...due)-now)));return()=>clearTimeout(timer)},[active,buckets,givenNow,now]);
  const unavailable=state===PaidCreditState.Loading?copy("paid-credits.loading"):state===PaidCreditState.Unsupported?copy("paid-credits.unsupported"):state===PaidCreditState.Failed?copy("paid-credits.balance-unavailable"):copy("paid-credits.unknown");
  const noEvidence=state===PaidCreditState.Unsupported||state===PaidCreditState.Loading||!buckets.length;
- const status=(b:PaidCreditBucket)=>state===PaidCreditState.Failed?copy("paid-credits.failed"):Date.parse(b.observedAt)>now||now-Date.parse(b.observedAt)>300000?copy("paid-credits.stale"):copy("paid-credits.observed");
+ const status=(b:PaidCreditBucket)=>state===PaidCreditState.Failed?copy("paid-credits.failed"):state===PaidCreditState.Unknown||Date.parse(b.observedAt)>now||now-Date.parse(b.observedAt)>300000?copy("paid-credits.stale"):copy("paid-credits.observed");
  return <section className={`subscription-paid-credits${compact?" subscription-paid-summary":""}`} aria-label={copy("paid-credits.title")}>
   <h3>{copy("paid-credits.title")}</h3>
   {noEvidence?<><p className="paid-credit-balance" role="status">{unavailable}</p>{state===PaidCreditState.Failed?<small>{copy("paid-credits.failed-empty")}</small>:null}</>:compact?<>

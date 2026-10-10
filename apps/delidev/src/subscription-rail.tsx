@@ -9,8 +9,9 @@ import { subscriptionCatalog } from "./subscription-catalog";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
-import { freshWindow, railAccount, remainingBadge, type RailAccount, type RailWindow } from "./subscription-rail-data";
+import { freshWindow, railAccount, reconcileRailCredits, remainingBadge, type RailAccount, type RailWindow } from "./subscription-rail-data";
 import "./subscription-rail.css";
+import { PaidCredits, PaidCreditState } from "./subscription-paid-credits";
 import { Failure, InlineRemediation } from "./ui";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 
@@ -20,6 +21,7 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
   const [now, setNow] = useState(Date.now);
   const [authenticationLost, setAuthenticationLost] = useState(false);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled });
+  const creditsSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1) === true;
   const capable = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1) === true;
   const allowed = enabled && !authenticationLost && visible && capable && !status.error && !status.data?.stopping;
   const request = useCallback((token: string) => ({ filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: token }, accountType: AccountTypeFilter.SUBSCRIPTION }), []);
@@ -40,12 +42,20 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
     if (query.error) { retainedReadFailure.current = query.error.failure; failedRows.current = query.rows; setUnconfirmedRead(true); }
     else if (query.loaded && !query.loading && query.rows !== failedRows.current) { retainedReadFailure.current = undefined; failedRows.current = undefined; setUnconfirmedRead(false); }
   }, [query.error, query.loaded, query.loading, query.rows]);
+  const [creditRows, setCreditRows] = useState<ReadonlyMap<string, RailAccount>>(() => new Map());
+  useEffect(() => {
+    if (!enabled || authenticationLost || !creditsSupported) { setCreditRows(new Map()); return; }
+    // Only the pagination owner's complete accepted range can replace evidence.
+    // Retain no removed accounts, and never commit partially refreshed pages.
+    if (query.loaded && !query.loading && !query.error) setCreditRows(previous => new Map(query.rows.map(row => [row.id, reconcileRailCredits(row, previous.get(row.id))])));
+  }, [enabled, authenticationLost, creditsSupported, query.loaded, query.loading, query.error, query.rows]);
   const root = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ id: string; opener: HTMLButtonElement }>();
   const popup = useRef<HTMLDivElement>(null);
   const fallbackFocus = useRef(focusFallback);
   fallbackFocus.current = focusFallback;
-  const account = query.rows.find(row => row.id === selection?.id && row.connected);
+  const selectedAccount = query.rows.find(row => row.id === selection?.id && row.connected);
+  const account = selectedAccount ? reconcileRailCredits(selectedAccount, creditRows.get(selectedAccount.id)) : undefined;
   const close = useCallback(() => { setSelection(current => { if (current?.opener.isConnected) current.opener.focus(); else fallbackFocus.current(); return undefined; }); }, []);
   useEffect(() => {
     const visibility = () => setVisible(document.visibilityState !== "hidden");
@@ -107,6 +117,7 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
       <header><img src={brand(account).mark} alt="" width="24" height="24" /><strong>{brand(account).name}</strong><button type="button" onClick={close} aria-label={copy("subscription-rail.close")}>×</button></header>
       <p className="subscription-account-alias">{account.alias}</p>
       <p className="subscription-account-state">{copy(account.disabled ? "subscription-rail.disabled" : "subscription-rail.connected")}</p>
+      {account.service === "chatgpt" ? <PaidCredits buckets={account.paidCredits} state={!creditsSupported ? PaidCreditState.Unsupported : query.error || unconfirmedRead ? PaidCreditState.Failed : account.paidCreditState} compact={account.paidCredits.length <= 1} active={allowed} now={now} /> : null}
       {unavailable ? <p role="status">{copy("subscription-rail.readFailed")}</p> : null}
       {!unavailable && remainingBadge(account.windows, now) === undefined ? <p>{copy("subscription-rail.incomplete")}</p> : null}
       {account.windows.length ? account.windows.map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} index={index} now={now} unavailable={unavailable} />) : <p>{copy("subscription-rail.unknown")}</p>}

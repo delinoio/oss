@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import { subscriptionService, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text } from "./documents";
+import { paidCreditProjection, PaidCreditState, type PaidCreditBucket } from "./subscription-paid-credits";
 import { serviceAccount } from "./subscription-resource";
 export interface RailWindow { id: string; state: string; remaining?: number; observedAt: string; resetAt: string; blocking?: boolean; comparisonGroup: string; valid?: boolean }
-export interface RailAccount { id: string; revision: bigint; alias: string; service: string; connected: boolean; disabled: boolean; windows: RailWindow[] }
+export interface RailAccount { id: string; revision: bigint; alias: string; service: string; connected: boolean; disabled: boolean; windows: RailWindow[]; creditScope: string; paidCredits: PaidCreditBucket[]; paidCreditState: PaidCreditState; paidCreditsComplete: boolean }
 export function railAccount(resource: Resource): RailAccount {
   if (!serviceAccount(resource)) throw new Error("Invalid subscription resource");
-  const data = document(resource);
+  const data = document(resource), subscription = object(data.subscription);
+  const paidCredits = data.subscription_service === "chatgpt" ? paidCreditProjection(subscription) : [];
+  const paidCreditsComplete = Array.isArray(subscription.paid_credits) && paidCredits.length === subscription.paid_credits.length;
   return { id: resource.id, revision: resource.revision, alias: resourceName(resource), service: subscriptionService(data.subscription_service)!, disabled: data.enabled === false,
+    creditScope: `${text(object(data.connection).id)}:${text(subscription.generation)}`, paidCredits, paidCreditsComplete,
+    paidCreditState: subscription.quota_state === "failed" ? PaidCreditState.Failed : paidCreditsComplete ? PaidCreditState.Observed : PaidCreditState.Unknown,
     connected: !data.removal && object(data.subscription).recovery_required !== true && Boolean(text(object(data.connection).id)),
     windows: items(data.quota).map(entry => { const value = object(entry);
       const stringFields = ["id", "state", "observed_at", "reset_at", "comparison_group"];
@@ -23,4 +28,11 @@ export function remainingBadge(windows: readonly RailWindow[], now: number): num
   if (windows.some(window => typeof window.blocking !== "boolean")) return undefined;
   const blocking = windows.filter(window => window.blocking);
   return blocking.length && blocking.every(window => freshWindow(window, now) && window.comparisonGroup) ? Math.round(Math.min(...blocking.map(window => window.remaining!)) * 100) : undefined;
+}
+
+/** Sparse or malformed saved replacements cannot erase original credit evidence.
+ * A new account connection or credential generation must never inherit it. */
+export function reconcileRailCredits(current: RailAccount, previous?: RailAccount): RailAccount {
+  if (!previous || current.id !== previous.id || current.service !== previous.service || current.creditScope !== previous.creditScope || !current.connected || current.paidCreditsComplete && current.paidCreditState !== PaidCreditState.Failed) return current;
+  return { ...current, paidCredits: current.paidCredits.length ? current.paidCredits : previous.paidCredits };
 }

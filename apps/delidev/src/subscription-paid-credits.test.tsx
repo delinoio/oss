@@ -49,3 +49,5 @@ it("retains original timestamps at the five-minute boundary and flags future obs
  view.rerender(<PaidCredits compact buckets={[bucket]} state={PaidCreditState.Observed} now={now+300001}/>);expect(screen.getByText(/Stale observation/)).toBeTruthy();
  view.rerender(<PaidCredits compact buckets={[{...bucket,observedAt:new Date(now+1).toISOString()}]} state={PaidCreditState.Observed} now={now}/>);expect(screen.getByText(/Stale observation/)).toBeTruthy();
 });
+
+it("marks retained evidence historical when a saved replacement is incomplete",()=>{render(<PaidCredits buckets={[bucket]} state={PaidCreditState.Unknown} now={now}/>);expect(screen.getByText("1,250.50")).toBeTruthy();expect(screen.getByText(/Stale observation/)).toBeTruthy()});

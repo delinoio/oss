@@ -34,3 +34,5 @@
 .subscription-account-popover .subscription-quota-observation { margin-bottom: 0; color: var(--muted); }
 .subscription-account-actions { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
 .subscription-account-actions button { width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+.subscription-account-popover .subscription-paid-credits { margin-block: 12px; padding: 12px; background: var(--surface-muted); }

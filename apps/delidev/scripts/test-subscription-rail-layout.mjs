@@ -59,6 +59,21 @@ try {
     checks++;console.log(JSON.stringify({operation:"subscription-rail-layout",language,theme,width,height,windows,result:"passed"}));
     if(screenshots){await mkdir(screenshots,{recursive:true});await page.screenshot({path:join(screenshots,language+"-"+theme+"-"+width+".png")});}
   }
+  // Credits reuse the original popover geometry, exact disclosure and focus owner.
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width,height] of [[1440,900],[480,320]]) for (const credits of ["single","multiple"]) {
+    await page.setViewportSize({width,height});await page.goto(`${origin}/?language=${language}&theme=${theme}&count=1&credits=${credits}`);
+    const opener=page.locator(".subscription-rail-account").first();await opener.waitFor();await opener.click();
+    const popup=page.locator(".subscription-account-popover"),card=popup.locator(".subscription-paid-credits");await card.waitFor();
+    const bounds=await popup.boundingBox();assert(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=width+1&&bounds.y+bounds.height<=height+1);
+    assert.equal(await popup.locator(".subscription-account-actions button").count(),2);
+    assert.equal(await card.locator(".paid-credit-information").count(),credits==="multiple"?2:1);
+    assert(await card.evaluate(node=>{const quota=node.parentElement.querySelector(".subscription-quota-window");return Boolean(node.compareDocumentPosition(quota)&Node.DOCUMENT_POSITION_FOLLOWING)}));
+    const numeric=await card.locator(".paid-credit-balance").first().evaluate(node=>({size:getComputedStyle(node).fontSize,text:node.textContent}));assert.equal(numeric.size,"24px");assert(numeric.text.includes("60,961.11"));
+    const information=card.locator(".paid-credit-information").first();await information.focus();assert((await card.locator('[role="tooltip"]').textContent()).includes("60961.1135370000"));
+    await page.keyboard.press("Escape");assert.equal(await card.locator('[role="tooltip"]').count(),0);assert.equal(await popup.count(),1);
+    assert(await information.evaluate(node=>document.activeElement===node));await page.keyboard.press("Escape");assert(await opener.evaluate(node=>document.activeElement===node));
+    checks++;console.log(JSON.stringify({operation:"subscription-rail-credit-layout",language,theme,width,height,credits,result:"passed"}));
+  }
   // A 480×320 CSS viewport also covers effective 200% reflow from 960×640.
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1440,1200],[1440,900],[960,640],[480,320]]) for (const count of [0,1,2,3,4,5,6,70]) {
     await page.setViewportSize({width,height});
