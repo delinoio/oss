@@ -72,6 +72,23 @@ fences and are never replayed. The [official empty notification schema](https://
 and [native cache invalidation watcher](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/skills_watcher.rs)
 define this passive observation separately from explicit selected-package proof.
 
+Native `fuzzyFileSearch/sessionUpdated` and `fuzzyFileSearch/sessionCompleted`
+notifications validate the original `sessionId`, required update query and ordered
+files before private discard. The strict file shape preserves `root`, `path`,
+`match_type`, `file_name`, uint32 score and omitted/null/ordered uint32 indices.
+Updates retain a 1 MiB envelope, at most 1,024 files, 4,096 indices per result,
+1,024-byte session identities and 4,096-byte query/path/name bounds. Unknown or
+duplicate fields, missing/null required values and invalid match types/counters
+fail with a closed fuzzy-search diagnostic classification. No product operation
+admits a native search-session/query owner; foreign/stale results and completion
+before update are validated and discarded without reading paths, starting queries,
+indexing conversations or changing original input, settings, outcome or cleanup.
+Same-name server requests remain unsupported. The official
+[updated schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+uses `match_type`, not `matchType`; the
+[completion schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionCompletedNotification.json)
+requires only the native session identity.
+
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so
 parser-level success cannot conceal an unsupported Worker event family.
