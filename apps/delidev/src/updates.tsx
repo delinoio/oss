@@ -97,7 +97,7 @@ function DesktopUpdates({active,controls}:{active:boolean;controls?:DesktopUpdat
   const validID=/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id);
   const read=useQuery(InstallationQuery.getUpdate,{id},{enabled:active&&supported&&validID});
   const selected=read.data?.update?.id===id?read.data.update:candidate?.id===id?candidate:undefined;
-  const attention=Boolean(check.busy||check.uncertain||check.error||read.error||contextError);
+  const attention=Boolean(check.busy||check.uncertain||check.error||read.error||contextError||status.error);
   useEffect(()=>{const node=root.current;if(!node)return;const reveal=()=>{if(node.querySelector('[data-connection-attention="true"]'))setRecoveryOpen(true);};const observer=new MutationObserver(reveal);observer.observe(node,{subtree:true,attributes:true,attributeFilter:["data-connection-attention"]});reveal();return()=>observer.disconnect();},[]);
   useEffect(()=>{if(attention)setRecoveryOpen(true);},[attention]);
   return <div ref={root}>
