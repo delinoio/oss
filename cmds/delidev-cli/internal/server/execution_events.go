@@ -161,6 +161,9 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 	if input.Configuration.Harness == domain.ClaudeCode && event.NativeThreadID != string(input.SessionID) {
 		return executionEventConflict()
 	}
+	if event.Message != nil && event.Message.Codex != nil && input.Configuration.Harness != domain.Codex {
+		return executionEventConflict()
+	}
 	if event.ClaudeMessage != nil && (input.Configuration.Harness != domain.ClaudeCode || event.ClaudeMessage.Model != input.Configuration.NativeModel) {
 		return executionEventConflict()
 	}
@@ -640,7 +643,7 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionMessageStarted {
-		value = domain.ExecutionMessage{ContextRevision: input.ContextRevision, Attachments: append([]domain.ImageAttachment(nil), update.Attachments...), ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
+		value = domain.ExecutionMessage{Codex: domain.CloneCodexMessage(update.Codex), ContextRevision: input.ContextRevision, Attachments: append([]domain.ImageAttachment(nil), update.Attachments...), ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -651,11 +654,12 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 			return err
 		}
 		phaseMatches := value.Phase == nil || (update.Phase != nil && *value.Phase == *update.Phase)
-		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || !slices.Equal(value.Attachments, update.Attachments) || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
+		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || !slices.Equal(value.Attachments, update.Attachments) || value.InputID != update.InputID || !phaseMatches || !value.Codex.CanAdvance(update.Codex) || value.State != domain.MessageStreaming {
 			return executionEventConflict()
 		}
 		revision = r.Revision
 		value.Phase = update.Phase
+		value.Codex = domain.CloneCodexMessage(update.Codex)
 		if event.Kind == domain.ExecutionTextAppended {
 			value.Text += update.Text
 		} else if event.Kind == domain.ExecutionMessageCompleted {

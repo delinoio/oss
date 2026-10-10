@@ -1,0 +1,10 @@
+{
+  "native-codex-message.observation": "Native message observation",
+  "native-codex-message.async": "Asynchronous delivery",
+  "native-codex-message.inert": "These are nonblocking suggestions, not requests for a native reply. Selecting a choice only puts text in an unsent draft.",
+  "native-codex-message.noChoices": "No choices were supplied.",
+  "native-codex-message.emptyChoices": "The native choices list is empty.",
+  "native-codex-message.emptyChoice": "Empty suggestion",
+  "native-codex-message.draftGuard": "Your existing draft and pending work are retained. Suggestions require an empty, available composer.",
+  "native-codex-message.unavailable": "This native message observation is unavailable."
+}

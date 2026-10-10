@@ -264,6 +264,10 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			}
 			message.Phase = &phase
 		}
+		if !message.Codex.CanAdvance(event.Message.Codex) || event.Message.Codex.Validate() != nil {
+			return false, publicationUncertain()
+		}
+		message.Codex = domain.CloneCodexMessage(event.Message.Codex)
 		message.Attachments = append([]domain.ImageAttachment(nil), event.Message.Attachments...)
 		message.Text = event.Message.Text
 		kind := domain.ExecutionMessageStarted

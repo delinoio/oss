@@ -426,7 +426,11 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 				}
 				items[item.ID] = true
 				switch item.Type {
-				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
+				case "agentMessage":
+					if _, private, err := decodeAgentMessage(rawItem); err != nil || private {
+						return nil, compactionUncertain()
+					}
+				case "userMessage", "reasoning", "plan", "contextCompaction":
 				case "commandExecution", "fileChange", "imageView":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()

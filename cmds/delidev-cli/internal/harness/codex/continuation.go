@@ -258,6 +258,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "agentMessage" {
+			if _, private, err := decodeAgentMessage(rawItem); err != nil || private {
+				return Turn{}, nil, incompatible()
+			}
+		}
 		if identity.Type != "userMessage" {
 			continue
 		}

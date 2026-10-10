@@ -3713,3 +3713,22 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+
+### Codex embedded message suggestions — issue #2401
+
+Render original async delivery and ordered embedded questions as inert message
+content, separate from synchronous native request/response forms. Preserve each
+native title and choice string, null choices versus an empty list, and source order.
+Show the native delivery observation without implying pending execution or a reply
+request. Malformed complete observations show Unavailable without partial actions.
+Use EN/KO copy and the existing message and action presentation. Locale changes and
+transcript refreshes must never populate or send a draft.
+
+Only an explicit human choice can place its text into an empty, active and available
+composer. Retain existing text, images, selected skills, pending/uncertain mutations,
+context changes and archived/inactive session guards; a rejected guard leaves them
+unchanged. Never replace existing composer content or send automatically. The new
+presentation does not call question response, enqueue, recovery or native controls.
+Ordinary Send keeps its existing admission. Historical and inherited Fork content
+remains observational and grants no original native reply authority.

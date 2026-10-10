@@ -859,3 +859,24 @@ Every claim, including the independent first-execution transaction primitive, us
 `ListWaitingQueue` reads dispatch order, exact uint64 generation, exact waiting count and bounded payloads from one transaction. Defaults are 50 inputs, maximum 200 and 3 MiB per payload page. Signed tokens bind server, session, generation and last reached input position. Membership/order changes return CursorExpired and require a fresh first page. Legacy ListQueue keeps its acceptance-history order and cursor meaning. Generation stays exact in Go uint64 and desktop bigint, including values above JavaScript's safe integer range.
 
 At each new Fork admission, freeze the source's already accepted image references in `fork-image-snapshot:<job-id>`, including an explicit empty set. Bind original source/child/execution/turn and immutable job-input digest. Independent inheritance and read-only Sidechat use this frozen set and recheck original image/Worker claims; later acceptance cannot enlarge it. Existing pre-cutover jobs without a snapshot retain the old verified history cutoff. Missing new snapshots require recovery. Retire snapshot metadata only after both original job and dependent child are retired; retain independent child deletion ownership and all original native/workspace restrictions.
+
+
+### Codex async message observations — issue #2401
+
+Root `agentMessage` delivery and embedded nonblocking questions are typed message
+content under the [harness async-message profile](cmds-delidev-harness-contract.md#codex-async-messages-and-embedded-questions--issue-2401).
+Preserve original execution/account/Worker/thread/turn/item ownership, native order,
+nullable option shape and durable publication receipts. The transcript retains
+presence and nullable fields through text deltas, completion and inherited Fork
+messages; final metadata may only extend earlier original observations. Foreign
+harness/user/child projections cannot supply this root assistant content. Receipt
+retry never adds an interaction, accepted answer or another queued input.
+
+Embedded choices are inert suggestions. Explicit selection may populate only an
+empty, active, available unsent composer through its original draft guard. Existing
+text, image/skill work, pending sends, context changes and inactive/archived sessions
+remain protected. Selection never invokes answer, native reply, enqueue or execution
+controls. A later explicit Send still passes the original queue and send admission.
+No new RPC, protocol allocation or SQLite migration is needed for these bounded
+observational JSON fields. Synchronous native requests and #1997 citations retain
+separate ownership.

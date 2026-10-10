@@ -42,7 +42,7 @@ notifications accept the saved disabled-plugin list. These observations are
 discarded and cannot replace the independently validated effective settings,
 enable plugins, select environments or grant Daybreak execution authority.
 Agent-message `questions` may be omitted, null or empty for ordinary text;
-populated questions retain the private extension boundary. Quota snapshots accept
+bounded owned root async delivery and embedded questions use the separate #2401 message observation profile below. Populated memory citations and rich child delivery retain their separate private boundaries. Quota snapshots accept
 the advisory `normalModelSlug` without selecting a model. Response-usage
 `usageMetadata.metadata` stays opaque and excluded from publication, cost and
 logs; original counters and amount-evidence classification remain unchanged.
@@ -1986,3 +1986,45 @@ Grok initialize responses confirm initialization and begin actual settings
 validation. Original successful settings publication confirms settings only.
 Preserve account/history/protocol/input claims and independent cleanup; no observer
 value grants readiness, native support, credential release or input acceptance.
+
+
+## Codex async messages and embedded questions — issue #2401
+
+The official `rust-v0.162.0` source (`c1382380de69521303b416720a52f42d51af6248`)
+[AgentMessageDelivery](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/typescript/v2/AgentMessageDelivery.ts)
+and [AsyncUserInputQuestion](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/typescript/v2/AsyncUserInputQuestion.ts)
+define `async` delivery and ordered `{title, options: string[] | null}` observations
+on root `agentMessage` items. They have no wire request ID and do not use the
+synchronous `item/tool/requestUserInput` controller. Native version metadata is
+not an admission gate; the actual original process and closed fields remain the proof.
+
+A shared closed decoder validates ordinary, async-only, questions-only and combined
+root messages before live publication and complete-history/continuation/Fork
+admission. Preserve original item/thread/turn, text, phase and native JSON/digests.
+Delivery omission, explicit null and `async` are distinct. Questions omission,
+null, an empty array, question order and nullable versus empty option arrays remain
+exact. Each title/option is at most 64 KiB; at most 128 questions and 128 options per
+question fit within 256 KiB of encoded observational metadata and existing message
+and frame bounds. Reject duplicate/unknown keys, malformed shapes, foreign ownership
+and invalid delivery values. Populated memory citations remain private under #1997;
+existing child-source omitted/null delivery rules are unchanged.
+
+The existing typed core message lifecycle stores a `codex` observation object with
+separate delivery/questions presence bits and nullable values. Worker and server
+validate it independently. Initial absent/null streaming observations may acquire
+final delivery/questions; already observed delivery and ordered question prefixes
+cannot change or disappear. Preserve null versus empty options in comparisons.
+Root assistant observations cannot borrow user input or native-parent ownership.
+The original outbox sequence/request/receipt remains durable; acknowledgment loss
+replays only that receipt and never reconstructs a message, native question, answer
+or input. Strict older-peer JSON rejection keeps original publication uncertainty;
+metadata is never dropped to obtain acceptance.
+
+These additive observations use existing event JSON and Message resources, with
+no new RPC, numeric allocation, migration or native reply operation. They grant no
+execution, recovery, synchronous question or answer authority. Native cleanup,
+account leases, accepted input, terminal evidence and history recovery stay under
+their original independent owners. Complete-history readers retain original bytes
+and digests; admission neither rebuilds nor writes a native rollout. Both ordinary
+and explicitly admitted managed Fork validate this closed assistant family; other
+restricted families retain their existing eligibility.

@@ -244,7 +244,7 @@ func TestNativeSettingsNotificationsCannotReplaceAcceptedAuthority(t *testing.T)
 	}
 }
 
-func TestAgentMessageQuestionsRemainPrivate(t *testing.T) {
+func TestAgentMessageQuestionsRetainClosedShape(t *testing.T) {
 	for _, questions := range []any{nil, []any{}, []any{map[string]any{"private-question": "private-content"}}, true} {
 		c, turn := observationClient()
 		item := map[string]any{"type": "agentMessage", "id": "message", "text": "fixture", "questions": questions}
@@ -256,8 +256,8 @@ func TestAgentMessageQuestionsRemainPrivate(t *testing.T) {
 			}
 		case []any:
 			if len(value) != 0 {
-				if err != nil || event.Kind != NativeExtensionEvent || event.Message != nil {
-					t.Fatal("populated questions became ordinary output", err)
+				if err == nil || event.Message != nil {
+					t.Fatal("malformed populated questions became ordinary output", err)
 				}
 				continue
 			}

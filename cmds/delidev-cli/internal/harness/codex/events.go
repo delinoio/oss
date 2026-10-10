@@ -137,6 +137,7 @@ const (
 )
 
 type Message struct {
+	Codex         *domain.CodexMessageContent
 	Attachments   []domain.ImageAttachment
 	ID            string
 	ClientInputID domain.ID
@@ -617,28 +618,14 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 
 	case "agentMessage":
-		var item struct {
-			Type           string            `json:"type"`
-			ID             string            `json:"id"`
-			Text           *string           `json:"text"`
-			Phase          *MessagePhase     `json:"phase"`
-			Delivery       json.RawMessage   `json:"delivery"`
-			MemoryCitation json.RawMessage   `json:"memoryCitation"`
-			Questions      []json.RawMessage `json:"questions,omitempty"`
+		decoded, private, err := decodeAgentMessage(params.Item)
+		if err != nil {
+			return Event{}, err
 		}
-		if domain.Decode(params.Item, &item) != nil || item.Text == nil {
-			return Event{}, incompatible()
-		}
-		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
-			return Event{}, incompatible()
-		}
-		if len(item.Questions) != 0 || (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
+		if private {
 			return privateNative(native), nil
 		}
-		message.ID = item.ID
-		message.Role = AssistantRole
-		message.Text = *item.Text
-		message.Phase = item.Phase
+		message = decoded
 	default:
 		return privateNative(native), nil
 	}

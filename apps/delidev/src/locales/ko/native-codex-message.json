@@ -1,0 +1,10 @@
+{
+  "native-codex-message.observation": "네이티브 메시지 관찰",
+  "native-codex-message.async": "비동기 전달",
+  "native-codex-message.inert": "이 내용은 네이티브 응답 요청이 아닌 비차단 제안입니다. 선택지는 전송되지 않은 초안에만 입력됩니다.",
+  "native-codex-message.noChoices": "선택지가 제공되지 않았습니다.",
+  "native-codex-message.emptyChoices": "네이티브 선택지 목록이 비어 있습니다.",
+  "native-codex-message.emptyChoice": "빈 제안",
+  "native-codex-message.draftGuard": "기존 초안과 진행 중인 작업을 유지합니다. 제안을 선택하려면 입력란이 비어 있고 사용 가능해야 합니다.",
+  "native-codex-message.unavailable": "이 네이티브 메시지 관찰을 사용할 수 없습니다."
+}
