@@ -44,6 +44,14 @@ func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Reso
 		t.Fatal(err)
 	}
 	job, input := forkClaimFixture(t, f, accepted.Msg.Job.Id)
+	return f, publishOpenCodeForkResult(t, f, job, input), input
+}
+
+// Publish controlled native observations without running OpenCode. Reuse this
+// fixture for API and key-backed Go profiles with their original assignments.
+func publishOpenCodeForkResult(t *testing.T, f *continuationFixture, job *pb.Resource, input domain.ForkJobInput) *pb.Resource {
+	t.Helper()
+	ctx := context.Background()
 	result := forkResultFixture(t, input)
 	result.Version = 2
 	result.NativeThreadID = "ses_01960dcbe1fdabcdefghijklmn"
@@ -61,7 +69,7 @@ func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Reso
 	manifest.InputDigest = forkInputDigest(result.Preparation)
 	result.Manifest, _ = json.Marshal(manifest)
 	raw, _ := json.Marshal(result)
-	if _, err = f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw})); err != nil {
+	if _, err := f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(job, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, OutputJson: raw})); err != nil {
 		t.Fatal(err)
 	}
 	final, err := sessionClient(f.accountFixture).GetSessionFork(ctx, ownerRequest(f.identity, &pb.GetSessionForkRequest{JobId: job.Id}))
@@ -73,7 +81,7 @@ func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Reso
 	if child.Fork.OpenCodeCreationRequestID != input.OpenCode.Fork {
 		t.Fatal("published child lost original creation marker")
 	}
-	return f, final.Msg.Session, input
+	return final.Msg.Session
 }
 
 func finishOpenCodeRecoveryTurn(t *testing.T, f *continuationFixture, report bool) {
