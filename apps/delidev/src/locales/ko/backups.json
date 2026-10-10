@@ -22,7 +22,7 @@
   "backups.bytes_825916": "<s0/><s1/> 바이트",
   "backups.verifiedInspection_14f284": "검증된 확인",
   "backups.notChecked_d16948": "확인되지 않음",
-  "backups.inspectBackup_78fbba": "{{v0}} 백업 확인",
+  "backups.inspectBackup_78fbba": "{{v0}} 검사",
   "backups.inspect_e0723a": "확인",
   "backups.integrityNotEstablishedByThisListing_299564": "이 목록은 무결성을 입증하지 않습니다.",
   "backups.backupPages_ca0a4a": "백업 페이지",

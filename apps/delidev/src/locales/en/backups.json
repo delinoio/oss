@@ -22,7 +22,7 @@
   "backups.bytes_825916": "<s0/><s1/> bytes",
   "backups.verifiedInspection_14f284": "Verified inspection",
   "backups.notChecked_d16948": "Not checked",
-  "backups.inspectBackup_78fbba": "Inspect backup {{v0}}",
+  "backups.inspectBackup_78fbba": "Inspect {{v0}}",
   "backups.inspect_e0723a": "Inspect",
   "backups.integrityNotEstablishedByThisListing_299564": "Integrity not established by this listing.",
   "backups.backupPages_ca0a4a": "Backup pages",
