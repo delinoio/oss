@@ -15,6 +15,7 @@ const (
 	CommandTool         ToolKind = "command"
 	PatchTool           ToolKind = "patch"
 	ImageViewTool       ToolKind = "image-view"
+	CodexAppTool        ToolKind = "codex-app"
 	OpenCodeReadTool    ToolKind = "opencode-read"
 	OpenCodeShellTool   ToolKind = "opencode-shell"
 	OpenCodeTodoTool    ToolKind = "opencode-todo"
@@ -71,6 +72,7 @@ type FileChangeObservation struct {
 }
 
 type ToolSnapshot struct {
+	CodexApp  *CodexAppCallObservation    `json:"codex_app,omitempty"`
 	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
 	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
 	Todo      *OpenCodeTodoObservation    `json:"todo,omitempty"`
@@ -145,6 +147,10 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 			if kind == ExecutionToolStarted && u.Snapshot.Status != ToolPending || kind == ExecutionToolUpdated && u.Snapshot.Status != ToolPending && u.Snapshot.Status != ToolRunning || kind == ExecutionToolCompleted && u.Snapshot.Status != ToolCompleted && u.Snapshot.Status != ToolFailed {
 				return invalidTool()
 			}
+		} else if u.Snapshot.Kind == CodexAppTool {
+			if kind == ExecutionToolStarted && u.Snapshot.Status != ToolRunning || kind == ExecutionToolUpdated && u.Snapshot.Status != ToolRunning || kind == ExecutionToolCompleted && u.Snapshot.Status != ToolCompleted && u.Snapshot.Status != ToolFailed {
+				return invalidTool()
+			}
 		} else if kind == ExecutionToolUpdated || (kind == ExecutionToolStarted) != (u.Snapshot.Status == ToolRunning) {
 			return invalidTool()
 		}
@@ -173,6 +179,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == CodexAppTool {
+		if s.CodexApp == nil || s.ImageView != nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil {
+			return invalidTool()
+		}
+		return s.CodexApp.Validate(s.Status)
+	}
+	if s.CodexApp != nil {
+		return invalidTool()
+	}
 	if s.Kind == ImageViewTool {
 		if s.ImageView == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
 			return invalidTool()

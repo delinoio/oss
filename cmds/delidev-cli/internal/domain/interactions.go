@@ -67,9 +67,10 @@ type Question struct {
 	Options []QuestionOption `json:"options"`
 }
 type QuestionRequest struct {
-	Blocking         bool       `json:"blocking"`
-	AutoResolutionMS *uint64    `json:"auto_resolution_ms"`
-	Questions        []Question `json:"questions"`
+	CodexApp         *CodexAppApprovalContext `json:"codex_app,omitempty"`
+	Blocking         bool                     `json:"blocking"`
+	AutoResolutionMS *uint64                  `json:"auto_resolution_ms"`
+	Questions        []Question               `json:"questions"`
 }
 
 func invalidInteraction() error {
@@ -109,18 +110,22 @@ func (q *Question) UnmarshalJSON(raw []byte) error {
 
 func (q *QuestionRequest) UnmarshalJSON(raw []byte) error {
 	var wire struct {
-		Blocking         *bool      `json:"blocking"`
-		AutoResolutionMS *uint64    `json:"auto_resolution_ms"`
-		Questions        []Question `json:"questions"`
+		CodexApp         *CodexAppApprovalContext `json:"codex_app,omitempty"`
+		Blocking         *bool                    `json:"blocking"`
+		AutoResolutionMS *uint64                  `json:"auto_resolution_ms"`
+		Questions        []Question               `json:"questions"`
 	}
 	if Decode(raw, &wire) != nil || wire.Blocking == nil {
 		return invalidInteraction()
 	}
-	*q = QuestionRequest{Blocking: *wire.Blocking, AutoResolutionMS: wire.AutoResolutionMS, Questions: wire.Questions}
+	*q = QuestionRequest{CodexApp: wire.CodexApp, Blocking: *wire.Blocking, AutoResolutionMS: wire.AutoResolutionMS, Questions: wire.Questions}
 	return q.Validate()
 }
 
 func (r QuestionRequest) Validate() error {
+	if r.CodexApp != nil && r.CodexApp.Validate(r) != nil {
+		return invalidInteraction()
+	}
 	if len(r.Questions) == 0 || len(r.Questions) > 128 {
 		return invalidInteraction()
 	}

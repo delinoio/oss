@@ -86,6 +86,9 @@ func (r QuestionResponseInput) Validate(original *QuestionRequest) error {
 		if !ok || answers == nil || len(answers) > 128 {
 			return invalidQuestionResponse()
 		}
+		if original.CodexApp != nil && len(answers) != 1 {
+			return invalidQuestionResponse()
+		}
 		seen := map[string]bool{}
 		for _, answer := range answers {
 			if Text(answer, "question answer", MaxQuestionResponseBytes, true) != nil || seen[answer] {
