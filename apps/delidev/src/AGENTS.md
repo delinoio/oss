@@ -11,6 +11,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
+- [DeliDev screen shortcuts and help](../../../docs/apps-delidev-desktop-contract.md#screen-shortcuts-and-help)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev parallel browser QA](../../../docs/apps-delidev-qa-contract.md)
 - [DeliDev AI Subscription Settings](../../../docs/apps-delidev-subscription-settings-contract.md)
