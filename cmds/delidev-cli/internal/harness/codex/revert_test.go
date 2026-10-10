@@ -226,3 +226,38 @@ func TestRevertProfileRejectsUnprovedActualNativeVersion(t *testing.T) {
 		t.Fatal("missing actual native profile refusal")
 	}
 }
+
+func TestRevertPreClaimHistoryAndBoundsFailuresNeverReachClaimOrWire(t *testing.T) {
+	for _, scenario := range []string{"history-read", "target-proof", "retained-prefix-bound", "intent-writer"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, "ready")
+			switch scenario {
+			case "history-read":
+				fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": []any{"invalid original history turn"}, "nextCursor": nil, "backwardsCursor": nil}})
+			case "target-proof":
+				inputs[0].PromptDigest = sha256.Sum256([]byte("changed target"))
+			case "retained-prefix-bound":
+				turns := []any{}
+				for n := 0; n < 129; n++ {
+					turn := fixtureTurn(domain.NewID(), TurnCompleted)
+					turn["itemsView"] = "full"
+					turn["items"] = []any{}
+					turns = append(turns, turn)
+				}
+				fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}})
+			}
+			claims := 0
+			_, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[0], ids[0], func(RevertIntent) error { claims++; return domain.CompactionUncertain() })
+			expected := 0
+			if scenario == "intent-writer" {
+				expected = 1
+			}
+			if err == nil || claims != expected || len(requestsOf(t, capture, "thread/revert")) != 0 {
+				t.Fatal("pre-send boundary or once-only claim changed", claims, err)
+			}
+			if err := c.Close(); err != nil {
+				t.Fatal("original native cleanup not joined", err)
+			}
+		})
+	}
+}

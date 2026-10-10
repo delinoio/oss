@@ -71,17 +71,28 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	logger = logger.With("job_id", owner, "action_id", i.ActionID, "session_id", i.Assignment.SessionID)
 	phase := compactionPrepare
 	nativeClosed, workspaceClosed, authenticationClosed := false, false, !i.Assignment.Configuration.Subscription
+	proxyClosed := true
+	var preSendFailure error
+	claimInvoked, cleanupFailed := false, false
+	defer func() {
+		if returned != nil {
+			logger.WarnContext(ctx, "codex_session_compaction_uncertain", "phase", phase, "code", domain.SafeError(returned).Code)
+		}
+	}()
 	defer func() {
 		if i.Revert != nil && nativeClosed && workspaceClosed && authenticationClosed {
 			proof := revertCleanupClaim{Version: 1, ServerID: c.Credential.ServerID, DeviceID: c.Credential.DeviceID, JobID: owner, InstanceID: c.Instance, Revision: c.Assignment.Revision, AssignmentDigest: executionInputDigest(c.Assignment.DocumentJson), InputDigest: executionInputDigest(job.Input)}
 			if e := writeRevertCleanup(config.Root, i.ActionID, proof); e != nil {
 				output, returned = nil, e
+				return
 			}
 		}
-	}()
-	defer func() {
-		if returned != nil {
-			logger.WarnContext(ctx, "codex_session_compaction_uncertain", "phase", phase, "code", domain.SafeError(returned).Code)
+		if preSendFailure != nil {
+			raw, e := completedRevertPreSendFailure(owner, job, i, preSendFailure, revertPreSendBoundary{claimInvoked, nativeClosed, proxyClosed, workspaceClosed, authenticationClosed, cleanupFailed})
+			if e == nil {
+				output, returned = raw, nil
+				logger.InfoContext(ctx, "codex_revert_presend_failure_cleanup_verified", "code", domain.SafeError(preSendFailure).Code)
+			}
 		}
 	}()
 	var prep workspace.PrepareRequest
@@ -100,6 +111,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	defer func() {
 		if err := lease.Close(); err != nil {
+			cleanupFailed = true
 			output, returned = nil, err
 		} else {
 			workspaceClosed = true
@@ -179,10 +191,12 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		}
 		conclusive := managedCleanup && (managedSuccess || managedUnused)
 		if err := managed.finish(managedLatest, managedCleanup, false, managedSuccess); err != nil {
+			cleanupFailed = true
 			output, returned = nil, &managedExecutionUncertain{err}
 		} else if conclusive {
 			authenticationClosed = true
 		} else if !conclusive {
+			cleanupFailed = true
 			output, returned = nil, &managedExecutionUncertain{subscription.Invalid()}
 		}
 		clear(managed.response.Bundle)
@@ -252,11 +266,15 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			return nil, err
 		}
 		if proxy != nil {
+			proxyClosed = false
 			nativeConfig.API.LoopbackProxyURL = proxy.NativeURL()
 			nativeConfig.Process.ProtectedValues = proxy.ProtectedValues()
 			defer func() {
 				if err := proxy.Close(); err != nil {
+					cleanupFailed = true
 					output, returned = nil, err
+				} else {
+					proxyClosed = true
 				}
 			}()
 		}
@@ -297,6 +315,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	defer func() {
 		if err := closeNative(); err != nil {
+			cleanupFailed = true
 			output, returned = nil, err
 		}
 	}()
@@ -327,8 +346,16 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	usages := []domain.NativeResponseUsage{}
 	if i.Revert != nil {
 		target := codex.HistoricalInput{ID: i.Revert.InputID, PromptDigest: i.Revert.Prompt.InputDigest()}
-		retained, err = native.RevertThread(ctx, i.ActionID, source.Native, target, domain.ID(i.Revert.NativeTurnID), func(intent codex.RevertIntent) error { return writeRevertIntent(config.Root, owner, i, intent) })
+		retained, err = native.RevertThread(ctx, i.ActionID, source.Native, target, domain.ID(i.Revert.NativeTurnID), func(intent codex.RevertIntent) error {
+			// Callback entry is the uncertainty fence, even if durable writing
+			// fails. Never downgrade a partially persisted claim to no-send.
+			claimInvoked = true
+			return writeRevertIntent(config.Root, owner, i, intent)
+		})
 		if err != nil {
+			if !claimInvoked {
+				preSendFailure = err
+			}
 			return nil, err
 		}
 	} else {
@@ -373,6 +400,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		if err := proxy.Close(); err != nil {
 			return nil, err
 		}
+		proxyClosed = true
 	}
 	if err := lease.Close(); err != nil {
 		return nil, err
