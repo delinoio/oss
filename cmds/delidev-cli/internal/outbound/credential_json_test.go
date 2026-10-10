@@ -198,3 +198,86 @@ func assertCredentialCancellationWithheld(t *testing.T, prefix, released string)
 		t.Fatal("close did not join")
 	}
 }
+
+func TestCredentialJSONEscapeAllocationsStayBounded(t *testing.T) {
+	patterns := [][]byte{[]byte("fixture-password")}
+	var baseline float64
+	for _, count := range []int{64, 1024, 10000} {
+		raw := []byte(`{"value":"` + strings.Repeat(`\u0061`, count) + `"}`)
+		allocations := testing.AllocsPerRun(5, func() {
+			g := credentialJSONGuard{patterns: patterns, framing: credentialOrdinary}
+			if g.scan(raw) || g.finish() {
+				panic("harmless escape fixture rejected")
+			}
+		})
+		if baseline == 0 {
+			baseline = allocations
+		}
+		t.Logf("escapes=%d wire_bytes=%d allocations=%.0f", count, len(raw), allocations)
+		if allocations > baseline+2 || allocations > 20 {
+			t.Fatal("decoder allocations grew with harmless escapes")
+		}
+	}
+}
+
+func TestCredentialJSONEscapeUnicodeSemanticsAtEverySplit(t *testing.T) {
+	for _, escape := range []string{
+		`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`,
+		`\u0061`, `\u00E9`, `\uD83D\uDD12`,
+		`\uD800`, `\uDC00`, `\uD800\u0061`, `\uD800\uD800`,
+	} {
+		wire := `{"value":"prefix` + escape + `suffix"}`
+		var oracle struct {
+			Value string `json:"value"`
+		}
+		if json.Unmarshal([]byte(wire), &oracle) != nil {
+			t.Fatal("invalid Unicode oracle fixture")
+		}
+		for split := 0; split <= len(wire); split++ {
+			g := credentialJSONGuard{patterns: [][]byte{[]byte(oracle.Value)}, framing: credentialOrdinary}
+			failed := g.scan([]byte(wire[:split]))
+			failed = g.scan([]byte(wire[split:])) || failed
+			if !failed && !g.finish() {
+				t.Fatalf("decoded protected Unicode escaped reflection accepted at split %d", split)
+			}
+		}
+	}
+}
+
+func TestCredentialJSONMalformedEscapesPreserveSafeWireAndLiteralProtection(t *testing.T) {
+	for _, escape := range []string{`\z`, `\u12zz`, `\u12`, `\uD800\uZZZZ`, `\uD800\`, `\uD800\n`} {
+		for _, value := range []string{"harmless", "fixture-password"} {
+			wire := `{"value":"` + escape + value + `"}`
+			guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(wire)}), domain.ProxyCredential{Username: "fixture-user", Password: "fixture-password"}, "application/json")
+			output, err := io.ReadAll(guard)
+			guard.Close()
+			if value == "harmless" {
+				if err != nil || string(output) != wire {
+					t.Fatal("malformed safe wire changed", err)
+				}
+			} else if err == nil || strings.Contains(string(output), value) {
+				t.Fatal("malformed JSON released literal protected content")
+			}
+		}
+	}
+}
+
+func TestCredentialJSONSurrogatePrefixRetainsOriginalWireOffset(t *testing.T) {
+	prefix := `{"value":"safe `
+	protected := `\uD83D\uDD12-password`
+	g := credentialJSONGuard{patterns: [][]byte{[]byte("🔒-password")}, framing: credentialOrdinary}
+	if g.scan([]byte(prefix)) {
+		t.Fatal("safe prefix rejected")
+	}
+	start := int64(len(prefix))
+	for _, b := range []byte(protected) {
+		failed := g.scan([]byte{b})
+		if g.retainFrom() != start {
+			t.Fatal("split surrogate released the original protected wire offset")
+		}
+		if failed {
+			return
+		}
+	}
+	t.Fatal("protected surrogate reflection was not rejected")
+}
