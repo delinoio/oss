@@ -329,7 +329,7 @@ func (t *Tx) RequireSettledCodexApps(session domain.ID) error {
 	if value != nil && value.Operation != nil && codexAppsProtected(value.Operation.State) {
 		return domain.SessionDeletionPending()
 	}
-	rows, err := t.tx.QueryContext(t.ctx, "SELECT key,value FROM metadata WHERE key LIKE ? ORDER BY key LIMIT ?", codexAppsOperationPrefix+"%", 100001)
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT key,value FROM metadata WHERE key LIKE ? AND json_extract(value,'$.operation.original.session_id')=? ORDER BY key LIMIT ?", codexAppsOperationPrefix+"%", session, 100001)
 	if err != nil {
 		return storageError(err)
 	}
