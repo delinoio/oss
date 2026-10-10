@@ -63,6 +63,8 @@ func TestExecutionToolsPreserveStreamAggregatePatchesAndNativeOutcome(t *testing
 	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: tool.ID, Tool: tool})
 	patch := &codex.Tool{ID: "patch-item", Kind: codex.PatchTool, Status: codex.ToolRunning, Changes: []codex.FileChange{}}
 	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: patch.ID, Tool: patch})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolOutputEvent, ItemID: patch.ID, ToolOutputKind: codex.PatchTool, TextDelta: "Patch applied "})
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolOutputEvent, ItemID: patch.ID, ToolOutputKind: codex.PatchTool, TextDelta: "successfully\n"})
 	move := "/private/workspace/new"
 	patch.Status, patch.Changes = "", []codex.FileChange{{Path: path, Diff: "-old\n+new\n", Kind: codex.UpdatedFile, MovePath: &move}}
 	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolPatchEvent, ItemID: patch.ID, Tool: patch})
@@ -86,7 +88,7 @@ func TestExecutionToolsPreserveStreamAggregatePatchesAndNativeOutcome(t *testing
 			}
 		case domain.PatchTool:
 			v := m.Tool
-			if m.FirstSequence != 7 || m.LastSequence != 9 || v.Started.Changes == nil || len(v.Started.Changes) != 0 || len(v.Patches) != 1 || v.Patches[0].Sequence != 8 || v.Patches[0].Changes[0].Diff != "-old\n+new\n" || v.Completed.Changes[0].Diff != "-old\n+final\n" || *v.Completed.Changes[0].MovePath != move || v.Completed.Status != domain.ToolDeclined {
+			if m.FirstSequence != 7 || m.LastSequence != 11 || v.Output == nil || *v.Output != "Patch applied successfully\n" || v.Started.Changes == nil || len(v.Started.Changes) != 0 || len(v.Patches) != 1 || v.Patches[0].Sequence != 10 || v.Patches[0].Changes[0].Diff != "-old\n+new\n" || v.Completed.Changes[0].Diff != "-old\n+final\n" || *v.Completed.Changes[0].MovePath != move || v.Completed.Status != domain.ToolDeclined {
 				t.Fatal("patch history lost its exact revision observations")
 			}
 		default:
@@ -98,7 +100,7 @@ func TestExecutionToolsPreserveStreamAggregatePatchesAndNativeOutcome(t *testing
 		t.Fatal(err)
 	}
 	s, err := store.Decode[domain.Session](r)
-	if err != nil || s.Outcome != domain.ExecutionSucceeded || s.Execution.Outcome != domain.ExecutionSucceeded || s.Execution.LastSequence != 10 || s.Execution.CleanupVerified {
+	if err != nil || s.Outcome != domain.ExecutionSucceeded || s.Execution.Outcome != domain.ExecutionSucceeded || s.Execution.LastSequence != 12 || s.Execution.CleanupVerified {
 		t.Fatal("tool failure replaced whole-turn outcome or fabricated cleanup")
 	}
 }
@@ -111,7 +113,7 @@ func TestExecutionToolsRejectScopeSubstitutionAndRequireCompletion(t *testing.T)
 	e := f.toolEvent(domain.ExecutionToolStarted, 3, id, "owned-tool")
 	e.Tool.Snapshot = toolCommand()
 	f.publish(t, e)
-	for _, bad := range []string{"duplicate-item", "message-collision", "wrong-turn", "wrong-native", "changed-command", "changed-source", "changed-kind", "missing-terminal", "mixed-payload", "patch-on-command"} {
+	for _, bad := range []string{"duplicate-item", "message-collision", "wrong-turn", "wrong-native", "changed-command", "changed-source", "changed-kind", "missing-terminal", "mixed-payload", "patch-on-command", "patch-output-on-command"} {
 		t.Run(bad, func(t *testing.T) {
 			e := f.toolEvent(domain.ExecutionToolCompleted, 4, id, "owned-tool")
 			e.Tool.Snapshot = toolCommand()
@@ -137,6 +139,9 @@ func TestExecutionToolsRejectScopeSubstitutionAndRequireCompletion(t *testing.T)
 			case "mixed-payload":
 				delta := "unowned"
 				e.Tool.Delta = &delta
+			case "patch-output-on-command":
+				delta := "success"
+				e.Kind, e.Tool.Snapshot, e.Tool.Delta, e.Tool.OutputKind = domain.ExecutionToolOutput, nil, &delta, domain.PatchTool
 			case "patch-on-command":
 				changes := []domain.FileChangeObservation{}
 				e.Kind, e.Tool.Snapshot, e.Tool.Changes = domain.ExecutionToolPatch, nil, &changes
@@ -248,6 +253,70 @@ func TestExecutionToolBoundsKeepPriorEvidenceAndSequence(t *testing.T) {
 			e = f.event(domain.ExecutionTurnFinished, last+1)
 			e.Outcome, e.ProblemCode = domain.ExecutionFailed, domain.ResourceExhausted
 			f.publish(t, e)
+		})
+	}
+}
+
+func TestLegacyPatchOutputLostAcknowledgmentReplaysExactDelta(t *testing.T) {
+	f := newPublicationFixture(t)
+	cfg := publicationWorkerConfig(t, f)
+	client := &losePublicationAck{WorkerServiceClient: f.client, t: t, path: filepath.Join(cfg.Root, "jobs", string(f.job), "publication.json"), dropAt: 4}
+	cfg.Client = client
+	publisher, mapper := bindNativeMapper(t, f, cfg)
+	tool := &codex.Tool{ID: "patch-item", Kind: codex.PatchTool, Status: codex.ToolRunning, Changes: []codex.FileChange{}}
+	publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: tool.ID, Tool: tool})
+	e := codex.Event{Kind: codex.ToolOutputEvent, ThreadID: f.thread, TurnID: f.turn, Correlated: true, ItemID: tool.ID, TextDelta: "once\n", ToolOutputKind: codex.PatchTool}
+	if handled, err := mapper.PublishCore(context.Background(), e); !handled || err == nil {
+		t.Fatal("lost tool acknowledgment was not retained")
+	}
+	if _, err := mapper.PublishCore(context.Background(), e); err == nil {
+		t.Fatal("uncertain tool publication allowed substitution")
+	}
+	if err := publisher.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := worker.OpenExecutionPublisher(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if err := reopened.ReplayPending(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.calls) != 5 || client.calls[3] != client.calls[4] {
+		t.Fatal("recovered output did not reuse its exact request identity")
+	}
+	rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+	if err != nil || len(rows) != 1 {
+		t.Fatal("lost acknowledgment duplicated tool identity")
+	}
+	m, err := store.Decode[domain.ExecutionMessage](rows[0])
+	if err != nil || (m.Tool.Output == nil || *m.Tool.Output != "once\n") || m.LastSequence != 4 {
+		t.Fatal("lost acknowledgment duplicated output")
+	}
+}
+
+func TestLegacyPatchOutputRejectsUnownedOrImplicitProvenance(t *testing.T) {
+	for _, bad := range []string{"implicit-command", "foreign-item", "foreign-turn", "unknown-kind"} {
+		t.Run(bad, func(t *testing.T) {
+			f := newPublicationFixture(t)
+			_, mapper := bindNativeMapper(t, f, publicationWorkerConfig(t, f))
+			tool := &codex.Tool{ID: "patch-item", Kind: codex.PatchTool, Status: codex.ToolRunning, Changes: []codex.FileChange{}}
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: tool.ID, Tool: tool})
+			event := codex.Event{Kind: codex.ToolOutputEvent, ThreadID: f.thread, TurnID: f.turn, Correlated: true, ItemID: tool.ID, TextDelta: "success", ToolOutputKind: codex.PatchTool}
+			switch bad {
+			case "implicit-command":
+				event.ToolOutputKind = ""
+			case "foreign-item":
+				event.ItemID = "foreign-patch"
+			case "foreign-turn":
+				event.TurnID = domain.NewID()
+			case "unknown-kind":
+				event.ToolOutputKind = codex.ImageViewTool
+			}
+			if _, err := mapper.PublishCore(context.Background(), event); err == nil {
+				t.Fatal("unowned patch output published")
+			}
 		})
 	}
 }

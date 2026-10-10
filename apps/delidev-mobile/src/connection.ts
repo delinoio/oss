@@ -65,7 +65,7 @@ export class Connection {
       if (generation !== this.generation || controller.signal.aborted) return;
       if (
         status.serverId !== this.state.profile(this.id).serverId ||
-        status.protocolVersion !== 1
+        status.protocolVersion !== 2
       ) {
         this.active = false;
         this.set(Status.Version);

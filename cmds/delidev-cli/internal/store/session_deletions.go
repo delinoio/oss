@@ -46,7 +46,7 @@ type SessionDeletion struct {
 }
 
 func (v SessionDeletion) validate() error {
-	if v.Version != 1 || v.Revision == 0 || v.ExpectedRevision == 0 || v.ExpectedRevision >= 1<<63 || v.AcceptedAt.IsZero() || len(v.Workers) > 100 {
+	if v.Version != 1 || v.Revision == 0 || v.ExpectedRevision == 0 || v.ExpectedRevision >= 1<<63 || v.AcceptedAt.IsZero() || len(v.Workers) > domain.MaxSessionDeletionJobs {
 		return domain.SessionDeletionPending()
 	}
 	if len(v.Dependents) > maxSidechatDependents || v.SidechatParentID != "" && (v.SidechatParentID.Validate() != nil || v.SidechatParentID == v.SessionID || len(v.Dependents) != 0) {
@@ -70,7 +70,8 @@ func (v SessionDeletion) validate() error {
 	if v.Actor.Type != domain.OwnerDevice && v.Actor.Type != domain.ClientDevice || v.Actor.MachineID != "" || v.Actor.Type == domain.ClientDevice && v.Actor.DeviceID.Validate() != nil {
 		return domain.SessionDeletionPending()
 	}
-	devices := []domain.ID{}
+	// Original Worker owners share the job allowance, not the general link cap.
+	devices := make(map[domain.ID]bool, len(v.Workers))
 	for _, w := range v.Workers {
 		if w.Work.Validate() != nil || w.Work.DeletionID != v.ID || w.Work.SessionID != v.SessionID || w.Work.ServerID != v.ServerID || w.Acknowledged && w.RequestID.Validate() != nil || !w.Acknowledged && w.RequestID != "" {
 			return domain.SessionDeletionPending()
@@ -78,10 +79,10 @@ func (v SessionDeletion) validate() error {
 		if v.DatabaseRemoved && !w.Acknowledged {
 			return domain.SessionDeletionPending()
 		}
-		devices = append(devices, w.Work.DeviceID)
-	}
-	if domain.UniqueIDs(devices) != nil {
-		return domain.SessionDeletionPending()
+		if devices[w.Work.DeviceID] {
+			return domain.SessionDeletionPending()
+		}
+		devices[w.Work.DeviceID] = true
 	}
 	if v.FinishedAt != nil && (!v.DatabaseRemoved || !v.BackupsRemoved || v.FinishedAt.Before(v.AcceptedAt)) {
 		return domain.SessionDeletionPending()
@@ -913,7 +914,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	}
 	// Every current session-owned Worker operation contributes its original
 	// claimed metadata. Never reconstruct ownership from a mutable terminal job.
-	rows, e := t.tx.QueryContext(t.ctx, "SELECT id,kind,revision,session_id,project_id,X'',created_at,updated_at FROM entities WHERE kind='job' AND session_id=? ORDER BY id LIMIT 4097", v.SessionID)
+	rows, e := t.tx.QueryContext(t.ctx, "SELECT id,kind,revision,session_id,project_id,X'',created_at,updated_at FROM entities WHERE kind='job' AND session_id=? ORDER BY id LIMIT ?", v.SessionID, domain.MaxSessionDeletionJobs+1)
 	if e != nil {
 		return v, storageError(e)
 	}
@@ -931,7 +932,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	if e != nil {
 		return v, storageError(e)
 	}
-	if len(jobs) > 4096 {
+	if len(jobs) > domain.MaxSessionDeletionJobs {
 		return v, domain.SessionDeletionPending()
 	}
 	for _, r := range jobs {

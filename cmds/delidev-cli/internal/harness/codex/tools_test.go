@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 )
 
 func commandFixture() map[string]any {
@@ -107,5 +108,55 @@ func TestNativeToolProfilesRejectMalformedOrMismatchedObservations(t *testing.T)
 		if _, err := decodeFileChanges([]json.RawMessage{raw}); err == nil {
 			t.Fatal("unsupported patch operation metadata was accepted")
 		}
+	}
+}
+
+func TestLegacyFileChangeOutputRetainsExplicitPatchProvenance(t *testing.T) {
+	c, turn := observationClient()
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "itemId": "original-patch", "delta": "Patch applied successfully"}
+	event, err := observeFixture(c, "item/fileChange/outputDelta", params)
+	if err != nil || event.Kind != ToolOutputEvent || event.ToolOutputKind != PatchTool || event.TextDelta != params["delta"] || event.Tool != nil || event.ToolInput != nil || event.ItemID != "original-patch" || !event.Correlated {
+		t.Fatal("legacy output lost inert patch provenance", event, err)
+	}
+	command, err := observeFixture(c, "item/commandExecution/outputDelta", params)
+	if err != nil || command.ToolOutputKind != CommandTool {
+		t.Fatal("command output provenance changed", command, err)
+	}
+	for _, bad := range []string{"missing-delta", "null-delta", "oversized", "extra-field", "unknown-turn", "invalid-item"} {
+		t.Run(bad, func(t *testing.T) {
+			client, ownedTurn := observationClient()
+			p := map[string]any{"threadId": client.thread, "turnId": ownedTurn, "itemId": "original-patch", "delta": "text"}
+			switch bad {
+			case "missing-delta":
+				delete(p, "delta")
+			case "null-delta":
+				p["delta"] = nil
+			case "oversized":
+				p["delta"] = strings.Repeat("x", 2<<20)
+			case "extra-field":
+				p["changes"] = []any{}
+			case "unknown-turn":
+				p["turnId"] = domain.NewID()
+			case "invalid-item":
+				p["itemId"] = ""
+			}
+			if _, err := observeFixture(client, "item/fileChange/outputDelta", p); err == nil {
+				t.Fatal("malformed legacy patch output accepted")
+			}
+		})
+	}
+	params["threadId"] = domain.NewID()
+	foreign, err := observeFixture(c, "item/fileChange/outputDelta", params)
+	raw, _ := json.Marshal(foreign)
+	if err != nil || foreign.Kind != NativeExtensionEvent || strings.Contains(string(raw), "Patch applied successfully") {
+		t.Fatal("foreign patch text escaped private boundary", err)
+	}
+}
+
+func TestLegacyPatchOutputRejectsDuplicateFields(t *testing.T) {
+	c, turn := observationClient()
+	raw := json.RawMessage(`{"threadId":"` + string(c.thread) + `","turnId":"` + string(turn) + `","itemId":"patch","delta":"first","delta":"replacement"}`)
+	if _, err := c.observeEventLocked(nativewire.Event{Kind: nativewire.Notification, Method: "item/fileChange/outputDelta", Params: raw}); err == nil {
+		t.Fatal("duplicate output field replaced original evidence")
 	}
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createPrivateKey, sign } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { Identity } from "./beta.mjs";
 const appleOrigin = "https://api.appstoreconnect.apple.com",
   googleOrigin = "https://androidpublisher.googleapis.com";
@@ -42,7 +42,9 @@ async function request(
 ) {
   if (!path.startsWith("/") || path.startsWith("//"))
     throw new Error("Invalid provider operation");
-  const response = await fetcher(origin + path, {
+  let response;
+  try {
+    response = await fetcher(origin + path, {
     method,
     redirect: "error",
     headers: {
@@ -56,8 +58,24 @@ async function request(
         : typeof body === "string"
           ? body
           : JSON.stringify(body),
-  });
+    });
+  } catch {
+    process.stderr.write(JSON.stringify({
+      operation: "mobile-beta-provider-request",
+      provider: origin === appleOrigin ? "apple" : "google",
+      method,
+      outcome: "transport-failure",
+    }) + "\n");
+    throw new Error("Provider transport failed");
+  }
   if (!response.ok) {
+    process.stderr.write(JSON.stringify({
+      operation: "mobile-beta-provider-request",
+      provider: origin === appleOrigin ? "apple" : "google",
+      method,
+      outcome: "http-failure",
+      status: response.status,
+    }) + "\n");
     const error = new Error(`Provider operation failed (${response.status})`);
     error.status = response.status;
     throw error;
@@ -87,17 +105,26 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       ).data ?? []
     );
   }
-  async function proof(m, upload) {
+  async function proof(m, upload, r = {}) {
     if (!sameUpload(upload, m))
       throw new Error("Apple original version identity mismatch");
     const matching = (await files(upload.id)).filter(
       (f) =>
         f.attributes?.uti === "com.apple.ipa" &&
-        f.attributes?.sourceFileChecksums?.file?.algorithm === "SHA_256" &&
-        f.attributes.sourceFileChecksums.file.hash === m.artifacts.ios.sha256 &&
-        f.attributes.fileSize === m.artifacts.ios.bytes,
+        f.attributes.fileSize === m.artifacts.ios.bytes &&
+        (f.attributes?.sourceFileChecksums?.file?.algorithm === "SHA_256" &&
+          f.attributes.sourceFileChecksums.file.hash === m.artifacts.ios.sha256 ||
+          // IPA uploads return MD5 despite the generic SHA_256 schema. Only the
+          // retained original file may corroborate locally reverified SHA-256
+          // bytes; never adopt a handleless inventory match using MD5.
+          r.candidateId === m.candidateId && r.providerId === upload.id &&
+          r.fileId === f.id && bytes.length === m.artifacts.ios.bytes &&
+          createHash("sha256").update(bytes).digest("hex") === m.artifacts.ios.sha256 &&
+          f.attributes.assetDeliveryState?.state === "COMPLETE" &&
+          f.attributes.sourceFileChecksums?.file?.algorithm === "MD5" &&
+          f.attributes.sourceFileChecksums.file.hash === createHash("md5").update(bytes).digest("hex")),
     );
-    if (matching.length !== 1 || upload.attributes.state !== "COMPLETE")
+    if (matching.length !== 1 || upload.attributes.state?.state !== "COMPLETE")
       return { state: "unknown" };
     const result = await api(
         `/v1/buildUploads/${encodeURIComponent(upload.id)}?include=build`,
@@ -105,12 +132,22 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       build = result.included?.find((v) => v.type === "builds");
     if (!build || build.attributes?.buildAudienceType !== "INTERNAL_ONLY")
       return { state: "unknown" };
-    const assigned =
-      (
-        await api(
-          `/v1/betaGroups/${encodeURIComponent(groupId)}/builds?limit=200`,
-        )
-      ).data ?? [];
+    let path = `/v1/betaGroups/${encodeURIComponent(groupId)}/builds?limit=200`,
+      pages = 0,
+      distributed = false;
+    while (path && pages++ < 20) {
+      const result = await api(path);
+      distributed ||= (result.data ?? []).some((b) => b.id === build.id);
+      const next = result.links?.next;
+      if (next) {
+        const url = new URL(next);
+        if (url.origin !== appleOrigin || url.username || url.password)
+          throw new Error("Invalid Apple pagination");
+        path = url.pathname + url.search;
+      } else path = "";
+    }
+    // An incomplete inventory cannot prove absence or authorize reassignment.
+    if (path) return { state: "unknown" };
     return {
       state: "present",
       id: upload.id,
@@ -118,7 +155,7 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       sha256: m.artifacts.ios.sha256,
       identity: Identity,
       internal: true,
-      distributed: assigned.some((b) => b.id === build.id),
+      distributed,
     };
   }
   return {
@@ -144,12 +181,31 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       )
         throw new Error("Apple internal group identity mismatch");
     },
+    async recoverUpload(m, r) {
+      if (!r.transferComplete) return;
+      if (r.candidateId !== m.candidateId || !r.providerId || !r.fileId ||
+          r.fileSha256 !== m.artifacts.ios.sha256 || r.fileBytes !== bytes.length ||
+          createHash("sha256").update(bytes).digest("hex") !== r.fileSha256)
+        throw new Error("Apple original transfer receipt mismatch");
+      const upload = (await api(`/v1/buildUploads/${encodeURIComponent(r.providerId)}`)).data;
+      if (!sameUpload(upload, m)) throw new Error("Apple original upload mismatch");
+      const file = (await files(upload.id)).find(f => f.id === r.fileId);
+      if (!file || file.attributes?.uti !== "com.apple.ipa" ||
+          file.attributes.fileSize !== r.fileBytes)
+        throw new Error("Apple original transfer file mismatch");
+      if (file.attributes.assetDeliveryState?.state === "AWAITING_UPLOAD")
+        await api(`/v1/buildUploadFiles/${encodeURIComponent(r.fileId)}`, {
+          method: "PATCH", body: { data: { type: "buildUploadFiles", id: r.fileId,
+            attributes: { uploaded: true } } },
+        });
+    },
     async inspect(m, r) {
       if (r.providerId)
         return proof(
           m,
           (await api(`/v1/buildUploads/${encodeURIComponent(r.providerId)}`))
             .data,
+          r,
         );
       // Initial POST acknowledgement loss has no handle. Inspect every bounded
       // page and accept only one source-bound upload; never create a replacement.
@@ -169,7 +225,7 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
         } else path = "";
       }
       if (path || matches.length !== 1) return { state: "unknown" };
-      return proof(m, matches[0]);
+      return proof(m, matches[0], r);
     },
     async upload(m, r) {
       // Read the complete bounded inventory before allocating an upload. Do not
@@ -238,6 +294,8 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       ).data;
       if (!file?.id) throw new Error("Apple original file identity missing");
       r.fileId = file.id;
+      r.fileSha256 = m.artifacts.ios.sha256;
+      r.fileBytes = bytes.length;
       await checkpoint({ ...r });
       let offset = 0;
       for (const operation of file.attributes?.uploadOperations ?? []) {
@@ -278,18 +336,18 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       }
       if (offset !== bytes.length)
         throw new Error("Apple upload descriptor coverage incomplete");
+      r.transferComplete = true;
+      await checkpoint({ ...r });
+      // Apple's IPA endpoint rejects the optional generic checksum attributes.
+      // Commit only uploaded=true and verify its returned original-file MD5
+      // against candidate bytes whose source/signature/SHA-256 stay immutable.
       await api(`/v1/buildUploadFiles/${encodeURIComponent(file.id)}`, {
         method: "PATCH",
         body: {
           data: {
             type: "buildUploadFiles",
             id: file.id,
-            attributes: {
-              uploaded: true,
-              sourceFileChecksums: {
-                file: { algorithm: "SHA_256", hash: m.artifacts.ios.sha256 },
-              },
-            },
+            attributes: { uploaded: true },
           },
         },
       });
@@ -298,6 +356,7 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       return proof(
         m,
         (await api(`/v1/buildUploads/${encodeURIComponent(upload.id)}`)).data,
+        r,
       );
     },
     async assignInternal(m, r) {
@@ -324,7 +383,7 @@ export function googleProvider(
   const packagePath = `/androidpublisher/v3/applications/${Identity}`,
     api = (path, options) =>
       request(fetcher, googleOrigin, path, token, options);
-  async function editor(r) {
+  async function editor(r, readOnly = false) {
     if (r.editId) return r.editId;
     const result = await api(`${packagePath}/edits`, {
       method: "POST",
@@ -332,11 +391,14 @@ export function googleProvider(
     });
     if (!result.id) throw new Error("Google original edit identity missing");
     r.editId = result.id;
+    // Only a newly created observation edit reflects committed provider state.
+    // Membership in the retained writable edit is still staged until commit.
+    r.editReadOnly = readOnly;
     await checkpoint({ ...r });
     return result.id;
   }
   async function inspect(m, r) {
-    const id = await editor(r),
+    const id = await editor(r, true),
       path = `${packagePath}/edits/${encodeURIComponent(id)}`;
     let bundles;
     try {
@@ -347,6 +409,7 @@ export function googleProvider(
       // observes published state; it never replaces the original artifact.
       r.previousEditId = r.editId;
       delete r.editId;
+      delete r.editReadOnly;
       await checkpoint({ ...r });
       return inspect(m, r);
     }
@@ -369,7 +432,7 @@ export function googleProvider(
       sha256: b.sha256,
       identity: Identity,
       internal: true,
-      distributed,
+      distributed: r.editReadOnly === true && distributed,
     };
   }
   return {
@@ -438,6 +501,10 @@ export function googleProvider(
     async assignInternal(m, r) {
       const id = await editor(r),
         path = `${packagePath}/edits/${encodeURIComponent(id)}`;
+      // Persist the loss of read-only authority before staging any track write.
+      // A lost PUT acknowledgement must still require this original edit's commit.
+      r.editReadOnly = false;
+      await checkpoint({ ...r });
       await api(`${path}/tracks/internal`, {
         method: "PUT",
         body: {
@@ -454,6 +521,7 @@ export function googleProvider(
       await api(`${path}:validate`, { method: "POST", body: {} });
       await api(`${path}:commit`, { method: "POST", body: {} });
       delete r.editId;
+      delete r.editReadOnly;
       await checkpoint({ ...r });
     },
   };

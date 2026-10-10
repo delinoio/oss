@@ -4,6 +4,7 @@ package server
 import (
 	"connectrpc.com/connect"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"slices"
 	"testing"
@@ -292,7 +293,7 @@ func TestOpenCodeGoContinuationRetainsOriginalServiceAccountAndSession(t *testin
 		t.Fatal("continuation changed immutable source or native session")
 	}
 }
-func TestOpenCodeGoIndependentForkHasNoSyntheticLoginGeneration(t *testing.T) {
+func TestOpenCodeGoIndependentForkRegistersFirstInputWithoutManagedCodex(t *testing.T) {
 	f := newOpenCodeGoContinuation(t)
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.go-fork-transcript", nil, func(tx *store.Tx) (any, error) {
 		return tx.Put(domain.MessageKind, domain.NewID(), 0, f.input.SessionID, "", domain.ExecutionMessage{ExecutionID: f.input.ExecutionID, NativeThreadID: string(f.thread), NativeTurnID: string(f.turn), NativeID: "prt_01960dcbe1fcabcdefghijklmn", NativeParentID: "msg_01960dcbe1fcABCDEFGHIJKLMN", Role: domain.AssistantMessage, Text: "Fixture original assistant.", State: domain.MessageComplete, FirstSequence: 5, LastSequence: 6})
@@ -305,9 +306,47 @@ func TestOpenCodeGoIndependentForkHasNoSyntheticLoginGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, input := forkClaimFixture(t, f, response.Msg.Job.Id)
+	job, input := forkClaimFixture(t, f, response.Msg.Job.Id)
 	if input.SubscriptionGeneration != "" || !input.SourceAssignment.Configuration.IsOpenCodeGo() || input.Snapshot.InitialAccountID != f.input.AccountID || input.ChildSessionID == input.SourceSessionID || input.OpenCode == nil {
 		t.Fatal("fork changed account or acquired native login authority")
+	}
+	child := publishOpenCodeForkResult(t, f, job, input)
+	f.change.Session = child
+	f.enqueue(t, "First independent Go child input", domain.ExecuteMode)
+	f.control(t, pb.SessionAction_SESSION_ACTION_RESUME)
+	f.claim(t) // Includes RegisterExecution and the original-process startup report.
+	if !f.input.Configuration.IsOpenCodeGo() || f.input.Fork == nil || f.input.AccountID != input.Snapshot.InitialAccountID || f.input.Continuation != nil || f.input.Fork.NativeThreadID == input.Completion.NativeThreadID || f.startupToken == "" {
+		t.Fatal("first child input lost original account or independent native history")
+	}
+	machineRow, err := f.service.Store.Get(context.Background(), domain.MachineKind, domain.ID(f.machine.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine, err := store.Decode[domain.Machine](machineRow)
+	if err != nil || domain.ManagedForkSupported(machine.WorkerCapabilities) {
+		t.Fatal("Go fixture unexpectedly required managed Codex Fork support", err)
+	}
+	// The Go exemption must not weaken the original OpenCode Fork gate, even
+	// after a credential has been registered for this exact child assignment.
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.remove-go-fork-capability", nil, func(tx *store.Tx) (any, error) {
+		r, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = slices.DeleteFunc(machine.WorkerCapabilities, func(capability domain.WorkerCapability) bool { return capability == domain.OpenCodeGeneralChatForkV1 })
+		return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentJob, err := f.service.Store.Get(context.Background(), domain.JobKind, domain.ID(f.job.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(f.startupToken))
+	_, err = f.workerClient.RegisterExecution(context.Background(), ownerRequest(f.workerIdentity, &pb.RegisterExecutionRequest{Mutation: acctMutation(resourceForTest(currentJob), domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, CredentialDigest: digest[:]}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatal("Go Fork retained registration without original OpenCode capability", err)
 	}
 }
 

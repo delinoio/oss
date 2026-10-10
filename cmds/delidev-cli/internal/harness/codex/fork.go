@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 )
@@ -453,8 +454,29 @@ func managedForkItem(raw json.RawMessage, kind string) bool {
 	if kind == "commandExecution" || kind == "fileChange" || kind == "dynamicToolCall" {
 		return settledForkTool(raw, kind)
 	}
-	if kind == "reasoning" || kind == "agentMessage" {
-		return true
+	if kind == "reasoning" {
+		_, err := decodeArtifact(raw, kind)
+		return err == nil
+	}
+	if kind == "agentMessage" {
+		var item struct {
+			Type           string            `json:"type"`
+			ID             string            `json:"id"`
+			Text           *string           `json:"text"`
+			Phase          *MessagePhase     `json:"phase"`
+			Delivery       json.RawMessage   `json:"delivery"`
+			MemoryCitation json.RawMessage   `json:"memoryCitation"`
+			Questions      []json.RawMessage `json:"questions,omitempty"`
+		}
+		if domain.Decode(raw, &item) != nil || item.Type != kind || domain.Text(item.ID, "native fork message identity", 1024, true) != nil || item.Text == nil || domain.Text(*item.Text, "native fork message text", nativewire.MaxFrame, false) != nil {
+			return false
+		}
+		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
+			return false
+		}
+		// Native history remains untouched. Eligibility uses the same plain
+		// metadata boundary as live assistant messages, never rich extensions.
+		return len(item.Questions) == 0 && (len(item.Delivery) == 0 || string(item.Delivery) == "null") && (len(item.MemoryCitation) == 0 || string(item.MemoryCitation) == "null")
 	}
 	if kind != "userMessage" {
 		return false
