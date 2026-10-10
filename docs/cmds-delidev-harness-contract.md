@@ -46,10 +46,35 @@ populated questions retain the private extension boundary. Quota snapshots accep
 the advisory `normalModelSlug` without selecting a model. Response-usage
 `usageMetadata.metadata` stays opaque and excluded from publication, cost and
 logs; original counters and amount-evidence classification remain unchanged.
-The installed schema also declares scoped `model/verification` notifications.
-Accept only a required empty verification array bound to the original known root
-turn as discarded metadata. Populated verification remains a private extension;
-the empty observation cannot establish model eligibility or account readiness.
+The scoped `model/verification`, `model/safetyBuffering/updated` and
+`turn/moderationMetadata` notifications retain bounded private observations on
+the original known active root turn. Verification accepts only the observed
+`trustedAccessForCyber` enum, including the original empty array. Buffering
+retains bounded model/use-case/reason descriptors, its required boolean and the
+original omitted/null/string `fasterModel`; moderation retains any required JSON
+value within 64 KiB and the existing strict duplicate/depth/UTF-8 checks. Only
+the latest observation of each family is retained per bounded original turn.
+None proves entitlement, model availability, account readiness or permission,
+and none generates prompts, responses, tools or model selection. Content-free
+metadata is discarded by the Worker; native descriptors remain absent from
+public logs and generic serialization. Foreign and unknown turns retain their
+existing fences. Terminal observations are marked late without changing stored
+evidence or the original outcome, and retain the Worker replay fence.
+
+Native `model/rerouted` accepts the observed `highRiskCyberActivity` reason and
+retains the original private source/destination models on the active root turn.
+It immediately pauses that original execution for reconciliation, blocks fresh
+sends and prevents terminal notifications from proving selected-model success.
+The original reroute evidence cannot be replaced by subsequent observations.
+Native safety remains enforced; no faster model, fallback, safety override,
+permission change or new account authority is introduced. Existing model and
+usage attribution remains source-backed. The pinned [verification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/ModelVerificationNotification.json),
+[buffering schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/ModelSafetyBufferingUpdatedNotification.json),
+[moderation schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/TurnModerationMetadataNotification.json)
+and [reroute schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/ModelReroutedNotification.json)
+define the observed shapes. The installed 0.162 catalog requires nullable
+`fasterModel`; pinned main additionally permits omission. These observations
+introduce no RPC, migration or arbitrary future-schema support.
 Managed ChatGPT execution also consumes the original root's passive
 `mcpServer/startupStatus/updated` notifications for the built-in `codex_apps`
 connector. Validate the closed starting/ready/failed/cancelled states, nullable

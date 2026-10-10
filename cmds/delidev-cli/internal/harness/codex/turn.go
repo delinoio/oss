@@ -59,6 +59,7 @@ type turnOperation struct {
 }
 
 type trackedTurn struct {
+	safety *modelSafetyState
 	Turn   Turn
 	Mode   domain.SessionMode
 	Inputs []domain.ID

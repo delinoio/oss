@@ -22,6 +22,7 @@ const (
 	validationUsage          eventValidationStage = "response-usage"
 	validationQuota          eventValidationStage = "account-quota"
 	validationVerification   eventValidationStage = "model-verification"
+	validationReroute        eventValidationStage = "model-safety-reroute"
 	validationAuthRecovery   eventValidationStage = "provider-auth-recovery"
 	validationModeration     eventValidationStage = "turn-moderation"
 	validationBuffering      eventValidationStage = "model-safety-buffering"
@@ -52,6 +53,8 @@ func validationStage(method string) eventValidationStage {
 		return validationQuota
 	case "model/verification":
 		return validationVerification
+	case "model/rerouted":
+		return validationReroute
 	case "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
 		return validationAuthRecovery
 	case "turn/moderationMetadata":
@@ -316,6 +319,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		}
 		event := Event{Kind: kind, ThreadID: c.thread, TurnID: turn.ID, Turn: &turn}
 		prior, exists := c.execution.turns[turn.ID]
+		if exists && prior.safety != nil && prior.safety.reroute != nil {
+			return Event{}, turnUncertain()
+		}
 		if !exists && native.Method == "turn/started" && c.execution.compaction != nil && c.execution.compaction.turnID == "" && c.execution.compaction.acknowledged && c.execution.active == "" && c.problem == nil {
 			// Only the original once-claimed manual action can own a new native
 			// compaction turn. It carries no synthetic input or input receipt.
