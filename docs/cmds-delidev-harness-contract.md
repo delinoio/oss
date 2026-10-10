@@ -2212,6 +2212,35 @@ The pinned Codex 0.159.2 native profile consumes `item/autoApprovalReview/starte
 
 These observations publish distinct metadata-only transcript progress, without a second approval dialog or a manual response/receipt. Approval, tool success, delivery, native acceptance and confirmed cleanup remain independent. Worker capability `CODEX_APPROVAL_REVIEW_V1 = 30` describes this adapter; inventory or account access alone proves no native acceptance. The [official reviewer type](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/typescript/v2/ApprovalsReviewer.ts) and [review-completion schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/typescript/v2/ItemGuardianApprovalReviewCompletedNotification.ts) define the pinned wire profile.
 
+### Codex guardian, deprecation and strict-review advisories
+
+The pinned [guardian warning schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/GuardianWarningNotification.json)
+requires the original `threadId` and bounded `message`. The [deprecation schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/DeprecationNoticeNotification.json)
+requires `summary` and permits omitted, string or null `details`. Validate only
+these exact fields, discard private messages/details/migration instructions, and
+project the existing native-warning/native-config-warning notice categories on
+the original process/execution. Foreign guardian threads remain private;
+malformed types, unknown/duplicate keys and excessive text retain rejection.
+Existing warning/configWarning handling remains unchanged.
+
+The [strict-review-required schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/StrictReviewRequiredNotification.json)
+requires the original `threadId`, known `turnId` and nonnegative int64
+`startedAtMs`. Accept this advisory only for the original active turn and selected
+`auto_review`/`on-request` configuration. Retain the observed turn/timestamp in a
+private bounded replay registry. Exact replay, including after original turn
+completion, produces no second public notice; a new terminal observation cannot
+revive the turn. The existing generic warning notice is progress only. Do not
+invent a review ID, approve/deny, settle a review or response receipt, override
+sandbox policy or grant denial retry. Native auto-review decisions and unsettled
+review completion gates remain independently authoritative.
+
+These notices contain no private native text in serialized events or logs and
+never send an input or response. They cannot clear prior execution recovery or
+cleanup obligations. Valid original advisories no longer terminate execution
+solely as unsupported families. This adds no RPC, protocol allocation or
+migration. Controlled decoder/Worker publication fixtures are separate from
+installed native/account/platform acceptance.
+
 ## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 

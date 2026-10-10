@@ -84,6 +84,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "guardianWarning", "deprecationNotice", "strictReviewRequired":
+		return c.observeAdvisoryNoticeLocked(native)
 	case "fs/changed":
 		var params struct {
 			WatchID      string   `json:"watchId"`
