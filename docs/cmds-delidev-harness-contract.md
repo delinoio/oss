@@ -72,6 +72,26 @@ fences and are never replayed. The [official empty notification schema](https://
 and [native cache invalidation watcher](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/skills_watcher.rs)
 define this passive observation separately from explicit selected-package proof.
 
+
+Issue #2402 accepts notification-only `fs/changed` through a strict private
+`watchId`/`changedPaths` envelope. Require a nonempty watch ID of at most 1024
+UTF-8 bytes and a non-null array of at most 1000 absolute paths, each at most
+4096 UTF-8 bytes without NUL. Empty arrays are valid; retain the original path
+order and bytes during validation. Unknown or duplicate fields, missing/null
+required fields and malformed or oversized payloads fail with the closed
+`filesystem-watch` diagnostic classification, without native methods, watch IDs
+or paths in logs.
+
+This adapter owns no `fs/watch` operation. All valid unsolicited or foreign watch
+notifications become discarded metadata, with no file access, cache refresh,
+watch creation, input resend or product publication. A same-name server request
+retains its unsupported request boundary. A future watch consumer requires its
+own successful original watch receipt, exact native connection and canonical
+selected-workspace root; notification arrival grants no such ownership. Original
+turn/settings/account, terminal results, receipts and independent recovery and
+cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
+defines this passive envelope separately from explicit filesystem operations.
+
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so
 parser-level success cannot conceal an unsupported Worker event family.
