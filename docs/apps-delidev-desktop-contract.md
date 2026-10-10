@@ -4395,6 +4395,21 @@ unsupported capability and unresolved scope remain unknown; late old-scope resul
 cannot publish. Observe complete whitespace-delimited tokens even with the panel
 dismissed through the existing query owner, without polling or locked reads.
 Names match exactly; a valid caret completion prefix and a bare `$` remain ordinary.
+Exact explicit nonstale, unambiguous bindings in their original resolved scope
+paint `$name` with semantic `--link` color and a thin underline. This is
+noninteractive selected styling, not a link or availability assertion. Manually
+typed matching names never gain decoration or binding authority. Preserve the
+literal textarea/submitted bytes, opaque selection and native request receipts;
+add no Markdown, path, chip, badge, hover action, navigation or keyboard stop.
+Outside edits move only an untouched exact binding; token edits and explicit
+clearing remove its decoration. Stale, unresolved, changed or overlapping
+binding scopes never receive selected styling. Unknown inventory can retain a
+valid original selection; confirmed absent styling takes precedence even when
+that name is a prefix of another live completion candidate. Bound selected
+painting to the existing 16-selection limit and use one shared mirror for both
+selected and unavailable spans. Pending/uncertain locks preserve original
+bindings and drafts without acceptance authority; IME suppresses all painting.
+
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible

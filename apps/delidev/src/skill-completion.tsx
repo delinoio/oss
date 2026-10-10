@@ -36,6 +36,18 @@ export function editedBindings(before: string, after: string, bindings: readonly
     return after.slice(next.start, next.end) === next.token && (next.start === 0 || /\s/u.test(after[next.start - 1]!)) && (next.end === after.length || /\s/u.test(after[next.end]!)) ? [next] : [];
   });
 }
+// Decoration proves the original explicit binding, never matching inventory text.
+export function selectedSkillRanges(value: string, bindings: readonly SkillTokenBinding[], scope: string, resolved: boolean): SkillToken[] {
+  if (!resolved) return [];
+  const tokens = skillRanges(value);
+  return bindings.filter((binding, index) => {
+    const selection = binding.selection;
+    return !binding.stale && !binding.ambiguous && (!binding.context || binding.context === scope)
+      && selection && isEntityId(selection.skillId) && isEntityId(selection.inventoryId) && isEntityId(selection.workerDeviceId) && /^[a-f0-9]{64}$/.test(selection.contentRevision)
+      && tokens.some(token => token.start === binding.start && token.end === binding.end && value.slice(token.start, token.end) === binding.token)
+      && !bindings.some((other, otherIndex) => otherIndex !== index && other.start < binding.end && other.end > binding.start);
+  }).slice(0, 16).map(binding => ({ start: binding.start, end: binding.end, prefix: binding.token.slice(1) }));
+}
 export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true, disabled = false, initialBindings = [], bindingsChanged, retainTransportContext = false }: {
   value: string; change: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; textarea: RefObject<HTMLTextAreaElement | null>;
   machineId: string; agentId: string; sessionId?: string; projectId?: string; active?: boolean; enabled?: boolean; disabled?: boolean; initialBindings?: SkillTokenBinding[]; bindingsChanged?: (bindings: SkillTokenBinding[]) => void; retainTransportContext?: boolean;
@@ -71,7 +83,8 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   const candidates = (inventoryKnown ? retained.current.entries : []).filter(entry => entry.name.toLocaleLowerCase().startsWith(prefix)).map(entry => ({ ...entry, availability: inventory.some(current => current.selection!.skillId === entry.selection!.skillId) ? SkillAvailability.Available : SkillAvailability.Unavailable })).sort((a, b) => Number(b.name.toLocaleLowerCase() === prefix) - Number(a.name.toLocaleLowerCase() === prefix) || a.name.localeCompare(b.name) || a.selection!.skillId.localeCompare(b.selection!.skillId));
   const enabledIndices = candidates.flatMap((entry,index) => entry.availability === SkillAvailability.Available ? [index] : []);
   const validIndex = enabledIndices.includes(selected) ? selected : enabledIndices[0] ?? -1;
-  const unavailable = inventoryKnown && !composing.current ? ranges.filter(range => !inventory.some(entry => entry.name === range.prefix) && !(token && range.start === token.start && inventory.some(entry => entry.name.toLocaleLowerCase().startsWith(token.prefix.toLocaleLowerCase())))) : [];
+  const selectedRanges = !composing.current ? selectedSkillRanges(value, bindings, scope, active && isEntityId(machineId) && isEntityId(agentId) && !contextChanged) : [];
+  const unavailable = inventoryKnown && !composing.current ? ranges.filter(range => !inventory.some(entry => entry.name === range.prefix) && (selectedRanges.some(selected => selected.start === range.start && selected.end === range.end) || !(token && range.start === token.start && inventory.some(entry => entry.name.toLocaleLowerCase().startsWith(token.prefix.toLocaleLowerCase()))))) : [];
   const accept = (entry: SkillEntry) => {
     if (!canEdit() || !enabled || !token || !entry.selection || composing.current || contextChanged || !inventoryKnown || !inventory.some(current => current.selection === entry.selection)) return;
     const replacement = `$${entry.name}`, next = value.slice(0, token.start) + replacement + value.slice(token.end), end = token.start + replacement.length;
@@ -117,14 +130,14 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
     onSelect: () => { if (!canEdit()) return; setCaret(textarea.current?.selectionStart ?? 0); },
     onCompositionStart: () => { if (!canEdit()) return; composing.current = true; setComposition(true); setDismissed(true); }, onCompositionEnd: () => { composing.current = false; setComposition(false); if (!canEdit()) return; setCaret(textarea.current?.selectionStart ?? 0); setDismissed(false); },
     attributes: { "aria-describedby": unavailable.length ? `${id}-unavailable` : undefined, "aria-controls": visible && candidates.length ? id : undefined, "aria-autocomplete": "list" as const, "aria-expanded": visible, "aria-activedescendant": visible && validIndex >= 0 ? `${id}-${validIndex}` : undefined },
-    unavailable, availability: inventoryKnown ? SkillAvailability.Available : SkillAvailability.Unknown, wrap: (child: ReactNode) => <SkillText textarea={textarea} value={value} ranges={unavailable} descriptionId={`${id}-unavailable`}>{child}</SkillText>,
+    unavailable, availability: inventoryKnown ? SkillAvailability.Available : SkillAvailability.Unknown, wrap: (child: ReactNode) => <SkillText textarea={textarea} value={value} ranges={unavailable} selectedRanges={selectedRanges} descriptionId={`${id}-unavailable`}>{child}</SkillText>,
     warning: blocked ? <p role="status">{copy("skills.reselect")}</p> : null,
   };
 }
 
 
 // The textarea retains editing, selection and undo ownership; this sibling only paints text.
-function SkillText({ textarea, value, ranges, descriptionId, children }: { textarea: RefObject<HTMLTextAreaElement | null>; value: string; ranges: SkillToken[]; descriptionId: string; children: ReactNode }) {
+function SkillText({ textarea, value, ranges, selectedRanges, descriptionId, children }: { textarea: RefObject<HTMLTextAreaElement | null>; value: string; ranges: SkillToken[]; selectedRanges: SkillToken[]; descriptionId: string; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null), content = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const input = textarea.current, viewport = frame.current, text = content.current;
@@ -137,8 +150,9 @@ function SkillText({ textarea, value, ranges, descriptionId, children }: { texta
     };
     align(); const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(align); observer?.observe(input); input.addEventListener("scroll", align); window.addEventListener("resize", align);
     return () => { observer?.disconnect(); input.removeEventListener("scroll", align); window.removeEventListener("resize", align); };
-  }, [textarea, value, ranges.length]);
+  }, [textarea, value, ranges.length, selectedRanges.length]);
+  const painting = [...ranges.map(range => ({ ...range, selected: false })), ...selectedRanges.filter(selected => !ranges.some(unavailable => unavailable.start < selected.end && unavailable.end > selected.start)).map(range => ({ ...range, selected: true }))].sort((a, b) => a.start - b.start);
   let end = 0;
-  const segments = ranges.map(range => { const preceding=value.slice(end,range.start); end=range.end; return <span key={range.start}>{preceding}<span className="skill-token-unavailable" data-skill-start={range.start}>{value.slice(range.start,range.end)}</span></span>; });
-  return <div className="skill-textarea" data-skill-overlay={ranges.length > 0 || undefined}>{children}{ranges.length ? <><div ref={frame} className="skill-text-overlay" aria-hidden="true"><div ref={content}>{segments}{value.slice(end)}{"\u200b"}</div></div><span id={descriptionId} className="sidebar-sr-only" aria-hidden="true">{copy("skills.tokensUnavailable", { count: ranges.length })}</span></> : null}</div>;
+  const segments = painting.map(range => { const preceding=value.slice(end,range.start); end=range.end; return <span key={range.start}>{preceding}<span className={range.selected ? "skill-token-selected" : "skill-token-unavailable"} data-skill-start={range.start}>{value.slice(range.start,range.end)}</span></span>; });
+  return <div className="skill-textarea" data-skill-overlay={painting.length > 0 || undefined}>{children}{painting.length ? <><div ref={frame} className="skill-text-overlay" aria-hidden="true"><div ref={content}>{segments}{value.slice(end)}{"\u200b"}</div></div>{ranges.length ? <span id={descriptionId} className="sidebar-sr-only" aria-hidden="true">{copy("skills.tokensUnavailable", { count: ranges.length })}</span> : null}</> : null}</div>;
 }
