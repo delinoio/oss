@@ -225,7 +225,10 @@ Configure only environment-owned secrets:
   `DELIDEV_MOBILE_ANDROID_STORE_PASSWORD` select its original signing key.
 - `DELIDEV_MOBILE_APPLE_ISSUER`, `DELIDEV_MOBILE_APPLE_KEY_ID` and
   `DELIDEV_MOBILE_APPLE_PRIVATE_KEY`: the App Store Connect API issuer, key ID and
-  PEM P-256 private key with access to the exact app/internal group.
+  PEM P-256 private key whose role permits the exact app/internal group operations.
+  Apple team keys apply to every team app and have no app-specific access limit;
+  owner approval must cover that scope before a new key is created. The adapter
+  still pins the configured DeliDev app and internal group.
 - `DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT`: the protected service-account JSON
   with Android Publisher scope, exact configured principal and official OAuth
   token endpoint. Grant only the app/internal-testing access required by the lane.
