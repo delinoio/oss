@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"mime"
 	"strings"
 	"sync"
 
@@ -28,8 +29,14 @@ type credentialBody struct {
 	eof           bool
 }
 
-func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential) *credentialBody {
+func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType ...string) *credentialBody {
 	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
+	if len(contentType) > 0 {
+		mediaType, _, err := mime.ParseMediaType(contentType[0])
+		if err == nil && mediaType == "text/event-stream" {
+			g.jsonGuard.framing = credentialSSE
+		}
+	}
 	for _, value := range []string{c.Username, c.Password, c.Username + ":" + c.Password} {
 		candidates := []string{value, base64.StdEncoding.EncodeToString([]byte(value)), base64.RawStdEncoding.EncodeToString([]byte(value))}
 		for _, candidate := range candidates {

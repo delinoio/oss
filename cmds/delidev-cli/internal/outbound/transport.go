@@ -111,7 +111,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	defer transport.CloseIdleConnections()
 	response, err := transport.RoundTrip(req)
 	if err == nil && p.CredentialGeneration != "" {
-		guard := newCredentialBody(response.Body, credential)
+		guard := newCredentialBody(response.Body, credential, response.Header.Get("Content-Type"))
 		for name, values := range response.Header {
 			if guard.containsHeaderName(name) {
 				guard.Close()
