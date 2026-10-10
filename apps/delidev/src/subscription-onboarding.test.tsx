@@ -121,3 +121,20 @@ it("keeps shared connection controls inside the invoking sign-in modal without s
  expect(value.inspect).not.toHaveBeenCalled();expect(value.reopen).not.toHaveBeenCalled();expect(value.cancel).not.toHaveBeenCalled();
  view.unmount();expect(request).toHaveBeenLastCalledWith(undefined);
 });
+
+it("uses numbered noninteractive progress without creating another sign-in owner", () => {
+  const value = props();
+  const view = render(<SubscriptionOnboarding {...value} />);
+  const progress = screen.getByRole("list", { name: "Account setup progress" });
+  const steps = [...progress.querySelectorAll("li")];
+  expect(steps).toHaveLength(2);
+  expect(steps.map(step => step.querySelector(".wizard-step-number")?.textContent)).toEqual(["1", "2"]);
+  expect(steps[0].getAttribute("aria-current")).toBe("step");
+  expect(progress.querySelector("button, a, [tabindex]")).toBeNull();
+  view.rerender(<SubscriptionOnboarding {...value} stage={Stage.Naming} />);
+  expect(steps[0].getAttribute("data-completed")).toBe("true");
+  expect(steps[1].getAttribute("aria-current")).toBe("step");
+  expect(value.reopen).not.toHaveBeenCalled();
+  expect(value.cancel).not.toHaveBeenCalled();
+  expect(value.saveName).not.toHaveBeenCalled();
+});

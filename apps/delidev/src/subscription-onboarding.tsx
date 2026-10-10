@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
@@ -70,13 +71,12 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
     [SubscriptionOnboardingStage.Recovery]: copy("subscription-onboarding.extra.24cffb89cba7"),
     [SubscriptionOnboardingStage.Failed]: copy("subscription-onboarding.extra.a8a3202b6aa5"),
   }[stage];
-  return <section className="subscription-account-create subscription-onboarding" aria-label={copy("subscription-onboarding.addAccount_8403fa", { v0: serviceName })}>
+  return <section className="subscription-account-create subscription-onboarding desktop-wizard" aria-label={copy("subscription-onboarding.addAccount_8403fa", { v0: serviceName })}>
     <SettingsActionButton icon={SettingsActionIcon.Back} type="button" className="subscription-onboarding-back" disabled={!active} onClick={leave}>{copy("subscription-onboarding.backToAiSubscription_224262")}</SettingsActionButton>
     <h2 hidden={inTask}><LocalizedText id="subscription-onboarding.addAccount_2c24d0" components={{ s0: <>{serviceName}</> }} /></h2>
-    <ol className="subscription-onboarding-steps" aria-label={copy("subscription-onboarding.accountSetupProgress_269e63")}>
-      <li aria-current={!naming ? "step" : undefined}><LocalizedText id="subscription-onboarding.signIn_b011b4" components={{ s0: <>{naming ? <span aria-hidden="true">✓ </span> : null}</> }} /></li>
-      <li aria-hidden="true">→</li>
-      <li aria-current={naming ? "step" : undefined}>{copy("subscription-onboarding.accountName_a704d8")}</li>
+    <ol className="subscription-onboarding-steps wizard-progress" aria-label={copy("subscription-onboarding.accountSetupProgress_269e63")}>
+      <li data-completed={naming} aria-current={!naming ? "step" : undefined}><span className="wizard-step-number" aria-hidden="true">1</span><LocalizedText id="subscription-onboarding.signIn_b011b4" components={{ s0: <>{naming ? <span aria-hidden="true">✓ </span> : null}</> }} /></li>
+      <li aria-current={naming ? "step" : undefined}><span className="wizard-step-number" aria-hidden="true">2</span>{copy("subscription-onboarding.accountName_a704d8")}</li>
     </ol>
     <p className={`subscription-onboarding-status${naming ? " subscription-onboarding-success" : ""}`} role="status">
       {stage === SubscriptionOnboardingStage.Preparing || stage === SubscriptionOnboardingStage.Waiting ? <span className="subscription-onboarding-spinner" aria-hidden="true" /> : null}

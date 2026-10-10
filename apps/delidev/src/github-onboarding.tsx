@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
@@ -140,9 +141,9 @@ export function GitHubOnboarding({ active, canStart, close, connected }: { activ
   };
   const back = () => { epoch.current++; clearSecrets(); setToken(""); setIdentity(undefined); setError(undefined); setMessage(""); setStage(Stage.Token); };
   const cancel = () => { epoch.current++; request.current?.abort(); clearSecrets(); close(); };
-  return <section className="integration-onboarding" aria-label={copy("github-onboarding.title")}>
+  return <section className="integration-onboarding desktop-wizard" aria-label={copy("github-onboarding.title")}>
     <h3>{copy("github-onboarding.title")}</h3>
-    <p className="integration-secondary">{copy(stage === Stage.Token ? "github-onboarding.stepVerify" : "github-onboarding.stepConfirm")}</p>
+    <ol className="wizard-progress" aria-label={copy("github-onboarding.title")}>{[Stage.Token, Stage.Confirm].map((value, index) => <li key={value} aria-current={stage === value ? "step" : undefined} data-completed={index === 0 && stage !== Stage.Token}><span className="wizard-step-number" aria-hidden="true">{index + 1}</span>{copy(index === 0 ? "github-onboarding.stepVerify" : "github-onboarding.stepConfirm")}</li>)}</ol>
     {stage === Stage.Token ? <>
       <form onSubmit={event => { event.preventDefault(); void verify(); }}>
         <fieldset disabled={busy}><label>{copy("github-onboarding.token")}<input ref={tokenInput} type="password" autoComplete="off" spellCheck={false} maxLength={512} value={token} onChange={event => setToken(event.target.value)} placeholder={copy("github-onboarding.placeholder")} /></label><p>{copy("github-onboarding.help")}</p></fieldset>

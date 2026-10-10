@@ -9,7 +9,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context
 .schedule-creation, .schedule-creation > form { height: 100%; min-height: 0; }
 .schedule-creation > form { display: flex; flex-direction: column; }
 .schedule-creation-scroll { flex: 1; min-height: 0; overflow: auto; padding: 32px; scrollbar-gutter: stable; }
-.schedule-creation-header, .schedule-creation-grid, .schedule-creation-errors, .schedule-creation-footer-inner { width: 100%; max-width: 760px; margin-inline: auto; }
+.schedule-creation-header, .schedule-creation-grid, .schedule-creation-errors, .schedule-creation-footer-inner { width: 100%; max-width: 720px; margin-inline: auto; }
 .schedule-creation-header { display: block; margin-bottom: 12px; }
 .schedule-creation-header h2 { margin-bottom: 8px; font-size: 28px; }
 .schedule-creation-header p { font-size: 14px; }
@@ -48,7 +48,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation) > .sidebar-context
 }
 
 .schedule-creation-card[hidden] { display:none !important; }
-.schedule-creation-progress,.schedule-creation-step-title,.schedule-creation-review { width:100%; max-width:760px; margin-inline:auto; }
+.schedule-creation-progress,.schedule-creation-step-title,.schedule-creation-review { width:100%; max-width:720px; margin-inline:auto; }
 .schedule-creation-progress { display:flex; gap:12px; flex-wrap:wrap; padding:0; margin-block:20px; list-style:none; color:var(--muted); }
 .schedule-creation-progress li[aria-current="step"] { color:var(--accent); font-weight:600; }
 .schedule-creation-step-title { font-size:18px; margin-bottom:12px; }

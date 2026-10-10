@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Presentation only. Workflow owners retain stage, form, focus and footer state. */
+.desktop-wizard:not(.schedule-creation) { width: 100%; max-width: 720px; margin-inline: auto; box-sizing: border-box; min-width: 0; border: 0; border-radius: 0; padding: 0; background: transparent; }
+/* A wizard retains its existing dialog host and scroll/footer regions. */
+dialog.settings-task-dialog:has(.desktop-wizard) { width: min(720px, calc(100vw - 32px)); }
+.desktop-wizard:not(.wizard-step-presentation) > :is(h1, h2, h3), .desktop-wizard > header :is(h1, h2, h3) { font-size: 20px; line-height: 28px; margin-block: 0 16px; }
+.desktop-wizard label:not(.checkbox) { font-size: 14px; margin-block: 16px; min-width: 0; }
+.desktop-wizard :is(input:not([type=checkbox], [type=radio]), select, textarea, button) { min-height: 40px; border-radius: 8px; max-width: 100%; }
+.desktop-wizard :is(fieldset, section, form) { min-width: 0; }
+.desktop-wizard > section + section, .desktop-wizard > fieldset + fieldset { margin-top: 24px; }
+.desktop-wizard .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 24px 0; }
+.desktop-wizard .actions button { white-space: normal; overflow-wrap: anywhere; }
+.desktop-wizard .schedule-creation-card { border: 0; border-radius: 0; padding: 0; background: transparent; }
+.desktop-wizard .schedule-creation-card label { margin-block: 16px; }
+.desktop-wizard .schedule-creation-footer-inner .actions { margin: 0; }
+.desktop-wizard .schedule-creation-header h2 { font-size: 20px; line-height: 28px; }
+.desktop-wizard .schedule-creation-footer-inner, .desktop-wizard .schedule-creation-header, .desktop-wizard .schedule-creation-grid, .desktop-wizard .schedule-creation-errors, .desktop-wizard .schedule-creation-step-title, .desktop-wizard .schedule-creation-review { width: 100%; max-width: 720px; margin-inline: auto; }
+
+:is(.desktop-wizard, .wizard-step-presentation) .wizard-progress { display: flex; flex-wrap: wrap; gap: 24px; padding: 0 0 24px; margin-block: 0 24px; list-style: none; border-bottom: 1px solid var(--border); }
+:is(.desktop-wizard, .wizard-step-presentation) .wizard-progress li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; line-height: 20px; color: var(--muted); overflow-wrap: anywhere; }
+:is(.desktop-wizard, .wizard-step-presentation) .wizard-progress li > .wizard-step-number { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; box-sizing: border-box; border: 1px solid var(--control-border); border-radius: 50%; background: transparent; color: var(--muted); }
+:is(.desktop-wizard, .wizard-step-presentation) .wizard-progress li:is([data-complete=true], [data-completed=true]) { color: var(--text); }
+:is(.desktop-wizard, .wizard-step-presentation) .wizard-progress li[aria-current=step] { color: var(--text); font-weight: 600; }
+:is(.desktop-wizard, .wizard-step-presentation) .wizard-progress li[aria-current=step] > .wizard-step-number { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.desktop-wizard .schedule-creation-progress { max-width: 720px; margin-inline: auto; }
+/* Account-source authoring keeps its split geometry inside the common cap. */
+:is(.settings-layout, .settings-task-body) .desktop-wizard.worker-wizard[data-wizard-step] { max-width: 720px; }
+dialog.settings-task-dialog:has(.desktop-wizard) .settings-task-footer :is(.actions, .worker-footer > div) { flex-wrap: wrap; gap: 8px; }
+.desktop-wizard .actions:empty { display: none; }
+.desktop-wizard:not(.schedule-creation) > form { margin-block: 24px 0; }

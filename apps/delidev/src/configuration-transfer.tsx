@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
 import { productError, ProductError,  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
@@ -205,7 +206,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     finally { previewRead.reset(); gate.current = false; }
   };
   const stage = preview || report || mutation.uncertain ? TransferStage.Review : loaded ? TransferStage.Map : TransferStage.Load;
-  return <section className="configuration-transfer" aria-label={copy("configuration-transfer.portableConfiguration_ca3e8a")}>
+  return <section className="configuration-transfer wizard-step-presentation" aria-label={copy("configuration-transfer.portableConfiguration_ca3e8a")}>
     {showCategoryIntro ? <header className="transfer-intro"><div><h1 aria-live="polite" aria-atomic="true">{copy("configuration-transfer.importExport_6e061f")}</h1><p>{copy("configuration-transfer.moveConfigurationBetweenDelidevServers_749ed7")}</p></div></header> : null}
     <section className="transfer-panel" data-settings-search-target="export" aria-labelledby="transfer-export-heading">
       <header className="transfer-export-header">
@@ -218,9 +219,9 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     <section className="transfer-panel" data-settings-search-target="import" aria-labelledby="transfer-import-heading">
       <h2 id="transfer-import-heading">{copy("configuration-transfer.importConfiguration_8a507f")}</h2>
       <p>{copy("configuration-transfer.chooseAJsonFileOrPaste_3d11c9")}</p>
-      <ol className="transfer-stages" aria-label={copy("configuration-transfer.configurationImportStages_9980b1")}>
+      <ol className="transfer-stages wizard-progress" aria-label={copy("configuration-transfer.configurationImportStages_9980b1")}>
         {transferStages.map((item) => <li key={item.stage} aria-current={stage === item.stage ? "step" : undefined}>
-          <span className="transfer-stage-number" aria-hidden="true">{item.stage}</span><span>{item.label}</span>
+          <span className="transfer-stage-number wizard-step-number" aria-hidden="true">{item.stage}</span><span>{item.label}</span>
           {stage === item.stage ? <span className="transfer-current-stage">{copy("configuration-transfer.currentStage_91766a")}</span> : null}
         </li>)}
       </ol>

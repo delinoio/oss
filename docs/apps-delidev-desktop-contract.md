@@ -1137,7 +1137,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - CI fixture executable reuse follows `repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks/two-shard inventory.
 
-- Claude subscription onboarding follows the approved existing 960px task dialog under System 38 / Worker 20: explicit Runner selection, once-only Start, conditional masked code, original browser URL, success-bound name and Later retention. Preserve hidden task lifetime, explicit cancellation, focus/scroll/responsive rules, both themes and 200% zoom. Record fixtures/builds separately from actual account and packaged macOS/Windows/Linux acceptance; do not commit the generated design preview.
+- Claude subscription onboarding follows the shared 720px wizard task dialog under System 38 / Worker 20: explicit Runner selection, once-only Start, conditional masked code, original browser URL, success-bound name and Later retention. Preserve hidden task lifetime, explicit cancellation, focus/scroll/responsive rules, both themes and 200% zoom. Record fixtures/builds separately from actual account and packaged macOS/Windows/Linux acceptance; do not commit the generated design preview.
 
 - New Project creation follows the desktop contract's three-step repository selection, project settings and usage restrictions wizard. Existing edits retain their form structure while repository labels use names and saved values use original UUIDs. Preserve first-repository automatic naming until manual edits. Creation defaults the primary only on empty-to-nonempty repository selection; preserve valid choices through additions/reordering and require manual reselection after removal while repositories remain. Existing edits retain explicit primary selection. Preserve sequential metadata-only 50-record catalog reads, exact read/save retry, validation and Settings disposal. First creation focus is repository search; explicit later stages focus Name and the final heading, without focus changes on catalog or language updates.
 
@@ -1490,7 +1490,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Workspace storage and permanent deletion use the connection-owned controller in `session-storage.tsx`. Retain original requests and jobs through navigation/uncertainty, pin exact successful previews and snapshot selections for confirmation, observe deletion independently of removed resources and preserve decimal/nullable byte measurements. Use separate negotiated capabilities and follow `cmds-delidev-storage-contract.md`.
 
-- New schedule creation presentation is owned by `src/schedule-creation.tsx` and `src/schedule-creation.css` (relative to `apps/delidev`) and follows the previous feature section in `apps-delidev-desktop-contract.md`: creation-only Task/Execution/Repeat/Review wizard with a centered 760px column, noninteractive status indicator, step count and persistent footer and an unobscured main-content action row, mounted collapsed overrides, native radios, explicit catalog states and once-only name focus. Inactive authoring steps stay mounted/hidden/unfocusable and outside native validation, with inventory reads suspended but pagination retained. Next validates/focuses its first invalid control; Back and distinct Review Edit actions preserve drafts without saves. Only Review invokes the original create path after all-step validation/reveal, including collapsed invalid references. Preserve full exact identities, available labels, prompt/reference text, raw cron/timezone and paused/enabled state; review is configuration, not readiness. Lock all navigation while proof/save/uncertain and preserve exact retry. User step changes focus the heading without refetch/reconnect focus theft. Step/frequency/time/weekday/disclosure stay in connection memory, emit only canonical existing Cron fields, preserve raw Custom transitions and invalid Time drafts, and never replace server calendar authority. Preserve strict schema-v1 writes, limits, fresh Local proof, exact uncertain retry and all existing edit/list/detail/history/sidebar behavior. Keep native viewport/zoom evidence separate from component checks.
+- New schedule creation presentation is owned by `src/schedule-creation.tsx` and `src/schedule-creation.css` (relative to `apps/delidev`) and follows the previous feature section in `apps-delidev-desktop-contract.md`: creation-only Task/Execution/Repeat/Review wizard with a centered 720px column, noninteractive status indicator, step count and persistent footer and an unobscured main-content action row, mounted collapsed overrides, native radios, explicit catalog states and once-only name focus. Inactive authoring steps stay mounted/hidden/unfocusable and outside native validation, with inventory reads suspended but pagination retained. Next validates/focuses its first invalid control; Back and distinct Review Edit actions preserve drafts without saves. Only Review invokes the original create path after all-step validation/reveal, including collapsed invalid references. Preserve full exact identities, available labels, prompt/reference text, raw cron/timezone and paused/enabled state; review is configuration, not readiness. Lock all navigation while proof/save/uncertain and preserve exact retry. User step changes focus the heading without refetch/reconnect focus theft. Step/frequency/time/weekday/disclosure stay in connection memory, emit only canonical existing Cron fields, preserve raw Custom transitions and invalid Time drafts, and never replace server calendar authority. Preserve strict schema-v1 writes, limits, fresh Local proof, exact uncertain retry and all existing edit/list/detail/history/sidebar behavior. Keep native viewport/zoom evidence separate from component checks.
 
 - Sidechat actions require negotiated server/native Worker support and a completed original parent. Retain creation/findings requests across navigation and uncertainty, offer complete own assistant replies only and transfer full selected content under exact revisions. Explain dependent permanent cleanup and keep workspace/terminal mutation outside Sidechat authority; follow `cmds-delidev-sidechat-contract.md`.
 
@@ -2512,6 +2512,37 @@ Notifications renders saved Enabled/Disabled values as noninteractive label/valu
 
 Use existing semantic light/dark/System tokens and system font; no external assets/fonts/dependencies, inline styles, gradients, transparency, blur or CSP exceptions. Preserve full wrapping identities/names/bytes/timestamps and keyboard/focus semantics. Presentation validation must cover all 18 synthetic empty/populated categories at 1920×1080, 1440×1000, 1440×900, 1280×820, 960×640, 640×480 and effective 200% CSS layouts. Fixture/browser/build/package checks remain distinct from actual browser chrome zoom, packaged CEF, macOS/Windows/X11, screen-reader, real-account and OS banner acceptance. Record revision/commands/results/limits in PRs/issues/CI artifacts, never repository evidence documents.
 
+### Shared desktop wizard presentation
+
+Schedule creation, Project creation in Home and Settings, Agent Worker creation
+and editing, API entry creation and OAuth, subscription onboarding including Claude,
+and GitHub integration onboarding use a centered content column capped at 720px.
+Wizard dialog hosts use the same 720px bound, including Claude; Schedule Review
+retains the same bound. Keep Agent Worker source/detail proportions inside it.
+Existing page/dialog placement and header dismissal remain unchanged.
+
+Shared static styling owns only presentation. It adds no request, polling, draft,
+navigation, focus or persistence owner. Existing progress indicators use 28px
+numbered circles, 14px labels, 24px gaps and a thin neutral divider. Current steps
+retain `aria-current="step"` and an accent-filled circle; future circles have a
+neutral outline, and completed-step text keeps its existing distinction. API
+direct-provider entry keeps its existing stage bypass and has no added numbered
+indicator. Configuration transfer reuses only the step styling; its derived stages,
+visible panels and actions remain unchanged.
+
+Use flat form sections, 24px section spacing, 16px field spacing, 20px top-level
+titles, 14px labels and 40px minimum controls with 8px corners. Preserve harness
+cards, radio choices, meaningful Review sections and diagnostic panels. Existing
+footer owners align actions and helper text with the body; their actual wrapped
+height reserves space without covering controls, errors or focus outlines. Wrap
+step labels and actions at narrow widths using semantic theme tokens and existing
+English/Korean copy. Dialog headers own their title; do not duplicate it in the body.
+
+Keep all original stage transitions, hidden-step validation/read suspension,
+conditional bypasses, drafts, resource bindings, pagination, enablement, original
+requests and uncertain retries. Presentation never starts, repeats or cancels
+login/OAuth operations or changes cleanup authority.
+
 ### Settings action icons
 
 Icon-only paged resource actions include the original resource ID alongside the localized target name. Identity does not depend on which payload pages remain mounted, and computing it adds no reads. Network profile deletion uses the same exact target name and ID as editing.
@@ -2530,7 +2561,9 @@ The catalog and renderer own no RPC, schema, capability, permission, mutation, r
 
 Settings keeps all 18 category lists and their owning controllers mounted when an operation opens. `settings-task.tsx`, `settings-task-context.ts` and `settings-task.css` add a Settings shell over the shared native `DialogSurface` in `ui.tsx`. Other dialogs retain their presentation. Appearance immediate choices, Import / Export, Connections, backup operation history and short Details disclosures stay in the category page, except API-entry Details and subscription Account details dialogs defined by their owning contracts. Search, page tokens, disclosures and scroll position survive opening and closing a task.
 
-Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview, read-only API-entry Details and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
+Use the closed size enum: 480px confirmations for configuration deletion, account disconnect/logout, device revocation and network-profile/backup deletion; 768px forms for Project, Provider, Model, account preferences and GitHub-profile create/edit, pricing, routing preview, read-only API-entry Details and notification edits; 960px workflows for Agent Workers, Instructions, repository editing/registration, account creation/connection/management, SSH setup, Runner Device details, network settings, pairing documents and backup inspection. The shared desktop wizard presentation below overrides wizard hosts to 720px,
+including creation, sign-in, Agent Worker authoring and Schedule Review.
+Width never exceeds viewport minus 32px; height never exceeds viewport minus 48px. Use 16px outer corners, 20px titles, 16px section titles, 14px body and 12px hints/scope, existing theme tokens and 40px controls with 8px corners. Header and action footer remain fixed; only the body scrolls. Narrow forms stack and wrap full identifiers/actions. These task rules supersede the ordinary-flow action and page-form geometry above only while a task is open.
 
 X and Escape close and dispose the task, including pending or unconfirmed submissions. Do not hide a mounted task, show an original-operation status/opener or lock the category after close. Keep the category list, filters, disclosures and scroll position mounted. Each top-level task owns a nested `SettingsOpening` and mutation registry; internal steps share that task scope. Mark it disposed before invoking the close callback once. Clear drafts, editable secrets and retry copies; stop local waits and polling. Original in-flight request bytes remain subject to their existing completion/cleanup rules. A reopened task reads current server state and cannot restore or replay its closed predecessor. An open task may explicitly retry only its exact original uncertain request.
 
@@ -3220,7 +3253,7 @@ The creation presentation owns `apps/delidev/src/schedule-creation.tsx` and
 `apps/delidev/src/schedule-creation.css`; shared schedule state and mutations
 remain in the existing schedule editor.
 
-Only creation without an initial resource uses the Task → Execution → Repeat → Review wizard in one centered column capped at 760px. Editing, list/detail/history, the icon rail, context pane and scheduling operations retain their existing contracts. A noninteractive wrapped indicator announces completed/current/future steps. Keep authoring steps mounted, hidden, unfocusable and excluded from native constraint validation while inactive. Suspend their inventory reads while retaining pagination; the original parent Runner preference remains independent. Step and all existing drafts remain connection-owned across Back/Next, navigation and same-identity reconnect; replacement starts fresh.
+Only creation without an initial resource uses the Task → Execution → Repeat → Review wizard in one centered column capped at 720px. Editing, list/detail/history, the icon rail, context pane and scheduling operations retain their existing contracts. A noninteractive wrapped indicator announces completed/current/future steps. Keep authoring steps mounted, hidden, unfocusable and excluded from native constraint validation while inactive. Suspend their inventory reads while retaining pagination; the original parent Runner preference remains independent. Step and all existing drafts remain connection-owned across Back/Next, navigation and same-identity reconnect; replacement starts fresh.
 
 Step 1 has Cancel/Next, steps 2–3 Cancel/Back/Next, and Review Cancel/Back/Create schedule, with a step count. Next validates only its step and focuses the first invalid control; Back and distinctly named Review Edit controls retain drafts without writes. User changes focus the step heading; fresh entry focuses Name once, and refresh/reconnect never steals focus. Enter in single-line inputs follows Next; prompt Enter remains newline. Only Review submits. Final creation validates all authoring steps, reveals the first invalid step/disclosure and focuses correction before calling the original save path. Local proof/save/uncertain states lock editing and all navigation/dismissal, with the original identical-request retry retained.
 
@@ -3230,9 +3263,9 @@ The main-content creation form owns a
 scrolling body and a separate white, top-bordered persistent action row; its
 actual wrapped height reserves space without covering errors, pagination, final
 controls or focus outlines. Keep scrolling at 960×640, narrow effective widths
-and 200% zoom. Use existing system fonts and tokens, white 12px-radius cards,
-24px card padding, 8px controls of at least 40px, 28px page title, 18px section
-headings and 14px labels. Static creation-scoped CSS preserves the strict
+and 200% zoom. Follow the shared desktop wizard presentation below. Keep
+meaningful Review sections, disclosures and radio choices, but omit the outer
+form card and the duplicate Task heading. Static creation-scoped CSS preserves the strict
 production `style-src 'self'`, dependencies and native geometry.
 
 The heading is **New schedule**, with **Set up a recurring task for your
