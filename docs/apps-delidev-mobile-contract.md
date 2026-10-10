@@ -64,6 +64,21 @@ Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before
 showing response controls; notification delivery never changes read state.
 
+Conversation queue inputs and interaction requests have separate explicit
+50-record pagination chains. Each continuation uses the exact returned cursor
+and keeps original resource order, IDs and revisions. Loaded closed requests
+remain counted; an unvisited continuation never implies that no request remains.
+Refresh reads the reached chain atomically, using its new original cursors.
+Failed reads retain the last valid observations, show incomplete coverage and
+allow explicit read retry or refresh without replaying a mutation. Duplicate
+IDs, repeated/nonadvancing cursors, incorrect session/kind/schema/revision and
+oversized pages fail closed. Queue coverage stops at 1,000 inputs; interaction
+coverage stops at 10,000 records, with a 16 MiB combined document bound. A cursor
+beyond a limit remains explicitly incomplete rather than implying exhaustion.
+Reading, incomplete or failed target observations disable response and Steer
+controls. Backgrounding, conversation replacement and profile replacement cancel
+reads and fence late completions; protected pending requests remain untouched.
+
 Language, System/light/dark theme, safe-area padding, software keyboard resize,
 48-pixel targets, native dialogs, keyboard access and opener focus return belong
 to the mobile client. English and Korean catalogs have identical keys. Narrow
