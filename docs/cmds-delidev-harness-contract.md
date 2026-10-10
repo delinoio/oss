@@ -899,7 +899,23 @@ The Worker first-turn runner now binds the selected account/connection and immut
 ### Codex native observations
 The exact installed profile now normalizes `thread/started`, `thread/settings/updated`, disabled `remoteControl/status/changed`, warnings and `thread/tokenUsage/updated`. Root identity, model/provider, observed effort/tier, working directory, approval reviewer/policy, sandbox details and active turn mode must remain consistent with the accepted native binding. A native model reroute blocks further sends for reconciliation; it never silently changes the selected model or bypasses Codex safety behavior. Foreign-thread observations remain private extensions for the future subagent adapter.
 
-Warnings become closed generic `native-warning` or `native-config-warning` notices, preserving an observable count without persisting/logging native diagnostic text, paths, remote installation identities or internal collaboration instructions. Remote control must report disabled with no connected environment; other states fail. An empty default Codex quota bucket is explicitly unavailable, never a measured zero or evidence of recovered quota. Populated/sparse account quota data still requires its own adapter and returns unhandled, so a production dispatcher cannot silently discard it.
+Warnings become closed generic `native-warning` or `native-config-warning` notices, preserving an observable count without persisting/logging native diagnostic text, paths, remote installation identities or internal collaboration instructions. Remote control uses a closed bounded private decoder for `disabled`,
+`connecting`, `connected` and `errored`, required string `serverName` and
+`installationId`, and nullable `environmentId`. Each private identity is at most
+1024 UTF-8 bytes without NUL; the complete envelope retains the native frame
+bound and rejects unknown/duplicate fields. Existing omitted/null environment
+compatibility remains accepted only as absence. Disabled with no environment
+retains its passive metadata behavior. Other valid states or any supplied
+environment retain a typed private policy violation on the original connection,
+log only the closed `remote-control-policy` classification and fence the original
+execution with recovery required and paused sends. Malformed observations retain
+a separate `remote-control-status` validation classification. Neither boundary
+adopts identities, pairs, disables remote control, reconnects or sends input.
+An existing uncertainty stays latched; status replay or later disabled/terminal
+observations cannot prove cleanup or clear recovery. Account/settings, original
+input, native outcome and immutable receipts keep their existing owners. The
+independent external-token quota profile retains its original disabled-only
+reader and cleanup rules. An empty default Codex quota bucket is explicitly unavailable, never a measured zero or evidence of recovered quota. Populated/sparse account quota data still requires its own adapter and returns unhandled, so a production dispatcher cannot silently discard it.
 
 Token observations preserve native cumulative and last-request counters separately, with unavailable cache-write and context-window fields remaining null. Required missing/null counters, negative/overflowing/non-integral counts and unknown fields reject publication. Do not recompute totals from overlapping breakdowns or assume monotonically increasing counters. The pinned Codex source can reset counters and fill context totals after a context-limit failure. These reports are therefore immutable attributed observations, not an implemented billable-usage aggregate, proof of actual cost or a universal context percentage. The Worker retains the observation UUID and exact event receipt before sending; the server derives account/connection/provider/model/execution provenance from the immutable assignment. Counter-reset, history/fork/subagent deduplication, exact request usage/cost and dashboard/budget integration remain required before aggregate usage is complete.
 

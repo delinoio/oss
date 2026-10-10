@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +15,11 @@ import (
 type EventKind string
 
 type eventValidationStage string
+
+const (
+	validationRemoteControl       eventValidationStage = "remote-control-status"
+	validationRemoteControlPolicy eventValidationStage = "remote-control-policy"
+)
 
 const (
 	validationOther          eventValidationStage = "other"
@@ -43,6 +49,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "remoteControl/status/changed":
+		return validationRemoteControl
 	case "thread/settings/updated":
 		return validationSettings
 	case "item/started", "item/completed":
@@ -250,12 +258,26 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	c.pendingEvent = nil
 	event, err := c.observeEventLocked(native)
 	if err != nil {
-		c.problem = turnUncertain()
+		stage := validationStage(native.Method)
+		var violation *remoteControlPolicyViolation
+		if errors.As(err, &violation) {
+			// Retain only the typed policy status on the original connection. Do not
+			// replace an earlier uncertainty or infer cleanup from this notification.
+			if c.remoteControlPolicy == nil {
+				c.remoteControlPolicy = violation
+			}
+			if c.problem == nil {
+				c.problem = remoteControlRecovery()
+			}
+			stage = validationRemoteControlPolicy
+		} else {
+			c.problem = turnUncertain()
+		}
 		if c.execution != nil {
 			c.execution.paused = true
 		}
 		if c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
+			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", stage, "code", c.problem.Code)
 		}
 		return Event{}, c.problem
 	}

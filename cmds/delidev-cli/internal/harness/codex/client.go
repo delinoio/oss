@@ -44,6 +44,8 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	remoteControlPolicy *remoteControlPolicyViolation
+
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string
