@@ -3015,6 +3015,18 @@ creates, restores or repairs opaque binding authority. All four placements share
 these rules and existing stale-binding, pending and uncertain request guards.
 
 
+Issue #2297 paints original explicitly selected `$name` spans with semantic
+`--link` color and a thin underline in the same noninteractive mirror across
+all four placements. Keep literal prompt bytes and opaque bindings separate.
+Only exact, nonstale, unambiguous spans in the resolved original scope qualify;
+manually typed tokens gain no decoration. Outside edits move the binding;
+token edits or explicit clearing remove it. Confirmed unavailable styling takes
+precedence, while retained selections may remain styled during unknown inventory.
+Changed/unresolved scopes and IME composition suppress selected decoration.
+Pending/uncertain locks preserve retained selections without acceptance authority.
+Bound selected paint spans to 16, retain native editing/accessibility ownership,
+and add no link role, navigation, pointer handler, focus target or duplicate mirror.
+
 The three first-message/follow-up composer surfaces share one `$` completion
 controller. Original pending or uncertain composer locks suppress completion
 reads and choices while preserving the exact draft and selected bindings. Every

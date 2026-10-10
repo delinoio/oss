@@ -303,6 +303,7 @@
 .skill-text-overlay { position: absolute; pointer-events: none; overflow: hidden; color: var(--text); }
 .skill-text-overlay > div { box-sizing: border-box; white-space: pre-wrap; overflow-wrap: break-word; }
 .skill-token-unavailable { color: var(--muted); }
+.skill-token-selected { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
 
 .new-session-composer .skill-textarea { flex: 1; display: flex; }
 .skill-textarea textarea { display: block; }

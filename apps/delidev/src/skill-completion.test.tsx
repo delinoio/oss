@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SessionService, SessionQuery, SkillService, SkillProvenance, newRequestId } from "@delinoio/delidev-api-client";
-import { skillToken, skillRanges, editedBindings, useSkillCompletion } from "./skill-completion";
+import { skillToken, skillRanges, editedBindings, selectedSkillRanges, useSkillCompletion } from "./skill-completion";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(), agent = newRequestId(), inventory = newRequestId(), worker = newRequestId();
@@ -179,4 +179,55 @@ it("prioritizes a complete live inventory at the retention bound instead of carr
  const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$",selectionStart:1}});await screen.findAllByRole("option");
  current=Array.from({length:256},(_,index)=>({...entries[0]!,name:`live-${index}`,selection:{...entries[0]!.selection,skillId:newRequestId()}})); await client.invalidateQueries();
  await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(256));expect(screen.queryByText("add-issue",{selector:"strong"})).toBeNull();expect(screen.queryByRole("option",{name:/Unavailable/})).toBeNull();
+});
+
+
+it.each(["Enter", "Tab", "mouse"])("decorates only original explicit selection with %s", async key => {
+ const f=fixture(), view=render(f.view()), input=screen.getByRole("textbox");
+ fireEvent.change(input,{target:{value:"한글\n$add-iss",selectionStart:11}});
+ const option=await screen.findByRole("option");
+ if(key==="mouse")fireEvent.click(option);else fireEvent.keyDown(input,{key});
+ expect((input as HTMLTextAreaElement).value).toBe("한글\n$add-issue");
+ const selected=view.container.querySelector(".skill-token-selected")!;
+ expect(selected.textContent).toBe("$add-issue");expect(selected.closest('[aria-hidden="true"]')).toBeTruthy();
+ expect(selected.hasAttribute("href")).toBe(false);expect(selected.hasAttribute("tabindex")).toBe(false);expect(selected.hasAttribute("role")).toBe(false);
+ expect(view.container.querySelectorAll(".skill-text-overlay")).toHaveLength(1);expect(f.send).not.toHaveBeenCalled();
+ fireEvent.compositionStart(input);expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+ fireEvent.compositionEnd(input);expect(view.container.querySelector(".skill-token-selected")).toBeTruthy();
+ view.rerender(f.view(newRequestId()));expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+});
+it("never decorates a manually typed matching token",async()=>{
+ const f=fixture(),view=render(f.view());fireEvent.change(screen.getByRole("textbox"),{target:{value:"$add-issue",selectionStart:10}});
+ await screen.findByRole("option");expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+});
+it("requires an exact unambiguous binding and moves paint with outside edits",()=>{
+ const scope=`${machine}:${agent}::`,value="한글\n$add-issue";
+ const binding={start:3,end:13,token:"$add-issue",selection:entries[0]!.selection,stale:false,context:scope};
+ expect(selectedSkillRanges(value,[binding],scope)).toEqual([{start:3,end:13,prefix:"add-issue"}]);
+ for(const bindings of [[{...binding,stale:true}],[{...binding,ambiguous:true}],[{...binding,context:"foreign"}],[binding,binding],[]])expect(selectedSkillRanges(value,bindings,scope)).toEqual([]);
+ const next="outside "+value, moved=editedBindings(value,next,[binding]);expect(selectedSkillRanges(next,moved,scope)[0]?.start).toBe(11);
+ expect(selectedSkillRanges("한글\n$add-note",editedBindings(value,"한글\n$add-note",[binding]),scope)).toEqual([]);
+ expect(selectedSkillRanges(value,[{...binding,context:undefined}],scope)).toHaveLength(1);
+ const many=Array.from({length:20},(_,index)=>({...binding,start:index*11,end:index*11+10}));
+ expect(selectedSkillRanges(Array(20).fill("$add-issue").join(" "),many,scope)).toHaveLength(16);
+});
+
+it("retains selected paint during unknown inventory and locks, with unavailable precedence",async()=>{
+ function Restored({locked=false}:{locked?:boolean}) {
+  const [value,change]=useState("$add-issue");const textarea=useRef<HTMLTextAreaElement>(null);
+  const skills=useSkillCompletion({value,change,textarea,machineId:machine,agentId:agent,disabled:locked,initialBindings:[{start:0,end:10,token:"$add-issue",selection:entries[0]!.selection,stale:false,context:`${machine}:${agent}::`}]});
+  return skills.wrap(<textarea ref={textarea} aria-label="Restored decoration" disabled={locked} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)}/>);
+ }
+ const read=vi.fn(async():Promise<{skills:typeof entries}>=>{throw new Error("Inventory unavailable");});
+ const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const tree=(locked=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Restored locked={locked}/></QueryClientProvider></TransportProvider>;
+ const view=render(tree());await waitFor(()=>expect(read).toHaveBeenCalledOnce());
+ expect(view.container.querySelector(".skill-token-selected")).toBeTruthy();expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+ const original=screen.getByRole("textbox");view.rerender(tree(true));expect(screen.getByRole("textbox")).toBe(original);expect(view.container.querySelector(".skill-token-selected")).toBeTruthy();
+ view.rerender(tree());
+ // A complete current empty inventory proves absence; failure above did not.
+ read.mockImplementation(async()=>({skills:[]}));await client.invalidateQueries();
+ await waitFor(()=>expect(view.container.querySelector(".skill-token-unavailable")).toBeTruthy());
+ expect(view.container.querySelector(".skill-token-selected")).toBeNull();expect(original).toHaveProperty("value","$add-issue");
 });
