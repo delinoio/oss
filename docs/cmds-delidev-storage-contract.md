@@ -305,7 +305,25 @@ proof before any unlink, persists removal stages before deleting journals, and
 then retains only non-content digest/report tombstones. Filesystem traversal
 never follows links, checks original file identity, observes cancellation before
 each unlink and is capped at 100,000 entries per owned tree. A replaced root is
-preserved as uncertain. Cleanup retry never starts native work or resends input.
+preserved as uncertain. Managed-copy cleanup retains each original root identity
+and absent operand before ownership validation. Directly validated journals and
+Fork publication files also retain their original file identity and byte digest.
+After original process and workspace owners join, cleanup records a bounded
+no-follow descendant inventory with stable native identities and file/link byte
+digests in a private, work-digest-bound copy removal intent (at most 64 MiB).
+It synchronizes that intent before the removal-started proof. Destruction checks
+the retained inventory before unlink and rechecks each original operand; it never
+adopts a fresh generic-remover baseline. Same-content foreign replacements,
+changed bytes, added descendants and creation after observed absence stay pending
+without Worker acknowledgement. Durable retries may finish already-unlinked
+original entries but cannot refresh identities from remaining or restored copies.
+An older removal-started proof without this intent permits absence checks only;
+remaining copies need original recovery evidence rather than fresh adoption.
+Original process reconciliation may create only its own joined recovery-lock
+operand; independently owned workspace, staging and skill cleanup retain their
+separate absence-only boundary. The final namespace check-to-unlink race remains
+a separate filesystem boundary. Cleanup retry never starts native work or
+resends input.
 Reusing a completed proof
 rechecks the full removal inventory, including process records/recovery locks and
 a bounded scan of matching title runtimes; a restored replacement stays pending.

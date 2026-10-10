@@ -81,6 +81,12 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 // Tombstones close native admission before cleanup. A once-persisted plan may
 // resume removals after a crash; it never replays preparation or native input.
 func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDeletionWork) (sessionDeletionProof, error) {
+	return deleteSessionCopiesBeforeRemoval(ctx, config, w, nil)
+}
+
+// The callback is a deterministic fixture boundary after original validation
+// and durable removal admission. Production always passes nil.
+func deleteSessionCopiesBeforeRemoval(ctx context.Context, config Config, w domain.SessionDeletionWork, beforeRemoval func()) (sessionDeletionProof, error) {
 	proof := sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID()}
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
@@ -158,6 +164,17 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 		return proof, nil
+	}
+	copyPlan, e := readSessionCopyPlan(ctx, root, w)
+	if e != nil {
+		return proof, e
+	}
+	var copyRoots map[string]security.RemovalRoot
+	if !proof.RemovalStarted && copyPlan == nil {
+		copyRoots, e = captureSessionCopyRoots(ctx, root, w)
+		if e != nil {
+			return proof, e
+		}
 	}
 	// The publisher lock precedes the session lock throughout the Worker. A live
 	// owner must finish cancellation and release its handles before removal.
@@ -242,6 +259,18 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				if e := process.ReconcileOwnerContext(ctx, filepath.Join(root, "processes"), copy.JobID); e != nil {
 					return proof, e
 				}
+				// Reconciliation owns creation of its original recovery-lock operand.
+				// Capture that new lock only after the exact owner successfully joins.
+				if copyRoots != nil {
+					recoveryPath := filepath.Join(root, "processes", string(copy.JobID)+".recovery.lock")
+					if copyRoots[recoveryPath].WasAbsent() {
+						observed, err := security.ObserveRemovalRoot(ctx, root, recoveryPath)
+						if err != nil {
+							return proof, err
+						}
+						copyRoots[recoveryPath] = observed
+					}
+				}
 			} else if !errors.Is(e, os.ErrNotExist) {
 				return proof, domain.SessionDeletionPending()
 			} else if copy.Type != domain.WorkspaceStorageJob && (j.State == journalStarted || j.Problem != nil && j.Problem.Code == domain.RecoveryRequired) {
@@ -268,17 +297,8 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 	}
-	unpublishedPaths := map[string]bool{}
-	for _, copy := range w.Copies {
-		if copy.UnpublishedChildProcessID != "" {
-			unpublishedPaths[filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID))] = true
-			unpublishedPaths[filepath.Join(root, "processes", string(copy.UnpublishedChildProcessID)+".recovery.lock")] = true
-		}
-		if copy.UnpublishedSidechatID != "" {
-			unpublishedPaths[filepath.Join(root, "workspaces", string(copy.UnpublishedSidechatID))] = true
-			unpublishedPaths[workspace.SidechatForkClaimPath(root, copy.JobID)] = true
-		}
-	}
+
+	removalPreviouslyStarted := proof.RemovalStarted
 	if len(w.Copies) != 0 || w.Fork != nil {
 		e = manager.DeleteOwnedWorkspace(ctx, w, allowAbsentWorkspace, func() error {
 			// Admission is tombstoned and every native/publisher owner was joined.
@@ -289,6 +309,24 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				}
 			}
 			locks = nil
+			if !proof.RemovalStarted && copyPlan == nil {
+				// The workspace manager also joins the original session process
+				// owner. Its recovery lock is the only newly created operand that
+				// this successful join permits us to observe.
+				processPath := filepath.Join(root, "processes", string(w.SessionID))
+				recoveryPath := processPath + ".recovery.lock"
+				if !copyRoots[processPath].WasAbsent() && copyRoots[recoveryPath].WasAbsent() {
+					observed, err := security.ObserveRemovalRoot(ctx, root, recoveryPath)
+					if err != nil {
+						return err
+					}
+					copyRoots[recoveryPath] = observed
+				}
+				copyPlan, e = captureSessionCopyPlan(ctx, root, w, copyRoots)
+				if e != nil {
+					return e
+				}
+			}
 			if !proof.RemovalStarted {
 				proof.RemovalStarted = true
 				if e := writeJSON(path, proof); e != nil {
@@ -300,21 +338,13 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 					return domain.SessionDeletionPending()
 				}
 			}
-			paths, e := sessionDeletionCopyPaths(ctx, root, w)
-			if e != nil {
+			if beforeRemoval != nil {
+				beforeRemoval()
+			}
+			if e := removeSessionCopyPlan(ctx, root, w, copyPlan, removalPreviouslyStarted); e != nil {
 				return e
 			}
-			for _, path := range paths {
-				if unpublishedPaths[path] {
-					if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-						return domain.SessionDeletionPending()
-					}
-					continue
-				}
-				if e := removeSessionCopy(ctx, root, path); e != nil {
-					return e
-				}
-			}
+
 			// Re-inventory dynamic storage namespaces at the completion boundary. A
 			// final root published after the first inventory is absence-only: never
 			// let the generic remover adopt it, and keep the deletion recoverable.
@@ -368,27 +398,17 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 // Workspace cleanup already validated original storage namespace ownership.
 // Reappearance cannot give the generic copy remover new traversal authority.
 func removeSessionCopy(ctx context.Context, root, path string) error {
+	if sessionCopyAbsenceOnly(root, path) {
+		return requireSessionCopyAbsent(path)
+	}
+	return domain.SessionDeletionPending()
+}
+
+func sessionCopyAbsenceOnly(root, path string) bool {
 	parent := filepath.Dir(path)
 	name := filepath.Base(path)
 	canonicalFinalClaim := parent == filepath.Join(root, "storage-removal-root-claims") && len(name) == 41 && name[36:] == ".json" && domain.ID(name[:36]).Validate() == nil
-	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") || canonicalFinalClaim {
-		// Workspace cleanup already checked the original native staging,
-		// public removal, final-root identity, or final-root claim. A later
-		// replacement or an old name without a published proof remains
-		// protected here. The generic session remover must never acquire
-		// authority over it.
-		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-			return domain.SessionDeletionPending()
-		}
-		return nil
-	}
-	if parent == filepath.Join(root, "skill-snapshots") {
-		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-			return domain.SessionDeletionPending()
-		}
-		return nil
-	}
-	return removeSessionTree(ctx, root, path)
+	return parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") || canonicalFinalClaim || parent == filepath.Join(root, "skill-snapshots")
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each
