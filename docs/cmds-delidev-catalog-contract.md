@@ -722,3 +722,49 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 
 ## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Inherited native harness defaults
+
+System capability `HARNESS_DEFAULTS_V1 = 83` negotiates server-owned inherited
+harness settings. Agent JSON schema 5 carries `harness_settings` with typed
+`inherit` or `override` selections for effort and the native-options group.
+Each source route carries `model_inheritance`; the retained inline model supplies
+original source attribution when inheriting. Its old native ID is never an
+implicit default. Project and Settings JSON schema 4 add `harness_defaults`.
+An explicit empty list clears defaults while retaining current-schema presence.
+
+Defaults bind one harness, an optional original API provider or subscription
+service, and an optional API protocol for that provider. Within a scope, source
+entries override harness entries and profile entries override source entries.
+Project defaults take precedence over server defaults; explicit Agent selections
+take precedence over both. An override retains explicit empty effort/options
+values. Inherit continues to the next scope. Model overrides must retain the
+original source identity; provider defaults cannot become subscription defaults.
+Project behavior settings, route order, account weights/references, instructions
+and selected input packages keep their existing ownership.
+
+The server selects the eligible original source/account without consuming routing
+state, then resolves its exact API profile and effective harness configuration in
+the same transaction. Missing model-default evidence reports `missing_input` with
+`Harness model default is unavailable.` It creates no execution claim and sends
+no native input. Native profiles currently advertise no authoritative default
+model selector, so the server requires a configured source-specific model default
+or an explicit Agent override. It never guesses from inventory order or starts a
+separate probe. Omitted native effort/options retain the existing original-process
+initialization and applied-setting verification before input.
+
+Before exposing an opened Store, one bounded transaction converts every legacy
+live Agent to typed inheritance, including model selection. It clears legacy
+effort/options selectors and preserves source metadata and all unrelated raw
+fields. A failed upgrade rolls back the entire conversion. Reopening is
+idempotent. Stored sessions, assignments, receipts, historical configuration
+bytes and native history are not rewritten. Later explicit overrides affect only
+new first-execution snapshots. Current execution configurations retain resolved
+values and their existing immutable digest and account/history boundaries.
+
+Current clients must preserve the typed fields. An older write that omits them
+is rejected instead of resetting selections. Configuration saves retain exact
+request receipts and expected-revision checks. Default entries keep provider
+references alive until explicitly removed. No SQLite migration, new Worker
+capability, runtime probe, credential authority or downstream Settings menu is
+introduced by this foundation.

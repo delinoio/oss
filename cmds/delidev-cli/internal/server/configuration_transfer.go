@@ -310,7 +310,7 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	if err != nil {
 		return plan, err
 	}
-	if bundle.Version != domain.ConfigurationBundleVersion {
+	if bundle.Version != 4 && bundle.Version != domain.ConfigurationBundleVersion {
 		return plan, domain.Fail(domain.Unsupported, "Earlier portable configuration versions are retired.", "Preserve the original bundle and use current source-native configuration.")
 	}
 	if len(bundle.Entries) == 0 {
@@ -318,6 +318,21 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 	}
 	if len(bundle.Entries) > domain.MaxConfigurationEntries || len(raw) > domain.MaxConfigurationBundleBytes || len(bundle.Machines) > domain.MaxConfigurationCheckouts || len(selection.Bindings) > len(bundle.Entries) || len(selection.Machines) > len(bundle.Machines) || len(selection.Checkouts) > domain.MaxConfigurationCheckouts {
 		return plan, transferLimit()
+	}
+	if bundle.Version == 4 {
+		// A supported old export undergoes the same explicit automatic conversion
+		// as local legacy configuration; it grants no runtime authority.
+		entries := slices.Clone(bundle.Entries)
+		for i := range entries {
+			if entries[i].Kind == domain.AgentKind {
+				raw, _, err := domain.UpgradeHarnessAgent(entries[i].Document)
+				if err != nil {
+					return plan, err
+				}
+				entries[i].Document = raw
+			}
+		}
+		bundle.Entries = entries
 	}
 	source := map[domain.ID]domain.ConfigurationEntry{}
 	targets := map[domain.ID]domain.ID{}
@@ -422,6 +437,21 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 		}
 		return nil
 	}
+	rewriteDefaults := func(defaults []domain.HarnessDefault) error {
+		for i := range defaults {
+			if defaults[i].ProviderID != "" {
+				if err := rewrite(&defaults[i].ProviderID, domain.ProviderKind); err != nil {
+					return err
+				}
+			}
+			if defaults[i].Model.Value != nil && defaults[i].Model.Value.ProviderID != "" {
+				if err := rewrite(&defaults[i].Model.Value.ProviderID, domain.ProviderKind); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
 	for _, entry := range bundle.Entries {
 		value, err := portableValue(entry.Kind, entry.Document, true)
 		if err != nil {
@@ -464,6 +494,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 
 		case *domain.Project:
+			if err = rewriteDefaults(v.HarnessDefaults); err != nil {
+				return plan, err
+			}
 			if err = rewriteIDs(v.Repositories, domain.RepositoryKind); err == nil {
 				err = rewrite(&v.PrimaryRepository, domain.RepositoryKind)
 			}
@@ -489,6 +522,9 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 			err = rewriteRemediation(v.Remediation)
 		case *domain.Settings:
+			if err = rewriteDefaults(v.HarnessDefaults); err != nil {
+				return plan, err
+			}
 			err = rewriteRemediation(&v.Remediation)
 		}
 		if err != nil {

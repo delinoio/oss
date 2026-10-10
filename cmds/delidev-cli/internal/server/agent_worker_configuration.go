@@ -30,6 +30,9 @@ type agentWorkerMutation struct {
 }
 
 func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerMutation) (store.Result, error) {
+	if err := domain.ValidateHarnessAgentDocument(input.Document); err != nil {
+		return store.Result{}, err
+	}
 	var agent domain.Agent
 	if e := domain.Decode(input.Document, &agent); e != nil {
 		return store.Result{}, e
@@ -40,7 +43,10 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 	if input.ID == "" && input.ExpectedRevision != 0 {
 		return store.Result{}, domain.Fail(domain.InvalidArgument, "A new Worker has no revision.", "Use revision zero for creation.")
 	}
-	for _, selection := range input.RouteModels {
+	for i, selection := range input.RouteModels {
+		if agent.HarnessSettings != nil && agent.Routes[i].ModelInheritance == domain.InheritSetting && selection.NativeID == "" {
+			continue
+		}
 		if selection.ModelID != "" || selection.ModelRevision != 0 || domain.Text(selection.NativeID, "native model ID", 256, true) != nil {
 			return store.Result{}, domain.Fail(domain.Unsupported, "Saved Model selection is retired.", "Enter the exact native model ID for its account source.")
 		}
@@ -72,7 +78,14 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 					return nil, domain.Fail(domain.InvalidArgument, "Selected accounts use different sources.", "Keep each provider or subscription source in its own route.")
 				}
 			}
-			identity := domain.ModelIdentity{ProviderID: source.ProviderID, SubscriptionService: source.SubscriptionService, NativeID: input.RouteModels[i].NativeID}
+			nativeID := input.RouteModels[i].NativeID
+			if agent.HarnessSettings != nil && route.ModelInheritance == domain.InheritSetting && nativeID == "" {
+				if route.Model == nil {
+					return nil, domain.Fail(domain.MissingInput, "Retained source metadata is required.", "Keep the original source identity while inheriting its model.")
+				}
+				nativeID = route.Model.NativeID
+			}
+			identity := domain.ModelIdentity{ProviderID: source.ProviderID, SubscriptionService: source.SubscriptionService, NativeID: nativeID}
 			if e := identity.Validate(); e != nil {
 				return nil, e
 			}
@@ -118,7 +131,7 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 
 func (s *Service) SaveAgentWorker(ctx context.Context, req *connect.Request[pb.SaveAgentWorkerRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.Model != nil || len(req.Msg.RouteModels) == 0 || req.Msg.SchemaVersion != 4 {
+	if req.Msg.Mutation == nil || req.Msg.Model != nil || len(req.Msg.RouteModels) == 0 || req.Msg.SchemaVersion != 4 && req.Msg.SchemaVersion != 5 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported Worker document, mutation and typed model selection are required.", "Use the current Worker revision and one model selection."), correlation)
 	}
 	if rpc.ResourceSchemaVersion(domain.AgentKind, req.Msg.DocumentJson) != req.Msg.SchemaVersion {

@@ -23,6 +23,11 @@ type ConfigurationMutation struct {
 type validatable interface{ Validate() error }
 
 func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
+	if kind == domain.AgentKind {
+		if err := domain.ValidateHarnessAgentDocument(raw); err != nil {
+			return nil, err
+		}
+	}
 	var value validatable
 	if kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
@@ -37,6 +42,9 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 		}
 		if v, ok := fields["automatic_plan_approval"]; kind == domain.SettingsKind && ok && !bytes.Equal(v, []byte("true")) && !bytes.Equal(v, []byte("false")) {
 			return nil, domain.Fail(domain.InvalidArgument, "Invalid automatic plan approval value.", "Use an explicit boolean.")
+		}
+		if v, ok := fields["harness_defaults"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			return nil, domain.Fail(domain.InvalidArgument, "Harness defaults cannot be null.", "Use a typed list, including an explicit empty list to clear defaults.")
 		}
 		if v, ok := fields["settings"]; kind == domain.ProjectKind && ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
 			return nil, domain.Fail(domain.InvalidArgument, "Invalid project settings.", "Use a typed settings object, including an empty object for inheritance.")
@@ -436,6 +444,21 @@ func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 	}
 }
 func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
+	if kind == domain.AgentKind || kind == domain.ProjectKind || kind == domain.SettingsKind {
+		if err := requireHarnessSelections(tx, kind, id, expected, value); err != nil {
+			return err
+		}
+	}
+	switch v := value.(type) {
+	case *domain.Project:
+		if err := validateHarnessDefaultRelationships(tx, v.HarnessDefaults); err != nil {
+			return err
+		}
+	case *domain.Settings:
+		if err := validateHarnessDefaultRelationships(tx, v.HarnessDefaults); err != nil {
+			return err
+		}
+	}
 	switch v := value.(type) {
 	case *domain.Project:
 		if v.Settings != nil && v.Settings.Remediation != nil {
@@ -766,4 +789,63 @@ func routingState(tx *store.Tx, agentID domain.ID) (domain.RoutingState, error) 
 func connectionGenerationBytes(account domain.Account) []byte {
 	raw, _ := json.Marshal(account.RetainedConnections)
 	return raw
+}
+
+// Future clients must preserve the typed selections they read. Omission is a
+// destructive legacy write, never an instruction to return to native defaults.
+func requireHarnessSelections(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
+	if expected == 0 {
+		return nil
+	}
+	previous, err := tx.Get(kind, id)
+	if err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(previous.Data, &fields); err != nil {
+		return err
+	}
+	current, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var next map[string]json.RawMessage
+	if err := json.Unmarshal(current, &next); err != nil {
+		return err
+	}
+	field := "harness_defaults"
+	if kind == domain.AgentKind {
+		field = "harness_settings"
+	}
+	if fields[field] != nil && (next[field] == nil || bytes.Equal(bytes.TrimSpace(next[field]), []byte("null"))) {
+		return domain.Fail(domain.Unsupported, "Inherited harness settings require a current client.", "Preserve all typed harness selections and use the current resource schema.")
+	}
+	return nil
+}
+func validateHarnessDefaultRelationships(tx configurationView, defaults []domain.HarnessDefault) error {
+	for _, entry := range defaults {
+		if entry.ProviderID != "" {
+			record, err := tx.Get(domain.ProviderKind, entry.ProviderID)
+			if err != nil {
+				return err
+			}
+			if entry.APIProtocol != "" {
+				provider, err := store.Decode[domain.Provider](record)
+				if err != nil {
+					return err
+				}
+				found := provider.Protocol == entry.APIProtocol
+				if len(provider.APIFormats) > 0 {
+					found = false
+					for _, format := range provider.APIFormats {
+						found = found || format.Protocol == entry.APIProtocol
+					}
+				}
+				if !found {
+					return domain.Fail(domain.InvalidArgument, "Harness default API profile is unavailable.", "Select one of the original provider's supported API formats.")
+				}
+			}
+		}
+	}
+	return nil
 }

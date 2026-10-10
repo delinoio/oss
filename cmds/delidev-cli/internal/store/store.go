@@ -224,6 +224,9 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 	if _, err := db.ExecContext(ctx, "UPDATE worker_instances SET available_since=0"); err != nil {
 		return fail(err)
 	}
+	if err := upgradeHarnessAgents(ctx, db); err != nil {
+		return fail(err)
+	}
 	s := &Store{db: db, root: root, lock: lock, notify: make(chan struct{}), restoreReservations: reservations}
 	success = true
 	return s, nil

@@ -138,3 +138,27 @@ Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-beha
 ## New-session defaults and branch prefix declarations
 
 Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+
+## Inherited harness portable amendment
+
+Current exports and reviewed plans use version 7. The source-native reset's
+executable baseline accepted version 4 only; earlier statements about versions
+5 and 6 remain historical allocation provenance, not renewed runtime acceptance.
+This increment accepts supported version 4 and current version 7. It does not
+reactivate retired document families or silently reinterpret their native model
+and credential semantics.
+
+Version 7 retains Agent typed model/effort/options inheritance and server/project
+harness defaults. Provider references in default selectors and default model
+identities use the same explicit graph remapping as original route models.
+Imports never preserve source-server provider UUID authority. Subscription source
+identities and explicit empty values remain exact. A version-4 Agent is converted
+to inheritance before review with the same live-document conversion rules; its
+source order, accounts, instructions and package fields are preserved. The
+reviewed plan shows the exact converted contents before atomic apply.
+
+An import cannot erase typed fields from a current reused/replaced configuration.
+Source/destination revision conflicts preserve the original data. Exports contain
+only configuration and no protected credentials, native observations or history.
+Version 7 changes no database tables or Worker assignment format. Follow the
+[catalog contract](cmds-delidev-catalog-contract.md#inherited-native-harness-defaults).

@@ -4,6 +4,7 @@ package store
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"log/slog"
 	"time"
 )
 
@@ -109,6 +110,32 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	}
 	result.Agent = agent.WithSource(agent.SourceRoutes()[index])
 	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
+	if agent.HarnessSettings != nil {
+		_, settings, err := t.SessionDefaultSettings()
+		if err != nil {
+			return result, err
+		}
+		selected := result.Accounts[route.Selected]
+		protocol := selected.APIProtocol
+		if selected.Connection != nil && selected.Connection.APIFormat != nil {
+			protocol = selected.Connection.APIFormat.Protocol
+		}
+		resolved, err := domain.ResolveInheritedHarness(agent, agent.SourceRoutes()[index], project, settings, protocol)
+		if err != nil {
+			slog.Warn("harness_defaults_resolution_failed", "agent_id", agentID, "harness", agent.Harness, "phase", "configuration_only", "error_code", domain.SafeError(err).Code)
+			return result, err
+		}
+		slog.Debug("harness_defaults_resolved", "agent_id", agentID, "harness", agent.Harness, "api_protocol", protocol, "phase", "configuration_only")
+		model := resolved.Model.AsModel(agent.Harness)
+		if !model.MatchesAccount(selected, agent.Harness) {
+			return result, domain.Fail(domain.Conflict, "Resolved default no longer matches the routed account.", "Reconcile the original source defaults before execution.")
+		}
+		result.Agent, result.Model = resolved, model
+		if len(result.Route.Sources) > index {
+			result.Route.Sources[index].ModelID = resolved.ModelID
+			result.Route.Sources[index].NativeModel = model.NativeID
+		}
+	}
 	if sources[index].Problem != nil {
 		return result, sources[index].Problem
 	}
