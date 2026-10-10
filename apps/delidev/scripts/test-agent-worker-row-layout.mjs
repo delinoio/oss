@@ -81,10 +81,13 @@ try {
       if (row.summaryX !== undefined) assert(Math.abs(row.headingX - row.summaryX) <= 1, JSON.stringify(row));
       if (row.sideBySide) assert(Math.abs(row.detailsTop - row.actionsTop) <= 1, JSON.stringify(row));
     }
+    assert.equal(await page.locator(".agent-reasoning-effort-value").first().textContent(), " Future-Effort ".repeat(12));
+    assert.equal(await page.locator(".settings-agent-row").last().locator(".agent-reasoning-effort").count(), 0);
     const toggle = page.getByRole("button", { name: language === "ko" ? "+2개 더 보기" : "+2 more" });
     await page.keyboard.press("Tab"); await toggle.focus(); assert(await toggle.evaluate(node => node.matches(":focus-visible") && parseFloat(getComputedStyle(node).outlineWidth) > 0));
     const actionsTop = await page.locator(".settings-agent-actions").first().evaluate(node => node.getBoundingClientRect().top);
     await toggle.press("Enter"); assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+    assert.equal(await page.locator(".settings-agent-row").first().locator(".agent-reasoning-effort").count(), 1);
     await page.waitForFunction(() => document.documentElement.dataset.modelReads === "2");
     if (anchors[0].sideBySide) assert(Math.abs(actionsTop - await page.locator(".settings-agent-actions").first().evaluate(node => node.getBoundingClientRect().top)) <= 1);
     const native = await page.locator(".agent-model-routes code").allTextContents(); assert.equal(native.length, 3); assert.equal(native[0], native[2]); assert.equal(native[1], "second-native");
