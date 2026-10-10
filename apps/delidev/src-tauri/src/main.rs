@@ -203,8 +203,8 @@ async fn export_generated_image(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     request: delidev_desktop::image_export::Request,
-) -> Result<delidev_desktop::image_export::Outcome, NativeFailure> {
-    use delidev_desktop::image_export::Outcome;
+) -> Result<delidev_desktop::image_export::CommandResult, NativeFailure> {
+    use delidev_desktop::image_export::{CommandResult, Outcome};
     let authority = capture_authority(&window)?;
     let binding = if is_local(&window) {
         trusted_local(&window)?;
@@ -216,9 +216,24 @@ async fn export_generated_image(
         "{}:{}:{}",
         authority.entry.label, authority.entry.instance, authority.local_revision
     );
-    let bytes = request.bytes()?;
-    if let Some(outcome) = IMAGE_EXPORTS.begin(&scope, &request)? {
-        return Ok(outcome);
+    let reject = |code| {
+        let proof = IMAGE_EXPORTS.non_admission(&request, code)?;
+        recheck_authority(&window, &authority)?;
+        tracing::warn!(
+            operation = "generated_image_export",
+            phase = "admission-rejected",
+            classification = ?proof.classification
+        );
+        Ok(CommandResult::Rejected(proof))
+    };
+    let bytes = match request.bytes() {
+        Ok(bytes) => bytes,
+        Err(code) => return reject(code),
+    };
+    match IMAGE_EXPORTS.begin(&scope, &request) {
+        Ok(Some(outcome)) => return Ok(CommandResult::Outcome(outcome)),
+        Ok(None) => {}
+        Err(code) => return reject(code),
     }
     tracing::info!(operation = "generated_image_export", phase = "choosing");
     let chosen = rfd::AsyncFileDialog::new()
@@ -271,7 +286,7 @@ async fn export_generated_image(
         ?outcome
     );
     recheck_authority(&window, &authority)?;
-    Ok(outcome)
+    Ok(CommandResult::Outcome(outcome))
 }
 
 #[tauri::command]

@@ -38,6 +38,34 @@ pub enum Outcome {
     Failed,
     Uncertain,
 }
+/// Existing admitted outcomes retain their original wire representation.
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum CommandResult {
+    Outcome(Outcome),
+    Rejected(AdmissionRejection),
+}
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AdmissionFailure {
+    Busy,
+    Stopped,
+    InvalidInput,
+    InvalidEvidence,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum Disposition {
+    NotAdmitted,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionRejection {
+    operation_id: String,
+    disposition: Disposition,
+    pub classification: AdmissionFailure,
+    no_receipt: bool,
+}
 #[derive(Clone)]
 struct Receipt {
     scope: String,
@@ -113,6 +141,37 @@ impl Controller {
             },
         );
         Ok(None)
+    }
+
+    /// Prove absence under the same receipt lock. Never infer non-admission
+    /// from a failure code alone, a poisoned lock, or a foreign/retained
+    /// receipt.
+    pub fn non_admission(
+        &self,
+        request: &Request,
+        failure: NativeFailure,
+    ) -> Result<AdmissionRejection, NativeFailure> {
+        let classification = match failure {
+            NativeFailure::Busy => AdmissionFailure::Busy,
+            NativeFailure::Stopped => AdmissionFailure::Stopped,
+            NativeFailure::InvalidInput => AdmissionFailure::InvalidInput,
+            NativeFailure::InvalidEvidence => AdmissionFailure::InvalidEvidence,
+            _ => return Err(failure),
+        };
+        let parsed = uuid::Uuid::parse_str(&request.operation_id).map_err(|_| failure)?;
+        if parsed.to_string() != request.operation_id {
+            return Err(failure);
+        }
+        let receipts = self.receipts.lock().map_err(|_| failure)?;
+        if receipts.contains_key(&request.operation_id) {
+            return Err(failure);
+        }
+        Ok(AdmissionRejection {
+            operation_id: request.operation_id.clone(),
+            disposition: Disposition::NotAdmitted,
+            classification,
+            no_receipt: true,
+        })
     }
 
     pub fn finish(
@@ -240,6 +299,74 @@ mod tests {
             byte_length: bytes.len() as u64,
             png: STANDARD.encode(bytes),
         }
+    }
+    #[test]
+    fn competing_window_rejection_proves_absence_without_releasing_original_receipts() {
+        let c = Controller::default();
+        let a = request();
+        let mut b = request();
+        assert_eq!(c.begin("window-a", &a).unwrap(), None);
+        let failure = c.begin("window-b", &b).unwrap_err();
+        assert_eq!(failure, NativeFailure::Busy);
+        let proof = c.non_admission(&b, failure).unwrap();
+        let wire = serde_json::to_value(CommandResult::Rejected(proof)).unwrap();
+        assert_eq!(wire["operationId"], b.operation_id);
+        assert_eq!(wire["disposition"], "not-admitted");
+        assert_eq!(wire["classification"], "busy");
+        assert_eq!(wire["noReceipt"], true);
+        assert_eq!(
+            c.read("window-b", &b.operation_id),
+            Err(NativeFailure::InvalidEvidence)
+        );
+        assert_eq!(c.read("window-a", &a.operation_id), Ok(Outcome::Pending));
+        c.finish("window-a", &a.operation_id, Outcome::Saved)
+            .unwrap();
+        b.operation_id = uuid::Uuid::now_v7().to_string();
+        assert_eq!(c.begin("window-b", &b).unwrap(), None);
+        // Admitted and post-publication uncertainty never become absence proof.
+        assert!(c.non_admission(&b, NativeFailure::Busy).is_err());
+        c.finish("window-b", &b.operation_id, Outcome::Uncertain)
+            .unwrap();
+        assert!(c.non_admission(&b, NativeFailure::InvalidEvidence).is_err());
+        assert_eq!(
+            c.begin("foreign-window", &b),
+            Err(NativeFailure::PermissionDenied)
+        );
+        assert!(
+            c.non_admission(&b, NativeFailure::PermissionDenied)
+                .is_err()
+        );
+        assert_eq!(c.read("window-b", &b.operation_id), Ok(Outcome::Uncertain));
+    }
+    #[test]
+    fn stopped_and_invalid_inputs_require_positive_no_receipt_proof() {
+        let c = Controller::default();
+        let admitted = request();
+        c.begin("original", &admitted).unwrap();
+        c.request_stop();
+        assert!(c.non_admission(&admitted, NativeFailure::Stopped).is_err());
+        let rejected = request();
+        assert_eq!(c.begin("original", &rejected), Err(NativeFailure::Stopped));
+        assert_eq!(
+            serde_json::to_value(c.non_admission(&rejected, NativeFailure::Stopped).unwrap())
+                .unwrap()["classification"],
+            "stopped"
+        );
+        let mut invalid = request();
+        invalid.byte_length = 0;
+        let failure = invalid.bytes().unwrap_err();
+        assert_eq!(failure, NativeFailure::InvalidInput);
+        assert!(c.non_admission(&invalid, failure).is_ok());
+        invalid.operation_id = "foreign-operation".into();
+        assert!(c.non_admission(&invalid, failure).is_err());
+        assert!(
+            c.non_admission(&rejected, NativeFailure::SidecarFailed)
+                .is_err()
+        );
+        assert_eq!(
+            serde_json::to_value(CommandResult::Outcome(Outcome::Saved)).unwrap(),
+            "saved"
+        );
     }
     #[test]
     fn exact_original_bytes_and_no_overwrite() {
