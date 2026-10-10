@@ -162,7 +162,10 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
     return () => onWorkflowReadyChange?.(false);
   }, [draft, exportRead.isPending, loaded, loading, mutation.busy, mutation.uncertain, onWorkflowReadyChange, preview, previewRead.isPending, problem, exportFailure, report]);
   useEffect(() => { if (state === JobState.Succeeded) void queryClient.invalidateQueries({ refetchType: "active" }); }, [state, queryClient]);
-  const invalidate = () => { generation.current++; setPreview(undefined); setProblem(""); };
+  const invalidate = () => {
+    generation.current++; exportGeneration.current++;
+    setPreview(undefined); setProblem(""); setExportFailure(undefined);
+  };
   const load = (raw: string) => {
     invalidate(); setLoaded(undefined);
     try { const bundle = readBundle(raw); setLoaded({ raw, bundle }); setBindings({}); setMachines({}); setConfirmedMachines({}); setPaths({}); }
