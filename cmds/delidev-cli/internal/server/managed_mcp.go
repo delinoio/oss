@@ -157,7 +157,7 @@ func (s *Service) forwardManagedMCP(ctx context.Context, q domain.ManagedMCPRequ
 			return e
 		}
 		if !slices.Contains(machine.WorkerCapabilities, domain.ManagedMCPV1) {
-			return mcpUnavailable()
+			return domain.Fail(domain.Unsupported, "This Runner does not support managed MCP.", "Pair a Worker that advertises MCP management support.")
 		}
 		return tx.WorkerUpdateAdmission(q.MachineID)
 	}
