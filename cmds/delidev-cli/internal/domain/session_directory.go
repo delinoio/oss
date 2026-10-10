@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"path"
 	"strings"
 )
@@ -32,7 +33,7 @@ func ValidateSessionDirectoryPath(value string) error {
 }
 
 func (r SessionDirectoryRef) Validate() error {
-	if UniqueIDs([]ID{r.GenerationID, r.JobID, r.RequestID, r.ExecutionID, r.RepositoryID}) != nil || ValidateSessionDirectoryPath(r.RelativePath) != nil || !validCompactionDigest(r.CheckpointDigest) || r.PreviousGenerationID != "" && (r.PreviousGenerationID.Validate() != nil || r.PreviousGenerationID == r.GenerationID) {
+	if UniqueIDs([]ID{r.GenerationID, r.JobID, r.RequestID, r.ExecutionID}) != nil || r.RepositoryID != "" && r.RepositoryID.Validate() != nil || ValidateSessionDirectoryPath(r.RelativePath) != nil || !validCompactionDigest(r.CheckpointDigest) || r.PreviousGenerationID != "" && (r.PreviousGenerationID.Validate() != nil || r.PreviousGenerationID == r.GenerationID) {
 		return DirectoryUncertain()
 	}
 	return nil
@@ -54,13 +55,13 @@ type SessionDirectoryInput struct {
 
 func (i SessionDirectoryInput) Validate() error {
 	a, done, p := i.Assignment, i.Completion, i.PreviousExecution
-	if i.Version != 1 || UniqueIDs([]ID{i.RequestID, i.GenerationID, i.SourceJobID, a.SessionID, a.ExecutionID, a.InputID}) != nil || i.HistoryExecutionID.Validate() != nil || i.RepositoryID.Validate() != nil || ValidateSessionDirectoryPath(i.RelativePath) != nil || a.Validate() != nil || a.Configuration.Harness != Codex || a.Fork != nil || a.SidechatRetry != nil || a.Configuration.SidechatPolicy != "" || done.Version != 2 || done.Validate() != nil || done.Outcome != ExecutionSucceeded || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || p.JobID != i.SourceJobID || p.ExecutionID != done.ExecutionID || p.InputID != done.InputID || p.NativeThreadID != string(done.NativeThreadID) || p.NativeTurnID != string(done.NativeTurnID) || p.LastSequence != done.LastSequence || p.Outcome != done.Outcome || !p.CleanupVerified || p.ContextRevision != a.ContextRevision || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || !p.NativeCompactions.Closed() || !p.AutoReviews.Closed() || p.TurnTiming != nil || p.Observed.ValidateForInput(a.Configuration, a.Input.Mode) != nil {
+	if i.Version != 1 || UniqueIDs([]ID{i.RequestID, i.GenerationID, i.SourceJobID, a.SessionID, a.ExecutionID, a.InputID}) != nil || i.HistoryExecutionID.Validate() != nil || !sessionDirectoryRepository(i.Assignment, i.RepositoryID) || ValidateSessionDirectoryPath(i.RelativePath) != nil || a.Validate() != nil || a.Configuration.Harness != Codex || a.Fork != nil || a.SidechatRetry != nil || a.Configuration.SidechatPolicy != "" || done.Version != 2 || done.Validate() != nil || done.Outcome != ExecutionSucceeded || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || p.JobID != i.SourceJobID || p.ExecutionID != done.ExecutionID || p.InputID != done.InputID || p.NativeThreadID != string(done.NativeThreadID) || p.NativeTurnID != string(done.NativeTurnID) || p.LastSequence != done.LastSequence || p.Outcome != done.Outcome || !p.CleanupVerified || p.ContextRevision != a.ContextRevision || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || !p.NativeCompactions.Closed() || !p.AutoReviews.Closed() || p.TurnTiming != nil || p.Observed.ValidateForInput(a.Configuration, a.Input.Mode) != nil {
 		return DirectoryUncertain()
 	}
 	if _, err := CheckedExecutionInputs(a.InputID, BindSessionInput(a.InputID, a.Input).PromptDigest, p.AcceptedInputs); err != nil {
 		return DirectoryUncertain()
 	}
-	if i.Previous != nil && (i.Previous.Validate() != nil || i.Previous.ExecutionID != a.ExecutionID || i.Previous.GenerationID == i.GenerationID || i.Previous.RequestID == i.RequestID) {
+	if i.Previous != nil && (i.Previous.Validate() != nil || i.Previous.GenerationID == i.GenerationID || i.Previous.RequestID == i.RequestID) {
 		return DirectoryUncertain()
 	}
 	return nil
@@ -80,4 +81,33 @@ func (r SessionDirectoryResult) Validate() error {
 		return DirectoryUncertain()
 	}
 	return nil
+}
+
+// Inspect only root-selection metadata; the Worker validates the complete
+// original manifest and canonical filesystem identities independently.
+func sessionDirectoryRepository(a ExecutionJobInput, id ID) bool {
+	var manifest struct {
+		SessionID    ID            `json:"session_id"`
+		MachineID    ID            `json:"machine_id"`
+		Type         WorkspaceType `json:"type"`
+		State        string        `json:"state"`
+		Repositories []struct {
+			RepositoryID ID `json:"id"`
+		} `json:"repositories"`
+	}
+	if json.Unmarshal(a.Manifest, &manifest) != nil || manifest.SessionID != a.SessionID || manifest.MachineID != a.MachineID || manifest.State != "ready" {
+		return false
+	}
+	if manifest.Type == GeneralChat {
+		return id == "" && len(manifest.Repositories) == 0
+	}
+	if id.Validate() != nil {
+		return false
+	}
+	for _, repository := range manifest.Repositories {
+		if repository.RepositoryID == id {
+			return true
+		}
+	}
+	return false
 }

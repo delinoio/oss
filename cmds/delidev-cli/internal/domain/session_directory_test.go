@@ -31,7 +31,7 @@ func TestSessionDirectoryImmutableProofRequiresAllOwners(t *testing.T) {
 		"job":              func(r *SessionDirectoryRef) { r.JobID = "" },
 		"request":          func(r *SessionDirectoryRef) { r.RequestID = "" },
 		"execution":        func(r *SessionDirectoryRef) { r.ExecutionID = "" },
-		"repository":       func(r *SessionDirectoryRef) { r.RepositoryID = "" },
+		"repository":       func(r *SessionDirectoryRef) { r.RepositoryID = "invalid" },
 		"reused owner":     func(r *SessionDirectoryRef) { r.JobID = r.GenerationID },
 		"previous self":    func(r *SessionDirectoryRef) { r.PreviousGenerationID = r.GenerationID },
 		"invalid previous": func(r *SessionDirectoryRef) { r.PreviousGenerationID = "not-id" },
@@ -67,5 +67,22 @@ func TestSessionDirectoryResultRequiresExactGenerationAndCleanup(t *testing.T) {
 				t.Fatal("mixed result accepted")
 			}
 		})
+	}
+}
+
+func TestSessionDirectorySelectionUsesOriginalPreparedRoots(t *testing.T) {
+	session, machine, repo := NewID(), NewID(), NewID()
+	a := ExecutionJobInput{SessionID: session, MachineID: machine}
+	a.Manifest = []byte(`{"session_id":"` + string(session) + `","machine_id":"` + string(machine) + `","type":"general-chat","state":"ready","repositories":[]}`)
+	if !sessionDirectoryRepository(a, "") || sessionDirectoryRepository(a, repo) {
+		t.Fatal("General Chat selection acquired a repository")
+	}
+	a.Manifest = []byte(`{"session_id":"` + string(session) + `","machine_id":"` + string(machine) + `","type":"worktree","state":"ready","repositories":[{"id":"` + string(repo) + `"}]}`)
+	if !sessionDirectoryRepository(a, repo) || sessionDirectoryRepository(a, "") || sessionDirectoryRepository(a, NewID()) {
+		t.Fatal("repository selection escaped original manifest")
+	}
+	a.Manifest = []byte(`{"session_id":"` + string(NewID()) + `","machine_id":"` + string(machine) + `","type":"general-chat","state":"ready","repositories":[]}`)
+	if sessionDirectoryRepository(a, "") {
+		t.Fatal("foreign manifest adopted")
 	}
 }
