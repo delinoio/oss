@@ -6,10 +6,10 @@ import { Comparison } from "./session-diff-model";
 export enum SessionTabKind {
   Conversation = "conversation", Files = "files", File = "file", Diff = "diff",
   Comparison = "comparison", Terminals = "terminals", Terminal = "terminal",
-  Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat",
+  Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat",
 }
 export type SessionTab =
-  | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Browser | SessionTabKind.Diagnostics }
+  | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Diagnostics }
   | { kind: SessionTabKind.File; repository: string; path: string }
   | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string }
   | { kind: SessionTabKind.Terminal; id: string }
@@ -83,6 +83,12 @@ export class SessionTabsStore {
       selected: previous.selected === key ? sessionTabKey(previous.tabs[index - 1]!) : previous.selected,
     });
   }
+  closePage(id: string, page: Extract<SessionTab,{kind:SessionTabKind.Page}>) {
+    const previous = this.snapshot(id), key = sessionTabKey(page);
+    const selected = previous.selected === key;
+    this.close(id,key);
+    if (selected && !this.snapshot(id).tabs.some(tab=>tab.kind===SessionTabKind.Page)) this.select(id,SessionTabKind.Conversation);
+  }
   dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
     const key = sessionTabKey({ kind: SessionTabKind.Terminal, id: terminalId });
     const previous = this.snapshot(id);
@@ -91,6 +97,24 @@ export class SessionTabsStore {
     this.close(id, key);
     if (next) this.open(id, { kind: SessionTabKind.Terminal, id: next });
     return this.snapshot(id).selected;
+  }
+  reconcilePages(id: string, profile: string, pages: readonly Extract<SessionTab, {kind:SessionTabKind.Page}>[], pending: readonly string[] = []) {
+    const previous = this.snapshot(id), inventory = new Map(pages.map(page => [sessionTabKey(page), page]));
+    const tabs = previous.tabs.flatMap<SessionTab>(tab => {
+      if (tab.kind !== SessionTabKind.Page) return [tab];
+      if (tab.profile !== profile) return [];
+      const key = sessionTabKey(tab), current = inventory.get(key);
+      if (current) { inventory.delete(key); return [current]; }
+      return pending.includes(tab.id) ? [tab] : [];
+    });
+    tabs.push(...inventory.values());
+    let selected = previous.selected;
+    if (!tabs.some(tab => sessionTabKey(tab) === selected)) {
+      const index = previous.tabs.findIndex(tab => sessionTabKey(tab) === selected);
+      const left = [...previous.tabs.slice(0,index)].reverse().find(tab => tabs.some(current => sessionTabKey(current) === sessionTabKey(tab)));
+      selected = pages.length && left ? sessionTabKey(left) : SessionTabKind.Conversation;
+    }
+    if (JSON.stringify(tabs) !== JSON.stringify(previous.tabs) || selected !== previous.selected) this.publish(id, {tabs,selected});
   }
   // Child controllers survive presentation close and retain their original parent.
   sidechats(parent: string) { return [...(this.children.get(parent)?.values() ?? [])]; }

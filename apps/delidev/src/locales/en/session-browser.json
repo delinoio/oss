@@ -34,5 +34,14 @@
   "session-browser.splitter": "Browser width",
   "session-browser.moreActions": "More browser actions",
   "session-browser.tabLabel": "Tab {{number}} · {{url}}",
-  "session-browser.localSummary": "Tabs and browser data stay on this computer."
+  "session-browser.localSummary": "Tabs and browser data stay on this computer.",
+  "session-browser.newPage": "New browser page",
+  "session-browser.openPage": "Open page",
+  "session-browser.loadingPages": "Loading browser pages…",
+  "session-browser.pageLimit": "This account already has 16 browser pages. Close a page before opening another.",
+  "session-browser.operationPending": "The original browser page operation is pending. Confirm its result before another operation.",
+  "session-browser.observeOperation": "Check original operation",
+  "session-browser.operationFailure": "The original page operation could not be confirmed. Check its result before starting another operation.",
+  "session-browser.uncommitted": "The original operation did not commit a page change. Discard this request before submitting a new one.",
+  "session-browser.discardRequest": "Discard failed request"
 }

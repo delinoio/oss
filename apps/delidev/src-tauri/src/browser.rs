@@ -65,11 +65,20 @@ pub struct Tab {
 pub struct Tabs {
     pub tabs: Vec<Tab>,
     pub selected: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operations: Vec<String>,
 }
 impl Tabs {
     pub fn validate(&self, policy: &Policy) -> Result<()> {
-        if self.tabs.len() > 16 {
+        if self.tabs.len() > 16 || self.operations.len() > 256 {
             return Err(NativeFailure::InvalidEvidence);
+        }
+        let mut operations = std::collections::BTreeSet::new();
+        for operation in &self.operations {
+            canonical_id(operation)?;
+            if !operations.insert(operation) {
+                return Err(NativeFailure::InvalidEvidence);
+            }
         }
         let mut ids = std::collections::BTreeSet::new();
         for t in &self.tabs {
@@ -587,6 +596,7 @@ mod tests {
         let mut tabs = Tabs {
             selected: tab.id.clone(),
             tabs: vec![tab],
+            operations: Vec::new(),
         };
         let path = root.join("tabs.json");
         write_private(&path, &tabs).unwrap();

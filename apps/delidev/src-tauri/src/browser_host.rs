@@ -1,7 +1,7 @@
 //! Raw CEF children deliberately bypass Tauri's scripts, schemes and IPC
 //! handler.
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::PathBuf,
     sync::{
@@ -22,6 +22,9 @@ use delidev_desktop::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_runtime_cef::CefRuntime;
+#[path = "browser_pages.rs"]
+mod pages;
+pub use pages::{PageAction, PageReply};
 type Result<T> = std::result::Result<T, NativeFailure>;
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -109,6 +112,11 @@ struct TabReplacement {
 #[derive(Default)]
 struct State {
     profiles: BTreeMap<String, RuntimeProfile>,
+    closed_children: BTreeSet<(String, u64)>,
+    // Retain accepted original children even after their presentation is replaced.
+    page_children: BTreeMap<(String, u64), (String, String)>,
+    page_close_waiters: BTreeSet<(String, u64)>,
+    page_close_fences: BTreeSet<(String, String)>,
     views: BTreeMap<String, View>,
     generation: u64,
     reservations: BTreeMap<String, String>,
@@ -486,6 +494,16 @@ impl BrowserHost {
         record: ProfileRecord,
         url: &str,
     ) -> Result<()> {
+        self.prepare_profile(Some((window, view_id)), scope, record, Some(url))
+    }
+
+    fn prepare_profile(
+        &self,
+        presentation: Option<(&str, &str)>,
+        scope: Option<SavedConnection>,
+        record: ProfileRecord,
+        url: Option<&str>,
+    ) -> Result<()> {
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
         record.validate()?;
         if self.stopping.load(Ordering::Acquire) || record.data.state != ProfileState::Active {
@@ -507,18 +525,24 @@ impl BrowserHost {
             .as_ref()
             .map(|s| s.endpoint.as_str())
             .unwrap_or(&local_endpoint);
-        let mut policy = Policy::new(endpoint, url)?;
+        let mut policy = Policy::new(endpoint, url.unwrap_or("https://example.com/"))?;
         policy.protect_local_runtime(&local_endpoint)?;
-        if !policy.navigation(url) {
+        if url.is_some_and(|url| !policy.navigation(url)) {
             return Err(NativeFailure::InvalidInput);
         }
         let existing = {
             let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
-            if state.reservations.get(window).map(String::as_str) != Some(view_id) {
+            if presentation.is_some_and(|(window, view_id)| {
+                state.reservations.get(window).map(String::as_str) != Some(view_id)
+            }) {
                 return Err(NativeFailure::Stopped);
             }
             if let Some(profile) = state.profiles.get(&record.id) {
                 if profile.removing
+                    || profile.record.data.server_id != record.data.server_id
+                    || profile.record.data.device_id != record.data.device_id
+                    || profile.record.data.account_id != record.data.account_id
+                    || profile.record.revision > record.revision
                     || profile
                         .scope
                         .as_ref()
@@ -542,7 +566,7 @@ impl BrowserHost {
                 None
             }
         };
-        let (path, mut tabs) = if let Some(existing) = existing {
+        let (path, tabs) = if let Some(existing) = existing {
             existing
         } else {
             let path = browser::profile_path(&self.root.join("profiles"), &record)?;
@@ -556,24 +580,17 @@ impl BrowserHost {
         for tab in &tabs.tabs {
             policy = policy.with_explicit(&tab.url)?;
         }
-        policy = policy.with_explicit(url)?;
+        if let Some(url) = url {
+            policy = policy.with_explicit(url)?;
+        }
         tabs.validate(&policy)?;
-        let staged = if tabs.tabs.is_empty() {
-            let id = uuid::Uuid::now_v7().to_string();
-            tabs.tabs.push(Tab {
-                id: id.clone(),
-                url: url.into(),
-            });
-            tabs.selected = id;
-            Some(browser::stage_private(&path.join("tabs.json"), &tabs)?)
-        } else {
-            None
-        };
         let cache_path = self.profile_storage.prepare_profile(&record)?;
         let _publication = self.publication.lock().map_err(|_| NativeFailure::Busy)?;
         let state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if self.stopping.load(Ordering::Acquire)
-            || state.reservations.get(window).map(String::as_str) != Some(view_id)
+            || presentation.is_some_and(|(window, view_id)| {
+                state.reservations.get(window).map(String::as_str) != Some(view_id)
+            })
         {
             return Err(NativeFailure::Stopped);
         }
@@ -585,14 +602,12 @@ impl BrowserHost {
             return Err(NativeFailure::Stopped);
         }
         drop(state);
-        if let Some(staged) = staged {
-            staged.publish()?;
-        }
         let mut state = self.state.lock().map_err(|_| NativeFailure::Busy)?;
         if let Some(profile) = state.profiles.get_mut(&record.id) {
             if profile.removing {
                 return Err(NativeFailure::Stopped);
             }
+            profile.record = record;
             profile.tabs = tabs;
             *profile.policy.lock().map_err(|_| NativeFailure::Busy)? = policy;
             profile.storage_revision = profile
@@ -630,6 +645,7 @@ impl BrowserHost {
         record: ProfileRecord,
         bounds: Bounds,
         view_id: String,
+        page_id: Option<String>,
     ) -> Result<BrowserState> {
         if self.stopping.load(Ordering::Acquire) || !bounds.valid() {
             return Err(NativeFailure::InvalidInput);
@@ -676,7 +692,16 @@ impl BrowserHost {
         if p.removing {
             return Err(NativeFailure::Stopped);
         };
-        let tab = p.tabs.selected.clone();
+        let tab = page_id.unwrap_or_else(|| p.tabs.selected.clone());
+        if !tab.is_empty() && !p.tabs.tabs.iter().any(|page| page.id == tab) {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        if tab.is_empty() {
+            return Ok(BrowserState {
+                tabs: p.tabs.clone(),
+                removal_pending: false,
+            });
+        }
         state.generation = state
             .generation
             .checked_add(1)
@@ -1064,6 +1089,13 @@ impl BrowserHost {
                 state.views.remove(&request.window);
             }
         }
+        let original = (request.window.clone(), request.generation);
+        if state.page_close_waiters.contains(&original) {
+            state.closed_children.insert(original);
+        }
+        state
+            .page_children
+            .remove(&(request.window.clone(), request.generation));
         state.live = state.live.saturating_sub(1);
         state.exit_when_ready()
     }
@@ -1651,14 +1683,19 @@ impl BrowserHost {
         let _storage = self.storage.lock().map_err(|_| NativeFailure::Busy)?;
         // Queue-local failures retain their original evidence, but cannot
         // prevent the independent account queue from using its exit budget.
+        let pages = self.finish_page_receipts();
         let forgotten = self.finish_forgotten(Instant::now());
         let accounts = self.finish_account_removals();
-        for (queue, result) in [("forgotten", &forgotten), ("accounts", &accounts)] {
+        for (queue, result) in [
+            ("pages", &pages),
+            ("forgotten", &forgotten),
+            ("accounts", &accounts),
+        ] {
             if let Err(code) = result {
                 tracing::warn!(operation = "browser_shutdown_cleanup", queue, ?code);
             }
         }
-        forgotten.and(accounts)
+        pages.and(forgotten).and(accounts)
     }
 
     // Called only after independent native shutdown and the address-worker
@@ -1874,9 +1911,12 @@ fn create_child(
         || host.stopping.load(Ordering::Acquire)
         || app.get_webview_window(&request.window).is_none()
         || state
+            .page_close_fences
+            .contains(&(profile.clone(), request.tab.clone()))
+        || state
             .views
             .get(&request.window)
-            .is_none_or(|v| v.generation != request.generation)
+            .is_none_or(|v| v.generation != request.generation || v.closing)
     {
         return Err(NativeFailure::Stopped);
     }
@@ -1898,10 +1938,25 @@ fn create_child(
         let mut state = host.state.lock().map_err(|_| NativeFailure::Busy)?;
         let view = state
             .views
-            .get_mut(&request.window)
+            .get(&request.window)
             .filter(|v| v.profile == profile && v.generation == request.generation)
             .ok_or(NativeFailure::Stopped)?;
-        view.creation_pending = true;
+        if view.closing
+            || state
+                .page_close_fences
+                .contains(&(profile.clone(), request.tab.clone()))
+        {
+            return Err(NativeFailure::Stopped);
+        }
+        state
+            .views
+            .get_mut(&request.window)
+            .unwrap()
+            .creation_pending = true;
+        state.page_children.insert(
+            (request.window.clone(), request.generation),
+            (profile.clone(), request.tab.clone()),
+        );
         state.live += 1;
     }
     let info = window_info(&request);
@@ -1935,6 +1990,13 @@ fn create_child(
             view.creation_pending = false;
         }
         state.live -= 1;
+        state
+            .page_children
+            .remove(&(request.window.clone(), request.generation));
+        let original = (request.window.clone(), request.generation);
+        if state.page_close_waiters.contains(&original) {
+            state.closed_children.insert(original);
+        }
         return Err(NativeFailure::SidecarFailed);
     };
     Ok(())
@@ -2543,7 +2605,7 @@ mod tests {
             }),
         }
     }
-    fn storage_fixture() -> (tempfile::TempDir, Arc<BrowserHost>, ProfileRecord) {
+    pub(super) fn storage_fixture() -> (tempfile::TempDir, Arc<BrowserHost>, ProfileRecord) {
         storage_fixture_with_mode(BrowserStorageMode::System)
     }
 
@@ -2685,6 +2747,17 @@ mod tests {
         let (_temp, host, record) = storage_fixture_with_mode(BrowserStorageMode::DevelopmentMock);
         let original = browser::profile_path(&host.root.join("profiles"), &record).unwrap();
         fs::write(original.join("Cookies"), b"original cookie fixture").unwrap();
+        host.prepare_pages(
+            None,
+            record.clone(),
+            &uuid::Uuid::now_v7().to_string(),
+            &PageAction::Create {
+                operation_id: uuid::Uuid::now_v7().to_string(),
+                url: "https://fixture.test/".into(),
+            },
+            || Ok(()),
+        )
+        .unwrap();
         let view = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &view).unwrap();
         host.prepare_open(
@@ -2829,7 +2902,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
         );
         assert!(host.numeric_selection(&record.id, &request, 1).is_none());
     }
-    fn active_storage_fixture() -> (
+    pub(super) fn active_storage_fixture() -> (
         tempfile::TempDir,
         Arc<BrowserHost>,
         ProfileRecord,
@@ -2837,6 +2910,17 @@ exec /bin/cat "$2/desktop-client/pending.json"
         ViewRequest,
     ) {
         let (temp, host, record) = storage_fixture();
+        host.prepare_pages(
+            None,
+            record.clone(),
+            &uuid::Uuid::now_v7().to_string(),
+            &PageAction::Create {
+                operation_id: uuid::Uuid::now_v7().to_string(),
+                url: "https://fixture.test/original".into(),
+            },
+            || Ok(()),
+        )
+        .unwrap();
         let view_id = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &view_id).unwrap();
         host.prepare_open(
@@ -2944,7 +3028,7 @@ exec /bin/cat "$2/desktop-client/pending.json"
     }
 
     #[test]
-    fn superseded_initial_open_discards_its_staged_first_tab() {
+    fn superseded_initial_open_never_creates_a_first_tab() {
         let (_temp, host, record) = storage_fixture();
         let original = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &original).unwrap();
@@ -2961,7 +3045,6 @@ exec /bin/cat "$2/desktop-client/pending.json"
                 "https://fixture.test/stale",
             )
         });
-        wait_for_staged_tabs(&path);
         assert!(host.state.try_lock().is_ok());
         let replacement = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &replacement).unwrap();
@@ -2977,8 +3060,13 @@ exec /bin/cat "$2/desktop-client/pending.json"
             "https://fixture.test/current",
         )
         .unwrap();
-        let restored: Tabs = read_json(&path.join("tabs.json")).unwrap();
-        assert_eq!(restored.tabs[0].url, "https://fixture.test/current");
+        assert!(!path.join("tabs.json").exists());
+        assert!(
+            host.state.lock().unwrap().profiles[&record.id]
+                .tabs
+                .tabs
+                .is_empty()
+        );
     }
 
     #[test]
@@ -4063,6 +4151,17 @@ esac
     #[test]
     fn worker_tab_updates_reject_stale_callbacks_and_durable_removal() {
         let (_temp, host, mut record) = storage_fixture();
+        host.prepare_pages(
+            None,
+            record.clone(),
+            &uuid::Uuid::now_v7().to_string(),
+            &PageAction::Create {
+                operation_id: uuid::Uuid::now_v7().to_string(),
+                url: "https://fixture.test/original".into(),
+            },
+            || Ok(()),
+        )
+        .unwrap();
         let view = uuid::Uuid::now_v7().to_string();
         host.reserve("fixture", &view).unwrap();
         host.prepare_open(

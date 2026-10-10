@@ -344,3 +344,11 @@
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
 .session-name-dialog button, .session-name-dialog input { min-height:40px; }
 .session-name-dialog form > .primary { align-self:flex-end; }
+
+.session-workspace .session-new-browser-page { width:40px; min-width:40px; height:40px; min-height:40px; flex:none; border-radius:8px; }
+.browser-page-dialog { width:480px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); overflow:auto; padding:24px; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:8px; }
+.browser-page-dialog::backdrop { background:var(--backdrop); }
+.browser-page-dialog form, .browser-page-dialog label { display:flex; flex-direction:column; gap:12px; }
+.browser-page-dialog input, .browser-page-dialog button { min-height:40px; border-radius:8px; }
+.browser-page-dialog footer { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }
+.browser-operation-status { flex:none; max-width:100%; overflow-wrap:anywhere; }

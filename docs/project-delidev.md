@@ -6,6 +6,19 @@ mutation authority. See the [shared desktop pagination contract](apps-delidev-de
 
 Files uses the original Worker-owned read-only observation boundary with a desktop lazy tree, one serial read owner and disposable preview. Per-directory metadata stays in the open scope; cancellation fences late publication, and only complete parent ranges prove absence. Back preserves the conversation/composer and restores accepted navigation while discarding bytes. Follow the [desktop](apps-delidev-desktop-contract.md#session-file-explorer) and [Files](cmds-delidev-files-contract.md) contracts; no protocol, native change or migration is added.
 
+## Direct browser workspace pages
+
+Issue #2528 places original account-profile pages directly in the shared session
+strip, with one explicit Address dialog and hidden mounted profile/operation
+owners. `src-tauri/src/browser_pages.rs` owns the closed native-local resource
+operations and private original receipts; `session-browser.tsx` owns admission,
+recovery and exact Page presentation. Page Close is the only browser-specific
+resource-close exception. Preserve protected shared profiles, original raw child
+identity, durable cleanup and independent session/execution ownership. Follow the
+[browser](cmds-delidev-browser-contract.md#direct-workspace-pages-issue-2528) and
+[desktop](apps-delidev-desktop-contract.md) contracts. No new business RPC,
+allocation, migration or dependency is added.
+
 ## Key-preserving format amendment
 
 After main reservation PR #1666, ProviderInventory capability 9 owns connected API

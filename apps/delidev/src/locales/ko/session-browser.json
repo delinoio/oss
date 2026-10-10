@@ -34,5 +34,14 @@
   "session-browser.splitter": "브라우저 너비",
   "session-browser.moreActions": "브라우저 추가 동작",
   "session-browser.tabLabel": "탭 {{number}} · {{url}}",
-  "session-browser.localSummary": "탭과 브라우저 데이터는 이 컴퓨터에 유지됩니다."
+  "session-browser.localSummary": "탭과 브라우저 데이터는 이 컴퓨터에 유지됩니다.",
+  "session-browser.newPage": "새 브라우저 페이지",
+  "session-browser.openPage": "페이지 열기",
+  "session-browser.loadingPages": "브라우저 페이지를 불러오는 중…",
+  "session-browser.pageLimit": "이 계정에는 브라우저 페이지가 16개 있습니다. 새 페이지를 열려면 기존 페이지를 닫으세요.",
+  "session-browser.operationPending": "원래 브라우저 페이지 작업이 대기 중입니다. 다른 작업 전에 결과를 확인하세요.",
+  "session-browser.observeOperation": "원래 작업 확인",
+  "session-browser.operationFailure": "원래 페이지 작업을 확인하지 못했습니다. 다른 작업 전에 결과를 확인하세요.",
+  "session-browser.uncommitted": "원래 작업은 페이지 변경을 저장하지 않았습니다. 새 요청을 제출하기 전에 이 요청을 버리세요.",
+  "session-browser.discardRequest": "실패한 요청 버리기"
 }

@@ -212,6 +212,57 @@ fn numeric_session_selection_is_trusted_local_only() {
 }
 
 #[test]
+fn browser_page_operations_are_trusted_product_only() {
+    const COMMAND: &str = "browser_pages";
+    for target in [Target::MacOS, Target::Windows, Target::Linux] {
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(CAPABILITIES).unwrap();
+        let app = &manifests[APP_ACL_KEY];
+        assert!(app.commands.iter().any(|command| command == COMMAND));
+        assert!(
+            app.permissions["browser-presentation"]
+                .commands
+                .allow
+                .iter()
+                .any(|command| command == COMMAND)
+        );
+        let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for label in ["main", "server-fixture"] {
+            assert!(
+                authority
+                    .resolve_access(COMMAND, label, label, &Origin::Local)
+                    .is_some()
+            );
+            for child in ["external-fixture", "browser-fixture", "tray"] {
+                assert!(
+                    authority
+                        .resolve_access(COMMAND, label, child, &Origin::Local)
+                        .is_none()
+                );
+            }
+            assert!(
+                authority
+                    .resolve_access(
+                        COMMAND,
+                        label,
+                        label,
+                        &Origin::Remote {
+                            url: "https://untrusted.invalid/".parse().unwrap()
+                        }
+                    )
+                    .is_none()
+            );
+        }
+    }
+}
+
+#[test]
 fn image_export_has_closed_compiled_permissions_and_product_only_authority() {
     let commands = ["export_generated_image", "read_generated_image_export"];
     for target in [Target::MacOS, Target::Windows, Target::Linux] {

@@ -1943,7 +1943,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-Issues #2140/#2121 use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. A fixed 40px Open tool menu sits beside the horizontally scrolling tablist. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+Issues #2140/#2121 use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. A fixed 40px Open tool menu sits beside the horizontally scrolling tablist. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads, except Browser, which opens the explicit Address dialog under issue #2528.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes #2121's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -1962,7 +1962,9 @@ editors. Connection replacement or app restart resets presentation state. Hidden
 retained views are inert and suspend observation reads. File/patch panes unmount,
 cancel publication and discard bytes through their original read owners. Accepted
 or uncertain mutations retain original connection-owned request/controller identity;
-selection, closure and reopening never create a resource or retry a mutation.
+selection and reopening never create a resource or retry a mutation. Browser Page
+Close alone owns explicit original resource removal under issue #2528; other tab
+closure remains presentation-only.
 
 Info remains persistent beside the active pane, with the original section focus,
 recovery and budget controls. At 900px available session width reserve its 360px
@@ -1975,12 +1977,20 @@ Tool labels and tabs remain reachable by scrolling at narrow/effective 200% layo
 Browser keeps its mounted original account/profile controller and releases its
 native child through exact Hide cleanup when a page becomes inactive. Failed or
 uncertain Hide prevents replacement; reactivation restores existing native pages
-without registration or page creation. The Browser entry lists retained pages and
-explicit New page; only a selected page presents native content. An explicit picker
-resource action restores its presentation after previous cleanup, sends that
-original action once and retains failures without automatic mutation retry.
-Profile explanation, address/navigation, explicit resource Close, 16-page gate,
-original revision/account checks and uncertain registration retry remain unchanged.
+without registration or page creation. The Browser entry and ordinary 40px + button outside numeric tab positions open
+one 480px viewport-bounded Address dialog with account explanation, 8px control
+corners, Cancel/Open page, contained focus and original opener restoration.
+Inventory restores peer Page tabs without a Browser singleton, inner selector or
+pane-header close. Explicit submission alone performs original registration and
+one bounded native Create. Pending operations survive dismissal and observe the
+same original receipt. Explicit Page Close never presents an inactive page and
+retains its descriptor until metadata absence and original native cleanup proof;
+unknown results retain inline recovery without blind resend. Active Close selects
+the left neighbor, inactive Close preserves selection, and the final active Page
+returns to Conversation without recreating the empty profile. Keep original
+navigation/Address/Go/information/recovery, 16-page gate, account/session/revision
+checks, protected shared storage and joined Quit. Follow the direct workspace
+pages amendment in the [browser contract](cmds-delidev-browser-contract.md#direct-workspace-pages-issue-2528).
 
 Each Sidechat is a child conversation tab inside its original parent. Its own
 Info, actions, findings, enqueue and original read-only restrictions bind that

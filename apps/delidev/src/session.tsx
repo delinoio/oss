@@ -8,7 +8,7 @@ import { useSessionRevert } from "./session-revert";
 import { isImageStartupRejectedInput } from "./startup-rejection";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
-import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
+import { useSessionTabs, SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
 import { initialExecutionPending, SessionProgressPhase, sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
 import { useStartupPresence } from "./session-startup-presence";
 import { startupOperations, startupWorkerCurrent } from "./session-startup-operations";
@@ -307,14 +307,16 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     })();
     return () => controller.abort();
   }, [id, conversationActive, submissionTransport, submissions.store]);
-  const panel = tabs.tab.kind === SessionTabKind.Conversation ? SessionPanel.Closed : tabs.tab.kind === SessionTabKind.Files ? SessionPanel.Files : tabs.tab.kind === SessionTabKind.Diff ? SessionPanel.Diff : tabs.tab.kind === SessionTabKind.Diagnostics ? SessionPanel.Diagnostics : tabs.tab.kind === SessionTabKind.Page || tabs.tab.kind === SessionTabKind.Browser ? SessionPanel.Browser : SessionPanel.Closed;
+  const panel = tabs.tab.kind === SessionTabKind.Conversation ? SessionPanel.Closed : tabs.tab.kind === SessionTabKind.Files ? SessionPanel.Files : tabs.tab.kind === SessionTabKind.Diff ? SessionPanel.Diff : tabs.tab.kind === SessionTabKind.Diagnostics ? SessionPanel.Diagnostics : tabs.tab.kind === SessionTabKind.Page ? SessionPanel.Browser : SessionPanel.Closed;
   const conversationRegion = useRef<HTMLDivElement>(null);
   const upperContent = useRef<HTMLDivElement>(null);
   const [filesOpened,setFilesOpened]=useState(false);
   const [terminalOpened, setTerminalOpened] = useState(false);
   const [pendingTerminalOpen, setPendingTerminalOpen] = useState<string>();
   const [terminalOpenIntent, setTerminalOpenIntent] = useState<{ requestId: string; revision: bigint }>();
-  const [browserOpened,setBrowserOpened]=useState(false);
+  const [browserCreationOpen,setBrowserCreationOpen]=useState(false);
+  const [browserOperationPending,setBrowserOperationPending]=useState(false);
+  const [browserCloseRequest,setBrowserCloseRequest]=useState<Extract<SessionTab,{kind:SessionTabKind.Page}>>();
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
   const terminalsButton = useRef<HTMLButtonElement>(null);
@@ -489,6 +491,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const closeTab = (key:string) => {
     const index=tabs.tabs.findIndex(tab=>sessionTabKey(tab)===key);
     if(index<=0)return;
+    const page=tabs.tabs[index];
+    if(page?.kind===SessionTabKind.Page){if(!browserOperationPending)setBrowserCloseRequest(page);return;}
     const target=tabs.selected===key?index-1:tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected);
     document.getElementById(`session-tab-${id}-${target}`)?.focus({preventScroll:true});
     tabs.store.close(id,key);
@@ -506,8 +510,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
     if(next===SessionPanel.Files)setFilesOpened(true);
     if(next === SessionPanel.Terminals) { setTerminalOpened(true); if (session) setTerminalOpenIntent(current => current ?? { requestId: newRequestId(), revision: session.revision }); else setPendingTerminalOpen(current => current ?? newRequestId()); }
-    if(next === SessionPanel.Browser) setBrowserOpened(true);
-    const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Terminals]:SessionTabKind.Terminals,[SessionPanel.Browser]:SessionTabKind.Browser,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
+    if(next === SessionPanel.Browser) { setBrowserCreationOpen(true);return; }
+    const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Terminals]:SessionTabKind.Terminals,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
     tabs.store.open(id, {kind:kinds[next]});
     requestAnimationFrame(() => { const current = tabs.store.snapshot(id); const index = current.tabs.findIndex(tab => sessionTabKey(tab) === current.selected); document.getElementById(`session-tab-${id}-${index}`)?.focus({ preventScroll: true }); });
   };
@@ -585,7 +589,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab} newPage={()=>setBrowserCreationOpen(true)} closing={browserCloseRequest?sessionTabKey(browserCloseRequest):browserOperationPending?"pending":undefined}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">
@@ -664,7 +668,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     {active && (tabs.tab.kind===SessionTabKind.Diff || tabs.tab.kind===SessionTabKind.Comparison) ? <div className="session-app-panel"><SessionDiff sessionId={id} worktree={data.workspace===Workspace.Worktree} close={closePanel} selected={tabs.tab.kind===SessionTabKind.Comparison?tabs.tab:undefined} openComparison={value=>tabs.store.open(id,{kind:SessionTabKind.Comparison,...value})}/></div>:null}
     {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path)=>tabs.store.open(id,{kind:SessionTabKind.File,repository,path})}/></div>:null}
     {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><div className="session-diagnostics"><div ref={setDiagnosticsTarget}/><FlatDisclosureScope><RequestDiagnostics sessionId={id} close={closePanel}/></FlatDisclosureScope></div></div>:null}
-    {session && browserOpened ? <div hidden={!active||panel!==SessionPanel.Browser} inert={!active||panel!==SessionPanel.Browser} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/></div>:null}
+    {session ? <SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} workspaceActive={active} creationOpen={browserCreationOpen} closeCreation={()=>setBrowserCreationOpen(false)} closeRequest={browserCloseRequest} pendingChanged={setBrowserOperationPending} closeSettled={page=>{const original=tabs.store.snapshot(id);const selected=original.selected===sessionTabKey(page);if(selected&&active){const at=original.tabs.findIndex(tab=>sessionTabKey(tab)===original.selected);const remaining=original.tabs.some(tab=>tab.kind===SessionTabKind.Page&&sessionTabKey(tab)!==original.selected);const index=remaining?Math.max(0,at-1):0;document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});}tabs.store.closePage(id,page);setBrowserCloseRequest(undefined);}} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/> : null}
     {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} openIntent={terminalOpenIntent} finishOpenIntent={() => setTerminalOpenIntent(undefined)} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}
               hideEmpty={hideEmptyTerminals}
               dismissTerminal={(terminalId, fallback) => {

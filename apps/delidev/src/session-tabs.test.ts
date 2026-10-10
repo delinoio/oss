@@ -43,3 +43,20 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
  store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
  expect(store.snapshot("session").tabs).toHaveLength(1); expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+
+it("restores direct pages without changing selection or existing descriptor order",()=>{
+ const store=new SessionTabsStore();const page=(id:string)=>({kind:SessionTabKind.Page as const,profile:"original",id,title:id});
+ store.open("s",page("B"));store.open("s",{kind:SessionTabKind.Files});
+ store.reconcilePages("s","original",[page("A"),page("B"),page("C")]);
+ expect(store.snapshot("s").tabs.map(tab=>tab.kind===SessionTabKind.Page?tab.id:tab.kind)).toEqual(["conversation","B","files","A","C"]);
+ expect(store.snapshot("s").selected).toBe("files");store.reconcilePages("s","original",[page("A"),page("B"),page("C")]);expect(store.snapshot("s").tabs).toHaveLength(5);
+});
+it("keeps native-pending page descriptors and selects Conversation after confirmed last-page closure",()=>{
+ const store=new SessionTabsStore(),page={kind:SessionTabKind.Page as const,profile:"original",id:"A",title:"A"};store.open("s",page);
+ store.reconcilePages("s","original",[],["A"]);expect(store.snapshot("s").selected).toBe(sessionTabKey(page));expect(store.snapshot("s").tabs).toHaveLength(2);
+ store.reconcilePages("s","original",[]);expect(store.snapshot("s").selected).toBe("conversation");expect(store.snapshot("s").tabs).toHaveLength(1);
+});
+it("uses the browser-specific resource close exception and leaves inactive selection intact",()=>{
+ const store=new SessionTabsStore(),page={kind:SessionTabKind.Page as const,profile:"original",id:"A",title:"A"};store.open("s",{kind:SessionTabKind.Terminal,id:"terminal"});store.open("s",page);
+ store.closePage("s",page);expect(store.snapshot("s").selected).toBe("conversation");store.open("s",page);store.select("s",JSON.stringify(["terminal","terminal"]));store.closePage("s",page);expect(store.snapshot("s").selected).toBe(JSON.stringify(["terminal","terminal"]));
+});

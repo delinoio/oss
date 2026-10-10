@@ -1535,6 +1535,7 @@ async fn open_browser(
     view_id: String,
     url: String,
     bounds: browser_host::Bounds,
+    tab_id: Option<String>,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
     let response_window = window.clone();
     let original_authority = capture_authority(&response_window)?;
@@ -1598,7 +1599,7 @@ async fn open_browser(
         let source = original_authority.clone();
         app.run_on_main_thread(move || {
             let result = recheck_registered(&copy, &source)
-                .and_then(|()| host.open(&copy, &window, scope, record, bounds, view_id));
+                .and_then(|()| host.open(&copy, &window, scope, record, bounds, view_id, tab_id));
             let _ = send.send(result);
         })
         .map_err(|_| NativeFailure::SidecarFailed)?;
@@ -1629,6 +1630,14 @@ async fn control_browser(
     tab_id: Option<String>,
     bounds: Option<browser_host::Bounds>,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
+    if matches!(
+        action,
+        browser_host::Action::NewTab
+            | browser_host::Action::SelectTab
+            | browser_host::Action::CloseTab
+    ) {
+        return Err(NativeFailure::InvalidInput);
+    }
     let response_window = window.clone();
     let original_authority = capture_authority(&response_window)?;
     let result = async {
@@ -1729,6 +1738,78 @@ async fn control_browser(
     recheck_authority(&response_window, &original_authority)?;
     result
 }
+// Native-local page ownership is independent of a visible presentation. The
+// closed action admits only one original profile and no renderer-selected path.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
+#[tauri::command]
+async fn browser_pages(
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    account_id: String,
+    action: browser_host::PageAction,
+) -> Result<browser_host::PageReply, NativeFailure> {
+    let original = capture_authority(&window)?;
+    canonical_id(&profile_id)?;
+    canonical_id(&account_id)?;
+    let scope = original.saved.clone();
+    let c = Arc::clone(connector.inner());
+    let id = profile_id.clone();
+    let s = scope.clone();
+    let record = tauri::async_runtime::spawn_blocking(move || c.browser_profile(s.as_ref(), &id))
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)??;
+    if record.data.account_id != account_id
+        || record.data.state != delidev_desktop::browser::ProfileState::Active
+    {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    recheck_authority(&window, &original)?;
+    let owner = original.entry.instance.clone();
+    let copy = app.clone();
+    let source = original.clone();
+    let h = Arc::clone(host.inner());
+    let r = record.clone();
+    let a = action.clone();
+    let o = owner.clone();
+    let s = scope.clone();
+    let reply = tauri::async_runtime::spawn_blocking(move || {
+        h.prepare_pages(s, r, &o, &a, || recheck_registered(&copy, &source))
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    recheck_authority(&window, &original)?;
+    if reply.finish {
+        let copy = app.clone();
+        let source = original.clone();
+        let h = Arc::clone(host.inner());
+        let p = profile_id;
+        let a = action.clone();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let result =
+                recheck_registered(&copy, &source).and_then(|()| h.finish_pages(&copy, &p, &a));
+            let _ = send.send(result);
+        })
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+        if let Err(code) = receive.await.map_err(|_| NativeFailure::SidecarFailed)? {
+            tracing::warn!(
+                operation = "browser_page",
+                phase = "native_cleanup_pending",
+                ?code
+            );
+        }
+    }
+    recheck_authority(&window, &original)?;
+    Ok(reply)
+}
+
 #[tauri::command]
 async fn browser_state(
     window: WebviewWindow<CefRuntime>,
@@ -1920,6 +2001,7 @@ fn run() -> Result<(), NativeFailure> {
                 open_browser,
                 control_browser,
                 browser_state,
+                browser_pages,
                 browser_tab_shortcuts,
                 open_github,
                 open_provider_guidance,

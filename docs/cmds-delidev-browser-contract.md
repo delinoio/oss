@@ -71,25 +71,72 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 for clients which actually completed native cleanup, not an automatic CLI action.
 `browser-storage prepare` only prepares the native client's private cache root.
 
-The session Browser button opens its singleton entry in the shared session-tab
-workspace. Each retained page opens/selects a tab keyed by original profile/page
-ID; observation state never changes identity. The selected page occupies the
-complete active content region beside persistent Info. Conversation/drafts remain
-mounted and inert while inactive. The Browser entry itself is a retained-page
-picker with explicit New page, not an unselected native page. The former Browser
-split, compact overlay and Expand/Restore presentation are superseded.
+## Direct workspace pages (issue #2528)
 
-The original account/profile manager remains mounted after presentation Close.
-Inactivity uses exact original Hide cleanup and retains failed/uncertain cleanup
-before any replacement. Reopen restores existing native pages without another
-registration or creation. Explicit picker actions restore the original presentation
-after cleanup and send the selected resource action once; failures do not create
-automatic retries. Profile explanation uses the original accessible Modal and
-native visibility boundary. Initial explicit registration retains the local-summary/
-address card and no empty viewport. Page labels derive only from retained URLs;
-no title/favicon discovery, URL logging, page scripts or generalized key bridge.
-The original 16-page gate and explicit resource Close remain separate from shared
-presentation Close. Numeric selection has only typed, original-owner fenced
+The shared session strip has no Browser singleton or inner page selector. It
+restores every native page in the admitted account profile as a peer Page tab,
+keyed by the original profile/page IDs. Retain existing descriptor order and
+selection; append new inventory pages in native order. Reading inventory or
+restoring zero pages never creates a profile/page or presents a native child.
+Conversation stays pinned first and noncloseable. Only the selected Page presents
+its exact native page ID; separate windows do not inherit a shared selected-page
+pointer. Conversation, Sidechat, Info and accepted authoring keep their original
+owners and attribution.
+
+An ordinary 40px + button outside tab/numeric positions and Open tool → Browser
+open the same 480px viewport-bounded Address dialog. Use 8px control corners,
+account-sharing explanation, Cancel/Open page, contained focus, initial Address
+focus, X/Escape dismissal and opener restoration. Opening/dismissing the dialog
+performs no registration or page creation. Accept only explicit bounded HTTP(S)
+addresses without credentials (8192 characters); retain the 16-page limit.
+Explicit submission reuses the original capability/account/session/revision and
+registration receipt checks, then creates exactly one page even when inventory
+was empty. Pending/uncertain operations stay mounted after dialog dismissal,
+observe the original operation ID and never submit a fresh mutation automatically.
+Page labels derive from retained URLs only; no title/favicon discovery, scripts,
+credentials or URL logging are added.
+
+The native-local `browser_pages` command accepts only Inventory/Create/Close/
+Observe under the original trusted Local/Saved product-window instance and fresh
+server/device/account/profile admission. Compiled ACLs exclude raw children,
+remote origins and auxiliary documents. It accepts no renderer filesystem path
+or generalized control authority. Serialized storage workers stage/fsync and
+atomically publish metadata after final original-authority rechecks. A bounded
+private operation journal freezes the original identity, owner, profile revision,
+action/result and native child claims before metadata publication. `tabs.json`
+retains bounded immutable committed operation IDs; legacy documents without this
+field remain readable. Replayed IDs return original observations without replaying
+creation or native Close. A retained journal without a committed ID proves no
+metadata commit; missing/invalid evidence cannot grant a new effect. Unknown
+publication/cleanup remains pending. No business RPC, protocol allocation,
+migration, engine switch or dependency change is introduced.
+
+Page resource Close is the browser-specific exception to presentation-only tab
+closure. It removes only the exact original page metadata, fences new native
+children for that page during publication and closes all matching original raw
+children, including replaced presentations still retiring. It never presents an
+inactive page. Keep its descriptor until metadata absence and original native
+close acknowledgments are both established. Failed/unknown Close retains inline
+original-operation recovery without resending Close. Shared inventory carries
+pending page IDs so another observer cannot remove the descriptor prematurely or
+adopt cleanup ownership. Original once-only callbacks persist closed proof during
+observation and the existing joined native shutdown; uncertainty never becomes
+success on restart. Active Close selects the left neighbor, inactive Close
+preserves selection, and closing the last active Page selects Conversation while
+the admitted profile remains empty. Journal bounds preserve existing evidence and
+refuse new mutations rather than evicting unresolved results.
+
+The original account/profile manager remains mounted independently of the active
+pane. Inactivity uses exact original Hide cleanup and retains failed/uncertain
+cleanup before replacement. Reopen restores existing pages without registration
+or creation. Retain account information, Back/Forward/Reload, labelled Address,
+Go, native-view recovery and viewport; remove only the inner page controls and
+pane-header close. Protected shared profile storage, account/profile removal,
+durable cleanup, original child control generations and joined Quit remain under
+the existing browser/desktop contracts. Component/storage/ACL fixtures and builds
+are separate from actual installed native/platform acceptance.
+
+Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
 approved deferring only Windows/Linux numeric forwarding while external browser
 content has focus; use the tab bar there. macOS forwarding requires original
@@ -188,8 +235,8 @@ only the worker waits for that callback, and native state is released during I/O
 Reservation waits are bounded to five seconds and cancel an unexecuted late UI
 callback, releasing the worker fence if native exit stops callback delivery.
 Superseded staged writes are discarded without changing durable or live tabs.
-First-tab initialization uses that same staged publication boundary, so a
-superseded initial open cannot seed the replacement's profile with its address.
+Initial presentation never initializes a first tab. Only the explicit original
+Create operation may publish a page through the staged publication boundary.
 Observed-address writes use the same fence and recheck exact profile, child
 generation and reservation after staging, so replacement opens retain the last
 accepted address rather than consuming a superseded callback.
