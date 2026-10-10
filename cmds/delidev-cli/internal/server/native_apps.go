@@ -377,6 +377,16 @@ func (s *Service) validateNativeAppsEffect(tx *store.Tx, value domain.ExecutionI
 	if proof == nil {
 		return nil
 	}
+	admits, choiceErr := domain.NativeAppsResponseAdmitsEffect(value)
+	if choiceErr != nil {
+		return choiceErr
+	}
+	// The caller already checked original question/account/Worker ownership.
+	// Source-backed Cancel closes that original prompt without a tool effect;
+	// revocation must not force an unavailable inventory read or lend authority.
+	if !admits {
+		return nil
+	}
 	if proof.Validate() != nil || proof.NativeItemID != value.NativeItemID {
 		return domain.NativeAppsUnavailable()
 	}
@@ -407,6 +417,13 @@ func (s *Service) refreshNativeAppsEffect(ctx context.Context, identity question
 			return err
 		}
 		if value.NativeApps == nil {
+			return nil
+		}
+		admits, choiceErr := domain.NativeAppsResponseAdmitsEffect(value)
+		if choiceErr != nil {
+			return choiceErr
+		}
+		if !admits {
 			return nil
 		}
 		if value.Response.State == domain.QuestionResponseClaimed && value.Response.Claim != nil {
