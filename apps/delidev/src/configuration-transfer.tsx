@@ -187,7 +187,7 @@ export function ConfigurationTransfer({ active, showCategoryIntro = true, onWork
   };
   const inspect = async () => {
     if (gate.current || blocked || !loaded || !active || remoteUnsupported || !mappingsConfirmed) return;
-    gate.current = true; setProblem(""); setPreview(undefined);
+    gate.current = true; setProblem(""); setExportProblem(""); setPreview(undefined);
     const original = generation.current;
     try {
       const selectedBindings = loaded.bundle.entries.flatMap((entry) => {
