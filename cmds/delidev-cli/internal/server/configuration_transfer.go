@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"slices"
 	"sort"
 	"time"
@@ -666,6 +667,32 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		if err = validateRelationships(overlay, change.Kind, change.ID, change.ExpectedRevision, value); err != nil {
 			return err
 		}
+	}
+	// Preview and final application share the same target and intra-bundle
+	// comparison. Explicit reuse excludes only its original ID, never a name.
+	names := map[domain.Kind]map[string]domain.ID{}
+	for _, change := range plan.Changes {
+		if change.Kind != domain.ProjectKind && change.Kind != domain.RepositoryKind {
+			continue
+		}
+		var value struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(change.After, &value); err != nil {
+			return transferInvalid()
+		}
+		if err := tx.RequireConfigurationName(change.Kind, change.ID, value.Name); err != nil {
+			return err
+		}
+		key := domain.ConfigurationNameKey(value.Name)
+		if names[change.Kind] == nil {
+			names[change.Kind] = map[string]domain.ID{}
+		}
+		if other, exists := names[change.Kind][key]; exists && other != change.ID {
+			slog.Warn("configuration name collision", "kind", change.Kind, "cause", domain.ConfigurationNameConflictCause)
+			return domain.ConfigurationNameConflict(change.Kind)
+		}
+		names[change.Kind][key] = change.ID
 	}
 	return nil
 }

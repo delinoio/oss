@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +187,85 @@ func TestRepositoryCloneRegistrationFailurePreservesPublishedMetadata(t *testing
 	}
 	if _, err := f.service.Store.Get(ctx, domain.RepositoryKind, repositoryID); domain.SafeError(err).Code != domain.NotFound {
 		t.Fatal("unauthorized checkout registered", err)
+	}
+}
+
+func TestRepositoryCloneNameCollisionSettlesAndPreservesUserCheckout(t *testing.T) {
+	f := newIntegrationFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	worker, paired := pairedWorker(t, ctx, Endpoint{URL: f.url}, f.service.Identity)
+	client := delidevv1connect.NewWorkerServiceClient(http.DefaultClient, f.url)
+	instance := string(domain.NewID())
+	_, err := client.AttachWorker(ctx, ownerRequest(worker, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, InstanceId: instance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := t.TempDir()
+	root := filepath.Join(parent, "repo")
+	request := &pb.CloneRepositoryRequest{RequestId: string(domain.NewID()), MachineId: paired.Machine.Id, ParentPath: parent, Url: "https://example.com/repo.git", DirectoryName: "repo", LocalWorkerToken: worker.Token}
+	accepted, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An unrelated configuration wins after Clone admission. The temporary path
+	// represents an already user-owned checkout, not actual Git/native acceptance.
+	actor := domain.WithPrincipal(ctx, domain.Principal{Type: domain.OwnerDevice})
+	_, err = f.service.Store.Mutate(actor, domain.NewID(), "fixture.clone-name-collision", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.RepositoryKind, domain.NewID(), 0, "", "", domain.Repository{Name: " REPO ", RemoteURL: "https://example.com/other.git", AutoFetch: true})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	retained := filepath.Join(root, "original.txt")
+	if err = os.WriteFile(retained, []byte("user-owned original checkout"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := client.WatchWork(ctx, ownerRequest(worker, &pb.WatchWorkRequest{MachineId: paired.Machine.Id, InstanceId: instance}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	var assignment *pb.Resource
+	for stream.Receive() {
+		if stream.Msg().Job != nil {
+			assignment = stream.Msg().Job
+			break
+		}
+	}
+	if assignment == nil {
+		t.Fatal("accepted clone not dispatched", stream.Err())
+	}
+	output, _ := json.Marshal(workspace.CloneResult{Inspection: &workspace.Inspection{Root: root, Name: "repo", Remotes: []string{"origin"}, DefaultRefs: map[string]string{}}})
+	report := &pb.ReportWorkRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: assignment.Id, ExpectedRevision: assignment.Revision}, MachineId: paired.Machine.Id, InstanceId: instance, OutputJson: output}
+	finished, err := client.ReportWork(ctx, ownerRequest(worker, report))
+	if err != nil {
+		t.Fatal("collision rolled back original report", err)
+	}
+	var job domain.Job
+	if domain.Decode(finished.Msg.Job.DocumentJson, &job) != nil || job.State != domain.JobFailed || job.Problem == nil || job.Problem.Cause != domain.ConfigurationNameConflictCause {
+		t.Fatal("collision not settled", job.Problem)
+	}
+	var result workspace.CloneResult
+	if domain.Decode(job.Output, &result) != nil || result.RepositoryID != "" || result.RepositoryRevision != 0 || result.Inspection == nil || result.Inspection.Root != root {
+		t.Fatal("registration or original outcome was lost")
+	}
+	if body, err := os.ReadFile(retained); err != nil || string(body) != "user-owned original checkout" {
+		t.Fatal("checkout acquired deletion authority", err)
+	}
+	rows, err := f.service.Store.List(actor, store.Filter{Kind: domain.RepositoryKind, Limit: 10})
+	if err != nil || len(rows) != 1 {
+		t.Fatal("colliding clone registered")
+	}
+	retry, err := client.ReportWork(ctx, ownerRequest(worker, report))
+	if err != nil || !retry.Msg.Replayed {
+		t.Fatal("original report replay changed", err)
+	}
+	replay, err := client.CloneRepository(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.Job.Id != accepted.Msg.Job.Id {
+		t.Fatal("collision replaced original clone receipt", err)
 	}
 }

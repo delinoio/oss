@@ -691,6 +691,19 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	created := now
 	action := Created
 	if expected == 0 {
+		if kind == domain.ProjectKind || kind == domain.RepositoryKind {
+			// Identity conflicts precede naming conflicts, including identities
+			// already occupied by another kind. Tombstones were checked above.
+			var used bool
+			if err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=?)", id).Scan(&used); err != nil {
+				return Record{}, storageError(err)
+			}
+			if !used {
+				if err := t.requireConfigurationDocumentName(kind, id, body); err != nil {
+					return Record{}, err
+				}
+			}
+		}
 		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO entities(id,kind,revision,session_id,project_id,body,created_at,updated_at) VALUES(?,?,1,?,?,?,?,?)", id, kind, sessionID, projectID, body, now, now)
 	} else {
 		old, e := t.Get(kind, id)
@@ -699,6 +712,9 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 		}
 		if old.Revision != expected {
 			return Record{}, domain.Fail(domain.Conflict, "The entity revision changed.", "Read its latest revision before editing.")
+		}
+		if err := t.requireConfigurationDocumentName(kind, id, body); err != nil {
+			return Record{}, err
 		}
 		created = old.CreatedAt.UnixMilli()
 		action = Updated

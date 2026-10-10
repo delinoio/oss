@@ -383,3 +383,21 @@ missing earlier observation. Callbacks carry no paths, remote URLs or Git output
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+
+## Repository registration name collisions — issue #2495
+
+Repository admission and final inspection/Clone registration use the shared
+[configuration name comparison](cmds-delidev-contract.md#unique-configuration-names--issue-2495).
+An initially free name is not a reservation: recheck in the final publication
+transaction. Repository and Project names remain independent namespaces. Settle
+a final collision as the original typed Conflict without rolling back successful
+inspection-child reports or acquiring fresh native authority.
+
+A successful Clone already transfers its original checkout to user-owned Local
+lifetime before registration. A subsequent registration-name collision retains
+that checkout and original inspection/output, publishes no repository, and
+atomically fails the original Clone job with `configuration_name_conflict`. It
+grants no deletion, cleanup, replacement Clone or Worker authority. Exact
+request/report replay returns original outcomes without another native attempt.
+No remote operation, RPC, capability, migration or auto-renaming is added by naming
+validation; preserved paths and original cleanup obligations remain separate.

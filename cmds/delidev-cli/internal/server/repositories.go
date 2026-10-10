@@ -51,6 +51,9 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 				return nil, err
 			}
 		}
+		if err := tx.RequireConfigurationName(domain.RepositoryKind, id, repository.Name); err != nil {
+			return nil, err
+		}
 		document, err := json.Marshal(repositorySaveInput{ID: id, ExpectedRevision: input.ExpectedRevision, Repository: repository})
 		if err != nil {
 			return nil, err

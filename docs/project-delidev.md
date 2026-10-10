@@ -421,3 +421,5 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+Project/Repository configuration names follow the Go-owned [unique name rule](cmds-delidev-contract.md#unique-configuration-names--issue-2495). Same-kind names use TrimSpace/NFC/default Unicode fold/NFC inside original mutation publication; names never replace resource IDs or historical selections. Storage, workspace, portable transfer and desktop name-focused refusals preserve their independent authorization, receipts and cleanup boundaries; no migration or native authority is added.

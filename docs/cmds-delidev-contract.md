@@ -290,3 +290,34 @@ permanent-deletion enforcement, bounded staging and startup recovery.
 CLI `account oauth complete` and public `update check` select 35 seconds for both the outer command and response-header budget. `account validate` and `provider discover` select 50 seconds for optional OAuth refresh, independent protected settlement and provider inspection. Shorter caller deadlines/cancellation retain priority. Other commands keep their existing limits, and timeout never grants a retry or new mutation identity.
 
 Current protocol 2 pricing also accepts `--subscription-service SERVICE --native-id EXACT_NATIVE_ID` instead of the API provider source. `usage pricing mode` takes the same exact source, `--mode automatic|manual`, and original provider/policy revisions plus `--revision` for the displayed active price (zero when unavailable). All three are retained for exact retries; a concurrent automatic price update conflicts before changing the policy. `usage pricing refresh` explicitly requests a bounded joined models.dev update; ordinary reads and Usage summary never fetch a price source. The native-ID Usage filter requires one original provider or subscription service. Earlier Model UUID selectors and Model configuration commands are retired by the complete current-only reset; immutable pricing-version UUIDs remain readable.
+
+## Unique configuration names — issue #2495
+
+Go owns one Project/Repository comparison key: `TrimSpace`, NFC, Unicode default
+case fold through `golang.org/x/text`, then NFC. Internal whitespace remains
+significant; locale-specific casing is not used. Preserve original stored display
+spelling, existing text validity and UTF-8 byte limits. A comparison key never
+replaces a resource ID, reference or immutable historical selection.
+
+All live same-kind configuration shares a server-wide namespace. Projects and
+Repositories may share names across their separate namespaces. Archived Projects
+reserve names while their configuration exists; deleted/tombstoned resources
+release names while their original IDs remain permanently fenced. Creation,
+rename and ordinary/future edits exclude only the same original resource ID.
+Do not convert existing duplicates or rename them automatically.
+
+Check inside the shared mutation transaction after original authorization,
+identity/tombstone and revision validation, before resource/event publication.
+Recheck repository inspection completion, clone registration and import
+application. Preview and apply check imported entries against each other and all
+target same-kind configuration, retaining explicit ID-based reuse. A name never
+implies reuse, availability, native support or execution authority.
+
+Return existing Conflict with `ErrorDetail.cause=configuration_name_conflict`.
+Messages and structured outcome logs contain no conflicting UUID, name, path or
+native content. Other revision/identity/recovery conflicts retain their causes.
+Preserve atomic receipts, revisions, references, original cleanup and immutable
+history. A clone registration collision settles its original job without deleting
+an already user-owned Local checkout. No persisted name index, migration, RPC,
+capability, feature flag or availability scan is added. Normal builds activate the
+rule. See storage, workspace, transfer and desktop contracts for their boundaries.
