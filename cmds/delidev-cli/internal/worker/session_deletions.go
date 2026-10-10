@@ -32,6 +32,120 @@ func sessionDeletionPath(root string, id domain.ID) string {
 	return filepath.Join(root, "session-deletions", string(id)+".json")
 }
 
+// Proofs belong to an immutable deletion/session/device obligation. The separate
+// session-only tombstone above remains the admission fence used by runJob.
+func sessionDeletionObligationPath(root string, w domain.SessionDeletionWork) string {
+	return filepath.Join(root, "session-deletions", string(w.SessionID), string(w.DeletionID)+"-"+string(w.DeviceID)+".json")
+}
+
+func loadSessionDeletionProof(raw []byte, w domain.SessionDeletionWork) (sessionDeletionProof, bool, error) {
+	var proof sessionDeletionProof
+	if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
+		return proof, false, domain.SessionDeletionPending()
+	}
+	if proof.Digest == w.Digest() {
+		return proof, true, nil
+	}
+	// Preserve the existing narrowly admitted child-owner amendment. Once removal
+	// started, missing evidence cannot be rebuilt or attributed to a new owner.
+	legacy := w
+	legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
+	for i := range legacy.Copies {
+		legacy.Copies[i].UnpublishedChildProcessID = ""
+	}
+	if proof.Digest != legacy.Digest() {
+		return proof, false, nil
+	}
+	if proof.RemovalStarted || proof.Complete {
+		return proof, false, domain.SessionDeletionPending()
+	}
+	proof.Digest = w.Digest()
+	return proof, true, nil
+}
+
+// Initialize the original obligation under its own lock. Serialize only fence
+// publication and the bounded namespace admission; native cleanup retains its
+// independent workspace/publisher locks. Legacy bytes are kept for exact receipt
+// recovery by their matching obligation, never copied to another device.
+func prepareSessionDeletionProof(root string, w domain.SessionDeletionWork, fresh sessionDeletionProof) (sessionDeletionProof, error) {
+	lock, err := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	if err != nil {
+		return fresh, domain.SessionDeletionPending()
+	}
+	defer lock.Close()
+	folder := filepath.Dir(sessionDeletionObligationPath(root, w))
+	f, err := os.Open(folder)
+	if err != nil {
+		return fresh, domain.SessionDeletionPending()
+	}
+	// At most one proof and lock per original Worker owner. A bounded read also
+	// rejects overflowing/restored namespaces before any destructive operation.
+	names, readErr := f.Readdirnames(2*domain.MaxSessionDeletionJobs + 1)
+	closeErr := f.Close()
+	if readErr != nil && !errors.Is(readErr, io.EOF) || closeErr != nil || len(names) > 2*domain.MaxSessionDeletionJobs {
+		return fresh, domain.SessionDeletionPending()
+	}
+	fence := sessionDeletionPath(root, w.SessionID)
+	raw, err := security.ReadPrivate(fence, 4096)
+	var legacy []byte
+	if err == nil {
+		var marker struct {
+			Version uint32 `json:"version"`
+		}
+		// Version 2 carries no cleanup authority. Version 1 is retained unchanged
+		// as both the old admission tombstone and exact legacy receipt evidence.
+		if domain.Decode(raw, &marker) == nil && marker.Version == 2 {
+			// A current session fence is independent of every obligation's proof.
+		} else {
+			var old sessionDeletionProof
+			if domain.Decode(raw, &old) != nil || old.Version != 1 || old.ReportID.Validate() != nil {
+				return fresh, domain.SessionDeletionPending()
+			}
+			legacy = raw
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if err := writeJSON(fence, struct {
+			Version uint32 `json:"version"`
+		}{Version: 2}); err != nil {
+			return fresh, err
+		}
+	} else {
+		return fresh, domain.SessionDeletionPending()
+	}
+	path := sessionDeletionObligationPath(root, w)
+	raw, err = security.ReadPrivate(path, 4096)
+	if err == nil {
+		proof, matches, err := loadSessionDeletionProof(raw, w)
+		if err != nil || !matches {
+			return proof, domain.SessionDeletionPending()
+		}
+		if proof.Digest != fresh.Digest {
+			return proof, domain.SessionDeletionPending()
+		}
+		var original sessionDeletionProof
+		if domain.Decode(raw, &original) != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+		if original.Digest != proof.Digest {
+			return proof, writeJSON(path, proof)
+		}
+		return proof, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return fresh, domain.SessionDeletionPending()
+	}
+	if legacy != nil {
+		proof, matches, err := loadSessionDeletionProof(legacy, w)
+		if err != nil {
+			return fresh, err
+		}
+		if matches {
+			fresh = proof
+		}
+	}
+	return fresh, writeJSON(path, fresh)
+}
+
 func watchSessionDeletions(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -97,39 +211,18 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if e := security.PrivateDir(filepath.Join(root, "session-deletions")); e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
-	lock, e := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	path := sessionDeletionObligationPath(root, w)
+	if e := security.PrivateDir(filepath.Dir(path)); e != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	lock, e := security.TryLock(path + ".lock")
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
 	defer lock.Close()
-	path := sessionDeletionPath(root, w.SessionID)
-	raw, e := security.ReadPrivate(path, 4096)
-	if e == nil {
-		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
-			return proof, domain.SessionDeletionPending()
-		}
-		if proof.Digest != w.Digest() {
-			// An untouched legacy proof can admit only the same immutable work
-			// plus server-proved child owners. Removed evidence cannot be rebuilt.
-			legacy := w
-			legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
-			for i := range legacy.Copies {
-				legacy.Copies[i].UnpublishedChildProcessID = ""
-			}
-			if proof.RemovalStarted || proof.Complete || proof.Digest != legacy.Digest() {
-				return proof, domain.SessionDeletionPending()
-			}
-			proof.Digest = w.Digest()
-			if err := writeJSON(path, proof); err != nil {
-				return proof, err
-			}
-		}
-	} else if !errors.Is(e, os.ErrNotExist) {
-		return proof, domain.SessionDeletionPending()
-	} else {
-		if e := writeJSON(path, proof); e != nil {
-			return proof, e
-		}
+	proof, e = prepareSessionDeletionProof(root, w, proof)
+	if e != nil {
+		return proof, e
 	}
 	if proof.Complete {
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {

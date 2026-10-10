@@ -283,7 +283,18 @@ ownership fails closed.
 A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
 immutable assignment instance/revision/hash; reports additionally require a live
-current instance and exact plan digest. One retained report UUID survives process
+current instance and exact plan digest. Worker cleanup proofs and locks use the original deletion/session/device identity
+under `session-deletions/<session>/<deletion>-<device>.json` and its `.lock`.
+The per-session namespace admits at most 4,096 original proof/lock pairs through
+a bounded inventory; these metadata tombstones remain outside removable copy
+inventories. Each completed proof checks only its original full copy-absence
+inventory. The independent session-only admission fence remains present before
+cleanup and cannot grant completion authority. Existing session-only version-1
+proofs remain unchanged and supply their original report receipt only to the
+exact digest-bound obligation; another device must establish its own original
+cleanup proof. The existing untouched child-owner amendment remains narrowly
+admitted, while started/complete mismatches and restored copies remain pending.
+One retained report UUID survives process
 replacement and lost acknowledgements. Exact acknowledged report retries reuse
 the matching actor/work-bound receipt without rewriting the external journal or
 changing its revision. Missing SQL receipts still recover from the original

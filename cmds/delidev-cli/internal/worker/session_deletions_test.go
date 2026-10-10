@@ -142,7 +142,7 @@ func TestSessionDeletionWorkerRemovesOnlySelectedWorktreeAndResumesAfterRemoval(
 	}
 	// Reproduce a crash after all unlinks but before completion persistence.
 	proof.Complete = false
-	if e := writeJSON(sessionDeletionPath(c.Root, w.SessionID), proof); e != nil {
+	if e := writeJSON(sessionDeletionObligationPath(c.Root, w), proof); e != nil {
 		t.Fatal(e)
 	}
 	again, e := deleteSessionCopies(context.Background(), c, w)
@@ -464,5 +464,94 @@ func TestRetiringAssignmentPreservesMaximumUnpublishedSidechatInventory(t *testi
 	resource.Revision++
 	if retiringAssignment(context.Background(), config, client, credential, original.InstanceID, resource) {
 		t.Fatal("large envelope lost exact claimed revision")
+	}
+}
+
+func TestSessionDeletionDistinctDeviceObligations(t *testing.T) {
+	c, first, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	second := first
+	second.DeviceID = domain.NewID()
+	second.Copies = append([]domain.SessionDeletionCopy(nil), first.Copies...)
+	second.Copies[0].JobID = domain.NewID()
+	copy := second.Copies[0]
+	// The historical second Worker had a rejected preparation and its own
+	// retained journal, rather than ownership of the first Worker's workspace.
+	if err := writeJSON(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json"), journal{
+		Version: 1, JobID: copy.JobID, InstanceID: copy.InstanceID, Revision: copy.Revision,
+		Digest: copy.Digest, State: journalReported, ReportID: domain.NewID(),
+		Problem: domain.Fail(domain.Unsupported, "Rejected.", "Preserve the source."),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	one, err := deleteSessionCopies(context.Background(), c, first)
+	if err != nil || !one.Complete {
+		t.Fatal(one, err)
+	}
+	if _, err := os.Stat(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json")); err != nil {
+		t.Fatal("other obligation journal removed", err)
+	}
+	two, err := deleteSessionCopies(context.Background(), c, second)
+	if err != nil || !two.Complete || one.ReportID == two.ReportID {
+		t.Fatal(two, err)
+	}
+	for _, work := range []domain.SessionDeletionWork{first, second} {
+		again, err := deleteSessionCopies(context.Background(), c, work)
+		want := one.ReportID
+		if work.DeviceID == second.DeviceID {
+			want = two.ReportID
+		}
+		if err != nil || again.ReportID != want {
+			t.Fatal("independent receipt replay failed", err)
+		}
+	}
+	// Even the complete first proof cannot be replayed under the second path.
+	if err := writeJSON(sessionDeletionObligationPath(c.Root, second), one); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), c, second); err == nil {
+		t.Fatal("foreign proof replay accepted")
+	}
+	if _, err := os.Stat(sessionDeletionPath(c.Root, first.SessionID)); err != nil {
+		t.Fatal("session admission fence lost", err)
+	}
+}
+
+func TestSessionDeletionLegacyReceiptAndRestoredScope(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	if err := security.PrivateDir(filepath.Join(c.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	legacy := sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID()}
+	path := sessionDeletionPath(c.Root, w.SessionID)
+	if err := writeJSON(path, legacy); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete || proof.ReportID != legacy.ReportID {
+		t.Fatal("legacy receipt lost", proof, err)
+	}
+	retained, err := os.ReadFile(path)
+	if err != nil || string(retained) != string(original) {
+		t.Fatal("legacy evidence changed", err)
+	}
+	changed := w
+	changed.ServerID = domain.NewID()
+	if _, err := deleteSessionCopies(context.Background(), c, changed); err == nil {
+		t.Fatal("changed scope accepted")
+	}
+	// A restored retained copy also invalidates completion without removing it.
+	restored := filepath.Join(c.Root, "jobs", string(w.Copies[0].JobID)+".json")
+	if err := os.WriteFile(restored, []byte("restored"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), c, w); err == nil {
+		t.Fatal("restored copy accepted")
+	}
+	if raw, err := os.ReadFile(restored); err != nil || string(raw) != "restored" {
+		t.Fatal("restored copy removed", err)
 	}
 }
