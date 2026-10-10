@@ -222,6 +222,14 @@ func finalizeSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revis
 	if session.CompactionJobID != r.ID || !session.OwnsExecution(input.Assignment) {
 		return store.Record{}, domain.CompactionUncertain()
 	}
+	// A separate closed outcome cannot masquerade as a successful native
+	// checkpoint. Generic errors and missing reports retain the old quarantine.
+	var preSend domain.SessionRevertPreSendFailure
+	noSend := problem == nil && input.Version == 4 && input.Revert != nil && domain.Decode(raw, &preSend) == nil && preSend.Validate() == nil && preSend.JobID == r.ID && preSend.ActionID == input.ActionID && preSend.ExecutionID == input.Assignment.ExecutionID && preSend.InputDigest == continuationDigest(j.Input) && preSend.ContextRevision == input.Revert.ContextRevision && session.ContextRevision == input.Revert.ContextRevision && preSend.NativeThreadID == input.Completion.NativeThreadID
+	if noSend && input.Assignment.Configuration.Subscription {
+		_, account, e := accountFromTx(tx, input.Assignment.AccountID, 0)
+		noSend = e == nil && account.Subscription != nil && account.Subscription.Lease == nil && !account.Subscription.RecoveryRequired
+	}
 	var output domain.SessionCompactionResult
 	verified := problem == nil && domain.Decode(raw, &output) == nil && output.Validate() == nil && output.ActionID == input.ActionID && output.ExecutionID == input.Assignment.ExecutionID && output.Checkpoint.JobID == r.ID
 	if verified {
@@ -260,10 +268,15 @@ func finalizeSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revis
 	now := time.Now().UTC()
 	j.FinishedAt = &now
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
-	// Explicit recovery has independently observed the original canceled Revert
-	// and its cleanup. Keep the durable cancellation record; only that proved
-	// observation may publish its checkpoint without treating it as new input.
-	if !verified || canceled && mode != observedOriginalRevert {
+	// Only the recovery-specific mode may publish a verified canceled Revert
+	// checkpoint. Ordinary late canceled reports retain quarantine.
+	if noSend {
+		// Positive no-claim/no-send and independent cleanup release only this
+		// failed action, even if canceled; no successor native work is admitted.
+		session.CompactionJobID = ""
+		j.State, j.Output = domain.JobFailed, raw
+		j.Problem = domain.Fail(preSend.FailureCode, "The original Revert failed before its native send claim.", "The prior context and history are unchanged; any later action requires fresh explicit admission.")
+	} else if !verified || (canceled && mode != observedOriginalRevert) {
 		j.State, j.Problem, j.Output = domain.JobUncertain, domain.CompactionUncertain(), nil
 		// Cancellation of claimed work retains native ownership even when a
 		// valid late report arrives. Its observations remain evidence, but cannot
