@@ -98,6 +98,11 @@ func (c *Client) answerDynamicUnavailableLocked(ctx context.Context, native nati
 	if !known || turn.Turn.Status.terminal() || c.execution.active != params.TurnID || c.execution.paused || c.problem != nil {
 		return Event{}, interactionConflict()
 	}
+	for _, prior := range c.dynamicReplies {
+		if prior.state.TurnID == params.TurnID && prior.state.CallID == params.CallID {
+			return Event{}, interactionConflict()
+		}
+	}
 	if c.dynamicReplies[key] != nil || len(c.dynamicReplies) >= maxTrackedInteractions {
 		return Event{}, interactionConflict()
 	}

@@ -43,6 +43,12 @@ func TestDynamicUnavailableOriginalOnceOnlyReceiptAndResolution(t *testing.T) {
 			t.Fatal("dynamic request replay/replacement replied again")
 		}
 	}
+	changed := owned.native
+	changed.ID = json.RawMessage(`8`)
+	changed.Token = domain.NewID()
+	if _, err := c.answerDynamicUnavailableLocked(context.Background(), changed); err == nil {
+		t.Fatal("same call acquired a second reply identity")
+	}
 	if len(states) != 2 {
 		t.Fatal("replay altered durable intent")
 	}
