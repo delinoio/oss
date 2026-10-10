@@ -56,12 +56,17 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 			return nil, ResultUncertain()
 		}
 	}
+	inspectionBudget := newForkCopyBudget(len(paths))
 	for i, path := range paths {
 		marker, err := captureForkRootMarker(path)
 		if err != nil {
 			return nil, err
 		}
-		digest, err := scanForkTreePinned(ctx, path, "", source.Type != domain.GeneralChat, request.forkEntryLimit(), &marker)
+		var copyBudget *snapshotCopyBudget
+		if source.Type != domain.GeneralChat && request.Repositories[i].SourceKind == IndependentForkSource {
+			copyBudget = inspectionBudget
+		}
+		digest, err := scanForkTreePinned(ctx, path, "", source.Type != domain.GeneralChat, request.forkEntryLimit(), &marker, copyBudget)
 		if err != nil {
 			return nil, err
 		}
@@ -74,12 +79,19 @@ func (m *Manager) InspectForkSnapshot(ctx context.Context, source Manifest, requ
 			if strings.TrimSpace(string(head)) != request.Repositories[i].Base.Name {
 				return nil, forkSnapshotChanged()
 			}
-			_, index, err := forkIndex(ctx, git, path)
+			_, index, err := forkIndex(ctx, git, path, copyBudget)
 			if err != nil {
 				return nil, err
 			}
 			hash := sha256.Sum256(index)
 			copy.head, copy.index = request.Repositories[i].Base.Name, hex.EncodeToString(hash[:])
+			if request.Repositories[i].SourceKind == IndependentForkSource {
+				inventory, err := inspectForkGitInventory(ctx, git, path, inspectionBudget)
+				if err != nil {
+					return nil, err
+				}
+				copy.gitInventory = &inventory
+			}
 		}
 		if err := copy.verifySourceMarker(); err != nil {
 			return nil, err
@@ -158,6 +170,7 @@ type forkCopy struct {
 	git            bool
 	head, index    string
 	entryLimit     int
+	gitInventory   *forkGitInventory
 }
 
 func forkUnsupported() error {
@@ -281,7 +294,7 @@ func scanForkTree(ctx context.Context, source, target string, gitTree bool) (str
 func scanForkTreeBounded(ctx context.Context, source, target string, gitTree bool, entryLimit int) (string, error) {
 	return scanForkTreePinned(ctx, source, target, gitTree, entryLimit, nil)
 }
-func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool, entryLimit int, original *forkGitMarker) (string, error) {
+func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool, entryLimit int, original *forkGitMarker, budgets ...*snapshotCopyBudget) (string, error) {
 	if entryLimit != maxForkEntries && entryLimit != maxOpenCodeForkEntries {
 		return "", forkUnsupported()
 	}
@@ -326,6 +339,18 @@ func scanForkTreePinned(ctx context.Context, source, target string, gitTree bool
 		before, err := root.Lstat(name)
 		if err != nil {
 			return forkUnsupported()
+		}
+		if len(budgets) > 0 && budgets[0] != nil {
+			size := uint64(0)
+			if before.Mode().IsRegular() {
+				if before.Size() < 0 {
+					return forkUnsupported()
+				}
+				size = uint64(before.Size())
+			}
+			if err := budgets[0].take(size); err != nil {
+				return err
+			}
 		}
 		if !before.IsDir() && !before.Mode().IsRegular() {
 			return forkUnsupported()
@@ -475,7 +500,7 @@ func copyForkTreePinned(ctx context.Context, source, target string, gitTree bool
 	return forkCopy{sourceMarker: &marker, source: source, target: target, tree: digest, git: gitTree, entryLimit: entryLimit}, err
 }
 
-func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, error) {
+func forkIndex(ctx context.Context, git Git, checkout string, budgets ...*snapshotCopyBudget) (string, []byte, error) {
 	shared, err := git.run(ctx, checkout, "rev-parse", "--shared-index-path")
 	if err != nil {
 		return "", nil, err
@@ -491,6 +516,9 @@ func forkIndex(ctx context.Context, git Git, checkout string) (string, []byte, e
 	info, err := os.Lstat(index)
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxForkBytes {
 		return "", nil, forkUnsupported()
+	}
+	if len(budgets) > 0 && budgets[0] != nil && (budgets[0].entries == 0 || uint64(info.Size()) > budgets[0].bytes) {
+		return "", nil, domain.Fail(domain.ResourceExhausted, "The complete fork inventory exceeds its bound.", "Reduce source data before requesting another Fork.")
 	}
 	canonical, err := filepath.EvalSymlinks(index)
 	if err != nil || !sameNativePath(canonical, index) {
@@ -562,6 +590,18 @@ func (c forkCopy) verify(ctx context.Context, git Git) error {
 		return forkSnapshotChanged()
 	}
 	if c.git {
+		if c.gitInventory != nil {
+			childHead, err := git.run(ctx, c.target, "rev-parse", "--verify", "HEAD")
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(string(childHead)) != c.head {
+				return forkSnapshotChanged()
+			}
+			if err := c.gitInventory.verify(ctx, git, c.source, c.target); err != nil {
+				return err
+			}
+		}
 		head, err := git.run(ctx, c.source, "rev-parse", "--verify", "HEAD")
 		if err != nil {
 			return err

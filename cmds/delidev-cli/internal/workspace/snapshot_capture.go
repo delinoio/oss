@@ -135,10 +135,25 @@ func (m *Manager) copySnapshotGit(ctx context.Context, session domain.ID, repo P
 	return m.copySnapshotGitBudget(ctx, session, repo, target, &budget)
 }
 
-func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, repo PreparedRepository, target string, budget *snapshotCopyBudget) error {
+func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, repo PreparedRepository, target string, budget *snapshotCopyBudget, existingGitRoot ...bool) error {
+	sourceBudget := *budget
+	var originalGitRoot os.FileInfo
+	if len(existingGitRoot) > 0 && existingGitRoot[0] {
+		var err error
+		originalGitRoot, err = os.Lstat(filepath.Join(target, ".git"))
+		if err != nil || !originalGitRoot.IsDir() || originalGitRoot.Mode()&os.ModeSymlink != 0 {
+			return ResultUncertain()
+		}
+	}
 	if m.storageCopyFault != nil {
 		if err := m.storageCopyFault(target); err != nil {
 			return err
+		}
+	}
+	if originalGitRoot != nil {
+		current, err := os.Lstat(filepath.Join(target, ".git"))
+		if err != nil || !os.SameFile(originalGitRoot, current) {
+			return ResultUncertain()
 		}
 	}
 	git := m.Git
@@ -170,7 +185,17 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	if err := validateSnapshotGitConfig(ctx, git, repo.Path, admin); err != nil {
 		return err
 	}
-	adminInventory, err := walkSnapshot(ctx, admin, "", nil)
+	var adminSkip func(string) bool
+	if originalGitRoot != nil && sameNativePath(common, admin) {
+		adminSkip = func(p string) bool { return p == "worktrees" || strings.HasPrefix(p, "worktrees/") }
+	}
+	var adminInventory snapshotInventory
+	if len(existingGitRoot) > 0 && existingGitRoot[0] {
+		inspectionBudget := *budget
+		adminInventory, err = walkSnapshotBudget(ctx, admin, "", adminSkip, min(MaxSnapshotEntries, budget.entries), &inspectionBudget)
+	} else {
+		adminInventory, err = walkSnapshot(ctx, admin, "", nil)
+	}
 	if err != nil {
 		return err
 	}
@@ -197,7 +222,7 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	if err := budget.take(0); err != nil {
 		return err
 	}
-	commonInventory, err := walkSnapshotBudget(ctx, common, filepath.Join(target, ".git"), skipCommon, MaxSnapshotEntries, budget)
+	commonInventory, err := walkSnapshotBudget(ctx, common, filepath.Join(target, ".git"), skipCommon, MaxSnapshotEntries, budget, existingGitRoot...)
 	if err != nil {
 		return err
 	}
@@ -239,11 +264,23 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 	if err := m.validateSnapshotGit(ctx, session, repo, target); err != nil {
 		return err
 	}
-	commonAfter, err := walkSnapshot(ctx, common, "", skipCommon)
+	var commonAfter snapshotInventory
+	if originalGitRoot != nil {
+		probe := sourceBudget
+		commonAfter, err = walkSnapshotBudget(ctx, common, "", skipCommon, min(MaxSnapshotEntries, probe.entries), &probe)
+	} else {
+		commonAfter, err = walkSnapshot(ctx, common, "", skipCommon)
+	}
 	if err != nil || inventoryDigest(commonAfter) != inventoryDigest(commonInventory) {
 		return ResultUncertain()
 	}
-	adminAfter, err := walkSnapshot(ctx, admin, "", nil)
+	var adminAfter snapshotInventory
+	if originalGitRoot != nil {
+		probe := sourceBudget
+		adminAfter, err = walkSnapshotBudget(ctx, admin, "", adminSkip, min(MaxSnapshotEntries, probe.entries), &probe)
+	} else {
+		adminAfter, err = walkSnapshot(ctx, admin, "", nil)
+	}
 	if err != nil || inventoryDigest(adminAfter) != inventoryDigest(adminInventory) {
 		return ResultUncertain()
 	}
@@ -266,6 +303,12 @@ func (m *Manager) copySnapshotGitBudget(ctx context.Context, session domain.ID, 
 		}
 		if closeErr != nil {
 			return closeErr
+		}
+	}
+	if originalGitRoot != nil {
+		current, err := os.Lstat(filepath.Join(target, ".git"))
+		if err != nil || !os.SameFile(originalGitRoot, current) {
+			return ResultUncertain()
 		}
 	}
 	return syncSnapshotDir(filepath.Join(target, ".git"))
