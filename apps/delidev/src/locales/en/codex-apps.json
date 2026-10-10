@@ -39,5 +39,6 @@
   "codex-apps.flag.installed": "Installed",
   "codex-apps.flag.enabled": "Enabled",
   "codex-apps.flag.callable": "Callable on original controller",
-  "codex-apps.flag.selected": "Native selected state"
+  "codex-apps.flag.selected": "Native selected state",
+  "codex-apps.state.canceled": "The original Apps operation was canceled before any native send. Native cleanup remains separate."
 }

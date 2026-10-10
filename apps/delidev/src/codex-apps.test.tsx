@@ -125,3 +125,11 @@ it("keeps a changed account revision from silently reauthorizing removal", async
   expect((screen.getByRole("button", { name: "Remove chosen Apps" }) as HTMLButtonElement).disabled).toBe(true);
   expect(f.revoke).not.toHaveBeenCalled();
 });
+
+it("keeps canceled-before-native-send distinct from a claimed cleanup result", () => {
+ const f=fixture(); const i=f.inventory;
+ const action={version:1,id:newRequestId(),revision:"1",request_id:newRequestId(),actor_id:newRequestId(),action:"inspect",state:"canceled",positive_no_native_send:true,original:f.config,execution_id:i.execution_id,execution_job_id:i.execution_job_id,machine_id:i.machine_id,instance_id:i.instance_id,native_thread_id:i.native_thread_id};
+ const reply={configuration:f.metadata(f.config,f.config.generation),operation:f.metadata(action,action.id)};
+ expect(codexAppsView(reply,f.session.id,f.account.id).invalid).toBe(false);
+ expect(codexAppsView({...reply,operation:f.metadata({...action,claim_id:newRequestId()},action.id)},f.session.id,f.account.id).invalid).toBe(true);
+});

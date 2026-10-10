@@ -39,5 +39,6 @@
   "codex-apps.flag.installed": "설치됨",
   "codex-apps.flag.enabled": "활성화됨",
   "codex-apps.flag.callable": "원래 컨트롤러에서 호출 가능",
-  "codex-apps.flag.selected": "네이티브 선택 상태"
+  "codex-apps.flag.selected": "네이티브 선택 상태",
+  "codex-apps.state.canceled": "원본 앱 작업은 네이티브 전송 전에 취소되었습니다. 네이티브 정리는 별도로 확인해야 합니다."
 }
