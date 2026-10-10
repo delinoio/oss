@@ -19,6 +19,9 @@ func TestAsyncAgentMessageShapes(t *testing.T) {
 		if err != nil || private || message == nil || message.ID != "original" || message.Text != "synthetic" {
 			t.Fatalf("shape %s: %v", extra, err)
 		}
+		if !strings.Contains(extra, `"async"`) && !strings.Contains(extra, `"title"`) && message.Codex != nil {
+			t.Fatal("legacy plain publication bytes changed")
+		}
 		if !managedForkItem(raw, "agentMessage") {
 			t.Fatal("owned settled message denied original Fork validation")
 		}

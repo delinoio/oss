@@ -53,5 +53,11 @@ func decodeAgentMessage(raw json.RawMessage) (*Message, bool, error) {
 	if len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null" {
 		return nil, true, nil
 	}
+	// Keep legacy plain publication bytes unchanged for older strict peers.
+	// Complete native history still retains omitted/null/empty source fields;
+	// every actual async or populated-question observation retains its metadata.
+	if content != nil && content.Delivery == nil && len(content.Questions) == 0 {
+		content = nil
+	}
 	return &Message{ID: item.ID, Role: AssistantRole, Text: *item.Text, Phase: item.Phase, Codex: content}, false, nil
 }

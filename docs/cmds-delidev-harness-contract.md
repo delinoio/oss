@@ -2009,8 +2009,11 @@ and frame bounds. Reject duplicate/unknown keys, malformed shapes, foreign owner
 and invalid delivery values. Populated memory citations remain private under #1997;
 existing child-source omitted/null delivery rules are unchanged.
 
-The existing typed core message lifecycle stores a `codex` observation object with
-separate delivery/questions presence bits and nullable values. Worker and server
+The existing typed core message lifecycle stores a `codex` observation object for
+actual async or populated-question messages, with separate delivery/questions
+presence bits and nullable values. Legacy plain messages with only omitted/null
+or empty outer observations keep their original publication bytes; their complete
+native history still preserves those original fields and digests. Worker and server
 validate it independently. Initial absent/null streaming observations may acquire
 final delivery/questions; already observed delivery and ordered question prefixes
 cannot change or disappear. Preserve null versus empty options in comparisons.
