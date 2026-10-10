@@ -49,6 +49,10 @@ func restoreTransformationBound(documents int, total int64) error {
 	return nil
 }
 
+func restoreRetainedBodyTotal(total int64, originalBytes, retainedBytes int) int64 {
+	return total + int64(retainedBytes-originalBytes)
+}
+
 // Only the private candidate is writable. The synchronized current snapshot is
 // attached immutable/read-only; it supplies revocations and deletion obligations
 // even when the selected image predates them. Every transformation is one SQL
@@ -202,6 +206,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	}
 	changes := []change{}
 	var sourceTotal, retainedTotal int64
+	sourceDocuments := 0
 	for rows.Next() {
 		var id domain.ID
 		var kind domain.Kind
@@ -210,9 +215,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			rows.Close()
 			return storageError(err)
 		}
-		// Bound aggregate retained documents as well as each domain document.
+		// Bound the complete candidate scan as well as its final transformed bodies.
+		sourceDocuments++
 		sourceTotal += int64(len(raw))
-		if err := restoreTransformationBound(len(changes), sourceTotal); err != nil {
+		retainedTotal += int64(len(raw))
+		if err := restoreTransformationBound(sourceDocuments, sourceTotal); err != nil {
 			rows.Close()
 			return err
 		}
@@ -249,6 +256,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				}
 			}
 			if v.Type == domain.DeleteBackupJob {
+				if err := restoreTransformationBound(sourceDocuments, retainedTotal); err != nil {
+					rows.Close()
+					return err
+				}
 				continue
 			}
 			if !v.State.Terminal() {
@@ -271,6 +282,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			value = v
 		case domain.AccountKind:
 			if retainedOAuth[id] {
+				if err := restoreTransformationBound(sourceDocuments, retainedTotal); err != nil {
+					rows.Close()
+					return err
+				}
 				continue
 			}
 			var v domain.Account
@@ -327,10 +342,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				return err
 			}
 		}
-		// Charge the bytes that will be retained, including quarantine metadata,
-		// before any row update. Keep the original scan bound independently.
-		retainedTotal += int64(len(body))
-		if err := restoreTransformationBound(len(changes), retainedTotal); err != nil {
+		// Replace the source body in the projected total with its quarantined body.
+		retainedTotal = restoreRetainedBodyTotal(retainedTotal, len(raw), len(body))
+		if err := restoreTransformationBound(sourceDocuments, retainedTotal); err != nil {
 			rows.Close()
 			return err
 		}

@@ -456,3 +456,26 @@ func TestRestoreTransformationCountsRetainedQuarantineBytes(t *testing.T) {
 		t.Fatal("document count unbounded")
 	}
 }
+
+func TestRestoreTransformationCountsUnchangedRetainedRows(t *testing.T) {
+	// The complete source is below the bound, and the transformed row by itself
+	// still fits. Its expansion crosses the bound only when the unchanged row is
+	// included in the final candidate total.
+	unchangedBytes := 20
+	originalBytes := maxRestoreTransformationBytes - 100
+	transformedBytes := originalBytes + 90
+	sourceTotal := int64(unchangedBytes + originalBytes)
+	if err := restoreTransformationBound(2, sourceTotal); err != nil {
+		t.Fatal("bounded source rejected", err)
+	}
+	if err := restoreTransformationBound(1, int64(transformedBytes)); err != nil {
+		t.Fatal("transformed row alone should fit", err)
+	}
+	retainedTotal := restoreRetainedBodyTotal(sourceTotal, originalBytes, transformedBytes)
+	if retainedTotal != int64(maxRestoreTransformationBytes+10) {
+		t.Fatalf("unchanged row omitted from final total: got %d", retainedTotal)
+	}
+	if err := restoreTransformationBound(2, retainedTotal); err == nil {
+		t.Fatal("final candidate exceeded aggregate bound without rejection")
+	}
+}
