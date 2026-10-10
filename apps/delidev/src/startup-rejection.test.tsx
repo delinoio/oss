@@ -60,6 +60,8 @@ it("presents only the exact original rejected image input without claiming recov
  expect(isImageStartupRejectedInput(f.queued,session)).toBe(true);
  for (const resource of [create(ResourceSchema,{...f.queued,id:newRequestId()}),create(ResourceSchema,{...f.queued,sessionId:newRequestId()}),create(ResourceSchema,{...f.queued,documentJson:encode({delivery:"accepted",execution_id:execution})})]) expect(isImageStartupRejectedInput(resource,session)).toBe(false);
  render(<RejectedInput session={session} resource={f.queued}/>);
- expect(screen.getByText(/Keep the image draft/)).toBeTruthy();
+ const notice=screen.getByText(/Start a new session with an Agent Worker and Runner Device that explicitly support images/);
+ expect(notice.textContent).toContain("or start a new text-only session.");
+ expect(notice.textContent).toContain("Retrying this session keeps its original input, images and selected Agent Worker and Runner Device.");
  expect(screen.queryByRole("button")).toBeNull();
 });
