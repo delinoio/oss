@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1088 adds interactive terminals owned by the session's execution Worker.
+The feature adds interactive terminals owned by the session's execution Worker.
 Canonical code lives in `cmds/delidev-cli/internal/{terminal,process,worker,server,store,cli}`,
 the additive `TerminalService` and Worker messages in `protos/delidev/v1`, the
 generated API client, and `apps/delidev/src/session-terminals.tsx`. This contract
@@ -33,7 +33,7 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
-The explicit Terminals toolbar/menu gesture (#2112) resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
+The explicit Terminals toolbar/menu gesture resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
 creation/selection opens a full-pane tab by original terminal ID while retaining
 conversation authoring and original mutation controllers. Presentation Close or
 inactive selection releases only the client attachment; it never closes the shell
@@ -139,7 +139,7 @@ reporting cleanup. Missing/changed ownership never authorizes PID termination.
 
 - Explicit stopped Codex API account selection follows the sessions/proxy contracts. Require exact terminal/cleanup/checkpoint evidence and current eligibility from the original candidate snapshot; retain revisioned selection history, pause until explicit Resume and never reroute automatically. Preserve original usage/assignments and read the predecessor checkpoint under its complete original account/connection pair while creating a fresh successor grant. Explicitly switching away and back after reconnection must retain the original checkpoint connection independently of the fresh selected connection. Missing or account-bound history cannot switch; every switched relay request independently rejects remote history references.
 
-- Grok public tool, interaction and terminal documents follow the pinned issue #1091 harness/protocol contracts. Keep original request namespaces and lexical numeric IDs through the Grok-only decimal identity, nullable question data, exact decimal uint64 counters and exclusive response/terminal families. Original native Plan decisions cannot be converted to common Plan approval. Null/mixed/foreign response fields must fail before a native encoder or side effect.
+- Grok public tool, interaction and terminal documents follow the pinned the feature harness/protocol contracts. Keep original request namespaces and lexical numeric IDs through the Grok-only decimal identity, nullable question data, exact decimal uint64 counters and exclusive response/terminal families. Original native Plan decisions cannot be converted to common Plan approval. Null/mixed/foreign response fields must fail before a native encoder or side effect.
 
 - Repository-inspection metadata uses the independent `repository-inspection-metadata-v1` Worker capability. Validate/deduplicate it alongside titles/forwarding/terminals without changing existing values or the closed inspection input. Follow the workspace/protocol contracts.
 
@@ -169,9 +169,9 @@ reporting cleanup. Missing/changed ownership never authorizes PID termination.
 
 - OpenCode automatic context progress must match the original execution harness and native part identity. Apply started before completed atomically, retain the canonical conversation and refuse terminal/continuation with an open boundary. Native context users and summaries grant no new input or inferred current token count.
 
-- Issue #2052 captures acceptance/end UTC once in the original validated primary-input/terminal publication transactions and receipts. Steer cannot reset timing. Atomically update every original primary-user part through bounded indexed selection; reject changed ownership/acceptance and preserve late-user, legacy and inherited Fork attribution. READY, pre-send rejection and queue/startup time cannot fabricate accepted timing. Strip display timing from every native job/checkpoint/digest projection.
+- The feature captures acceptance/end UTC once in the original validated primary-input/terminal publication transactions and receipts. Steer cannot reset timing. Atomically update every original primary-user part through bounded indexed selection; reject changed ownership/acceptance and preserve late-user, legacy and inherited Fork attribution. READY, pre-send rejection and queue/startup time cannot fabricate accepted timing. Strip display timing from every native job/checkpoint/digest projection.
 
-- Issue #2112 / PR #2260 owns `CreateTerminalRequest.creation_mode` field 5, optional original-session candidate `preferred_terminal_id` field 6, and closed `TerminalCreationMode` values 0/1. Resolve every toolbar reuse-or-create in the original authenticated receipt transaction; inventory grants only a preference, never final selection. Revalidate the preferred candidate within the same session/current Worker instance before first-eligible fallback; preserve unspecified explicit additional creation and +, fields 1–4, existing capabilities, current Worker/workspace/revision checks and independent cleanup. Pending input/resize permits inspection reuse; close intent does not. Follow the terminal/protocol contracts; no migration or new native authority.
+- The feature / the originating change owns `CreateTerminalRequest.creation_mode` field 5, optional original-session candidate `preferred_terminal_id` field 6, and closed `TerminalCreationMode` values 0/1. Resolve every toolbar reuse-or-create in the original authenticated receipt transaction; inventory grants only a preference, never final selection. Revalidate the preferred candidate within the same session/current Worker instance before first-eligible fallback; preserve unspecified explicit additional creation and +, fields 1–4, existing capabilities, current Worker/workspace/revision checks and independent cleanup. Pending input/resize permits inspection reuse; close intent does not. Follow the terminal/protocol contracts; no migration or new native authority.
 
 ### cmds/delidev-cli/internal/skills constraints
 
@@ -201,7 +201,7 @@ reporting cleanup. Missing/changed ownership never authorizes PID termination.
 
 - Backup creation settlement rechecks the original irreversible deletion index in its terminal job transaction. Pending or completed deletion wins with the existing RecoveryRequired failure; deletion after committed success preserves history. Never replay a terminal creation to recreate an image; follow the storage contract.
 
-- Issue #2052 uses the single existing mutation UTC clock after receipt lookup and bounded indexed original primary-user selection for atomic terminal timing. Verify session/execution/input/thread/turn and original acceptance before writes; rollback all changed-owner records with the original terminal publication. Keep contents/indexes and exact receipt timestamps unchanged; no legacy backfill or migration.
+- The feature uses the single existing mutation UTC clock after receipt lookup and bounded indexed original primary-user selection for atomic terminal timing. Verify session/execution/input/thread/turn and original acceptance before writes; rollback all changed-owner records with the original terminal publication. Keep contents/indexes and exact receipt timestamps unchanged; no legacy backfill or migration.
 
 ### cmds/delidev-cli/internal/worker constraints
 
@@ -412,8 +412,8 @@ or retire uncertain original controls. Older restored history cannot revive a
 presentation tombstone; stream completion and lookup failure are not exit proof.
 
 Byte-stream consumers
-retain all native control bytes. Record source revisions, commands, results and unresolved limits in PR #1226,
-issue #1088 and CI logs/artifacts under the root validation policy. Historical
+retain all native control bytes. Record source revisions, commands, results and unresolved limits in the originating change,
+The feature and CI logs/artifacts under the root validation policy. Historical
 validation remains available at its original Git revisions; do not add repository
 evidence documents.
 
@@ -444,19 +444,19 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Protocol](protos-delidev-v1-contract.md)
 - [API client](packages-delidev-api-client-contract.md)
 - [Desktop](apps-delidev-desktop-contract.md)
-- [PR validation](https://github.com/delinoio/oss/pull/1226)
+- PR validation
 - [Historical issue validation](https://github.com/delinoio/oss/tree/a7a47662bdabdc652da97ce7d01449a008663b0a/docs/evidence/delidev/issue-1088)
 - [Frozen historical ledger](https://github.com/delinoio/oss/blob/a7a47662bdabdc652da97ce7d01449a008663b0a/docs/cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)
-- [Issue #1088](https://github.com/delinoio/oss/issues/1088)
+- The feature
 
 - [Microsoft pseudoconsole creation and teardown](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session)
 - [Go PTY package API](https://pkg.go.dev/github.com/creack/pty)
 
-## Atomic toolbar terminal admission — issue #2112 / PR #2260
+## Atomic toolbar terminal admission — the feature / the originating change
 
 `CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
-session candidate preference under the same #2112 / PR #2260 ownership. Every
+session candidate preference under the same / the originating change ownership. Every
 toolbar gesture uses atomic admission after complete inventory inspection;
 inventory alone cannot select a terminal. Admission prefers that ID only if it
 remains eligible in the same original session and current Worker instance, then

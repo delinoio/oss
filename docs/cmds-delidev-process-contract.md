@@ -112,7 +112,7 @@ The resident desktop CLI has a separate original-child lifetime from Worker-laun
 
 ## Descriptive interactive startup observations
 
-Issue #2120 permits a transient nonblocking observer on the original interactive
+The feature permits a transient nonblocking observer on the original interactive
 child. Launch begins at its actual owned creation boundary and completes only
 after its original Resume succeeds; initialization begins then and is confirmed
 only by the adapter's validated native response. This callback is excluded from

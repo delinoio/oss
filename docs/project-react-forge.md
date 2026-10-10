@@ -1,7 +1,7 @@
 # React Forge
 
 ## Goal
-Provide publicly distributed React document sessions, a TSX task CLI and a local session-based stdio MCP server for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. Issue [#968](https://github.com/delinoio/oss/issues/968) defines the original feature boundary; the explicit 2026-09-24 follow-up on PR #970 adds macOS x64 and Windows/Linux x64/arm64 support. The subsequent public npm distribution decision supersedes the original private-package boundary. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
+Provide publicly distributed React document sessions, a TSX task CLI and a local session-based stdio MCP server for authoring and preservation-aware editing of PPTX, DOCX, XLSX, and independent tagged PDF. This contract defines the original feature boundary; the explicit 2026-09-24 follow-up on the originating change adds macOS x64 and Windows/Linux x64/arm64 support. The subsequent public npm distribution decision supersedes the original private-package boundary. Partial format support does not satisfy that issue. The Figma extension adds explicit remote creation and preservation-aware editing under its separate contract; authenticated acceptance targets Node.js 24 on macOS arm64.
 
 The 2026-09-25 follow-up adds static GLB/FBX generation, SceneSession, original audio-product examples, and actual-file Blender/web validation. These formats were not part of the historical `0.1.1` npm release; all were included in the published `0.2.0` release.
 
@@ -61,7 +61,7 @@ part of this extension.
 - Persistent document/node identities are UUID v7. React keys and useId values do not become persistent identities. Figma native IDs are separately mapped to those logical identities.
 - Preserve unrelated Office parts/XML; reject unsafe or unprovable edits transactionally. Never flatten opaque imported content. Existing Forge CLI/MCP behavior and default fonts remain stable.
 - Registered assets and render-relevant asynchronous work must settle before export pins a revision. Later commits cannot change an export already pinned. Cancellation has no automatic timeout and cannot misreport an already completed atomic publication.
-- Source-backed requirements must remain intact. Track missing evidence honestly; do not close #968 until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
+- Source-backed requirements must remain intact. Track missing evidence honestly; do not close until all acceptance criteria pass. Direct Microsoft Office validation and PDF/UA certification are not claimed.
 - Public user guides are owned by the consolidated documentation app at `https://oss.delino.io/react-forge/`; they cover the released library, CLI, MCP, four local document formats, Figma, GLB/FBX, SFX and Sprite without exposing internal implementation or overstating evidence.
 
 ## Change Policy
@@ -72,7 +72,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## References
 - [Repository defaults](repository-defaults.md).
 - [Forge project](project-forge.md).
-- [Issue #968](https://github.com/delinoio/oss/issues/968).
+- The feature.
 
 ## Sprite Extension (Released in npm 0.2.0)
 The 2026-09-25 sprite request adds `Format.Sprite` and `/sprite` through the existing library, CLI and MCP. React declares layers, pixel grids, shapes, local images and timed animations. One `.sprite.zip` export contains a PNG atlas, individual frames and JSON metadata. This source implementation is not part of npm 0.1.1; it adds no hosted artwork generation or sprite import. Follow the sprite contract for bounds, geometry and evidence.

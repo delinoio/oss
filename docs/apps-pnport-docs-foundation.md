@@ -56,7 +56,7 @@ Use the existing documentation build/validation logs. Document native diagnostic
 Run pnpm test from apps/public-docs. Validate the eleven routes, required content, internal-content boundaries, selector accessibility, published stable availability, preserved known limits and the production build. Remove generated dist output after verification. Documentation deployment uses only the existing consolidated publisher.
 
 ## Dependencies and Integrations
-Shared docs-site-switcher and existing Rspress build. Curate from the complete #958 contract and its staged-release amendment; link to stable public interfaces and GitHub support.
+Shared docs-site-switcher and existing Rspress build. Curate from the complete contract and its staged-release amendment; link to stable public interfaces and GitHub support.
 
 ## Change Triggers
 Update pnport CLI/npm guides, project index, shared navigation/public-site contracts and relevant AGENTS files together.

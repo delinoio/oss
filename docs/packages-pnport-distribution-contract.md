@@ -9,7 +9,7 @@ investigations, separate root clibox watch failure and full-acceptance review.
 Keep those limits visible; this exception does not establish a fix or passing
 skipped checks. Require `pnportReleaseReady: true` and exact
 `pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
-and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
+and keep and the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
 Public README/release notes disclose platforms and unresolved user-facing failures;
@@ -30,13 +30,13 @@ patch release. Require `pnportReleaseReady: true` with exact
 all published bytes, and pass every existing four-native candidate gate before
 publication. Existing disclosed initialization/cancellation and full-acceptance
 limits remain visible; new candidate failures must be fixed. This authorization
-is specific to 0.1.2 and does not close #958 or add Windows support.
+is specific to 0.1.2 and does not close or add Windows support.
 
 ## Scope
 Native CI and release candidate jobs additionally run installed hidden-cache directory/mutation conformance and prepared offline Yarn 4.18.0 / Vitest 5.0.1 / Vite 8.3.0 cache conformance. Execute the prepared `vitest` package bin through the supplied packaged CLI's `run --` path, with its matching companion, so Vitest and its workers use the native view. Yarn/npm are used only for fixture preparation. Each fresh temporary project must create its first lockfile under `CI=true`; disable immutable installs only for its preparation call, without changing repository install policy or offline execution settings. Default settings create `.vite` inside physical `node_modules`; two inline/split runs must preserve cache bytes, native dependency access and doctor readiness. Source-only support does not mutate or grant capabilities to published 0.1.0/preview artifacts.
 
 macOS packages and CLI admission require private companion ABI format 3 for the pending-image constructor lease protocol. Package inspection rejects older format 1/2 macOS libraries; Linux/Windows retain their independent format 1. Build and install the executable and companion together. This private protocol change retains CLI commands, doctor JSON v1 and the exact-version publication guard.
-`packages/pnport` owns the private npm source, launcher and four native packages for 0.1.0; the two Windows packages are deferred to 0.2.0. Native release archives include the matching interception artifacts. All distribution requirements in [#958](crates-pnport-requirements.md) remain stable release gates; the explicitly authorized experimental next channel retains the complete four-host package gates and discloses unfinished acceptance.
+`packages/pnport` owns the private npm source, launcher and four native packages for 0.1.0; the two Windows packages are deferred to 0.2.0. Native release archives include the matching interception artifacts. All distribution requirements in [](crates-pnport-requirements.md) remain stable release gates; the explicitly authorized experimental next channel retains the complete four-host package gates and discloses unfinished acceptance.
 
 ## Runtime and Language
 Node.js 22+ for the built-in-only CommonJS launcher; Node.js 24 for repository build/release tooling. The standalone Rust CLI does not require Node.js. No bundler is needed for a native wrapper.

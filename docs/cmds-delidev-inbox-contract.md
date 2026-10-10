@@ -1,7 +1,7 @@
 # DeliDev retained inbox contract
 
 ## Scope
-The Go domain, store, server and CLI under `cmds/delidev-cli` own retained inbox records, per-client notification preferences and durable native-presentation reservations. The complete issue #964 remains normative; OS delivery and activation require the separate desktop adapter and platform evidence.
+The Go domain, store, server and CLI under `cmds/delidev-cli` own retained inbox records, per-client notification preferences and durable native-presentation reservations. The complete the feature remains normative; OS delivery and activation require the separate desktop adapter and platform evidence.
 
 ## Runtime and Language
 Go and the server's existing private SQLite/Connect boundary. No independent client database or notification service owns inbox state.
@@ -40,7 +40,7 @@ CLI parity is `notification preferences`, `notification configure --revision N -
 
 The desktop must acquire native permission independently, submit only a fresh grant and resolve activation through a fresh `GetInboxEntry` read in the original connection. A retained or delayed OS notification cannot renew an archived, answered, stopped or replaced request. Server-event presentation receives only metadata from TypeScript. The separate original-connection observer below reads status through the fixed Go sidecar; it does not subscribe to product streams or acquire execution authority. The ledger alone does not establish OS delivery or native activation acceptance.
 
-### Situation-specific notifications (#2055)
+### Situation-specific notifications
 System capability 58 owns the complete situation preferences, typed operational Inbox projection and original-connection native observer. The allocation manifest records its closed declarations. No Worker capability or database migration is required. Reserved real migration 32 retains its original reset ownership.
 
 An explicit `GetNotificationPreferencesRequest.situations` opt-in initializes twelve choices in the authenticated client scope. Legacy `interactions` maps to Questions and Approval requests; legacy `terminals` maps to Succeeded, Failed and Stopped. Explicit false values, the original revision and receipt bytes remain intact. New attention choices are Server lost, Worker unavailable, Account quota exhausted, Schedule could not start and Schedule skipped while offline; these default on. Server restored and Worker available default off. Account quota recovery consent remains independently managed per account. A complete granular write preserves the legacy fields. Once initialized, an omitted granular generation cannot overwrite these choices. Initialization and each operational re-enable capture the current durable event sequence before acknowledgment; earlier operational records never become display candidates.
@@ -73,7 +73,7 @@ CLI individual controls are `notification configure --revision N` with any of `-
 
 - Account deletion removes only its account-scoped subscription-recovery Inbox entries in the same transaction through ordinary tombstone/receipt-redaction/event publication. Preserve unrelated account and session Inbox entries and bound every read page.
 
-- Preserve issue #2055 typed version-1 metadata preferences/checkpoints, reservations and Worker baselines under the Inbox/storage contracts. Couple the original preference revision atomically, reject destructive legacy writes, retain source-owned claims without expiry, remove source/Inbox orphans, and preserve current preference/claim authority through restore quarantine. Do not reinterpret new kinds through legacy delivery CHECK values or consume reserved migration 32.
+- Preserve the feature typed version-1 metadata preferences/checkpoints, reservations and Worker baselines under the Inbox/storage contracts. Couple the original preference revision atomically, reject destructive legacy writes, retain source-owned claims without expiry, remove source/Inbox orphans, and preserve current preference/claim authority through restore quarantine. Do not reinterpret new kinds through legacy delivery CHECK values or consume reserved migration 32.
 
 ### cmds/delidev-cli/internal/worker constraints
 
@@ -110,7 +110,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
 
-## Unread icon aggregate (issue #2143)
+## Unread icon aggregate
 
 `InboxService.GetUnreadInboxCount` is an authenticated owner/paired-client-only
 read. System capability 80 advertises the complete operation. Go rechecks the

@@ -1,7 +1,7 @@
 # DeliDev native usage ledger
 
 ## Scope
-`cmds/delidev-cli/internal/domain`, `internal/harness/codex`, `internal/harness/opencode`, `internal/worker`, `internal/server`, and `internal/store` own the normalized response usage pipeline. Issue #964 requires DeliDev-only aggregation, the dashboard, attributable actual costs, separate historical token-price estimates and optional session budgets. The implemented boundary includes exact Codex response ingestion, durable deduplication, coherent read-only RPC/CLI aggregation and desktop presentation. Immutable user-declared pricing, per-currency estimate aggregation and owner/client pricing RPC/CLI are implemented. Desktop pricing forms and historical estimate presentation are implemented. Optional lifetime session budgets are implemented across creation, RPC, CLI and desktop. Remaining native usage scopes remain required work.
+`cmds/delidev-cli/internal/domain`, `internal/harness/codex`, `internal/harness/opencode`, `internal/worker`, `internal/server`, and `internal/store` own the normalized response usage pipeline. The feature requires DeliDev-only aggregation, the dashboard, attributable actual costs, separate historical token-price estimates and optional session budgets. The implemented boundary includes exact Codex response ingestion, durable deduplication, coherent read-only RPC/CLI aggregation and desktop presentation. Immutable user-declared pricing, per-currency estimate aggregation and owner/client pricing RPC/CLI are implemented. Desktop pricing forms and historical estimate presentation are implemented. Optional lifetime session budgets are implemented across creation, RPC, CLI and desktop. Remaining native usage scopes remain required work.
 
 ## Runtime and Language
 Go owns decoding, attribution, authorization and SQLite persistence. Native harness JSON is the only usage source. The relay, account catalogs and account-wide billing APIs cannot generate usage or establish spend.
@@ -216,7 +216,7 @@ The original outbox receipt deduplicates publication; equal counters on separate
 
 The closed first-text Grok terminal additionally retains the original input aggregate in the execution's `grok_terminal`: the same five counters, reported total, single model call/turn, API duration and original terminal elapsed time. These are validated against the independent native RPC/turn/prompt triplet and already published response counters. Preserve each reported integer without computing total arithmetic or adding the overlapping response observation. Terminal totals do not enter normalized billing, pricing or budget ledgers, do not cover unreported auxiliary requests and do not turn a response observation into actual cost. Desktop completion details disclose this input aggregate separately from the existing individual-response view.
 
-### Negotiated native accounting (issue #1100)
+### Negotiated native accounting
 
 `NATIVE_UNITS_V1` is an explicit `GetUsageSummary` accounting profile, advertised
 by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed in the response. Omission
@@ -277,7 +277,7 @@ semantic tables and original attribution. An older server retains the existing
 response views and receives explicit update guidance; the renderer never computes
 or prices native aggregates.
 
-### Claude and OpenCode input accounting (#1098, #1099)
+### Claude and OpenCode input accounting
 
 Schema 26 composes the priced input ledger with schema 25 without rewriting any
 Grok body or repricing retained observations. It rebuilds the shared table to
@@ -359,11 +359,11 @@ Automatic application never closes the drawer or changes focus. Reset cancels pe
 
 ## Desktop presentation
 
-The desktop contract owns the topmost Overview / Usage history / Model prices navigation under issue #2137. Overview presents independent tool summaries and source-specific daily trends; Usage history retains the trend-first response layout and compact row disclosures. Model prices owns current manual rates and the staged editor independently of the applied historical range. Original model links preserve provider/service identity, and deleted or changed identities retain read-only historical evidence. Automatic controls require a separately implemented server capability. All original response grouping, ordering, counters, identities, interval evidence and historical estimates remain accessible. Charts use the server-provided ranking and Other without renderer aggregation. This presentation changes no accounting, filtering, authorization, polling, RPC or native ownership.
+The desktop contract owns the topmost Overview / Usage history / Model prices navigation for this feature. Overview presents independent tool summaries and source-specific daily trends; Usage history retains the trend-first response layout and compact row disclosures. Model prices owns current manual rates and the staged editor independently of the applied historical range. Original model links preserve provider/service identity, and deleted or changed identities retain read-only historical evidence. Automatic controls require a separately implemented server capability. All original response grouping, ordering, counters, identities, interval evidence and historical estimates remain accessible. Charts use the server-provided ranking and Other without renderer aggregation. This presentation changes no accounting, filtering, authorization, polling, RPC or native ownership.
 
 ## Latest native-reported Codex context snapshot
 
-Issue #1959 extends the existing authorized context JSON with optional
+The feature extends the existing authorized context JSON with optional
 `native_context`; `current_tokens` remains null. The Codex root's retained
 last-request total is an exact nonnegative decimal string, separate from
 cumulative usage, response accounting, cache breakdowns and model limits.
@@ -393,14 +393,12 @@ range, source/status enums and original provenance; old absent-field replies
 remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
 
-## Codex reviewer attribution — issue #1980
-
+## Codex reviewer attribution
 Raw native response-completion notifications lack a model field. With AI review selected, default their immutable event-time model attribution to `unknown-auto-review-model` instead of borrowing the parent model. Only the original same-account/connection response reference proved by the bounded API relay may establish root, child or the builtin canonical reviewer attribution `codex-reviewer-gpt-5.6-luna`. A canonical reviewer model also selected as root/child remains ambiguous. Managed native review and parent-model fallback without distinguishing evidence remain unknown.
 
 Retain observed counters and original session/execution/account ownership, separate unknown and builtin reviewer groups, and expose the canonical builtin name only when proved. Builtin/unknown rows have no catalog model detail authority, no inferred pricing or actual spend and explicit unpriced coverage. Existing JSON response records and summary projections carry the closed attribution type; existing relational tables retain independent private response references without a migration. Historical records and duplicate receipts keep their original attribution.
 
-## Conversation context attribution — issue #2045
-
+## Conversation context attribution
 Execution assignments, transcript messages and exact Codex response-usage records
 retain their event-time context revision. Omitted revision is the historical
 initial context. Revert advances only the current session context after native
@@ -415,8 +413,7 @@ The Time range fieldset offers equal-width 24 hours, 7 days and 30 days buttons 
 
 Refresh reads the captured interval again; choosing the same preset captures a new interval. Manual date edits immediately clear the indicator while retaining the last valid selection during the existing 300ms validation delay. Reset and newly consumed Usage entries clear the indicator; Reset retains server-relative default bounds. Navigation preserves mounted drafts and active-only reads. The localized helper says the rolling range ends when selected. Keep semantic selected/focus styling, wrapping controls, independent filter scrolling and the fixed Reset footer. No polling, new wire fields, aggregation or native/account authority is added.
 
-## Exact provider reference rates — issue #2138
-
+## Exact provider reference rates
 The separate `internal/tokenprices` collector validates provider-specific models.dev data without binary floating-point conversion. Preserve exact supported USD per-million decimals, explicit zero and unavailable rates. Match exact upstream provider and native ID, never `canonical_model_id`, model names or URL resemblance. Context tiers and distinct reasoning/audio/media variants retain bounded reference metadata without an applicable estimate. Distinct cache-write rates remain excluded from the supported input/cache-read/output basis; existing conservative cache-write accounting and unpriced Grok units remain separate.
 
 The collector alone activates no automatic policy or execution support. Complete activation composes source/native-ID identity, immutable future first-retention prices, durable Manual precedence, authenticated policy/refresh operations and the approved Model prices surface with the catalog's inline-model/reset ownership. Original historical unavailable estimates, prices, publication replay and budget subtotals cannot change on refresh.
@@ -445,8 +442,7 @@ and retrieval time separately from the rate-card `AsOf` label. These are referen
 rates; subscription references are explicitly API-equivalent. Grok closed-input
 units remain unavailable for token estimates and budgets.
 
-### Automatic source-specific token prices — issue #2138
-
+### Automatic source-specific token prices
 The protocol-2 current layout supersedes the saved-Model pricing and Settings → Models flows described above. Usage filters and price links retain one exact Provider or subscription service plus the original native ID. They use typed `ModelIdentity` values; legacy Model UUID fields remain empty. Diagnostics, charts, routing evidence and immutable execution details preserve the same original source identity. Current Worker readiness accepts schema-4 inline routes and retains existing account, installation and startup checks.
 
 Model prices provides one source/native-ID picker. The compact header contains Automatic (models.dev) or Manual, Refresh prices and Edit. Show input, cached input and output rates, currency, retrieval freshness and the once-per-day update cadence. Missing rates differ from explicit zero. Detailed reference identity, snapshot digest, exclusions and immutable historical versions remain collapsed. Do not display a persistent Model UUID or a separate redundant Model details header. Retired API sources expose historical prices read-only; their metadata does not authorize new policies or rates. Provider deletion atomically retains the original non-secret Provider record in the existing retired configuration table. Live configuration reads never adopt that record, and neither matching nor no-match refreshes may change its retained active price.

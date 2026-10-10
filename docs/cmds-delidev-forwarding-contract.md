@@ -1,7 +1,7 @@
 # DeliDev Session Development-Server Forwarding
 
 ## Scope
-`cmds/delidev-cli/internal/forwarding`, the server/Worker forwarding handlers and `session forward` CLI own issue #1089's authenticated session-bound TCP forwarding. The Go client owns a local listener; the execution Worker owns outbound connections to one explicitly selected Worker-loopback development port. This is independent of agent execution and the server-relative model API relay.
+`cmds/delidev-cli/internal/forwarding`, the server/Worker forwarding handlers and `session forward` CLI own the feature's authenticated session-bound TCP forwarding. The Go client owns a local listener; the execution Worker owns outbound connections to one explicitly selected Worker-loopback development port. This is independent of agent execution and the server-relative model API relay.
 
 ## Runtime and Language
 Go owns durable control, authorization, bounded traffic relay, private cleanup receipts and native TCP handles. Connect server streams plus bounded unary frames use the existing authenticated outbound Worker connection. No inbound Worker listener, WebSocket product transport or hosted public tunnel is introduced.

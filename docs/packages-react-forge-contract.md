@@ -22,7 +22,7 @@ PPTX list, image, shape, chart and connector components are leaves. Nonempty Rea
 
 ### Project requirements
 
-- `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+- `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in the feature. Follow `project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
 
 ### Application integration
 
@@ -107,7 +107,7 @@ The private source workspace manifest omits `os`/`cpu` installation filters so u
 
 
 ## Platform Extension
-The 2026-09-24 PR #970 follow-up supersedes issue #968's original macOS-arm64-only boundary. `src/native-platforms.json` is the shared build/runtime inventory of six Node-platform/architecture/Rust-target tuples. Native builds explicitly select the matching Rust target and emit `react-forge.<id>.node`; loading selects only that host artifact, never another architecture or an external binary. Packed test consumers contain the locally built artifact and must be rebuilt on another host. Host-neutral workspace metadata prevents pnpm warnings from corrupting unrelated protocol stdout. Unsupported architectures, Node majors and musl return `unsupported_package` before binding load.
+The 2026-09-24 the originating change follow-up supersedes the feature's original macOS-arm64-only boundary. `src/native-platforms.json` is the shared build/runtime inventory of six Node-platform/architecture/Rust-target tuples. Native builds explicitly select the matching Rust target and emit `react-forge.<id>.node`; loading selects only that host artifact, never another architecture or an external binary. Packed test consumers contain the locally built artifact and must be rebuilt on another host. Host-neutral workspace metadata prevents pnpm warnings from corrupting unrelated protocol stdout. Unsupported architectures, Node majors and musl return `unsupported_package` before binding load.
 
 `capabilities.runtime.hosts` lists all supported platform/architecture IDs. Linux uses Fontconfig and installed fonts; CI installs Noto CJK/core/color emoji. Windows uses DirectWrite/system fonts and registers the repository's OFL CJK fixture on disposable runners; callers can also use `registerFont`. Missing fonts remain typed recoverable failures, never downloaded implicitly.
 

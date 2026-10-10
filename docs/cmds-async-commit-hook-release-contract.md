@@ -108,7 +108,7 @@ Reproduce the cross-platform lifecycle coverage with:
 
 ```bash
 set -Eeuo pipefail
-cleanup() {
+cleanup {
   local status=$?
   rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist packages/async-commit-hook-api-client/dist packages/devhud-api-client/dist 2>/dev/null || true
   trap - EXIT

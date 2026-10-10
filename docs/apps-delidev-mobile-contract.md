@@ -2,8 +2,7 @@
 
 ## Scope
 
-`apps/delidev-mobile` owns the separate iOS and Android remote client in issue
-#2099. Its identity is `io.delino.delidev.mobile`, and its display name is
+`apps/delidev-mobile` owns the separate iOS and Android remote client in the feature. Its identity is `io.delino.delidev.mobile`, and its display name is
 DeliDev. It consumes the existing server and Worker system; it does not include
 or supervise a Go server, Worker, desktop sidecar, CEF or model harness. Desktop
 and CLI lifetimes remain independent.

@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Issue #1746 owns first-message and follow-up still-image inputs for project sessions and General Chat. File selection, clipboard images and drag/drop share one ordered draft. Image-only messages are valid. Text retains its independent 256 KiB limit. Each message admits at most eight images, 10 MiB per image and 40 MiB combined. Accept original PNG, JPEG and WebP bytes only after content decoding; reject animation, corruption, mismatched media types and unsafe decode allocations. Do not resize, convert, OCR or replace images with text.
+The feature owns first-message and follow-up still-image inputs for project sessions and General Chat. File selection, clipboard images and drag/drop share one ordered draft. Image-only messages are valid. Text retains its independent 256 KiB limit. Each message admits at most eight images, 10 MiB per image and 40 MiB combined. Accept original PNG, JPEG and WebP bytes only after content decoding; reject animation, corruption, mismatched media types and unsafe decode allocations. Do not resize, convert, OCR or replace images with text.
 
 The owner explicitly permits the complete capability/protocol declarations and their activation in one feature PR for this issue. System capability 45, Worker capability 25, and `CreateSessionRequest.attachments` / `EnqueueInputRequest.attachments` field 5 belong exclusively to this feature. All feature allocations follow the [shared allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow); a separate reservation PR or prior merge to main is not required. No SQLite migration is authorized.
 
@@ -44,16 +44,14 @@ Automated route fixtures stage real owned images and assert that all three unsup
 
 Queued edits include typed attachment field 5. Explicit selections must match the immutable original ordered references; old-client omission preserves them. Mixed skill/image Fork proofs retain the original Worker image lookup while copying child-owned skill packages; no new byte ownership or native call is inferred.
 
-## Image-view observation separation — issue #2017
-
-[Codex image-view metadata](cmds-delidev-harness-contract.md#codex-image-view-observations--issue-2017) uses the original tool/reference identity, not an image-input attachment. Its native location and prepared-root scope grant no source file read, transfer, image-input claim or source-file deletion. Existing authenticated attachment reads continue to require an original claimed upload and immutable byte ownership; an image-view observation alone cannot satisfy them. The metadata-only transcript explicitly reports unavailable preview. Do not reopen a displayed path or download a URL to supply missing native bytes. Existing attachment cleanup and independent workspace/native cleanup retain their original authority.
-## Pre-send image rejection classification — issue #2048
-
+## Image-view observation separation
+[Codex image-view metadata](cmds-delidev-harness-contract.md#codex-image-view-observations) uses the original tool/reference identity, not an image-input attachment. Its native location and prepared-root scope grant no source file read, transfer, image-input claim or source-file deletion. Existing authenticated attachment reads continue to require an original claimed upload and immutable byte ownership; an image-view observation alone cannot satisfy them. The metadata-only transcript explicitly reports unavailable preview. Do not reopen a displayed path or download a URL to supply missing native bytes. Existing attachment cleanup and independent workspace/native cleanup retain their original authority.
+## Pre-send image rejection classification
 Follow the direct startup contract's positive image rejection profile. The exact original native model modality response may reject image preparation before turn/start; model names or generic error codes do not establish support or send status. Retain the opaque original adapter proof, exact synchronized Worker claim and independent cleanup before publishing IMAGE_INPUT_REJECTED. Missing or changed proof remains uncertain. Preserve the accepted original prompt and ordered image references, authenticated image ownership and existing explicit retry guards; do not replace attachments, reconstruct native history or resend from observation. The optional startup field 11 and enum values 0/1 add no capability or migration.
 
 ## Original native generated images
 
-Issue #2018 records System capability 61 and Worker capability 35 with its complete implementation. These are independent of input-image capabilities 45/25. No database migration or generation-service bridge is introduced. The supported native route is the original managed Codex subscription configuration whose effective built-in OpenAI provider and protected authentication have been independently validated. Custom API proxy routes and read-only Sidechat do not gain image generation, provider substitution or inferred entitlement from these allocations. New assignments freeze image-generation admission only when that original managed root route and Worker capability 35 are selected. Historical assignments retain their original disabled profile. Request and verify the actual native `features.image_generation` setting before input; it grants neither account entitlement nor custom-provider support. The native provider still decides actual account availability and reports its original failure.
+The feature records System capability 61 and Worker capability 35 with its complete implementation. These are independent of input-image capabilities 45/25. No database migration or generation-service bridge is introduced. The supported native route is the original managed Codex subscription configuration whose effective built-in OpenAI provider and protected authentication have been independently validated. Custom API proxy routes and read-only Sidechat do not gain image generation, provider substitution or inferred entitlement from these allocations. New assignments freeze image-generation admission only when that original managed root route and Worker capability 35 are selected. Historical assignments retain their original disabled profile. Request and verify the actual native `features.image_generation` setting before input; it grants neither account entitlement nor custom-provider support. The native provider still decides actual account availability and reports its original failure.
 
 The pinned Codex 0.162.0 source (`c1382380de69521303b416720a52f42d51af6248`) exposes `imageGeneration` items with original call ID, status, nullable revised prompt, base64 result, optional transparency, optional saved path and nullable usage-limit failure. Each completed native call exposes one PNG; multiple calls preserve publication order. Internal backend generation/request IDs are deliberately absent from this wire. Image-specific token/cost usage is also absent. Preserve actual existing turn-usage observations separately; never synthesize backend IDs or usage. Reject unknown shapes, malformed success bytes and foreign or terminal turn observations. Native saved paths are discarded and never become read or deletion authority.
 
@@ -67,19 +65,19 @@ Native/account/platform observations remain separate from automated decoder, aut
 
 ## Project requirements
 
-- Issue #1746 image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
+- The feature image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
 
 ## cmds/delidev-cli/internal/domain constraints
 
 - Windows service process ownership resolves the reported Win32 image path under the installation's canonical path contract, including 8.3 aliases, and matches the original executable file identity. Preserve independent SID and before/after process-birth checks.
 
-- Issue #2048 optional startup failure kind is closed and zero-omitted. IMAGE_INPUT_REJECTED requires Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup; generic errors and mixed metadata cannot acquire image provenance. Follow the image-input and direct startup contracts.
+- The feature optional startup failure kind is closed and zero-omitted. IMAGE_INPUT_REJECTED requires Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup; generic errors and mixed metadata cannot acquire image provenance. Follow the image-input and direct startup contracts.
 
 ## cmds/delidev-cli/internal/harness/codex constraints
 
 - Image inputs use the pinned V2 localImage primitive under `cmds-delidev-image-input-contract.md`. Require the exact immutable model to advertise image modality before send, resolve only original validated private Worker bytes, and bind ordered refs into acknowledgment/history/recovery digests. Never publish native paths, convert images to text, omit image parts or enable image-bound Steer without a separate complete profile.
 
-- Issue #2048 image rejection proof is private to original image preparation before turn/start and binds request/input/full ordered input digest. Generic errors, attachment resolution, transport/acknowledgment and successful native sends cannot grant the proof. Preserve exact native model modality and localImage/history verification under the image-input and direct startup contracts.
+- The feature image rejection proof is private to original image preparation before turn/start and binds request/input/full ordered input digest. Generic errors, attachment resolution, transport/acknowledgment and successful native sends cannot grant the proof. Preserve exact native model modality and localImage/history verification under the image-input and direct startup contracts.
 
 ## cmds/delidev-cli/internal/imageinput constraints
 
@@ -99,7 +97,7 @@ Native/account/platform observations remain separate from automated decoder, aut
 
 - Image Begin, claim and metadata updates use the store-owned session capacity fence before writing new metadata or Worker bytes. Preserve existing per-input limits and exact actor/operation/Runner authority; capacity rejection never admits or retires an uncertain image. Follow the image-input contract.
 
-- Issue #2048 accepts image startup provenance only for the closed settled Input-phase Codex rejection with original ready process identity, native thread without acknowledged turn and exact claimed queue/input/request/images. Preserve original receipts, prompt/ordered image references, pending capacity settlement and explicit original-selection retry; malformed or mixed reports fail closed. Follow the image-input and direct startup contracts.
+- The feature accepts image startup provenance only for the closed settled Input-phase Codex rejection with original ready process identity, native thread without acknowledged turn and exact claimed queue/input/request/images. Preserve original receipts, prompt/ordered image references, pending capacity settlement and explicit original-selection retry; malformed or mixed reports fail closed. Follow the image-input and direct startup contracts.
 
 ## cmds/delidev-cli/internal/store constraints
 
@@ -137,4 +135,4 @@ Native/account/platform observations remain separate from automated decoder, aut
 
 - Last-owner image removal uses original Worker identity after joined native/process cleanup. Image-only plans grant no workspace authority. Persist intent before DELETE; completion and replay require original deletion receipt and absent data/metadata. Reappearing files remain protected. Follow the image-input and storage contracts.
 
-- Issue #2048 classifies original image rejection only from the opaque pre-wire adapter proof, exclusive synchronized original assignment/input/request claim and independent confirmed cleanup. Retain claimed uncertainty on missing/changed proof or cleanup, unchanged public receipts and original assignment revisions; never resend by observation. Follow the image-input and direct startup contracts.
+- The feature classifies original image rejection only from the opaque pre-wire adapter proof, exclusive synchronized original assignment/input/request claim and independent confirmed cleanup. Retain claimed uncertainty on missing/changed proof or cleanup, unchanged public receipts and original assignment revisions; never resend by observation. Follow the image-input and direct startup contracts.

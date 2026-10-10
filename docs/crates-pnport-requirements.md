@@ -9,7 +9,7 @@ investigations, separate root clibox watch failure and full-acceptance review.
 Keep those limits visible; this exception does not establish a fix or passing
 skipped checks. Require `pnportReleaseReady: true` and exact
 `pnportReleaseVersion: "0.1.0"`, preserve signing/integrity and immutable retries,
-and keep #958 and the complete Windows 0.2.0 requirements open. This amendment
+and keep and the complete Windows 0.2.0 requirements open. This amendment
 takes precedence over earlier full-acceptance prerequisites for exactly 0.1.0.
 
 Stable 0.1.0 is published for all four macOS/glibc Linux targets. The retained
@@ -23,10 +23,10 @@ The [project repair amendment](project-pnport.md#owner-authorized-012-repair-rel
 authorizes exactly 0.1.2 after all retained final-tag and fresh publication gates.
 Stable 0.1.2 is published on the same four targets, with the previously disclosed
 initialization/cancellation and full-acceptance limits retained. The failed 0.1.1
-tag and earlier published bytes remain immutable. Keep #958 open and preserve
+tag and earlier published bytes remain immutable. Keep open and preserve
 the complete Windows 0.2.0 requirements.
 
-Normative source: [issue #958](https://github.com/delinoio/oss/issues/958). The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. #958 stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
+Normative source: the feature. The complete accepted scope is retained below. Requirements are release gates, not claims of completed implementation. The owner-approved 2026-10-01 amendment stages full macOS/glibc Linux x64/arm64 acceptance in 0.1.0 and defers the original Windows x64/arm64 requirements to 0.2.0. stays open until both stages are complete. The owner-approved 2026-10-03 amendment raises the macOS support floor to 15; both native CI architectures must execute on that supported floor.
 
 ## Summary
 
@@ -44,7 +44,7 @@ Release acceptance is based on filesystem and process conformance fixtures execu
 - The inspected [`fspy` revision](https://github.com/voidzero-dev/vite-task/tree/3aac49e31fba6905bb0b3d0e29d7755493241e9c/crates/fspy) observes filesystem access using Unix preload libraries, Linux syscall interception, and Windows Detours. Its existing hooks do not provide the required virtual filesystem.
 - Upstream macOS handling [replaces certain system executables](https://github.com/voidzero-dev/vite-task/blob/3aac49e31fba6905bb0b3d0e29d7755493241e9c/crates/fspy_shared_unix/src/spawn/macos.rs). pnport must disable that behavior.
 - Yarn documents virtual `node_modules` translation and its limitations in [PnPify](https://yarnpkg.com/advanced/pnpify).
-- Repository searches found no existing pnport implementation, contract, or issue. [Runlens #907](https://github.com/delinoio/oss/issues/907) also uses fspy but concerns command diagnostics; it is not a pnport dependency.
+- Repository searches found no existing pnport implementation, contract, or issue. Runlens also uses fspy but concerns command diagnostics; it is not a pnport dependency.
 - Repository contracts determine documentation ownership, explicit Cargo membership, structured logging, CI isolation, and issue formatting.
 
 These observations establish implementation inputs and gaps, not completed compatibility or performance results.

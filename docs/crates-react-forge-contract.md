@@ -22,7 +22,7 @@ React Forge defaults to system font discovery/fallback with explicit caller font
 
 ### Rust component integration
 
-- Follow `crates-react-forge-contract.md` and the complete issue #968 requirements. `forge-package` owns shared bounded OOXML preservation; `forge-document` owns shared text/style, asset and chart primitives; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
+- Follow `crates-react-forge-contract.md` and the complete feature requirements. `forge-package` owns shared bounded OOXML preservation; `forge-document` owns shared text/style, asset and chart primitives; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
 
 - System discovery and caller fonts apply to React Forge only. Presentation inspection must not require font setup before the caller can register fonts. Check newly rendered content without rendering untouched opaque source. Keep all packages unpublished.
 
@@ -89,7 +89,7 @@ Run root `cargo test` after required generated app prerequisites, plus targeted 
 DOCX paragraph and run backgrounds emit RGB run shading (`w:shd`), with paragraph defaults inherited into runs and explicit run colors taking precedence ([Open XML shading](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.shading?view=openxml-3.0.1)). The DOCX engine has structural tests for rich text, headings, lists, sections, headers/footers, page breaks, merged cells, images and native bar/line/pie charts with editable embedded workbooks. Its python-docx 1.2.0 fixture verifies supported paragraph/cell edits and exact preservation of unselected parts and XML, plus opaque-equation refusal. The complementary renderer evidence and reproduction commands are recorded in [validation](packages-react-forge-validation.md).
 
 ## Dependencies and Integrations
-Forge foundation from PR #967 is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
+Forge foundation from the originating change is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
 
 ## Change Triggers
 Update the Node contract, project index, Forge foundation when shared behavior changes, relevant ownership rules and evidence in the same change.
@@ -129,7 +129,7 @@ XML preflight enforces the published depth before parsing. Valid XML with at lea
 
 Word regions with foreign paragraph/run attributes or bookmark/field/revision markers around drawings remain opaque. Drawing and chart replacements reject foreign extension namespaces instead of dropping them; selected cell wrapper attributes remain byte-preserved. Ordinary external paragraphs, cells, images and native chart families retain positive edit coverage.
 
-The 0.9.0 font stack includes upstream CoreText enumeration and macOS CJK fallback repairs ([enumeration](https://github.com/linebender/parley/pull/536), [CJK fallback](https://github.com/linebender/parley/pull/598)). This avoids missing system fonts outside legacy Library/Fonts scans and unsupported PingFangUI outlines on macOS 15. Swash 0.2.10 remains an explicit name-table decoder for legacy Macintosh font names; it no longer relies on a Parley re-export.
+The 0.9.0 font stack includes upstream CoreText enumeration and macOS CJK fallback repairs (enumeration, CJK fallback). This avoids missing system fonts outside legacy Library/Fonts scans and unsupported PingFangUI outlines on macOS 15. Swash 0.2.10 remains an explicit name-table decoder for legacy Macintosh font names; it no longer relies on a Parley re-export.
 
 React Forge native targets cover macOS/Windows/glibc Linux on x64 and arm64. Parley/Fontique select CoreText, DirectWrite or Fontconfig system discovery. Caller fonts and typed missing-glyph/color/embedding errors apply identically on every target. Dedicated native-host CI enables the non-macOS system-font tests after installing fonts; ordinary Cargo runs may omit those environment-dependent fixtures. Windows console integration requires the built Node workspace and explicitly enabled isolated-console test.
 

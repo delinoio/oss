@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/runmoor` owns the CLI, local controller, GitHub adapter, Docker, Tart and opt-in host backends, image lifecycle, service integration, power inhibition, diagnostics, and reconciliation for issues #893 and #1312. Internal implementation boundaries are files in `internal/runmoor`; adapters expose interfaces for deterministic tests without substituting mocks in production.
+`cmds/runmoor` owns the CLI, local controller, GitHub adapter, Docker, Tart and opt-in host backends, image lifecycle, service integration, power inhibition, diagnostics, and reconciliation for the feature. Internal implementation boundaries are files in `internal/runmoor`; adapters expose interfaces for deterministic tests without substituting mocks in production.
 
 ## Runtime and Language
 
@@ -47,7 +47,7 @@ Trusted developers and small-team operators install the binary, Docker/Tart, cre
 - Late session failures, scale-set reconnect success and preparation success preserve an already committed suspension's exact problem, ownership source and preparation-failure count. Reconnect still journals its owned scale-set identity and settles creation intent; only authorized failure-specific recovery clears the suspension. Ordinary active-pool diagnostics and failure-count resets after successful preparation remain available.
 - Status and doctor report a safe `DEPENDENCY_RETRY` diagnostic when legacy state has a suspended pool with no recorded problem, without guessing the original cause or automatically resuming it. A verified managed image replacement may clear only a matching image/version suspension or a three-failure startup preparation circuit breaker; unrelated authentication/ownership failures, operator pause, drain and stop remain authoritative.
 - Lifecycle transitions, reservation publication, GitHub ownership, and cleanup progress are persisted. Restart reconciles actual Docker/Tart resources and GitHub registrations, preserves verified live work, resumes cleanup idempotently, and quarantines ambiguous state. Reservations are not released until termination is confirmed. No automatic GitHub job rerun is performed.
-- Missing-registration inspection revalidates the lifecycle before starting backend work and inside the atomic state update after an absent GitHub lookup. Only an active preparing/idle/busy execution without completion, forced cleanup, remote removal or confirmed termination may be quarantined by absence. An older lookup cannot overwrite cleanup/completion, replace an existing quarantine diagnostic or recreate a pruned record. Discarded absence results emit no quarantine warning; a failed commit logs only a safe state-storage error. Actual Docker/Tart or GitHub identity errors still quarantine through the existing ownership checks, including errors returned by in-flight work after completion. Ordinary cleanup confirms termination before releasing capacity and retains unfinished local/remote cleanup for retry. This issue #903 fix prevents new stale transitions; it does not migrate or automatically recover existing quarantines.
+- Missing-registration inspection revalidates the lifecycle before starting backend work and inside the atomic state update after an absent GitHub lookup. Only an active preparing/idle/busy execution without completion, forced cleanup, remote removal or confirmed termination may be quarantined by absence. An older lookup cannot overwrite cleanup/completion, replace an existing quarantine diagnostic or recreate a pruned record. Discarded absence results emit no quarantine warning; a failed commit logs only a safe state-storage error. Actual Docker/Tart or GitHub identity errors still quarantine through the existing ownership checks, including errors returned by in-flight work after completion. Ordinary cleanup confirms termination before releasing capacity and retains unfinished local/remote cleanup for retry. This the feature fix prevents new stale transitions; it does not migrate or automatically recover existing quarantines.
 - Runner quarantine causes are typed private snapshot state, separate from public runner/status JSON. Recorded registration absence keeps the existing absence-then-completion cleanup path. A matching job-completion event records `CompletedJob` but preserves actual identity-conflict quarantine and unknown legacy quarantine, their diagnosis and unconfirmed reservation. Completion supplies no backend or registration ownership correction. Restart initializes missing or unrecognized private causes conservatively; never infer the cause from public problem codes or text. Existing explicit force recovery still revalidates original ownership before termination and cleanup, and successful cleanup removes the private cause. No public TOML/JSON or SQLite version changes are required.
 - Persisted job deadlines continue across manager restart, sleep and connectivity loss. Active preparation/jobs request OS sleep inhibition; idle warm capacity alone does not. Failure warns and continues without changing system policy or promising protection from lid closure, forced sleep, shutdown or power loss. Inhibitor failure backoff retains its warning while work remains active; becoming idle clears both the warning and retry deadline so new runner/image activity immediately retries acquisition.
 - Image removal retains sleep inhibition through external cleanup and its durable completion, including interrupted removal pending recovery.
@@ -286,7 +286,7 @@ systemd user-session replacement or live GitHub/Docker/Tart/host jobs.
 
 - Runmoor uses stable for both source releases and native packages. Preview remains reserved and separately registered; callers cannot override project channels.
 
-- Follow `project-runmoor.md`, `cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for issues #893 and #1312. Runmoor owns local ephemeral GitHub Actions runners through Docker, Tart and explicitly selected macOS host processes, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
+- Follow `project-runmoor.md`, `cmds-runmoor-foundation.md`, and `cmds/runmoor/AGENTS.md` for the feature. Runmoor owns local ephemeral GitHub Actions runners through Docker, Tart and explicitly selected macOS host processes, with host-only credentials, durable ownership, fair resource budgets, and single-job disposable environments.
 
 - Runmoor binaries use the stable release channel for darwin-arm64, linux-amd64, and linux-arm64 under `runmoor@v<MAJOR.MINOR.PATCH>`; publication dry runs are credential-free and non-publishing. Homebrew distributes the same signed darwin-arm64 archive through `delinoio/tap/runmoor` on macOS 14+ Apple Silicon only. Follow `packaging/homebrew/AGENTS.md`: verify the public source and signed assets, install the complete Apache license, test the Formula in ephemeral ARM64 CI, and obtain tap-only bot credentials only after validation. No Intel/Linux Homebrew, bundled Tart or automatic service registration is added.
 
@@ -308,7 +308,7 @@ systemd user-session replacement or live GitHub/Docker/Tart/host jobs.
 
 ### cmds/runmoor constraints
 
-- Follow `project-runmoor.md` and `cmds-runmoor-foundation.md`; issue #893 is the original product contract and #1312 defines opt-in macOS host execution.
+- Follow `project-runmoor.md` and `cmds-runmoor-foundation.md`; the feature is the original product contract and defines opt-in macOS host execution.
 
 - Linux `systemctl --user` service commands may inherit only caller-provided `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` in addition to the existing minimal command environment. Keep `minimalEnv` unchanged for Tart, guests, and unrelated subprocesses; leave missing selectors unset and do not inherit arbitrary variables.
 
@@ -458,7 +458,7 @@ systemd user-session replacement or live GitHub/Docker/Tart/host jobs.
 
 - Ordinary tests inject release transports and image builders. Real Docker/Tart validation remains opt-in and is distinct from live GitHub job certification.
 
-- Follow issue #1312 and the host section of the command contract. Host selection is explicit, macOS 14+ arm64-only and plain-only. Keep default backend selection and authored labels unchanged. Reject host image/source/path, DinD and image-only options.
+- Follow the feature and the host section of the command contract. Host selection is explicit, macOS 14+ arm64-only and plain-only. Keep default backend selection and authored labels unchanged. Reject host image/source/path, DinD and image-only options.
 
 - Host reservations share CPU/memory/disk and fair scheduling with Docker/Tart; only Tart uses the two-VM limit. Reservations are admission values, not enforced usage limits. Keep immutable verified distributions and distinct per-execution registration, installation, HOME, temporary and work state.
 
@@ -478,7 +478,7 @@ systemd user-session replacement or live GitHub/Docker/Tart/host jobs.
 
 - Bound host deadline-state reads to a five-second cadence after startup confirmation, with a cached deadline timer and an authority recheck at expiry; never tie SQLite reads to rapid process-cleanup polling.
 
-- New host tests use injected native/process adapters and temporary state. Native Darwin regression fixtures may build the CLI helper and execute temporary fixture scripts; `RUNMOOR_HOST_VERSION_TEST=1` may verify the official checksummed ARM64 archive with `--version` only. Run host contract fixtures, the existing full unit/race/vet suites, public-docs tests and supported-target cross-builds. Never run actual host jobs, Xcode builds or live GitHub jobs for #1312. Preserve explicit native/account validation gaps in docs and PRs.
+- New host tests use injected native/process adapters and temporary state. Native Darwin regression fixtures may build the CLI helper and execute temporary fixture scripts; `RUNMOOR_HOST_VERSION_TEST=1` may verify the official checksummed ARM64 archive with `--version` only. Run host contract fixtures, the existing full unit/race/vet suites, public-docs tests and supported-target cross-builds. Never run actual host jobs, Xcode builds or live GitHub jobs for . Preserve explicit native/account validation gaps in docs and PRs.
 
 - Host directory cleanup verifies the private parent and every direct ancestor before committed-absence proof. Bind child checks, no-replace staging and deletion to the same verified parent descriptor; reject symlinked, unsafe or foreign-owned parents without creating directories or repairing permissions. Preserve uncertain staged resources and journals; verified direct-parent absence remains idempotent.
 
@@ -553,13 +553,13 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 
 ### Completion/registration race validation (2026-09-19)
 
-- Reproduced issue [#903](https://github.com/delinoio/oss/issues/903) with failing deterministic tests before the fix: completion before worker start or during lookup was overwritten by missing-registration quarantine, including its obsolete warning.
+- Reproduced the contract with failing deterministic tests before the fix: completion before worker start or during lookup was overwritten by missing-registration quarantine, including its obsolete warning.
 - Passed `go test ./cmds/runmoor/...`, native macOS arm64 `go test -race ./cmds/runmoor/...`, and `go vet ./cmds/runmoor/...`. The new inspection regressions also passed ten repetitions under the race detector with channel-controlled interleavings and no timing sleeps.
 - Coverage includes completion/absence event ordering, terminal and forced cleanup preservation, pruned records, commit-failure diagnostics, actual ownership-error classifications after completion, conservative live absence/transient-error handling, GitHub busy rejection, and host-concurrency-one handoff to a second pool while local or remote cleanup remains pending. Cleanup retries finish without force-stop or job reruns.
 - Passed public-docs `pnpm test`, including the production build and clean-URL/content validation. This fix's validation used temporary state and deterministic adapters; no live GitHub job assignment, real Docker/Tart execution, user-service installation, signing or release publication was performed. Existing compatibility limits remain in force.
-- Merge validation with the documentation move (#899) and runner freshness fix (#904) preserved both validation records and the recovery guidance in `apps/public-docs/docs/runmoor`. The ordinary inspection regressions, full Runmoor race tests and vet, consolidated `public-docs` validation, and all 25 CI contract tests passed. Ordinary Go suite retries and an isolated guest-validation run hit the unchanged fixture's two-second deadline on different cases; that fixture and its production validation code match `main` and were not modified for this repair.
+- Merge validation with the documentation move and runner freshness fix preserved both validation records and the recovery guidance in `apps/public-docs/docs/runmoor`. The ordinary inspection regressions, full Runmoor race tests and vet, consolidated `public-docs` validation, and all 25 CI contract tests passed. Ordinary Go suite retries and an isolated guest-validation run hit the unchanged fixture's two-second deadline on different cases; that fixture and its production validation code match `main` and were not modified for this repair.
 
-### Runner freshness validation (2026-09-19, issue #902)
+### Runner freshness validation (2026-09-19, the feature)
 
 - Reproduced rejection of the valid 4,144,596-byte latest-100 response before the fix. Deterministic in-process HTTP transport tests now accept the compact fixture, 2 MiB, 2 MiB + 1, 4,144,596 bytes and exactly 8 MiB; 8 MiB + 1 and 9 MiB responses return an explicit size-limit warning while reading at most 8 MiB + 1 bytes.
 - Verified stable-release filtering, latest pins, 29-day update warnings, 31-day/unknown-pin rejection, and the oldest newer release's update window. Malformed/truncated JSON, trailing data, multiple JSON values, read failure after a valid prefix, non-200 responses, transport failure, cancellation and expired deadlines return safe diagnostics. Tests assert request identity/context, response-body closure and secret-free error/JSON output.
@@ -575,14 +575,14 @@ Use `log/slog` text or JSON for lifecycle transitions, preparation duration, ret
 
 ### Public release recovery evidence (2026-09-28)
 
-- [PR #1001](https://github.com/delinoio/oss/pull/1001) merged the draft lookup and ID-bound publication repair after all required CI checks and automated review passed. [Release Project run 36362584715](https://github.com/delinoio/oss/actions/runs/36362584715) created `runmoor@v0.1.3` at `514ff0a2af4c79a9448b3148c512e416e0b00cf6` through the release bot.
+- The feature merged the draft lookup and ID-bound publication repair after all required CI checks and automated review passed. [Release Project run 36362584715](https://github.com/delinoio/oss/actions/runs/36362584715) created `runmoor@v0.1.3` at `514ff0a2af4c79a9448b3148c512e416e0b00cf6` through the release bot.
 - [Release Runmoor run 36362626105](https://github.com/delinoio/oss/actions/runs/36362626105) successfully built, signed, downloaded, verified and published [Runmoor 0.1.3](https://github.com/delinoio/oss/releases/tag/runmoor%40v0.1.3), release ID `397873289`, with `draft=false`, `prerelease=false` and exactly eight assets.
 - Independently downloaded all eight public assets without authentication. Their sizes and SHA-256 digests matched the release metadata; archive inventory and `SHA256SUMS` verification passed. Cosign `v3.1.3` verified all four bundles against the exact `release-runmoor.yml@refs/tags/runmoor@v0.1.3` identity and GitHub Actions OIDC issuer. The temporary cosign binary's digest was checked against its upstream release metadata.
 - Extracted the public macOS arm64 archive in a temporary directory and executed `runmoor version`, which returned `runmoor 0.1.3 (514ff0a2af4c79a9448b3148c512e416e0b00cf6)`. Temporary downloaded archives and extracted executables were removed; no user installation or service was changed.
 - The same release workflow completed all 60 jobs successfully, including native stable-repository publication and all 26 public Linux installation checks. Native package availability and evidence are recorded in `docs/repository-linux-packages-contract.md`.
 - Confirmed preservation of the immutable, asset-free `runmoor@v0.1.1` release (ID `392272909`) and the unpublished `runmoor@v0.1.2` draft with eight assets (ID `392298946`). This release verification does not certify live runner assignment or real Tart execution.
 
-### Linux user-session service environment validation (2026-09-29, issue #1010)
+### Linux user-session service environment validation (2026-09-29, the feature)
 
 - Service environment fixtures preserve each supplied selector exactly, including spaces and additional `=` characters in the bus address; cover both selectors, each selector alone, and both absent. They verify unrelated fixture credentials stay out of the child environment and selectors are limited to Linux `systemctl` commands.
 - The service lifecycle fixture captures child environments across install, start, stop and uninstall, including both `daemon-reload` calls. A Linux-only failed-start fixture checks the safe dependency diagnostic, selector preservation, credential exclusion and preservation of the installed definition.
@@ -603,7 +603,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 
 - [Runmoor project](project-runmoor.md).
 - [Repository defaults](repository-defaults.md).
-- [Issue #893](https://github.com/delinoio/oss/issues/893).
+- The feature.
 - [GitHub runner authentication](https://docs.github.com/en/actions/how-tos/manage-runners/use-actions-runner-controller/authenticate-to-the-api).
 - [Runner update requirements](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 - [Tart releases](https://github.com/openai/tart/releases), [Guest Agent 0.14.2](https://github.com/openai/tart-guest-agent/tree/v0.14.2).
@@ -779,7 +779,7 @@ managed preparation and cleanup.
 
 ## Opt-in macOS host execution
 
-Issue #1312 extends the closed backend enum with `host` for macOS 14+ arm64.
+The feature extends the closed backend enum with `host` for macOS 14+ arm64.
 `init --backend host` creates `macos-host` with scale set `runmoor-macos-host`
 and labels `runmoor-macos-host`, `macOS`, `ARM64`. Defaults still select Tart on
 macOS and Docker on Linux. Loading and reload never add or replace authored labels.

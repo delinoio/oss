@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing, Git comparisons and durable local reviews. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing, bounded Git comparisons and durable local review comments/submissions for issue #964; terminal, browser, file editing and downloads remain separate capabilities.
+`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing, Git comparisons and durable local reviews. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing, bounded Git comparisons and durable local review comments/submissions for the feature; terminal, browser, file editing and downloads remain separate capabilities.
 
 ## Runtime and Language
 

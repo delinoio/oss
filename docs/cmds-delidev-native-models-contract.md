@@ -2,7 +2,7 @@
 
 ## Scope
 
-[Issue #1206](https://github.com/delinoio/oss/issues/1206) requires an explicit,
+The feature requires an explicit,
 Worker-, installed-version- and selected-account-scoped native model observation
 flow. The API-account path exposes durable observation controls and explicit
 registration preparation. Managed-subscription observation remains typed unsupported
@@ -143,7 +143,7 @@ includes none/minimal/low/medium/high/xhigh/max/ultra/persistent; unknown
 model-defined efforts remain unsupported until reviewed. Join owned process/file
 cleanup before treating the operation as complete.
 
-Subscription discovery depends on [issue #1095](https://github.com/delinoio/oss/issues/1095)'s
+Subscription discovery depends on the feature's
 exclusive account lease and protected bundle transfer, refresh writeback and
 cleanup boundary. Until that complete boundary is available, report typed
 unsupported. When enabled, serialize discovery with the account's other native
@@ -178,7 +178,7 @@ with the following issue acceptance scenarios:
    launch.
 4. Explicitly register one observed entry and assert one manual model, idempotent
    save and preservation of existing entries after a later discovery failure.
-5. Once #1095 is available, serialize discovery behind another account operation.
+5. Once is available, serialize discovery behind another account operation.
    Exercise cached fallback, refresh writeback and cleanup failure without false
    readiness or release of stale credentials.
 
@@ -190,7 +190,7 @@ pull requests, issues and CI logs/artifacts.
 
 The existing account, catalog, native harness, owned process, storage and Connect
 contracts remain authoritative. The API path activates its main-established
-reservations; managed-subscription support additionally requires #1095.
+reservations; managed-subscription support additionally requires .
 Regenerate Go and TypeScript bindings from reconciled schemas when activation
 changes the protocol. Never edit generated outputs or activate a reserved
 capability solely because its number exists in the ledger.

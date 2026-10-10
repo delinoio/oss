@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1087 implements the session browser boundary required by issue #964.
+The feature implements the session browser boundary required by the feature.
 Go owns profile registration, current authorization, exact receipts and durable
 per-device account-removal obligations. `cmds/delidev-cli/internal/domain/browser.go`,
 `internal/store/browser.go`, `internal/server/browser.go`, `internal/cli/dispatch_browser.go` and `internal/cli/browser.go`

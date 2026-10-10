@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Issue #1046 adds server-owned activation for API providers. Go owns provider identity, availability, model-filter semantics and execution admission. The Connect API, CLI and desktop are clients of that authority. This feature does not own the Settings shell geometry (#1045) or account-menu/two-step connection flow; those surfaces consume this provider state.
+The feature adds server-owned activation for API providers. Go owns provider identity, availability, model-filter semantics and execution admission. The Connect API, CLI and desktop are clients of that authority. This feature does not own the Settings shell geometry or account-menu/two-step connection flow; those surfaces consume this provider state.
 
 ## Provider identity and compatibility
 
@@ -71,7 +71,7 @@ Automated fixtures do not establish real desktop layout/keyboard, real provider 
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [TypeScript client](packages-delidev-api-client-contract.md)
 
-## Additional hosted providers (#1148)
+## Additional hosted providers
 
 The allocation ledger assigns `ProviderPresetId` 10–35 in the issue's
 published table order for 26 additional fixed hosted services. Existing 0–9

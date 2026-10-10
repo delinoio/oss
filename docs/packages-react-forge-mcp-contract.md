@@ -1,7 +1,7 @@
 # React Forge MCP Contract
 
 ## Scope
-`packages/react-forge/src/mcp` owns the React Forge stdio server, shared Node execution process, TSX loader and session registry. The private source workspace assembles these modules into the public npm package. The explicit MCP follow-up supersedes the original issue #968 exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
+`packages/react-forge/src/mcp` owns the React Forge stdio server, shared Node execution process, TSX loader and session registry. The private source workspace assembles these modules into the public npm package. The explicit MCP follow-up supersedes the original the feature exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
 
 ## Runtime and Language
 Use the existing Node.js 24, React 19.2.8 and six-host native inventory. TypeScript owns MCP and React execution; validated native computations remain in the existing Rust workers. All sessions share one execution process and canonical React/React Forge imports, including Figma's per-authentication rate admission and per-file publication queues. Authenticated Figma retains its existing macOS Keychain boundary; this extension does not claim new Figma authentication platforms.
@@ -30,7 +30,7 @@ Inline imports and tool-relative paths resolve against the fixed working directo
 
 The synchronous MCP load hook must provide source bytes for resolved file-backed CommonJS modules when the `tsx` hook chain would otherwise return an undefined source. This includes the running package's `react/jsx-runtime` and its CommonJS implementation. Keep the resolved URL and CommonJS format so React identity and ordinary caller dependency resolution remain intact; remove the direct-read workaround only when the supported Node/`tsx` hook chain supplies valid sources itself.
 
-`DocumentSession.snapshot({ signal })` settles React roots, pending mounts and registered assets, pins the existing model/font revision and returns the corresponding inspection captured at that boundary without generating or publishing output. The synchronous `inspect()` remains available. A snapshot is not native layout certification; measure/export still perform native validation. Later React commits can invalidate an earlier measurement revision.
+`DocumentSession.snapshot({ signal })` settles React roots, pending mounts and registered assets, pins the existing model/font revision and returns the corresponding inspection captured at that boundary without generating or publishing output. The synchronous `inspect` remains available. A snapshot is not native layout certification; measure/export still perform native validation. Later React commits can invalidate an earlier measurement revision.
 
 Successful results contain `structuredContent` and equivalent JSON text. Failures use `isError` and existing `ForgeError` codes/context; Figma publication failures additionally include their original receipt. The receipt's status is authoritative: for example a remote setter error can have code `remote` and status `partial`. A saved receipt is not a `.fig` file. Each result identifies the applicable session/format/revision when available. Geometry and successful publication results retain their pinned revision.
 
@@ -49,7 +49,7 @@ EOF, transport close, SIGINT/SIGTERM and Windows SIGBREAK stop admission, abort 
 
 ### Package integration
 
-- `packages/react-forge` owns the private source workspace that generates the public `@delino/react-forge` npm package and six native packages, real React reconciler, format components, one-shot `react-forge` TSX CLI and local session-based stdio MCP server. Follow `packages-react-forge-mcp-contract.md` for MCP execution, retained state and transport isolation. Package imports and workspace task filters use the scoped npm name; the directory, project ID and executable keep `react-forge`. Follow `packages-react-forge-contract.md` and all requirements from #968. Pin React 19.2.8 and react-reconciler 0.33.0; support Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64. Enforce the native host restriction in build/loading code, not workspace manifest `os`/`cpu` fields: pnpm emits platform warnings on unrelated commands and corrupts binary protocol stdout.
+- `packages/react-forge` owns the private source workspace that generates the public `@delino/react-forge` npm package and six native packages, real React reconciler, format components, one-shot `react-forge` TSX CLI and local session-based stdio MCP server. Follow `packages-react-forge-mcp-contract.md` for MCP execution, retained state and transport isolation. Package imports and workspace task filters use the scoped npm name; the directory, project ID and executable keep `react-forge`. Follow `packages-react-forge-contract.md` and all requirements from . Pin React 19.2.8 and react-reconciler 0.33.0; support Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64. Enforce the native host restriction in build/loading code, not workspace manifest `os`/`cpu` fields: pnpm emits platform warnings on unrelated commands and corrupts binary protocol stdout.
 
 ### packages/react-forge constraints
 

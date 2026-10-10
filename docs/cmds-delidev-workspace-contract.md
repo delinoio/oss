@@ -33,7 +33,7 @@ revision.
 
 ### Negotiated repository metadata
 
-Issue #1142 adds optional `Inspection.github_repositories`, mapping an inspected remote name to only validated `{owner, name}`. The normal `Inspect` result stays unchanged. `RepositoryInspectionInput` can carry an internal opaque expected source identity for a repository save/import; it never carries the raw URL into Worker output. The Worker enriches results only after observing server support and the second attachment's accepted Machine capability. Legacy combinations omit the map and identity; the server also omits the identity input for an active Worker that has not negotiated `RepositoryInspectionMetadataV1`, preserving strict decoders and the original inspection flow. Missing GitHub metadata never blocks otherwise valid registration or invents a default branch. The CLI's legacy inspection raw output remains decodable. This does not promise compatibility for unrelated legacy consumers that reject newly advertised Machine capability identifiers.
+The feature adds optional `Inspection.github_repositories`, mapping an inspected remote name to only validated `{owner, name}`. The normal `Inspect` result stays unchanged. `RepositoryInspectionInput` can carry an internal opaque expected source identity for a repository save/import; it never carries the raw URL into Worker output. The Worker enriches results only after observing server support and the second attachment's accepted Machine capability. Legacy combinations omit the map and identity; the server also omits the identity input for an active Worker that has not negotiated `RepositoryInspectionMetadataV1`, preserving strict decoders and the original inspection flow. Missing GitHub metadata never blocks otherwise valid registration or invents a default branch. The CLI's legacy inspection raw output remains decodable. This does not promise compatibility for unrelated legacy consumers that reject newly advertised Machine capability identifiers.
 
 Enrichment uses the existing owned Git command boundary for `git remote get-url --all -- <remote>`. Effective fetch URLs include local `insteadOf` expansion, without fetching, changing files/index/refs, contacting a remote or invoking transport/credential helpers. Only a single canonical `https://github.com/owner/name`, `ssh://git@github.com/owner/name` or `git@github.com:owner/name`, with optional `.git`, produces metadata. Credentials, explicit ports, foreign hosts, escaping, queries/fragments, controls, extra path components and multiple URLs produce no inferred entry. Cancellation, process/cleanup uncertainty and command failure remain failures rather than missing metadata. Raw URLs never leave the Worker parser or enter logs. The map is limited to 128 inspected remotes and the existing 1 MiB job envelope; keys and identities are validated before publication. Structured completion logs expose only phase and counts.
 
@@ -99,7 +99,7 @@ weakens the complete original manifest or primary-directory checks.
 
 - Every immutable manual-fix execution assignment independently requires Codex Execute mode and explicit workspace-write or full-access permission. Initial request acceptance cannot preserve write authority after the selected Agent becomes read-only or returns to default permission before dispatch.
 
-- Issue #2120 descriptive startup progress follows the startup/workspace/process/desktop/protocol contracts. Preserve original claimed job/device/instance/revision/server epoch, bounded applicable operation summaries, exact receipt replay and independent leases/native input/cleanup. Completion requires actual successful operations; telemetry is nonblocking, joined, metadata-only and grants no execution authority. System 74 / Worker 50 preserve System 43 / Worker 23 and all existing startup fields. Old peers retain coarse progress; keep original failures, controls, drafts, focus and availability precedence. No migration or native-host change.
+- The feature descriptive startup progress follows the startup/workspace/process/desktop/protocol contracts. Preserve original claimed job/device/instance/revision/server epoch, bounded applicable operation summaries, exact receipt replay and independent leases/native input/cleanup. Completion requires actual successful operations; telemetry is nonblocking, joined, metadata-only and grants no execution authority. System 74 / Worker 50 preserve System 43 / Worker 23 and all existing startup fields. Old peers retain coarse progress; keep original failures, controls, drafts, focus and availability precedence. No migration or native-host change.
 
 ### cmds/delidev-cli/internal/integrations/github constraints
 
@@ -123,7 +123,7 @@ weakens the complete original manifest or primary-directory checks.
 
 - Explicit skill inventory and preparation share the joined original Worker workspace-read lane. Authenticate original owner/client, Worker device/instance and Agent revision; expose metadata only. Bind immutable package references into original acceptance receipts and reject plain edits or Steer that would lose selected bindings.
 
-- Issue #1859 remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
+- The feature remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
 
 - Repository saves check unused global identity and permanent tombstones at expected-zero admission and final validation. Known identity conflicts settle the original parent failure with valid child success in one report transaction; unexpected storage failures remain rollback/retryable. Follow the workspace contract.
 
@@ -195,11 +195,11 @@ weakens the complete original manifest or primary-directory checks.
 
 - Repeated Claude child-history inspection revalidates original file/sidecar ownership and deduplicates each exact child/leaf/projected-telemetry digest only after its receipt acknowledgment, including exact replay. Keep a bounded 65,536-entry execution-local identity set; independently verified new leaves or native metadata finalization remain distinct observations. Neither a duplicate read nor deduplication grants root completion or native cleanup.
 
-- Repository metadata enrichment follows issue #1142 and the workspace/protocol contracts: preserve the initial attachment and exact inspection input bytes, request metadata on the second attachment only after server support, bind support into the retained negotiation profile and require Machine echo before enrichment. Effective URLs stay in the owned local Git parser; never fetch, call helpers, return/log URLs or turn cancellation/cleanup failure into metadata absence.
+- Repository metadata enrichment follows the feature and the workspace/protocol contracts: preserve the initial attachment and exact inspection input bytes, request metadata on the second attachment only after server support, bind support into the retained negotiation profile and require Machine echo before enrichment. Effective URLs stay in the owned local Git parser; never fetch, call helpers, return/log URLs or turn cancellation/cleanup failure into metadata absence.
 
 - Direct startup leaves execution process-index creation to the successful workspace claim. Definite resolver failure may create only a fresh exclusive, parent-synchronized empty index. Gate reconciliation on this attempt's ownership before inspecting or changing a retained scope; failed creation/synchronization and original-history/publication uncertainty cannot grant retry. Report Launch after successful resolution and Initialize at actual native opening.
 
-- Issue #2120 descriptive startup progress follows the startup/workspace/process/desktop/protocol contracts. Preserve original claimed job/device/instance/revision/server epoch, bounded applicable operation summaries, exact receipt replay and independent leases/native input/cleanup. Completion requires actual successful operations; telemetry is nonblocking, joined, metadata-only and grants no execution authority. Close callback admission before draining accepted reports within one aggregate 1.5-second deadline, then cancel and join the original reporter. System 74 / Worker 50 preserve System 43 / Worker 23 and all existing startup fields. Old peers retain coarse progress; keep original failures, controls, drafts, focus and availability precedence. No migration or native-host change.
+- The feature descriptive startup progress follows the startup/workspace/process/desktop/protocol contracts. Preserve original claimed job/device/instance/revision/server epoch, bounded applicable operation summaries, exact receipt replay and independent leases/native input/cleanup. Completion requires actual successful operations; telemetry is nonblocking, joined, metadata-only and grants no execution authority. Close callback admission before draining accepted reports within one aggregate 1.5-second deadline, then cancel and join the original reporter. System 74 / Worker 50 preserve System 43 / Worker 23 and all existing startup fields. Old peers retain coarse progress; keep original failures, controls, drafts, focus and availability precedence. No migration or native-host change.
 
 ### cmds/delidev-cli/internal/workspace constraints
 
@@ -409,7 +409,7 @@ An internal completed-execution inspection now correlates the original Worker op
 
 ## Managed storage ownership
 
-Issue #1079 adds private Worker-local whole-workspace snapshots, preview-bound
+The feature adds private Worker-local whole-workspace snapshots, preview-bound
 manual cleanup and atomic restoration under the existing session/process locks.
 Follow [storage operations](cmds-delidev-storage-contract.md) for the complete
 job/receipt, bounds, independent Git stores, retained bytes, removal-intent and
@@ -472,7 +472,7 @@ Permanent session deletion includes each original execution's `pr-git` capabilit
 scope in the same independently checked Worker removal inventory. A restored
 scope invalidates a previously completed deletion proof.
 
-## Independent fork workspaces (#1092)
+## Independent fork workspaces
 
 Follow the [fork contract](cmds-delidev-forks-contract.md). Optional omitted
 `fork_source_id`/`fork_source_path` preparation fields preserve historical JSON.
@@ -502,8 +502,7 @@ Reuse immediate Clone's argv/credential-free transport restrictions, empty templ
 
 Managed clones use independent `.git` directories. Execution and continuation leases, preparation recovery, snapshot/restore and permanent deletion validate that ownership. Restore uses its existing independently synchronized publication proof rather than adopting old inode commitments. Fork derives `independent-fork` from a new managed or Local source only through the original closed parent: copy the complete Git objects without local optimization/hard links, pin parent HEAD/index/dirty files and set the original remote URL. Its child lifetime remains independent of parent cleanup. Sidechat continues to own metadata only and blocks parent removal until its own joined cleanup. Legacy accepted linked worktrees and original Local lifetimes remain unchanged.
 
-## Remote starting-branch discovery — issue #1859
-
+## Remote starting-branch discovery
 System 51 and Worker 27 independently negotiate `REPOSITORY_BRANCH_DISCOVERY_V1`.
 `DiscoverRepositoryBranches` accepts only a request identity and original project,
 repository and selected machine IDs/revisions. The server freezes the configured
@@ -532,9 +531,9 @@ receipt, bounded transport and single-resource reader support the complete resul
 other job inputs/outputs, page/event bounds and native Git output limits remain
 unchanged. A dedicated branch reader must not widen the general document parser.
 
-## Project behavior settings (issue #1965)
+## Project behavior settings
 
-Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
 ## Prepared skill inventory observation deadline
 
 Prepared-session skill inventory reuses original workspace observation locks,
@@ -549,8 +548,7 @@ Creation/unprepared inventory, selected-package preparation and independent
 cleanup retain their original operation context and ownership checks. Follow the
 [explicit native skills contract](cmds-delidev-sessions-contract.md#explicit-native-skills).
 
-## Descriptive startup operations — issue #2120
-
+## Descriptive startup operations
 The invocation-scoped typed observer in `startup_progress.go` reports actual
 setup, per-original-repository inspection/clone/reference/checkout, final
 verification and publication. Local omits clone/reference/replacement checkout;
@@ -561,4 +559,4 @@ original operation is observed complete. Success of a later stage cannot fill a
 missing earlier observation. Callbacks carry no paths, remote URLs or Git output.
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
-See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress).

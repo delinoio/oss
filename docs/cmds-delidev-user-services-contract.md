@@ -1,7 +1,7 @@
 # DeliDev current-user service contract
 
 ## Scope
-Issue #1086 adds optional native server and Worker registrations. Go owns `cmds/delidev-cli/internal/userservice`, the CLI infrastructure boundary, and authenticated `SystemService` operations. This is separate from Worker job, workspace and native harness process ownership. The complete product requirements remain in [requirements](cmds-delidev-requirements.md).
+The feature adds optional native server and Worker registrations. Go owns `cmds/delidev-cli/internal/userservice`, the CLI infrastructure boundary, and authenticated `SystemService` operations. This is separate from Worker job, workspace and native harness process ownership. The complete product requirements remain in [requirements](cmds-delidev-requirements.md).
 
 ## Runtime and Language
 The installed Go `delidev` executable is registered directly. macOS uses the current user's GUI LaunchAgents domain; Linux uses the existing `systemd --user` manager; Windows uses Task Scheduler with the current SID, `InteractiveToken`, `LeastPrivilege` and `IgnoreNew`. No system service, password, elevation, pre-login execution, linger enablement or logout-survival guarantee is introduced.
@@ -74,7 +74,7 @@ Windows process image observation resolves the Win32 path with the same canonica
 
 A missing native user session leaves positively owned Stop suppression durable but returns unavailable without native control or shutdown claims. Native writes are bounded and cancellable. An unknown or failed native outcome retains the original claim; reconnect cannot blindly replay it. Authorization is rechecked after bounded admission/native observation immediately before intent publication and again before each native side effect, so a client revoked during inspection cannot publish Stop suppression. Product RPCs return only service kind/ID/revision/state, desired state, login enablement and independent controller-cleanup confirmation; no executable, private path, PID, birth identity or credential is exposed. Service completion never implies native session cleanup or grants Resume.
 
-### Desktop launch admission (owner amendment #1137)
+### Desktop launch admission (owner amendment )
 
 Opening a fresh main desktop process is intentional local Start only for an ordinary scope. A native server registration retains independent ownership: launch may reuse a compatible authenticated live server, but cannot clear its desired state, start its service manager, repair/remove registration or spawn a detached competitor. Stopped and unresolved registrations remain blocked; malformed evidence is preserved. The desktop advanced Start capability uses the same admission boundary, including after an earlier launch failure, so it cannot bypass a retained registration. Ordinary explicit CLI Start retains its separate semantics.
 

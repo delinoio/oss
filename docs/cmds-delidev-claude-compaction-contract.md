@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1093 owns the authenticated native-context read and manual compaction action
+The feature owns the authenticated native-context read and manual compaction action
 for Claude Code 2.1.236 API sessions. Implementation belongs to feature-owned
 `session_compaction.go` files in `internal/domain`, `internal/server`,
 `internal/worker`, and `internal/cli` under `cmds/delidev-cli`, plus the context
@@ -11,8 +11,8 @@ in `protos/delidev/v1/session.proto`; generated Go, TypeScript and Connect Query
 bindings follow the canonical pipeline. Existing automatic compaction publication
 and native manual-action/history validation remain independent owners.
 
-The shared-compaction reservation PR #1215 landed on main at `574c1a92c` with
-identifiers and a common contract for issues #1093, #1202 and #1203. This Claude implementation adds
+The shared-compaction reservation the originating change landed on main at `574c1a92c` with
+identifiers and a common contract for the feature. This Claude implementation adds
 no existing-message field or shared enum member, consumes none of that PR's
 reserved numbers, and introduces no migration. Its session-owned context enum
 does not advertise support for another harness. Before any later shared activation,
@@ -232,4 +232,4 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Usage semantics](cmds-delidev-usage-contract.md)
 - [Feature ownership](cmds-delidev-structure-contract.md)
 - [Repository defaults](repository-defaults.md)
-- [Issue #1093](https://github.com/delinoio/oss/issues/1093)
+- The feature

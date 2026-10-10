@@ -17,7 +17,7 @@ clearing retain their existing ownership.
 
 ## Ownership and scope
 
-The server owns non-inference API checks in `cmds/delidev-cli/internal/providers`, exposed through `AccountService.ValidateAccount` and `account validate --id ID --revision N`. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This inspector implements bounded model-list inspection and credential evidence. Automatic catalog publication and provider presets are integrated through the separate [catalog contract](cmds-delidev-catalog-contract.md). Quota refresh, subscription authentication, API proxy execution and selected-model/harness validation remain required work and must preserve the same explicit authority and secret boundaries.
+The server owns non-inference API checks in `cmds/delidev-cli/internal/providers`, exposed through `AccountService.ValidateAccount` and `account validate --id ID --revision N`. The complete [the feature requirements](cmds-delidev-requirements.md) remain normative. This inspector implements bounded model-list inspection and credential evidence. Automatic catalog publication and provider presets are integrated through the separate [catalog contract](cmds-delidev-catalog-contract.md). Quota refresh, subscription authentication, API proxy execution and selected-model/harness validation remain required work and must preserve the same explicit authority and secret boundaries.
 
 Only owner/paired-client RPCs can invoke validation. The key is read from the current immutable connection's protected server reference, used locally for the request, and cleared after use. It is never returned or forwarded to a Worker. Keyless endpoints remain loopback-only; localhost always means the server machine. Explicit account validation may inspect the models endpoint even when automatic discovery is disabled, but never registers models or changes a session configuration.
 
@@ -75,7 +75,7 @@ Successful model discovery with unobservable authentication records `state=unsup
 Provider enabled state and preset provenance are governed by the [provider activation contract](cmds-delidev-provider-activation-contract.md). Discovery requires both provider and discovery enabled; turning a provider Off cancels only its in-flight catalog work, prevents stale publication, and preserves previous model observations. Explicit account validation remains separate. Legacy providers without an activation field remain effectively enabled, while generic writes preserve a stored false value.
 
 
-## Additional fixed hosted inspection profiles (#1148)
+## Additional fixed hosted inspection profiles
 
 Official key-creation metadata is static presentation data on each hosted preset.
 The native desktop compiles the tool-owned allowlist generated from Go by
@@ -148,7 +148,7 @@ CLI account validation and explicit provider discovery use 50-second outer and r
 
 - ProviderPresetID includes the 26 additions allocated in 10–35, preserving old IDs and fixed managed definitions. Preset guidance and advisory catalog metadata cannot grant connection, readiness or inference/harness authority. Follow the catalog/inspection contracts.
 
-- Issue #1961 native Fast diagnostics permit `fast` only for original Codex native input evidence. Keep provider HTTP requested/effective service-tier domains unchanged, unknown-value redaction, immutable execution snapshots and independent applied-setting validation. A diagnostic does not grant entitlement, billing, acceleration or retry authority.
+- The feature native Fast diagnostics permit `fast` only for original Codex native input evidence. Keep provider HTTP requested/effective service-tier domains unchanged, unknown-value redaction, immutable execution snapshots and independent applied-setting validation. A diagnostic does not grant entitlement, billing, acceleration or retry authority.
 
 ## cmds/delidev-cli/internal/harness/codex constraints
 
@@ -162,9 +162,9 @@ CLI account validation and explicit provider discovery use 50-second outer and r
 
 ## cmds/delidev-cli/internal/providers constraints
 
-- Per-key API formats follow the catalog/provider contracts and PR #1646's recorded allocation closure. The fixed 35-preset registry declares direct Responses, Chat Completions and Messages profiles; preserve original flat defaults. Resolve the selected account profile through the common server resolver and keep inference URLs separate from canonical non-inference inspection targets. Format availability grants no model, OAuth or native execution authority.
+- Per-key API formats follow the catalog/provider contracts and the originating change's recorded allocation closure. The fixed 35-preset registry declares direct Responses, Chat Completions and Messages profiles; preserve original flat defaults. Resolve the selected account profile through the common server resolver and keep inference URLs separate from canonical non-inference inspection targets. Format availability grants no model, OAuth or native execution authority.
 
-- Follow `cmds-delidev-providers-contract.md`, the activation/catalog contracts and issue #1148. Go owns the canonical 35-entry ordered registry, fixed non-inference inspection targets and protected credential use. Endpoint/protocol/authentication must match the closed official profile; copied names, preset IDs, response URLs and public catalogs cannot grant authentication authority.
+- Follow `cmds-delidev-providers-contract.md`, the activation/catalog contracts and the feature. Go owns the canonical 35-entry ordered registry, fixed non-inference inspection targets and protected credential use. Endpoint/protocol/authentication must match the closed official profile; copied names, preset IDs, response URLs and public catalogs cannot grant authentication authority.
 
 - Bound private verification and complete discovery together to the original 20-second/32-page/10,000-entry/4-MiB-per-response/16-MiB-total/32-KiB-header profile. Count filtered identities, reject duplicate identities/cursor cycles and publish no partial catalog. Discard private identity, financial, invocation URL and organization fields; keys never enter URLs or diagnostics.
 
@@ -186,11 +186,11 @@ CLI account validation and explicit provider discovery use 50-second outer and r
 
 - Service-native accounts/models use schema 2 and capability 17 independently of API Providers. Preserve immutable source/service identity in configuration, routing, execution publication, pricing and diagnostics; API configuration stays schema 1. Historical retired reads are explicit owner/client metadata-only projections and cannot authorize mutation, Resume or dispatch. Portable v2 strips subscription ownership; API-only v1 import rejects every native subscription graph atomically.
 
-- Issue #1208 OpenCode child publication validates the original task product message, native message/part/call, current execution root/input, independent native child parent and same immutable provider/model before atomic writes. Only the original task source may establish a new one-level child; original history may refine it. Preserve historical unique parent-tool claims, nullable telemetry and version-1 cleanup gates.
+- The feature OpenCode child publication validates the original task product message, native message/part/call, current execution root/input, independent native child parent and same immutable provider/model before atomic writes. Only the original task source may establish a new one-level child; original history may refine it. Preserve historical unique parent-tool claims, nullable telemetry and version-1 cleanup gates.
 
-- Codex Fast diagnostics follow issue #1961: project selected `fast` from the original immutable execution configuration and effective `fast` only from its native applied-setting event. Use the source/harness-specific native filter; provider HTTP tiers, current Worker edits, unknown redaction and original receipt/history ownership remain independent.
+- Codex Fast diagnostics follow the feature: project selected `fast` from the original immutable execution configuration and effective `fast` only from its native applied-setting event. Use the source/harness-specific native filter; provider HTTP tiers, current Worker edits, unknown redaction and original receipt/history ownership remain independent.
 
-- Issues #2015/#2016 root Claude web blocks share the original provider-message transaction and strict sessions contract. Independently reject foreign/repeated call/result IDs, local/server namespace reuse, unsupported server families and malformed native projections before publication. Preserve original actor/account/Worker/thread/turn, sequence/receipt atomicity, private content and independent usage/citation/cleanup gates. Public web history remains excluded from unsupported native continuation; no allocation or migration.
+- The feature root Claude web blocks share the original provider-message transaction and strict sessions contract. Independently reject foreign/repeated call/result IDs, local/server namespace reuse, unsupported server families and malformed native projections before publication. Preserve original actor/account/Worker/thread/turn, sequence/receipt atomicity, private content and independent usage/citation/cleanup gates. Public web history remains excluded from unsupported native continuation; no allocation or migration.
 
 ## cmds/delidev-cli/internal/store constraints
 
@@ -234,4 +234,4 @@ CLI account validation and explicit provider discovery use 50-second outer and r
 
 - Original Claude tool results may precede provider message-stop only after their exact original proposal block stopped. Independently validate provider/index/tool ownership and proposal/result identity in Worker and server; never complete the provider or task from a result. Reject incomplete/foreign blocks and validate a complete native result batch before any publication. Retain original receipt replay and separate callback/terminal/cleanup gates, with closed-stage diagnostics only.
 
-- Issues #2015/#2016 native Claude web publication preserves original accepted input/account/Worker/provider ownership, exact streaming-input/static-result comparisons and once-only receipts under the sessions/harness contracts. Release acknowledged display payloads; never publish encrypted/native binary bytes or run an independent fetch. A settled server-tool history retains its version-1 completion under the original private checkpoint exclusion, rather than attempting unsupported replacement or declaring publication failure. Keep independent cleanup and native code-execution/programmatic/child gates.
+- The feature native Claude web publication preserves original accepted input/account/Worker/provider ownership, exact streaming-input/static-result comparisons and once-only receipts under the sessions/harness contracts. Release acknowledged display payloads; never publish encrypted/native binary bytes or run an independent fetch. A settled server-tool history retains its version-1 completion under the original private checkpoint exclusion, rather than attempting unsupported replacement or declaring publication failure. Keep independent cleanup and native code-execution/programmatic/child gates.

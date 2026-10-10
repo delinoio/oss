@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #964's Sidechat uses the Go session, Worker, workspace and native harness
+The feature's Sidechat uses the Go session, Worker, workspace and native harness
 owners in `cmds/delidev-cli/internal`, authenticated `protos/delidev/v1` and
 `packages/delidev-api-client`, with presentation in `apps/delidev`. Ordinary Fork
 retains its independent native/workspace lifetime contract. Sidechat owns its
@@ -58,7 +58,7 @@ gate before atomic claim; a scan wake never grants native cleanup authority.
 
 - DeliDev Sidechat follows `cmds-delidev-sidechat-contract.md`. Preserve the parent fork-point account/snapshot, native read-only and external-write restrictions, metadata-only workspace reference ownership and durable dependent cleanup. Independent Fork lifetime and deletion ownership remain separate; reserved System 27 / Worker 16 numbers grant no support.
 
-- Managed ChatGPT Sidechat follows issue #1829 and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork stays unsupported; no migration/new login. Fixtures do not establish native/account/platform acceptance.
+- Managed ChatGPT Sidechat follows the feature and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork stays unsupported; no migration/new login. Fixtures do not establish native/account/platform acceptance.
 
 - Sidechat same-question retry follows `cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061`: System 57 / Worker 31 compose original 27/16 and managed 47/26/3. Preserve one direct text-only question, exact actor/revision/turn receipts, immutable child/snapshots, original metadata-only workspace reference, captured Worker/native authority, atomic current-answer publication and all-generation joined cleanup within existing bounds. Never replay uncertain native work, create another child or add a migration.
 
@@ -66,7 +66,7 @@ gate before atomic claim; a scan wake never grants native cleanup authority.
 
 - Native read-only Sidechat additionally follows `cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.
 
-- Managed ChatGPT Sidechat follows issue #1829 and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork follows the separately negotiated #1979 profile; no migration/new login. Fixtures do not establish native/account/platform acceptance.
+- Managed ChatGPT Sidechat follows the feature and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork follows the separately negotiated profile; no migration/new login. Fixtures do not establish native/account/platform acceptance.
 
 ### cmds/delidev-cli/internal/cli constraints
 
@@ -244,8 +244,7 @@ envelope, evict accepted references, add RPCs or add a migration.
 
 Sidechat adds no image deletion owner. Readback requires the current nondeleting parent owner and exact original succeeded Fork job prefix. Validate its input digest, session, machine, Worker device and runtime. Later parent images, changed jobs and restored quarantined metadata grant no access. Parent deletion joins dependent cleanup before last-owner image removal.
 
-## Managed ChatGPT Sidechat — issue #1829
-
+## Managed ChatGPT Sidechat
 System `MANAGED_CODEX_SIDECHAT_V1 = 47` and Worker
 `MANAGED_CODEX_SIDECHAT_V1 = 26` extend the closed Codex Sidechat profile.
 System 27 and Worker 16 retain API Sidechat ownership; protected subscriptions
@@ -299,8 +298,7 @@ not delete the child or its dependent ownership; retained drafts and controllers
 survive and sidebar reopening selects the child under its parent. Independent
 Fork lifetime and deletion ownership remain separate.
 
-## Same-question retry — issue #2061
-
+## Same-question retry
 System capability 57 and Worker capability 31 implement same-question retry
 through `RetrySidechatQuestion` and `GetSidechatQuestionRetry`. Compose them with
 original Sidechat 27/16 and, for managed ChatGPT, 47/26 plus protected Worker 3.

@@ -99,7 +99,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
-- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- [Complete feature requirements](cmds-delidev-requirements.md)
 
 ### React Forge
 - [Project index](project-react-forge.md)
@@ -130,7 +130,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### clibox
 - `docs/project-clibox.md`
 - `docs/crates-clibox-foundation.md` (five private Rust crates: CLI composition, configuration, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
-- `docs/crates-clibox-fspy-contract.md` (issue #971 file-access workflows and observation requirements; implementation in progress)
+- `docs/crates-clibox-fspy-contract.md` (file-access workflows and observation requirements; implementation in progress)
 - `docs/packages-clibox-distribution-contract.md` (npm, signed native archives, Linux packages and macOS Homebrew publication)
 - `docs/apps-clibox-docs-foundation.md` (`apps/public-docs/docs/clibox`, canonical URL `https://oss.delino.io/clibox`, thirteen user-guide routes including the source-only fspy guide)
 
@@ -200,7 +200,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Project index](project-pnport.md)
 - [Rust foundation](crates-pnport-foundation.md)
 - [fspy source fork and licensing](crates-fspy-vendor-contract.md)
-- [Complete issue #958 requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
+- [Complete feature requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 

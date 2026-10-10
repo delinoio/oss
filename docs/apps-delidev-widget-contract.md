@@ -2,11 +2,11 @@
 
 ## Scope
 
-Issue #1090 adds the initial read-only macOS WidgetKit extension under
+The feature adds the initial read-only macOS WidgetKit extension under
 `apps/delidev/macos-widget`, the desktop's `widget_host` presentation adapter,
 and native preparation/verification scripts. Other OS widgets, production
 signing/publication and continuous background-refresh guarantees are excluded.
-Issue #1410 moves persistence and shutdown joins off the native UI loop without
+The feature moves persistence and shutdown joins off the native UI loop without
 changing widget refresh scheduling or the protected Swift storage format.
 
 ## Runtime and Language
@@ -108,7 +108,7 @@ English/Korean presentation follows [the localization contract](apps-delidev-loc
 
 ### apps/delidev constraints
 
-- Widget persistence follows issue #1410 and `apps-delidev-widget-contract.md`: use the process-owned bounded FIFO worker, recheck original window/scope/revision and oldest-ready ownership before storage, and never hold tray/window/queue locks across disk I/O. Quit closes admission on the UI loop and joins all presentation tasks plus final stale publication on its tracked worker. Native Exit performs no storage or task joins; fixtures remain separate from native/platform acceptance.
+- Widget persistence follows the feature and `apps-delidev-widget-contract.md`: use the process-owned bounded FIFO worker, recheck original window/scope/revision and oldest-ready ownership before storage, and never hold tray/window/queue locks across disk I/O. Quit closes admission on the UI loop and joins all presentation tasks plus final stale publication on its tracked worker. Native Exit performs no storage or task joins; fixtures remain separate from native/platform acceptance.
 
 ### apps/delidev/scripts constraints
 
@@ -206,7 +206,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
 
-### Quota reset countdowns (issue #1826)
+### Quota reset countdowns
 
 The large widget's existing reset labels use localized elapsed-duration
 countdowns calculated when an entry renders. Strict reset validation rejects

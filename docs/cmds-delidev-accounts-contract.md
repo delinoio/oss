@@ -3,7 +3,7 @@
 ## Connected API format changes
 
 ProviderInventory capability 9 and `ChangeAccountApiFormat` were reserved on main
-in PR #1666. The owner/client operation receives an account ID, expected revision,
+in the originating change. The owner/client operation receives an account ID, expected revision,
 request ID, closed API protocol and editable preferences. Its transaction publishes
 all preferences and the selected profile together with an actor-bound retry receipt.
 An exact replay returns current account metadata without another generation or
@@ -45,7 +45,7 @@ is introduced.
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
 own the recorded capability 8 and Start/attempt format fields established
-by reservation PR #1657. Preserve manual
+by reservation the originating change. Preserve manual
 format profiles, original defaults and independent OAuth eligibility. The common
 manual/OAuth connection UI requires selection for multiple profiles and displays
 a sole profile read-only; server-owned Start pins explicit OAuth selections through
@@ -86,7 +86,7 @@ OpenRouter OAuth uses the dedicated owner/client Start/Complete/Cancel/Status li
 
 ## Ownership and implemented scope
 
-The server owns account state and credentials under [issue #964](cmds-delidev-requirements.md). This contract currently implements API credential connection, explicit keyless local connection, disconnection, cleanup reconciliation and account status through authenticated Connect and the CLI. Bounded non-inference validation is defined in the [provider inspection contract](cmds-delidev-providers-contract.md). Automatic model catalog publication is defined in the [catalog contract](cmds-delidev-catalog-contract.md). Digest-only execution proxy credentials and first Codex Worker execution are integrated through the [proxy](cmds-delidev-proxy-contract.md) and [session](cmds-delidev-sessions-contract.md) contracts. Disconnect now durably cancels that account's unfinished native assignments; public first Codex API dispatch uses current validated connection readiness; Codex subscription login, refresh, execution and logout follow the separate [managed subscription contract](cmds-delidev-subscription-contract.md); complete native recovery, existing-login import, other subscription harnesses and quota refresh remain pending. Saving a credential is not provider validation or execution readiness.
+The server owns account state and credentials under [the feature](cmds-delidev-requirements.md). This contract currently implements API credential connection, explicit keyless local connection, disconnection, cleanup reconciliation and account status through authenticated Connect and the CLI. Bounded non-inference validation is defined in the [provider inspection contract](cmds-delidev-providers-contract.md). Automatic model catalog publication is defined in the [catalog contract](cmds-delidev-catalog-contract.md). Digest-only execution proxy credentials and first Codex Worker execution are integrated through the [proxy](cmds-delidev-proxy-contract.md) and [session](cmds-delidev-sessions-contract.md) contracts. Disconnect now durably cancels that account's unfinished native assignments; public first Codex API dispatch uses current validated connection readiness; Codex subscription login, refresh, execution and logout follow the separate [managed subscription contract](cmds-delidev-subscription-contract.md); complete native recovery, existing-login import, other subscription harnesses and quota refresh remain pending. Saving a credential is not provider validation or execution readiness.
 
 Account aliases/provider associations and display/routing preferences remain configuration. Health, connection generation, validation/catalog observations, quota observations and pending removal are server-owned. General configuration writes must preserve those fields exactly; new accounts start disconnected. An account's provider/type cannot be relabeled through configuration, and a referenced provider's authentication/authority cannot be changed in place. Credentials never enter configuration documents.
 
@@ -173,11 +173,11 @@ API provider activation is independent of account enablement, connection, valida
 
 ## Desktop terminology
 
-AI API Keys includes keyed API entries and keyless local connections over the existing Account resource. API-only frontend copy uses entry nouns; connection, validation, health, discovery and cleanup remain independent. Keyless retry guidance refers to the local endpoint, never key reentry. Shared presentation retains subscription and mixed routing/selection terminology, original aliases and server diagnostics. Account RPC/CLI names, document fields, IDs, revisions, filters/cursors, exact retries and protected credential ownership stay unchanged. The [desktop contract](apps-delidev-desktop-contract.md) owns exact labels; record validation in issue #1135, its pull requests and CI runs.
+AI API Keys includes keyed API entries and keyless local connections over the existing Account resource. API-only frontend copy uses entry nouns; connection, validation, health, discovery and cleanup remain independent. Keyless retry guidance refers to the local endpoint, never key reentry. Shared presentation retains subscription and mixed routing/selection terminology, original aliases and server diagnostics. Account RPC/CLI names, document fields, IDs, revisions, filters/cursors, exact retries and protected credential ownership stay unchanged. The [desktop contract](apps-delidev-desktop-contract.md) owns exact labels; record validation in the feature, its pull requests and CI runs.
 
 ## Independent subscription identities
 
-Issue #1235 uses the closed service-native account/model contract in [managed subscriptions](cmds-delidev-subscription-contract.md). `SaveConfiguration` requires schema 2 for subscription accounts/native models and schema 1 for API configuration, rejects mixed identity families and preserves exact request/revision receipts. System capability `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` (17) negotiates this independent support. Metadata-only saves remain disconnected. CLI JSON configuration infers the matching document schema; generated Go/TypeScript descriptors expose the same service enum for new usage, pricing and diagnostic attribution. The CLI result envelope itself remains version 1.
+The feature uses the closed service-native account/model contract in [managed subscriptions](cmds-delidev-subscription-contract.md). `SaveConfiguration` requires schema 2 for subscription accounts/native models and schema 1 for API configuration, rejects mixed identity families and preserves exact request/revision receipts. System capability `SUBSCRIPTION_SERVICE_ACCOUNTS_V1` (17) negotiates this independent support. Metadata-only saves remain disconnected. CLI JSON configuration infers the matching document schema; generated Go/TypeScript descriptors expose the same service enum for new usage, pricing and diagnostic attribution. The CLI result envelope itself remains version 1.
 
 ## Failed initial subscription deletion
 
@@ -188,13 +188,12 @@ The [subscription batch contract](cmds-delidev-subscription-contract.md#failed-s
 
 Enabled connected API accounts acquire non-inference current-connection validation through the joined server maintenance owner under the [provider verification contract](cmds-delidev-providers-contract.md#automatic-api-verification). Missing evidence is immediately due; subsequent checks use persisted completion plus max(15 minutes, Retry-After). Provider disablement, account disablement, removal and changed connection/profile/revision fence automatic publication. Existing explicit validation, actor-bound replay, quota/exhaustion and immutable execution generations retain their authority. A readable saved key or successful public model list alone cannot become verified authentication.
 
-## OpenCode Go subscriptions — issue #2097
-
+## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
 ## cmds/delidev-cli constraints
 
-- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation PR #1666. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+- Key-preserving API format changes follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
 
 ## cmds/delidev-cli/internal/cli constraints
 
@@ -202,13 +201,13 @@ The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) ow
 
 ## cmds/delidev-cli/internal/domain constraints
 
-- Capability-9 API format generations follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation PR #1666. Resolve immutable execution connection IDs against server-owned retained profiles, share the original protected key reference, and keep current validation separate. Preserve actor-bound atomic retries, all-generation confirmed cleanup, old-client protection and portable/restore exclusions. Ordered-route reconfiguration markers block new routing only. No SQLite migration or native change.
+- Capability-9 API format generations follow `cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation the originating change. Resolve immutable execution connection IDs against server-owned retained profiles, share the original protected key reference, and keep current validation separate. Preserve actor-bound atomic retries, all-generation confirmed cleanup, old-client protection and portable/restore exclusions. Ordered-route reconfiguration markers block new routing only. No SQLite migration or native change.
 
 - Codex diagnostics are optional bounded existing-document metadata with closed phases/codes and locally reconstructed safe text. Validate actual version attribution and original operation correlation; no diagnostic grants native/account authority or requires a SQLite migration.
 
 ## cmds/delidev-cli/internal/harness/claude constraints
 
-- Issue #2120 permits only transient nonblocking descriptive observations from the original interactive native process and validated initialization/settings boundaries. Preserve exact native/protocol/account/input/history/cleanup checks; observed stage success grants no input or recovery authority, and no helper/probe may stand in for agent launch. Follow the startup and harness contracts.
+- The feature permits only transient nonblocking descriptive observations from the original interactive native process and validated initialization/settings boundaries. Preserve exact native/protocol/account/input/history/cleanup checks; observed stage success grants no input or recovery authority, and no helper/probe may stand in for agent launch. Follow the startup and harness contracts.
 
 ## cmds/delidev-cli/internal/harness/codex constraints
 

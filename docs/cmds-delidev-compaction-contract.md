@@ -6,8 +6,8 @@
 
 ## Status and ownership
 
-This is the common boundary for issues #1093 (Claude), #1202 (Codex) and
-#1203 (OpenCode). Claude owns its implemented settled-boundary product profile.
+This is the common boundary for the feature (Claude), (Codex) and
+ (OpenCode). Claude owns its implemented settled-boundary product profile.
 Codex implements its independently negotiated settled-boundary product profile.
 OpenCode implements its independently negotiated settled-boundary product profile.
 A reservation never advertises support or enables dispatch. Each complete native
@@ -25,7 +25,7 @@ Go and TypeScript bindings must be regenerated together when activated.
 ## Shared reservations
 
 `protos/delidev/allocations.json` reserves these existing-declaration additions
-under issue #1203 with #1093 and #1202 as shared consumers:
+for this feature with as shared consumers:
 
 | Declaration | Member | Number |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ as permitted by the structure contract.
 
 The existing `CompactSessionRequest.mutation = 1` and response `job = 1`,
 `request_id = 2`, `replayed = 3` assignments are recorded in the immutable
-baseline. They were introduced by merged PR #1221 and retain their current wire
+baseline. They were introduced by merged the originating change and retain their current wire
 meanings. The two additional fields above are reserved only; the active RPC and
 generated bindings do not yet contain them. The current native profiles still
 use the original revision-bound mutation and job receipt, so their implementation
@@ -59,7 +59,7 @@ its current `session` and original `job` together under current authorization,
 including receipt replay. Existing `request_id` already identifies the original
 action; it must remain equal to the accepted action ID rather than the Worker
 job ID. These reservations add no capability, native command authority or
-migration and do not establish issue #1203 acceptance.
+migration and do not establish the feature acceptance.
 
 The existing schema-24 entities, jobs, receipts and cancellation tables provide
 the generic durable storage boundary. Compaction allocates no migration and leaves
@@ -117,11 +117,11 @@ Do not manually rewrite native database rows to manufacture acceptance proof.
 Native context counters preserve measured zero and nullable unavailable values.
 Usage retains original provenance and coverage; inherited or overlapping sources
 cannot become duplicate charges or fabricated exact totals. Coordination with
-the usage work does not imply completion of issue #1099.
+the usage work does not imply completion of the feature.
 
 ## Pinned OpenCode profile and acceptance
 
-Issue #1203 uses OpenCode `1.18.32` and its existing owned API profile. Its native
+The feature uses OpenCode `1.18.32` and its existing owned API profile. Its native
 summarize operation must select the original provider/model explicitly and use
 `auto=false` once for manual actions. Automatic parts/events require separate
 original-session/input/message/part proof. The pinned native implementation owns
@@ -382,7 +382,7 @@ Source assignment/completion, account/connection/configuration, manifest/prepara
 
 ## Latest native-reported Codex context snapshot
 
-Issue #1959 extends the existing authorized context JSON with optional
+The feature extends the existing authorized context JSON with optional
 `native_context`; `current_tokens` remains null. The Codex root's retained
 last-request total is an exact nonnegative decimal string, separate from
 cumulative usage, response accounting, cache breakdowns and model limits.
@@ -412,8 +412,7 @@ range, source/status enums and original provenance; old absent-field replies
 remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
 
-## Conversation Revert and edit — issue #2045
-
+## Conversation Revert and edit
 Revert is a separate owner/client operation under System 62 and Worker 36. Its
 closed version-4 context action shares the existing durable context-job storage,
 workspace lease, account lease and independent cleanup fences. It is not a
@@ -480,11 +479,11 @@ quarantined. Ordinary context jobs keep their existing recovery restrictions.
 
 ## Project requirements
 
-- Conversation Revert (#2045) follows `cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045`. Record complete System 62 / Worker 36 declarations with implementation. Preserve one exact original turn/prompt mutation, authoritative paged retained-prefix proof, independent cleanup, immutable prior context/history/usage and original account/Worker. Restore prompt text only as an unsent guarded draft; files and existing Fork/Sidechat snapshots stay unchanged. Uncertainty permits only explicit observation of the exact original intent and cleanup, never a second native send or new target. No migration.
+- Conversation Revert follows `cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045`. Record complete System 62 / Worker 36 declarations with implementation. Preserve one exact original turn/prompt mutation, authoritative paged retained-prefix proof, independent cleanup, immutable prior context/history/usage and original account/Worker. Restore prompt text only as an unsent guarded draft; files and existing Fork/Sidechat snapshots stay unchanged. Uncertainty permits only explicit observation of the exact original intent and cleanup, never a second native send or new target. No migration.
 
 ## cmds/delidev-cli constraints
 
-Native session compaction for issues #1093, #1202 and #1203 follows the planned shared boundary in `cmds-delidev-compaction-contract.md`. Its allocation records may be included with implementation in the same feature PR. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
+Native session compaction for the feature follows the planned shared boundary in `cmds-delidev-compaction-contract.md`. Its allocation records may be included with implementation in the same feature PR. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
 
 ## cmds/delidev-cli/internal/apiproxy constraints
 
@@ -530,7 +529,7 @@ Native session compaction for issues #1093, #1202 and #1203 follows the planned 
 
 - Session context projects retained compaction jobs through the typed 3 MiB input decoder used by admission and settlement, preserving action state even for large original assignments.
 
-- Conversation Revert (#2045) follows `cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045`. Record complete System 62 / Worker 36 declarations with implementation. Preserve one exact original turn/prompt mutation, authoritative paged retained-prefix proof, independent cleanup, immutable prior context/history/usage and original account/Worker. Restore prompt text only as an unsent guarded draft; files and existing Fork/Sidechat snapshots stay unchanged. Uncertainty permits only explicit observation of the exact original intent and cleanup, never a second native send or new target. Verified explicit recovery may settle the canceled original action once without erasing its durable cancellation; ordinary late canceled reports remain quarantined and receipt replay never advances context again. No migration.
+- Conversation Revert follows `cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045`. Record complete System 62 / Worker 36 declarations with implementation. Preserve one exact original turn/prompt mutation, authoritative paged retained-prefix proof, independent cleanup, immutable prior context/history/usage and original account/Worker. Restore prompt text only as an unsent guarded draft; files and existing Fork/Sidechat snapshots stay unchanged. Uncertainty permits only explicit observation of the exact original intent and cleanup, never a second native send or new target. Verified explicit recovery may settle the canceled original action once without erasing its durable cancellation; ordinary late canceled reports remain quarantined and receipt replay never advances context again. No migration.
 
 ## cmds/delidev-cli/internal/store constraints
 

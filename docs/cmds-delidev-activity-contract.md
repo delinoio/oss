@@ -1,7 +1,7 @@
 # DeliDev Activity retirement
 
 ## Scope
-Issue #1977 retires the Activity product. This contract owns the authenticated compatibility handler in `cmds/delidev-cli/internal/server/activity.go`, legacy metadata validators in domain `pr_activity.go`, dependent erasure in store `pr_activity.go` and `session_deletion_remediation.go`, and the unchanged `ActivityService` declarations in `protos/delidev/v1/activity.proto`.
+The feature retires the Activity product. This contract owns the authenticated compatibility handler in `cmds/delidev-cli/internal/server/activity.go`, legacy metadata validators in domain `pr_activity.go`, dependent erasure in store `pr_activity.go` and `session_deletion_remediation.go`, and the unchanged `ActivityService` declarations in `protos/delidev/v1/activity.proto`.
 
 ## Runtime and Language
 Go in the pinned root module, SQLite and authenticated Connect. No database migration, new allocation, historical backfill or destructive purge is required.

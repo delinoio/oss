@@ -2,8 +2,8 @@
 
 ## Key-preserving API format change reservations
 
-PR #1666 established the complete reservations on main before activation.
-Issue #964 owns ProviderInventory capability
+The originating change established the complete reservations on main before activation.
+The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
 reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
@@ -30,7 +30,7 @@ unchanged; capability 9 owns the dedicated extension.
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
 own the recorded capability 8 and Start/attempt format fields established
-by reservation PR #1657. Preserve manual
+by reservation the originating change. Preserve manual
 format profiles, original defaults and independent OAuth eligibility. The common
 manual/OAuth connection UI requires selection for multiple profiles and displays
 a sole profile read-only; server-owned Start pins explicit OAuth selections through
@@ -39,7 +39,7 @@ database migration is added.
 
 ## API account format selection
 
-Reservation PR #1646 reached main before this implementation. Issue #964 owns
+The reservation change reached main before this implementation. The feature owns
 ProviderInventory `ACCOUNT_API_PROTOCOL_V1 = 7`, inventory `api_formats = 10`,
 account-list `api_protocol = 5`, and the complete closed `ApiProtocol`,
 `ApiAuthentication` and `ProviderApiFormat` declarations. The protocol values are
@@ -190,7 +190,7 @@ skips native enumeration and cannot be relabeled as credential-owning authority.
 
 ## Ordered Agent Worker account sources
 
-PR #1371 established System capability 36 and SaveAgentWorkerRequest field 5 on
+The originating change established System capability 36 and SaveAgentWorkerRequest field 5 on
 main before this extension. Capability 35 remains reserved for known subscription
 models. Capability 36 advertises configuration and routing support, never native
 execution authority. No SQLite migration is added.
@@ -302,7 +302,7 @@ Worker job and immutable pages do not alter the HTTP catalog, account readiness 
 manual entries. Registration uses the existing model-save boundary with the selected
 account provider and observed executable model ID, retaining manual provenance.
 
-The server owns provider presets, API model discovery, catalog publication and canonical model selection in `cmds/delidev-cli/internal/providers`, `internal/server`, `internal/store` and the corresponding CLI commands. The complete [issue #964 requirements](cmds-delidev-requirements.md) remain normative. This contract implements the API catalog boundary; native harness observations, selected-model execution capability and subscription authentication retain their separate authority contracts. API proxy execution and first-dispatch snapshots follow their own implemented authority contracts; a catalog cannot authorize them.
+The server owns provider presets, API model discovery, catalog publication and canonical model selection in `cmds/delidev-cli/internal/providers`, `internal/server`, `internal/store` and the corresponding CLI commands. The complete [the feature requirements](cmds-delidev-requirements.md) remain normative. This contract implements the API catalog boundary; native harness observations, selected-model execution capability and subscription authentication retain their separate authority contracts. API proxy execution and first-dispatch snapshots follow their own implemented authority contracts; a catalog cannot authorize them.
 
 ## Runtime and Language
 
@@ -399,19 +399,19 @@ Provider-row account links use the list-only `provider_id` selector on `Resource
 
 ### Workflow integration
 
-- Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
+- Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
 ### Project requirements
 
-- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: PR #1666 established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
 
-- API account format selection follows `cmds-delidev-catalog-contract.md#api-account-format-selection` and the account/protocol contracts. PR #1646 established ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed declarations on main before activation. Preserve schema-3 API families, portable v4 with v1–3 imports, original defaults, capability-7 disconnect/confirmed cleanup and capability-9 key-preserving format changes, account-referenced profile immutability, immutable executions and keyless cleanup proofs. Resolve the selected account profile in every consuming flow; add no database migration or format conversion.
+- API account format selection follows `cmds-delidev-catalog-contract.md#api-account-format-selection` and the account/protocol contracts. The originating change established ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed declarations on main before activation. Preserve schema-3 API families, portable v4 with v1–3 imports, original defaults, capability-7 disconnect/confirmed cleanup and capability-9 key-preserving format changes, account-referenced profile immutability, immutable executions and keyless cleanup proofs. Resolve the selected account profile in every consuming flow; add no database migration or format conversion.
 
 - Inline Worker models and endpoint-only completion follow the allocation amendment in `cmds-delidev-catalog-contract.md`. Record System 42 / Worker 22 and the complete endpoint/identity/pricing declarations in the owning feature PR. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs and backups are unsupported. The owner waives earlier DB retention, permitting an explicit reset of its DB/sidecars without conversion; protected credentials and native ownership retain their original cleanup authority. Reservation-only changes grant no support.
 
 - DeliDev execution options follow `cmds-delidev-catalog-contract.md#native-execution-option-selection`: forward available native settings exactly without advertised-support gates or a product concurrency cap. Keep unavailable saved values, reject them explicitly at execution, and preserve applied-setting, account, authentication, cleanup and original-recovery proofs. Codex API/subscription accept all four permission modes; full-access may expose managed authentication files. No RPC/storage migration.
 
-- Issues #2054/#2057 follow `cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057`: System 56/Worker 38, schema-3 Project/Settings and portable v6 preserve capability52, schema1/2 reads and v1–5 imports. Reject destructive legacy writes. Resolve creation Plan defaults until explicit checkbox edit; freeze pending/uncertain mode and exact requests. Preserve literal `delidev/` default, absent inheritance/empty disable, exact UTF-8 ref validation, original source revisions and legacy execution omission bytes. Compose bounded shared prefix instructions in Execute only through existing four-harness channels, never in Plan/read-only Sidechat or shell interpolation. Preserve all native/account/workspace/history/cleanup authority; no migration or numeric native gate.
+- The feature follow `cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057`: System 56/Worker 38, schema-3 Project/Settings and portable v6 preserve capability52, schema1/2 reads and v1–5 imports. Reject destructive legacy writes. Resolve creation Plan defaults until explicit checkbox edit; freeze pending/uncertain mode and exact requests. Preserve literal `delidev/` default, absent inheritance/empty disable, exact UTF-8 ref validation, original source revisions and legacy execution omission bytes. Compose bounded shared prefix instructions in Execute only through existing four-harness channels, never in Plan/read-only Sidechat or shell interpolation. Preserve all native/account/workspace/history/cleanup authority; no migration or numeric native gate.
 
 ### cmds/delidev-cli constraints
 
@@ -423,11 +423,11 @@ Provider-row account links use the list-only `provider_id` selector on `Resource
 
 ### cmds/delidev-cli/internal/domain constraints
 
-- OpenCode foreground children follow issue #1208 and the subagent contract: close original task input/metadata and product/native tool references, retain exact independent child IDs, same model and nullable response counters. Keep task observations separate from independently read content/history, reject nested/reused/background ownership and never add child usage to root accounting.
+- OpenCode foreground children follow the feature and the subagent contract: close original task input/metadata and product/native tool references, retain exact independent child IDs, same model and nullable response counters. Keep task observations separate from independently read content/history, reject nested/reused/background ownership and never add child usage to root accounting.
 
 - OpenCode context metadata preserves a selected known/user-declared model limit in an optional immutable execution snapshot before its first digest. Omitted legacy limits and limits with unknown metadata sources remain unknown and do not change the execution digest. Original automatic context progress uses the closed OpenCode native part identity and ordered lifecycle; summaries/continuation users grant no product input or fabricated accounting.
 
-- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
 
 - `native_options.go` separates saved selection validity from execution adapter availability under the catalog native-option contract. Preserve unavailable saved values and report exact option names before execution. Bounded efforts and approval policies are not support enums; uint32 concurrency has no product cap. Retain exact applied observations and immutable same-account model references.
 
@@ -526,7 +526,7 @@ Follow [API provider activation](cmds-delidev-provider-activation-contract.md) f
 ## Agent Worker model selection
 
 System capability 33 and ConfigurationService.SaveAgentWorker follow the main
-reservations established in PR #1351. Source-scoped account and model list
+reservations established in the originating change. Source-scoped account and model list
 selectors are applied in SQL before LIMIT and bound into signed cursors. Unknown
 services, mixed API/service filters and non-account account selectors fail.
 Unspecified fields keep legacy behavior; coherent snapshots/events are unchanged.
@@ -548,7 +548,7 @@ accountless behavior. No migration or historical snapshot rewrite is introduced.
 
 ## Inline Worker models and endpoint-only completion reservation
 
-The owner-approved replacement under issue #964 removes the independent saved
+The owner-approved replacement for this feature removes the independent saved
 Model registry, model-input history and persistent API catalogs. API completion
 uses only the selected Provider model endpoint. Exact direct IDs remain local to
 the selected Agent Worker configuration. Subscription completion retains the
@@ -625,7 +625,7 @@ Automatic validation uses the [provider verification boundary](cmds-delidev-prov
 
 Provider inventory and model search pages retain complete entries within a 4 MiB budget measured in both protobuf and protobuf JSON, including cursor/envelope and capability metadata. Model pages charge and deduplicate only the providers represented by returned models. Byte-limited continuation follows the last returned entry/model under the existing query/filter/epoch binding. A single unfit entry returns correlated ResourceExhausted with narrowing guidance; it cannot produce an empty nonadvancing page.
 
-## Project behavior settings (issue #1965)
+## Project behavior settings
 
 System capability `PROJECT_BEHAVIOR_SETTINGS_V1 = 52` owns the complete project
 settings feature. Project and Settings documents use schema 2. Schema-1 documents
@@ -663,14 +663,12 @@ native ownership do not enter portable documents.
 
 The once-only automatic plan policy decision stays in the original server-owned interaction record. Public schema-1 Interaction JSON omits that private provenance so strict legacy Worker decoders continue to read the unchanged native request and queued response. Restart receipts retain the private first decision and original response ID.
 
-### Explicit Codex Fast mode — issue #1961
-
+### Explicit Codex Fast mode
 Agent Worker configuration presents Native default, Fast mode and Custom service tier through the shared legacy and ordered-source form. Native default explicitly omits `options.service_tier`; Fast saves exact `fast`. Existing other nonempty strings select Custom and remain exact, including whitespace, until edited. Opening the editor never changes absent, empty or null values. Custom entry retains the existing bound. Other harnesses retain disabled saved values and the original explicit clearing action; source/loading/save admission gates remain owned by the existing wizard/editor.
 
 Fast is an explicit native Codex request for API and ChatGPT subscription sources, subject to original model/account availability. The localized control links [official guidance](https://learn.chatgpt.com/docs/agent-configuration/speed) and explains potentially higher subscription usage without a fixed billing multiplier, entitlement or speed claim. Saving grants no native support. No account defaults, session switches, feature flag, version gate, protocol allocation or migration are added. Immutable execution and continuation configurations retain their original tier after Worker edits. Existing applied-setting verification rejects null/different native tiers before input and never downgrades or retries with defaults.
 
-## New-session defaults and literal branch prefixes — issues #2054 and #2057
-
+## New-session defaults and literal branch prefixes
 The complete feature uses System capability 56 and schema-3 Project/Settings
 JSON, preserving capability 52 and readable schema-1/2 documents. Legacy full
 writes cannot replace a newer document with an older schema. Portable exports
@@ -719,10 +717,8 @@ fields, revision conflicts, exact uncertain requests, English/Korean text,
 Settings search, keyboard access and responsive presentation. Diagnostics retain
 operation identities, revisions and safe outcomes, never prefixes/instructions.
 
-## Codex reviewer selection — issue #1980
+## Codex reviewer selection
+Configure exposes a separate localized User / AI auto-review picker for Codex. AI selection explicitly sets `on-request` while preserving sandbox and unrelated native options. The server capability `CODEX_APPROVAL_REVIEW_V1 = 55` enables this configuration surface; the selected Runner must independently advertise Worker capability 30 before dispatch. Unsupported consumers fail without stripping a selected reviewer. The retained foreign option has an explicit Clear action; harness switching alone never clears it. Portable configuration and atomic Agent/Worker saves preserve this optional enum through the existing typed options document, without changing absent historical bytes or adding a database migration. Follow the [native reviewer profile](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer).
 
-Configure exposes a separate localized User / AI auto-review picker for Codex. AI selection explicitly sets `on-request` while preserving sandbox and unrelated native options. The server capability `CODEX_APPROVAL_REVIEW_V1 = 55` enables this configuration surface; the selected Runner must independently advertise Worker capability 30 before dispatch. Unsupported consumers fail without stripping a selected reviewer. The retained foreign option has an explicit Clear action; harness switching alone never clears it. Portable configuration and atomic Agent/Worker saves preserve this optional enum through the existing typed options document, without changing absent historical bytes or adding a database migration. Follow the [native reviewer profile](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980).
-
-## OpenCode Go subscriptions — issue #2097
-
+## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

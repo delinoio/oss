@@ -30,7 +30,7 @@ profiles. Worker assignment and credential wire formats stay unchanged.
 
 ## Metadata-only request publication
 
-Issue #1103 adds an original-lease diagnostic projection around each single authorized HTTP invocation. Before transmission, persist one generated correlation/record identity and its send claim; exact publication receipts do not make another HTTP attempt. After response/cancellation, publish only closed status/error, observed elapsed latency, allowlisted settings and protected-value-checked opaque request/response IDs. Completion is bounded and joined before lease/storage release; failed or interrupted settlement retains uncertainty. This table is not a usage source and does not modify native retry, authorization, request/response byte forwarding or credential lifetime. Native input/effective settings remain a separate exact-identity publication. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for limits and reads.
+The feature adds an original-lease diagnostic projection around each single authorized HTTP invocation. Before transmission, persist one generated correlation/record identity and its send claim; exact publication receipts do not make another HTTP attempt. After response/cancellation, publish only closed status/error, observed elapsed latency, allowlisted settings and protected-value-checked opaque request/response IDs. Completion is bounded and joined before lease/storage release; failed or interrupted settlement retains uncertainty. This table is not a usage source and does not modify native retry, authorization, request/response byte forwarding or credential lifetime. Native input/effective settings remain a separate exact-identity publication. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for limits and reads.
 
 
 ## Scope
@@ -180,12 +180,10 @@ An explicit Codex child model snapshot permits the parent and that one canonical
 
 The Go relay validates complete OpenCode Chat Completions foreground task arguments before executable function-call frames reach the native process. Bounded private buffering preserves the original frames and order across split function names/arguments and intervening heartbeat frames. Reject reused `task_id`, background execution, unknown/duplicate fields and incomplete arguments before forwarding any tool-call frame. Nonstream responses use the same closed task input validation. A truncated, canceled, malformed or oversized stream discards retained private frames and grants no native side effect, direct fallback or provider resend. Native dual-proof child observation remains independently required after execution. Task arguments and buffers never enter logs, request diagnostics or storage.
 
-## Original Codex reviewer relay — issue #1980
-
+## Original Codex reviewer relay
 An API execution configured for AI review freezes one additional canonical native model allowance, `gpt-5.6-luna`, alongside its original root and optional canonical child model. Only Responses creation may narrow the original lease to that reviewer; it retains the same provider/profile, account, protected credential generation, cancellation and request gates. No wildcard, metadata-discovered model, fallback model, subscription-native alias or provider conversion is permitted. Recheck original assignment/account authority before forwarding. Reviewer history references occupy an independent private model slot and cannot become root/child history. No catalog model record, new account, credential or SQLite migration is introduced.
 
-A proved reviewer relay request has the closed builtin attribution `codex-reviewer-gpt-5.6-luna`, with no borrowed catalog model ID. Diagnostics remain metadata-only. Root/child requests retain their own original attribution. A model name shared with the parent/child does not distinguish a raw native reviewer completion; preserve unknown usage attribution under the [usage contract](cmds-delidev-usage-contract.md#codex-reviewer-attribution--issue-1980).
+A proved reviewer relay request has the closed builtin attribution `codex-reviewer-gpt-5.6-luna`, with no borrowed catalog model ID. Diagnostics remain metadata-only. Root/child requests retain their own original attribution. A model name shared with the parent/child does not distinguish a raw native reviewer completion; preserve unknown usage attribution under the [usage contract](cmds-delidev-usage-contract.md#codex-reviewer-attribution).
 
-## OpenCode Go subscriptions — issue #2097
-
+## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

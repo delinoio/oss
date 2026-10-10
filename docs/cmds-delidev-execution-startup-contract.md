@@ -11,7 +11,7 @@ operations. It does not activate an unsupported operation or account family.
 
 The owner approved removal of manual Worker inspection, separate execution
 probes, `--version` subprocesses and version-number admission gates on
-2026-10-07. PR #1645 established the complete protocol reservation on main at
+2026-10-07. The originating change established the complete protocol reservation on main at
 `03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation. The active
 schemas use those exact numbers; the prior reservation itself granted no execution
 or credential authority.
@@ -32,9 +32,9 @@ Users retain explicit account connection, installation and executable-path edits
 
 ### Main-first allocation closure
 
-Under issue #964, PR #1645 reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
+Under the feature, the originating change reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
 `EXECUTION_STARTUP_V1 = 23`. Preserve System 42 and Worker 22 for the separate
-inline-model proposal in PR #1642, including while that reservation is pending.
+inline-model proposal in the originating change, including while that reservation is pending.
 The ledger preserves these declaration reservations with `newDeclaration: true`:
 
 | Declaration | Fields or enum members in numeric order |
@@ -105,7 +105,7 @@ operation retains its own capability, protocol and original-executable checks.
 
 Remove the first-session prerequisite checklist and required inspection controls
 from ordinary execution. Preserve optional explicit diagnostics and path editing.
-Show an immediate session-owned failure summary with a concrete corrective action. Issue #1699 keeps available safe cause metadata and the original session/Runner controls in the owning surface; required setup does not navigate to another category. Preserve the single original controller, task draft and exact Runner identity. Unsupported installation or remote administration uses concrete manual steps and a supported explicit recheck, without new repair authority.
+Show an immediate session-owned failure summary with a concrete corrective action. The feature keeps available safe cause metadata and the original session/Runner controls in the owning surface; required setup does not navigate to another category. Preserve the single original controller, task draft and exact Runner identity. Unsupported installation or remote administration uses concrete manual steps and a supported explicit recheck, without new repair authority.
 Optional details expose phase, observed version, stable code, original log/
 correlation reference, input delivery and independent cleanup classification.
 Copy only validated metadata; opening or copying details performs no inspection.
@@ -138,7 +138,7 @@ own settings; normal successful execution shows no prerequisite or ready score.
 
 ### Project requirements
 
-- DeliDev direct execution follows `cmds-delidev-execution-startup-contract.md`. PR #1645 established System 43, Worker 23 and the complete closed startup-report allocation on main before implementation; preserve separate inline-model ownership 42/22. Negotiate v4 assignments without manual inspection, execution probes or numeric version gates. Validate the original actual process before input/inference; preserve account/Worker/history, protected credentials, revisions and independent cleanup. Retry only explicit positive no-send/cleanup proof; uncertainty requires original recovery. No SQLite migration.
+- DeliDev direct execution follows `cmds-delidev-execution-startup-contract.md`. The originating change established System 43, Worker 23 and the complete closed startup-report allocation on main before implementation; preserve separate inline-model ownership 42/22. Negotiate v4 assignments without manual inspection, execution probes or numeric version gates. Validate the original actual process before input/inference; preserve account/Worker/history, protected credentials, revisions and independent cleanup. Retry only explicit positive no-send/cleanup proof; uncertainty requires original recovery. No SQLite migration.
 
 ### cmds/delidev-cli constraints
 
@@ -150,7 +150,7 @@ own settings; normal successful execution shows no prerequisite or ready score.
 
 - `server desktop-launch` is the fresh-main-host intentional Start boundary; desktop-retry cannot clear stopped intent and desktop-status is read-only readiness. Hold native-service control admission before startup/lifecycle/store locks through detached spawn, and recheck before intent publication and spawn. Automatic/desktop modes share a 35-second aggregate admission/controller/ownership/readiness deadline below the native 40-second envelope; check cancellation before admission and side effects, retaining truthful uncertainty after publication. Registered scopes may provide compatible live reuse but cannot admit a detached competitor or service mutation. Preserve malformed/private evidence and prior cleanup barriers.
 
-- Issue #1981 local startup conflicts use closed private desktop `startup_conflict` metadata for positively observed ownership versus transient admission. Preserve legacy errors and original owners/data; do not infer a lock subtype from text, automatically stop/adopt/replace/remap or add RPC/migration authority. Follow the desktop contract's local startup conflict guidance.
+- The feature local startup conflicts use closed private desktop `startup_conflict` metadata for positively observed ownership versus transient admission. Preserve legacy errors and original owners/data; do not infer a lock subtype from text, automatically stop/adopt/replace/remap or add RPC/migration authority. Follow the desktop contract's local startup conflict guidance.
 
 ### cmds/delidev-cli/internal/domain constraints
 
@@ -271,16 +271,14 @@ The conversation presents the original closed startup classification, safe cause
 - [Diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Repository defaults](repository-defaults.md)
 
-## Positive image rejection before input — issue #2048
-
+## Positive image rejection before input
 ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureKind enum: zero UNSPECIFIED is omitted, and IMAGE_INPUT_REJECTED is one. This optional classification adds no capability or migration and preserves legacy observation bytes and generic behavior. A generic Unsupported error does not prove image provenance. Only the original Codex image-preparation branch before turn/start may issue an opaque proof bound to the original request, input and complete ordered input digest. Successful sends, turn transport failures, acknowledgments and attachment-resolution failures carry no such proof.
 
 The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
 
 The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies image support requirements, preserves visible original rejected input/images and never substitutes attachments or starts another send.
 
-## Operational startup progress — issue #2120
-
+## Operational startup progress
 System `SESSION_STARTUP_PROGRESS_V1 = 74` and Worker
 `SESSION_STARTUP_PROGRESS_V1 = 50` own the separately negotiated
 `ReportSessionStartupProgress` RPC. System 43/Worker 23 and all original startup

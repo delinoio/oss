@@ -196,7 +196,7 @@ from the still-unreleased guided creation of a new Mac VM.
 
 ## Host guide
 
-Issue #1312 adds `/runmoor/host` to the shared navigation, sidebar and exact
+The feature adds `/runmoor/host` to the shared navigation, sidebar and exact
 route registry. Preserve every existing route and public-content safeguard.
 The guide describes explicit `host` selection on macOS 14+ arm64, generated
 routing labels, shared admission budgets without the Tart ceiling, disposable

@@ -6,8 +6,8 @@
 
 ## Scope
 
-Issue #1092 adds independent native Codex forks to the Go session, Worker and
-workspace owners. Issue #964 and the existing session, harness and workspace
+The feature adds independent native Codex forks to the Go session, Worker and
+workspace owners. The feature and the existing session, harness and workspace
 contracts remain normative. Fork does not imply Sidechat, account switching,
 transcript replay or support for unknown native history.
 
@@ -23,7 +23,7 @@ to the repository's independently verified native `0.151.0` profile.
 
 Owner and paired clients request/observe Fork through Connect, CLI or desktop.
 Only the original authorized Worker may inspect its private source and create a
-child. Provider/account authorities remain the original immutable selection. Independent Codex Fork supports API authentication and separately negotiated managed ChatGPT authentication under issue #1979 below. Managed ChatGPT Sidechat follows the separately negotiated protected lease, joined cleanup and final credential write-back profile in the Sidechat contract. Ordinary Fork capability does not grant managed authentication.
+child. Provider/account authorities remain the original immutable selection. Independent Codex Fork supports API authentication and separately negotiated managed ChatGPT authentication for this feature below. Managed ChatGPT Sidechat follows the separately negotiated protected lease, joined cleanup and final credential write-back profile in the Sidechat contract. Ordinary Fork capability does not grant managed authentication.
 
 ## Interfaces and Contracts
 
@@ -88,7 +88,7 @@ and original job records unchanged.
 
 - Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `cmds-delidev-forks-contract.md`.
 
-- Independent managed ChatGPT Fork follows issue #1979 and `cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979`. System 53 / Worker 29 separately authorize original-account native Fork; ordinary Fork and managed Sidechat capabilities do not. Preserve exact settled tool history, original source/settings/reviewer/generation, credential-free inspection, exclusive EXECUTE Take, capture/join/plaintext cleanup and durable Finish before publication. Child runtime/workspace/checkpoint lifetime remains independent after parent deletion; no migration, replacement credentials, command replay or path rewrite.
+- Independent managed ChatGPT Fork follows the feature and `cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979`. System 53 / Worker 29 separately authorize original-account native Fork; ordinary Fork and managed Sidechat capabilities do not. Preserve exact settled tool history, original source/settings/reviewer/generation, credential-free inspection, exclusive EXECUTE Take, capture/join/plaintext cleanup and durable Finish before publication. Child runtime/workspace/checkpoint lifetime remains independent after parent deletion; no migration, replacement credentials, command replay or path rewrite.
 
 ### cmds/delidev-cli/internal/cli constraints
 
@@ -116,7 +116,7 @@ and original job records unchanged.
 
 - Native summaries/forks must retain original source identities, complete history, nullable usage and protected runtime ownership. Never manufacture history, rewrite native database rows, infer native acceptance from HTTP success or replay uncertain native mutations.
 
-- Issue #1210 preparation owns only bounded Unix plain-text General Chat native Fork, complete ID-clone/history proof, explicit no-change relocation and copied-source deletion. Use an unregistered fresh nonce without inference; native agent/model absence is an explicit preparation state. Claim every mutation once and reconcile exact owned native state after response loss without resend. Preserve inherited paths/usage as provenance, not filesystem or accounting authority.
+- The feature preparation owns only bounded Unix plain-text General Chat native Fork, complete ID-clone/history proof, explicit no-change relocation and copied-source deletion. Use an unregistered fresh nonce without inference; native agent/model absence is an explicit preparation state. Claim every mutation once and reconcile exact owned native state after response loss without resend. Preserve inherited paths/usage as provenance, not filesystem or accounting authority.
 
 - Native checkpoint metadata uses the strict declared 8 MiB decoder ceiling, retaining canonical bytes and independent complete private-file inventory verification. Fork source inventory exposes content-free original IDs only after full private checkpoint/profile validation; it grants no native mutation or inference authority.
 
@@ -372,8 +372,8 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Session contract](cmds-delidev-sessions-contract.md)
 - [Workspace contract](cmds-delidev-workspace-contract.md)
 - [Harness contract](cmds-delidev-harness-contract.md)
-- [Issue #1092](https://github.com/delinoio/oss/issues/1092)
-- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- The feature
+- [Complete feature requirements](cmds-delidev-requirements.md)
 
 Workspace storage and fork ownership compose at the original source boundary. When
 workspace storage is supported, fork acceptance, claim and publication require a
@@ -381,7 +381,7 @@ present workspace without a pending or uncertain storage operation. Storage
 admission waits for unresolved fork jobs to settle; a stored workspace must be
 explicitly restored before it can be forked.
 
-## Bounded OpenCode General Chat fork (#1210)
+## Bounded OpenCode General Chat fork
 
 The independent System 26 / Worker 15 profile uses pinned OpenCode `1.18.32`
 (commit `545f51d26cc39a907d2867492d498d9607ea5fa4`) and the existing authenticated
@@ -492,8 +492,7 @@ OpenCode lost-report recovery checks a child-owned immutable closed creation pro
 
 A settled eligible first child turn may become a manual compaction source under the compaction contract. Its new continuation restore clears the one-shot Fork import and retains the child-owned Fork runtime as history, preserving legacy 3-to-2 and startup 4-to-4 assignment profiles. Independent child lifetime and Sidechat dependent/read-only ownership remain separate.
 
-## Managed ChatGPT independent Fork — issue #1979
-
+## Managed ChatGPT independent Fork
 Record System capability 53 `MANAGED_CODEX_FORK_V1` and Worker capability 29 in the complete feature PR. Preserve existing ownership, including Sidechat 27/16, protected subscriptions 3 and managed Sidechat 47/26. These declarations compose complete runtime support; they alone prove no native/account/platform acceptance. No SQLite migration is added.
 
 Version 1 with explicit or omitted independent purpose retains the existing RPC and child publication format. Admission, claim, publication and child continuation require the separate managed Fork capability and original account/connection. Freeze original actor, source revision, completed native turn, immutable configuration and reviewer, generation, startup identity, Worker machine/device/instance and claimed job revision. Busy lease, pending lifecycle, recovery and active server/Worker observations refuse admission before protected credentials or native work. No new login, account fallback, sandbox expansion or reviewer substitution is permitted.
@@ -507,6 +506,6 @@ The child privately retains a complete inherited-history digest and count. Its f
 Existing workspace ownership applies unchanged: Worktree copies actual HEAD and dirty contents, General Chat copies owned files, and Local preserves its original machine rules. Publish paused with an empty queue. Independent parent deletion preserves child-owned checkpoint, runtime and workspace; later turns retain the original account and immutable reviewer/branch-prefix provenance. Parent-dependent read-only Sidechat remains a separate overlay and deletion profile.
 
 Automated fixtures and builds validate these boundaries. Installed native, real-account, remote-machine, platform and manual visual acceptance remain owner-assigned and are not claimed by those checks.
-## Inherited elapsed observations (issue #2052)
+## Inherited elapsed observations
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.

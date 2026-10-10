@@ -101,7 +101,7 @@ The deck imported successfully into Artifact Tool without rewriting it, and test
 The compact evidence record is `packages/react-forge/tests/evidence/travel-ir-macos-arm64.json`. The delivered export's SHA-256 identifies the reviewed artifact; subsequent exports can differ because new document/node IDs are UUID v7. PPTX/PDF/PNG outputs and tool-owned validation receipts stay local and untracked.
 
 ## Dependencies and Integrations
-Foundation PR #967 at `303fa6747d89fae427725b6f50e6a1a58b10bafb` is the reused repository implementation. Test fixtures document their generating tool versions beside their sources. CI installs optional renderers only on its disposable test host; the private package never downloads tools or fonts.
+Foundation the originating change at `303fa6747d89fae427725b6f50e6a1a58b10bafb` is the reused repository implementation. Test fixtures document their generating tool versions beside their sources. CI installs optional renderers only on its disposable test host; the private package never downloads tools or fonts.
 
 ## Change Triggers
 Update evidence and relevant project/native/Node contracts when formats, preservation, runtime compatibility, fonts, lifecycle, limits or validation commands change. Keep central CI path selection, required result aggregation and owning AGENTS rules synchronized.
@@ -117,7 +117,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Workflow contract](repository-workflow-contract.md).
 
 ## Cross-platform extension
-The 2026-09-24 PR #970 follow-up expands the initial macOS-arm64 observations above to six native hosts. The CI matrix runs build, native and React regressions, installed consumers, system-font tests, ROAM example generation and benchmarks on every host, plus isolated Windows console cancellation and macOS/Linux render checks. Each Rust invocation selects the matching target explicitly, including Windows arm64, and Node asserts its actual host architecture. The initial macOS evidence records remain historical observations rather than proof for another operating system.
+The 2026-09-24 the originating change follow-up expands the initial macOS-arm64 observations above to six native hosts. The CI matrix runs build, native and React regressions, installed consumers, system-font tests, ROAM example generation and benchmarks on every host, plus isolated Windows console cancellation and macOS/Linux render checks. Each Rust invocation selects the matching target explicitly, including Windows arm64, and Node asserts its actual host architecture. The initial macOS evidence records remain historical observations rather than proof for another operating system.
 
 | Native ID | Runner | Native target |
 | --- | --- | --- |
@@ -128,7 +128,7 @@ The 2026-09-24 PR #970 follow-up expands the initial macOS-arm64 observations ab
 | `win32-x64-msvc` | `windows-2022` | `x86_64-pc-windows-msvc` |
 | `win32-arm64-msvc` | `windows-11-arm` | `aarch64-pc-windows-msvc` |
 
-The [initial matrix](https://github.com/delinoio/oss/actions/runs/35992992719) at `fba6059d` passed both macOS and Windows architectures and exposed Linux's monochrome emoji fallback failure. After the color-first grapheme repair, both Linux jobs, both Windows jobs and macOS arm64 passed at `6fa32003` in the [runtime validation run](https://github.com/delinoio/oss/actions/runs/35994740028). Final follow-up results, including the complete investor example on every host, are recorded in [PR #970's checks](https://github.com/delinoio/oss/pull/970/checks) and PR description. These are native executions, not cross-compilation-only evidence.
+The [initial matrix](https://github.com/delinoio/oss/actions/runs/35992992719) at `fba6059d` passed both macOS and Windows architectures and exposed Linux's monochrome emoji fallback failure. After the color-first grapheme repair, both Linux jobs, both Windows jobs and macOS arm64 passed at `6fa32003` in the [runtime validation run](https://github.com/delinoio/oss/actions/runs/35994740028). Final follow-up results, including the complete investor example on every host, are recorded in the originating change's checks and PR description. These are native executions, not cross-compilation-only evidence.
 
 Local follow-up verification passed root `cargo test` (1,883 passed; three existing ignored tests), targeted native Clippy with warnings denied, 45 package tests, typecheck/lint, 73 CI contract tests and workflow validation. Seven generated/edited LibreOffice/Poppler cases passed after the font repair. macOS source protection additionally covers removed case and Unicode-normalization aliases.
 
@@ -148,11 +148,11 @@ The compact committed record is `packages/react-forge/tests/evidence/travel-figm
 
 Validation commands include root `TMPDIR=/private/tmp cargo test -- --test-threads=1`, planner/native Clippy, `pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge`, standalone TypeScript checks for both Figma examples, and repository CI contract/workflow checks. Existing Office/PDF generation, editing and installed-consumer regressions remain in the package suite. The existing optional renderer test remains separately gated; this change does not alter the local document engines.
 
-After rebasing onto PR #970 at `70efa714`, macOS arm64 verification passed 1,906 root Rust tests (three existing opt-in tests ignored), all 73 package tests including installed consumers, build/typecheck/lint, planner/native Clippy, both Figma example type checks, 73 CI contract tests and workflow validation. Permanent HTTP request failures also have explicit no-retry coverage. The broader native-host matrix remains CI evidence, not a claim of local execution on other operating systems.
+After rebasing onto the originating change at `70efa714`, macOS arm64 verification passed 1,906 root Rust tests (three existing opt-in tests ignored), all 73 package tests including installed consumers, build/typecheck/lint, planner/native Clippy, both Figma example type checks, 73 CI contract tests and workflow validation. Permanent HTTP request failures also have explicit no-retry coverage. The broader native-host matrix remains CI evidence, not a claim of local execution on other operating systems.
 
 ## PR review repair validation
 
-The subsequent one-shot repair of PR #970 addresses 18 actionable review threads and the independent Linux pnport cleanup failure in 19 separate repair commits. Regression coverage includes unsupported presentation semantics, opaque descendant deletion/movement, imported shape edits, source-bound updates whose imported text exceeds the 16 MiB authored-tree envelope, typed Word breaks, conservative chart ownership, cell style inheritance, independent list instances, source section/cell measurement widths, explicit non-bold PDF headings, OPC namespace authority, the accepted XML depth boundary, Excel General alignment, differential false overrides and operation-pinned diagnostics.
+The subsequent one-shot repair of the originating change addresses 18 actionable review threads and the independent Linux pnport cleanup failure in 19 separate repair commits. Regression coverage includes unsupported presentation semantics, opaque descendant deletion/movement, imported shape edits, source-bound updates whose imported text exceeds the 16 MiB authored-tree envelope, typed Word breaks, conservative chart ownership, cell style inheritance, independent list instances, source section/cell measurement widths, explicit non-bold PDF headings, OPC namespace authority, the accepted XML depth boundary, Excel General alignment, differential false overrides and operation-pinned diagnostics.
 
 Final local macOS arm64 verification at the repaired implementation (`140974d6`) passed root `cargo test` with 1,910 passed and three existing ignored tests, package build/typecheck/lint with all 50 React/CLI tests, and targeted native Clippy with warnings denied. All seven generated/edited LibreOffice/Poppler cases passed, the separately enabled legacy Forge renderer test passed, and the full 12-slide ROAM example exported again. The unchanged CI contract/workflow checks also passed (73 contract tests). Generated `dist` trees were removed after validation.
 
@@ -163,7 +163,7 @@ All six React Forge native jobs passed at `70efa714` in the [pre-repair matrix](
 
 ## Figma PR review repair validation
 
-The one-shot repair of PR #972 merges parent #970 at `653e1842` while preserving both validation histories. Five separate fixes cover indirectly changed collection/variant guards, a session-wide credential reread allowance, native rejection of nested pages, retained ownership transfer on remount, and serialized aggregate image admission. Regressions reproduce the collection self-conflict, remount overlap and concurrent 256 MiB budget bypass; additional cases verify no credential rereads after rejection or successful recovery, rejection before page/file creation, retained descendant IDs, duplicate image capacity and recovery after cancelled/failed registrations. All Figma tests remain synthetic and do not access live credentials or files.
+The one-shot repair of the originating change merges parent at `653e1842` while preserving both validation histories. Five separate fixes cover indirectly changed collection/variant guards, a session-wide credential reread allowance, native rejection of nested pages, retained ownership transfer on remount, and serialized aggregate image admission. Regressions reproduce the collection self-conflict, remount overlap and concurrent 256 MiB budget bypass; additional cases verify no credential rereads after rejection or successful recovery, rejection before page/file creation, retained descendant IDs, duplicate image capacity and recovery after cancelled/failed registrations. All Figma tests remain synthetic and do not access live credentials or files.
 
 Final macOS arm64 verification passed root `cargo test` with 1,922 passed and three existing opt-in tests ignored, all 85 package tests including installed consumers, build/typecheck/lint, native planner/adapter Clippy with warnings denied, both Figma example type checks, 73 CI contract tests and workflow validation. The pre-push PR head had no failing CI checks; this record does not claim results for the final repair push. Generated repository `dist` trees are removed after verification.
 
@@ -193,7 +193,7 @@ Visual work corrected FBX enum flags rejected by Blender's camera reader, the FB
 
 Local verification passed root `TMPDIR=/private/tmp cargo test -- --test-threads=1` with **1,927 passed and three pre-existing opt-in tests ignored**, targeted scene/exporter/adapter Clippy with warnings denied, package build/typecheck/lint with **112 tests**, standalone example checks, public main/native candidate assembly and installed six-format CLI smoke, installed-archive six-format MCP inspection/measurement/export, **77 CI contract tests**, workflow validation, and `pnpm test` from `apps/public-docs` (all sixteen React Forge guide routes). Root test preparation followed the existing generic/pnport preload separation above. Earlier root attempts exposed existing path-alias/preload preparation requirements and transient clibox process-fixture failures; the final complete serial run passed. An initial Node 24.11.0 MCP loader issue was avoided by validating with Node 24.17.0; this does not establish compatibility for every Node 24 patch.
 
-At the time of this acceptance record, the six-host native CI matrix included the three scene crates, and Linux x64 additionally installed checksum-pinned Blender 4.5.14 and rendered the fixtures. **Only macOS arm64 was executed locally for this acceptance record.** The later `0.2.0` release workflow passed all six native build and installed-consumer jobs; that evidence is distinct from the local Blender visual review recorded above and does not imply identical results in arbitrary FBX applications. GLB/FBX were absent from the historical npm `0.1.1` release and were included in `0.2.0`. PR #992 removes those engine, React scene test, render, and visual-validation gates from React Forge CI/release validation and the scene crates from generic workspace Rust tests/Clippy; the recorded acceptance results above are historical.
+At the time of this acceptance record, the six-host native CI matrix included the three scene crates, and Linux x64 additionally installed checksum-pinned Blender 4.5.14 and rendered the fixtures. **Only macOS arm64 was executed locally for this acceptance record.** The later `0.2.0` release workflow passed all six native build and installed-consumer jobs; that evidence is distinct from the local Blender visual review recorded above and does not imply identical results in arbitrary FBX applications. GLB/FBX were absent from the historical npm `0.1.1` release and were included in `0.2.0`. The originating change removes those engine, React scene test, render, and visual-validation gates from React Forge CI/release validation and the scene crates from generic workspace Rust tests/Clippy; the recorded acceptance results above are historical.
 
 Reproduce after building:
 
@@ -220,7 +220,7 @@ Final local macOS arm64 acceptance of this revision passed eight product imports
 
 The package build/typecheck/lint, **113 package tests** including installed six-format CLI/MCP checks, and standalone example type checks passed after the planar-UV correction. Regenerating all seven source textures with Node 24.17.0 produced identical bytes. The separate committed record is [audio-studio-quality-macos-arm64.json](../packages/react-forge/tests/evidence/audio-studio-quality-macos-arm64.json), containing source, model and image hashes, versions, checks and visual observations. Model/render archives and a labeled before/after presentation comparison are delivered outside the repository. Rust sources and public guides were unchanged in this refinement, so their earlier checks remain historical; other hosts and hosted CI were not executed or marked passed.
 
-### PR #988 render scheduling repair
+### The originating change render scheduling repair
 
 The first hosted run (`36115873712`) completed native/package checks on Linux x64 but reached the 60-minute job limit during sequential CPU scene rendering. The studio GLB alone took approximately 38 minutes for four views, leaving only five of 32 images complete when the job was cancelled. At that time, preparation moved into the native job, while four product jobs consumed its validated exports and rendered both formats independently with 120-minute budgets. Resolution, 96-sample CPU quality, scene geometry/materials and all 32 views remained unchanged. The comparison stage validated the complete requested product set and input/image hashes before producing evidence. The same run’s unrelated DevHud API OCI build failed on a Go module proxy connection reset; no application failure was reported, and the final repair push retried that job without changing its source. Hosted results after that repair remained pending.
 
@@ -238,7 +238,7 @@ The shell initially selected Node.js 24.11.0. Its synchronous loader failed both
 
 After that documented preparation, root `TMPDIR=/private/tmp cargo test` passed **1,930 tests**, with three existing opt-in tests ignored. The final package suite again passed **110 tests** after the last native rebuild, and the installed public candidate reported five generated local formats. No binpm/pnport production code was changed. Generated `packages/react-forge/dist` (including local candidate archives) was removed after validation; the inspected example output remains outside the repository.
 
-### PR #989 CLI readiness repair (2026-09-25)
+### The originating change CLI readiness repair (2026-09-25)
 
 The [darwin-x64 CI job](https://github.com/delinoio/oss/actions/runs/36124614014/job/108037799956) passed 109 package tests and failed the Unix CLI signal fixture before sending a signal: its mounted-effect readiness marker did not appear within the approximately two-second polling window. A 2.1-second task-start delay reproduces the same assertion locally. The repaired test waits for actual mounted readiness under a 30-second monotonic deadline, stops on an early process exit, and retains the delayed-start regression. SIGINT/SIGTERM exit codes, redacted cancellation, effect cleanup and absence of partial exports remain asserted.
 
@@ -295,7 +295,7 @@ the previous run had stopped on its missing native artifact. No unrelated Rust
 source was changed. Generated repository-owned `dist` directories were removed
 after validation.
 
-### PR #987 CLI readiness repair
+### The originating change CLI readiness repair
 
 The initial six-host CI run passed five React Forge hosts. The darwin-x64 job
 failed the CLI signal fixture before sending a signal: its fixed 200 polls at
@@ -314,7 +314,7 @@ No production code or public contract changed; native Intel Mac execution of the
 repair remains a CI validation step.
 
 
-## PR #988 merge and review repair (2026-09-25)
+## The originating change merge and review repair (2026-09-25)
 
 Merged `origin/main` at `bcc35d49` without rebasing, preserving both the static
 GLB/FBX extension and the incoming WAV/SFX extension. The combined installation
@@ -358,7 +358,7 @@ directories are removed after verification.
 
 ## AURA source texture Git LFS migration (2026-09-25)
 
-PR #988 stores all seven AURA source PNGs in Git LFS through the exact
+The originating change stores all seven AURA source PNGs in Git LFS through the exact
 `packages/react-forge/examples/audio-studio-assets/*.png` attribute pattern.
 Their combined original size is **10,760,286 bytes**; their seven Git pointers
 occupy **916 bytes**. The three source assets above 1 MiB were included, and no
@@ -388,9 +388,9 @@ changes select both native/package validation and scene-render jobs. Generated
 repository-owned `dist` directories were removed after these checks.
 
 
-## PR #988 shared LFS policy merge repair (2026-09-25)
+## The originating change shared LFS policy merge repair (2026-09-25)
 
-Merged `main` at `13391e4a` (PR #990) without rebasing. The resolved attribute file
+Merged `main` at `13391e4a` without rebasing. The resolved attribute file
 retains all thirteen LFS assets, including every AURA texture, using explicit file
 paths under the shared 512 KiB policy. The four smaller AURA companion textures
 remain tracked with their set. Removed a duplicate release-checkout `lfs` key
@@ -413,7 +413,7 @@ were temporary. No source change was needed for those environment limitations.
 Generated repository-owned `dist` directories were removed after validation.
 
 
-## PR #988 scene render ordering repair (2026-09-25)
+## The originating change scene render ordering repair (2026-09-25)
 
 The final review snapshot identified concurrent explicit scene renders bypassing
 the session operation queue. GLB and FBX renders now enter the same queue as
@@ -430,16 +430,16 @@ queue repair changes no native engine, asset bytes or prior visual evidence.
 
 ### Combined sprite/SFX merge validation
 
-PR #989 merges `main` at `bcc35d49`, preserving the SFX extension and dependency-security updates while retaining sprites. Both component subpaths, native dispatch paths, measurement coordinate spaces and export extensions are registered together. Installed CLI/MCP fixtures cover all six local formats, including `.wav` and `.sprite.zip`. The shared signal fixture retains the upstream 2.5-second delayed start for both Unix signals and the 30-second readiness deadline.
+The originating change merges `main` at `bcc35d49`, preserving the SFX extension and dependency-security updates while retaining sprites. Both component subpaths, native dispatch paths, measurement coordinate spaces and export extensions are registered together. Installed CLI/MCP fixtures cover all six local formats, including `.wav` and `.sprite.zip`. The shared signal fixture retains the upstream 2.5-second delayed start for both Unix signals and the 30-second readiness deadline.
 
 After resolving the merge, the macOS arm64 package build, typecheck, lint and standalone examples passed, as did all 115 package tests, all 77 repository CI contract tests, workflow validation and sprite/SFX/adapter Clippy with warnings denied. Historical evidence above remains tied to its recorded source state and format count.
 
 On the merged code at `3e938a14`, public main/native candidate installation passed with six generated local formats. The final prepared root `TMPDIR=/private/tmp cargo test` run passed 1,938 tests with 3 existing opt-in tests ignored. Generated repository-owned `dist` output was removed after validation.
 
 
-## PR #988 sprite integration merge repair (2026-09-25)
+## The originating change sprite integration merge repair (2026-09-25)
 
-Merged `main` at `6debb999` (PR #989) without rebasing. Conflict resolution retains
+Merged `main` at `6debb999` without rebasing. Conflict resolution retains
 both static GLB/FBX engines and the sprite engine in Cargo, the native adapter,
 package subpaths, diagnostic vocabulary, CLI/MCP routing, installed consumers,
 and six-host CI/release checks. Sprite output retains its `.sprite.zip` compound
@@ -453,7 +453,7 @@ validation also passed. These checks do not claim new visual renders or remote
 platform execution.
 
 
-## PR #988 scene file-export ordering repair (2026-09-25)
+## The originating change scene file-export ordering repair (2026-09-25)
 
 File exports reserve both their session position and shared directory position
 at invocation, preserving the preceding operation even if directory reservation
@@ -483,7 +483,7 @@ CI results and new visual renders are not claimed. Generated repository-owned
 `dist` directories were removed after verification.
 
 
-## PR #988 schema CI and event-matrix repair (2026-09-25)
+## The originating change schema CI and event-matrix repair (2026-09-25)
 
 Both failing jobs in run `36133345298` (DevHud Protocol and Client, and
 async-commit-hook contracts/integration) failed when Buf cloned a pointer-only
@@ -495,7 +495,7 @@ pointer-only clone of the full repository passed `proto:check`, Go binding tests
 and client lint/build with **37 tests**, without fetching LFS payloads.
 
 At that historical merge snapshot, the final status check also discovered newly
-merged `main` commit `a00774d0` (PR #986). The merge retained the event-specific CI
+merged `main` commit `a00774d0` . The merge retained the event-specific CI
 matrix: ordinary affected Windows/Linux validation, all six hosts in manual CI
 and release gates, and the shared host script. Scene/GLB/FBX tests and Clippy ran
 through that script; Linux scene preparation and all four product render shards
@@ -521,9 +521,9 @@ preparation. Generated repository-owned `dist` directories were removed, and
 `git lfs fsck` passed before the single repair push.
 
 
-## PR #988 public-guide merge repair (2026-09-25)
+## The originating change public-guide merge repair (2026-09-25)
 
-Merged `main` at `6b8b6cfe` (PR #991) without rebasing. The grouped navigation and
+Merged `main` at `6b8b6cfe` without rebasing. The grouped navigation and
 The Sprite guide remains intact, and GLB/FBX join the format-directory layout. All
 eighteen guides are retained, with permanent redirects for both spellings of
 each of the nine former format routes. The package README and internal route
@@ -651,7 +651,7 @@ stills retain fractional frame times rather than rounding the FBX importer's
 repository-owned dist output was removed after validation; the local preview
 serves only artifacts outside the checkout.
 
-### 2026-09-26 PR #999 FBX key-interval repair
+### 2026-09-26 the originating change FBX key-interval repair
 
 The new regression first reproduced acceptance of Float32 key times near
 `1e-11` and `2e-11` seconds, which round to distinct FBX ticks despite being less

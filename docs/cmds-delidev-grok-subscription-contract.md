@@ -21,7 +21,7 @@ private runtime. Separate accounts can run independently.
 
 ## Interfaces and Contracts
 
-Record these issue #964 allocations in the owning feature PR:
+Record these the feature allocations in the owning feature PR:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.

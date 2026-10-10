@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/domain`, `internal/server`, `internal/store`, `internal/apiproxy`, `internal/worker`, and `internal/harness/codex` own automatic title state, attribution, execution, and cleanup. The canonical product requirements are issues #1056 and #1057; conversation execution and UI contracts remain in their existing documents.
+`cmds/delidev-cli/internal/domain`, `internal/server`, `internal/store`, `internal/apiproxy`, `internal/worker`, and `internal/harness/codex` own automatic title state, attribution, execution, and cleanup. The canonical product requirements are the feature; conversation execution and UI contracts remain in their existing documents.
 
 ## Runtime and Language
 
@@ -100,5 +100,5 @@ Instruction-file updates in this requirement apply only to changes in developmen
 
 - [DeliDev project index](project-delidev.md)
 - [Repository defaults](repository-defaults.md)
-- [Issue #1056: automatic session titles](https://github.com/delinoio/oss/issues/1056)
-- [Issue #1057: chat-first session page](https://github.com/delinoio/oss/issues/1057)
+- The feature: automatic session titles
+- The feature: chat-first session page

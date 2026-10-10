@@ -111,9 +111,9 @@ does not create or close a shell, and unknown ownership never permits PID cleanu
 
 - Native skill bindings contain opaque original Worker/inventory/package/snapshot identifiers and content digests. Retain them in immutable initial and queued inputs; plain text tokens grant no package authority and bound Steer is unsupported.
 
-- Issues #2015/#2016 native Claude web publication uses the closed original `web` block union under the sessions/harness contracts. Preserve exact call input fragments, original ID/name/caller and result/source/error metadata, bounded immutable copies, private encrypted/binary bodies and independent citations/usage. Reject foreign/duplicate/local/code-execution ownership. Public web histories remain ineligible for the separately unsupported native checkpoint/continuation profile; no allocation or migration.
+- The feature native Claude web publication uses the closed original `web` block union under the sessions/harness contracts. Preserve exact call input fragments, original ID/name/caller and result/source/error metadata, bounded immutable copies, private encrypted/binary bodies and independent citations/usage. Reject foreign/duplicate/local/code-execution ownership. Public web histories remain ineligible for the separately unsupported native checkpoint/continuation profile; no allocation or migration.
 
-- Server-owned per-turn timing follows issue #2052 and the sessions/protocol contracts. Keep optional typed UTC acceptance/end observations in Session progress and primary-user Messages only; reject Worker-injected timing and omit it from native assignment/checkpoint/digest projections. Legacy omission grants no elapsed, outcome or execution authority.
+- Server-owned per-turn timing follows the feature and the sessions/protocol contracts. Keep optional typed UTC acceptance/end observations in Session progress and primary-user Messages only; reject Worker-injected timing and omit it from native assignment/checkpoint/digest projections. Legacy omission grants no elapsed, outcome or execution authority.
 
 ### cmds/delidev-cli/internal/server constraints
 
@@ -592,7 +592,7 @@ The public first dispatcher now accepts pinned Claude Code `2.1.236` API Execute
 
 The actual Worker holds the original execution lease, checks the selected canonical executable, creates an exclusive private runtime, retains digest-only registration intent and obtains a fresh exact scoped relay. It synchronizes the original input intent before native transmission. The joined reader publishes native initialization, pre-acceptance progress, exact user replay, ordered supported provider content, usage, tools, callbacks, direct replies/echoes/settlement and correlated result-command-idle facts through the original durable outbox. Closed or unsupported response streams fail explicitly; unknown native observations retain recovery rather than being dropped. Control failures cancel the owned native lifetime and every control goroutine is joined before returning.
 
-Correlated ordinary completion joins clean EOF and workspace closure, then uses the durable version-1 Worker result/report path. It stays paused and cannot authorize FIFO or Resume from native history alone. Targeted Stop before original input acceptance contains the original process and retains uncertainty. Accepted streaming Stop/Archive now uses the separately validated native interruption profile below; interrupted-denial cleanup, continuation/history recovery, pending-tool and richer native event families remain required. Those missing families are explicit implementation limits, not exclusions from issue #964.
+Correlated ordinary completion joins clean EOF and workspace closure, then uses the durable version-1 Worker result/report path. It stays paused and cannot authorize FIFO or Resume from native history alone. Targeted Stop before original input acceptance contains the original process and retains uncertainty. Accepted streaming Stop/Archive now uses the separately validated native interruption profile below; interrupted-denial cleanup, continuation/history recovery, pending-tool and richer native event families remain required. Those missing families are explicit implementation limits, not exclusions from the feature.
 
 ### Original Claude streaming Stop and Archive
 After acknowledged original input publication, targeted Stop/Archive joins response controls, synchronizes one original interrupt claim into the immutable binding journal and gives the same native controller a bounded 15-second grace under the Worker stream lifetime. Stream loss/revocation still cancels that lifetime immediately. Failed claims, unsupported pending work or raced completion remain uncertain, with original owned containment available independently; no native retry or replacement input is authorized.
@@ -629,7 +629,7 @@ The separately verified original answered-question profile also extends Claude F
 The separate public command/file-edit profile also permits completed synchronous Bash, Write and Edit history with original accepted tool permissions when native Claude requested them. Server acceptance independently rechecks original allow/claim/delivery/echo/result/settlement ownership and keeps tool approval distinct from question acceptance. An eligible root outcome and the private native checkpoint remain independently necessary; failed root outcomes require the verified settled-failure profile below. Restoring native conversation history cannot reissue a command/file mutation/approval or overwrite later workspace changes; unsupported auxiliary, failed tool, denied and permission-transition histories remain gated.
 
 ### Verified settled failed Claude input
-Issue #1102 extends the successful-root profiles above to a correlated original failed input with the same independently eligible inline content, Read, answered Question, synchronous Bash/Write/Edit and completed inline-task history. The Worker requires acknowledged terminal/content/result/callback publications, unchanged permission, the original controller's clean input EOF, joined native cleanup and independently completed workspace ownership before retaining its immutable checkpoint. The server independently rechecks original terminal classification, input acceptance, complete indexed history and settled callbacks before accepting the version-2 failed completion. Aborted streaming/tools, Stop, denial/interruption, changed permissions, unsettled callbacks and unproved child/background histories remain excluded, even when their terminal error bit classifies them as failed. A `background_requested` terminal is excluded independently of tracked background-task events.
+The feature extends the successful-root profiles above to a correlated original failed input with the same independently eligible inline content, Read, answered Question, synchronous Bash/Write/Edit and completed inline-task history. The Worker requires acknowledged terminal/content/result/callback publications, unchanged permission, the original controller's clean input EOF, joined native cleanup and independently completed workspace ownership before retaining its immutable checkpoint. The server independently rechecks original terminal classification, input acceptance, complete indexed history and settled callbacks before accepting the version-2 failed completion. Aborted streaming/tools, Stop, denial/interruption, changed permissions, unsettled callbacks and unproved child/background histories remain excluded, even when their terminal error bit classifies them as failed. A `background_requested` terminal is excluded independently of tracked background-task events.
 
 A verified failed completion keeps the original failed outcome and failed job, confirmed cleanup, paused dispatch and no next-execution intent. It never starts FIFO automatically. The existing authenticated `ControlSession` Resume operation and equivalent `session resume` CLI explicitly authorize only the oldest new queued input, with fresh execution/job/native-request/process/relay authority and the original immutable account/configuration/history. An empty-queue Resume retains explicit intent under the existing readiness gate. Exact Resume receipt replay cannot claim another input or undo a later Stop. The Worker compares the original checkpoint and native settings/history again before launch and input; missing or altered evidence blocks continuation without reconstruction, input replay, tool replay or workspace rollback. Historical accepted version-1 reports remain paused and cannot be promoted retroactively.
 
@@ -716,7 +716,7 @@ Fresh initial/continuation/Resume admission and first durable execution registra
 
 ## Authenticated development-server forwarding
 
-Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+The feature follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
 
 ## Preserved project-index implementation notes
 
@@ -724,15 +724,15 @@ The following source-backed notes were relocated from the project index at `12b3
 
 Uncertain question/approval response delivery now automatically inspects the original native conversation and exact retained turn/input scope after retaining the original delivery observation. Already observed exact live proof uses its original queued durable publication; history/closure alone never manufactures acceptance or permits a resend. Native pause and earlier recovery remain independent. Lost-event historical reconstruction and safe surviving-process reattachment remain required.
 
-Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
+The feature adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
 
 The private server execution-dispatch coordinator establishes its own server-owner context before reading retained PR input ownership. Ordinary initial and continuation dispatch therefore share the same actor boundary regardless of the internal caller. This does not grant any public RPC or paired Worker owner authority; their authorization remains independently enforced.
 
 An empty queue supplies no manual-fix candidate and skips only the optional PR preflight. The ordinary claim transaction still decides lifecycle and empty-input errors, rejecting already active work before emptiness and preserving pause, Archive, routing and original assignment state.
 
-### Grok public original tool interactions (issue #1091)
+### Grok public original tool interactions
 
-The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan-issue-1091)
+The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan)
 extends first dispatch to the verified Execute/Plan General Chat inputs. Initial
 Plan requires its original native mode claim before input; native tools then
 publish immutable ordered observations and original Write/question/Plan requests
@@ -749,7 +749,7 @@ Stop evidence retain paused recovery. Existing first-text history/Stop continue 
 use their separate original profiles; repositories and continuation stay gated.
 Tool completion remains version 1, with no automatic next input.
 
-## Same-account Codex fork boundary (#1092)
+## Same-account Codex fork boundary
 
 The [fork contract](cmds-delidev-forks-contract.md) adds a separate durable Worker
 operation for a completed source turn. A source reservation prevents concurrent
@@ -762,7 +762,7 @@ workspace result advances routing or authorizes provider inference. Local sharin
 is limited to user-owned Local source checkouts; parent-owned managed worktrees
 require an independent child copy so permanent parent deletion cannot remove its files.
 
-### Windows OpenCode General Chat (issue #1205)
+### Windows OpenCode General Chat
 
 The existing first-dispatch and FIFO/Resume APIs admit the pinned Windows global
 profile under the same immutable account/model/settings and owned-workspace
@@ -772,7 +772,7 @@ native checkpoint version 2 and read-only completed-report recovery. Existing
 Worker/report version 2 and public schemas/commands stay unchanged. Missing or
 changed root evidence refuses replacement without consuming another native
 input; recovery never starts native work and stays paused until explicit Resume.
-The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general-chat-root-profile-issue-1205)
+The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general-chat-root-profile)
 owns exact root, isolation, Plan-policy, version-1 compatibility and native-evidence
 requirements.
 
@@ -798,7 +798,7 @@ session after that separately settled automatic failure only when original nativ
 cleanup is confirmed and active/recovery/Archive ownership is absent; it never
 resumes the old failed queue. Its current source link and latest attempt session
 still enforce user controls. Historical and manual pauses remain ineligible.
-See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
+See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation).
 
 ## Ordered account source first execution
 
@@ -814,7 +814,7 @@ Usage and costs continue to use the actual immutable selected account/model.
 
 ## Explicit native skills
 
-Issue #1748 adds `$` skill selection to project-session and General Chat creation
+The feature adds `$` skill selection to project-session and General Chat creation
 and existing follow-up composers. A selected token carries an opaque inventory,
 package revision and original paired Worker identity separately from text.
 Manually typed tokens remain plain text. Editing a selected token removes its
@@ -879,7 +879,7 @@ remain in the queue's retained cleanup references. Queue edits preserve their
 original revision, actor and complete request identity through exact retries.
 
 The owner explicitly authorized declarations and activation together for the
-2026-10-08 fixed QA batch. This exception applies only to issue #1748's System 44,
+2026-10-08 fixed QA batch. This exception applies only to the feature's System 44,
 Worker 24 and typed session request field 4. It does not waive original authority,
 immutable input, cleanup or compatibility checks. Current feature allocation delivery
 follows the [shared allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow). The owner retains real-account,
@@ -898,7 +898,7 @@ Read preflight
 checks before new package preparation; the original acceptance transaction checks
 again atomically. Existing references are never evicted to make room.
 
-## Project first-prompt history (issue #1828)
+## Project first-prompt history
 
 Public `CreateSession` appends the exact nonblank first prompt for accepted MANUAL or EXTERNAL_CLI project sessions. The original receipt transaction appends and prunes immutable project-owned entities to the latest 100 entries. Durable server event sequence determines acceptance order. Replay, rejection and rollback add nothing. Image-only, General Chat, follow-up, schedule, remediation, Fork and Sidechat flows add nothing. Text history includes no attachments, typed skill bindings or execution choices. Source-session deletion and queue edits retain original history. No backfill runs.
 
@@ -906,20 +906,18 @@ Public `CreateSession` appends the exact nonblank first prompt for accepted MANU
 
 OpenCode lost-report recovery checks a child-owned immutable closed creation proof before admitting inspection work. Verified Fork publication atomically retains the expected creation request, child ID, original accepted output digest and digest binding of the complete original Fork boundary (including accepted input digest, native checkpoint/runtime, Worker and selection). This retains no source prompt or protected native content and survives independent parent purge. Changed valid creation UUIDs, checkpoint/runtime/selection or proof ownership reject before admission. Older seeds without that proof must compare any recorded marker against the exact retained completed original Fork input/output; absence remains recovery-required. The proof is trusted server-owned publication metadata, never authority derived from a later mutable marker; no RPC, allocation or migration.
 
-## Project behavior settings (issue #1965)
+## Project behavior settings
 
-Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
 
 ## New-session defaults and branch prefix declarations
 
-Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
 
-## Immutable approval reviewer — issue #1980
+## Immutable approval reviewer
+The original Codex execution freezes its optional reviewer and bounded API reviewer model allowance. Agent edits never rewrite it. Resume and ordinary Fork require original effective reviewer proof and current Worker capability 30; mismatch cannot retry input or silently use User review. Unsettled observed reviews block terminal success, continuation and manual compaction independently of approvals, tool outcomes and cleanup. Sidechat overlays User/read-only/never and removes the additional reviewer model allowance, retaining its parent snapshot/account and independent cleanup ownership. Follow the [harness reviewer contract](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer).
 
-The original Codex execution freezes its optional reviewer and bounded API reviewer model allowance. Agent edits never rewrite it. Resume and ordinary Fork require original effective reviewer proof and current Worker capability 30; mismatch cannot retry input or silently use User review. Unsettled observed reviews block terminal success, continuation and manual compaction independently of approvals, tool outcomes and cleanup. Sidechat overlays User/read-only/never and removes the additional reviewer model allowance, retaining its parent snapshot/account and independent cleanup ownership. Follow the [harness reviewer contract](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980).
-
-### Claude native web-tool publication — issues #2015 and #2016
-
+### Claude native web-tool publication
 Original root provider messages retain closed `server_tool_use`, `web_search_tool_result` and `web_fetch_tool_result` blocks in their existing ordered `claude.blocks` union. Each block has empty generic text and a separate `web` document with the original native call ID, closed search/fetch name and omitted-versus-explicit-direct caller observation. Server tools never become local `role=tool` calls, permission callbacks, tasks, user results or HTTP requests. Other server families, including code execution, remain unsupported by this publication profile.
 
 Calls retain exact initial JSON and ordered input fragments. At native completion, the assembled input must match the original native input and the closed one-field search `query` or fetch `url` shape. Results must follow the original stopped call block in the same provider message, match its original name/ID and occur once. Server acceptance independently rejects native identity reuse across provider messages and local tools in the original session/thread/turn. The existing accepted input, immutable account/configuration, authenticated Worker, sequence and atomic event/receipt gates apply unchanged. A lost acknowledgment retries only the exact pending publication; it cannot run another search or fetch.
@@ -932,17 +930,15 @@ The existing native checkpoint boundary excludes server-tool histories. Both Wor
 
 ## Same-question Sidechat retry
 
-Same-question Sidechat retry follows [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061). Preserve original ForkOrigin, exactly one direct text-only question and actor/revision-bound captured parent turns. Generated retry inputs do not count as new direct questions. Fresh native Fork history and the existing child workspace predecessor have separate ownership. Atomic successful completion selects the current answer; earlier jobs, answers, usage and findings retain their original identities. Stop/Archive, recovery and deletion fence every original generation; never infer a fresh retry from observation or lost acknowledgement.
+Same-question Sidechat retry follows [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry). Preserve original ForkOrigin, exactly one direct text-only question and actor/revision-bound captured parent turns. Generated retry inputs do not count as new direct questions. Fresh native Fork history and the existing child workspace predecessor have separate ownership. Atomic successful completion selects the current answer; earlier jobs, answers, usage and findings retain their original identities. Stop/Archive, recovery and deletion fence every original generation; never infer a fresh retry from observation or lost acknowledgement.
 
-### Codex image-view publication — issue #2017
-
-Compose the [closed image-view observation profile](cmds-delidev-harness-contract.md#codex-image-view-observations--issue-2017) with existing tool publication. Store only original Worker-owned observation metadata: opaque tool/reference ID, machine, immutable manifest digest, selected repository/root and relative location. The original immutable execution supplies account, connection, thread, turn and generation attribution. Reject duplicate native item identities and changed lifecycle references atomically, preserving earlier evidence and receipts. Completed native observations do not prove root success or independent cleanup.
+### Codex image-view publication
+Compose the [closed image-view observation profile](cmds-delidev-harness-contract.md#codex-image-view-observations) with existing tool publication. Store only original Worker-owned observation metadata: opaque tool/reference ID, machine, immutable manifest digest, selected repository/root and relative location. The original immutable execution supplies account, connection, thread, turn and generation attribution. Reject duplicate native item identities and changed lifecycle references atomically, preserving earlier evidence and receipts. Completed native observations do not prove root success or independent cleanup.
 
 The reference is not an ImageUpload or ImageAttachment. Existing byte reads require their independent claimed-upload authority and cannot accept this tool reference. No server image bytes, source paths, inferred image inputs, new file reads or new deletion obligations are created. Ordinary historical replay, Archive and retained Fork history preserve the original metadata; native/history checkpoints remain immutable. Metadata deletion follows existing joined session deletion, while original Local/source files and independently owned workspace cleanup retain their prior authority.
 
-## Revert context revisions — issue #2045
-
-Follow the [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).
+## Revert context revisions
+Follow the [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit).
 The session advances a context revision only with the verified original native
 Revert and cleanup result. Its version-4 context job and explicit Revert
 checkpoint are separate from historical execution progress. Preserve original
@@ -952,7 +948,7 @@ to the exact historical predecessor and independently validated replacement
 history. Success, failure and Stop outcomes remain attributed to that predecessor.
 Manual Resume and one fresh input do not replay an old turn. Original Fork and
 Sidechat snapshots retain their own lifetimes and contexts.
-## Accepted-turn elapsed observations (issue #2052)
+## Accepted-turn elapsed observations
 
 The server captures `turn_timing.accepted_at` once from the UTC clock of the original validated primary-input acceptance transaction. Queuing, preparation, READY/thread binding and pre-send rejection capture no accepted-turn timing. Matching success, failure or confirmed interruption captures `terminal_at` once in the original terminal publication transaction. Exact actor-bound receipt replay retains both original observations. Tool work and approval/user waits remain inside this interval; provider/native elapsed values and usage remain independent.
 
@@ -960,8 +956,7 @@ Session progress and every original primary-input user Message carry the same ac
 
 Timing is server-owned display metadata only. Worker publication documents cannot supply it. Strip it from native assignments, continuation/Fork/compaction projections, checkpoints and native digest inputs, including older closed Worker documents. It grants no execution, outcome, cleanup, recovery, permission or continuation authority. No RPC, allocation, migration or native adapter changes are added.
 
-## Waiting input dispatch order — issue #2142
-
+## Waiting input dispatch order
 Owner/client `MoveQueuedInput` changes private waiting order in the same receipt transaction as its session event. It binds the selected input revision, explicit queue generation (including zero), original session and optional anchor revision. Empty anchor means the end; its revision must be zero. Self-anchors and malformed requests are invalid; foreign scopes are denied; changed revisions, delivery or generation conflict. A current-position move records an exact receipt without changing order, generation or session revision. Original actor receipts are checked before current-state fences and never execute a movement again after claim, removal or restart.
 
 Every claim, including the independent first-execution transaction primitive, uses the same effective waiting head. Membership changes append new waiting inputs and increment generation for enqueue, claim, Steer, removal and return to waiting. Text/content edits do not change order generation. Public acceptance sequence, content revisions, prompts, mode, skills, images, existing assignment shapes and immutable execution ownership remain unchanged. Movement grants no new dispatch or native authority.

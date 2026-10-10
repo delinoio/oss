@@ -79,7 +79,7 @@
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
-- `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current issue #815 contract.
+- `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current the feature contract.
 - `docs/crates-binpm-foundation.md`: binpm Rust CLI, release asset source selection, global cache, and local tooling contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.

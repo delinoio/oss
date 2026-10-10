@@ -20,7 +20,7 @@ The first release is a full supported release, not a preview. There is no fixed 
 - Repository contracts establish Go as the default language, UUID v7 for new persisted entities, Rspack-family frontend tooling, Cloudflare Pages for static hosting, structured logging, and documentation-first project onboarding.
 - Relevant contracts: `AGENTS.md`, `cmds/AGENTS.md`, `apps/AGENTS.md`, `docs/repository-defaults.md`, and the project/domain documentation templates.
 - Searches for `async-commit-hook`, `local CI`, and `commit hook` found no duplicate issue.
-- Issue #893, Runmoor, manages ephemeral GitHub Actions runners and is a separate product with no required integration.
+- The feature, Runmoor, manages ephemeral GitHub Actions runners and is a separate product with no required integration.
 - The repository currently has no `PRD` label.
 
 ## Current Gap

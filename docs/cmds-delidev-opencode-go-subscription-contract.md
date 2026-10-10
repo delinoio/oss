@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #2097 owns the closed `opencode_go` Account and Model identity, protected key connection, OpenCode execution and AI Subscription presentation. Canonical paths are `cmds/delidev-cli/internal/{domain,server,store,worker,apiproxy}`, `protos/delidev/v1`, `packages/delidev-api-client` and `apps/delidev/src/opencode-go-account.tsx`.
+The feature owns the closed `opencode_go` Account and Model identity, protected key connection, OpenCode execution and AI Subscription presentation. Canonical paths are `cmds/delidev-cli/internal/{domain,server,store,worker,apiproxy}`, `protos/delidev/v1`, `packages/delidev-api-client` and `apps/delidev/src/opencode-go-account.tsx`.
 
 ## Runtime and Language
 
@@ -24,7 +24,7 @@ Settings appends OpenCode Go / For OpenCode to existing flat service rows with l
 
 ### Project requirements
 
-- Issue #2097 OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
+- The feature OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
 
 ## Storage
 
