@@ -3747,3 +3747,5 @@ Component fixtures, source checks and builds remain separate from installed-nati
 or real-account acceptance.
 
 Native Goals treat an original unclaimed `canceled` action as settled product cancellation rather than a native acknowledgment. Retain its Job outcome; the goal observation and process cleanup remain independent.
+
+The Native goal panel enables set, native refresh and clear only for the original live claimed execution without recovery. Worker capability admission uses the typed domain value from the original Machine document, separate from protocol enum advertisement. After stop or recovery, saved state and original action uncertainty remain readable while native controls are disabled.

@@ -67,3 +67,18 @@ func TestNativeGoalToolOutputsRemainClosedPrivateObservations(t *testing.T) {
 		}
 	}
 }
+
+func TestGoalRootIdentityIsOriginalPerTurnMetadata(t *testing.T) {
+	id, root := domain.NewID(), domain.NewID()
+	a := Turn{ID: id, RootTurnID: &root}
+	if !sameRootTurn(a, a) || sameRootTurn(a, Turn{ID: id}) {
+		t.Fatal("original root identity was replaced")
+	}
+	changed := domain.NewID()
+	if sameRootTurn(a, Turn{ID: id, RootTurnID: &changed}) {
+		t.Fatal("foreign root admitted on original turn")
+	}
+	if !sameRootTurn(Turn{ID: id}, Turn{ID: id}) {
+		t.Fatal("legacy nullable root rejected")
+	}
+}

@@ -161,7 +161,7 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 		}
 	}
 	if checkpoint.ForkHistory != nil {
-		turns, err := c.forkTurnsLocked(ctx, c.thread)
+		turns, err := c.forkTurnsProfileLocked(ctx, c.thread, checkpoint.GoalHistory)
 		if err != nil || !c.managedForkHistory || !checkpoint.ForkHistory.matches(turns) {
 			return mismatch()
 		}

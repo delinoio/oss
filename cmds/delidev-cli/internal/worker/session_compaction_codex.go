@@ -136,6 +136,11 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if err != nil {
 		return nil, err
 	}
+	// The legacy replacement-history profile does not retain native Goal state.
+	// Reject before credentials or Resume, which can start an active native goal.
+	if source.Native.GoalHistory != nil {
+		return nil, domain.NativeGoalUncertain()
+	}
 	var prior *codex.CompactedCheckpoint
 	if i.Previous != nil {
 		restored, err := readCodexSessionCompactionCheckpoint(ctx, config.Root, c.Credential, i.Restore, *i.Previous, source)

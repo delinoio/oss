@@ -37,5 +37,7 @@
   "session-goal.action.accepted": "The original goal action was accepted and is waiting for native handling.",
   "session-goal.action.claimed": "The original goal action was claimed. Native acknowledgment is pending.",
   "session-goal.action.acknowledged": "The original goal action was acknowledged by the native thread.",
-  "session-goal.action.uncertain": "The original goal action is uncertain. Do not send it again."
+  "session-goal.action.uncertain": "The original goal action is uncertain. Do not send it again.",
+  "session-goal.readOnlyState": "Native controls require the original running execution. Saved state remains readable after it stops or requires recovery.",
+  "session-goal.action.canceled": "The original goal action was canceled before its native claim."
 }

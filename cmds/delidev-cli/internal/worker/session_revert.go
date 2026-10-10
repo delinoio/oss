@@ -119,6 +119,11 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil {
 		return nil, err
 	}
+	// Revert recovery must not resume a goal-bearing thread through the legacy
+	// replacement-history profile; Resume can itself continue an active goal.
+	if source.Native.GoalHistory != nil {
+		return nil, domain.NativeGoalUncertain()
+	}
 	a, _ := json.Marshal(source.Native)
 	b, _ := json.Marshal(intent.Intent.Source)
 	if !bytes.Equal(a, b) {

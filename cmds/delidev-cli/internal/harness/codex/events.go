@@ -352,6 +352,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			}
 			return event, nil
 		}
+		if !sameRootTurn(prior.Turn, turn) {
+			return Event{}, incompatible()
+		}
 		event.Correlated = true
 		if prior.Turn.Status.terminal() {
 			event.Late = true

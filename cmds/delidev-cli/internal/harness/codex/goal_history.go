@@ -26,12 +26,12 @@ type GoalHistoryCheckpoint struct {
 
 func (p GoalHistoryCheckpoint) Valid(thread domain.ID) bool { return p.validate(thread) == nil }
 func (p GoalHistoryCheckpoint) validate(thread domain.ID) error {
-	if p.Version != 1 || len(p.Goal) == 0 || p.TurnsCount == 0 || p.TurnsCount > maxForkTurns || !contextDigest(p.HistoryDigest) || !contextDigest(p.RolloutDigest) || p.InputTurnID.Validate() != nil || len(p.OwnedTurns) > maxTrackedTurns {
+	if p.Version != 1 || len(p.Goal) == 0 || p.TurnsCount == 0 || p.TurnsCount > maxForkTurns || !contextDigest(p.HistoryDigest) || !contextDigest(p.RolloutDigest) || p.InputTurnID.Validate() != nil || len(p.OwnedTurns) > int(p.TurnsCount) {
 		return goalUncertain()
 	}
 	seen := map[domain.ID]bool{}
 	for _, turn := range p.OwnedTurns {
-		if turn.Validate() != nil || seen[turn] {
+		if turn.Validate() != nil || turn == p.InputTurnID || seen[turn] {
 			return goalUncertain()
 		}
 		seen[turn] = true
@@ -153,7 +153,7 @@ func (c *Client) RetainGoalHistory(ctx context.Context, source ContinuationCheck
 			continue
 		}
 		tracked, known := state.turns[turn.ID]
-		if !known || tracked.Turn.Status != turn.Status || found[turn.ID] {
+		if !known || tracked.Turn.Status != turn.Status || !sameRootTurn(tracked.Turn, turn) || found[turn.ID] {
 			return nil, goalUncertain()
 		}
 		found[turn.ID] = true
@@ -174,9 +174,7 @@ func (c *Client) RetainGoalHistory(ctx context.Context, source ContinuationCheck
 			if !slices.Equal(inputs, expected) || len(expected) == 0 {
 				return nil, goalUncertain()
 			}
-			if turn.ID == source.TurnID || proof.InputTurnID == "" {
-				proof.InputTurnID = turn.ID
-			}
+			proof.InputTurnID = turn.ID
 		}
 	}
 	// The source terminal may be the original product turn, with no automatic
@@ -264,4 +262,13 @@ func (c *Client) VerifyGoalBeforeResume(ctx context.Context, source Continuation
 		return goalUncertain()
 	}
 	return nil
+}
+
+// Native Goals starts regular native work chains. Cross-iteration root equality
+// is not native ownership evidence; preserve each original turn's own root.
+func sameRootTurn(a, b Turn) bool {
+	if a.RootTurnID == nil || b.RootTurnID == nil {
+		return a.RootTurnID == nil && b.RootTurnID == nil
+	}
+	return *a.RootTurnID == *b.RootTurnID
 }

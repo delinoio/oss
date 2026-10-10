@@ -37,5 +37,7 @@
   "session-goal.action.accepted": "원래 목표 작업이 접수되어 네이티브 처리를 기다립니다.",
   "session-goal.action.claimed": "원래 목표 작업이 인수되었습니다. 네이티브 승인을 기다립니다.",
   "session-goal.action.acknowledged": "원래 목표 작업이 네이티브 스레드에서 승인되었습니다.",
-  "session-goal.action.uncertain": "원래 목표 작업이 불확실합니다. 다시 전송하지 마세요."
+  "session-goal.action.uncertain": "원래 목표 작업이 불확실합니다. 다시 전송하지 마세요.",
+  "session-goal.readOnlyState": "원래 실행이 진행 중일 때만 목표를 제어할 수 있습니다. 실행이 중지되거나 복구가 필요해도 저장된 상태는 읽을 수 있습니다.",
+  "session-goal.action.canceled": "원래 목표 작업은 네이티브 처리 요청 전에 취소되었습니다."
 }

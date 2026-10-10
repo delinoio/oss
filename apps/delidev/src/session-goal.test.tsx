@@ -5,16 +5,16 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, NativeGoalAction, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, WorkerCapability, newRequestId, type RequestSessionGoalActionRequest } from "@delinoio/delidev-api-client";
+import { EntityKind, NativeGoalAction, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type RequestSessionGoalActionRequest } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { SessionGoal } from "./session-goal";
 function fixture({ enabled = true, sidechat = false }: { enabled?: boolean; sidechat?: boolean } = {}) {
   const id = newRequestId(), execution = newRequestId(), thread = newRequestId(), machineId = newRequestId();
-  let data: Record<string, unknown> = { machine_id: machineId, initial_execution: { configuration: { harness: "codex" } }, execution: { execution_id: execution, native_thread_id: thread }, ...(sidechat ? { fork: { sidechat_parent_snapshot: {} } } : {}), native_goal: { enabled, source_execution_id: execution, source_native_thread_id: thread, observation: null } };
+  let data: Record<string, unknown> = { archive: "active", recovery: "none", dispatch: "claimed", active_execution_id: execution, machine_id: machineId, initial_execution: { configuration: { harness: "codex" } }, execution: { execution_id: execution, native_thread_id: thread }, ...(sidechat ? { fork: { sidechat_parent_snapshot: {} } } : {}), native_goal: { enabled, source_execution_id: execution, source_native_thread_id: thread, observation: null } };
   let session = create(ResourceSchema, { id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode(data) });
   const original = session;
-  const machine = create(ResourceSchema, { id: machineId, kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ worker_capabilities: [WorkerCapability.NATIVE_CODEX_GOALS_V1] }) });
+  const machine = create(ResourceSchema, { id: machineId, kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ worker_capabilities: ["native-codex-goals-v1"] }) });
   const read = vi.fn(() => ({ session }));
   const write = vi.fn(async (request: RequestSessionGoalActionRequest) => {
     const action = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, sessionId: id, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "native-goal-action", state: "queued" }) });

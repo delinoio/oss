@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
-import { EntityKind, NativeGoalAction, ResourceQuery, SessionQuery, SystemCapability, SystemQuery, WorkerCapability, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, NativeGoalAction, ResourceQuery, SessionQuery, SystemCapability, SystemQuery, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
 import { copy, useLocale } from "./localization";
 import { useRetainedMutation } from "./mutation";
@@ -25,11 +25,12 @@ export function SessionGoal({ session, changed, readOnly = false }: { session: R
   const machineId = text(data.machine_id);
   const machine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: machineId }, { enabled: supported && Boolean(machineId), retry: false });
   const row = machine.data?.resource;
-  const workerSupported = !machine.error && row?.id === machineId && row.kind === EntityKind.MACHINE && row.revision > 0n && supportsResourceSchema(row) && items(document(row).worker_capabilities).includes(WorkerCapability.NATIVE_CODEX_GOALS_V1);
+  const workerSupported = !machine.error && row?.id === machineId && row.kind === EntityKind.MACHINE && row.revision > 0n && supportsResourceSchema(row) && items(document(row).worker_capabilities).includes("native-codex-goals-v1");
   const harness = retainedSessionHarness(current);
   const sidechat = Boolean(object(data.fork).sidechat_parent_snapshot);
   const originalScope = Boolean(view && text(execution.execution_id) === view.source_execution_id && text(execution.native_thread_id) === view.source_native_thread_id && (!data.current_execution || text(object(data.current_execution).id) === view.source_execution_id));
-  const eligible = active && supported && !readOnly && !sidechat && harness === "codex" && workerSupported && originalScope && view?.enabled === true && !result.error && !result.isFetching;
+  const liveScope = data.archive === "active" && data.recovery === "none" && data.dispatch === "claimed" && data.active_execution_id === view?.source_execution_id && execution.cleanup_verified !== true;
+  const eligible = liveScope && active && supported && !readOnly && !sidechat && harness === "codex" && workerSupported && originalScope && view?.enabled === true && !result.error && !result.isFetching;
   const [draft, setDraft] = useState<{ revision: bigint; execution: string; thread: string; objective: string; changeObjective: boolean; status: string; budgetMode: string; budget: string }>();
   const mutation = useRetainedMutation(`native-goal:${session.id}`, SessionQuery.requestSessionGoalAction, (reply, request) => {
     if (reply.session) changed(reply.session);
@@ -58,6 +59,7 @@ export function SessionGoal({ session, changed, readOnly = false }: { session: R
     {view?.observed_at ? <p>{copy("session-goal.observed")} <Timestamp value={view.observed_at} /></p> : null}
     {result.error && view ? <p role="status">{copy("session-goal.stale")}</p> : null}
     {view?.action_state ? <p role="status">{copy(`session-goal.action.${view.action_state}`)}</p> : null}
+    {supported && originalScope && !liveScope ? <p role="status">{copy("session-goal.readOnlyState")}</p> : null}
     {view?.problem_code ? <p role="alert">{copy("session-goal.recovery")}</p> : null}
     <div className="actions"><button type="button" disabled={!supported || result.isFetching} onClick={() => void result.refetch()}>{copy("session-goal.reload")}</button><button type="button" disabled={!eligible || blocked} onClick={() => send(NativeGoalAction.READ)}>{copy("session-goal.refresh")}</button><button type="button" disabled={!eligible || blocked || Boolean(draft)} onClick={() => { if (current && view) setDraft({ revision: current.revision, execution: view.source_execution_id, thread: view.source_native_thread_id, objective: observation?.objective ?? "", changeObjective: false, status: "", budgetMode: "keep", budget: observation?.token_budget ?? "" }); }}>{copy("session-goal.edit")}</button><button type="button" disabled={!eligible || blocked} onClick={() => send(NativeGoalAction.CLEAR)}>{copy("session-goal.clear")}</button></div>
     {mutation.uncertain ? <><p role="alert">{copy("session-goal.uncertain")}</p><button type="button" disabled={mutation.busy || !active || readOnly} onClick={mutation.retry}>{copy("session-goal.retry")}</button></> : null}
