@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ShortcutPreferenceProvider, ShortcutPreferenceProblem, useShortcutPreferences, type ShortcutPreferenceBridge, type ShortcutPreferenceSnapshot } from "./shortcut-preference-controller";
 import { ShortcutSettings } from "./shortcut-settings";
@@ -32,6 +32,22 @@ const capture = async(name="New session",key="j")=>{
  await screen.findByText("Unsaved changes");
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Cancel capture"})).toBeNull());
 };
+it("uses New Chat in the English creation heading while preserving Korean and shortcut dispatch",async()=>{
+ const f=fixture(),run=vi.fn();render(<Owner bridge={f.bridge} run={run}/>);await screen.findByText("Current saved shortcuts");
+ const heading=screen.getByRole("heading",{level:2,name:"New session / New Chat"});
+ expect(i18n.t("sidebar.newGeneralChat")).toBe("New Chat");
+ expect(screen.queryByText("New session / New general chat")).toBeNull();
+ expect(screen.getByRole("button",{name:"Capture shortcut for New session"})).toBeTruthy();
+ const action=screen.getByRole("button",{name:"Ordinary action"});
+ expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
+ fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();
+ await act(async()=>{await i18n.changeLanguage(SupportedLanguage.Korean);});
+ expect(screen.getByRole("heading",{level:2,name:"새 세션 / 새 일반 대화"})).toBe(heading);
+ expect(screen.getByRole("button",{name:"Ordinary action"})).toBe(action);
+ expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
+ fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledTimes(2);
+ expect(f.state().overrides).toEqual({});expect(f.bridge.update).not.toHaveBeenCalled();
+});
 it("keeps draft bindings inactive until Save and updates dispatch and ARIA without remount",async()=>{
  const f=fixture(),run=vi.fn();render(<StrictMode><Owner bridge={f.bridge} run={run}/></StrictMode>);await screen.findByText("Current saved shortcuts");
  expect(screen.getByRole("button",{name:"Save changes"}).getAttribute("data-settings-action")).toBe("save");
@@ -103,4 +119,15 @@ it("shows fixed New Window N and permits saving former T without changing native
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"t",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"n",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  expect(screen.getByText("New Window").closest("div")?.querySelector("dd")?.textContent).toBe("Ctrl + N");
+});
+
+it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열에 추가','고정: Enter']])("shows fixed send independently of disabled primary in %s",async(language,label,fixed)=>{
+ await act(()=>i18n.changeLanguage(language));Object.defineProperty(navigator,'platform',{configurable:true,value:'Linux'});
+ const f=fixture();render(<Owner bridge={f.bridge}/>);
+ const row=screen.getByRole('heading',{name:label}).closest('.shortcut-settings-row')!;
+ expect(within(row as HTMLElement).getByText(fixed)).toBeTruthy();
+ fireEvent.click(within(row as HTMLElement).getByRole('button',{name:language==='en'?`Disable ${label} shortcut`:`${label} 단축키 사용 안 함`}));
+ expect(within(row as HTMLElement).getByText(fixed)).toBeTruthy();
+ expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
+ await act(()=>i18n.changeLanguage('en'));
 });

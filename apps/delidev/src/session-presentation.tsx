@@ -4,10 +4,11 @@ import { copy, useLocale } from "./localization";
 
 export enum SessionIconKind {
   Diff = "diff", Files = "files", Terminals = "terminals", Browser = "browser",
-  Diagnostics = "diagnostics", Conversation = "conversation", Warning = "warning",
+  Tools = "tools", Diagnostics = "diagnostics", Conversation = "conversation", Warning = "warning",
 }
 
 const paths: Record<SessionIconKind, ReactNode> = {
+  [SessionIconKind.Tools]: <path d="m14 6 4 4 3-3a6 6 0 0 1-8 8l-6 6a3 3 0 0 1-4-4l6-6a6 6 0 0 1 8-8z" />,
   [SessionIconKind.Diff]: <><path d="M5 3h8l4 4v14H5zM13 3v5h4M8 12h6M11 9v6M8 18h6" /></>,
   [SessionIconKind.Files]: <><path d="M5 3h8l4 4v14H5zM13 3v5h4" /></>,
   [SessionIconKind.Terminals]: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="m7 9 3 3-3 3M13 16h4" /></>,

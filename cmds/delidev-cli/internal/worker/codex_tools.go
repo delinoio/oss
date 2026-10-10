@@ -10,10 +10,11 @@ import (
 )
 
 type codexToolPublication struct {
-	ID        domain.ID
-	Kind      domain.ToolKind
-	Completed bool
-	ImageView *domain.ImageViewObservation
+	ID              domain.ID
+	Kind            domain.ToolKind
+	Completed       bool
+	SleepDurationMS *uint64
+	ImageView       *domain.ImageViewObservation
 }
 
 // Called under the event publisher lock. Only identities remain in this map;
@@ -43,7 +44,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			if event.Kind == codex.ToolCompletedEvent {
 				snapshot.Status = domain.ToolCompleted
 			}
-			if event.Tool.Command != nil || event.Tool.Changes != nil || event.Tool.ID != event.ItemID || event.Tool.Status != map[domain.ToolStatus]codex.ToolStatus{domain.ToolRunning: codex.ToolRunning, domain.ToolCompleted: codex.ToolCompleted}[snapshot.Status] {
+			if event.Tool.SleepDurationMS != nil || event.Tool.Command != nil || event.Tool.Changes != nil || event.Tool.ID != event.ItemID || event.Tool.Status != map[domain.ToolStatus]codex.ToolStatus{domain.ToolRunning: codex.ToolRunning, domain.ToolCompleted: codex.ToolCompleted}[snapshot.Status] {
 				return publicationUncertain()
 			}
 		} else {
@@ -57,7 +58,10 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			if c.itemKnown(event.ItemID) || c.itemLimitReached() {
 				return publicationUncertain()
 			}
-			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView}
+			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView, SleepDurationMS: nil}
+			if snapshot.Sleep != nil {
+				retained.SleepDurationMS = snapshot.Sleep.DurationMS
+			}
 			if snapshot.ImageView != nil {
 				retained.ID = snapshot.ImageView.ReferenceID
 			}
@@ -65,6 +69,9 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			kind = domain.ExecutionToolStarted
 		} else {
 			if !known || retained.Completed || retained.Kind != snapshot.Kind || snapshot.Kind == domain.ImageViewTool && (retained.ImageView == nil || snapshot.ImageView == nil || *retained.ImageView != *snapshot.ImageView) {
+				return publicationUncertain()
+			}
+			if snapshot.Kind == domain.SleepTool && (retained.SleepDurationMS == nil || snapshot.Sleep == nil || snapshot.Sleep.DurationMS == nil || *retained.SleepDurationMS != *snapshot.Sleep.DurationMS) {
 				return publicationUncertain()
 			}
 			retained.Completed = true
@@ -76,17 +83,26 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 		}
 		switch event.Kind {
 		case codex.ToolOutputEvent:
-			if retained.Kind != domain.CommandTool {
+			outputKind := domain.CommandTool
+			if event.ToolOutputKind == codex.PatchTool {
+				outputKind = domain.PatchTool
+			} else if event.ToolOutputKind != "" && event.ToolOutputKind != codex.CommandTool {
+				return publicationUncertain()
+			}
+			if retained.Kind != outputKind {
 				return publicationUncertain()
 			}
 			kind, update.Delta = domain.ExecutionToolOutput, &event.TextDelta
+			if outputKind == domain.PatchTool {
+				update.OutputKind = outputKind
+			}
 		case codex.ToolInputEvent:
 			if retained.Kind != domain.CommandTool || event.ToolInput == nil {
 				return publicationUncertain()
 			}
 			kind, update.Input = domain.ExecutionToolInput, &domain.ToolInputObservation{ProcessID: event.ToolInput.ProcessID, Text: event.ToolInput.Text}
 		case codex.ToolPatchEvent:
-			if retained.Kind != domain.PatchTool || event.Tool == nil || event.Tool.ID != event.ItemID || event.Tool.Kind != codex.PatchTool || event.Tool.Status != "" || event.Tool.Command != nil {
+			if retained.Kind != domain.PatchTool || event.Tool == nil || event.Tool.ID != event.ItemID || event.Tool.Kind != codex.PatchTool || event.Tool.Status != "" || event.Tool.Command != nil || event.Tool.SleepDurationMS != nil {
 				return publicationUncertain()
 			}
 			changes := codexFileChanges(event.Tool.Changes)
@@ -104,9 +120,16 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
 	result := domain.ToolSnapshot{
-		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool}[native.Kind],
+		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool}[native.Kind],
 		Status:  map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],
 		Changes: codexFileChanges(native.Changes),
+	}
+	if native.SleepDurationMS != nil {
+		value := *native.SleepDurationMS
+		result.Sleep = &domain.SleepObservation{DurationMS: &value}
+	}
+	if native.ImagePath != "" {
+		return result, publicationUncertain()
 	}
 	if n := native.Command; n != nil {
 		c := &domain.CommandObservation{Command: n.Command, Cwd: n.Cwd, Source: map[codex.CommandSource]domain.CommandSource{codex.AgentCommand: domain.AgentCommand, codex.UserShellCommand: domain.UserShellCommand, codex.ExecStartupCommand: domain.ExecStartupCommand, codex.ExecInputCommand: domain.ExecInputCommand}[n.Source], ProcessID: n.ProcessID, AggregatedOutput: n.AggregatedOutput, ExitCode: n.ExitCode, DurationMS: n.DurationMS, PluginID: n.PluginID, ScriptPath: n.ScriptPath}

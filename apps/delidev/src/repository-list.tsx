@@ -33,7 +33,7 @@ export function RepositoryRow({ row, edit, remove }: { row: Resource; edit: () =
       </div>
     </header>
     {supported ? <dl className="repository-metadata">
-      <div><dt>{copy("settings.repositoryFolders")}</dt><dd>{checkouts.length ? <ul>{checkouts.map((checkout, index) => <li key={index}><code>{text(checkout.path)}</code></li>)}</ul> : copy("settings.repositoryNoFolders")}</dd></div>
+      <div><dt>{copy("settings.repositoryFolders")}</dt><dd>{checkouts.length ? <ul>{checkouts.map((checkout, index) => <li key={index}><code className="repository-checkout-path">{text(checkout.path)}</code></li>)}</ul> : copy("settings.repositoryNoFolders")}</dd></div>
       <div><dt>GitHub</dt><dd>{owner && githubName ? <span className="repository-github-name">{owner}/{githubName}</span> : copy("settings.repositoryNoGithubIdentity")}</dd></div>
     </dl> : null}
     {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}

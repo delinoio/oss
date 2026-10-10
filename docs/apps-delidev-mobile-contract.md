@@ -120,6 +120,10 @@ prove that a person saw an alert or accepted a native request.
 
 ## Logging
 
+Beta provider failures record only provider, HTTP method, numeric status and
+closed transport outcome. Durable checkpoints report platform and stage; no
+provider URL, response body or raw exception is recorded.
+
 Platform failures log only the operation and sanitized outcome. Product
 connection diagnostics include opaque profile/server identifiers and status.
 Never log origins, authorization headers, pairing codes, prompts, messages,
@@ -139,7 +143,9 @@ Xcode application target without signing or launching a simulator. The pinned
 cargo-mobile2 CLI incorrectly requires an installed runtime for a build-only
 simulator archive; the owned build script uses the installed SDK through direct
 xcodebuild after compiling and copying the exact Rust library. Remove this path
-when the pinned CLI supports build-only simulator targets. `pnpm
+when the pinned CLI supports build-only simulator targets. Direct Cargo
+builds also pass the configured iOS minimum explicitly to the pinned Tauri Swift
+linker, which otherwise falls back to iOS 13 before the app config is applied. `pnpm
 build:android:emulator` builds the x86_64 Android APK through the pinned CLI.
 Required mobile target build failures are blockers. Root `cargo test` remains
 required for Rust changes. Hydrate required LFS assets before root compilation.
@@ -147,11 +153,28 @@ All generated native projects and `dist` directories stay untracked; remove
 `dist` directories from final worktrees.
 
 Beta candidates pin one source SHA and semantic app version, with explicit iOS
-build and Android version-code inputs. Candidate manifests include identity,
+build and, for the default both-platform target, Android version-code inputs.
+An explicit `ios` target omits Android inputs and credentials. It produces a
+schema-2 manifest with exactly the iOS artifact; the default `both` target retains
+the schema-1 manifest. Provenance pins the target and cannot reinterpret a
+candidate across targets. All beta runs share one non-canceling concurrency group
+to serialize edits against the configured Google principal. Candidate manifests include identity,
 architectures, expected signer fingerprints, original artifact byte lengths and
 SHA-256 checksums. Conflicting candidate/version reuse is refused. Internal-only
-preflight and immutable provider receipts precede any future upload. Unknown
-upload outcomes require authoritative inspection of the original provider
+preflight and immutable provider receipts precede any future upload. All selected platform receipts are stored before any provider is contacted. A
+definitive preflight failure retains the unsubmitted platform as Ready; missing
+receipts during recovery remain Unknown. Apple proof reads the nested processing
+state and the complete bounded internal-group build inventory. The IPA endpoint
+rejects optional SHA-256 commit attributes and returns an MD5 file checksum.
+Keep the candidate's source/signature/SHA-256 verification; corroborate those
+bytes only through the original receipt-bound BuildUpload/file ID, exact length,
+completed file and matching returned MD5. Never adopt a handleless match using
+MD5. Retain original file SHA-256/length and positive complete-transfer proof
+before committing `uploaded: true`; explicit recovery may finish that same
+metadata commit, but uncertain transfers cannot resend or replace bytes. Google proof
+distinguishes a new read-only edit from staged membership in the original
+writable edit; only committed internal distribution can complete the receipt.
+Unknown upload outcomes require authoritative inspection of the original provider
 operation; they cannot regenerate, re-sign or upload replacement artifacts.
 The default dry run has no credential or provider access. Account setup, actual
 signing/provisioning, store uploads and real device/account acceptance remain
@@ -201,7 +224,11 @@ Create separate Apple and Google app records for `io.delino.delidev.mobile`.
 Apple uses an internal TestFlight group whose `isInternalGroup` is true and whose
 public link is disabled. Only App Store Connect team members belong to this
 lane. Google uses the `internal` track and owner-selected internal testers.
-Neither adapter exposes an external-testing or production target.
+Neither adapter exposes an external-testing or production target. The Google
+account must be active, and a new app requires its first owner-controlled binary
+upload and required legal consents through Play Console before Publisher API
+submission can operate. An inactive or terminated account cannot be repaired by
+workflow retries.
 
 Protect the `delidev-mobile-beta` GitHub environment with trusted source branches
 and required owner review. Keep the following non-secret variables there:
@@ -224,7 +251,10 @@ Configure only environment-owned secrets:
   `DELIDEV_MOBILE_ANDROID_STORE_PASSWORD` select its original signing key.
 - `DELIDEV_MOBILE_APPLE_ISSUER`, `DELIDEV_MOBILE_APPLE_KEY_ID` and
   `DELIDEV_MOBILE_APPLE_PRIVATE_KEY`: the App Store Connect API issuer, key ID and
-  PEM P-256 private key with access to the exact app/internal group.
+  PEM P-256 private key whose role permits the exact app/internal group operations.
+  Apple team keys apply to every team app and have no app-specific access limit;
+  owner approval must cover that scope before a new key is created. The adapter
+  still pins the configured DeliDev app and internal group.
 - `DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT`: the protected service-account JSON
   with Android Publisher scope, exact configured principal and official OAuth
   token endpoint. Grant only the app/internal-testing access required by the lane.
@@ -236,15 +266,24 @@ build/code, minimum platform and exact native architectures are checked against
 actual signed artifacts. Bundletool 1.18.3 uses its recorded official SHA-256;
 the app does not import DevHud release authority. Native/signing/upload tasks
 have no shared caches. Hosted runners need Xcode with the iOS SDK, XcodeGen,
-Android API 37/build-tools 36/NDK 29.0.14206865, JDK 21 and the declared Rust targets.
+Android API 37.0 (`platforms;android-37.0`), command-line tools 16111833,
+build-tools 36/NDK 29.0.14206865, JDK 21 and the declared Rust targets.
 Account/provisioning setup and hosted signing acceptance are owner work.
 
 ## Future Live Procedure
 
 Do not execute this procedure as ordinary validation. Select a trusted workflow
 ref whose HEAD is the exact `source_sha`. The workflow rejects a different
-workflow/source revision. Enter the same semantic `version`, positive explicit
-`ios_build` and canonical positive `android_code` for both platforms.
+workflow/source revision. For an explicitly repaired `resume` only, pin the
+reviewed workflow revision with `recovery_sha` while `source_sha` remains the
+original candidate revision. Check out and verify both clean revisions
+independently. Recovery code reads the original candidate from the original
+checkout and cannot package, submit a fresh candidate, rebuild or re-sign.
+Receipt provenance accepts only the original or exact selected recovery revision;
+receipt content must still bind the original candidate. Enter the same semantic `version`, positive explicit
+`ios_build`. The default `both` target also requires canonical positive
+`android_code`; select `ios` and leave Android code empty for Apple-only work.
+Apple-only execution requires only Apple variables and secrets.
 
 1. Dispatch `dry-run` first. This mode has no store/signing secrets, no provider
    access and no publication. It runs frontend/shared-client fixtures and actual
@@ -253,13 +292,16 @@ workflow/source revision. Enter the same semantic `version`, positive explicit
 2. After owner review, dispatch `package` with the same inputs. Both candidates
    come from the same source and version. iOS exports an arm64 IPA with
    `testFlightInternalTestingOnly`; Android produces arm64-v8a/armeabi-v7a AAB.
-   The complete immutable artifact retains both bytes, metadata and source-bound
+   The complete immutable artifact retains selected platform bytes, metadata and source-bound
    SHA-256 manifest. Record its GitHub artifact ID. A package run cannot upload.
 3. Dispatch `submit` with that exact `candidate_artifact_id`. The workflow checks
    the original repository/run/source/workflow and successful package result.
+   Download the candidate and latest receipt from their independently verified
+   original run IDs; never search the current submission run for retained artifacts.
    Submission checks the retained candidate and never rebuilds or re-signs it.
-   Apple validates the exact app/internal group, original BuildUpload/file SHA-256
-   and `INTERNAL_ONLY` processed build before assignment. Google validates the
+   Apple validates the exact app/internal group, original receipt-owned upload/file,
+   locally verified candidate SHA-256, returned file checksum and `INTERNAL_ONLY`
+   processed build before assignment. Google validates the
    exact principal, original bundle version/hash and `internal` release only.
 4. Preserve the receipt artifact even when submission fails. After an uncertain
    response or Apple processing, dispatch `resume` against the original candidate
