@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +88,62 @@ func (b *titleReasoningBudget) observe(event codex.Event) bool {
 	return b.total <= domain.MaxAutomaticTitleReasoningBytes
 }
 
+// titleRuntimeCleanup runs each cleanup attempt once. A failed process join keeps
+// the private runtime and its intent available for original-owner recovery.
+type titleRuntimeCleanup struct {
+	closeClient    func() error
+	closeProxy     func() error
+	reconcileOwner func() error
+	removeHome     func() error
+	syncParent     func() error
+	logger         *slog.Logger
+	jobID          domain.ID
+	attempted      bool
+}
+
+type titleCleanupStage string
+
+const (
+	titleCleanupClient titleCleanupStage = "native-close"
+	titleCleanupProxy  titleCleanupStage = "proxy-close"
+	titleCleanupOwner  titleCleanupStage = "owner-reconcile"
+	titleCleanupRemove titleCleanupStage = "runtime-remove"
+	titleCleanupSync   titleCleanupStage = "parent-sync"
+)
+
+func (c *titleRuntimeCleanup) finish(output *json.RawMessage, returned *error) {
+	if c.attempted {
+		return
+	}
+	c.attempted = true
+	failed := false
+	run := func(stage titleCleanupStage, operation func() error) {
+		if operation == nil {
+			return
+		}
+		if err := operation(); err != nil {
+			failed = true
+			if c.logger != nil {
+				c.logger.Error("automatic title cleanup remains uncertain", "job_id", c.jobID, "stage", stage)
+			}
+		}
+	}
+	run(titleCleanupClient, c.closeClient)
+	run(titleCleanupProxy, c.closeProxy)
+	run(titleCleanupOwner, c.reconcileOwner)
+	// Never erase the private intent while original process ownership is uncertain.
+	if !failed {
+		run(titleCleanupRemove, c.removeHome)
+		if !failed {
+			run(titleCleanupSync, c.syncParent)
+		}
+	}
+	if failed {
+		*output = nil
+		*returned = domain.Fail(domain.RecoveryRequired, "The private automatic title runtime cleanup is unconfirmed.", "Retain the original operation and reconcile native ownership and durable cleanup; do not replay inference.")
+	}
+}
+
 func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	connection := config.execution
 	if connection == nil || connection.Assignment == nil || domain.ID(connection.Assignment.Id) != jobID || connection.Client == nil || connection.Instance != job.InstanceID {
@@ -104,46 +161,46 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if err != nil {
 		return nil, err
 	}
+	processRoot := filepath.Join(config.Root, "processes")
+	verificationStarted := false
+	var client *codex.Client
+	var proxy *nativeproxy.Proxy
+	cleanup := titleRuntimeCleanup{
+		logger: config.Logger, jobID: jobID,
+		closeClient: func() error {
+			if client != nil {
+				return client.Close()
+			}
+			return nil
+		},
+		closeProxy: func() error {
+			if proxy != nil {
+				return proxy.Close()
+			}
+			return nil
+		},
+		reconcileOwner: func() error {
+			if verificationStarted {
+				return process.ReconcileOwner(processRoot, jobID)
+			}
+			return nil
+		},
+		removeHome: func() error { return os.RemoveAll(home) },
+		syncParent: func() error { return security.SyncParent(home) },
+	}
+	defer cleanup.finish(&output, &returned)
 	if err := security.PrivateDir(home); err != nil {
 		return nil, err
 	}
-	home, err = filepath.EvalSymlinks(home)
+	canonicalHome, err := filepath.EvalSymlinks(home)
 	if err != nil {
 		return nil, err
 	}
-	home, err = filepath.Abs(home)
+	canonicalHome, err = filepath.Abs(canonicalHome)
 	if err != nil {
 		return nil, err
 	}
-	removed := false
-	verificationStarted := false
-	processRoot := filepath.Join(config.Root, "processes")
-	var client *codex.Client
-	var proxy *nativeproxy.Proxy
-	defer func() {
-		if client != nil {
-			if err := client.Close(); err != nil && returned == nil {
-				output, returned = nil, domain.Fail(domain.RecoveryRequired, "The private Codex title runtime could not be closed cleanly.", "Retain its journal and reconcile owned native processes before retrying.")
-			}
-		}
-		if proxy != nil {
-			if err := proxy.Close(); err != nil {
-				output, returned = nil, err
-			}
-		}
-		if verificationStarted {
-			if err := process.ReconcileOwner(processRoot, jobID); err != nil {
-				output, returned = nil, err
-			}
-		}
-		if !removed {
-			if err := os.RemoveAll(home); err != nil && returned == nil {
-				output, returned = nil, domain.Fail(domain.RecoveryRequired, "The private automatic title runtime could not be removed.", "Retain its native ownership and reconcile cleanup before continuing.")
-			} else if err == nil {
-				_ = security.SyncParent(home)
-			}
-		}
-	}()
+	home = canonicalHome
 	workdir := filepath.Join(home, "work")
 	if err := security.PrivateDir(workdir); err != nil {
 		return nil, err
@@ -346,26 +403,12 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 	if completed == nil || finalCount != 1 || !sawUserInput || !sawTurnStart || len(final) > 256 || domain.Text(final, "automatic title", 256, true) != nil || strings.ContainsAny(final, "\r\n\x00") {
 		return nil, domain.Fail(domain.InvalidArgument, "The native title response is not one bounded single-line title.", "Keep the placeholder; do not repair, truncate or retry it.")
 	}
-	if err := client.Close(); err != nil {
-		client = nil
-		return nil, domain.Fail(domain.RecoveryRequired, "The automatic title app-server could not be closed cleanly.", "Retain its private runtime and reconcile owned processes before reporting the operation.")
+	// Cleanup precedes success publication and is never retried by the deferred
+	// error path. Any uncertainty replaces an otherwise valid inference result.
+	cleanup.finish(&output, &returned)
+	if returned != nil {
+		return nil, returned
 	}
-	client = nil
-	if proxy != nil {
-		if err := proxy.Close(); err != nil {
-			return nil, err
-		}
-	}
-	if err := process.ReconcileOwner(processRoot, jobID); err != nil {
-		return nil, err
-	}
-	if err := os.RemoveAll(home); err != nil {
-		return nil, domain.Fail(domain.RecoveryRequired, "The private automatic title runtime could not be removed.", "Retain its native ownership and reconcile cleanup before continuing.")
-	}
-	if err := security.SyncParent(home); err != nil {
-		return nil, domain.Fail(domain.RecoveryRequired, "The automatic title runtime removal could not be synchronized.", "Retain its cleanup evidence before reporting the completed title.")
-	}
-	removed = true
 	var usageRecord *domain.ResponseUsageRecord
 	if usage != nil {
 		usageRecord = &domain.ResponseUsageRecord{
