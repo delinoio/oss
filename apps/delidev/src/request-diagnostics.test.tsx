@@ -156,6 +156,6 @@ it("retains independent native review diagnostic purpose without borrowing conve
   f.row.inputId = "";
   const page = create(ListRequestDiagnosticsResponseSchema, { records: [f.row] });
   expect(validateDiagnosticPage(page, f.session, f.execution)).toBe(page);
-  f.row.purpose = "foreign-review";
+  page.records[0]!.purpose = "foreign-review";
   expect(() => validateDiagnosticPage(page, f.session, f.execution)).toThrow();
 });
