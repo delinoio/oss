@@ -22,5 +22,7 @@
   "queue.moveUp": "위로 이동",
   "queue.moveDown": "아래로 이동",
   "queue.retryMove": "동일한 이동 다시 시도",
-  "queue.moved": "대기 입력을 이동했습니다."
+  "queue.moved": "대기 입력을 이동했습니다.",
+  "queue.rejectedImageInputs_other": "이미지 지원 문제로 거부된 입력 {{count}}개",
+  "queue.rejectedImageInputs_one": "이미지 지원 문제로 거부된 입력 {{count}}개"
 }
