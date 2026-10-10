@@ -238,6 +238,7 @@ const (
 )
 
 type ExecutionInteraction struct {
+	NativeApps         *NativeAppCallProof            `json:"native_apps,omitempty"`
 	PlanApprovalPolicy PlanApprovalPolicyDecision     `json:"plan_approval_policy,omitempty"`
 	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	ClaudeSettlement   *ClaudeCallbackSettlement      `json:"claude_settlement,omitempty"`
