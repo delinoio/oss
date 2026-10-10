@@ -218,7 +218,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		// Bound the complete candidate scan as well as its final transformed bodies.
 		sourceDocuments++
 		sourceTotal += int64(len(raw))
-		retainedTotal += int64(len(raw))
+		// Start with every retained source body, including rows preserved by an
+		// overlay, then replace this row's contribution after transformation.
+		retainedTotal = restoreRetainedBodyTotal(retainedTotal, 0, len(raw))
 		if err := restoreTransformationBound(sourceDocuments, sourceTotal); err != nil {
 			rows.Close()
 			return err

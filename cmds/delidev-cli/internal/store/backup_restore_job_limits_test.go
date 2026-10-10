@@ -464,14 +464,16 @@ func TestRestoreTransformationCountsUnchangedRetainedRows(t *testing.T) {
 	unchangedBytes := 20
 	originalBytes := maxRestoreTransformationBytes - 100
 	transformedBytes := originalBytes + 90
-	sourceTotal := int64(unchangedBytes + originalBytes)
+	retainedTotal := restoreRetainedBodyTotal(0, 0, unchangedBytes)
+	retainedTotal = restoreRetainedBodyTotal(retainedTotal, 0, originalBytes)
+	sourceTotal := retainedTotal
 	if err := restoreTransformationBound(2, sourceTotal); err != nil {
 		t.Fatal("bounded source rejected", err)
 	}
 	if err := restoreTransformationBound(1, int64(transformedBytes)); err != nil {
 		t.Fatal("transformed row alone should fit", err)
 	}
-	retainedTotal := restoreRetainedBodyTotal(sourceTotal, originalBytes, transformedBytes)
+	retainedTotal = restoreRetainedBodyTotal(retainedTotal, originalBytes, transformedBytes)
 	if retainedTotal != int64(maxRestoreTransformationBytes+10) {
 		t.Fatalf("unchanged row omitted from final total: got %d", retainedTotal)
 	}
