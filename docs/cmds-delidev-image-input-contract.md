@@ -59,6 +59,15 @@ The pinned Codex 0.162.0 source (`c1382380de69521303b416720a52f42d51af6248`) exp
 
 Only this validated managed route admits 16 MiB native frames and a 32 MiB bounded event queue for the original base64 observations. Decode original still PNG bytes with the existing 10 MiB and 40-million-pixel limits. Managed read-only Sidechat may read the same bounded original image-bearing parent history while its generation feature remains explicitly disabled. Other native routes retain their existing frame/queue limits. History containers must admit the same closed bounded original image-bearing turn without reconstructing or truncating its original identity.
 
+Paged context history for compaction, Revert and Context-bearing continuation
+uses the same closed completed `imageGeneration` decoder as original live items.
+Settled PNG successes and native failures retain their exact item/turn identity,
+order and result in the history digest. In-progress, malformed, foreign, duplicate,
+changed or unknown evidence remains uncertain. Keep the existing 128-turn and
+4 MiB aggregate context-history bounds independently of the managed frame bound.
+History validation never reads native saved paths, reconstructs generated items,
+publishes image bytes or enables generation for read-only Sidechat.
+
 The original Worker durably records execution/job/instance/machine ownership and ordered call-to-reference intent before writing bytes or publishing metadata. A replay resolves the same immutable digest and reference. The server stores only ordered artifact observations and opaque image metadata, under the original execution lease and publishing Worker/device. Authenticated attachment readback uses the existing original Worker transfer path, with exact chunk and full-image checksums. Successes before a later native failure remain visible without claiming the whole turn succeeded.
 
 Deletion freezes independent owners, preserved generated references and every originally admitted execution generation, even if no output metadata was published. Frozen work requires Worker capability 35 before a first acknowledgment; a downgraded Worker cannot skip unpublished controller intents. Original acknowledged receipts remain replayable without replacing their revision. No cleanup acquires newer output references. After the original native execution and workspace owners have joined, the original Worker enumerates its durable controller, including an image whose publication acknowledgment was lost. A last-owner deletion removes only the original owned stored bytes; an independent Fork's retained reference protects them until that owner is explicitly deleted. Read-only Sidechat borrows references without owning bytes. Tombstones fence delayed recreation. Native saved files and explicit exported user copies are outside this cleanup authority.

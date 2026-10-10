@@ -432,6 +432,12 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
 					}
+				case "imageGeneration":
+					// History proves the original settled item; it grants no image
+					// generation, saved-path access or replacement output authority.
+					if _, err := decodeImageGeneration(rawItem, true); err != nil {
+						return nil, compactionUncertain()
+					}
 				default:
 					return nil, compactionUncertain()
 				}

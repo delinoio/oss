@@ -22,13 +22,29 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 	if method == "fixture/history" {
 		var params struct {
 			Page            json.RawMessage             `json:"page"`
+			Append          bool                        `json:"append,omitempty"`
 			ChangeAfterRead bool                        `json:"changeAfterRead,omitempty"`
 			Notify          *fixtureHistoryNotification `json:"notify,omitempty"`
 		}
 		if domain.Decode(raw, &params) != nil || f.thread == nil {
 			os.Exit(60)
 		}
-		f.history = params.Page
+		if params.Append {
+			// Assemble bounded synthetic pages without increasing the fixture
+			// request/frame limits used by ordinary native protocol tests.
+			var old, next struct {
+				Data []json.RawMessage `json:"data"`
+				Next *string           `json:"nextCursor"`
+				Back *string           `json:"backwardsCursor"`
+			}
+			if json.Unmarshal(f.history, &old) != nil || domain.Decode(params.Page, &next) != nil {
+				os.Exit(60)
+			}
+			next.Data = append(old.Data, next.Data...)
+			f.history, _ = json.Marshal(next)
+		} else {
+			f.history = params.Page
+		}
 		f.historyChangeAfterRead = params.ChangeAfterRead
 		f.historyNotification = params.Notify
 		write(id, map[string]any{})
