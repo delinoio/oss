@@ -88,6 +88,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "guardianWarning", "deprecationNotice", "autoApprovalReview/strictReviewRequired":
+		return c.observeAdvisoryNoticeLocked(native)
 	case "error", "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
 		return c.observeRecoveryTelemetryLocked(native)
 	case "thread/name/updated", "thread/attachment/updated", "project/changed", "thread/project/updated", "thread/prediction/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/readState/changed":
