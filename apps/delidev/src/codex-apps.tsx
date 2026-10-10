@@ -15,16 +15,16 @@ interface App { id: string; name: string; discovered: boolean; accessible: boole
 interface Inventory { operation_id: string; claim_id: string; native_catalog_refresh_verified: true; version: 1; session_id: string; account_id: string; configuration_generation: string; execution_id: string; execution_job_id: string; machine_id: string; instance_id: string; native_thread_id: string; observed_at: string; apps: App[] }
 interface Operation { positive_no_native_send?: true; claim_id?: string; version: 1; id: string; revision: string; request_id: string; actor_id: string; action: "inspect" | "revoke"; state: "queued" | "claimed" | "succeeded" | "failed" | "uncertain" | "canceled"; original: Configuration; next?: Configuration; execution_id: string; execution_job_id: string; machine_id: string; instance_id: string; native_thread_id: string; inventory?: Inventory; problem?: Record<string, unknown> }
 const id = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
-const bounded = (v: unknown, max: number, required = true): v is string => typeof v === "string" && (!required || v.trim().length > 0) && new TextEncoder().encode(v).byteLength <= max;
+const bounded = (v: unknown, max: number, required = true): v is string => typeof v === "string" && (!required || v.trim().length > 0) && !v.includes("\0") && new TextEncoder().encode(v).byteLength <= max;
 const closed = (v: Record<string, unknown>, fields: readonly string[]) => Object.keys(v).every(k => fields.includes(k));
-function appIDs(v: unknown): v is string[] { return Array.isArray(v) && v.length <= 100 && v.every(x => bounded(x, 1024)) && new Set(v).size === v.length; }
+function appIDs(v: unknown): v is string[] { return Array.isArray(v) && v.length <= 100 && v.every(x => x !== "_default" && bounded(x, 1024)) && new Set(v).size === v.length; }
 function configuration(v: unknown): Configuration | undefined {
   const c = object(v);
   return c.version === 1 && closed(c, ["version", "session_id", "account_id", "generation", "app_ids"]) && id(c.session_id) && id(c.account_id) && id(c.generation) && appIDs(c.app_ids) ? c as unknown as Configuration : undefined;
 }
 function inventory(v: unknown): Inventory | undefined {
   const i = object(v), fields = ["operation_id", "claim_id", "native_catalog_refresh_verified", "version", "session_id", "account_id", "configuration_generation", "execution_id", "execution_job_id", "machine_id", "instance_id", "native_thread_id", "observed_at", "apps"];
-  if (i.version !== 1 || i.native_catalog_refresh_verified !== true || !id(i.operation_id) || !id(i.claim_id) || !closed(i, fields) || ![i.session_id, i.account_id, i.configuration_generation, i.execution_id, i.execution_job_id, i.machine_id, i.instance_id, i.native_thread_id].every(id) || typeof i.observed_at !== "string" || timestampInstant(i.observed_at) === undefined || !Array.isArray(i.apps) || i.apps.length > 1000) return;
+  if (i.version !== 1 || i.native_catalog_refresh_verified !== true || !id(i.operation_id) || !id(i.claim_id) || !closed(i, fields) || ![i.session_id, i.account_id, i.configuration_generation, i.execution_id, i.execution_job_id, i.machine_id, i.instance_id].every(id) || !bounded(i.native_thread_id, 1024) || typeof i.observed_at !== "string" || timestampInstant(i.observed_at) === undefined || !Array.isArray(i.apps) || i.apps.length > 1000) return;
   const seen = new Set<string>();
   for (const value of i.apps) {
     const a = object(value);
@@ -36,7 +36,7 @@ function inventory(v: unknown): Inventory | undefined {
 function operation(v: unknown): Operation | undefined {
   const o = object(v), original = configuration(o.original), next = o.next === undefined ? undefined : configuration(o.next), snapshot = o.inventory === undefined ? undefined : inventory(o.inventory);
   const states = ["queued", "claimed", "succeeded", "failed", "uncertain", "canceled"];
-  if (o.version !== 1 || !closed(o, ["positive_no_native_send", "claim_id", "version", "id", "revision", "request_id", "actor_id", "action", "state", "original", "next", "execution_id", "execution_job_id", "machine_id", "instance_id", "native_thread_id", "inventory", "problem"]) || ![o.id, o.request_id, o.actor_id, o.execution_id, o.execution_job_id, o.machine_id, o.instance_id, o.native_thread_id].every(id) || typeof o.revision !== "string" || !/^[1-9][0-9]{0,19}$/.test(o.revision) || BigInt(o.revision) > 18446744073709551615n || !states.includes(o.state as string) || !original || o.action !== "inspect" && o.action !== "revoke" || o.next !== undefined && !next || o.inventory !== undefined && !snapshot) return;
+  if (o.version !== 1 || !closed(o, ["positive_no_native_send", "claim_id", "version", "id", "revision", "request_id", "actor_id", "action", "state", "original", "next", "execution_id", "execution_job_id", "machine_id", "instance_id", "native_thread_id", "inventory", "problem"]) || ![o.id, o.request_id, o.actor_id, o.execution_id, o.execution_job_id, o.machine_id, o.instance_id].every(id) || !bounded(o.native_thread_id, 1024) || typeof o.revision !== "string" || !/^[1-9][0-9]{0,19}$/.test(o.revision) || BigInt(o.revision) > 18446744073709551615n || !states.includes(o.state as string) || !original || o.action !== "inspect" && o.action !== "revoke" || o.next !== undefined && !next || o.inventory !== undefined && !snapshot) return;
   if (["queued", "canceled"].includes(String(o.state)) ? o.claim_id !== undefined : !id(o.claim_id)) return;
  if (o.state === "canceled" ? o.positive_no_native_send !== true || snapshot || o.problem !== undefined : o.positive_no_native_send !== undefined) return;
   if (o.action === "inspect" && next || o.action === "revoke" && (!next || next.session_id !== original.session_id || next.account_id !== original.account_id || next.generation === original.generation || next.app_ids.some(value => !original.app_ids.includes(value)))) return;
@@ -48,7 +48,7 @@ function operation(v: unknown): Operation | undefined {
 // Dedicated metadata envelopes are not generic Session/Job resources and grant
 // no EntityKind authority. Decode only their closed original-scope documents.
 function payload(resource?: Resource): unknown {
-  if (!resource || !id(resource.id) || resource.revision <= 0n || resource.schemaVersion !== 1 || resource.documentJson.byteLength > 1 << 20) return;
+  if (!resource || !id(resource.id) || resource.revision <= 0n || resource.schemaVersion !== 1 || resource.documentJson.byteLength > 4 << 20) return;
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson)); } catch { return; }
 }
 export function codexAppsView(reply: { configuration?: Resource; inventory?: Resource; operation?: Resource } | undefined, sessionId: string, accountId: string) {
