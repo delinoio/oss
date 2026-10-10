@@ -13,6 +13,7 @@ const (
 	CodexAppsInspect   CodexAppsAction = "inspect"
 	CodexAppsRevoke    CodexAppsAction = "revoke"
 	CodexAppsQueued    CodexAppsState  = "queued"
+	CodexAppsCanceled  CodexAppsState  = "canceled"
 	CodexAppsClaimed   CodexAppsState  = "claimed"
 	CodexAppsSucceeded CodexAppsState  = "succeeded"
 	CodexAppsFailed    CodexAppsState  = "failed"

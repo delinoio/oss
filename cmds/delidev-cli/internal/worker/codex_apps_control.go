@@ -52,7 +52,7 @@ type appsControlJournal struct {
 }
 
 type nativeAppsController interface {
-	ReadCodexApps(context.Context, string) ([]domain.CodexApp, error)
+	ReadCodexApps(context.Context) ([]domain.CodexApp, error)
 	RevokeCodexApps(context.Context, domain.ID, domain.CodexAppConfiguration, string) error
 }
 
@@ -147,7 +147,7 @@ func (c *CodexEventPublisher) deliverCodexAppsControl(ctx, publicationCtx contex
 	}
 	var rows []domain.CodexApp
 	if nativeErr == nil {
-		rows, nativeErr = client.ReadCodexApps(bounded, cwd)
+		rows, nativeErr = client.ReadCodexApps(bounded)
 	}
 	stop()
 	journal.State = responseObserved

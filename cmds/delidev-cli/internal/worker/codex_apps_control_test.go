@@ -72,7 +72,7 @@ func (f *appControlFixture) ClaimCodexAppsControl(_ context.Context, r *connect.
 	raw, _ := json.Marshal(f.operation)
 	return connect.NewResponse(&pb.ClaimCodexAppsControlResponse{Operation: appControlResource(f.operation), InputJson: raw, Replayed: f.mode == "replayed"}), nil
 }
-func (f *appControlFixture) ReadCodexApps(context.Context, string) ([]domain.CodexApp, error) {
+func (f *appControlFixture) ReadCodexApps(context.Context) ([]domain.CodexApp, error) {
 	f.reads++
 	f.journal(responseSendIntent)
 	return []domain.CodexApp{{ID: "original-app", Name: "Original", Discovered: true, Installed: true, Accessible: true, Enabled: f.mode != "revoke", Callable: f.mode != "revoke", Selected: f.mode != "revoke"}}, nil
