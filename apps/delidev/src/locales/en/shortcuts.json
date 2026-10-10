@@ -31,6 +31,7 @@
   "shortcut-settings.session": "Session",
   "shortcut-settings.creation": "New session / New general chat",
   "shortcut-settings.search": "Search",
+  "shortcut-settings.fixedBinding": "Fixed: {{binding}}",
   "shortcut-settings.default": "Default: {{binding}}",
   "shortcut-settings.capture": "Capture shortcut",
   "shortcut-settings.captureAction": "Capture shortcut for {{name}}",
