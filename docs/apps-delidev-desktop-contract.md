@@ -3449,7 +3449,9 @@ Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
 
 Verified completion restores the original prompt text as an unsent draft and
-focuses the active composer. Preserve a draft edited during the operation or
+focuses the active composer. Automatic and explicit restoration preserve the
+current composer Plan/Execute choice; historical input mode remains validated
+evidence and does not select the next input mode. Preserve a draft edited during the operation or
 while the view was inactive; offer explicit restoration of the retained prompt
 instead of overwriting it. Reopening the conversation can restore that same
 verified prompt without a new native mutation. Original image/skill metadata
