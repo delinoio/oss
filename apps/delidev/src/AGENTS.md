@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ## Owning contracts
 
+- [DeliDev Session Terminals](../../../docs/cmds-delidev-terminals-contract.md)
+- [DeliDev desktop localization](../../../docs/apps-delidev-localization-contract.md)
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev parallel browser QA](../../../docs/apps-delidev-qa-contract.md)
