@@ -643,6 +643,17 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			if err != nil {
 				return Record{}, err
 			}
+			// All late completion/recovery paths share the retained title gate.
+			// Conversation cleanup cannot settle the independent title process.
+			var session domain.Session
+			if err := json.Unmarshal(raw, &session); err != nil {
+				return Record{}, err
+			}
+			titlePending, err := t.SessionTitleCleanupPending(id, session)
+			if err != nil {
+				return Record{}, err
+			}
+			pending = pending || titlePending
 			// A manual action owns native cleanup separately from the preceding
 			// conversation. No other late completion may archive over its claim.
 			var compaction domain.ID
