@@ -346,17 +346,8 @@ func TestSidechatQuestionRetryCapturedWorkerChangeFencesPublicationAndDeletionRe
 func TestSidechatQuestionRetryRetentionBoundRejectsBeforeNativeAdmission(t *testing.T) {
 	_, child := completedRetrySidechatFixture(t)
 	request := retryRequestFixture(t, child)
-	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "test.retry-capacity", nil, func(tx *store.Tx) (any, error) {
-		for n := 0; n < 4094; n++ {
-			if _, e := tx.PutJob(domain.NewID(), 0, domain.ID(child.change.Session.Id), "", domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobCanceled, MachineID: domain.ID(child.machine.Id), Input: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()}); e != nil {
-				return nil, e
-			}
-		}
-		return nil, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	padExecutionHistory(t, child.service.Store, domain.ID(child.change.Session.Id), domain.ID(child.machine.Id), 4094)
+	var err error
 	request.Mutation.ExpectedRevision = child.refresh(t).Revision
 	if _, err = sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err == nil {
 		t.Fatal("history capacity granted fresh native work")
@@ -475,5 +466,117 @@ func TestManagedSidechatQuestionRetryUsesChildOwnedProtectedForkReceipt(t *testi
 	result := retryViewFixture(t, child, request.Mutation.RequestId)
 	if result.Generations[0].ExecutionJobID == "" || result.CurrentAnswer != child.input.ExecutionID {
 		t.Fatal("managed protected Finish did not queue same-child question while retaining answer", result)
+	}
+}
+
+// Count setup jobs too, so capacity fixtures exercise the exact stated boundary.
+func executionHistoryCount(t *testing.T, database *store.Store, session domain.ID) int {
+	t.Helper()
+	count := 0
+	after := domain.ID("")
+	for {
+		rows, err := database.List(context.Background(), store.Filter{Kind: domain.JobKind, SessionID: session, After: after, Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		count += len(rows)
+		if len(rows) < 100 {
+			return count
+		}
+		after = rows[len(rows)-1].ID
+	}
+}
+func padExecutionHistory(t *testing.T, database *store.Store, session, machine domain.ID, total int) {
+	t.Helper()
+	count := executionHistoryCount(t, database, session)
+	if count > total {
+		t.Fatal("fixture exceeded requested exact capacity", count, total)
+	}
+	_, err := database.Mutate(context.Background(), domain.NewID(), "fixture.exact-history", nil, func(tx *store.Tx) (any, error) {
+		for n := count; n < total; n++ {
+			if _, err := tx.PutJob(domain.NewID(), 0, session, "", domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobCanceled, MachineID: machine, Input: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := executionHistoryCount(t, database, session); got != total {
+		t.Fatal("wrong history boundary", got, total)
+	}
+}
+func TestSidechatQuestionRetryExactBoundaryRecoveryAndPermanentCleanup(t *testing.T) {
+	parent, child := completedRetrySidechatFixture(t)
+	id := domain.ID(child.change.Session.Id)
+	padExecutionHistory(t, child.service.Store, id, domain.ID(child.machine.Id), 4091)
+	request := retryRequestFixture(t, child)
+	client := sessionClient(child.accountFixture)
+	if _, err := client.RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err != nil {
+		t.Fatal("last five-job boundary", err)
+	}
+	finishRetryForkFixture(t, child, request)
+	if got := executionHistoryCount(t, child.service.Store, id); got != 4093 {
+		t.Fatal("normal retry jobs", got)
+	}
+	child.grant(t)
+	event := domain.ExecutionEvent{Version: 1, ExecutionID: child.input.ExecutionID, Sequence: 1, Kind: domain.ExecutionThreadBound, NativeThreadID: string(child.thread), Observed: &domain.ObservedExecutionSettings{Model: child.input.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "never"}}
+	raw, _ := json.Marshal(event)
+	if _, err := child.workerClient.PublishExecution(context.Background(), ownerRequest(child.workerIdentity, &pb.PublishExecutionRequest{Mutation: acctMutation(child.job, domain.NewID()), MachineId: child.machine.Id, InstanceId: child.workerInstance, EventJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+	child.publish(t, domain.ExecutionInputAccepted, 2, "")
+	child.publish(t, domain.ExecutionTurnFinished, 3, domain.ExecutionSucceeded)
+	// Lose only the completion receipt, retaining the original native assignment.
+	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.retry-uncertain", nil, func(tx *store.Tx) (any, error) {
+		original, err := tx.Get(domain.JobKind, domain.ID(child.job.Id))
+		if err != nil {
+			return nil, err
+		}
+		job, err := store.Decode[domain.Job](original)
+		if err != nil {
+			return nil, err
+		}
+		job.State, job.Problem = domain.JobUncertain, nativeCompletionUncertain()
+		if err := finishLostNativeExecution(tx, original, job); err != nil {
+			return nil, err
+		}
+		return tx.PutJob(original.ID, original.Revision, original.SessionID, original.ProjectID, job)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := child.refresh(t)
+	recovery := &pb.RecoverSessionExecutionRequest{Mutation: &pb.Mutation{Id: string(id), RequestId: string(domain.NewID()), ExpectedRevision: current.Revision}, ExpectedExecutionId: string(child.input.ExecutionID)}
+	response, err := client.RecoverSessionExecution(context.Background(), ownerRequest(child.identity, recovery))
+	if err != nil {
+		t.Fatal("reserved uncertain recovery", err)
+	}
+	if got := executionHistoryCount(t, child.service.Store, id); got != 4094 {
+		t.Fatal("recovery consumption", got)
+	}
+	padExecutionHistory(t, child.service.Store, id, domain.ID(child.machine.Id), 4096)
+	if _, err := client.RecoverSessionExecution(context.Background(), ownerRequest(child.identity, recovery)); err != nil {
+		t.Fatal("receipt replay at full capacity", err)
+	}
+	recovery.Mutation.RequestId = string(domain.NewID())
+	recovery.Mutation.ExpectedRevision = response.Msg.Change.Session.Revision
+	if _, err := client.RecoverSessionExecution(context.Background(), ownerRequest(child.identity, recovery)); err != nil {
+		t.Fatal("queued recovery reuse at full capacity", err)
+	}
+	if got := executionHistoryCount(t, child.service.Store, id); got != 4096 {
+		t.Fatal("duplicate consumed capacity", got)
+	}
+	current = child.refresh(t)
+	if _, err := client.DeleteSession(context.Background(), ownerRequest(child.identity, &pb.DeleteSessionRequest{Mutation: &pb.Mutation{Id: string(id), RequestId: string(domain.NewID()), ExpectedRevision: current.Revision}})); err != nil {
+		t.Fatal("bounded uncertain cleanup", err)
+	}
+	plan, err := child.service.Store.GetSessionDeletion(context.Background(), id)
+	if err != nil || len(plan.Workers) != 1 || plan.Workers[0].Work.Fork == nil || len(plan.Workers[0].Work.RetryForks) != 1 {
+		t.Fatal("original cleanup ownership lost", err)
+	}
+	if _, err := parent.service.Store.Get(context.Background(), domain.SessionKind, domain.ID(parent.change.Session.Id)); err != nil {
+		t.Fatal("parent changed", err)
 	}
 }

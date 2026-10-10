@@ -68,6 +68,10 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 				return sessionReceipt{SessionID: sr.ID}, nil
 			}
 		}
+		if err := tx.CheckExecutionRecoveryCapacity(sr); err != nil {
+			s.logger.WarnContext(ctx, "session_execution_recovery_rejected", "session_id", sr.ID, "phase", "retained-capacity", "code", domain.SafeError(err).Code)
+			return nil, err
+		}
 		input, err := executionRecoveryRequest(tx, s.Identity.ServerID, sr, session)
 		if err != nil {
 			s.logger.WarnContext(ctx, "session_execution_recovery_rejected", "session_id", sr.ID, "execution_id", execution, "phase", "original-ownership", "code", domain.SafeError(err).Code)

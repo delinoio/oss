@@ -356,3 +356,17 @@ Log operation/generation IDs, closed phases and stable errors only. Synthetic
 RPC/native-process fixtures and builds do not establish real-account,
 installed-native or platform acceptance; report their actual limits in PR/CI
 records rather than repository evidence files.
+
+Retry admission reserves five retained jobs: the Fork, question execution,
+original execution recovery, one startup retry and its recovery. The existing
+4,096-job limit and 4 MiB parent/dependent deletion envelope remain unchanged.
+Recovery inspection reserves one job; each later explicit startup retry reserves
+its execution and recovery before writing a queued input or job. Capacity checks
+retain every historical assignment and original Worker owner. Queued recovery
+reuse and request receipt replay consume no additional capacity.
+
+Each reserved job includes conservative headroom for fixed-size deletion
+ownership references and Worker envelopes. Raw native data is never copied into
+that reservation. Later attempts recheck retained capacity; the reservation does
+not grant another native attempt, bypass original recovery proof, or evict an
+older assignment.
