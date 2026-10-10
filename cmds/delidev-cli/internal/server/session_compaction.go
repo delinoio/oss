@@ -196,10 +196,24 @@ func (s *Service) CompactSession(ctx context.Context, req *connect.Request[pb.Co
 	return response, nil
 }
 
+type contextActionFinalization uint8
+
+const (
+	ordinaryContextAction contextActionFinalization = iota
+	observedOriginalRevert
+)
+
 func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error) (store.Record, error) {
+	return finalizeSessionCompaction(tx, r, j, revision, raw, problem, ordinaryContextAction)
+}
+
+func finalizeSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error, mode contextActionFinalization) (store.Record, error) {
 	var input domain.SessionCompactionInput
 	if domain.DecodeCompactionInput(j.Input, &input) != nil || input.Validate() != nil {
 		return store.Record{}, domain.CompactionUncertain()
+	}
+	if mode != ordinaryContextAction && (mode != observedOriginalRevert || input.Version != 4 || input.Revert == nil || j.State != domain.JobUncertain) {
+		return store.Record{}, domain.ExecutionRecoveryUncertain()
 	}
 	sr, session, err := sessionRecord(tx, r.SessionID)
 	if err != nil {
@@ -223,6 +237,9 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 			verified = output.Version == 1
 		}
 	}
+	if mode == observedOriginalRevert && !verified {
+		return store.Record{}, domain.ExecutionRecoveryUncertain()
+	}
 	if verified && output.Version == 3 {
 		v := input.Assignment
 		for n, usage := range output.OpenCode.Usages {
@@ -243,7 +260,10 @@ func finishSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revisio
 	now := time.Now().UTC()
 	j.FinishedAt = &now
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
-	if !verified || canceled {
+	// Explicit recovery has independently observed the original canceled Revert
+	// and its cleanup. Keep the durable cancellation record; only that proved
+	// observation may publish its checkpoint without treating it as new input.
+	if !verified || canceled && mode != observedOriginalRevert {
 		j.State, j.Problem, j.Output = domain.JobUncertain, domain.CompactionUncertain(), nil
 		// Cancellation of claimed work retains native ownership even when a
 		// valid late report arrives. Its observations remain evidence, but cannot

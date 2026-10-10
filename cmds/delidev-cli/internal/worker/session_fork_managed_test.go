@@ -27,9 +27,10 @@ import (
 )
 
 type managedSidechatProcess struct {
-	Thread map[string]any
-	Turn   map[string]any
-	Fault  string
+	Thread               map[string]any
+	Turn                 map[string]any
+	Fault                string
+	ExpectedInstructions *string
 }
 
 // The original test executable acts as a bounded native protocol process. Its
@@ -116,6 +117,9 @@ func runManagedSidechatProcess(home string) bool {
 			}
 			write(req.ID, map[string]any{"data": []any{f.Turn}, "nextCursor": nil, "backwardsCursor": nil})
 		case "thread/fork":
+			if f.ExpectedInstructions != nil && (req.Params["developerInstructions"] != *f.ExpectedInstructions || req.Params["sandbox"] != "read-only" || req.Params["approvalPolicy"] != "never") {
+				os.Exit(96)
+			}
 			child = true
 			marker := filepath.Join(home, "fork-sent")
 			if os.WriteFile(marker, nil, 0600) != nil {
@@ -178,12 +182,23 @@ func (f *managedSidechatRPC) FinishSubscription(_ context.Context, r *connect.Re
 }
 
 func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
-	for _, fault := range []string{"success", "finish-response-loss", "native-response-loss", "cleanup", "retry-success", "retry-native-response-loss", "retry-finish-response-loss"} {
+	for _, fault := range []string{"success", "success-execute-prefix", "finish-response-loss", "native-response-loss", "cleanup", "retry-success", "retry-native-response-loss", "retry-finish-response-loss"} {
 		t.Run(fault, func(t *testing.T) {
 			retry := strings.HasPrefix(fault, "retry-")
 			fault = strings.TrimPrefix(fault, "retry-")
 			f := newCheckpointFixture(t)
 			ctx := context.Background()
+			var expectedInstructions *string
+			if fault == "success-execute-prefix" {
+				fault = "success"
+				// The Execute parent contains branch guidance; only its read-only
+				// child may exclude that guidance while retaining template bytes.
+				f.input.Input.Mode, f.ref.InputMode = domain.ExecuteMode, domain.ExecuteMode
+				f.input.Configuration.Instructions = "Original template\n"
+				f.input.Configuration.Templates = []domain.AppliedTemplate{{ID: domain.NewID(), Revision: 1, Contents: f.input.Configuration.Instructions}}
+				f.input.Configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: 1, Prefix: "team/"}
+				expectedInstructions = &f.input.Configuration.Instructions
+			}
 			f.input.Configuration.Subscription = true
 			f.input.Configuration.SubscriptionService = domain.SubscriptionChatGPT
 			f.input.Configuration.ProviderID = ""
@@ -234,7 +249,7 @@ func TestManagedSidechatWorkerOriginalForkAuthentication(t *testing.T) {
 			}
 			thread := map[string]any{"id": string(checkpoint.Native.ThreadID), "sessionId": string(checkpoint.Native.SessionID), "cliVersion": codex.SupportedVersion, "cwd": manifest.PrimaryPath, "modelProvider": "openai", "createdAt": 1, "updatedAt": 1, "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}, "historyMode": "legacy", "extra": nil, "canAcceptDirectInput": true, "path": rollout}
 			turn := map[string]any{"id": string(checkpoint.Native.TurnID), "items": []any{map[string]any{"type": "userMessage", "id": "fixture-user", "clientId": string(checkpoint.Native.Inputs[0].ID), "content": []any{map[string]any{"type": "text", "text": f.input.Input.Prompt, "text_elements": []any{}}}}}, "itemsView": "full", "status": "completed", "startedAt": nil, "completedAt": nil, "durationMs": nil, "error": nil}
-			if err = os.WriteFile(filepath.Join(f.root, "managed-sidechat-fixture.json"), mustForkJSON(managedSidechatProcess{Thread: thread, Turn: turn, Fault: fault}), 0600); err != nil {
+			if err = os.WriteFile(filepath.Join(f.root, "managed-sidechat-fixture.json"), mustForkJSON(managedSidechatProcess{Thread: thread, Turn: turn, Fault: fault, ExpectedInstructions: expectedInstructions}), 0600); err != nil {
 				t.Fatal(err)
 			}
 			input := domain.ForkJobInput{Version: 3, Purpose: domain.SidechatFork, SourceSessionID: f.input.SessionID, SourceRevision: 1, ChildSessionID: domain.NewID(), RuntimeID: domain.NewID(), NativeRequestID: domain.NewID(), Name: "Sidechat fixture", Workspace: domain.GeneralChat, SourceJobID: f.jobID, SourceAssignment: f.input, Completion: f.ref.Completion, SubscriptionGeneration: domain.NewID(), Snapshot: domain.InitialExecution{Configuration: f.input.Configuration, ConfigurationDigest: f.input.ConfigurationDigest, InitialAccountID: f.input.AccountID, ConnectionID: f.input.ConnectionID}, Progress: domain.ExecutionProgress{JobID: f.jobID, ExecutionID: f.input.ExecutionID, InputID: f.input.InputID, LastSequence: f.completion.LastSequence, NativeThreadID: string(f.completion.NativeThreadID), NativeTurnID: string(f.completion.NativeTurnID), Outcome: domain.ExecutionSucceeded, CleanupVerified: true}}

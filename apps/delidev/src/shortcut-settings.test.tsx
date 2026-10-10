@@ -32,6 +32,22 @@ const capture = async(name="New session",key="j")=>{
  await screen.findByText("Unsaved changes");
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Cancel capture"})).toBeNull());
 };
+it("uses New Chat in the English creation heading while preserving Korean and shortcut dispatch",async()=>{
+ const f=fixture(),run=vi.fn();render(<Owner bridge={f.bridge} run={run}/>);await screen.findByText("Current saved shortcuts");
+ const heading=screen.getByRole("heading",{level:2,name:"New session / New Chat"});
+ expect(i18n.t("sidebar.newGeneralChat")).toBe("New Chat");
+ expect(screen.queryByText("New session / New general chat")).toBeNull();
+ expect(screen.getByRole("button",{name:"Capture shortcut for New session"})).toBeTruthy();
+ const action=screen.getByRole("button",{name:"Ordinary action"});
+ expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
+ fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();
+ await act(async()=>{await i18n.changeLanguage(SupportedLanguage.Korean);});
+ expect(screen.getByRole("heading",{level:2,name:"새 세션 / 새 일반 대화"})).toBe(heading);
+ expect(screen.getByRole("button",{name:"Ordinary action"})).toBe(action);
+ expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
+ fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledTimes(2);
+ expect(f.state().overrides).toEqual({});expect(f.bridge.update).not.toHaveBeenCalled();
+});
 it("keeps draft bindings inactive until Save and updates dispatch and ARIA without remount",async()=>{
  const f=fixture(),run=vi.fn();render(<StrictMode><Owner bridge={f.bridge} run={run}/></StrictMode>);await screen.findByText("Current saved shortcuts");
  expect(screen.getByRole("button",{name:"Save changes"}).getAttribute("data-settings-action")).toBe("save");

@@ -118,10 +118,23 @@ func (c *Client) observeImageGeneration(native nativewire.Event, turnID domain.I
 }
 
 func (c *Client) nativeFrameLimit() int {
-	if c.managedHome != "" && c.api == nil && c.imageRoot != "" {
+	if c.imageObservations {
 		return 16 << 20
 	}
 	return nativewire.MaxFrame
+}
+
+// Freeze one frame profile before launch for both the transport and decoders.
+// A private storage root alone does not admit generation. Read-only Sidechat
+// borrows original parent history without enabling the generation feature.
+func (config Config) imageObservationProfile() bool {
+	if config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.ImageRoot == "" {
+		return false
+	}
+	if config.EnableImageGeneration {
+		return config.Sidechat == "" && config.ImageMachineID.Validate() == nil
+	}
+	return config.Sidechat == ReadOnlySidechatV1
 }
 
 // Request support only for the admitted original managed route. The later config
