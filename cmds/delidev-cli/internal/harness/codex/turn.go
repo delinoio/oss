@@ -59,6 +59,7 @@ type turnOperation struct {
 }
 
 type trackedTurn struct {
+	modelRerouted     bool
 	recoveryTelemetry nativeRecoveryTelemetry
 	Turn              Turn
 	Mode              domain.SessionMode
@@ -71,6 +72,9 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	// Private ordered evidence is bounded independently of public event history.
+	modelSafety         []ModelSafetyObservation
+	modelSafetyBytes    int
 	strictReviewNotices map[strictReviewNoticeKey]bool
 
 	autoReviews         map[domain.ID]domain.AutoReviewState

@@ -153,6 +153,7 @@ type Message struct {
 }
 
 type Event struct {
+	ModelSafety      *ModelSafetyObservation `json:"-"`
 	NativeError      *NativeErrorObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
@@ -278,6 +279,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	if c.logger != nil && (event.Metadata == AuthRecoveryStartedObserved || event.Metadata == AuthRecoveryCompletedObserved) {
 		c.logger.InfoContext(ctx, "Codex native authentication recovery observed", "owner_id", c.ownerID, "phase", event.Metadata)
 	}
+	if c.logger != nil && event.ModelSafety != nil {
+		c.logger.InfoContext(ctx, "Codex native model safety observed", "kind", event.ModelSafety.Kind, "late", event.Late)
+	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
 }
@@ -349,6 +353,10 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 			return event, nil
 		}
 		event.Correlated = true
+		// A safety reroute can never prove success for the immutable selected model.
+		if prior.modelRerouted && turn.Status == TurnCompleted {
+			return Event{}, incompatible()
+		}
 		if prior.Turn.Status.terminal() {
 			event.Late = true
 			if turn.Status.terminal() && turn.Status != prior.Turn.Status {
