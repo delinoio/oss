@@ -4,6 +4,7 @@ use tauri_runtime_cef::{CefRuntime, WebviewCefExt};
 
 mod appearance_host;
 mod badge_host;
+mod browser_child_close;
 mod browser_host;
 mod date_format_host;
 mod notification_host;
