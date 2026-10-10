@@ -16,10 +16,21 @@ import (
 // Classification uses the same private, identity-checked immutable SQLite copy
 // as user inspection. No original image is opened directly by SQLite.
 func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) error {
+	return s.removeSessionBackups(ctx, v, nil)
+}
+
+// Controlled tests can interrupt after a completed checkpoint or during copy.
+// Product passes provide no callback and never detach inspection work.
+func (s *Store) removeSessionBackups(ctx context.Context, v SessionDeletion, afterCopy func()) error {
+	scan, e := s.readSessionBackupScan(v)
+	if e != nil {
+		return e
+	}
 	items, e := s.BackupInventory(ctx)
 	if e != nil {
 		return e
 	}
+	scan.retainInventory(items)
 	classified := map[domain.ID]BackupInspection{}
 	for _, item := range items {
 		if e := ctx.Err(); e != nil {
@@ -42,8 +53,19 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 			}
 			continue
 		}
+		if clean, ok := scan.find(item.ID); ok {
+			checked, match, err := s.reuseSessionBackupClassification(ctx, v, clean)
+			if err != nil {
+				return err
+			}
+			if match {
+				classified[item.ID] = checked
+				continue
+			}
+			scan.remove(item.ID)
+		}
 		contains := false
-		checked, e := s.inspectBackupContent(ctx, item.ID, v.ServerID, nil, func(db *sql.DB) error {
+		checked, e := s.inspectBackupContent(ctx, item.ID, v.ServerID, afterCopy, func(db *sql.DB) error {
 			return db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? OR session_id=? OR (kind='job' AND json_extract(body,'$.type')='image-attachment' AND EXISTS(SELECT 1 FROM json_each(entities.body,'$.input.owners') WHERE value=?)) OR (kind='problem' AND json_extract(body,'$.type')='pull-request-remediation-attempt' AND json_extract(body,'$.session_id')=?))", v.SessionID, v.SessionID, v.SessionID, v.SessionID).Scan(&contains)
 		})
 		if e != nil {
@@ -51,6 +73,11 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 		}
 		if !contains {
 			classified[item.ID] = checked
+			scan.remove(item.ID)
+			scan.Clean = append(scan.Clean, sessionBackupClassification{Backup: checked.Backup, Mode: checked.sourceInfo.Mode(), NativeIdentity: checked.sourceIdentity, SHA256: checked.SHA256, SchemaVersion: checked.SchemaVersion})
+			if err := s.writeSessionBackupScan(ctx, v, scan); err != nil {
+				return err
+			}
 			continue
 		}
 		row, _, e := s.DeleteBackup(ctx, domain.NewID(), BackupDeletionInput{Actor: domain.Principal{Type: domain.OwnerDevice}, ServerID: v.ServerID, Backup: checked.Backup, ExpectedRevision: 1, SHA256: checked.SHA256})
@@ -60,6 +87,9 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 		if _, e = s.RunBackupDeletion(ctx, row.ID, v.ServerID); e != nil {
 			return e
 		}
+	}
+	if err := s.writeSessionBackupScan(ctx, v, scan); err != nil {
+		return err
 	}
 	return s.finishSessionBackupScan(ctx, classified)
 }
@@ -75,6 +105,11 @@ func (s *Store) finishSessionBackupScan(ctx context.Context, classified map[doma
 		return e
 	}
 	defer s.backupGate.Unlock()
+	return s.finishSessionBackupScanLocked(ctx, classified)
+}
+
+// Caller retains backupGate through final acknowledgement or validation.
+func (s *Store) finishSessionBackupScanLocked(ctx context.Context, classified map[domain.ID]BackupInspection) error {
 	f, e := os.Open(filepath.Join(s.root, "backups"))
 	if e != nil {
 		return storageError(e)
@@ -96,8 +131,8 @@ func (s *Store) finishSessionBackupScan(ctx context.Context, classified map[doma
 		if id.Validate() != nil || !ok {
 			return domain.SessionDeletionPending()
 		}
-		current, e := backupInfo(filepath.Join(s.root, "backups", entry.Name()))
-		if e != nil || !sameBackup(checked.sourceInfo, current) {
+		current, identity, e := sessionBackupClassificationInfo(filepath.Join(s.root, "backups", entry.Name()))
+		if e != nil || !sameBackup(checked.sourceInfo, current) || identity != checked.sourceIdentity {
 			return domain.SessionDeletionPending()
 		}
 	}

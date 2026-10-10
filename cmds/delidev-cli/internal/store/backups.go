@@ -29,10 +29,11 @@ type Backup struct {
 type BackupInspection struct {
 	Backup
 	// sourceInfo binds internal classification to the exact inspected image.
-	sourceInfo    os.FileInfo
-	SHA256        string    `json:"sha256"`
-	SchemaVersion uint32    `json:"schema_version"`
-	ServerID      domain.ID `json:"server_id"`
+	sourceInfo     os.FileInfo
+	sourceIdentity string
+	SHA256         string    `json:"sha256"`
+	SchemaVersion  uint32    `json:"schema_version"`
+	ServerID       domain.ID `json:"server_id"`
 }
 
 // BackupInventory reads metadata only. Integrity is a separate explicit operation,
@@ -185,6 +186,10 @@ func (s *Store) copyBackup(ctx context.Context, id, expectedServer domain.ID, af
 	if err != nil || !sameBackup(before, opened) {
 		return result, backupUnavailable()
 	}
+	sourceIdentity, err := sessionBackupFileIdentity(input)
+	if err != nil {
+		return result, storageError(err)
+	}
 	current, err := backupInfo(path)
 	if err != nil || !sameBackup(before, current) {
 		return result, backupUnavailable()
@@ -268,6 +273,10 @@ func (s *Store) copyBackup(ctx context.Context, id, expectedServer domain.ID, af
 	if err != nil || !sameBackup(before, current) {
 		return result, backupUnavailable()
 	}
+	afterIdentity, err := sessionBackupFileIdentity(input)
+	if err != nil || afterIdentity != sourceIdentity {
+		return result, backupUnavailable()
+	}
 	// A same-user SQLite connection can create adjacent state without changing
 	// the original main-file bytes. Refuse that raced image at publication too.
 	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
@@ -275,6 +284,6 @@ func (s *Store) copyBackup(ctx context.Context, id, expectedServer domain.ID, af
 			return result, backupUnavailable()
 		}
 	}
-	result = BackupInspection{Backup: backupMetadata(id, before), SHA256: hex.EncodeToString(hash.Sum(nil)), SchemaVersion: version, ServerID: owner, sourceInfo: before}
+	result = BackupInspection{Backup: backupMetadata(id, before), SHA256: hex.EncodeToString(hash.Sum(nil)), SchemaVersion: version, ServerID: owner, sourceInfo: before, sourceIdentity: sourceIdentity}
 	return result, nil
 }

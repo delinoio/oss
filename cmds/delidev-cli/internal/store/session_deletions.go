@@ -129,11 +129,11 @@ func (s *Store) sessionDeletionInventory(ctx context.Context) ([]SessionDeletion
 		return nil, storageError(e)
 	}
 	defer f.Close()
-	entries, e := f.ReadDir(maxSessionDeletions*2 + 1)
+	entries, e := f.ReadDir(maxSessionDeletions*3 + 1)
 	if e != nil && !errors.Is(e, io.EOF) {
 		return nil, storageError(e)
 	}
-	if len(entries) > maxSessionDeletions*2 {
+	if len(entries) > maxSessionDeletions*3 {
 		return nil, domain.SessionDeletionPending()
 	}
 	out := []SessionDeletion{}
@@ -142,6 +142,16 @@ func (s *Store) sessionDeletionInventory(ctx context.Context) ([]SessionDeletion
 			return nil, domain.SafeError(e)
 		}
 		if strings.HasPrefix(entry.Name(), ".pending-") {
+			continue
+		}
+		if id, ok := sessionBackupScanSession(entry.Name()); ok {
+			original, err := s.readSessionDeletion(id)
+			if err != nil {
+				return nil, domain.SessionDeletionPending()
+			}
+			if _, err := s.readSessionBackupScan(original); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		id := domain.ID(strings.TrimSuffix(entry.Name(), ".json"))
@@ -752,6 +762,10 @@ func (s *Store) PurgeDeletedSession(ctx context.Context, session domain.ID) (Ses
 }
 
 func (s *Store) CompleteSessionDeletion(ctx context.Context, session domain.ID) (SessionDeletion, error) {
+	if err := lockBackupContext(ctx, &s.backupGate); err != nil {
+		return SessionDeletion{}, err
+	}
+	defer s.backupGate.Unlock()
 	s.gate.Lock()
 	defer s.gate.Unlock()
 	v, e := s.readSessionDeletion(session)
@@ -762,6 +776,9 @@ func (s *Store) CompleteSessionDeletion(ctx context.Context, session domain.ID) 
 		return v, domain.SessionDeletionPending()
 	}
 	if v.FinishedAt == nil {
+		if err := s.confirmSessionBackupScanLocked(ctx, v); err != nil {
+			return v, err
+		}
 		now := time.Now().UTC()
 		v.FinishedAt = &now
 		v.BackupsRemoved = true

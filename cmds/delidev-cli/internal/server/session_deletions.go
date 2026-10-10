@@ -231,7 +231,11 @@ func (s *Service) runSessionDeletions(parent context.Context) {
 			}
 			cancel()
 			if e != nil && ctx.Err() == nil {
-				s.logger.WarnContext(ctx, "session_deletion_pending", "deletion_id", v.ID, "code", domain.SafeError(e).Code)
+				checkpointed, progressErr := s.Store.SessionBackupScanProgress(v)
+				if progressErr != nil {
+					checkpointed = 0
+				}
+				s.logger.WarnContext(ctx, "session_deletion_pending", "deletion_id", v.ID, "code", domain.SafeError(e).Code, "checkpointed_backups", checkpointed)
 			} else if e == nil && current.Revision != v.Revision {
 				s.logger.InfoContext(ctx, "session_deletion_progress", "deletion_id", v.ID, "revision", current.Revision, "completed", current.FinishedAt != nil)
 			}

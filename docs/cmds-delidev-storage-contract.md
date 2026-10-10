@@ -346,7 +346,26 @@ mode, size and modification time captured by its content inspection. New or
 replaced images stay pending until a fresh pass classifies their contents;
 completion does not assert physical free-space recovery, and reclaimed bytes
 remain explicitly unknown. Repeated scans retain completed obligations and
-reapply removal to stale restored managed data. Logs contain operation/UUID,
+reapply removal to stale restored managed data. Each fully inspected unrelated
+image adds a synchronized private classification checkpoint bound to the original
+session deletion ID, immutable intent digest, server, backup ID, inspected SHA-256,
+schema and native file identity/change generation. Omitted checkpoints are legacy
+compatible. A sibling `.backup-scan.json` record in the existing private deletion
+journal retains at most 4,096 clean facts and 3 MiB, separately from the immutable
+4 MiB Worker plan. Strict closed decoding and original intent binding apply at
+recovery; malformed, foreign or orphaned records remain pending.
+
+Subsequent bounded passes reuse only unchanged native generations, modes, sizes
+and modification times. Access time is not an identity field. A changed or
+replaced image invalidates only its own fact; new images require full immutable
+copy/content inspection. Retain completed facts across cancellation, restart and
+database rollback. A canceled/failed copy creates no clean fact, and unknown
+scratch, sidecars or claimed removals still block completion. Classification
+metadata grants no deletion authority; containing images retain the existing
+original durable backup deletion path. Recheck the current complete inventory
+under the publication gate through the final deletion acknowledgement so late
+publication cannot inherit an earlier clean scan. Diagnostics may include the
+bounded retained checkpoint count, without image paths or content. Logs contain operation/UUID,
 revision and stable error codes only, never paths, prompts or credentials.
 
 Workspace snapshots now join the original deletion plan through reserved snapshot
