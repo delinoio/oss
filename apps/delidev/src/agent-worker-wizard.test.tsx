@@ -58,3 +58,51 @@ it("reads API endpoint hints only after explicit Refresh models and never on Mod
   await f.client.invalidateQueries(); view.rerender(f.view(false)); view.rerender(f.view());
   expect(f.endpoint).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
 });
+
+it("preserves complete multimodal advisory metadata without new model authority", async () => {
+ const f=fixture(), modalities=["text","image","audio","video","file"];
+ const original=f.endpoint.getMockImplementation()!;
+ f.endpoint.mockImplementation(async request=>{const response=await original(request);response.models[1].inputModalities=modalities;return response;});
+ render(f.view());const input=await accounts(f);
+ fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);
+ await screen.findByRole("option",{name:/Endpoint One/});
+ fireEvent.click(await screen.findByRole("option",{name:/Endpoint Two/}));
+ expect(input.value).toBe("exact-two");
+ // Advance without editing the selected ID, retaining its suggestion metadata.
+ fireEvent.keyDown(input,{key:"Escape"});fireEvent.click(screen.getByRole("button",{name:"Next"}));
+ await screen.findByRole("heading",{name:"Configure",level:3});fireEvent.change(screen.getByLabelText("Name"),{target:{value:"Multimodal Worker"}});
+ fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(1));
+ const request=f.save.mock.calls[0][0], route=JSON.parse(new TextDecoder().decode(request.documentJson)).routes[0];
+ expect(request.routeModels[0].selection).toEqual({case:"nativeId",value:"exact-two"});
+ expect(route.model).toMatchObject({provider_id:f.provider.id,native_id:"exact-two",input_modalities:modalities,metadata_source:"user-declared"});
+ expect(f.list.mock.calls.every(([request])=>request.filter?.kind!==EntityKind.MODEL)).toBe(true);
+});
+
+it.each([
+ ["too many tokens",Array(17).fill("text")],
+ ["empty token",[""]], ["oversized token",["a".repeat(33)]],
+ ["uppercase",["Audio"]], ["digit",["audio2"]], ["underscore",["audio_input"]],
+ ["Unicode",["오디오"]], ["whitespace",["audio "]],
+] as [string, string[]][])("rejects an entire endpoint response with %s",async(_name,modalities)=>{
+ const f=fixture(), original=f.endpoint.getMockImplementation()!;
+ f.endpoint.mockImplementation(async request=>{const response=await original(request);response.models[1].inputModalities=modalities;return response;});
+ render(f.view());const input=await accounts(f);
+ fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);
+ await screen.findByText(/catalog page includes unsupported/);
+ expect(screen.queryByRole("option",{name:/Endpoint One/})).toBeNull();expect(f.save).not.toHaveBeenCalled();
+});
+
+it.each(["accountId","providerId","connectionId","accountRevision","providerRevision","duplicateId","oversizedId"])("retains endpoint rejection for %s",async field=>{
+ const f=fixture(), original=f.endpoint.getMockImplementation()!;
+ f.endpoint.mockImplementation(async request=>{
+  const response=await original(request);
+  if(field==="accountId"||field==="providerId"||field==="connectionId")response[field]=newRequestId();
+  else if(field==="accountRevision"||field==="providerRevision")response[field]=0n;
+  else response.models[1].nativeId=field==="duplicateId"?response.models[0].nativeId:"x".repeat(257);
+  return response;
+ });
+ render(f.view());const input=await accounts(f);
+ fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);
+ await screen.findByText(/catalog page includes unsupported/);expect(screen.queryByRole("option",{name:/Endpoint One/})).toBeNull();
+ expect(f.save).not.toHaveBeenCalled();
+});

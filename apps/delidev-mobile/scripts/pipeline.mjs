@@ -5,6 +5,7 @@ import {
   mkdirSync,
   existsSync,
   copyFileSync,
+  renameSync,
 } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,10 +19,14 @@ import {
   Stage,
   Identity,
 } from "./beta.mjs";
+import { iosEnvironment } from "./mobile.mjs";
 import { inspectIos, inspectAndroid } from "./artifacts.mjs";
 import { appleProvider, googleProvider } from "./providers.mjs";
 const app = resolve(dirname(fileURLToPath(import.meta.url)), ".."),
-  root = resolve(app, "../.."),
+  toolRoot = resolve(app, "../.."),
+  root = process.env.DELIDEV_MOBILE_RECOVERY_SHA
+    ? resolve(process.env.GITHUB_WORKSPACE ?? toolRoot)
+    : toolRoot,
   output = resolve(
     process.env.DELIDEV_MOBILE_CANDIDATE_DIR ?? join(app, "artifacts"),
   );
@@ -35,9 +40,9 @@ function run(program, args, cwd = app, env = {}) {
   if (r.error || r.status !== 0)
     throw new Error("Mobile candidate build failed");
 }
-function capture(program, args) {
+function capture(program, args, cwd = root) {
   const r = spawnSync(program, args, {
-    cwd: root,
+    cwd,
     encoding: "utf8",
     maxBuffer: 4 << 20,
   });
@@ -48,6 +53,7 @@ function capture(program, args) {
 export function inputs(e) {
   return validateInputs({
     identity: Identity,
+    target: e.DELIDEV_MOBILE_TARGET ?? "both",
     sourceSha: e.DELIDEV_MOBILE_SOURCE_SHA,
     version: e.DELIDEV_MOBILE_VERSION,
     iosBuild: e.DELIDEV_MOBILE_IOS_BUILD,
@@ -58,11 +64,20 @@ export function inputs(e) {
     androidSigner: e.DELIDEV_MOBILE_ANDROID_SIGNER,
   });
 }
+export function verifySourceRecords(input, original, recovery, environment = {}) {
+  if (original.sha !== input.sourceSha || original.dirty)
+    throw new Error("Candidate source revision or tracked state mismatch");
+  if (environment.DELIDEV_MOBILE_RECOVERY_SHA &&
+      (environment.MODE !== "resume" || !/^[a-f0-9]{40}$/.test(environment.DELIDEV_MOBILE_RECOVERY_SHA) ||
+       recovery?.sha !== environment.DELIDEV_MOBILE_RECOVERY_SHA || recovery.dirty ||
+       environment.GITHUB_SHA !== recovery.sha))
+    throw new Error("Reviewed recovery source revision or mode mismatch");
+}
 export function source(input) {
-  if (capture("git", ["rev-parse", "HEAD"]) !== input.sourceSha)
-    throw new Error("Candidate source revision mismatch");
-  if (capture("git", ["status", "--porcelain", "--untracked-files=no"]))
-    throw new Error("Candidate source has tracked changes");
+  const read = cwd => ({ sha: capture("git", ["rev-parse", "HEAD"], cwd),
+    dirty: !!capture("git", ["status", "--porcelain", "--untracked-files=no"], cwd) });
+  verifySourceRecords(input, read(root), process.env.DELIDEV_MOBILE_RECOVERY_SHA ? read(toolRoot) : undefined,
+    process.env);
 }
 function config(input) {
   const file = join(app, "src-tauri/tauri.conf.json"),
@@ -70,7 +85,7 @@ function config(input) {
     value = JSON.parse(original);
   value.version = input.version;
   value.bundle.iOS.bundleVersion = input.iosBuild;
-  value.bundle.android.versionCode = Number(input.androidCode);
+  if (input.target !== "ios") value.bundle.android.versionCode = Number(input.androidCode);
   writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
   return () => writeFileSync(file, original);
 }
@@ -125,6 +140,7 @@ async function build(input, platform) {
           "custom-protocol",
         ],
         root,
+        iosEnvironment(),
       );
       const target = resolve(root, process.env.CARGO_TARGET_DIR ?? "target"),
         external = join(app, "src-tauri/gen/apple/Externals/arm64/release");
@@ -199,20 +215,35 @@ export function assemble(input, directory) {
   const manifest = candidate(
     input,
     artifact("ios", "DeliDev.ipa"),
-    artifact("android", "DeliDev.aab"),
+    input.target === "ios" ? undefined : artifact("android", "DeliDev.aab"),
   );
   retainCandidate(join(directory, "manifest.json"), manifest);
   return manifest;
 }
 async function submit(input, resume) {
-  credentials(process.env);
+  credentials(process.env, input.target);
   source(input);
   const manifest = JSON.parse(readFileSync(join(output, "manifest.json"))),
     actual = assemble(input, output);
   if (actual.candidateId !== manifest.candidateId)
     throw new Error("Original candidate changed");
-  for (const platform of ["ios", "android"]) {
-    const file = join(output, `${platform}-receipt.json`),
+  await submitPlatforms(manifest, output, resume, (platform, checkpoint) => {
+    const bytes = readFileSync(
+      join(output, platform === "ios" ? "DeliDev.ipa" : "DeliDev.aab"),
+    );
+    return platform === "ios"
+      ? appleProvider(process.env, bytes, checkpoint)
+      : googleProvider(process.env, bytes, checkpoint);
+  });
+}
+/** Preserve both original platform intents before any provider access. */
+export async function submitPlatforms(manifest, directory, resume, providerFor) {
+  const receipts = [];
+  const platforms = manifest.schema === 2 && manifest.target === "ios" ? ["ios"] : ["ios", "android"];
+  if (Object.keys(manifest.artifacts).join(",") !== platforms.join(","))
+    throw new Error("Original candidate platform mismatch");
+  for (const platform of platforms) {
+    const file = join(directory, `${platform}-receipt.json`),
       receipt = existsSync(file)
         ? JSON.parse(readFileSync(file))
         : {
@@ -222,35 +253,43 @@ async function submit(input, resume) {
           };
     if (
       receipt.candidateId !== manifest.candidateId ||
-      receipt.platform !== platform
+      receipt.platform !== platform ||
+      !Object.values(Stage).includes(receipt.stage)
     )
       throw new Error("Original receipt identity mismatch");
     const checkpoint = async (value) => {
       const temporary = file + ".tmp";
       writeFileSync(temporary, JSON.stringify(value) + "\n", { mode: 0o600 });
-      run(
-        "node",
-        [
-          "-e",
-          "require('node:fs').renameSync(process.argv[1],process.argv[2])",
-          temporary,
-          file,
-        ],
-        root,
-      );
+      renameSync(temporary, file);
+      process.stdout.write(JSON.stringify({
+        operation: "mobile-beta-checkpoint",
+        platform,
+        stage: value.stage,
+      }) + "\n");
     };
-    const bytes = readFileSync(
-        join(output, platform === "ios" ? "DeliDev.ipa" : "DeliDev.aab"),
-      ),
-      provider =
-        platform === "ios"
-          ? appleProvider(process.env, bytes, checkpoint)
-          : googleProvider(process.env, bytes, checkpoint);
+    receipts.push({ platform, file, receipt, checkpoint });
+  }
+  // Validate all retained identities first, then atomically persist each missing
+  // receipt before either platform can submit. Absence on resume stays Unknown.
+  for (const { file, receipt, checkpoint } of receipts)
+    if (!existsSync(file)) await checkpoint(receipt);
+  for (const { platform, receipt, checkpoint } of receipts) {
+    const provider = providerFor(platform, checkpoint);
     // All artifact hashes and retained source metadata are checked again before
     // this explicit upload boundary. Submission never rebuilds candidate bytes.
-    await distribute(manifest, receipt, provider, checkpoint, {
-      dryRun: false,
-    });
+    try {
+      await distribute(manifest, receipt, provider, checkpoint, {
+        dryRun: false,
+      });
+    } catch {
+      process.stderr.write(JSON.stringify({
+        operation: "mobile-beta-distribution",
+        platform,
+        stage: JSON.parse(readFileSync(join(directory, `${platform}-receipt.json`))).stage,
+        outcome: "failed-retain-original",
+      }) + "\n");
+      throw new Error("Original platform distribution failed");
+    }
   }
 }
 if (

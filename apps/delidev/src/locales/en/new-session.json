@@ -79,6 +79,5 @@
   "new-session.invalidStartingBranch": "Enter a valid branch name of at most 1,024 UTF-8 bytes.",
   "new-session.branchRepositoryUnavailable": "Repository metadata is unavailable. Retain the draft until its configured remote is known.",
   "new-session.useTypedBranch": "Use \"{{name}}\"",
-  "new-session.branchInputHelp": "Choose a discovered branch or type a branch name. Empty uses the saved starting reference.",
   "new-session.noMatchingBranches": "No matching branches. Valid direct input is still available."
 }
