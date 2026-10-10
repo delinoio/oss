@@ -256,8 +256,8 @@ func TestAgentMessageQuestionsRemainPrivate(t *testing.T) {
 			}
 		case []any:
 			if len(value) != 0 {
-				if err != nil || event.Kind != NativeExtensionEvent || event.Message != nil {
-					t.Fatal("populated questions became ordinary output", err)
+				if err == nil || event.Message != nil {
+					t.Fatal("malformed questions became ordinary output", err)
 				}
 				continue
 			}

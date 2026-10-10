@@ -249,7 +249,8 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 	items := make(map[string]bool, len(wire.Items))
 	for _, rawItem := range wire.Items {
 		// Non-user history is deliberately not interpreted as fresh execution
-		// or interaction evidence. Only its bounded item identity is needed.
+		// or interaction evidence. Known async metadata is validated without
+		// changing the protected original or creating an interaction.
 		var identity struct {
 			Type string `json:"type"`
 			ID   string `json:"id"`
@@ -258,6 +259,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "agentMessage" {
+			if _, err := decodeAgentMessage(rawItem); err != nil {
+				return Turn{}, nil, incompatible()
+			}
+		}
 		if identity.Type == "sleep" {
 			if _, err := decodeSleep(rawItem); err != nil {
 				return Turn{}, nil, err

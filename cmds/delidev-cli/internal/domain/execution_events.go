@@ -171,14 +171,15 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 }
 
 type ExecutionMessageUpdate struct {
-	Attachments    []ImageAttachment `json:"attachments,omitempty"`
-	ID             ID                `json:"id"`
-	NativeID       string            `json:"native_id"`
-	NativeParentID string            `json:"native_parent_id,omitempty"`
-	Role           MessageRole       `json:"role"`
-	Phase          *MessagePhase     `json:"phase,omitempty"`
-	InputID        ID                `json:"input_id,omitempty"`
-	Text           string            `json:"text"`
+	CodexAsyncMessage *CodexAsyncMessage `json:"codex_async_message,omitempty"`
+	Attachments       []ImageAttachment  `json:"attachments,omitempty"`
+	ID                ID                 `json:"id"`
+	NativeID          string             `json:"native_id"`
+	NativeParentID    string             `json:"native_parent_id,omitempty"`
+	Role              MessageRole        `json:"role"`
+	Phase             *MessagePhase      `json:"phase,omitempty"`
+	InputID           ID                 `json:"input_id,omitempty"`
+	Text              string             `json:"text"`
 }
 
 // ExecutionEvent is a closed normalized Worker publication, not a native wire
@@ -383,6 +384,9 @@ func (e ExecutionEvent) Validate() error {
 			return Fail(InvalidArgument, "A message event requires its typed payload.", "Normalize the native message before publication.")
 		}
 		m := e.Message
+		if m.CodexAsyncMessage != nil && (m.Role != AssistantMessage || m.CodexAsyncMessage.Validate() != nil) {
+			return invalidAsyncMessage()
+		}
 		if err := m.ID.Validate(); err != nil {
 			return err
 		}
@@ -547,6 +551,7 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
+	CodexAsyncMessage  *CodexAsyncMessage         `json:"codex_async_message,omitempty"`
 	ContextRevision    uint64                     `json:"context_revision,omitempty"`
 	TurnTiming         *TurnTiming                `json:"turn_timing,omitempty"`
 	Attachments        []ImageAttachment          `json:"attachments,omitempty"`

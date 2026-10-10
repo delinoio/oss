@@ -2265,3 +2265,23 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Codex asynchronous assistant messages
+
+Owned root `agentMessage` observations use one bounded closed decoder for live
+started/completed items, complete context history and managed continuation/Fork
+eligibility. Optional `delivery` accepts only null or `async`. Optional ordered
+`questions` contains titles and nullable ordered string options. Preserve
+omission, explicit null and empty arrays separately. The feature-local
+`codex_async_message` profile has version 1 and explicit presence flags; it does
+not change global event versions, entities, portable formats or RPCs.
+
+Limit questions to 64, options per question to 32, each title/option to 4096 UTF-8
+bytes, and total title/option bytes to 65536. Reject malformed types, unknown or
+duplicate fields, enum violations and changed populated lifecycle metadata.
+Completion may populate an earlier absent/null field. Existing original
+thread/turn/item/execution ownership and durable receipt replay remain mandatory.
+Populated memory citations require their separate adapter; retain them privately
+and do not drop them to admit a message. Child-source omission/null rules remain
+unchanged. Embedded questions are inert content and create no synchronous
+question resource, answer receipt, native reply or automatic prompt.

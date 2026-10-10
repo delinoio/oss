@@ -140,13 +140,14 @@ const (
 )
 
 type Message struct {
-	Attachments   []domain.ImageAttachment
-	ID            string
-	ClientInputID domain.ID
-	Role          MessageRole
-	Phase         *MessagePhase
-	Text          string
-	Parts         []string
+	CodexAsyncMessage *domain.CodexAsyncMessage
+	Attachments       []domain.ImageAttachment
+	ID                string
+	ClientInputID     domain.ID
+	Role              MessageRole
+	Phase             *MessagePhase
+	Text              string
+	Parts             []string
 }
 
 type Event struct {
@@ -621,28 +622,14 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		}
 
 	case "agentMessage":
-		var item struct {
-			Type           string            `json:"type"`
-			ID             string            `json:"id"`
-			Text           *string           `json:"text"`
-			Phase          *MessagePhase     `json:"phase"`
-			Delivery       json.RawMessage   `json:"delivery"`
-			MemoryCitation json.RawMessage   `json:"memoryCitation"`
-			Questions      []json.RawMessage `json:"questions,omitempty"`
-		}
-		if domain.Decode(params.Item, &item) != nil || item.Text == nil {
-			return Event{}, incompatible()
-		}
-		if item.Phase != nil && *item.Phase != CommentaryPhase && *item.Phase != FinalAnswerPhase {
-			return Event{}, incompatible()
-		}
-		if len(item.Questions) != 0 || (len(item.Delivery) > 0 && string(item.Delivery) != "null") || (len(item.MemoryCitation) > 0 && string(item.MemoryCitation) != "null") {
+		decoded, err := decodeAgentMessage(params.Item)
+		if err == asyncCitationUnsupported {
 			return privateNative(native), nil
 		}
-		message.ID = item.ID
-		message.Role = AssistantRole
-		message.Text = *item.Text
-		message.Phase = item.Phase
+		if err != nil {
+			return Event{}, err
+		}
+		message = decoded
 	default:
 		return privateNative(native), nil
 	}

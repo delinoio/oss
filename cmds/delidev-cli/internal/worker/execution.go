@@ -433,6 +433,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	input.Installation.Version = client.Version()
 	publisher.nativeVersion = client.Version()
 	mapper := NewCodexEventPublisher(publisher)
+	mapper.asyncMessageSupported = config.asyncMessageSupported
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
 		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)

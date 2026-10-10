@@ -1,3 +1,4 @@
+import { CodexAsyncContent, selectAsyncDraft, type AsyncDraftOwner } from "./codex-async-message";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -191,7 +192,7 @@ function ConversationStatus({ state }: { state: string }) {
   return !state || state === "complete" || state === "completed" ? null : <header><small>{statusLabel(state)}</small></header>;
 }
 
-export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, contextRevision = 0 }: { resource: Resource; active?: boolean; actions?: ReactNode; contextRevision?: number }) {
+export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, contextRevision = 0, selectAsync }: { selectAsync?: (option: string) => void; resource: Resource; active?: boolean; actions?: ReactNode; contextRevision?: number }) {
   useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
@@ -233,6 +234,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
+ {textRole && data.role === "assistant" && data.codex_async_message != null ? <CodexAsyncContent value={data.codex_async_message} select={active ? selectAsync : undefined} /> : null}
     {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
     {data.role==="user"?actions:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
@@ -441,6 +443,21 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const revert = useSessionRevert({ session, active:conversationActive, draft, composer, blocked:locked || images.images.length>0, changed:setAcknowledged, restore:(prompt)=>{if(images.images.length || images.busy)return false;if(setDraft(prompt,[])===false)return false;skills.clearAccepted();return true;} });
   const contextLocked = Boolean(data.compaction_job_id) || revert.pending || revert.uncertain;
   const canSend = !contextLocked && !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
+  const asyncOwner = useRef<AsyncDraftOwner>({ session: id, transport: submissionTransport, connection: live.generation, generation: 0, draft, allowed: false });
+  const asyncAllowed = conversationActive && live.state === ConnectionState.Live && !live.error && !contextLocked && !locked && !skills.blocked && !images.images.length && !images.busy && text(data.archive) === "active" && draft === "";
+  const previousAsyncOwner = asyncOwner.current;
+  const generation = previousAsyncOwner.session === id && previousAsyncOwner.transport === submissionTransport && previousAsyncOwner.connection === live.generation && previousAsyncOwner.draft === draft && previousAsyncOwner.allowed === asyncAllowed ? previousAsyncOwner.generation : previousAsyncOwner.generation + 1;
+  const capturedAsyncOwner = { session: id, transport: submissionTransport, connection: live.generation, generation, draft, allowed: asyncAllowed };
+  asyncOwner.current = capturedAsyncOwner;
+  const asyncMounted = useRef(false);
+  useLayoutEffect(() => { asyncMounted.current = true; return () => { asyncMounted.current = false; }; }, []);
+  const selectAsync = (option: string) => {
+    if (asyncMounted.current && selectAsyncDraft(capturedAsyncOwner, asyncOwner.current, option, value => setDraft(value, []))) {
+      asyncOwner.current = { ...asyncOwner.current, generation: asyncOwner.current.generation + 1, draft: option };
+      composer.current?.focus();
+    }
+  };
+
   const enqueue = async () => {
     if (!canSend) return;
     const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
@@ -618,7 +635,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
         {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length || timing ? null : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
-        {rows.length || messages.rows.length || timing ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} current={timing} confirmed={timingConfirmed} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : null}
+        {rows.length || messages.rows.length || timing ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} current={timing} confirmed={timingConfirmed} render={row => <TranscriptItem key={row.id} resource={row} selectAsync={asyncAllowed ? selectAsync : undefined} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : null}
         {observeStartupOwner && !startupOwnerCurrent && !startupMachine.isPending && !inlineRecovery && !budgetBlocked && data.archive === "active" && ["not-started", "running"].includes(text(data.outcome)) ? <p role="status">{copy("session.connectionRequiresAttention_160d4a")}</p> : null}
         {progress ? <SessionProgressStatus phase={progress} operations={startupOperations(session, progress)} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         {items(data.sidechat_retries).length ? <Disclosure className="sidechat-answer-history"><DisclosureSummary>{copy("sidechat.retry.history")}</DisclosureSummary><p>{copy("sidechat.retry.retainedHistory")}</p><div className="sidechat-history-content" ref={historyRoot}><ToolTurnTranscript sessionId={id} active={conversationActive} query={{...messages,pages:messages.pages.map(page=>({...page,height:historyHeights.current.get(page.token)})),measure:(token,height)=>{historyHeights.current.set(token,height);}}} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={historyRoot} include={sidechatAnswerFilter(session,true)} render={row=><TranscriptItem resource={row} active={conversationActive}/>} /></div></Disclosure> : null}

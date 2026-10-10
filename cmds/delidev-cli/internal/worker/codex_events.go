@@ -13,21 +13,22 @@ import (
 // must route them to another typed adapter or stop with an unsupported result.
 // This component never sends prompts, answers interactions or owns cleanup.
 type CodexEventPublisher struct {
-	children          domain.SubagentState
-	mu                sync.Mutex
-	publisher         *ExecutionPublisher
-	thread, turn      domain.ID
-	messages          map[string]domain.ExecutionMessageUpdate
-	tools             map[string]codexToolPublication
-	artifacts         map[string]codexArtifactPublication
-	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
-	approvalKinds     map[domain.ID]domain.CodexApprovalKind
-	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
-	approvalResponses map[domain.ID]domain.ExecutionApprovalResponseUpdate
-	acceptedInputs    []domain.ExecutionInputBinding
-	steers            map[domain.ID]domain.ExecutionSteerUpdate
-	waiting           domain.NativeWaiting
-	blocked, finished bool
+	asyncMessageSupported bool
+	children              domain.SubagentState
+	mu                    sync.Mutex
+	publisher             *ExecutionPublisher
+	thread, turn          domain.ID
+	messages              map[string]domain.ExecutionMessageUpdate
+	tools                 map[string]codexToolPublication
+	artifacts             map[string]codexArtifactPublication
+	interactions          map[domain.ID]domain.ExecutionInteractionUpdate
+	approvalKinds         map[domain.ID]domain.CodexApprovalKind
+	questionResponses     map[domain.ID]domain.ExecutionQuestionResponseUpdate
+	approvalResponses     map[domain.ID]domain.ExecutionApprovalResponseUpdate
+	acceptedInputs        []domain.ExecutionInputBinding
+	steers                map[domain.ID]domain.ExecutionSteerUpdate
+	waiting               domain.NativeWaiting
+	blocked, finished     bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
@@ -230,6 +231,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	case codex.ToolStartedEvent, codex.ToolCompletedEvent, codex.ToolOutputEvent, codex.ToolInputEvent, codex.ToolPatchEvent:
 		return true, c.publishTool(ctx, event)
 	case codex.MessageStartedEvent, codex.MessageCompletedEvent:
+		if event.Message != nil && event.Message.CodexAsyncMessage != nil && !c.asyncMessageSupported {
+			return false, publicationUncertain()
+		}
 		if event.Message == nil || event.ItemID != event.Message.ID {
 			return false, publicationUncertain()
 		}
@@ -264,6 +268,10 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			}
 			message.Phase = &phase
 		}
+		if !domain.CodexAsyncMessageAdvances(message.CodexAsyncMessage, event.Message.CodexAsyncMessage) {
+			return false, publicationUncertain()
+		}
+		message.CodexAsyncMessage = event.Message.CodexAsyncMessage
 		message.Attachments = append([]domain.ImageAttachment(nil), event.Message.Attachments...)
 		message.Text = event.Message.Text
 		kind := domain.ExecutionMessageStarted

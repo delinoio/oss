@@ -64,3 +64,5 @@ export * as InstallationQuery from "./gen/delidev/v1/installation-InstallationSe
 
 export * as SkillQuery from "./gen/delidev/v1/skills-SkillService_connectquery.js";
 export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService_connectquery.js";
+
+export { codexAsyncMessage, type CodexAsyncMessage, type CodexAsyncQuestion } from "./codex-async-message.js";

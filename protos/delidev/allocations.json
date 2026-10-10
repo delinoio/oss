@@ -13293,6 +13293,20 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2401,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_ASYNC_MESSAGE_V1",
+      "number": 92
+    },
+    {
+      "issue": 2401,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_ASYNC_MESSAGE_V1",
+      "number": 61
     }
   ],
   "rpcReservations": [

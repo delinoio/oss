@@ -568,3 +568,12 @@ Native session compaction for the feature follows the planned shared boundary in
 Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
+
+## Asynchronous message history
+
+Complete Codex history validates supported asynchronous assistant message
+metadata with the same bounded decoder as live items. Validation never replaces
+the original protected item/turn bytes or canonical digest with public message
+projections. Preserve ordered questions, nullable options and original
+provenance through continuation and Fork prefix checks. These observations
+create no interaction, execution or native response authority.

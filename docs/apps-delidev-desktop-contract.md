@@ -5098,3 +5098,16 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Asynchronous assistant suggestions
+
+Show supported Codex asynchronous provenance and ordered embedded questions in
+the existing assistant transcript. Render native titles and options as inert
+text; do not fetch resources or interpret them as instructions. Nullable and
+empty options remain distinct in retained metadata. Only explicit human option
+selection can populate an empty, unsent composer draft. Guard the original
+session, authenticated transport, composer generation, current draft equality
+and current admission state. Preserve existing text and intervening edits,
+connection/session replacements, image drafts and blocked contexts. Read-only
+history exposes no actionable selection. Selection does not submit a prompt,
+answer a native question or bypass the existing send admission checks.

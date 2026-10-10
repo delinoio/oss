@@ -446,3 +446,12 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Codex asynchronous message decoding
+
+The `codexAsyncMessage` helper validates the closed version-1 optional message
+metadata profile. Preserve explicit field presence, native nullable delivery,
+ordered question titles and null versus empty options. Apply the owning harness
+bounds and reject unknown fields and malformed types. This decoder returns
+inert text provenance only, with no request, reply, media fetch or dispatch
+authority. Generated capability bindings advertise System 92 and Worker 61.

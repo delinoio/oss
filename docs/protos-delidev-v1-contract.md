@@ -1417,3 +1417,12 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Codex asynchronous message capability
+
+`SYSTEM_CAPABILITY_CODEX_ASYNC_MESSAGE_V1 = 92` and
+`WORKER_CAPABILITY_CODEX_ASYNC_MESSAGE_V1 = 61` advertise the bounded, inert
+version-1 message provenance profile. Negotiate Worker support before publishing
+this profile. Use existing normalized message publication and receipt RPCs;
+allocate no message fields, global event versions, entity kinds or portable
+formats. Preserve all existing capability meanings.
