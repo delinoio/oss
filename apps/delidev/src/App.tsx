@@ -15,8 +15,8 @@ import type { ServerPresentation } from "./server-presentation";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
 import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { type Transport } from "@connectrpc/connect";
-import { TransportProvider, useQuery } from "@connectrpc/connect-query";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { TransportProvider, useQuery, useTransport } from "@connectrpc/connect-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { SessionQuery, SystemQuery, SystemCapability, newRequestId, EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document, text } from "./documents";
 import { SettingsCategory } from "./settings-category";
@@ -37,6 +37,7 @@ import { TrayPresentation } from "./tray-presentation";
 import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
+import { refreshCreatedSessionNavigation } from "./home-navigation-query";
 import { Sidebar, Icon } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import { SettingsEntryDestination, type SettingsNavigationEntry } from "./settings";
@@ -50,6 +51,11 @@ import { ShortcutProvider, useShortcutHelp, useHeldShortcutHelp, useShortcutSurf
 import { ShortcutId, ShortcutInput, ShortcutScope, globalShortcutBindings } from "./shortcuts";
 
 function Shell({ localServer, serverPresentation, connectionReady, connectionSettings, connectionTarget, onConnectionHelp, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionReady: boolean; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; onConnectionHelp?: (target: HTMLElement | undefined) => void; readLocalWorker?: ReadLocalWorkerProof }) {
+  const queryClient = useQueryClient();
+  const transport = useTransport();
+  const sessionCreated = useCallback((session: Resource) => {
+    void refreshCreatedSessionNavigation(queryClient, transport, session);
+  }, [queryClient, transport]);
   useLocale();
   const [surface, setSurface] = useState(Surface.Sessions);
   useShortcutSurface(surface);
@@ -185,8 +191,8 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     {[...drafts.keys()].map(id => <SessionDraftSettlement key={id} id={id} clear={() => { saveDraft(id, "", []); }} />)}
     {projectCreation ? <ProjectCreationDialog registrationAdapters={{ readLocalWorker, controlLocalWorker, chooseFolder: chooseRepositoryFolder }} key={projectCreation.id} activation={projectCreation.activation} close={closeProjectCreation} fallbackFocus={projectFallbackFocus} /> : null}
     <div hidden={surface !== Surface.Sessions} className="session-container">{visited.map(id => <div key={id} hidden={id !== selected} inert={id !== selected}><SessionView active={surface === Surface.Sessions && id === selected} id={id} draft={drafts.get(id)?.prompt ?? ""} initialSkills={drafts.get(id)?.bindings} setDraft={(value, bindings) => saveDraft(id, value, bindings)} changeSkills={bindings => { saveDraft(id, undefined, bindings); }} openRunnerSettings={() => openSettings(SettingsEntryDestination.RunnerDevices)} /></div>)}{!selected ? <section className="page welcome"><h2>{copy("App.yourSessionsInOnePlace_5dad94")}</h2><p>{copy("App.selectARetainedSessionOrStart_a9de9e")}</p><Problem error={status.error} actions={<button type="button" disabled={status.isFetching || !connectionReady} onClick={() => void status.refetch()}>{copy("ui.retryCurrentRead")}</button>} /></section> : null}</div>
-    <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} />
-    {newGeneralChatActivation > 0 ? <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={() => { void sessions.refetch(); }} /> : null}
+    <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} active={surface === Surface.NewSession} ownsActivation={surface === Surface.NewSession} activation={newSessionEntry.activation} entryProjectId={newSessionEntry.projectId} projectSelectionBlockedChanged={setNewSessionProjectBlocked} readLocalWorker={readLocalWorker} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={sessionCreated} />
+    {newGeneralChatActivation > 0 ? <NewSession preferenceScope={pairingAuthority && currentDeviceId ? { server_id: pairingAuthority.serverId, device_id: currentDeviceId } : undefined} kind={NewSessionKind.GeneralChat} active={surface === Surface.NewGeneralChat} ownsActivation={surface === Surface.NewGeneralChat} activation={newGeneralChatActivation} back={() => { navigate(Surface.Sessions); void sessions.refetch(); }} openSettings={openSettings} open={open} created={sessionCreated} /> : null}
     <Search active={surface === Surface.Search} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} openOperational={openOperationalNotification} /></div>
     <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />
