@@ -3672,6 +3672,36 @@ A report timestamp or long-running step duration is never a freshness substitute
 Rechecks suspend with the owning conversation; canceled late results cannot publish.
 
 
+### Active conversation questions (issue #2529)
+
+Retained interaction documents and Inbox inspection are independent of the active
+Agent requests tray. An original confirmed answer submission removes its answer
+form. Keep compact queued, claimed, transmitted, uncertain, canceled, failed or
+unknown delivery information and the exact explicit original receipt retry when
+needed. Never create another answer from a delivery, closure or session outcome.
+Authoritative acceptance or confirmed closure without an unresolved response or
+retained mutation retires the question. Unknown or contradictory observations
+remain visible without answer authority.
+
+Use one revision-ordered, original-session projection for response RPC receipts,
+list refresh, live updates, page-scoped counts, automatic expansion and restored
+payload pages. Submission receipts must match the original interaction, request
+UUID and expected revision. Metadata-only retirement watermarks prevent older
+restored payloads from reviving forms; they retain no answer bytes. Preserve
+original page/arrival order and unrelated approvals. A removed or evicted row
+cannot conceal a retained original response operation.
+
+Hide the complete disclosure only after a successful current complete read with
+all reached payload pages resident proves no displayed request or unresolved
+operation remains. Loading, read errors, continuation and payload restoration
+remain reachable. Empty presentation adds no form, badge, replacement message or
+vacant region. Keep the existing composer mounted with its draft, dimensions,
+styling and controls at narrow widths and short viewport heights. If removed
+controls held focus, move it to the next actionable request or composer; never
+steal another control's focus. Retain question/answer history and independent
+Inbox read state. This presentation changes no RPC, allocation, migration or
+native delivery authority.
+
 ### Compact waiting inputs (issue #2141)
 
 Ordinary reconciled waiting inputs use a compact list immediately above the

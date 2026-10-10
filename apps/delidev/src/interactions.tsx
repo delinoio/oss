@@ -1,3 +1,4 @@
+import { type QuestionPresentation } from "./active-question";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
@@ -20,16 +21,24 @@ const decisionNames: Record<Decision, string> = {
 const responseLimit = 256 << 10;
 function own<T>(record: Record<string, T>, key: string): T | undefined { return Object.hasOwn(record, key) ? record[key] : undefined; }
 
-export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; refresh: () => void; draft?: InboxInteractionDraft; saveDraft?: (value: InteractionDraftState) => void; clearDraft?: () => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
+export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, questionPresentation, compactQuestion = false, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; refresh: () => void; draft?: InboxInteractionDraft; saveDraft?: (value: InteractionDraftState) => void; clearDraft?: () => void; questionPresentation?: QuestionPresentation; compactQuestion?: boolean; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
   useLocale();
   const [accepted, setAccepted] = useState<Resource>();
-  const current = accepted && accepted.id === resource.id && accepted.revision > resource.revision ? accepted : resource;
+  const current = accepted && accepted.id === resource.id && accepted.sessionId === resource.sessionId && accepted.kind === resource.kind && accepted.revision > resource.revision ? accepted : resource;
   const data = document(current);
+  const presentation = questionPresentation && questionPresentation.revision >= current.revision ? questionPresentation : undefined;
   const changed = (result?: Resource) => { if (result) { setAccepted(result); clearDraft?.(); } refresh(); };
-  return <article className="interaction"><header><h3>{text(data.type) === InteractionType.Question ? copy("interactions.agentQuestion_1a6b3f") : copy("interactions.nativeApproval_c515b9")}</h3><small>{text(data.closure)}</small></header>
-    <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{statusLabel(text(object(data.response ?? data.approval_response).state)) || copy("interactions.extra.d3289e625281")}</> }} /></p>
-    {Object.hasOwn(data,"grok") ? <NativeGrokInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.claude != null ? <NativeClaudeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.opencode != null ? <NativeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>}
+  return <article className="interaction"><header><h3>{text(data.type) === InteractionType.Question ? copy("interactions.agentQuestion_1a6b3f") : copy("interactions.nativeApproval_c515b9")}</h3><small>{presentation?.closure ?? text(data.closure)}</small></header>
+    <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{statusLabel(presentation?.state ?? text(object(data.response ?? data.approval_response).state)) || copy("interactions.extra.d3289e625281")}</> }} /></p>
+    {text(data.type) === InteractionType.Question && (compactQuestion || data.response != null || data.closure !== "open") ? <QuestionReceiptRecovery intentKey={`${data.opencode != null ? "opencode-answer" : data.claude != null ? "claude-answer" : data.grok != null ? "grok-answer" : "answer"}:${current.id}`} allowed={receiptRetryAllowed} refresh={refresh} /> : Object.hasOwn(data,"grok") ? <NativeGrokInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.claude != null ? <NativeClaudeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.opencode != null ? <NativeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>}
   </article>;
+}
+
+/** This uses the original connection-owned request; it cannot create an answer. */
+export function QuestionReceiptRecovery({ intentKey, allowed, refresh }: { intentKey: string; allowed: boolean; refresh: () => void }) {
+  useLocale();
+  const mutation = useRetainedMutation(intentKey, InteractionQuery.respondQuestion, refresh);
+  return <>{mutation.busy || mutation.uncertain ? <p role="status">{statusLabel(mutation.busy ? "sending" : "uncertain")}</p> : null}<Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy || !allowed} onClick={mutation.retry}>{copy("interactions.retryTheSameAnswers_572a30")}</button> : null}</>;
 }
 
 function Questions({ resource, accepted, draft, saveDraft, submissionAllowed, receiptRetryAllowed }: { resource: Resource; accepted: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed: boolean; receiptRetryAllowed: boolean }) {

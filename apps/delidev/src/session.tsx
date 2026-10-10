@@ -1,3 +1,4 @@
+import { ConversationRequests } from "./conversation-requests";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -28,7 +29,7 @@ import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
-import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
+import { type InboxInteractionDraft } from "./inbox-drafts";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -73,7 +74,6 @@ import { useRetainedMutation, useRetainedMutationNotifications } from "./mutatio
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
-import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
 import { SidechatFindings } from "./sidechat";
@@ -347,12 +347,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
  const [runnerRemediationPending, setRunnerRemediationPending] = useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
-  const interactionRow = (row: Resource) => {
-    const draft = requestDrafts.values.get(row.id) ?? initialInteractionDraft(row);
-    return <Interaction key={row.id} resource={row} refresh={interactions.refresh} draft={draft} saveDraft={editable => { if (draft) requestDrafts.save(row.id, { ...draft, editable }); }} clearDraft={() => requestDrafts.save(row.id)} submissionAllowed={!interactions.error && (!draft || draft.requestIdentity === interactionRequestIdentity(row))} />;
-  };
-  const transcriptRoot = useRef<HTMLDivElement>(null), requestsRoot = useRef<HTMLDivElement>(null), queueRoot = useRef<HTMLDivElement>(null);
-  const [requestsOpen, setRequestsOpen] = useState(false);
+  const transcriptRoot = useRef<HTMLDivElement>(null), queueRoot = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState(Mode.Execute);
   const messages = useConversationPages(EntityKind.MESSAGE, id, conversationActive && live.generation > 0);
   const queue = useConversationPages(EntityKind.QUEUE, id, conversationActive && live.generation > 0);
@@ -629,12 +624,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </article>)}
       </div>
       <div className="session-input-tray">
-        <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
-          <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
-            <ScrollContinuation query={interactions} root={requestsRoot} active={conversationActive && requestsOpen} label={copy("session.requestPages_d06a30")} />
-          </div>
-        </Disclosure>
+        <ConversationRequests sessionId={id} query={interactions} live={live.resources} removed={live.removed} arrivals={live.newInteractionIds} active={conversationActive} current={live.state === ConnectionState.Live && !live.error} composer={composer} drafts={requestDrafts.values} saveDraft={requestDrafts.save} />
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
         <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
