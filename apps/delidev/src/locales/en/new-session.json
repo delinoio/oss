@@ -79,5 +79,6 @@
   "new-session.invalidStartingBranch": "Enter a valid branch name of at most 1,024 UTF-8 bytes.",
   "new-session.branchRepositoryUnavailable": "Repository metadata is unavailable. Retain the draft until its configured remote is known.",
   "new-session.useTypedBranch": "Use \"{{name}}\"",
-  "new-session.noMatchingBranches": "No matching branches. Valid direct input is still available."
+  "new-session.noMatchingBranches": "No matching branches. Valid direct input is still available.",
+  "new-session.createAgentWorker": "Create agent worker"
 }

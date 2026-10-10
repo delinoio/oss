@@ -173,7 +173,7 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
   fireEvent.click(screen.getByRole("button", { name: `Edit ${name} · ${agent.id}` }));
-  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
   expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();

@@ -15,6 +15,7 @@ import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { useProjectSessionPlacement } from "./project-session-placement";
 import { useGeneralChatPlacement } from "./general-chat-placement";
 import { document, encode, items, Mode, object, text, Workspace } from "./documents";
+import { SettingsEntryDestination, type SettingsNavigationEntry } from "./settings";
 import { ResourceChoice } from "./configuration-fields";
 import { StartingBranches } from "./starting-branches";
 import { StartingReferences } from "./schedules";
@@ -50,7 +51,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   preferenceBridge?: CreationPreferenceBridge;
   preferenceScope?: CreationPreferenceScope;
   back: () => void;
-  openSettings: () => void;
+  openSettings: (destination?: SettingsNavigationEntry) => void;
   open: (id: string) => void;
   created: () => void;
 }) {
@@ -306,7 +307,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
             <ImageAttachmentInput active={active} draft={images} disabled={blocked} available={imageRoute.systemSupported} routeReady={imageRoute.ready} routeLoading={imageRoute.loading} machineId={machine} creationToolbar={attach => <div className="new-session-toolbar">
               <div className="new-session-selectors">
                 {attach}
-                <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />
+                <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} omitEmptyStatus createEmptyAgent={() => openSettings(SettingsEntryDestination.NewAgentWorker)} />
                 <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required resolvedChoice={machineChoice} change={editMachine} />
                 <label className="new-session-mode plan-mode"><input type="checkbox" checked={effectiveMode === Mode.Plan} onChange={(event) => { touched.current = true; setManualMode(true); setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
  {!modeReady ? <div><p role="status">{copy("new-session.planDefaultUnavailable")}</p><button type="button" disabled={blocked || defaultSettings.isFetching || selectedProject.isFetching} onClick={() => { void defaultSettings.refetch(); if (project && !generalChat) void selectedProject.refetch(); }}>{copy("new-session.retryPlanDefaults")}</button></div> : null}
@@ -334,7 +335,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
         </fieldset>
       </form>
       {restrictions.configured === true && items(restrictions.ids).length === 0 ? <p role="alert">{copy("new-session.thisProjectExplicitlyAllowsNoAgent_7e04ae")}</p> : null}
-      {!automaticTitles ? <div className="notice" role="status"><strong>{copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}</strong><p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p><button type="button" onClick={openSettings}>{copy("new-session.openSettings_3f9401")}</button><Problem error={status.error} /></div> : null}
+      {!automaticTitles ? <div className="notice" role="status"><strong>{copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}</strong><p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p><button type="button" onClick={() => openSettings()}>{copy("new-session.openSettings_3f9401")}</button><Problem error={status.error} /></div> : null}
       {preferences.pair && (rememberedAgent.isFetching || rememberedMachine.isFetching) ? <p role="status">{copy("new-session.preferencesResolving")}</p> : null}
       {preferences.reading ? <p role="status">{copy("new-session.preferencesReading")}</p> : null}
       {preferences.problem ? <div role="alert"><p>{copy("new-session.preferencesProblem", { v0: creationPreferenceProblemMessage(preferences.problem) })}</p><button type="button" disabled={preferences.reading} onClick={() => void preferences.reinspect()}>{copy("new-session.preferencesInspect")}</button></div> : null}

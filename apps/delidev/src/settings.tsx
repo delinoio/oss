@@ -240,7 +240,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
 }
 
 export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string; resourceId?: string; resourceKind?: EntityKind };
-export enum SettingsEntryDestination { ConnectionDiagnostics="connection-diagnostics", Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
+export enum SettingsEntryDestination { ConnectionDiagnostics="connection-diagnostics", Repositories = "repositories", NewProject = "new-project", NewAgentWorker = "new-agent-worker", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
 enum SettingsArea { Network, Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
 
 enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
@@ -304,14 +304,14 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 
 
 interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsNavigationEntry; destinationConsumed?: () => void }
-enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount, NotificationTarget }
-type SettingsCategoryEntry = {kind:SettingsEntryKind.NotificationTarget;resourceId:string;resourceKind:EntityKind} | { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
+enum SettingsEntryKind { NewAgentWorker, NewProject, ManageAccounts, AddAccount, NotificationTarget }
+type SettingsCategoryEntry = {kind:SettingsEntryKind.NotificationTarget;resourceId:string;resourceKind:EntityKind} | { kind: SettingsEntryKind.NewProject | SettingsEntryKind.NewAgentWorker } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
 interface SettingsSelection { category: SettingsCategory; key: string; entry?: SettingsCategoryEntry }
 type NavigateSettings = (category: SettingsCategory, entry?: SettingsCategoryEntry) => void;
 
 function entrySelection(destination?: SettingsNavigationEntry): SettingsSelection {
   if (typeof destination === "object") return { category: destination.category === SettingsCategory.GitWorkflow ? SettingsCategory.ProjectDefaults : destination.category, key: newRequestId(),entry:destination.resourceId&&destination.resourceKind?{kind:SettingsEntryKind.NotificationTarget,resourceId:destination.resourceId,resourceKind:destination.resourceKind}:undefined };
-  return { category: destination === SettingsEntryDestination.ConnectionDiagnostics ? SettingsCategory.Diagnostics : destination === SettingsEntryDestination.GitProfiles ? SettingsCategory.Integrations : destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
+  return { category: destination === SettingsEntryDestination.ConnectionDiagnostics ? SettingsCategory.Diagnostics : destination === SettingsEntryDestination.GitProfiles ? SettingsCategory.Integrations : destination === SettingsEntryDestination.RunnerDevices ? SettingsCategory.ExecutionWorkers : destination === SettingsEntryDestination.Repositories ? SettingsCategory.Repositories : destination === SettingsEntryDestination.NewAgentWorker ? SettingsCategory.AgentWorkers : destination === SettingsEntryDestination.NewProject ? SettingsCategory.Projects : SettingsCategory.SubscriptionAccounts, key: newRequestId(), entry: destination === SettingsEntryDestination.NewAgentWorker ? { kind: SettingsEntryKind.NewAgentWorker } : destination === SettingsEntryDestination.NewProject ? { kind: SettingsEntryKind.NewProject } : undefined };
 }
 
 export function Settings({ visible = true, ...props }: SettingsProps) {
@@ -373,7 +373,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const deviceContent = useRef<HTMLDivElement>(null), refreshDevices = useRef<HTMLButtonElement>(null);
   const deviceReturnFocus = useRef<{ id: string; exit: DeviceRevocationExit } | undefined>(undefined);
   const page = "";
-  const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.NewProject ? { key: newRequestId() } : undefined);
+  const [editing, setEditing] = useState<{ kind?: EntityKind; initial?: Resource; initialData?: Document; key: string; subscriptionOnly?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.NewAgentWorker ? { kind: EntityKind.AGENT, key: newRequestId() } : entry?.kind === SettingsEntryKind.NewProject ? { key: newRequestId() } : undefined);
   const [machine, setMachine] = useState<Resource>();
   const runnerInspection = useRunnerRemediation({ compact: false, authority: pairingAuthority, active: visible });
   const inspectMachine = (row: Resource) => runnerInspection ? runnerInspection(row) : setMachine(row);
@@ -395,8 +395,8 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });
 
   const [startApiWizard, setStartApiWizard] = useState<{ key: string; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean } | undefined>(() => entry?.kind === SettingsEntryKind.AddAccount ? { key: newRequestId(), providerId: entry.providerId, provider: entry.provider, startOAuth: entry.startOAuth } : undefined);
-  const [apiProviderID, setApiProviderID] = useState(() => entry && entry.kind !== SettingsEntryKind.NewProject && entry.kind!==SettingsEntryKind.NotificationTarget ? entry.providerId : "");
-  const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary | undefined>(() => entry && entry.kind !== SettingsEntryKind.NewProject && entry.kind!==SettingsEntryKind.NotificationTarget ? entry.provider : undefined);
+  const [apiProviderID, setApiProviderID] = useState(() => entry && (entry.kind === SettingsEntryKind.ManageAccounts || entry.kind === SettingsEntryKind.AddAccount) ? entry.providerId : "");
+  const [apiProviderHint, setApiProviderHint] = useState<AccountProviderSummary | undefined>(() => entry && (entry.kind === SettingsEntryKind.ManageAccounts || entry.kind === SettingsEntryKind.AddAccount) ? entry.provider : undefined);
 
   const client = useQueryClient();
   const selected = settingsCategories[selectedCategory];
@@ -507,7 +507,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const taskResource = editing?.initial ?? device ?? machine ?? deleting ?? routing ?? account;
   const taskKind = editing?.kind ?? kind;
   const taskTitle = device ? "Revoke device" : machine ? "Runner Device details" : deleting ? deleting.kind === EntityKind.ACCOUNT && document(deleting).type === "api" ? copy("account-deletion.api.title") : "Delete configuration" : routing ? copy("settings.previewRouting_02d4d9") : account ? "Manage connection" : editing && taskKind === EntityKind.REPOSITORY && !editing.initial ? copy("settings.addRepository_2eda4d") : editing && taskKind === EntityKind.PROJECT && !editing.initial ? copy("project-creation.title") : editing ? `${editing.initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} ${taskKind === EntityKind.SETTINGS ? preferenceLabel : kindNames[taskKind]}` : "Settings task";
-  const taskSize = deleting || device ? SettingsDialogSize.Confirmation : routing ? SettingsDialogSize.Form : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
+  const taskSize = deleting || device ? SettingsDialogSize.Confirmation : routing || taskKind === EntityKind.AGENT ? SettingsDialogSize.Form : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
   return <SettingsTasks>
       <SettingsSearchFocus request={searchRequest} root={deviceContent} category={selectedCategory} />
       <section className={selectedCategory === SettingsCategory.Repositories ? "settings-content settings-repositories" : isProjects ? "settings-content settings-projects" : (isPreferenceCategory || isServerPreferences) ? `settings-content settings-server-preferences${isGitWorkflow ? " settings-git-workflow" : ""}` : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices ? "settings-content settings-runner-devices" : area === SettingsArea.Diagnostics ? "settings-content settings-connections" : "settings-content"} aria-label={copy("settings.settingsContent_e4dcd3")}>

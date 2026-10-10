@@ -11,3 +11,9 @@
 .scroll-picker-content > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .scroll-picker-decoration { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
 .scroll-picker-decoration .worker-harness-mark { width: 16px; height: 16px; flex-basis: 16px; margin: 0; }
+
+/* The absence action occupies the same control footprint as the picker. */
+.empty-agent-choice > .create-empty-agent { display: flex; justify-content: center; align-items: center; gap: 8px; height: 40px; padding: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-align: center; }
+.create-empty-agent > svg { flex: 0 0 16px; width: 16px; height: 16px; }
+
+.create-empty-agent:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

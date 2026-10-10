@@ -546,7 +546,8 @@ it("distinguishes an empty current Agent Worker page from a loading selector", a
   const value = fixture([], [], [], false, true, undefined, true);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
-  expect(await screen.findByText("No selectable Agent Worker choices are on this page.")).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Create agent worker" })).toBeTruthy();
+  expect(screen.queryByText("No selectable Agent Worker choices are on this page.")).toBeNull();
 });
 
 it("shows selector loading while the current page has not returned", async () => {
@@ -1528,3 +1529,29 @@ it("compact navigation never changes the retained wide collapse choice or dispat
   act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);
+
+
+it.each(["New session", "New Chat"])("opens Harness from proven empty %s while retaining the unsent draft", async entry => {
+  const value = fixture([], [], [], false, true, undefined, true);
+  value.status.mockImplementation(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }));
+  render(<App transport={value.transport} />);
+  fireEvent.click((await screen.findAllByRole("button", { name: entry }))[0]);
+  const message = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(message, { target: { value: `Unsent ${entry}` } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
+  fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), { target: { value: "2" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Create agent worker" }));
+  await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+  expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
+  expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
+  expect(value.creates).not.toHaveBeenCalled();
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(screen.getAllByRole("button", { name: entry })[0]);
+  expect(await screen.findByRole("textbox", { name: "First message" })).toHaveProperty("value", `Unsent ${entry}`);
+  expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
+  expect(screen.getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "2");
+  expect(value.creates).not.toHaveBeenCalled();
+});
