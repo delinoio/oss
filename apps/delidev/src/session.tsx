@@ -486,12 +486,22 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     [SessionPanel.Terminals]: terminalsButton, [SessionPanel.Browser]: browserButton,
     [SessionPanel.Diagnostics]: diagnosticsButton,
   };
+  const fileFocusReturns = useRef<{ session: string; callbacks: Map<string, () => boolean> }>({ session: id, callbacks: new Map() });
+  if (fileFocusReturns.current.session !== id) fileFocusReturns.current = { session: id, callbacks: new Map() };
   const closeTab = (key:string) => {
     const index=tabs.tabs.findIndex(tab=>sessionTabKey(tab)===key);
     if(index<=0)return;
     const target=tabs.selected===key?index-1:tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected);
     document.getElementById(`session-tab-${id}-${target}`)?.focus({preventScroll:true});
+    const returnFocus = tabs.selected === key && active ? fileFocusReturns.current.callbacks.get(key) : undefined;
+    fileFocusReturns.current.callbacks.delete(key);
     tabs.store.close(id,key);
+    if (returnFocus && tabs.store.snapshot(id).tabs.some(tab=>tab.kind===SessionTabKind.Files)) {
+      tabs.store.select(id, SessionTabKind.Files);
+      // The retained explorer must be visible before its original opener can
+      // receive focus. Connected/scope checks live with that explorer owner.
+      queueMicrotask(()=>{if(fileFocusReturns.current.session===id&&tabs.store.snapshot(id).selected===SessionTabKind.Files)returnFocus();});
+    }
   };
   const closePanel = () => closeTab(tabs.selected);
   const closeTerminal = closePanel;
@@ -662,7 +672,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     </div></SessionActivityProvider>
     {active && tabs.tab.kind===SessionTabKind.File ? <div className="session-app-panel"><SessionFilePreview sessionId={id} repository={tabs.tab.repository} path={tabs.tab.path} close={closePanel}/></div> : null}
     {active && (tabs.tab.kind===SessionTabKind.Diff || tabs.tab.kind===SessionTabKind.Comparison) ? <div className="session-app-panel"><SessionDiff sessionId={id} worktree={data.workspace===Workspace.Worktree} close={closePanel} selected={tabs.tab.kind===SessionTabKind.Comparison?tabs.tab:undefined} openComparison={value=>tabs.store.open(id,{kind:SessionTabKind.Comparison,...value})}/></div>:null}
-    {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path)=>tabs.store.open(id,{kind:SessionTabKind.File,repository,path})}/></div>:null}
+    {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path,returnFocus)=>{const tab={kind:SessionTabKind.File as const,repository,path};fileFocusReturns.current.callbacks.set(sessionTabKey(tab),returnFocus);tabs.store.open(id,tab);}}/></div>:null}
     {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><div className="session-diagnostics"><div ref={setDiagnosticsTarget}/><FlatDisclosureScope><RequestDiagnostics sessionId={id} close={closePanel}/></FlatDisclosureScope></div></div>:null}
     {session && browserOpened ? <div hidden={!active||panel!==SessionPanel.Browser} inert={!active||panel!==SessionPanel.Browser} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/></div>:null}
     {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} openIntent={terminalOpenIntent} finishOpenIntent={() => setTerminalOpenIntent(undefined)} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}

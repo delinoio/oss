@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -187,4 +187,32 @@ it("joins an ignored-abort Connect handler before preview after directory cancel
 it("opens active typed file previews through the serialized read owner and discards bytes on departure",async()=>{
  const f=fixture();const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><SessionFilePreview sessionId={f.sessionId} repository={f.primary} path="note.txt" close={()=>{}}/></QueryClientProvider></TransportProvider>);
  await screen.findByText("<script>globalThis.unsafe = true</script>");expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls[0][0].queryJson))).toMatchObject({operation:"file",repository_id:f.primary,path:"note.txt"});expect(view.container.querySelector("script,iframe,a")).toBeNull();view.unmount();await waitFor(()=>expect(f.client.getQueryCache().getAll()).toHaveLength(0));
+});
+
+
+it.each(["Enter", "pointer"])("hands shared preview focus off and returns to the original explorer after %s activation", async activation => {
+ const f=fixture();
+ function Shared() {
+  const [preview,setPreview]=useState<{repository:string;path:string}>();const returning=useRef<(()=>boolean)|undefined>(undefined);
+  return <><div hidden={Boolean(preview)} inert={Boolean(preview)}><SessionFiles sessionId={f.sessionId} active={!preview} close={()=>{}} openFile={(repository,path,returnFocus)=>{returning.current=returnFocus;setPreview({repository,path});}}/></div>{preview?<SessionFilePreview sessionId={f.sessionId} {...preview} close={()=>{setPreview(undefined);queueMicrotask(()=>returning.current?.());}}/>:null}<button>Other control</button></>;
+ }
+ const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><Shared/></QueryClientProvider></TransportProvider>);
+ const row=await screen.findByRole("treeitem",{name:"note.txt 42 bytes"});row.focus();const scroll=row.closest<HTMLElement>(".file-tree-scroll")!;scroll.scrollTop=137;
+ if(activation==="Enter")fireEvent.keyDown(row,{key:"Enter"});else fireEvent.click(row);
+ const heading=screen.getByRole("heading",{name:"note.txt"});expect(document.activeElement).toBe(heading);expect(row.closest("[hidden][inert]")).toBeTruthy();
+ await screen.findByText("<script>globalThis.unsafe = true</script>");
+ const other=screen.getByRole("button",{name:"Other control"});other.focus();fireEvent.click(screen.getByRole("button",{name:"Refresh files"}));
+ await waitFor(()=>expect(f.read.mock.calls.filter(([request])=>JSON.parse(new TextDecoder().decode(request.queryJson)).operation==="file")).toHaveLength(2));
+ expect(document.activeElement).toBe(other);
+ fireEvent.click(screen.getByRole("button",{name:"Close"}));await waitFor(()=>expect(document.activeElement).toBe(row));expect(scroll.scrollTop).toBe(137);expect(row.getAttribute("aria-selected")).toBe("true");
+ expect(view.container.querySelector(".file-preview")).toBeNull();
+});
+
+it("does not hand focus to a hidden preview or after its original read settles on departure",async()=>{
+ const f=fixture();let release!:(value:{documentJson:Uint8Array})=>void;
+ f.read.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+ const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><div hidden inert><SessionFilePreview sessionId={f.sessionId} repository={f.primary} path="note.txt" close={()=>{}}/></div><button>Retained target</button></QueryClientProvider></TransportProvider>);
+ const target=screen.getByRole("button",{name:"Retained target"});target.focus();await waitFor(()=>expect(f.read).toHaveBeenCalledOnce());
+ view.rerender(<button>Replacement target</button>);const replacement=screen.getByRole("button",{name:"Replacement target"});replacement.focus();release({documentJson:encode({size:"4",binary:false,truncated:false,text:"late"})});
+ await waitFor(()=>expect(f.client.getQueryCache().getAll()).toHaveLength(0));expect(document.activeElement).toBe(replacement);expect(screen.queryByText("late")).toBeNull();
 });

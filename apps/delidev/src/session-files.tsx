@@ -52,7 +52,7 @@ export function useWorkspaceReader(sessionId: string): WorkspaceReader {
 function Icon({ kind }: { kind: "refresh" | "close" | "folder" | "file" | "chevron" }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{kind === "refresh" ? <path d="M20 7v5h-5M19 12a7 7 0 1 0-2 5M20 12l-3-5" /> : kind === "close" ? <path d="m6 6 12 12M18 6 6 18" /> : kind === "folder" ? <path d="M3 6h7l2 3h9v11H3z" /> : kind === "file" ? <path d="M6 3h8l4 4v14H6zM14 3v5h4" /> : <path d="m9 5 7 7-7 7" />}</svg>;
 }
-export function SessionFiles({ sessionId, close, openFile, active=true }: { sessionId: string; close: () => void; active?:boolean; openFile?: (repository:string,path:string)=>void }) {
+export function SessionFiles({ sessionId, close, openFile, active=true }: { sessionId: string; close: () => void; active?:boolean; openFile?: (repository:string,path:string,returnFocus:()=>boolean)=>void }) {
   useLocale();
   const read = useWorkspaceReader(sessionId), owner = useMemo(() => new FilesController(read), [read]);
   const state = useSyncExternalStore(owner.subscribe, owner.getSnapshot);
@@ -71,7 +71,7 @@ export function SessionFiles({ sessionId, close, openFile, active=true }: { sess
     {state.repository !== undefined ? <Explorer key={state.repository} owner={owner} state={state} openFile={openFile} /> : null}
   </aside>;
 }
-function Explorer({ owner, state, openFile }: { owner: FilesController; state: FilesSnapshot; openFile?: (repository:string,path:string)=>void }) {
+function Explorer({ owner, state, openFile }: { owner: FilesController; state: FilesSnapshot; openFile?: (repository:string,path:string,returnFocus:()=>boolean)=>void }) {
   const scroll = useRef<HTMLDivElement>(null), tree = useRef<HTMLDivElement>(null), previewHeading = useRef<HTMLHeadingElement>(null);
   const scrollPosition = useRef({ top: 0, left: 0 }), ancestors = useRef<{ owner: FilesController; repository: string | undefined; positions: { element: HTMLElement; top: number; left: number }[] } | undefined>(undefined), returning = useRef(false), focusOwned = useRef(false);
   const [focused, setFocused] = useState<string>();
@@ -104,7 +104,23 @@ function Explorer({ owner, state, openFile }: { owner: FilesController; state: F
     if (!state.preview && focusOwned.current && focused && !visible.some(row => row.path === focused)) focusRow(focusPath);
   }, [state.directories, state.expanded, state.preview, focused]);
   const open = (path: string) => {
-    if (openFile && state.repository !== undefined) { openFile(state.repository,path); return; }
+    if (openFile && state.repository !== undefined) {
+      const repository = state.repository, originalTree = tree.current, originalScroll = scroll.current;
+      const opener = [...(originalTree?.querySelectorAll<HTMLElement>("[role=treeitem]") ?? [])].find(row => row.dataset.path === path);
+      const positions: { element: HTMLElement; top: number; left: number }[] = [];
+      for (let element = originalScroll; element && element !== document.body && element !== document.documentElement; element = element.parentElement) {
+        positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
+        if (element.classList.contains("session-workspace")) break;
+      }
+      openFile(repository, path, () => {
+        if (!originalTree?.isConnected || originalTree !== tree.current || owner.getSnapshot().repository !== repository || originalTree.closest("[hidden], [inert]")) return false;
+        const target = opener?.isConnected && originalTree.contains(opener) ? opener : originalTree;
+        target.focus({ preventScroll: true });
+        for (const { element, top, left } of positions) if (element.isConnected && element.contains(originalTree)) { element.scrollTop = top; element.scrollLeft = left; }
+        return true;
+      });
+      return;
+    }
     scrollPosition.current = { top: scroll.current?.scrollTop ?? 0, left: scroll.current?.scrollLeft ?? 0 };
     const positions: { element: HTMLElement; top: number; left: number }[] = [];
     // Preview focus can move every compact enclosing scroll owner. Retain only
@@ -150,7 +166,9 @@ function DirectoryStatus({ owner, state, path, root }: { owner: FilesController;
 
 /** Only the active tab owns bytes; unmount fences its original serialized read. */
 export function SessionFilePreview({sessionId,repository,path,close}:{sessionId:string;repository:string;path:string;close:()=>void}) {
+ const heading=useRef<HTMLHeadingElement>(null);
+ useLayoutEffect(()=>{if(heading.current?.isConnected&&!heading.current.closest("[hidden], [inert]"))heading.current.focus({preventScroll:true});},[sessionId,repository,path]);
  const read=useWorkspaceReader(sessionId);const[result,setResult]=useState<Awaited<ReturnType<WorkspaceReader>>>();const[error,setError]=useState<unknown>();const[retry,setRetry]=useState(0);
  useLayoutEffect(()=>{const abort=new AbortController();setResult(undefined);setError(undefined);void read({operation:FileOperation.File,repository_id:repository,path},abort.signal).then(value=>{if(!abort.signal.aborted)setResult(value);},reason=>{if(!abort.signal.aborted)setError(reason);});return()=>{abort.abort();};},[read,repository,path,retry]);
- return <section className="session-files file-preview" aria-label={copy("session-files.filePreview_71d50a")}><header><h2>{path}</h2><button type="button" onClick={close}>{copy("session-diff.close_7d9eb7")}</button></header><p>{copy("session-files.readOnly")}</p><Problem error={error}/><button onClick={()=>setRetry(value=>value+1)}>{copy("session-files.refreshFiles_e2b488")}</button>{!result&&!error?<p role="status">{copy("session-files.previewLoading")}</p>:null}{result?result.binary?<p>{copy("session-files.thisFileHasNoUtf8_c06ed8")}</p>:<><p>{result.size}{result.truncated?copy("session-files.previewLimitedTo64Kib_9fd380"):""}</p><pre tabIndex={0}>{result.text}</pre></>:null}</section>;
+ return <section className="session-files file-preview" aria-label={copy("session-files.filePreview_71d50a")}><header><h2 ref={heading} tabIndex={-1}>{path}</h2><button type="button" onClick={close}>{copy("session-diff.close_7d9eb7")}</button></header><p>{copy("session-files.readOnly")}</p><Problem error={error}/><button onClick={()=>setRetry(value=>value+1)}>{copy("session-files.refreshFiles_e2b488")}</button>{!result&&!error?<p role="status">{copy("session-files.previewLoading")}</p>:null}{result?result.binary?<p>{copy("session-files.thisFileHasNoUtf8_c06ed8")}</p>:<><p>{result.size}{result.truncated?copy("session-files.previewLimitedTo64Kib_9fd380"):""}</p><pre tabIndex={0}>{result.text}</pre></>:null}</section>;
 }
