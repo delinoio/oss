@@ -2885,7 +2885,25 @@ from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard contai
 and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
 #### Device styling and custom themes
 
-Appearance uses five flat sections: Theme, Composer, Status, Display and Images.
+Appearance uses five flat sections: Theme, Composer, Session status, Display and Images.
+Its left-aligned fluid body, including the following Language and Date format rows,
+is capped at 880 CSS pixels; other form widths remain unchanged. Preserve shared
+32px/24px/16px responsive content padding. Sections use thin semantic dividers
+and 24px gaps, 16px/24px headings, 14px/20px labels and 12px/18px explanations.
+The existing category title stays 26px/32px. “Saved on this computer.” and
+“Changes save automatically.” accompany it without replacing actual read/save/failure status.
+Ordinary rows are at least 64px high with a wrapping explanation column, a 220px
+control column and a 16px gap. Native controls retain 40px targets and 8px corners;
+checkbox hit areas include their entire labelled row. Three separate, independently
+labelled tool/reasoning/compaction selectors share one row. Retain all four labelled
+disabled renderer controls and unavailable guidance. The Appearance body owns an
+inline-size container: below 640px available width labels/controls, mode tiles and
+disclosure selectors stack, and actions wrap. Decorative mode miniatures contain
+no user data. Descriptions are programmatically associated without changing
+accessible names, native radio semantics, search targets or target focus. This
+presentation retains every original controller, option, longer behavior/recovery
+explanation and pending/uncertain-write lock. Browser reflow fixtures do not prove
+packaged CEF, OS-theme, restart, multiwindow or screen-reader acceptance.
 Language and Date format retain their existing ownership. Ordinary selections
 save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.

@@ -558,7 +558,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         <div className="settings-panels">
           {area === SettingsArea.Network ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} onPresentationChange={setNetworkPresentationOpen} /> : null}
           {area === SettingsArea.KeyboardShortcuts ? <ShortcutSettings /> : null}
-          {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
+          {area === SettingsArea.Appearance ? <div className="appearance-body"><p className="appearance-autosave">{copy("appearance.v2.autoSave")}</p><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}

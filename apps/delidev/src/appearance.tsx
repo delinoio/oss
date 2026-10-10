@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { applyAppearanceColors, appearanceIdentity, defaultPreferences, parsePreferences, selectedColors, type AppearancePreferences } from "./appearance-preferences";
+import "./appearance-body.css";
 import { AppearanceControls } from "./appearance-controls";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { LocalizedText, copy, useLocale } from "./localization";
