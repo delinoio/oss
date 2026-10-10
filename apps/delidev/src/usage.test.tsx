@@ -503,7 +503,7 @@ it.each([SupportedLanguage.English, SupportedLanguage.Korean].flatMap(language =
   await waitFor(() => expect(f.read).toHaveBeenCalled());
   const chip = view.container.querySelector<HTMLElement>(".usage-timezone-chip")!;
   expect(chip.querySelector('[aria-hidden="true"]')?.textContent).toBe(timeZone);
-  expect(chip.querySelector(".visually-hidden")?.textContent).toBe(`${language === SupportedLanguage.Korean ? "시간대" : "Timezone"}: ${timeZone}`);
+  expect(chip.querySelector(".usage-sr-only")?.textContent).toBe(`${language === SupportedLanguage.Korean ? "시간대" : "Timezone"}: ${timeZone}`);
   expect(chip.tabIndex).toBe(-1);
   expect(chip.hasAttribute("role")).toBe(false);
   expect(chip.hasAttribute("tabindex")).toBe(false);
@@ -537,7 +537,7 @@ it("keeps the timezone pinned across navigation and language changes until the e
   view.rerender(f.view(false)); view.rerender(f.view());
   expect(view.container.querySelector('.usage-timezone-chip [aria-hidden="true"]')?.textContent).toBe("Asia/Seoul");
   await i18n.changeLanguage(SupportedLanguage.Korean);
-  await waitFor(() => expect(view.container.querySelector(".usage-timezone-chip .visually-hidden")?.textContent).toBe("시간대: Asia/Seoul"));
+  await waitFor(() => expect(view.container.querySelector(".usage-timezone-chip .usage-sr-only")?.textContent).toBe("시간대: Asia/Seoul"));
   fireEvent.click(screen.getByRole("button", { name: "최근 30일로 초기화" }));
   await waitFor(() => expect(view.container.querySelector('.usage-timezone-chip [aria-hidden="true"]')?.textContent).toBe("UTC"));
 });

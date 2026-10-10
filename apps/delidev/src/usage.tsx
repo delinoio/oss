@@ -114,7 +114,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
 
   return <>
     <SidebarSurface active={active} title={copy("usage.usage_8d5982")} className="usage-sidebar">
-      <span className="usage-timezone-chip"><span className="visually-hidden"><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{detectedTimeZone}</> }} /></span><span aria-hidden="true">{detectedTimeZone}</span></span>
+      <span className="usage-timezone-chip"><span className="usage-sr-only"><LocalizedText id="usage.timezone_9229e0" components={{ s0: <>{detectedTimeZone}</> }} /></span><span aria-hidden="true">{detectedTimeZone}</span></span>
       <form className="sidebar-form usage-sidebar-form" onSubmit={(event) => { event.preventDefault(); }}>
         <div className="usage-filter-scroll"><fieldset><legend>{copy("usage.timeRange")}</legend>
         <div className="usage-range-presets">{([UsageRangePreset.Hours24, UsageRangePreset.Days7, UsageRangePreset.Days30] as const).map((value) => <button key={value} type="button" aria-pressed={preset === value} onClick={() => selectPreset(value)}>{copy(value === UsageRangePreset.Hours24 ? "usage.preset24Hours" : value === UsageRangePreset.Days7 ? "usage.preset7Days" : "usage.preset30Days")}</button>)}</div>

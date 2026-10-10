@@ -126,7 +126,7 @@ try {
     const pane = page.locator(".usage-sidebar");
     const zone = pane.locator(".usage-timezone-chip");
     assert.equal(await zone.locator('[aria-hidden="true"]').textContent(), "America/Argentina/Rio_Gallegos", context);
-    assert.equal(await zone.locator('.visually-hidden').textContent(), language === "ko" ? "시간대: America/Argentina/Rio_Gallegos" : "Timezone: America/Argentina/Rio_Gallegos", context);
+    assert.equal(await zone.locator('.usage-sr-only').textContent(), language === "ko" ? "시간대: America/Argentina/Rio_Gallegos" : "Timezone: America/Argentina/Rio_Gallegos", context);
     const zoneGeometry = await zone.evaluate(node => ({ width: node.getBoundingClientRect().width, available: node.parentElement.clientWidth, overflow: node.scrollWidth > node.clientWidth + 1, size: getComputedStyle(node).fontSize, padding: getComputedStyle(node).padding, radius: getComputedStyle(node).borderRadius, tabIndex: node.tabIndex, headingGap: node.getBoundingClientRect().top - node.previousElementSibling.getBoundingClientRect().bottom, fieldsetGap: node.nextElementSibling.getBoundingClientRect().top - node.getBoundingClientRect().bottom }));
     assert(zoneGeometry.width <= zoneGeometry.available && !zoneGeometry.overflow && zoneGeometry.size === "12px" && zoneGeometry.padding === "2px 8px" && zoneGeometry.radius === "6px" && zoneGeometry.tabIndex === -1 && Math.abs(zoneGeometry.headingGap - 8) <= 1 && Math.abs(zoneGeometry.fieldsetGap - 16) <= 1, `${context}: timezone chip ${JSON.stringify(zoneGeometry)}`);
 
