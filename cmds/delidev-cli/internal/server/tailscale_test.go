@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tailscale"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/worker"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/proto"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -132,15 +133,15 @@ func TestTailscaleApprovalEncryptsOriginalClientGrantAndReplays(t *testing.T) {
 	if err != nil || same.Msg.Device.Id != paired.Msg.Device.Id {
 		t.Fatal("original client receipt did not replay", err)
 	}
-	replacement := *consume
+	replacement := proto.Clone(consume).(*pb.PairDeviceRequest)
 	replacement.RequestId = string(domain.NewID())
 	replacement.DeviceId = string(domain.NewID())
-	if _, err = f.s.PairDevice(context.Background(), connect.NewRequest(&replacement)); err == nil {
+	if _, err = f.s.PairDevice(context.Background(), connect.NewRequest(replacement)); err == nil {
 		t.Fatal("single-use grant admitted a replacement client")
 	}
-	changed := *request
+	changed := proto.Clone(request).(*pb.RequestTailscaleConnectionRequest)
 	changed.ObservedTargetKey = make([]byte, 32)
-	if _, err = f.s.RequestTailscaleConnection(tailnet, connect.NewRequest(&changed)); err == nil {
+	if _, err = f.s.RequestTailscaleConnection(tailnet, connect.NewRequest(changed)); err == nil {
 		t.Fatal("changed original target offer accepted")
 	}
 }
