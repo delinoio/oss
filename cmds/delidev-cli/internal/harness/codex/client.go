@@ -70,6 +70,7 @@ type Client struct {
 	managedHome        string
 	revertHistory      bool
 	imageGeneration    bool
+	windowsWarnings    map[WindowsWarningKind]bool
 }
 
 type ProtocolMode string

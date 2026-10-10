@@ -32,6 +32,7 @@ const (
 	validationApps           eventValidationStage = "app-inventory"
 	validationGateway        eventValidationStage = "account-gateway"
 	validationSkills         eventValidationStage = "skills-inventory"
+	validationWindowsSandbox eventValidationStage = "windows-sandbox"
 	validationMCP            eventValidationStage = "mcp-startup"
 	validationHook           eventValidationStage = "native-hook"
 	validationThreadMetadata eventValidationStage = "thread-metadata"
@@ -72,6 +73,8 @@ func validationStage(method string) eventValidationStage {
 		return validationGateway
 	case "skills/changed":
 		return validationSkills
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return validationWindowsSandbox
 	case "mcpServer/startupStatus/updated", "mcpServer/event/stream/notification", "mcpServer/oauthLogin/completed":
 		return validationMCP
 	case "hook/started", "hook/completed":
@@ -171,6 +174,7 @@ type Event struct {
 	Usage            *domain.NativeTokenUsage
 	ResponseUsage    *domain.NativeResponseUsage
 	Notice           domain.NativeNotice
+	WindowsWarning   *WindowsWarning
 	Tool             *Tool
 	ToolInput        *ToolInput
 	Artifact         *Artifact

@@ -72,6 +72,23 @@ fences and are never replayed. The [official empty notification schema](https://
 and [native cache invalidation watcher](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server/src/skills_watcher.rs)
 define this passive observation separately from explicit selected-package proof.
 
+Native Windows `windows/worldWritableWarning` notifications validate required
+`samplePaths`, unsigned 64-bit `extraCount` and boolean `failedScan`. Keep the
+existing 1 MiB envelope, at most 1,024 samples and 4,096 UTF-8 bytes per path.
+Discard paths without accessing them; retain only typed world-writable/scan-failed
+classification and finite counts in the private event. Publish the existing
+generic native warning once per classification in the original process; a clean
+empty scan and repeated classifications are discarded metadata.
+`windowsSandbox/setupCompleted` validates elevated/unelevated mode, required
+boolean success and optional nullable error text bounded to 4,096 UTF-8 bytes.
+Discard that text and unsolicited completion. No product setup owner exists;
+completion grants no readiness, privilege, execution, recovery or cleanup proof
+and cannot start privileged setup. Unknown/duplicate/case-aliased fields and
+malformed/missing/null required values fail under the closed windows-sandbox
+log classification. Same-name server requests remain unsupported. See the
+[official warning schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/v2/WindowsWorldWritableWarningNotification.json)
+and [setup completion schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/v2/WindowsSandboxSetupCompletedNotification.json).
+
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so
 parser-level success cannot conceal an unsupported Worker event family.

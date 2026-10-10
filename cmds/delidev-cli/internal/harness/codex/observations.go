@@ -21,6 +21,7 @@ const (
 	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
 	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"
 	SkillsChangedDiscarded   MetadataKind = "skills-changed-discarded"
+	WindowsSandboxDiscarded  MetadataKind = "windows-sandbox-discarded"
 )
 
 type nativeMCPStartupState string
@@ -82,6 +83,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return c.observeWindowsSandboxLocked(native)
 	case "skills/changed":
 		// The original process invalidated its own cache. Discard this passive
 		// notification without enumerating packages or changing selected input.
