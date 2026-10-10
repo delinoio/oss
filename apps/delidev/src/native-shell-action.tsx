@@ -14,11 +14,19 @@ import "./native-shell-action.css";
 export function ownedNativeShellJob(job: Resource | undefined, sessionId: string): job is Resource {
   const data = document(job), input = object(data.input), shell = object(input.shell);
   const observation = data.output == null ? undefined : readNativeShellObservation(data.output);
-  return Boolean(job && job.kind === EntityKind.JOB && isEntityId(job.id) && supportsResourceSchema(job) && job.revision > 0n && job.sessionId === sessionId && (data.output == null || observation && observation.action_id === input.action_id) && isEntityId(text(input.action_id)) && data.type === "native-shell" && Object.values(NativeShellJobState).includes(data.state as NativeShellJobState) && object(input.assignment).session_id === sessionId && shell.full_access_confirmed === true && shellText(shell.command, 65536, true) && (shell.timeout_ms === undefined || Number.isSafeInteger(shell.timeout_ms) && (shell.timeout_ms as number) > 0 && (shell.timeout_ms as number) <= 3600000));
+  return Boolean(job && job.kind === EntityKind.JOB && isEntityId(job.id) && supportsResourceSchema(job) && job.revision > 0n && job.sessionId === sessionId && (data.output == null || observation && observation.action_id === input.action_id) && isEntityId(text(input.action_id)) && data.type === "native-shell" && Object.values(NativeShellJobState).includes(data.state as NativeShellJobState) && object(input.assignment).session_id === sessionId && shell.full_access_confirmed === true && shellText(shell.command, 65536, true) && (shell.timeout_ms === undefined || Number.isSafeInteger(shell.timeout_ms) && (shell.timeout_ms as number) >= 0 && (shell.timeout_ms as number) <= 3600000));
 }
-export function verifiedNativeShellRun(job: Resource | undefined, sessionId: string, requestId: string, command: string, timeoutMs = 0): boolean {
+export function verifiedNativeShellRun(job: Resource | undefined, sessionId: string, requestId: string, command: string, timeoutMs?: bigint): boolean {
   const shell = object(object(document(job).input).shell);
-  return Boolean(job?.id === requestId && ownedNativeShellJob(job, sessionId) && shell.command === command && shell.full_access_confirmed === true && (shell.timeout_ms ?? 0) === timeoutMs);
+  return Boolean(job?.id === requestId && ownedNativeShellJob(job, sessionId) && shell.command === command && shell.full_access_confirmed === true && (shell.timeout_ms === undefined ? timeoutMs === undefined : timeoutMs !== undefined && BigInt(shell.timeout_ms as number) === timeoutMs));
+}
+export function nativeShellSettled(job: Resource | undefined, sessionId: string): boolean {
+  if (!ownedNativeShellJob(job, sessionId)) return false;
+  const data = document(job), observation = readNativeShellObservation(data.output);
+  if (observation?.terminal && observation.cleanup_verified) return true;
+  // The server publishes canceled without native output only for queued no-send
+  // cancellation. This settles operation lifetime, never an uncertain Cancel receipt.
+  return data.state === NativeShellJobState.Canceled && data.output == null && object(data.problem).code === "canceled" && typeof data.finished_at === "string" && Number.isFinite(Date.parse(data.finished_at));
 }
 export function nativeShellEligible(session: Resource | undefined): boolean {
   const data = document(session), execution = object(data.execution);
@@ -61,13 +69,13 @@ export function NativeShellAction({ session, active, blocked }: { session: Resou
   useEffect(() => {
     const next = current.data?.job;
     if (!next) return;
-    const mismatchedOriginal = originalId && (originalMutation.id !== scope || original?.fullAccessConfirmed !== true || !verifiedNativeShellRun(next, scope, originalId, text(original?.command), typeof original?.timeoutMs === "number" ? original.timeoutMs : 0));
+    const mismatchedOriginal = originalId && (originalMutation.id !== scope || original?.fullAccessConfirmed !== true || !verifiedNativeShellRun(next, scope, originalId, text(original?.command), typeof original?.timeoutMs === "bigint" ? original.timeoutMs : undefined));
     if (next.id !== observedId || mismatchedOriginal || !acceptJob(next)) { console.warn("delidev.native_shell.observation_rejected", { classification: "original_scope" }); setInvalidRead(true); return; }
     if (run.uncertain && originalId && !run.busy) run.acceptObserved(create(SessionQuery.runNativeShell.output, { job: next, requestId: originalId, replayed: true }));
 
   }, [current.data, observedId, run.uncertain, run.busy, cancel.uncertain, cancel.busy]);
   const observation = readNativeShellObservation(document(job).output);
-  const unfinished = Boolean(job && !(observation?.terminal && observation.cleanup_verified));
+  const unfinished = Boolean(job && !nativeShellSettled(job, scope));
   const changed = source?.id !== session.id || source?.revision !== session.revision;
   const canRun = !invalidRead && !current.error && (!observedId || job?.id === observedId) && supported && nativeShellEligible(session) && !blocked && !changed && !run.busy && !run.uncertain && !cancel.busy && !cancel.uncertain && !unfinished && confirmed && shellText(command, 65536, true);
   const openAction = () => { setSource(session); setConfirmed(false); setOpen(true); };

@@ -68,7 +68,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger = logger.With("job_id", owner, "action_id", i.ActionID, "session_id", i.Assignment.SessionID)
+	logger = logger.With("job_id", owner, "action_id", i.ActionID, "session_id", i.Assignment.SessionID, "native_action", job.Type)
 	phase := compactionPrepare
 	nativeClosed, workspaceClosed, authenticationClosed := false, false, !i.Assignment.Configuration.Subscription
 	proxyClosed := true
@@ -95,7 +95,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	var preSendFailure error
 	defer func() {
 		if returned != nil {
-			logger.WarnContext(ctx, "codex_session_compaction_uncertain", "phase", phase, "code", domain.SafeError(returned).Code)
+			logger.WarnContext(ctx, "codex_native_context_action_uncertain", "phase", phase, "code", domain.SafeError(returned).Code)
 		}
 	}()
 	defer func() {

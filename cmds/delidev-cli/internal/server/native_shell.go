@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -161,6 +162,7 @@ func (s *Service) CancelNativeShell(ctx context.Context, req *connect.Request[pb
 	if err != nil {
 		return nil, rpc.Error(err, corr)
 	}
+	s.logger.InfoContext(ctx, "native_shell_cancellation_accepted", "job_id", m.Id, "request_id", m.RequestId, "replayed", result.Replayed)
 	return connect.NewResponse(&pb.CancelNativeShellResponse{Job: rpc.Resource(r), RequestId: m.RequestId, Replayed: result.Replayed}), nil
 }
 
@@ -200,7 +202,7 @@ func (s *Service) PublishNativeShell(ctx context.Context, req *connect.Request[p
 			return nil, domain.NativeShellUncertain()
 		}
 		input, err := nativeShellClaim(tx, r, j, m.ExpectedRevision)
-		if err != nil || input.ActionID != observation.ActionID || input.Completion.NativeThreadID != domain.NativeIdentity(observation.NativeThreadID) {
+		if err != nil || input.ActionID != observation.ActionID || input.Completion.NativeThreadID != domain.NativeIdentity(observation.NativeThreadID) || !nativeShellCommandMatches(input, observation) {
 			return nil, domain.NativeShellUncertain()
 		}
 		if len(j.Output) > 0 {
@@ -247,7 +249,7 @@ func finishNativeShell(tx *store.Tx, r store.Record, j domain.Job, revision uint
 		return store.Record{}, domain.NativeShellUncertain()
 	}
 	var done domain.NativeShellObservation
-	verified := problem == nil && domain.Decode(raw, &done) == nil && done.Validate() == nil && done.ActionID == input.ActionID && done.NativeThreadID == domain.ID(input.Completion.NativeThreadID) && done.Terminal && done.CleanupVerified && done.Delivery == domain.NativeShellAcknowledged
+	verified := problem == nil && domain.Decode(raw, &done) == nil && done.Validate() == nil && done.ActionID == input.ActionID && done.NativeThreadID == domain.ID(input.Completion.NativeThreadID) && done.Terminal && done.CleanupVerified && done.Delivery == domain.NativeShellAcknowledged && nativeShellCommandMatches(input, done)
 	if verified && len(j.Output) > 0 {
 		var previous domain.NativeShellObservation
 		verified = domain.Decode(j.Output, &previous) == nil && nativeShellProgress(previous, done)
@@ -279,4 +281,17 @@ func finishNativeShell(tx *store.Tx, r store.Record, j domain.Job, revision uint
 		return store.Record{}, err
 	}
 	return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+}
+
+func nativeShellCommandMatches(input domain.SessionCompactionInput, observation domain.NativeShellObservation) bool {
+	var manifest workspace.Manifest
+	if input.Shell == nil || domain.Decode(input.Assignment.Manifest, &manifest) != nil {
+		return false
+	}
+	for _, process := range observation.Processes {
+		if process.Command != input.Shell.Command || process.Cwd != manifest.PrimaryPath {
+			return false
+		}
+	}
+	return true
 }
