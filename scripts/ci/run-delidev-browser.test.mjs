@@ -10,7 +10,7 @@ test("host configuration pins Chromium and disables all QA screenshots",()=>{
  assert.equal(env.DELIDEV_QA_PLAYWRIGHT_MODULE,source.DELIDEV_BROWSER_PLAYWRIGHT_MODULE);
  assert.equal(env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE,source.DELIDEV_BROWSER_PLAYWRIGHT_MODULE);
  assert.equal(env.DELIDEV_QA_BROWSER_CHANNEL,"chromium");assert.equal(env.DELIDEV_LAYOUT_BROWSER_CHANNEL,"chromium");assert.equal(env.DELIDEV_QA_SCREENSHOTS,"disabled");
- assert.equal(browserChecks.length,11);assert.equal(new Set(browserChecks.map(value=>value.script)).size,11);
+ assert.equal(browserChecks.length,13);assert.equal(new Set(browserChecks.map(value=>value.script)).size,13);
 });
 test("missing host and checkout-owned evidence fail without skipping checks",()=>{
  assert.throws(()=>browserEnvironment({},"/fixture/checkout"),/host-missing/);
@@ -51,5 +51,15 @@ test("closed layout inventory requires every actual completion count and disable
   assert.equal(completedEvidence(check,[record]),record);
   for(const field of check.counts) assert.throws(()=>completedEvidence(check,[{...record,[field]:0}]));
   assert.throws(()=>completedEvidence(check,[]));
+ }
+});
+
+test("usage and session tabs execute existing full fixtures without optional images",()=>{
+ const env=browserEnvironment({...source,DELIDEV_USAGE_SCREENSHOT_DIR:"/tmp/usage-images",DELIDEV_BROWSER_SCREENSHOT_DIR:"/tmp/tab-images"},"/fixture/checkout");
+ assert.equal(env.DELIDEV_USAGE_SCREENSHOT_DIR,undefined);assert.equal(env.DELIDEV_BROWSER_SCREENSHOT_DIR,undefined);
+ for(const [id,operation,field] of [["usage-layout","usage-layout-browser","checks"],["session-tabs-layout","session-tabs-layout","cases"]]) {
+  const check=browserChecks.find(value=>value.id===id);assert.equal(check.operation,operation);assert.deepEqual(check.counts,[field]);assert.equal(check.passed,true);
+  const record={operation,result:"passed",[field]:24};assert.equal(completedEvidence(check,[record]),record);
+  for(const replacement of [{[field]:0},{[field]:undefined},{result:"failed"}]) assert.throws(()=>completedEvidence(check,[{...record,...replacement}]));
  }
 });

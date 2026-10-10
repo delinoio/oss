@@ -9,6 +9,8 @@ export const browserChecks = Object.freeze([
   { id: "worker-model-layout", script: "apps/delidev/scripts/test-worker-model-layout.mjs", operation: "worker-model-layout" },
   { id: "sidebar-collapse-layout", script: "apps/delidev/scripts/test-sidebar-collapse-layout.mjs", operation: "sidebar-collapse-layout" },
   { id: "command-menu-layout", script: "apps/delidev/scripts/test-command-menu-layout.mjs", operation: "command-menu-layout" },
+  { id: "usage-layout", script: "apps/delidev/scripts/test-usage-layout.mjs", operation: "usage-layout-browser", counts: ["checks"], passed: true },
+  { id: "session-tabs-layout", script: "apps/delidev/scripts/test-session-tabs-layout.mjs", operation: "session-tabs-layout", counts: ["cases"], passed: true },
   { id: "settings-layout", script: "apps/delidev/scripts/test-settings-layout.mjs", operation: "settings_layout", counts: ["categoryChecks", "childFormChecks", "keyboardChecks"], passed: true },
   { id: "settings-actions-layout", script: "apps/delidev/scripts/test-settings-actions-layout.mjs", operation: "settings_action_icons", counts: ["categoryChecks", "tooltipChecks"], passed: true },
   { id: "settings-search-layout", script: "apps/delidev/scripts/test-settings-search-layout.mjs", operation: "settings_search_layout", counts: ["checks"], passed: true },
@@ -26,7 +28,7 @@ export function browserEnvironment(source, root = repository) {
   const safe = { ...source };
   // Existing layout scripts expose optional image capture and narrower modes.
   // Hosted validation always runs their complete assertions without image output.
-  for (const key of ["DELIDEV_LAYOUT_SCREENSHOT_DIR", "DELIDEV_LAYOUT_SCREENSHOT", "DELIDEV_SEARCH_SCREENSHOT_DIR", "DELIDEV_PR_CARDS_SCREENSHOT_DIR",
+  for (const key of ["DELIDEV_LAYOUT_SCREENSHOT_DIR", "DELIDEV_LAYOUT_SCREENSHOT", "DELIDEV_SEARCH_SCREENSHOT_DIR", "DELIDEV_PR_CARDS_SCREENSHOT_DIR", "DELIDEV_USAGE_SCREENSHOT_DIR", "DELIDEV_BROWSER_SCREENSHOT_DIR",
     "DELIDEV_LAYOUT_GITHUB_ONLY", "DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY", "DELIDEV_LAYOUT_ACCOUNTS_ONLY", "DELIDEV_LAYOUT_DISMISSAL_ONLY", "DELIDEV_LAYOUT_PROJECTS_ONLY", "DELIDEV_LAYOUT_PROJECT_ROWS_ONLY", "DELIDEV_LAYOUT_LANGUAGE_ONLY"]) delete safe[key];
   return { ...safe, DELIDEV_QA_PLAYWRIGHT_MODULE: module, DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: module,
     DELIDEV_QA_BROWSER_CHANNEL: "chromium", DELIDEV_LAYOUT_BROWSER_CHANNEL: "chromium", DELIDEV_QA_SCREENSHOTS: "disabled" };
