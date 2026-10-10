@@ -49,6 +49,17 @@ try {
       return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select, .pr-repository-details")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
     });
     assert(!geometry.overflow && !geometry.outside && geometry.targets, `${context}: ${JSON.stringify(geometry)}`);
+    const titleRow = pane.locator(".pr-sidebar-title");
+    assert.equal(await pane.locator("h2").count(), 1, `${context}: one sidebar title`);
+    assert.equal(await pane.locator(".sidebar-list-heading").count(), 0, `${context}: no former repository heading row`);
+    const title = await titleRow.evaluate(node => {
+      const heading = node.querySelector("h2"), action = node.querySelector("button");
+      const row = node.getBoundingClientRect(), text = heading.getBoundingClientRect(), button = action.getBoundingClientRect();
+      const style = getComputedStyle(action), name = action.querySelector(".settings-action-name");
+      const repository = node.nextElementSibling.querySelector(".pr-repository-heading")?.getBoundingClientRect();
+      return { actions: node.querySelectorAll("button").length, width: button.width, height: button.height, aligned: Math.abs(button.right - row.right) < 1 && text.right <= button.left, transparent: style.backgroundColor === "rgba(0, 0, 0, 0)", hiddenName: getComputedStyle(name).clipPath === "inset(50%)", glyph: action.querySelector("svg").getAttribute("aria-hidden"), gap: repository ? repository.top - row.bottom : 12 };
+    });
+    assert(title.actions === 1 && title.width >= 40 && title.height >= 40 && title.aligned && title.transparent && title.hiddenName && title.glyph === "true" && Math.abs(title.gap - 12) < 1, `${context}: ${JSON.stringify(title)}`);
     const disclosures = await pane.locator(".pr-repository-details-toggle").evaluateAll(nodes => nodes.map(node => {
       const style = getComputedStyle(node), box = node.getBoundingClientRect(), glyph = node.querySelector(".disclosure-chevron").getBoundingClientRect(), row = node.parentElement.getBoundingClientRect();
       return { border: style.borderWidth, background: style.backgroundColor, shadow: style.boxShadow, width: box.width, height: box.height, glyphWidth: glyph.width, glyphHeight: glyph.height, centered: Math.abs(glyph.x + glyph.width / 2 - box.x - box.width / 2) < 1 && Math.abs(glyph.y + glyph.height / 2 - box.y - box.height / 2) < 1, contained: box.left >= row.left && box.right <= row.right && box.top >= row.top && box.bottom <= row.bottom };
@@ -65,6 +76,16 @@ try {
     await row.waitFor();
     assert.equal(await row.textContent(), "oss");
     await assertLayout(pane, `${language}/${theme}/${width}: unselected`);
+    const refresh = pane.getByRole("button", { name: language === "ko" ? "새로고침" : "Refresh", exact: true });
+    const beforeTooltip = await page.evaluate(() => window.__prSidebarCatalogReads);
+    await refresh.hover();
+    assert.equal(await page.getByRole("tooltip").textContent(), language === "ko" ? "새로고침" : "Refresh");
+    await refresh.focus();
+    assert.equal(await page.evaluate(() => window.__prSidebarCatalogReads), beforeTooltip, "Tooltip interaction adds no catalog reads");
+    await refresh.press("Escape");
+    await refresh.blur();
+    await page.mouse.move(0, 0);
+
     if (screenshots && width === 1440) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `pr-${language}-${theme}-unselected.png`) }); }
     const details = pane.getByRole("button", { name: language === "ko" ? `oss 상세. 저장소 ID: ${id}` : `Details for oss. Repository ID: ${id}`, exact: true });
     await details.hover(); await assertLayout(pane, `${language}/${theme}/${width}: hover`);
@@ -80,6 +101,21 @@ try {
     assert(await closed.isChecked(), "Native arrows select the next draft state");
     assert.equal(await closed.evaluate(node => getComputedStyle(node.nextElementSibling).backgroundColor), theme === "light" ? "rgb(255, 255, 255)" : "rgb(27, 33, 43)");
     await assertLayout(pane, `${language}/${theme}/${width}: selected`);
+    await details.click();
+    const detailsRegion = pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true });
+    for (const activation of ["mouse", "Enter", "Space"]) {
+      const beforeRefresh = await page.evaluate(() => window.__prSidebarCatalogReads);
+      if (activation === "mouse") await refresh.click();
+      else { await refresh.focus(); await refresh.press(activation); }
+      await page.waitForFunction(before => window.__prSidebarCatalogReads === before + 1, beforeRefresh);
+      await page.waitForFunction(() => !document.querySelector(".pr-sidebar-refresh").disabled);
+      assert.equal(await row.getAttribute("aria-pressed"), "true", "Refresh retains selection");
+      assert(await closed.isChecked(), "Refresh retains filter state");
+      assert(await detailsRegion.isVisible(), "Refresh retains Details expansion");
+    }
+    await refresh.blur();
+    await page.mouse.move(0, 0);
+
     if (screenshots && width === 1440) await page.screenshot({ path: join(resolve(screenshots), `pr-${language}-${theme}-selected.png`) });
     if (width < 760) {
       await page.keyboard.press("Escape");
@@ -98,6 +134,8 @@ try {
     await last.click();
     const details = pane.locator(".pr-repository-details-toggle").last();
     await details.click();
+    // Fixture-only long title proves that localization can wrap beside the fixed action.
+    await pane.locator(".pr-sidebar-title h2").evaluate(node => { node.textContent = node.textContent.repeat(8); });
     await assertLayout(pane, `${language}: long name/details at effective 200%`);
     assert.equal(await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).locator("dd").last().textContent(), "0195c9c0-7b13-7000-8000-000000000003");
     checks++;
