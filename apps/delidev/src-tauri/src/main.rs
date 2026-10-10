@@ -2339,6 +2339,54 @@ mod tests {
         let capabilities: BTreeMap<String, Capability> =
             serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/capabilities.json")))
                 .unwrap();
+        let mut registry = Registry::default();
+        let main = registry.reserve(Role::Local, true).unwrap();
+        registry.ready(&main).unwrap();
+        let local = registry.reserve(Role::Local, false).unwrap();
+        registry.ready(&local).unwrap();
+        let saved_id = uuid::Uuid::now_v7().to_string();
+        let saved = registry
+            .reserve(Role::Saved(saved_id.clone()), false)
+            .unwrap();
+        registry.ready(&saved).unwrap();
+        assert_eq!(main.label, "main");
+        assert_eq!(local.label, format!("local-{}", local.instance));
+        assert_eq!(saved.label, format!("server-{saved_id}-{}", saved.instance));
+        assert_ne!(main.label, local.label);
+        assert_ne!(local.label, saved.label);
+
+        // A compiled capability counterfactual must detect losing the actual
+        // initial webview while preserving later Local and Saved admission.
+        let mut without_main = capabilities.clone();
+        assert!(
+            without_main
+                .values()
+                .any(|capability| capability.webviews.iter().any(|label| label == "main"))
+        );
+        for capability in without_main.values_mut() {
+            capability.webviews.retain(|label| label != "main");
+        }
+        let denied = Resolved::resolve(&manifests, without_main, Target::current()).unwrap();
+        let denied_authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests.clone(),
+            denied,
+        );
+        for command in commands {
+            assert!(
+                denied_authority
+                    .resolve_access(command, &main.label, &main.label, &Origin::Local)
+                    .is_none()
+            );
+            for entry in [&local, &saved] {
+                assert!(
+                    denied_authority
+                        .resolve_access(command, &entry.label, &entry.label, &Origin::Local)
+                        .is_some()
+                );
+            }
+        }
+
         let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
         for command in commands {
             assert!(resolved.allowed_commands.contains_key(command));
@@ -2348,15 +2396,6 @@ mod tests {
             manifests,
             resolved,
         );
-        let mut registry = Registry::default();
-        let main = registry.reserve(Role::Local, false).unwrap();
-        registry.ready(&main).unwrap();
-        let local = registry.reserve(Role::Local, false).unwrap();
-        registry.ready(&local).unwrap();
-        let saved = registry
-            .reserve(Role::Saved(uuid::Uuid::now_v7().to_string()), false)
-            .unwrap();
-        registry.ready(&saved).unwrap();
         for command in commands {
             for entry in [&main, &local, &saved] {
                 assert!(registry.admitted(&entry.label).is_ok());
