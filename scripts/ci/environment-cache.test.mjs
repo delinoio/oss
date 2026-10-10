@@ -23,7 +23,7 @@ test("environment verification reuses valid cache and rejects each changed devel
   const files = [
     "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "turbo.json",
     ".gitignore", ".nvmrc", "rust-toolchain", "go.mod", "go.sum",
-    "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs",
+    "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs", "scripts/ci/buf-entry.mjs",
     "scripts/dev-environment/verify-turbo.mjs", "scripts/dev-environment/contracts.mjs",
     "scripts/dev-environment/process.mjs", "scripts/spawn-dev-server.mjs",
     ...globSync(["apps/*/package.json", "apps/*/turbo.json", "packages/*/package.json", "packages/*/turbo.json", "servers/*/package.json", "servers/*/turbo.json"], { cwd: root }),

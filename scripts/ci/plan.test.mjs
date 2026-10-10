@@ -185,12 +185,14 @@ test("PR never allocates native package jobs, including changes to CI itself", (
   assert.deepEqual(native, ["linux-packages", "pnport-native", ...devhudNative]);
 });
 
-test("shared affected runner changes exercise every eligible workspace job", () => {
+test("shared CI execution inputs exercise every eligible workspace job", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    const plan = planJobs(event, ["scripts/ci/run-affected.mjs"]);
-    const expected = Object.keys(jobPaths).filter((id) => id !== "devhud-ios-simulator" && (event !== Event.PullRequest || !native.includes(id)));
-    assert.deepEqual(Object.entries(plan.jobs).filter(([, run]) => run).map(([id]) => id), expected);
-    for (const id of expected) assert.equal(plan.forced[id], true, `${event}: ${id}`);
+    for (const path of ["scripts/ci/run-affected.mjs", "scripts/ci/buf-entry.mjs"]) {
+      const plan = planJobs(event, [path]);
+      const expected = Object.keys(jobPaths).filter((id) => id !== "devhud-ios-simulator" && (event !== Event.PullRequest || !native.includes(id)));
+      assert.deepEqual(Object.entries(plan.jobs).filter(([, run]) => run).map(([id]) => id), expected, `${event}: ${path}`);
+      for (const id of expected) assert.equal(plan.forced[id], true, `${event}: ${path}: ${id}`);
+    }
   }
 });
 
@@ -321,6 +323,7 @@ test("a readback regression fails the portable fixture command and CI aggregate"
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   for (const path of [
     "scripts/ci/from-root.mjs",
+    "scripts/ci/buf-entry.mjs",
     "scripts/release/linux-packages.test.mjs",
     "scripts/release/linux-packages",
     "scripts/release/runmoor.mjs",

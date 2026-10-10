@@ -149,7 +149,9 @@ The shared checksum generator keeps sorted recursive paths, GNU filename escapin
 The `ci-contracts` matrix runs workflow syntax and the full Node contract suite on
 Linux, plus the uncached `ci:proto:launcher` fixtures on native macOS and Windows.
 Linux runs the launcher fixtures within the full suite. Protocol lint, format and
-freshness launch `node_modules/@bufbuild/buf/bin/buf` through `process.execPath`
+freshness resolve the installed `@bufbuild/buf` package manifest `bin.buf` entry
+through a shared bounded resolver, reject missing, malformed or escaping entries,
+and launch its contained Node entry through `process.execPath`
 with explicit argv, root cwd and `shell: false`. They do not require a standalone
 Buf executable or Windows package-manager shim. The fixtures remove Buf from
 PATH, use checkout paths with spaces, check literal shell metacharacters and
