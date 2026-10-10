@@ -344,3 +344,7 @@
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
 .session-name-dialog button, .session-name-dialog input { min-height:40px; }
 .session-name-dialog form > .primary { align-self:flex-end; }
+
+/* Initial startup retains the Info controllers without reserving their rail. */
+.session-tabbed.startup-info-hidden > .session-content { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 0; }
+.session-tabbed.startup-info-hidden > .session-content > .session-upper-content { grid-area: 1 / 1; }

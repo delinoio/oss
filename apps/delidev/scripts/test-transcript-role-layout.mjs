@@ -159,6 +159,26 @@ try {
     }
     cases++;
   }
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height, zoom] of [[1440,900,1],[980,640,1],[979,640,1],[360,640,1],[1120,960,2]]) {
+    await page.setViewportSize({ width, height });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${origin}/?startup=initial&language=${language}&theme=${theme}&zoom=${zoom}&workspace=general-chat`);
+    await page.locator(".startup-info-hidden .session-progress").waitFor();
+    const info = page.locator(".session-information"), composer = page.locator(".composer textarea");
+    assert.equal(await info.evaluate(node => node.hidden && node.inert), true);
+    await page.evaluate(() => { window.__retainedStartupInfo = document.querySelector(".session-information"); });
+    const geometry = await page.locator(".session-content").evaluate(node => {
+      const style = getComputedStyle(node), upper = node.querySelector(".session-upper-content").getBoundingClientRect(), content = node.getBoundingClientRect();
+      return { gap: style.columnGap, width: upper.width, available: content.width, overflow: document.documentElement.scrollWidth > innerWidth + 1 };
+    });
+    assert.equal(geometry.gap, "0px"); assert(Math.abs(geometry.width - geometry.available) <= 1); assert.equal(geometry.overflow, false);
+    await composer.focus(); const draft = await composer.inputValue();
+    await page.evaluate(() => window.__startupInformationFixture.stop());
+    await info.waitFor();
+    assert.equal(await info.evaluate(node => node === window.__retainedStartupInfo && !node.hidden && !node.inert), true);
+    assert.equal(await composer.inputValue(), draft); assert.equal(await composer.evaluate(node => node === document.activeElement), true);
+    cases++; console.log(JSON.stringify({ operation: "startup-information-layout", language, theme, width, height, zoom, result: "passed" }));
+  }
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width,height,zoom] of [[1440,900,1],[390,844,1],[1440,900,2]]) for (const workspace of ["general-chat","worktree"]) {
     await page.setViewportSize({width,height});
     await page.addInitScript(() => { Date.now = () => Date.parse("2026-10-09T10:01:23.123Z"); });

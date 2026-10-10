@@ -143,6 +143,27 @@ Pause/Stop, archive, problems, budget blocks, recovery, startup failure, uncerta
 
 Use semantic colors, a decorative spinner and one stable polite status announcement. Repeated successful reads keep the same label/node; locale changes update that node without remounting controllers. Reduced motion disables animation; narrow and 200% reflow use wrapping within the existing region. Rendering/navigation/reconnect/polling never start, resume, retry, dispatch or duplicate execution. No RPC, allocation, persistence, migration, native bridge, dependency, feature flag, percentages, ETA or clone-specific progress is added. Fixture/type-check evidence and skipped owner-assigned native/platform acceptance remain separate.
 
+### Initial startup information visibility
+
+Ordinary Session and General Chat hide the mounted Info aside only while the
+active Conversation has a current validated startup phase owned by its original
+initial input. Before a claim, require complete original sequence-one queue
+ownership; after a claim require the exact initial execution/input identity and
+first input sequence. Counts, missing identity or a later follow-up never suffice.
+The compact first-response row keeps this exception after initial user publication.
+All existing progress suppression, response-evidence latches and monotonic revision
+checks restore normal Info for actual content, failure, pause/Stop, archive,
+recovery, budget, approval/user-input, uncertainty, stale or disconnected reads.
+Tool tabs retain Info; Sidechat retains its independent presentation.
+
+Use hidden and inert on the original DOM without unmounting information controllers
+or discarding drafts. Reclaim the wide 360px rail and gap and the compact band at
+the existing 900px breakpoint. The existing startup list remains centered with its
+380px maximum. Before hiding focused Info, focus the original available composer
+or the session heading; restoration never steals focus. Preserve original tools,
+trays, localization, semantic themes, reduced motion and execution authority.
+Browser fixtures establish geometry only; native/account acceptance is separate.
+
 ## Screen shortcuts and help
 
 The connection-owned `ShortcutProvider` and `useShortcuts` register stable enum action IDs, a Surface or global scope, logical key bindings, typed localization keys, active/enabled conditions, an unavailable reason, input policy and an existing action callback or explicit native behavior. Registration is memory-only. Connection-owned keydown/keyup, window blur and document visibility listeners serve the connection; Strict Mode and connection replacement remove the original listener/registrations. Surface navigation and same-identity reconnect preserve original drafts, queries and mutation receipts. The lightweight Surface module retains the existing enum values and the existing views export.

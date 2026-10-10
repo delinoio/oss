@@ -32,6 +32,12 @@ if (timingMode) {
   historical.splice(0);
   if (timingMode === "inherited") historical.push(transcriptResource({ role: "user", state: "complete", text: "Inherited original immutable input", execution_id: newRequestId(), input_id: "", native_thread_id: "inherited-thread", native_turn_id: "inherited-turn", first_sequence: 0, last_sequence: 0, inherited: { session_id: newRequestId(), execution_id: newRequestId(), input_id: newRequestId(), message_id: newRequestId(), first_sequence: 3, last_sequence: 4 }, turn_timing: { accepted_at: "2026-10-08T08:59:59.123Z", terminal_at: timingStart } }, 40));
 }
+const startupMode = args.get("startup") === "initial";
+const startupQueue = startupMode ? [create(ResourceSchema, { id: timingIds.input, sessionId: session.id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ sequence: 1, content_revision: 1, prompt: "Synthetic first input", mode: "execute", delivery: "queued" }) })] : [];
+if (startupMode) {
+  historical.splice(0);
+  session = create(ResourceSchema, { ...session, documentJson: encode({ name: "Synthetic initial startup", workspace: args.get("workspace") ?? "general-chat", archive: "active", outcome: "not-started", dispatch: "ready", recovery: "none", last_input_sequence: 1, pending_inputs: 1, preparation: { job_id: timingIds.job, state: "pending" } }) });
+}
 const resources = new Map(historical.map(row => [row.id, row]));
 const events: WatchEventsResponse[] = [];
 let wake: (() => void) | undefined, revision = 0n;
@@ -47,7 +53,10 @@ function createEvent(entityId: string, revision: bigint): WatchEventsResponse {
 function timingSessionEvent() {
   events.push({ $typeName: "delidev.v1.WatchEventsResponse", cursor: `timing-${session.revision}`, id: newRequestId(), entityId: session.id, kind: EntityKind.SESSION, sessionId: session.id, revision: session.revision, action: EventAction.UPDATED, time: timingStart }); wake?.();
 }
-Object.assign(window, { __turnTimingFixture: {
+Object.assign(window, { __startupInformationFixture: { stop() {
+  const original = JSON.parse(new TextDecoder().decode(session.documentJson));
+  session = create(ResourceSchema, { ...session, revision: session.revision + 1n, documentJson: encode({ ...original, outcome: "stopped", dispatch: "paused" }) }); timingSessionEvent();
+} }, __turnTimingFixture: {
   get reads() { return timingReads; },
   early() {
     const original = JSON.parse(new TextDecoder().decode(session.documentJson)); original.execution.last_sequence = 3;
@@ -76,7 +85,7 @@ Object.assign(window, { __turnTimingFixture: {
 } });
 const transport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
-  router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: () => ({ view: { session, state: BudgetState.ALLOW_INCOMPLETE } }) });
+  router.service(SessionService, { listQueue: () => ({ inputs: startupQueue }), getSessionBudget: () => ({ view: { session, state: BudgetState.ALLOW_INCOMPLETE } }) });
   router.service(ResourceService, {
     getSnapshot: () => { timingReads++; return ({ resources: [session], cursor: "fixture-original" }); },
     getResource: request => { timingReads++; return ({ resource: request.id === session.id ? session : resources.get(request.id) }); },

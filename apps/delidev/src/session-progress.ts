@@ -122,3 +122,16 @@ export function progressResponseOwner(row: Resource | undefined, sessionId: stri
 export function responseSuppressesProgress(messages: readonly ProgressMessage[], owner: ReturnType<typeof progressResponseOwner>): boolean {
   return Boolean(owner && messages.some(row => row.response && row.response.executionId === owner.executionId && row.response.threadId === owner.threadId && row.response.turnId === owner.turnId && (row.response.kind === ResponseEvidenceKind.Unavailable || row.response.kind === ResponseEvidenceKind.Visible && row.response.lastSequence !== undefined && row.response.lastSequence <= owner.lastSequence)));
 }
+
+/** Reuse a validated phase, but hide Info only for the original initial input. */
+export function initialStartupInformationHidden(session: Resource | undefined, phase: SessionProgressPhase | undefined, queue: readonly Resource[], queueCurrent: boolean): boolean {
+  if (!session || !phase) return false;
+  const d = readDocument(session), initial = object(d.initial_execution), selected = object(d.current_execution ?? d.initial_execution);
+  if (d.last_input_sequence !== 1) return false;
+  if (d.active_execution_id) return uuid(initial.id) && uuid(initial.input_id) && initial.id === d.active_execution_id && selected.id === initial.id && selected.input_id === initial.input_id;
+  // Counts and preparation alone cannot prove first-input ownership.
+  return queueCurrent && queue.length === 1 && originalQueue(queue[0]!, session.id)
+    && readDocument(queue[0]!).sequence === 1 && readDocument(queue[0]!).delivery === "queued"
+    && readDocument(queue[0]!).execution_id == null && readDocument(queue[0]!).native_request_id == null
+    && d.initial_execution == null && d.current_execution == null;
+}

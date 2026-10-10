@@ -8,6 +8,10 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+Keep session information visibility in the desktop presentation owner. Reuse
+validated startup ownership and retain mounted controllers, original drafts and
+focus; presentation suppression must not add reads or execution authority.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
