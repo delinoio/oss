@@ -40,7 +40,7 @@
   "shortcut-settings.restore": "Restore default",
   "shortcut-settings.restoreAction": "Restore default for {{name}}",
   "shortcut-settings.fixed": "Native and fixed shortcuts",
-  "shortcut-settings.fixedHelp": "Newline, guarded creation Enter, Search Enter, panel Escape, Tab and editing shortcuts keep their original behavior. Command or Control + K, N, T, W, Q, H, M and 1–9 remain reserved.",
+  "shortcut-settings.fixedHelp": "Newline, guarded creation Enter, Search Enter, panel Escape, Tab and editing shortcuts keep their original behavior. Command or Control + K, N, W, Q, H, M and 1–9 remain reserved.",
   "shortcut-settings.captureHelp": "Press Command on macOS or Control on Windows/Linux, optionally Shift, with an ASCII letter, digit or Enter. Escape cancels capture.",
   "shortcut-settings.invalid": "Use one supported primary chord. Reserved, editing, repeated and composing keys cannot be assigned.",
   "shortcut-settings.cancelCapture": "Cancel capture",
@@ -79,5 +79,6 @@
   "shortcuts.tab7": "Select tab 7",
   "shortcuts.tab8": "Select tab 8",
   "shortcuts.tab9": "Select tab 9",
-  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app."
+  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.",
+  "shortcuts.customToolPriority": "A saved custom shortcut uses Command or Control + T. Its action has priority; the default Open tool shortcut is inactive."
 }

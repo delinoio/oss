@@ -40,7 +40,7 @@
   "shortcut-settings.restore": "기본값 복원",
   "shortcut-settings.restoreAction": "{{name}} 기본값 복원",
   "shortcut-settings.fixed": "기본 동작 및 고정 단축키",
-  "shortcut-settings.fixedHelp": "줄바꿈, 새 세션 Enter, 검색 Enter, 패널 Escape, Tab 및 편집 단축키는 기존 동작을 유지합니다. Command 또는 Control + K, N, T, W, Q, H, M 및 1–9는 예약되어 있습니다.",
+  "shortcut-settings.fixedHelp": "줄바꿈, 새 세션 Enter, 검색 Enter, 패널 Escape, Tab 및 편집 단축키는 기존 동작을 유지합니다. Command 또는 Control + K, N, W, Q, H, M 및 1–9는 예약되어 있습니다.",
   "shortcut-settings.captureHelp": "macOS에서는 Command, Windows/Linux에서는 Control과 영문자, 숫자 또는 Enter를 누르세요. Shift를 함께 사용할 수 있습니다. Escape는 입력을 취소합니다.",
   "shortcut-settings.invalid": "지원되는 단일 조합을 사용하세요. 예약 키, 편집 키, 반복 입력 및 조합 중인 키는 지정할 수 없습니다.",
   "shortcut-settings.cancelCapture": "단축키 입력 취소",
@@ -79,5 +79,6 @@
   "shortcuts.tab7": "7번 탭 선택",
   "shortcuts.tab8": "8번 탭 선택",
   "shortcuts.tab9": "9번 탭 선택",
-  "shortcuts.externalBrowserTabLimit": "Windows와 Linux에서는 외부 브라우저 페이지에 포커스가 있을 때 탭 표시줄을 사용하세요. 숫자 단축키는 앱의 다른 영역에서 사용할 수 있습니다."
+  "shortcuts.externalBrowserTabLimit": "Windows와 Linux에서는 외부 브라우저 페이지에 포커스가 있을 때 탭 표시줄을 사용하세요. 숫자 단축키는 앱의 다른 영역에서 사용할 수 있습니다.",
+  "shortcuts.customToolPriority": "저장된 사용자 단축키가 Command 또는 Control + T를 사용합니다. 해당 동작이 우선하며 기본 도구 열기 단축키는 비활성 상태입니다."
 }

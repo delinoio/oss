@@ -48,3 +48,17 @@ it("retains fixed Session Enter with default, custom and disabled primary overri
  expect(readOnlyShortcutCatalog.find(action=>action.id===ShortcutId.SessionNewline)?.defaults).toEqual([{key:"Enter",shift:true}]);
  expect(editableShortcutCatalog).toHaveLength(7);
 });
+
+it("suppresses only default unshifted primary T for any committed editable override across scopes", () => {
+ const original = [{ id: ShortcutId.OpenTool, scope: Surface.Sessions, label: "session.openTool" as const, bindings: [{key:"t",primary:true}, {key:"t",primary:true,shift:true}] }];
+ for (const action of editableShortcutCatalog) {
+  const overrides = {[action.id]: {state: ShortcutOverrideState.Binding, chord:{key:"t",shift:false}}} as const;
+  expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+  expect(shortcutConflicts(overrides)).toEqual([]);
+  expect(effectiveShortcutDefinitions(original,overrides)[0]).toMatchObject({bindings:[{key:"t",primary:true,shift:true}]});
+  expect(effectiveShortcutDefinitions(original,{[action.id]:{state:ShortcutOverrideState.Disabled}})[0]!.bindings).toEqual(original[0]!.bindings);
+  expect(effectiveShortcutDefinitions(original,{[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:"t",shift:true}}})[0]!.bindings).toEqual(original[0]!.bindings);
+ }
+ expect(editableShortcutCatalog.some(action=>action.id===ShortcutId.OpenTool)).toBe(false);
+ expect(()=>parseShortcutOverrides({[ShortcutId.OpenTool]:{state:ShortcutOverrideState.Disabled}})).toThrow("Invalid shortcut action");
+});
