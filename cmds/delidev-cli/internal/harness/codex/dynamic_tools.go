@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"reflect"
+	"strconv"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -233,9 +234,9 @@ func (c *Client) observeDynamicRequestLocked(native nativewire.Event) (Event, er
 	if err != nil {
 		return Event{}, err
 	}
-	publicID := domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: requestID.Text}
+	publicID := domain.CodexDynamicRequestID{Kind: domain.InteractionTextID, Value: requestID.Text}
 	if requestID.Kind == NumberRequestID {
-		publicID = domain.InteractionRequestID{Kind: domain.InteractionNumberID, Number: requestID.Number}
+		publicID = domain.CodexDynamicRequestID{Kind: domain.InteractionNumberID, Value: strconv.FormatInt(*requestID.Number, 10)}
 	}
 	args, err := dynamicArguments(params.Arguments)
 	if err != nil {

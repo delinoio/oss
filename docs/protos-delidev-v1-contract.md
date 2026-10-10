@@ -1431,7 +1431,8 @@ registry, tool adoption, media retrieval or public native-reply authority.
 The server accepts the dedicated event only for the original ordinary Codex
 assignment and authenticated current Worker advertising its independent profile.
 It applies exact outbox receipts and revalidates bounded per-call descriptors,
-request ID kind, original arrival, negative outcome, response identity and
+request ID kind plus canonical text value (including int64 numeric IDs beyond
+JavaScript precision), original arrival, negative outcome, response identity and
 send-started/delivery/resolution sequence across retained immutable records.
 Tool result, native request resolution, root result and cleanup are independent.
 The owning [native harness contract](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-original-negative-replies)

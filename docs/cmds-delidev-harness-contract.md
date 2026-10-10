@@ -2287,7 +2287,10 @@ image/audio URL/data bytes, native envelope, credentials or retrieval capability
 Each complete message is one immutable observation; its message state does not
 claim native item completion. Requested, send-started, transmitted/uncertain and
 request-resolved observations remain separate from native item status/success,
-root outcome and process/workspace cleanup. Native success is not inferred from
+root outcome and process/workspace cleanup. Public request identity retains its
+original string/number kind with a canonical text value, so int64 numeric IDs
+remain exact across JavaScript readers; original lexical wire bytes remain private.
+Native success is not inferred from
 status, a negative reply or root completion.
 
 Only an original live `item/tool/call` arrival can receive a response. The

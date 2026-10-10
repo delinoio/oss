@@ -6,6 +6,7 @@ const text = (v: unknown, max: number, required = false): v is string => typeof 
 const digest = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 const closed = (v: Document, allowed: string[], required = allowed) => Object.keys(v).every(k => allowed.includes(k)) && required.every(k => Object.hasOwn(v, k));
 const base = ["version", "id", "stage", "call_id", "namespace", "tool", "arguments", "status", "content_items", "success", "duration_ms"];
+const numericRequest = (value: unknown): value is string => typeof value === "string" && /^-?(0|[1-9][0-9]{0,18})$/.test(value) && value !== "-0" && BigInt(value) >= -9223372036854775808n && BigInt(value) <= 9223372036854775807n;
 const request = ["arrival_id", "request_id", "response_id", "delivery", "negative_outcome", "request_resolved"];
 /** Closed inert projection: no native argument value or fetchable reference. */
 export function validCodexDynamicTool(data: Document): boolean {
@@ -28,7 +29,7 @@ export function validCodexDynamicTool(data: Document): boolean {
   }
   if (!["requested", "reply-delivery", "request-resolved"].includes(String(d.stage)) || d.status !== null || d.content_items !== null || d.success !== null || d.duration_ms !== null || !uuid(d.arrival_id) || typeof d.request_resolved !== "boolean" || !["not-sent", "send-started", "transmitted", "uncertain"].includes(String(d.delivery))) return false;
   const id = object(d.request_id);
-  if (!(id.kind === "text" && closed(id, ["kind", "text"]) && text(id.text, 128, true) || id.kind === "number" && closed(id, ["kind", "number"]) && Number.isSafeInteger(id.number))) return false;
+  if (!(closed(id,["kind","value"]) && (id.kind === "text" && text(id.value, 128, true) || id.kind === "number" && numericRequest(id.value)))) return false;
   if (d.stage === "requested") return d.delivery === "not-sent" && d.request_resolved === false && !Object.hasOwn(d, "response_id") && !Object.hasOwn(d, "negative_outcome");
   if (d.stage === "reply-delivery") return d.delivery !== "not-sent" && d.request_resolved === false && uuid(d.response_id) && d.negative_outcome === false;
   return d.request_resolved === true && (d.delivery === "not-sent" ? !Object.hasOwn(d, "response_id") && !Object.hasOwn(d, "negative_outcome") : uuid(d.response_id) && d.negative_outcome === false);

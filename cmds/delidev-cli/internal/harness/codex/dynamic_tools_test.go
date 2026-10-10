@@ -84,7 +84,7 @@ func TestDynamicToolOriginalRequestOnceOnlyAndResolutionIndependent(t *testing.T
 	fixtureSignal(t, c, "dynamic", map[string]any{"requestId": 7})
 	event := nextKind(t, c, DynamicToolRequestedEvent)
 	arrival := event.DynamicTool.Observation.ArrivalID
-	if event.DynamicTool.Observation.RequestID.Kind != domain.InteractionNumberID || *event.DynamicTool.Observation.RequestID.Number != 7 {
+	if event.DynamicTool.Observation.RequestID.Kind != domain.InteractionNumberID || event.DynamicTool.Observation.RequestID.Value != "7" {
 		t.Fatal("request id kind was rewritten")
 	}
 	// Editing returned metadata cannot edit the privately retained descriptor.
@@ -182,7 +182,7 @@ func TestDynamicToolCanceledOriginalReplyDoesNotWriteOrResolve(t *testing.T) {
 	}
 	fixtureSignal(t, c, "dynamic", map[string]any{"requestId": "7"})
 	event := nextKind(t, c, DynamicToolRequestedEvent)
-	if event.DynamicTool.Observation.RequestID.Kind != domain.InteractionTextID || event.DynamicTool.Observation.RequestID.Text != "7" {
+	if event.DynamicTool.Observation.RequestID.Kind != domain.InteractionTextID || event.DynamicTool.Observation.RequestID.Value != "7" {
 		t.Fatal("text native id became integer")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -193,5 +193,23 @@ func TestDynamicToolCanceledOriginalReplyDoesNotWriteOrResolve(t *testing.T) {
 	inspection, err := c.InspectDynamicTool(context.Background(), event.DynamicTool.Observation.ArrivalID)
 	if err != nil || inspection.DynamicTool.Observation.Delivery != domain.DynamicNotSent || *inspection.DynamicTool.Observation.RequestResolved || c.execution.turns[turn.TurnID].Turn.Status != TurnRunning {
 		t.Fatal("cancellation fabricated reply, resolution or root completion", err)
+	}
+}
+
+func TestDynamicToolPublicRequestIdentityPreservesInt64PrecisionAndPrivateSpelling(t *testing.T) {
+	for _, rawID := range []string{`9007199254740993`, `-9223372036854775808`, `9223372036854775807`, `-0`} {
+		c, turn := observationClient()
+		c.mode = ThreadProtocol
+		c.execution.paused = false
+		params := mustJSON(t, map[string]any{"threadId": c.thread, "turnId": turn, "callId": "dynamic-call", "namespace": nil, "tool": "unavailable", "arguments": nil})
+		native := nativewire.Event{Kind: nativewire.ServerRequest, Method: "item/tool/call", ID: json.RawMessage(rawID), Token: domain.NewID(), Params: params}
+		event, err := c.observeEventLocked(native)
+		expected := rawID
+		if rawID == "-0" {
+			expected = "0"
+		}
+		if err != nil || event.DynamicTool.Observation.RequestID.Kind != domain.InteractionNumberID || event.DynamicTool.Observation.RequestID.Value != expected || string(c.dynamicState().arrivals[native.Token].native.ID) != rawID {
+			t.Fatal("original numeric identity lost precision, kind or private spelling", rawID, err)
+		}
 	}
 }

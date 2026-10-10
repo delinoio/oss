@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"slices"
+	"strconv"
 )
 
 // The closed public profile is an observation, never a tool dispatch contract.
@@ -52,22 +53,47 @@ type DynamicContent struct {
 	ReferencePresent *bool              `json:"reference_present,omitempty"`
 	ReferenceDigest  string             `json:"reference_digest,omitempty"`
 }
+
+// Numeric request identity is canonical decimal text in the public profile.
+// Its kind remains number; only protected original bytes authorize a reply.
+type CodexDynamicRequestID struct {
+	Kind  InteractionRequestIDKind `json:"kind"`
+	Value string                   `json:"value"`
+}
+
+func (id CodexDynamicRequestID) Key() (string, error) {
+	switch id.Kind {
+	case InteractionTextID:
+		if Text(id.Value, "native dynamic request identity", 128, true) == nil {
+			return "s:" + id.Value, nil
+		}
+	case InteractionNumberID:
+		if len(id.Value) > 0 && len(id.Value) <= 20 {
+			value, err := strconv.ParseInt(id.Value, 10, 64)
+			if err == nil && strconv.FormatInt(value, 10) == id.Value {
+				return "n:" + id.Value, nil
+			}
+		}
+	}
+	return "", InvalidDynamicTool()
+}
+
 type CodexDynamicTool struct {
-	Version      uint32                `json:"version"`
-	ID           ID                    `json:"id"`
-	Stage        DynamicToolStage      `json:"stage"`
-	CallID       string                `json:"call_id"`
-	Namespace    *string               `json:"namespace"`
-	Tool         string                `json:"tool"`
-	Arguments    DynamicArguments      `json:"arguments"`
-	Status       *DynamicToolStatus    `json:"status"`
-	ContentItems []DynamicContent      `json:"content_items"`
-	Success      *bool                 `json:"success"`
-	DurationMS   *int64                `json:"duration_ms"`
-	ArrivalID    ID                    `json:"arrival_id,omitempty"`
-	RequestID    *InteractionRequestID `json:"request_id,omitempty"`
-	ResponseID   ID                    `json:"response_id,omitempty"`
-	Delivery     DynamicReplyDelivery  `json:"delivery,omitempty"`
+	Version      uint32                 `json:"version"`
+	ID           ID                     `json:"id"`
+	Stage        DynamicToolStage       `json:"stage"`
+	CallID       string                 `json:"call_id"`
+	Namespace    *string                `json:"namespace"`
+	Tool         string                 `json:"tool"`
+	Arguments    DynamicArguments       `json:"arguments"`
+	Status       *DynamicToolStatus     `json:"status"`
+	ContentItems []DynamicContent       `json:"content_items"`
+	Success      *bool                  `json:"success"`
+	DurationMS   *int64                 `json:"duration_ms"`
+	ArrivalID    ID                     `json:"arrival_id,omitempty"`
+	RequestID    *CodexDynamicRequestID `json:"request_id,omitempty"`
+	ResponseID   ID                     `json:"response_id,omitempty"`
+	Delivery     DynamicReplyDelivery   `json:"delivery,omitempty"`
 	// NegativeOutcome retains the fixed native response success bit (false).
 	NegativeOutcome *bool `json:"negative_outcome,omitempty"`
 	RequestResolved *bool `json:"request_resolved,omitempty"`

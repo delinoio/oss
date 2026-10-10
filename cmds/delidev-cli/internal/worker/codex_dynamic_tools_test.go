@@ -60,8 +60,7 @@ func TestDynamicToolPrivateIntentPrecedesOnlyNativeAttemptAndLostAckNeverResends
 			mapper.thread, mapper.turn = domain.NewID(), domain.NewID()
 			p.state.LastSequence = 2
 			negative := false
-			number := int64(7)
-			value := domain.CodexDynamicTool{Version: 1, ID: domain.NewID(), Stage: domain.DynamicToolRequested, CallID: "original-call", Tool: "unavailable", Arguments: domain.DynamicArguments{Present: true, Type: domain.DynamicObject, Digest: dynamicPrivateDigest([]byte(`{"secret":"private"}`))}, ArrivalID: domain.NewID(), RequestID: &domain.InteractionRequestID{Kind: domain.InteractionNumberID, Number: &number}, Delivery: domain.DynamicNotSent, RequestResolved: &negative}
+			value := domain.CodexDynamicTool{Version: 1, ID: domain.NewID(), Stage: domain.DynamicToolRequested, CallID: "original-call", Tool: "unavailable", Arguments: domain.DynamicArguments{Present: true, Type: domain.DynamicObject, Digest: dynamicPrivateDigest([]byte(`{"secret":"private"}`))}, ArrivalID: domain.NewID(), RequestID: &domain.CodexDynamicRequestID{Kind: domain.InteractionNumberID, Value: "7"}, Delivery: domain.DynamicNotSent, RequestResolved: &negative}
 			raw, _ := json.Marshal(map[string]any{"threadId": mapper.thread, "turnId": mapper.turn, "callId": value.CallID, "namespace": nil, "tool": value.Tool, "arguments": map[string]any{"secret": "private"}})
 			native := nativewire.Event{Kind: nativewire.ServerRequest, Method: "item/tool/call", ID: json.RawMessage(`7`), Token: value.ArrivalID, Params: raw}
 			event := codex.Event{Kind: codex.DynamicToolRequestedEvent, ThreadID: mapper.thread, TurnID: mapper.turn, ItemID: value.CallID, Correlated: true, DynamicTool: &codex.DynamicTool{Observation: value, OriginalJSON: raw, OriginalRequest: &native}}
@@ -121,9 +120,8 @@ func TestDynamicToolPublicationAckLossBeforeWireLeavesNoResendFence(t *testing.T
 	mapper := NewCodexEventPublisher(p)
 	mapper.thread, mapper.turn = domain.NewID(), domain.NewID()
 	p.state.LastSequence = 2
-	number := int64(7)
 	resolved := false
-	value := domain.CodexDynamicTool{Version: 1, ID: domain.NewID(), Stage: domain.DynamicToolRequested, CallID: "original-call", Tool: "unavailable", Arguments: domain.DynamicArguments{Present: true, Type: domain.DynamicNull, Digest: dynamicPrivateDigest([]byte("null"))}, ArrivalID: domain.NewID(), RequestID: &domain.InteractionRequestID{Kind: domain.InteractionNumberID, Number: &number}, Delivery: domain.DynamicNotSent, RequestResolved: &resolved}
+	value := domain.CodexDynamicTool{Version: 1, ID: domain.NewID(), Stage: domain.DynamicToolRequested, CallID: "original-call", Tool: "unavailable", Arguments: domain.DynamicArguments{Present: true, Type: domain.DynamicNull, Digest: dynamicPrivateDigest([]byte("null"))}, ArrivalID: domain.NewID(), RequestID: &domain.CodexDynamicRequestID{Kind: domain.InteractionNumberID, Value: "7"}, Delivery: domain.DynamicNotSent, RequestResolved: &resolved}
 	raw, _ := json.Marshal(map[string]any{"threadId": mapper.thread, "turnId": mapper.turn, "callId": value.CallID, "namespace": nil, "tool": value.Tool, "arguments": nil})
 	native := nativewire.Event{Kind: nativewire.ServerRequest, Method: "item/tool/call", ID: json.RawMessage(`7`), Token: value.ArrivalID, Params: raw}
 	event := codex.Event{Kind: codex.DynamicToolRequestedEvent, ThreadID: mapper.thread, TurnID: mapper.turn, ItemID: value.CallID, Correlated: true, DynamicTool: &codex.DynamicTool{Observation: value, OriginalJSON: raw, OriginalRequest: &native}}

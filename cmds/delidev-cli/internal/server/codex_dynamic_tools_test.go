@@ -11,8 +11,7 @@ import (
 
 func dynamicPublicFixture(stage domain.DynamicToolStage) domain.CodexDynamicTool {
 	resolved := false
-	number := int64(7)
-	return domain.CodexDynamicTool{Version: 1, ID: domain.NewID(), Stage: stage, CallID: "original-call", Tool: "unavailable", Arguments: domain.DynamicArguments{Present: true, Type: domain.DynamicObject, Digest: strings.Repeat("a", 64)}, ArrivalID: domain.NewID(), RequestID: &domain.InteractionRequestID{Kind: domain.InteractionNumberID, Number: &number}, Delivery: domain.DynamicNotSent, RequestResolved: &resolved}
+	return domain.CodexDynamicTool{Version: 1, ID: domain.NewID(), Stage: stage, CallID: "original-call", Tool: "unavailable", Arguments: domain.DynamicArguments{Present: true, Type: domain.DynamicObject, Digest: strings.Repeat("a", 64)}, ArrivalID: domain.NewID(), RequestID: &domain.CodexDynamicRequestID{Kind: domain.InteractionNumberID, Value: "7"}, Delivery: domain.DynamicNotSent, RequestResolved: &resolved}
 }
 func TestDynamicToolReducerRejectsRebindingAndRepeatedReply(t *testing.T) {
 	for _, bad := range []string{"namespace", "arguments", "request-kind", "arrival", "response", "delivery-retry", "negative-success"} {
@@ -44,7 +43,7 @@ func TestDynamicToolReducerRejectsRebindingAndRepeatedReply(t *testing.T) {
 			case "arguments":
 				value.Arguments.Digest = strings.Repeat("b", 64)
 			case "request-kind":
-				value.RequestID = &domain.InteractionRequestID{Kind: domain.InteractionTextID, Text: "7"}
+				value.RequestID = &domain.CodexDynamicRequestID{Kind: domain.InteractionTextID, Value: "7"}
 			case "arrival":
 				value.ArrivalID = domain.NewID()
 			case "response":
