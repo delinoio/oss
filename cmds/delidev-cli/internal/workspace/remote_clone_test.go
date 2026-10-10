@@ -394,3 +394,135 @@ func TestManagedCloneForkFromLocalPreservesOriginalFolder(t *testing.T) {
 		t.Fatal("child deletion changed original Local folder")
 	}
 }
+
+func TestManagedCloneSymbolicHeadOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		name, command string
+		want          domain.Code
+	}{
+		{"absent", "exit 1", ""},
+		{"fatal", "exit 128", domain.Unavailable},
+		{"foreign", "printf 'refs/remotes/other/main\\n'; exit 0", domain.RecoveryRequired},
+		{"empty", "printf 'refs/remotes/origin/\\n'; exit 0", domain.RecoveryRequired},
+		{"self", "printf 'refs/remotes/origin/HEAD\\n'; exit 0", domain.RecoveryRequired},
+		{"multiline", "printf 'refs/remotes/origin/main\\nrefs/remotes/origin/other\\n'; exit 0", domain.RecoveryRequired},
+		{"malformed", "printf 'refs/remotes/origin/bad..branch\\n'; exit 0", domain.Unavailable},
+		{"valid", "printf 'refs/remotes/origin/main\\n'; exit 0", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, input, marker := managedCloneFixture(t)
+			input.Repositories[0].Base = domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}
+			input.Repositories[0].Starting = domain.Reference{Type: domain.RemoteBranch, Remote: "secondary", Name: "main"}
+			input.Repositories[0].AutoFetch = false
+			body, err := os.ReadFile(m.Git.Executable)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Only the primary read is injected; alias symbolic-ref writes and
+			// all clone/ownership commands retain the real fixture executable.
+			prefix := "#!/bin/sh\ncase \" $* \" in *' symbolic-ref --quiet refs/remotes/origin/HEAD '*) " + tc.command + ";; esac\n"
+			if err := os.WriteFile(m.Git.Executable, []byte(prefix+strings.TrimPrefix(string(body), "#!/bin/sh\n")), 0700); err != nil {
+				t.Fatal(err)
+			}
+			manifest, err := m.Prepare(context.Background(), input)
+			if tc.want != "" {
+				if err == nil || domain.SafeError(err).Code != tc.want || manifest.State == Ready {
+					t.Fatal("failed symbolic HEAD published readiness", manifest, err)
+				}
+			} else {
+				if err != nil || manifest.State != Ready {
+					t.Fatal(manifest, err)
+				}
+				if tc.name == "valid" {
+					for _, alias := range []string{"upstream", "secondary"} {
+						if got := gitTest(t, manifest.Repositories[0].Path, "symbolic-ref", "refs/remotes/"+alias+"/HEAD"); got != "refs/remotes/"+alias+"/main" {
+							t.Fatal("incorrect alias target", alias, got)
+						}
+					}
+				} else {
+					for _, alias := range []string{"upstream", "secondary"} {
+						if got := gitTest(t, manifest.Repositories[0].Path, "for-each-ref", "--format=%(symref)", "refs/remotes/"+alias+"/HEAD"); got != "" {
+							t.Fatal("absence fabricated symbolic HEAD", got)
+						}
+					}
+				}
+			}
+			if raw, err := os.ReadFile(marker); err != nil || string(raw) != "invoked" {
+				t.Fatal("failure replayed clone", err, string(raw))
+			}
+		})
+	}
+}
+
+func TestManagedCloneSymbolicHeadCancellationAndTimeout(t *testing.T) {
+	for _, cancelRead := range []bool{false, true} {
+		t.Run(map[bool]string{false: "timeout", true: "canceled"}[cancelRead], func(t *testing.T) {
+			fixture, _, _, _ := cloneFixture(t)
+			root := repository(t)
+			gitTest(t, root, "remote", "add", "origin", "https://github.com/fixture/repo.git")
+			entered := filepath.Join(t.TempDir(), "symbolic-entered")
+			body, err := os.ReadFile(fixture.Executable)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefix := "#!/bin/sh\ncase \" $* \" in *' symbolic-ref --quiet refs/remotes/origin/HEAD '*) printf entered > " + fixtureShellQuote(entered) + "; exec sleep 30;; esac\n"
+			if err := os.WriteFile(fixture.Executable, []byte(prefix+strings.TrimPrefix(string(body), "#!/bin/sh\n")), 0700); err != nil {
+				t.Fatal(err)
+			}
+			fixture.Timeout = 10 * time.Second
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				result <- provisionManagedCloneRemotes(ctx, fixture, root, "https://github.com/fixture/repo.git", RepositorySpec{Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}}, "origin")
+			}()
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				if _, err := os.Stat(entered); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("symbolic observation not reached")
+				}
+				time.Sleep(25 * time.Millisecond)
+			}
+			want := domain.Unavailable
+			if cancelRead {
+				want = domain.Canceled
+				cancel()
+			}
+			if err := <-result; err == nil || domain.SafeError(err).Code != want {
+				t.Fatal("original failure classification lost", err)
+			}
+			if refs := gitTest(t, root, "for-each-ref", "refs/remotes/upstream/"); refs != "" {
+				t.Fatal("failed observation published alias refs", refs)
+			}
+		})
+	}
+}
+
+func TestManagedCloneSymbolicHeadLaunchFailure(t *testing.T) {
+	fixture, _, _, _ := cloneFixture(t)
+	root := repository(t)
+	gitTest(t, root, "remote", "add", "origin", "https://github.com/fixture/repo.git")
+	body, err := os.ReadFile(fixture.Executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegate := filepath.Join(t.TempDir(), "delegate")
+	if err := os.WriteFile(delegate, body, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Remote-add succeeds, then the original executable disappears. The next
+	// operation is precisely the primary HEAD read, not another clone or fetch.
+	script := "#!/bin/sh\n" + fixtureShellQuote(delegate) + " \"$@\" || exit $?\ncase \" $* \" in *' remote add '*) rm -- \"$0\";; esac\n"
+	if err := os.WriteFile(fixture.Executable, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := provisionManagedCloneRemotes(context.Background(), fixture, root, "https://github.com/fixture/repo.git", RepositorySpec{Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}}, "origin"); err == nil {
+		t.Fatal("missing original executable became HEAD absence")
+	}
+	if refs := gitTest(t, root, "for-each-ref", "refs/remotes/upstream/"); refs != "" {
+		t.Fatal("launch failure published alias refs", refs)
+	}
+}

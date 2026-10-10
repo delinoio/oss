@@ -310,7 +310,12 @@ Read-only native inspection first tries the exact HEAD commit, then proves a val
 
 First execution, continuation, closed inspection and ready preparation recovery accept the user's current committed or valid unborn HEAD under the same captured Git identity. A user-created first commit does not rewrite the original preparation or checkpoint. Index, staged/unstaged/untracked bytes and branch selection remain unchanged by these checks. Structured Local inspection logs include only session/repository IDs and whether HEAD is unborn, never paths, branch names, object IDs or contents.
 
-Remote default-branch inspection ignores only the native `git symbolic-ref --quiet` exit status 1 ([Git status contract](https://git-scm.com/docs/git-symbolic-ref)); launch, timeout, output and owned-process cleanup failures abort inspection without publishing successful preparation.
+Managed clone remote-alias provisioning and remote default-branch inspection ignore only the native `git symbolic-ref --quiet` exit status 1 ([Git status contract](https://git-scm.com/docs/git-symbolic-ref)); launch, timeout, output and owned-process cleanup failures abort inspection without publishing successful preparation. Alias provisioning
+validates a successful primary symbolic HEAD as one complete native reference in
+the original primary remote namespace before mirroring it to each accepted alias.
+Foreign, empty, self-referential or malformed targets cannot become absence.
+Failure retains the original owned-process classification and cleanup authority;
+no fallback clone or fetch is admitted.
 
 Before an execution lease is issued, a reported owner-directory synchronization or atomic claim-publication failure rolls back only the attempt-owned empty process directory and its exact claim. Continuation restores the original closed predecessor and retains immutable history. Cleanup synchronizes restored/removed entries, rejects unexpected claim changes or any process evidence, and logs rollback uncertainty without paths. This synchronous pre-launch rollback does not infer safety for a returned lease, a crashed Worker, or an active retained claim.
 

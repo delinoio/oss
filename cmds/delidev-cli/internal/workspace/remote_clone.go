@@ -185,6 +185,25 @@ func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string
 	if len(remotes) == 1 {
 		return nil
 	}
+	primaryPrefix := "refs/remotes/" + primary + "/"
+	symbolic, exit, err := git.runCommand(ctx, path, "symbolic-ref", "--quiet", primaryPrefix+"HEAD")
+	if err != nil && exit != 1 {
+		// Only Git's positively observed non-symbolic status is absence. Launch,
+		// cancellation, timeout and uncertain owned cleanup retain their errors.
+		return err
+	}
+	target := ""
+	if err == nil {
+		target = strings.TrimSuffix(strings.TrimSuffix(string(symbolic), "\n"), "\r")
+		if !strings.HasPrefix(target, primaryPrefix) || target == primaryPrefix || target == primaryPrefix+"HEAD" || strings.ContainsAny(target, "\r\n") {
+			return ResultUncertain()
+		}
+		// Validate the complete native name before publishing any alias refs;
+		// malformed successful output must not become an absent default branch.
+		if _, err := git.run(ctx, path, "check-ref-format", target); err != nil {
+			return err
+		}
+	}
 	// The pinned URL is the only source URL available to this managed clone.
 	// Mirror the refs already obtained by the initial clone into each alias so
 	// auto_fetch=false remains meaningful without a stale or missing-reference
@@ -193,7 +212,6 @@ func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string
 	if err != nil {
 		return err
 	}
-	primaryPrefix := "refs/remotes/" + primary + "/"
 	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
 		if line == "" {
 			continue
@@ -212,9 +230,9 @@ func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string
 			}
 		}
 	}
-	if symbolic, err := git.run(ctx, path, "symbolic-ref", "--quiet", "refs/remotes/"+primary+"/HEAD"); err == nil && strings.HasPrefix(string(symbolic), primaryPrefix) {
+	if target != "" {
 		for _, remote := range remotes[1:] {
-			alias := "refs/remotes/" + remote + "/" + strings.TrimPrefix(strings.TrimSpace(string(symbolic)), primaryPrefix)
+			alias := "refs/remotes/" + remote + "/" + strings.TrimPrefix(target, primaryPrefix)
 			if _, err := git.run(ctx, path, "symbolic-ref", "refs/remotes/"+remote+"/HEAD", alias); err != nil {
 				return err
 			}
