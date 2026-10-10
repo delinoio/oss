@@ -79,7 +79,7 @@ func validationStage(method string) eventValidationStage {
 		return validationMCP
 	case "hook/started", "hook/completed":
 		return validationHook
-	case "thread/name/updated", "thread/attachment/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/project/updated":
+	case "thread/name/updated", "thread/attachment/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/project/updated", "project/changed", "thread/prediction/updated", "thread/readState/changed", "thread/archived", "thread/deleted", "thread/closed", "thread/unarchived", "thread/compacted", "thread/reverted":
 		return validationThreadMetadata
 	case "thread/status/changed":
 		return validationStatus
