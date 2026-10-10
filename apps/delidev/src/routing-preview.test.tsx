@@ -45,7 +45,8 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(within(dialog).getByText("Unauthenticated")).toBeTruthy();
   expect(within(dialog).getByText("No eligible account")).toBeTruthy();
   expect(dialog.querySelector(".routing-account-id")?.hasAttribute("open")).toBe(false);
-  expect(within(dialog).getByText(row.id)).toBeTruthy();
+  expect(dialog.textContent).not.toContain(row.id);
+  expect(within(dialog).getByText(/^Account [0-9]+$/)).toBeTruthy();
   expect(within(dialog).getByText("Weight")).toBeTruthy();
   expect(within(dialog).getByText("unknown")).toBeTruthy();
   expect(value.get).toHaveBeenCalledTimes(1);
@@ -283,8 +284,8 @@ it("keeps empty-source failure explicit without guessing a provider or hiding it
   const value = setup([], { policy: "priority", candidates: [], sources: [{ source: `api:${id}`, model_key: newRequestId(), native_model: "Original model", route: { policy: "priority", candidates: [], fallback: true }, problem: { code: "missing_input", message: "Original source problem" } }] });
   value.get.mockRejectedValue(new ConnectError("private-metadata-value", Code.PermissionDenied));
   render(<value.Fixture />);
-  await screen.findAllByText("Service information unavailable · Original model");
-  expect(document.querySelector(".routing-source-notices")?.textContent).toContain("Service information unavailable · Original model");
+  await screen.findAllByText(/Provider [0-9]+ · Original model/);
+  expect(document.querySelector(".routing-source-notices")?.textContent).toMatch(/Provider [0-9]+ · Original model/);
   expect(screen.getByText("Original source problem")).toBeTruthy();
   expect(screen.getByText(/Insufficient comparable quota evidence/)).toBeTruthy();
   expect(document.body.textContent).not.toContain("private-metadata-value");

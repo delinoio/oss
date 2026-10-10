@@ -69,8 +69,10 @@ it("displays the complete original handled-push audit without offering another a
   await screen.findByText(/Local handling: Handled after verified push/);
   const audit = screen.getByText(/Verified push:/);
   expect(audit.textContent).toContain(handling.pushed_head);
-  expect(audit.textContent).toContain(`attempt ${handling.attempt_id}`);
-  expect(audit.textContent).toContain(`execution ${handling.execution_id}`);
+  expect(audit.textContent).not.toContain(handling.attempt_id);
+  expect(audit.textContent).toMatch(/attempt Operation [0-9]+/);
+  expect(audit.textContent).not.toContain(handling.execution_id);
+  expect(audit.textContent).toMatch(/execution Execution [0-9]+/);
   expect(audit.textContent).toContain("handled at ");
   expect(audit.querySelector("time")?.dateTime).toBe(handling.at);
   expect(screen.queryByRole("button", { name: "Dismiss this content version" })).toBeNull();
@@ -158,7 +160,8 @@ it("retains an original conflict transition while showing current unknown mergea
   f.list.mockResolvedValue({ problemSet: f.set, problems: [row] });
   render(f.view()); await screen.findByRole("heading", { name: "Merge conflict · feature → main" });
   expect(screen.getByText(/Latest mergeability: unknown/)).toBeTruthy();
-  expect(screen.getByText(conflict.transition_id)).toBeTruthy();
+  expect(document.body.textContent).not.toContain(conflict.transition_id);
+  expect(screen.getByText(/^Operation [0-9]+$/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Dismiss this content version" })).toBeTruthy();
   expect(readPRProblem(create(ResourceSchema, { ...row, documentJson: encode({ ...value, conflict: { ...conflict, observation: { ...f.body.observation, head_sha: "d".repeat(40) } } }) }), f.set, f.selection)).toBeUndefined();
 });

@@ -32,7 +32,9 @@ it("renders exact HTTP provenance and zero latency while absent observations rem
   expect(screen.getByText("resp_original")).toBeTruthy();
   expect(screen.getByText("high")).toBeTruthy();
   expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(2);
-  expect(screen.getByText(f.row.accountId)).toBeTruthy();
+  expect(document.body.textContent).not.toContain(f.row.accountId);
+  expect(screen.getByText(/^Account [0-9]+$/)).toBeTruthy();
+  expect(screen.queryByText(f.row.correlationId)).toBeNull();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByLabelText("Execution ID (optional)"));
 });
@@ -148,4 +150,19 @@ it("does not refresh a successful diagnostics page for unchanged Apply filters",
  fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial);
  fireEvent.change(screen.getByLabelText("Execution ID (optional)"),{target:{value:f.execution}});fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(initial+1));
  fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial+1);
+});
+
+// External native identities can be UUID-shaped. Preserve their evidence while
+// internal account, connection and execution references use product labels.
+it("preserves UUID-shaped native evidence without exposing internal references", async () => {
+  const f = fixture();
+  const row = create(RequestDiagnosticSchema, { ...f.row, id: newRequestId(), source: Source.NATIVE_INPUT, operation: Operation.INPUT, inputId: newRequestId(), correlationId: "", nativeResponseId: "", httpAttempted: undefined, httpStatus: undefined, durationMs: undefined, nativeThreadId: newRequestId(), nativeTurnId: newRequestId() });
+  row.nativeRequestId = row.id;
+  f.read.mockResolvedValue(create(ListRequestDiagnosticsResponseSchema, { records: [row] }));
+  render(<f.View />);
+  await screen.findByText(row.nativeThreadId);
+  for (const id of [row.nativeRequestId, row.nativeThreadId, row.nativeTurnId]) expect(screen.getByText(id)).toBeTruthy();
+  for (const id of [row.accountId, row.connectionId, row.executionId, row.publicationRequestId]) expect(document.body.textContent).not.toContain(id);
+  expect(screen.getByLabelText("Execution ID (optional)").getAttribute("type")).toBe("password");
+  expect(f.read).toHaveBeenCalledTimes(1);
 });

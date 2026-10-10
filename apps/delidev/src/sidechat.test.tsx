@@ -31,7 +31,8 @@ it("retains selected complete reply revisions across navigation and uncertain fi
  await screen.findByRole("button",{name:"Retry the same findings request"});
  rendered.rerender(view(false));rendered.rerender(view(true));
  fireEvent.click(await screen.findByRole("button",{name:"Retry the same findings request"}));
- await screen.findByText(new RegExp(`Selected findings queued as ${input.id}`));
+ await screen.findByText(/Selected findings queued as Request [0-9]+/);
+ expect(document.body.textContent).not.toContain(input.id);
  expect(sent[1]).toEqual(sent[0]);
  expect(sent[0]).toMatchObject({mutation:{id:child.id,expectedRevision:23n},parentId:parent.id,expectedParentRevision:19n,messages:[{messageId:message.id,expectedRevision:2n}]});
  expect(send).toHaveBeenCalledTimes(2);

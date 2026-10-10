@@ -55,7 +55,8 @@ it("owns the standalone Diagnostics heading, three independent observations and 
   expect(worker.querySelectorAll(".diagnostics-installations > li")).toHaveLength(4);
   expect(within(worker).getAllByText("Handshake not checked")).toHaveLength(4);
   allClosed(view.container);
-  expect(within(server).getByText(value.state.report.server_id as string).closest("details")?.open).toBe(false);
+  expect(server.textContent).not.toContain(value.state.report.server_id as string);
+  expect(within(server).getByText(/^Server [0-9]+$/).closest("details")?.open).toBe(false);
   expect(within(worker).getByText(/Machine identity:/).closest("details")?.open).toBe(false);
   expect(screen.queryByText(/healthy|reclaimable bytes|total storage|%/i)).toBeNull();
 });
@@ -228,4 +229,17 @@ it("omits account-storage presentation while retaining independent diagnostics r
   await refresh();
   expect(value.doctor).toHaveBeenCalledTimes(2);
   expect(value.save).not.toHaveBeenCalled();
+});
+
+it("projects generated diagnostic UUIDs while preserving a user-authored Worker name", async () => {
+  const data = report(), internal = newRequestId(), authored = newRequestId();
+  const machine = (data.machines as Document[])[0];
+  machine.name = authored;
+  (data.storage as Document).result = { state: "failed", code: "unavailable", guidance: `Inspect original reference ${internal}.` };
+  const value = fixture(data);
+  render(value.view(<Doctor active />));
+  await screen.findByRole("heading", { name: authored });
+  expect(screen.getByText(/Inspect original reference Reference [0-9]+/)).toBeTruthy();
+  expect(document.body.textContent).not.toContain(internal);
+  expect(value.doctor).toHaveBeenCalledTimes(1);
 });

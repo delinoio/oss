@@ -101,8 +101,9 @@ it("retains exact provenance for an empty successful native observation", async 
  const value = fixture(false, false, "succeeded", true);
  await choose(value);
  await screen.findByText("No native models in this observation page.");
- expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain(value.account.id);
- expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain("1");
+ expect(document.body.textContent).not.toContain(value.job.id);
+ expect(document.body.textContent).not.toContain(value.account.id);
+ expect(screen.getByText(/Source observation.*Operation [0-9]+.*Account [0-9]+/).textContent).toContain("1");
  expect(screen.getByText(/Observed at/)).toBeTruthy();
  expect(screen.queryByRole("button", { name: /Register/ })).toBeNull();
  expect(value.createModel).not.toHaveBeenCalled();

@@ -66,7 +66,8 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   expect(screen.getByText(/charts are unavailable from this server version/)).toBeTruthy();
   const table = screen.getByRole("table");
   expect(within(table).getByText("General Chat")).toBeTruthy();
-  expect(within(table).getByText(f.ids.account)).toBeTruthy();
+  expect(table.textContent).not.toContain(f.ids.account);
+  expect(within(table).getAllByText("Original account").length).toBeGreaterThan(0);
   expect(within(table).getByText("Original model")).toBeTruthy();
   fireEvent.click(within(table).getByRole("button", { name: "Retained session" }));
   expect(f.open).toHaveBeenCalledWith(f.ids.session);
@@ -361,7 +362,8 @@ it("keeps current query results when an older scope resolves later, without show
   await waitFor(() => expect(screen.queryByText("Loading token usage…")).toBeNull());
   expect(screen.getByText("Latest scope")).toBeTruthy();
   expect(screen.queryByText("Earlier scope")).toBeNull();
-  expect(screen.getByRole("group", { name: "Applied conditions" }).textContent).toContain(f.ids.account);
+  expect(screen.getByRole("group", { name: "Applied conditions" }).textContent).not.toContain(f.ids.account);
+  expect(screen.getByRole("group", { name: "Applied conditions" }).textContent).toMatch(/Account [0-9]+/);
 });
 
 it("does not reuse old scope data when a new valid selection fails", async () => {
@@ -426,7 +428,8 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
  const row=document.querySelector<HTMLTableRowElement>(".usage-detail tbody tr")!, detail=row.querySelector<HTMLDetailsElement>("details")!, summary=detail.querySelector("summary")!;
  expect(row.querySelectorAll("td")).toHaveLength(9); for(const cell of [...row.cells].slice(0,3)) for(const id of Object.values(f.ids)) expect(cell.textContent).not.toContain(id);
  fireEvent.click(summary); expect(detail.open).toBe(true); expect(detail.querySelectorAll("[data-token-measure]")).toHaveLength(6);
- for(const id of [f.ids.session,f.ids.account,f.ids.model,f.ids.provider,f.data.groups[0].projectId]) expect(detail.textContent).toContain(id);
+ for(const id of [f.ids.session,f.ids.account,f.ids.provider,f.data.groups[0].projectId]) expect(detail.textContent).not.toContain(id);
+ expect(detail.textContent).toContain(f.ids.model);
  expect(detail.textContent).toContain("USD 0.002"); expect(detail.textContent).toContain("EUR 0"); expect(f.read).toHaveBeenCalledTimes(1);
  view.rerender(f.view(false)); view.rerender(f.view()); expect(row.querySelector("details")).toBe(detail); expect(detail.open).toBe(true);
  fireEvent.click(screen.getByRole("button",{name:"Refresh"})); await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(2)); expect(row.querySelector("details")).toBe(detail); expect(detail.open).toBe(true);

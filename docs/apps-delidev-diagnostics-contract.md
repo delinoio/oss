@@ -2,7 +2,7 @@
 
 ## Direct startup presentation
 
-[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing; owning failures can present the same original controller locally without category navigation. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing; owning failures can present the same original controller locally without category navigation. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
 
 ## Scope
 
@@ -42,7 +42,7 @@ Validate absence alongside preserved account operations and general diagnostics 
 
 ### State and compatibility
 
-Keep one active-gated `SystemQuery.getDoctor`, explicit refresh and existing query defaults/bounds. Disclosures change visibility only: no RPC, discovery, login, repair, inference, native operation or mutation. Loading announces Reading server diagnostics and disables refresh. Refresh retains prior data/time; failure exposes the safe Problem/correlation surface and labels the last returned observation. Initial denial/failure cannot establish a successful summary or empty inventory.
+Keep one active-gated `SystemQuery.getDoctor`, explicit refresh and existing query defaults/bounds. Disclosures change visibility only: no RPC, discovery, login, repair, inference, native operation or mutation. Loading announces Reading server diagnostics and disables refresh. Refresh retains prior data/time; failure exposes the safe Problem surface and labels the last returned observation. Initial denial/failure cannot establish a successful summary or empty inventory.
 
 Strict UTF-8/1 MiB and legacy/future/malformed handling remain unchanged. Legacy reports show original fields and the capacity/protected-storage limitation; unsupported/malformed reports establish no health. Unknown field-level enums remain Unknown/unavailable without adding the first-session checklist's stronger whole-report validator. Missing versus empty inventories and true/false/unknown completeness remain distinct, with at most 50 machine records rendered in Doctor; account categories do not inspect account storage.
 
@@ -62,7 +62,7 @@ Disclosures are native memory-only presentation state within the original connec
 
 ## Security
 
-Render every name, identity, endpoint, capability and guidance as inert English text. Retain strict decoding and safe Problem/correlation handling. Disclosures cannot access credentials or authorize an operation, and styling cannot relax CSP.
+Render every name, identity, endpoint, capability and guidance as inert English text. Retain strict decoding and safe Problem handling. Disclosures cannot access credentials or authorize an operation, and styling cannot relax CSP.
 
 ## Logging
 
@@ -96,7 +96,7 @@ Title requests commit their once-only HTTP send claim and diagnostic send revisi
 
 ## Inline problems and remediation (issue #1699)
 
-Every desktop task, row, dialog and startup surface presents its available safe cause and supported next actions locally. Typed transport guidance remains visible beside workflow-specific explanations. Only secondary technical codes, versions and opaque references may be disclosed. Standalone diagnostics remains optional; navigation to another category is not a prerequisite for understanding a failure or invoking an existing remedy.
+Every desktop task, row, dialog and startup surface presents its available safe cause and supported next actions locally. Typed transport guidance remains visible beside workflow-specific explanations. Only secondary technical codes, versions and safe product references may be disclosed. Standalone diagnostics remains optional; navigation to another category is not a prerequisite for understanding a failure or invoking an existing remedy.
 
 Presentation reuses the owning read, mutation or native controller and its exact busy, confirmation and uncertain-request state. Moving a view cannot create another server, registration, credential, Runner or account recovery controller. Rechecks read the original scope; they do not retry mutations. Never mount Doctor globally or in an account workflow to obtain causes: its protected credential inspection retains explicit diagnostic invocation and bounds.
 
@@ -105,3 +105,20 @@ Successful empty inventory, loading, failed reads, retained stale observations, 
 ## Inline Connections presentation
 
 Issue #1868 exposes current connection and main-window saved-profile management inline in the stable `diagnostics` Settings category, named Connections/연결. `connections-page.tsx` owns presentation slots and stable movable hosts, never diagnostics or repair authority. Original desktop controllers retain requests, revisions, confirmations and uncertainty across page disposal. Advanced owns registration recovery, updates, installation inspection and removed-profile/retained Worker controls; its attention text remains visible when collapsed. Doctor stays absent. Saved inventory cannot claim remote authorization or readiness and cannot probe saved endpoints. Saved windows retain their pinned connect-only authority.
+
+## Internal identity presentation
+
+Issue #2496 hides DeliDev internal UUIDs in product diagnostics, Usage details,
+execution configuration, routing details and clipboard diagnostics. Use names from
+the original authorized observation. Otherwise use localized identity numbers
+from the current connection/window presentation scope. Preserve the original IDs,
+keys, revisions, requests, recovery and uncertainty checks. A display number is
+not mutation or recovery authority. Do not issue new reads solely to obtain names.
+
+Remove correlation rows and correlation fields from copied startup metadata.
+Project only DeliDev-generated diagnostic prose through the bounded diagnostic
+identity formatter. Preserve user-authored names, messages, instructions, tool
+and terminal output, native model/request/thread/turn identifiers and external
+GitHub identities verbatim, including UUID-like text. Original operator-entered
+recovery IDs remain exact, masked inputs. Machine-readable configuration, backups,
+protocols and operational logs retain their identifiers.

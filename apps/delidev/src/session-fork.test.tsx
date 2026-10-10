@@ -429,7 +429,8 @@ it("preserves pending then uncertain original ownership through hiding and attem
  expect(fixture.fork.mock.calls[1]![0]).toEqual(fixture.fork.mock.calls[0]![0]);
  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
  fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
- expect(screen.getByText(new RegExp(fixture.sources[0]!.id))).toBeDefined();
+ expect(document.body.textContent).not.toContain(fixture.sources[0]!.id);
+ expect(screen.getByText(/Session [0-9]+.*Turn/)).toBeDefined();
  expect(screen.queryByRole("button", { name: "Create fork" })).toBeNull();
  fireEvent.click(screen.getByRole("button", { name: "Open forked session" }));
  expect(fixture.open).toHaveBeenCalledWith([...fixture.children.values()][0]!.id);

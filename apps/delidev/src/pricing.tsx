@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { formatDecimal, productError, ProductError, ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
@@ -14,12 +16,13 @@ import { Problem } from "./ui";
 
 export function PricingBasis({ value }: { value: PricingVersion }) {
   useLocale();
+  const productIdentity = useProductIdentity();
   const p = value.basis;
   if (!p) return <p>{copy("pricing.pricingBasisUnavailable_1b8fe3")}</p>;
   return <div className="pricing-basis"><dl><dt>{copy("pricing.source_0e570c")}</dt><dd>{p.source}</dd><dt>{copy("pricing.asOf_431575")}</dt><dd>{p.asOf}</dd><dt>{copy("pricing.currency_3ac1a9")}</dt><dd>{p.currency}</dd><dt>{copy("pricing.inputPricing_a2d912")}</dt><dd>{p.inputMode === InputPricingMode.UNIFORM ? copy("pricing.uniformInputCacheIncluded_420f49") : p.inputMode === InputPricingMode.CACHED_DISCOUNT ? copy("pricing.separateUncachedInputAndCachedReads_c91ad9") : copy("pricing.unknownMode_892fdb")}</dd><dt>{copy("pricing.inputMillion_fb54c1")}</dt><dd>{formatDecimal(p.inputPerMillion ?? "") || copy("pricing.unavailable_ca1844")}</dd>{p.inputMode === InputPricingMode.CACHED_DISCOUNT ? <><dt>{copy("pricing.cachedInputMillion_187c72")}</dt><dd>{formatDecimal(p.cachedInputPerMillion ?? "") || copy("pricing.unavailable_ca1844")}</dd></> : null}<dt>{copy("pricing.outputMillion_bd8cb4")}</dt><dd>{formatDecimal(p.outputPerMillion ?? "") || copy("pricing.unavailable_ca1844")}</dd></dl>
     {p.exclusions.length ? <><h4>{copy("pricing.declaredExclusions_dc075b")}</h4><ul>{p.exclusions.map((value, index) => <li key={index}>{value}</li>)}</ul></> : null}
     <p>{copy("pricing.onlyObservedTokenCategoriesAreCovered_783253")}</p>
-    <small><LocalizedText id="pricing.version_4fda4a" components={{ s0: <>{value.revision.toString()}</>, s1: <>{value.id}</> }} /></small><small><LocalizedText id="pricing.originalModel_62c471" components={{ s0: <>{value.model?.nativeId ?? ""}</>, s1: <>{value.subscriptionService ? copy("pricing.subscriptionService_596422", { v0: subscriptionServiceLabel(value.subscriptionService) }) : copy("pricing.provider_28af03", { v0: value.providerId })}</> }} /></small>
+    <small><LocalizedText id="pricing.version_4fda4a" components={{ s0: <>{value.revision.toString()}</>, s1: <><ProductIdentity id={value.id} kind={ProductIdentityKind.Resource} /></> }} /></small><small><LocalizedText id="pricing.originalModel_62c471" components={{ s0: <>{value.model?.nativeId ?? ""}</>, s1: <>{value.subscriptionService ? copy("pricing.subscriptionService_596422", { v0: subscriptionServiceLabel(value.subscriptionService) }) : copy("pricing.provider_28af03", { v0: productIdentity.label(value.providerId, ProductIdentityKind.Provider) })}</> }} /></small>
   </div>;
 }
 interface Draft { currency: string; source: string; asOf: string; inputMode: InputPricingMode; input: string; cached: string; output: string; exclusions: string }
@@ -70,7 +73,8 @@ function PricingEditor({ model, initial, original, current, readError, retryRead
   </form>;
 }
 export function ModelPricing({ model, active, close, compact = false }: { model: SourceModel; active: boolean; close: () => void; compact?: boolean }) {
- useLocale(); const key=priceIdentity(model);
+ useLocale();
+  const productIdentity = useProductIdentity(); const key=priceIdentity(model);
  const current=useQuery(UsageQuery.getTokenPricing,{model},{enabled:active,refetchInterval:active?5000:false});
  const [editing,setEditing]=useState<GetTokenPricingResponse>();
  const mode=useRetainedMutation(`pricing-mode:${key}`,UsageQuery.setTokenPricingMode,()=>void current.refetch(),(result,request)=>result.requestId===request.requestId && result.current?.policy?.mode===request.mode && result.current.policy.revision===(request.expectedPolicyRevision??0n)+1n);
@@ -97,7 +101,7 @@ export function ModelPricing({ model, active, close, compact = false }: { model:
  <p>{copy("usage.futurePricesOnly")}</p>
  <Disclosure><DisclosureSummary>{copy("usage.priceDetails")}</DisclosureSummary>
  {data?.pricing?<PricingBasis value={data.pricing}/>:null}
- <dl><dt>{copy("usage.model_5e2c61")}</dt><dd>{model.nativeId}</dd><dt>{copy("usage.provider_472590")}</dt><dd>{model.providerId || subscriptionServiceLabel(model.subscriptionService)}</dd>
+ <dl><dt>{copy("usage.model_5e2c61")}</dt><dd>{model.nativeId}</dd><dt>{copy("usage.provider_472590")}</dt><dd>{model.providerId ? <ProductIdentity id={model.providerId} kind={ProductIdentityKind.Provider} /> : subscriptionServiceLabel(model.subscriptionService)}</dd>
  {data?.pricing?.provenance?<><dt>{copy("pricing.upstreamIdentity")}</dt><dd>{data.pricing.provenance.providerKey} · {data.pricing.provenance.modelKey}</dd><dt>{copy("pricing.snapshot")}</dt><dd>{data.pricing.provenance.snapshotSha256}</dd></>:null}</dl>
  {data?.reference?.costsJson.length?<pre>{new TextDecoder().decode(data.reference.costsJson)}</pre>:null}</Disclosure>
  <p>{copy("pricing.subscriptionEquivalent")}</p>

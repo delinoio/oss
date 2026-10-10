@@ -19,7 +19,8 @@ it("shows distinct exact Grok totals in summary, day, model and session views wi
   expect(screen.queryByText("20")).toBeNull();
   expect(screen.getByText(/estimated-budget contribution are unavailable/)).toBeTruthy();
   const tables = screen.getAllByRole("table"); expect(tables).toHaveLength(3);
-  expect(within(tables[0]).getByText("original-account")).toBeTruthy();
+  expect(tables[0].textContent).not.toContain("original-account");
+  expect(within(tables[0]).getByText("Original account")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Original session" })); expect(open).toHaveBeenCalledWith("original-session");
 });
 
@@ -61,7 +62,7 @@ it("shows both localized endpoints of a clipped daily interval with an exclusive
   expect(within(daily).getByText("(exclusive)")).toBeTruthy();
 });
 
-it("retains original project IDs beside duplicate and renamed project labels", () => {
+it("retains safe project numbers beside duplicate and renamed project labels", () => {
   const totals = { accounting: [{ kind: AccountingUnitKind.GROK_CLOSED_INPUT, units: 1, knownTotal: "16", measuredUnits: 1 }] };
   const projects = ["original-project-one", "original-project-two"];
   const data = create(GetUsageSummaryResponseSchema, {
@@ -72,12 +73,18 @@ it("retains original project IDs beside duplicate and renamed project labels", (
   const view = render(<GrokAccounting data={data} open={() => {}} />);
   const table = screen.getByRole("table", { name: "Grok inputs by original session, account and model" });
   expect(within(table).getAllByText("Shared project label")).toHaveLength(2);
-  for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+  for (const project of projects) expect(table.textContent).not.toContain(project);
+  expect(within(table).getAllByText(/^Project [0-9]+$/)).toHaveLength(2);
+  const numbers = [...table.querySelectorAll("tbody tr")].map(row => row.querySelector("small")?.textContent);
+  data.groups.reverse();
+  view.rerender(<GrokAccounting data={data} open={() => {}} />);
+  expect([...table.querySelectorAll("tbody tr")].map(row => row.querySelector("small")?.textContent)).toEqual([...numbers].reverse());
   data.groups[0].projectName = "Renamed project";
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
   expect(within(table).getByText("Renamed project")).toBeTruthy();
   expect(within(table).getByText("Shared project label")).toBeTruthy();
-  for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+  for (const project of projects) expect(table.textContent).not.toContain(project);
+  expect(within(table).getAllByText(/^Project [0-9]+$/)).toHaveLength(2);
 });
 
 it.each(["duplicate", "unknown"])("does not render an invalid %s source as an empty supported source", kind => {

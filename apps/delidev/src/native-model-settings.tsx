@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampText } from "./timestamp-display";
@@ -20,6 +22,7 @@ import { ServiceProblem, Failure, Problem, failureSummary  } from "./ui";
 
 export function NativeModelSettings({ active, createModel, selectedAccounts, pendingOperation }: { active: boolean; createModel: (data: Document) => void; selectedAccounts?: Resource[]; pendingOperation?: (pending: boolean) => void }) {
   useLocale();
+  const productIdentity = useProductIdentity();
   const inspection = useRunnerRemediation();
   const [opened, setOpened] = useState(false);
   const [machine, setMachine] = useState<Resource>();
@@ -70,13 +73,13 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     <fieldset disabled={!supported || blocked || observationPending}>
       <legend>{copy("native-model-settings.observationScope_329506")}</legend>
       <ResourceChoice label={copy("native-model-settings.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine?.id ?? ""} active={active && supported} change={(_id, _data, row) => { runnerTouched.current = true; runner.touch(); setMachine(row); reset(); }} />
-      {selectedAccounts ? <label>{copy("native-model-settings.connectedSelectedAccount")}<select value={account?.id ?? ""} onChange={event => { setAccount(selectedAccounts.find(row => row.id === event.target.value)); reset(); }}><option value="">{copy("native-model-settings.selectAccount")}</option>{selectedAccounts.map(row => <option key={row.id} value={row.id}>{text(document(row).alias) || row.id}</option>)}</select></label> : <ResourceChoice label={copy("native-model-settings.connectedAccount_3903f0")} kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />}
+      {selectedAccounts ? <label>{copy("native-model-settings.connectedSelectedAccount")}<select value={account?.id ?? ""} onChange={event => { setAccount(selectedAccounts.find(row => row.id === event.target.value)); reset(); }}><option value="">{copy("native-model-settings.selectAccount")}</option>{selectedAccounts.map(row => <option key={row.id} value={row.id}>{productIdentity.label(row.id, ProductIdentityKind.Account, text(document(row).alias))}</option>)}</select></label> : <ResourceChoice label={copy("native-model-settings.connectedAccount_3903f0")} kind={EntityKind.ACCOUNT} value={account?.id ?? ""} active={active && supported} change={(_id, _data, row) => { setAccount(row); reset(); }} />}
       <label><input type="checkbox" checked={hidden} onChange={(event) => { setHidden(event.target.checked); reset(); }} />{copy("native-model-settings.includeHiddenModels_64799e")}</label>
       <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={!machine || !account || !accountSelected || !document(account).connection} onClick={() => { runner.touch(); void discovery.send({ mutation: { requestId: newRequestId(), id: machine!.id, expectedRevision: machine!.revision }, accountId: account!.id, accountRevision: account!.revision, includeHidden: hidden }); }}>{copy("native-model-settings.observeModels_cf8865")}</SettingsActionButton>
     </fieldset>
     {runner.guidance}<Problem error={discovery.error} />
     {discovery.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={discovery.busy} onClick={discovery.retry}>{copy("native-model-settings.retryTheSameObservationRequest_0b6c58")}</SettingsActionButton> : null}
-    <label>{copy("native-model-settings.originalObservationId_949ead")}<input value={lookup} maxLength={36} disabled={blocked || observationPending} onChange={(event) => setLookup(event.target.value)} /></label>
+    <label>{copy("native-model-settings.originalObservationId_949ead")}<input type="password" autoComplete="off" value={lookup} maxLength={36} disabled={blocked || observationPending} onChange={(event) => setLookup(event.target.value)} /></label>
     <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={!supported || blocked || observationPending || !lookup} onClick={() => { setJobID(lookup); setObservationID(""); }}>{copy("native-model-settings.inspectObservation_ded69a")}</SettingsActionButton>
     {job && (state !== "succeeded" || text(object(document(job).problem).message)) ? <div><OperationStatus state={state} />
       {["queued", "claimed"].includes(state) ? <SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={blocked} onClick={() => void cancellation.send({ mutation: { requestId: newRequestId(), id: job.id, expectedRevision: job.revision } })}>{copy("native-model-settings.cancelObservation_0f4be7")}</SettingsActionButton> : null}
@@ -88,7 +91,7 @@ export function NativeModelSettings({ active, createModel, selectedAccounts, pen
     <Failure failure={models.error?.failure} />
     {models.error?.failure.code === FailureCode.Internal ? <p role="alert">{copy("native-model-settings.theObservationPageIsMalformedNo_ac73dd")}</p> : null}
     {models.loaded && !models.rows.length && !models.error ? <p>{copy("native-model-settings.noNativeModelsInThisObservation_a24b4f")}</p> : null}
-    {models.loaded && selectedObservation ? <><p>{<TimestampText id={"native-model-settings.observedAt"} values={{ v0: <Timestamp value={text(object(document(selectedObservation).output).observed_at)} fallback={copy("native-model-settings.extra.ca1844969742")} /> }} />}</p><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <>{selectedObservation.id}</>, s1: <>{text(observedScope.account_id)}</>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p></> : null}
+    {models.loaded && selectedObservation ? <><p>{<TimestampText id={"native-model-settings.observedAt"} values={{ v0: <Timestamp value={text(object(document(selectedObservation).output).observed_at)} fallback={copy("native-model-settings.extra.ca1844969742")} /> }} />}</p><p><LocalizedText id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d" components={{ s0: <><ProductIdentity id={selectedObservation.id} kind={ProductIdentityKind.Operation} /></>, s1: <><ProductIdentity id={text(observedScope.account_id)} kind={ProductIdentityKind.Account} /></>, s2: <>{String(observedScope.installation_generation ?? copy("native-model-settings.extra.ca1844969742"))}</> }} /></p></> : null}
     <div ref={listRoot} className="conversation-page-scroll"><ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={models} root={listRoot} active={active && opened && !blocked}>{payload => {
       if (!payload.length) return null;
       const page = payload[0], entries = payload.map(row => row.entry), observedScope = object(document(page.job).input);

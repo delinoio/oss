@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { useShortcuts } from "./shortcut-provider";
@@ -63,14 +65,15 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
 
 function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
   useLocale();
+  const productIdentity = useProductIdentity();
   const native = value.source === Source.NATIVE_INPUT;
   const state = State[value.state].toLowerCase().replaceAll("_", " ");
-  return <article className="result" aria-label={copy("request-diagnostics.message_42d375", { v0: native ? copy("request-diagnostics.nativeInput_f0007b") : copy("request-diagnostics.httpRequest_f1ee11"), v1: value.id })}>
+  return <article className="result" aria-label={copy("request-diagnostics.message_42d375", { v0: native ? copy("request-diagnostics.nativeInput_f0007b") : copy("request-diagnostics.httpRequest_f1ee11"), v1: productIdentity.label(value.id, ProductIdentityKind.Request) })}>
     <h3>{native ? copy("request-diagnostics.nativeInput_f0007b") : Operation[value.operation].toLowerCase()} · {state}</h3>
     <dl>
-      <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd>{value.id}</dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd>{value.executionId}</dd>
-      <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd>{value.accountId}</dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd>{value.connectionId}</dd>
-      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.model?.nativeId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
+      <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd><ProductIdentity id={value.id} kind={ProductIdentityKind.Request} /></dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd><ProductIdentity id={value.executionId} kind={ProductIdentityKind.Execution} /></dd>
+      <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd><ProductIdentity id={value.accountId} kind={ProductIdentityKind.Account} /></dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd><ProductIdentity id={value.connectionId} kind={ProductIdentityKind.Connection} /></dd>
+      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : <ProductIdentity id={value.providerId} kind={ProductIdentityKind.Provider} />}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.model?.nativeId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
       <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd><Timestamp value={value.observedAt} /></dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd><Timestamp value={value.finishedAt} fallback={copy("request-diagnostics.unavailable_ca1844")} /></dd>
       <dt>{copy("request-diagnostics.httpLatency_4cebf1")}</dt><dd>{value.durationMs === undefined ? copy("request-diagnostics.unavailable_ca1844") : copy("request-diagnostics.ms_d659ce", { v0: value.durationMs.toString() })}</dd>
       <dt>{copy("request-diagnostics.httpAttempt_4a264f")}</dt><dd>{value.httpAttempted === undefined ? copy("request-diagnostics.unavailable_ca1844") : value.httpAttempted ? copy("request-diagnostics.sendClaimedProviderAcceptanceIsUnconfirmed_0370a9") : copy("request-diagnostics.noHttpAttempt_56754e")}</dd>
@@ -81,7 +84,7 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       <dt>{native ? copy("request-diagnostics.nativeEffectiveServiceTier_d412ae") : copy("request-diagnostics.providerObservedServiceTier_01a40b")}</dt><dd>{value.effectiveServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
     </dl>
     <section><h3>{copy("request-diagnostics.originalIdentities_580b0d")}</h3><dl>{[
-      [copy("request-diagnostics.extra.406c0cd17230"), value.publicationRequestId], [copy("request-diagnostics.extra.5f1a25573a30"), value.correlationId], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
+      [copy("request-diagnostics.extra.406c0cd17230"), productIdentity.label(value.publicationRequestId, ProductIdentityKind.Request)], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
       [copy("request-diagnostics.extra.45d8583658f2"), value.providerRequestId], [copy("request-diagnostics.extra.6e5cd62e3845"), value.nativeResponseId], [copy("request-diagnostics.extra.230d0da59fbf"), value.nativeThreadId], [copy("request-diagnostics.extra.a12de5a8959e"), value.nativeTurnId],
     ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></section>
   </article>;
@@ -111,7 +114,7 @@ export function RequestDiagnostics({ sessionId, close }: { sessionId: string; cl
     <p>{copy("request-diagnostics.nativeInputsAndIndividualHttpAttempts_6d3cf6")}</p>
     <p>{copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}</p>
     <form onSubmit={(event) => { event.preventDefault(); if (draft && !isEntityId(draft)) { setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a")); return; } setProblem(""); if (draft !== execution) setExecution(draft); }}>
-      <label>{copy("request-diagnostics.executionIdOptional_43c4ca")}<input ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>{copy("request-diagnostics.applyExecutionFilter_591b7d")}</button>
+      <label>{copy("request-diagnostics.executionIdOptional_43c4ca")}<input type="password" ref={input} value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} /></label><button disabled={!supported}>{copy("request-diagnostics.applyExecutionFilter_591b7d")}</button>
     </form>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={status.error} /><Failure failure={result.error?.failure} />
     {status.isPending ? <p role="status">{copy("request-diagnostics.checkingDiagnosticSupport_65aa48")}</p> : status.data && !supported ? <p>{copy("request-diagnostics.requestDiagnosticsAreUnavailableOnThis_cb5bc2")}</p> : null}

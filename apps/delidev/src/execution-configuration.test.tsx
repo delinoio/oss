@@ -72,7 +72,8 @@ it("shows the immutable ordered instructions as inert read-only text without nat
   expect(detail(saved, "Requested concurrency")).toBe("4");
   expect(detail(saved, "Requested approval review model")).toBe("original-review");
   expect(detail(saved, "Requested service tier")).toBe("priority");
-  expect(screen.getByLabelText("Saved account order").children[0].textContent).toContain(value.configuration.accounts[0].id);
+  expect(screen.getByLabelText("Saved account order").children[0].textContent).not.toContain(value.configuration.accounts[0].id);
+  expect(screen.getByLabelText("Saved account order").children[0].textContent).toMatch(/Account [0-9]+/);
 });
 
 it("distinguishes missing native values from requested settings and empty native observations", () => {
@@ -97,8 +98,10 @@ it("preserves first-execution choices while separately identifying retained prio
   expect(screen.getByText(/retained observations belong to an earlier execution/)).toBeTruthy();
   expect(screen.getByLabelText("Combined applied instructions").textContent).toBe(value.configuration.instructions);
   const saved = screen.getByRole("region", { name: "Saved execution configuration" });
-  expect(detail(document.body, "First account")).toBe(value.data.initial_execution.initial_account_id);
-  expect(detail(document.body, "Selected execution account")).toBe(next.current_execution.account_id);
+  expect(detail(document.body, "First account")).toMatch(/^Account [0-9]+$/);
+  expect(document.body.textContent).not.toContain(value.data.initial_execution.initial_account_id);
+  expect(detail(document.body, "Selected execution account")).toMatch(/^Account [0-9]+$/);
+  expect(document.body.textContent).not.toContain(next.current_execution.account_id);
   const bound = { ...next, execution: { ...next.execution, execution_id: next.current_execution.id, input_id: next.current_execution.input_id } };
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, revision: 11n, documentJson: encode(bound) }} />);
   expect(screen.queryByText(/retained observations belong to an earlier execution/)).toBeNull();
@@ -131,7 +134,8 @@ it("keeps unavailable snapshots, unknown options and imprecise revisions explici
   expect(screen.queryByText("private unknown data")).toBeNull();
   expect(screen.getByText(/No native settings have been observed/)).toBeTruthy();
   expect(screen.queryByText("unbound-model")).toBeNull();
-  expect(screen.getByText(`${value.configuration.agent_id} · revision Unavailable`)).toBeTruthy();
+  expect(document.body.textContent).not.toContain(value.configuration.agent_id);
+  expect(screen.getByText(/^Agent Worker [0-9]+ · revision Unavailable$/)).toBeTruthy();
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, schemaVersion: 2 }} />);
   expect(screen.getByText(/session document version is not supported/)).toBeTruthy();
   expect(screen.queryByLabelText("Combined applied instructions")).toBeNull();

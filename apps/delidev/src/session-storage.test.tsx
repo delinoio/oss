@@ -125,7 +125,8 @@ it.each([Code.NotFound, Code.Unavailable])("makes an externally removed session 
   expect(screen.queryByText("Permanent deletion completed.")).toBeNull();
   fireEvent.click(await screen.findByRole("button",{name:"Finish storage view"}));
   fireEvent.click(screen.getAllByRole("button",{name:"Workspace storage and permanent deletion"})[1]!);
-  expect(await screen.findByText(new RegExp(`Next session.*${next.id}`))).not.toBeNull();
+  expect(await screen.findByText(/Next session.*Session [0-9]+/)).not.toBeNull();
+  expect(document.body.textContent).not.toContain(next.id);
  }else{
   expect(screen.queryByRole("button",{name:"Finish storage view"})).toBeNull();
   expect(getDeletion).not.toHaveBeenCalled();

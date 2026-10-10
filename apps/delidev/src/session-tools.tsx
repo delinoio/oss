@@ -1,3 +1,5 @@
+import { ProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { useSessionQuery as useQuery, useSessionActive } from "./session-activity";
 import { FlatDisclosureScope } from "./disclosure";
 import { statusLabel } from "./product-status";
@@ -25,7 +27,7 @@ function RetainedJob({ id, title, diagnosticsTarget, sessionId }: { id: string; 
   const active = useSessionActive();
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id });
   const row = result.data?.resource, succeeded = row?.id === id && row.kind === EntityKind.JOB && row.sessionId === sessionId && row.schemaVersion === 1 && row.revision > 0n && document(row).state === "succeeded" && !text(object(document(row).problem).message) && !result.error;
-  return <><section hidden={succeeded}><h4>{title}</h4><Problem error={result.error} />{row ? <TrackedJob initial={row} active={active} /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>{diagnosticsTarget ? createPortal(<section><h3>{title}</h3><p>{id} · {row?.revision.toString()} · {text(document(row).state)}</p><Problem error={result.error}/></section>, diagnosticsTarget) : null}</>;
+  return <><section hidden={succeeded}><h4>{title}</h4><Problem error={result.error} />{row ? <TrackedJob initial={row} active={active} /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>{diagnosticsTarget ? createPortal(<section><h3>{title}</h3><p><ProductIdentity id={id} kind={ProductIdentityKind.Operation} /> · {row?.revision.toString()} · {text(document(row).state)}</p><Problem error={result.error}/></section>, diagnosticsTarget) : null}</>;
 }
 export function SessionTools({ resource, changed, initiallyOpen = false, children, target, launcherTarget, openRecovery, diagnosticsTarget }: { resource: Resource; changed: (resource: Resource) => void; initiallyOpen?: boolean; children?: ReactNode; target?: HTMLElement | null; launcherTarget?: HTMLElement | null; openRecovery?: (opener: HTMLButtonElement) => void; diagnosticsTarget?: HTMLElement | null }) {
   useLocale();
@@ -60,7 +62,7 @@ export function SessionTools({ resource, changed, initiallyOpen = false, childre
   };
   const recoveryActions = <div className="actions">{!sidechat && data.archive === "active" && ["failed", "canceled"].includes(text(preparation.state)) && data.recovery === "none" ? <button disabled={blocked} onClick={event => { request(RecoveryAction.Prepare, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.prepareWorkspaceAgain_3a819b")}</button> : null}{!sidechat && data.archive !== "archived" && preparation.state === "uncertain" ? <><button disabled={blocked} onClick={event => { request(RecoveryAction.InspectWorkspace, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.inspectOriginalWorkspaceRecovery_b53ede")}</button><button disabled={blocked} onClick={event => { request(RecoveryAction.CleanupWorkspace, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.cleanIncompletePreparation_bc39ad")}</button></> : null}{data.archive !== "archived" && data.recovery === "required" && executionId ? <button disabled={blocked} onClick={event => { request(RecoveryAction.Execution, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.reconcileOriginalExecution_71e689")}</button> : null}</div>;
   const technical = <section className="session-information-section"><h3>{copy("session-name.sessionDetails")}</h3><dl>
-      <dt>{copy("session-tools.sessionId")}</dt><dd>{resource.id} · {resource.revision.toString()}</dd>
+      <dt>{copy("session-tools.sessionId")}</dt><dd><ProductIdentity id={resource.id} kind={ProductIdentityKind.Session} name={resourceName(resource)} /> · {resource.revision.toString()}</dd>
       <dt>{copy("session-tools.dispatch")}</dt><dd>{statusValue(data.dispatch)}</dd>
       <dt>{copy("session-tools.preparation")}</dt><dd>{statusValue(preparation.state)}</dd>
       <dt>{copy("session-tools.recovery")}</dt><dd>{statusValue(data.recovery)}</dd>
