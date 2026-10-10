@@ -175,7 +175,7 @@ func (r *claudePublicRecoveryFixture) reconcile(t *testing.T, ctx context.Contex
 	}
 	// Claim version describes first execution versus continuation, not the
 	// conversation turn count. Every later execution uses version 2.
-	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recovery) != nil || domain.Decode(recovery.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.ClaudeCode || comparison.Claude == nil || comparison.Claude.ClaimVersion != originalInput.Version {
+	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recovery) != nil || domain.Decode(recovery.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.ClaudeCode || comparison.Claude == nil || !claudeRecoveryClaimMatches(originalInput, comparison.Claude.ClaimVersion) {
 		t.Fatal("original Claude comparison profile changed")
 	}
 	var evidence domain.ExecutionRecoveryEvidence
