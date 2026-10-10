@@ -19,6 +19,7 @@
 .settings-content.settings-repositories .repository-metadata > div { min-width: 0; }
 .settings-content.settings-repositories .repository-metadata dt { margin-bottom: 6px; font-size: 12px; line-height: 18px; color: var(--muted); }
 .settings-content.settings-repositories .repository-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.settings-content.settings-repositories .repository-checkout-path { white-space: pre-wrap; overflow-wrap: anywhere; }
 .settings-content.settings-repositories .repository-metadata ul { padding: 0; margin: 0; list-style: none; }
 .settings-content.settings-repositories .repository-metadata li + li { margin-top: 8px; }
 .settings-content.settings-repositories .repository-github-name { font-weight: 500; }
