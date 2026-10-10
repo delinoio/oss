@@ -67,8 +67,8 @@ export function useSessionInboxRead(sessionId: string, active: boolean, admitted
   useEffect(() => {
     if (!presented || !availableConversation(region) || !epoch || !foreground.current || !active || !admitted || !loaded || !isEntityId(sessionId) || mutation.busy || attempted.current === epoch) return;
     attempted.current = epoch;
-    const original = { sessionId, epoch }, controller = new AbortController();
-    
+    const original = { sessionId }, controller = new AbortController();
+
     const eligible = () => availableConversation(region) && !controller.signal.aborted && current.current.sessionId === original.sessionId && current.current.active && current.current.admitted && current.current.loaded && foreground.current && document.visibilityState === "visible" && document.hasFocus();
     // Reinspect the initial transcript and session on this activation. Retained
     // payloads alone cannot prove that a stale/reconnected scope loaded safely.
