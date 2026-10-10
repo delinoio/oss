@@ -2225,7 +2225,8 @@ Existing warning/configWarning handling remains unchanged.
 
 The [strict-review-required schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/StrictReviewRequiredNotification.json)
 requires the original `threadId`, known `turnId` and nonnegative int64
-`startedAtMs`. Accept this advisory only for the original active turn and selected
+`startedAtMs`. The pinned [notification catalog](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/common.rs) maps this family to
+`autoApprovalReview/strictReviewRequired`; accept only that exact discriminator. Accept this advisory only for the original active turn and selected
 `auto_review`/`on-request` configuration. Retain the observed turn/timestamp in a
 private bounded replay registry. Exact replay, including after original turn
 completion, produces no second public notice; a new terminal observation cannot

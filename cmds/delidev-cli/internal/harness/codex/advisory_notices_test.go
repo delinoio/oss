@@ -20,7 +20,7 @@ func advisoryFixture() (*Client, domain.ID) {
 	return c, turn
 }
 func TestGuardianDeprecationStrictReviewKeepOnlyBoundedNoticesAndOriginalCompletion(t *testing.T) {
-	for _, method := range []string{"guardianWarning", "deprecationNotice", "strictReviewRequired"} {
+	for _, method := range []string{"guardianWarning", "deprecationNotice", "autoApprovalReview/strictReviewRequired"} {
 		t.Run(method, func(t *testing.T) {
 			c, turn := advisoryFixture()
 			settings := c.execution.settings
@@ -28,7 +28,7 @@ func TestGuardianDeprecationStrictReviewKeepOnlyBoundedNoticesAndOriginalComplet
 			if method == "deprecationNotice" {
 				params = map[string]any{"summary": "private-deprecated-setting", "details": nil}
 			}
-			if method == "strictReviewRequired" {
+			if method == "autoApprovalReview/strictReviewRequired" {
 				params = map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 0}
 			}
 			event, err := observeFixture(c, method, params)
@@ -46,7 +46,7 @@ func TestGuardianDeprecationStrictReviewKeepOnlyBoundedNoticesAndOriginalComplet
 			if err != nil || event.Kind != TurnCompletedEvent || event.Late || !event.Correlated {
 				t.Fatal("notice blocked original completion", event, err)
 			}
-			if method == "strictReviewRequired" {
+			if method == "autoApprovalReview/strictReviewRequired" {
 				replay, err := observeFixture(c, method, params)
 				if err != nil || replay.Kind != MetadataEvent || replay.Metadata != StrictReviewReplayChecked {
 					t.Fatal("exact terminal replay regained progress", replay, err)
@@ -60,7 +60,7 @@ func TestGuardianDeprecationStrictReviewKeepOnlyBoundedNoticesAndOriginalComplet
 	}
 }
 func TestGuardianDeprecationStrictReviewMalformedAndForeignFences(t *testing.T) {
-	for _, method := range []string{"guardianWarning", "deprecationNotice", "strictReviewRequired"} {
+	for _, method := range []string{"guardianWarning", "deprecationNotice", "autoApprovalReview/strictReviewRequired"} {
 		for _, change := range []string{"missing", "null", "unknown", "oversized", "foreign", "negative", "reviewer", "turn", "notification-kind"} {
 			t.Run(method+"/"+change, func(t *testing.T) {
 				c, turn := advisoryFixture()
@@ -68,7 +68,7 @@ func TestGuardianDeprecationStrictReviewMalformedAndForeignFences(t *testing.T) 
 				if method == "deprecationNotice" {
 					params = map[string]any{"summary": "private-summary", "details": nil}
 				}
-				if method == "strictReviewRequired" {
+				if method == "autoApprovalReview/strictReviewRequired" {
 					params = map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 1}
 				}
 				switch change {
@@ -104,17 +104,17 @@ func TestGuardianDeprecationStrictReviewMalformedAndForeignFences(t *testing.T) 
 					}
 					params["threadId"] = domain.NewID()
 				case "negative":
-					if method != "strictReviewRequired" {
+					if method != "autoApprovalReview/strictReviewRequired" {
 						return
 					}
 					params["startedAtMs"] = -1
 				case "reviewer":
-					if method != "strictReviewRequired" {
+					if method != "autoApprovalReview/strictReviewRequired" {
 						return
 					}
 					c.execution.settings.ApprovalsReviewer = "user"
 				case "turn":
-					if method != "strictReviewRequired" {
+					if method != "autoApprovalReview/strictReviewRequired" {
 						return
 					}
 					params["turnId"] = domain.NewID()
@@ -136,7 +136,7 @@ func TestGuardianDeprecationStrictReviewMalformedAndForeignFences(t *testing.T) 
 	}
 	c, turn := advisoryFixture()
 	raw := `{"threadId":"` + string(c.thread) + `","turnId":"` + string(turn) + `","startedAtMs":0,"startedAtMs":1}`
-	if _, err := c.observeEventLocked(nativewire.Event{Kind: nativewire.Notification, Method: "strictReviewRequired", Params: json.RawMessage(raw)}); err == nil {
+	if _, err := c.observeEventLocked(nativewire.Event{Kind: nativewire.Notification, Method: "autoApprovalReview/strictReviewRequired", Params: json.RawMessage(raw)}); err == nil {
 		t.Fatal("duplicate native keys accepted")
 	}
 }
@@ -146,11 +146,11 @@ func TestStrictReviewNoticeReplayAndRecoveryRemainIndependent(t *testing.T) {
 	c.problem = problem
 	c.execution.paused = true
 	params := map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 23}
-	first, err := observeFixture(c, "strictReviewRequired", params)
+	first, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", params)
 	if err != nil || first.Kind != NoticeEvent {
 		t.Fatal(err)
 	}
-	replay, err := observeFixture(c, "strictReviewRequired", params)
+	replay, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", params)
 	if err != nil || replay.Metadata != StrictReviewReplayChecked || len(c.execution.strictReviewNotices) != 1 {
 		t.Fatal("replay changed progress", err)
 	}
@@ -162,7 +162,7 @@ func TestStrictReviewNoticeReplayAndRecoveryRemainIndependent(t *testing.T) {
 		c.execution.strictReviewNotices[strictReviewNoticeKey{Turn: turn, StartedAtMS: int64(i)}] = true
 	}
 	params["startedAtMs"] = maxTrackedTurns
-	if _, err := observeFixture(c, "strictReviewRequired", params); err == nil {
+	if _, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", params); err == nil {
 		t.Fatal("notice retention bound ignored")
 	}
 }
@@ -193,7 +193,7 @@ func TestStrictReviewNoticeCannotSettleNativeReviewOrChangeSandbox(t *testing.T)
 	if _, err := observeFixture(c, "item/autoApprovalReview/started", start); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := observeFixture(c, "strictReviewRequired", map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 10}); err != nil {
+	if _, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 10}); err != nil {
 		t.Fatal(err)
 	}
 	if c.execution.autoReviews[turn].Closed() || !reflect.DeepEqual(settings, c.execution.settings) {
@@ -205,7 +205,7 @@ func TestStrictReviewNoticeCannotSettleNativeReviewOrChangeSandbox(t *testing.T)
 	if _, err := observeFixture(c, "item/autoApprovalReview/completed", reviewFixture(c.thread, turn, "denied")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := observeFixture(c, "strictReviewRequired", map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 11}); err != nil {
+	if _, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 11}); err != nil {
 		t.Fatal(err)
 	}
 	if c.execution.autoReviews[turn]["review-fixture"].Status != domain.AutoReviewDenied || !reflect.DeepEqual(settings, c.execution.settings) {
@@ -213,9 +213,10 @@ func TestStrictReviewNoticeCannotSettleNativeReviewOrChangeSandbox(t *testing.T)
 	}
 }
 
-func TestGuardianDeprecationOrderedWireLogsRemainPrivate(t *testing.T) {
-	c, capture := openThreadFixture(t, "thread-turn-ready")
+func TestGuardianDeprecationStrictReviewOrderedWireLogsRemainPrivate(t *testing.T) {
+	c, capture := openThreadFixture(t, "thread-turn-advisory-auto-review")
 	settings := threadSettings(t)
+	settings.Options.ApprovalsReviewer = domain.CodexReviewerAuto
 	if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +234,7 @@ func TestGuardianDeprecationOrderedWireLogsRemainPrivate(t *testing.T) {
 	}{
 		{"guardianWarning", map[string]any{"threadId": c.thread, "message": "private-wire-guardian-instructions"}},
 		{"deprecationNotice", map[string]any{"summary": "private-wire-deprecation", "details": "private-wire-migration"}},
+		{"autoApprovalReview/strictReviewRequired", map[string]any{"threadId": c.thread, "turnId": result.TurnID, "startedAtMs": 0}},
 	} {
 		fixtureSignal(t, c, "notify", map[string]any{"method": item.method, "params": item.params})
 		event := nextKind(t, c, NoticeEvent)
@@ -248,5 +250,13 @@ func TestGuardianDeprecationOrderedWireLogsRemainPrivate(t *testing.T) {
 	event := nextKind(t, c, TurnCompletedEvent)
 	if event.TurnID != result.TurnID || event.Turn.Status != TurnCompleted {
 		t.Fatal("original result replaced")
+	}
+}
+
+func TestStrictReviewNoticeRejectsBareDiscriminator(t *testing.T) {
+	c, turn := advisoryFixture()
+	event, err := observeFixture(c, "strictReviewRequired", map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 0})
+	if err != nil || event.Kind != NativeExtensionEvent || event.Correlated || len(c.execution.strictReviewNotices) != 0 {
+		t.Fatal("unsupported bare discriminator gained notice authority", event, err)
 	}
 }

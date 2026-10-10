@@ -45,7 +45,7 @@ func (c *Client) observeAdvisoryNoticeLocked(native nativewire.Event) (Event, er
 			return Event{}, incompatible()
 		}
 		return Event{Kind: NoticeEvent, ThreadID: c.thread, Notice: domain.NativeConfigWarning, Correlated: true}, nil
-	case "strictReviewRequired":
+	case "autoApprovalReview/strictReviewRequired":
 		var p struct {
 			ThreadID    domain.ID `json:"threadId"`
 			TurnID      domain.ID `json:"turnId"`

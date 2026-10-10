@@ -150,7 +150,7 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 		result["serviceTier"] = nil
 	case "thread-policy":
 		result["approvalPolicy"] = "never"
-	case "thread-reviewer":
+	case "thread-reviewer", "thread-turn-advisory-auto-review":
 		result["approvalsReviewer"] = "auto_review"
 	case "thread-sandbox":
 		result["sandbox"] = map[string]any{"type": "dangerFullAccess"}
