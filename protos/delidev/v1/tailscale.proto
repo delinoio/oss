@@ -5,21 +5,24 @@ import "delidev/v1/device.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 service TailscaleService {
- rpc ListTailscalePeerConnections(ListTailscaleConnectionsRequest) returns (ListTailscaleConnectionsResponse);
- rpc CancelTailscalePeerConnection(PollTailscalePeerConnectionRequest) returns (TailscaleConnectionResponse);
- rpc DeliverTailscaleWorkerGrant(DeliverTailscaleWorkerGrantRequest) returns (DeliverTailscaleWorkerGrantResponse);
+  rpc GetTailscaleWorker(GetTailscaleWorkerRequest) returns (GetTailscaleWorkerResponse);
+  rpc StartTailscaleWorker(StartTailscaleWorkerRequest) returns (StartTailscaleWorkerResponse);
+  rpc StopTailscaleWorker(StopTailscaleWorkerRequest) returns (StopTailscaleWorkerResponse);
+  rpc ListTailscalePeerConnections(ListTailscalePeerConnectionsRequest) returns (ListTailscalePeerConnectionsResponse);
+  rpc CancelTailscalePeerConnection(CancelTailscalePeerConnectionRequest) returns (CancelTailscalePeerConnectionResponse);
+  rpc DeliverTailscaleWorkerGrant(DeliverTailscaleWorkerGrantRequest) returns (DeliverTailscaleWorkerGrantResponse);
   rpc GetTailscaleStatus(GetTailscaleStatusRequest) returns (GetTailscaleStatusResponse);
   rpc ReadTailscaleDevices(ReadTailscaleDevicesRequest) returns (ReadTailscaleDevicesResponse);
   rpc CheckTailscaleDevice(CheckTailscaleDeviceRequest) returns (CheckTailscaleDeviceResponse);
   rpc GetTailscaleAccess(GetTailscaleAccessRequest) returns (GetTailscaleAccessResponse);
-  rpc SetTailscaleAccess(SetTailscaleAccessRequest) returns (GetTailscaleAccessResponse);
-  rpc RequestTailscaleConnection(RequestTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
-  rpc GetTailscaleConnection(GetTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc SetTailscaleAccess(SetTailscaleAccessRequest) returns (SetTailscaleAccessResponse);
+  rpc RequestTailscaleConnection(RequestTailscaleConnectionRequest) returns (RequestTailscaleConnectionResponse);
+  rpc GetTailscaleConnection(GetTailscaleConnectionRequest) returns (GetTailscaleConnectionResponse);
   rpc ListTailscaleConnections(ListTailscaleConnectionsRequest) returns (ListTailscaleConnectionsResponse);
-  rpc DecideTailscaleConnection(DecideTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
-  rpc CancelTailscaleConnection(GetTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
-  rpc StartTailscalePeerConnection(StartTailscalePeerConnectionRequest) returns (TailscaleConnectionResponse);
-  rpc PollTailscalePeerConnection(PollTailscalePeerConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc DecideTailscaleConnection(DecideTailscaleConnectionRequest) returns (DecideTailscaleConnectionResponse);
+  rpc CancelTailscaleConnection(CancelTailscaleConnectionRequest) returns (CancelTailscaleConnectionResponse);
+  rpc StartTailscalePeerConnection(StartTailscalePeerConnectionRequest) returns (StartTailscalePeerConnectionResponse);
+  rpc PollTailscalePeerConnection(PollTailscalePeerConnectionRequest) returns (PollTailscalePeerConnectionResponse);
   rpc CompleteTailscalePeerConnection(CompleteTailscalePeerConnectionRequest) returns (CompleteTailscalePeerConnectionResponse);
 }
 enum TailscaleDiscoveryState {
@@ -87,6 +90,7 @@ message ReadTailscaleDevicesResponse {
 }
 message CheckTailscaleDeviceRequest {
   string peer_id = 1;
+  string expected_origin = 2;
 }
 message CheckTailscaleDeviceResponse {
   TailscalePeerState state = 1;
@@ -129,6 +133,8 @@ message TailscaleConnection {
   bytes encrypted_grant = 11;
   string worker_server_id = 12;
   string worker_server_origin = 13;
+  string decision_id = 14;
+  bool decision_allow = 15;
 }
 message TailscaleConnectionResponse {
   TailscaleConnection connection = 1;
@@ -168,11 +174,87 @@ message CompleteTailscalePeerConnectionResponse {
 }
 
 message DeliverTailscaleWorkerGrantRequest {
- string request_id = 1;
- bytes requester_key = 2;
- bytes encrypted_grant = 3;
+  string request_id = 1;
+  bytes requester_key = 2;
+  bytes encrypted_grant = 3;
 }
 message DeliverTailscaleWorkerGrantResponse {
- string worker_device_id = 1;
- bool completed = 2;
+  string worker_device_id = 1;
+  bool completed = 2;
+}
+
+message ListTailscalePeerConnectionsRequest {}
+message ListTailscalePeerConnectionsResponse {
+  repeated TailscaleConnection connections = 1;
+}
+message CancelTailscalePeerConnectionRequest {
+  string request_id = 1;
+}
+message CancelTailscalePeerConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message SetTailscaleAccessResponse {
+  TailscaleAccessState state = 1;
+  string origin = 2;
+  bool enabled = 3;
+}
+message RequestTailscaleConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message GetTailscaleConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message DecideTailscaleConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message CancelTailscaleConnectionRequest {
+  string request_id = 1;
+  bytes requester_key = 2;
+}
+message CancelTailscaleConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message StartTailscalePeerConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message PollTailscalePeerConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+
+enum TailscaleWorkerState {
+  TAILSCALE_WORKER_STATE_UNSPECIFIED = 0;
+  TAILSCALE_WORKER_STATE_NOT_STARTED = 1;
+  TAILSCALE_WORKER_STATE_STARTING = 2;
+  TAILSCALE_WORKER_STATE_RUNNING = 3;
+  TAILSCALE_WORKER_STATE_STOPPING = 4;
+  TAILSCALE_WORKER_STATE_STOPPED = 5;
+  TAILSCALE_WORKER_STATE_UNCERTAIN = 6;
+  TAILSCALE_WORKER_STATE_EXITED = 7;
+}
+message GetTailscaleWorkerRequest {
+  string approval_request_id = 1;
+}
+message GetTailscaleWorkerResponse {
+  TailscaleWorkerState state = 1;
+  string generation = 2;
+}
+message StartTailscaleWorkerRequest {
+  string approval_request_id = 1;
+  string request_id = 2;
+  string expected_generation = 3;
+}
+message StartTailscaleWorkerResponse {
+  TailscaleWorkerState state = 1;
+  string generation = 2;
+  string request_id = 3;
+}
+message StopTailscaleWorkerRequest {
+  string approval_request_id = 1;
+  string request_id = 2;
+  string expected_generation = 3;
+}
+message StopTailscaleWorkerResponse {
+  TailscaleWorkerState state = 1;
+  string generation = 2;
+  string request_id = 3;
 }

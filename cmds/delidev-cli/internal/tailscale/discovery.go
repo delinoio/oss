@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,7 +77,9 @@ func (c CLI) Read(ctx context.Context, args ...string) ([]byte, error) {
 	cmd.Stdin = nil
 	var output limitedBuffer
 	cmd.Stdout = &output
-	cmd.Stderr = io.Discard
+	var diagnostic limitedBuffer
+	diagnostic.limit = 8 << 10
+	cmd.Stderr = &diagnostic
 	err := cmd.Run()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -91,6 +94,9 @@ func (c CLI) Read(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, ReadFailure{Malformed}
 	}
 	if err != nil {
+		if !diagnostic.over && bytes.Contains(diagnostic.Bytes(), []byte("Access denied:")) {
+			return nil, ReadFailure{PermissionDenied}
+		}
 		// A failing status command may still return a typed backend state.
 		if len(args) == 2 && args[0] == "status" && args[1] == "--json" && output.Len() > 0 {
 			return output.Bytes(), nil
@@ -102,12 +108,17 @@ func (c CLI) Read(ctx context.Context, args ...string) ([]byte, error) {
 
 type limitedBuffer struct {
 	bytes.Buffer
-	over bool
+	over  bool
+	limit int
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
-	if b.Len()+n > MaxOutput {
+	limit := b.limit
+	if limit == 0 {
+		limit = MaxOutput
+	}
+	if b.Len()+n > limit {
 		b.over = true
 		return n, nil
 	}
@@ -212,6 +223,13 @@ func DecodeStatus(raw []byte) (Discovery, error) {
 		if err != nil {
 			return Peer{}, err
 		}
+		for _, value := range []json.Number{p.UserID, p.AltSharerUserID} {
+			if value != "" {
+				if _, err := strconv.ParseUint(string(value), 10, 63); err != nil {
+					return Peer{}, invalid()
+				}
+			}
+		}
 		owner := Unknown
 		if len(p.Tags) > 0 {
 			owner = Tagged
@@ -237,12 +255,14 @@ func DecodeStatus(raw []byte) (Discovery, error) {
 		}
 	}
 	seen := map[string]bool{self.ID: true}
+	origins := map[string]bool{self.Origin: true}
 	for _, wirePeer := range wire.Peer {
 		peer, err := normalize(wirePeer)
-		if err != nil || seen[peer.ID] {
+		if err != nil || seen[peer.ID] || origins[peer.Origin] {
 			return bad(Malformed)
 		}
 		seen[peer.ID] = true
+		origins[peer.Origin] = true
 		result.Peers = append(result.Peers, peer)
 	}
 	sort.Slice(result.Peers, func(i, j int) bool { return result.Peers[i].ID < result.Peers[j].ID })

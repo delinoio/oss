@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delidev/v1/tailscale.proto.
  */
 export const file_delidev_v1_tailscale: GenFile = /*@__PURE__*/
-  fileDesc("ChpkZWxpZGV2L3YxL3RhaWxzY2FsZS5wcm90bxIKZGVsaWRldi52MSJ8Cg1UYWlsc2NhbGVQZWVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGb3JpZ2luGAMgASgJEg4KBm9ubGluZRgEIAEoCBIxCglvd25lcnNoaXAYBSABKA4yHi5kZWxpZGV2LnYxLlRhaWxzY2FsZU93bmVyc2hpcCIbChlHZXRUYWlsc2NhbGVTdGF0dXNSZXF1ZXN0ImYKGkdldFRhaWxzY2FsZVN0YXR1c1Jlc3BvbnNlEhEKCXNlcnZlcl9pZBgBIAEoCRIOCgZvcmlnaW4YAiABKAkSEgoKcHVibGljX2tleRgDIAEoDBIRCglhY2NlcHRpbmcYBCABKAgiHQobUmVhZFRhaWxzY2FsZURldmljZXNSZXF1ZXN0IroBChxSZWFkVGFpbHNjYWxlRGV2aWNlc1Jlc3BvbnNlEjIKBXN0YXRlGAEgASgOMiMuZGVsaWRldi52MS5UYWlsc2NhbGVEaXNjb3ZlcnlTdGF0ZRInCgRzZWxmGAIgASgLMhkuZGVsaWRldi52MS5UYWlsc2NhbGVQZWVyEigKBXBlZXJzGAMgAygLMhkuZGVsaWRldi52MS5UYWlsc2NhbGVQZWVyEhMKC2h0dHBzX3JlYWR5GAQgASgIIi4KG0NoZWNrVGFpbHNjYWxlRGV2aWNlUmVxdWVzdBIPCgdwZWVyX2lkGAEgASgJImAKHENoZWNrVGFpbHNjYWxlRGV2aWNlUmVzcG9uc2USLQoFc3RhdGUYASABKA4yHi5kZWxpZGV2LnYxLlRhaWxzY2FsZVBlZXJTdGF0ZRIRCglzZXJ2ZXJfaWQYAiABKAkiGwoZR2V0VGFpbHNjYWxlQWNjZXNzUmVxdWVzdCJuChpHZXRUYWlsc2NhbGVBY2Nlc3NSZXNwb25zZRIvCgVzdGF0ZRgBIAEoDjIgLmRlbGlkZXYudjEuVGFpbHNjYWxlQWNjZXNzU3RhdGUSDgoGb3JpZ2luGAIgASgJEg8KB2VuYWJsZWQYAyABKAgiYgoZU2V0VGFpbHNjYWxlQWNjZXNzUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEg4KBmVuYWJsZRgCIAEoCBIRCglzZXJ2ZXJfaWQYAyABKAkSDgoGb3JpZ2luGAQgASgJIoQCCiFSZXF1ZXN0VGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIWCg5yZXF1ZXN0ZXJfbmFtZRgCIAEoCRIVCg1yZXF1ZXN0ZXJfa2V5GAMgASgMEhEKCXNlcnZlcl9pZBgEIAEoCRIOCgZvcmlnaW4YBSABKAkSJAoEcm9sZRgGIAEoDjIWLmRlbGlkZXYudjEuRGV2aWNlVHlwZRIbChNvYnNlcnZlZF90YXJnZXRfa2V5GAcgASgMEhgKEHdvcmtlcl9zZXJ2ZXJfaWQYCCABKAkSHAoUd29ya2VyX3NlcnZlcl9vcmlnaW4YCSABKAki6AIKE1RhaWxzY2FsZUNvbm5lY3Rpb24SEgoKcmVxdWVzdF9pZBgBIAEoCRIWCg5yZXF1ZXN0ZXJfbmFtZRgCIAEoCRIVCg1yZXF1ZXN0ZXJfa2V5GAMgASgMEhIKCnRhcmdldF9rZXkYBCABKAwSEQoJc2VydmVyX2lkGAUgASgJEg4KBm9yaWdpbhgGIAEoCRIkCgRyb2xlGAcgASgOMhYuZGVsaWRldi52MS5EZXZpY2VUeXBlEhkKEWNvbmZpcm1hdGlvbl9jb2RlGAggASgJEhIKCmV4cGlyZXNfYXQYCSABKAkSMQoFc3RhdGUYCiABKA4yIi5kZWxpZGV2LnYxLlRhaWxzY2FsZUFwcHJvdmFsU3RhdGUSFwoPZW5jcnlwdGVkX2dyYW50GAsgASgMEhgKEHdvcmtlcl9zZXJ2ZXJfaWQYDCABKAkSHAoUd29ya2VyX3NlcnZlcl9vcmlnaW4YDSABKAkiUgobVGFpbHNjYWxlQ29ubmVjdGlvblJlc3BvbnNlEjMKCmNvbm5lY3Rpb24YASABKAsyHy5kZWxpZGV2LnYxLlRhaWxzY2FsZUNvbm5lY3Rpb24iSgodR2V0VGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIVCg1yZXF1ZXN0ZXJfa2V5GAIgASgMIiEKH0xpc3RUYWlsc2NhbGVDb25uZWN0aW9uc1JlcXVlc3QiWAogTGlzdFRhaWxzY2FsZUNvbm5lY3Rpb25zUmVzcG9uc2USNAoLY29ubmVjdGlvbnMYASADKAsyHy5kZWxpZGV2LnYxLlRhaWxzY2FsZUNvbm5lY3Rpb24idQogRGVjaWRlVGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRITCgtkZWNpc2lvbl9pZBgCIAEoCRIZChFjb25maXJtYXRpb25fY29kZRgDIAEoCRINCgVhbGxvdxgEIAEoCCKhAQojU3RhcnRUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIPCgdwZWVyX2lkGAIgASgJEiQKBHJvbGUYAyABKA4yFi5kZWxpZGV2LnYxLkRldmljZVR5cGUSFQoNdGFyZ2V0X29yaWdpbhgEIAEoCRIYChB0YXJnZXRfc2VydmVyX2lkGAUgASgJIjgKIlBvbGxUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCSJXCiZDb21wbGV0ZVRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhkKEWNvbmZpcm1hdGlvbl9jb2RlGAIgASgJImoKJ0NvbXBsZXRlVGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXNwb25zZRISCgpwcm9maWxlX2lkGAEgASgJEhgKEHdvcmtlcl9kZXZpY2VfaWQYAiABKAkSEQoJY29tcGxldGVkGAMgASgIImgKIkRlbGl2ZXJUYWlsc2NhbGVXb3JrZXJHcmFudFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIVCg1yZXF1ZXN0ZXJfa2V5GAIgASgMEhcKD2VuY3J5cHRlZF9ncmFudBgDIAEoDCJSCiNEZWxpdmVyVGFpbHNjYWxlV29ya2VyR3JhbnRSZXNwb25zZRIYChB3b3JrZXJfZGV2aWNlX2lkGAEgASgJEhEKCWNvbXBsZXRlZBgCIAEoCCrlAgoXVGFpbHNjYWxlRGlzY292ZXJ5U3RhdGUSKQolVEFJTFNDQUxFX0RJU0NPVkVSWV9TVEFURV9VTlNQRUNJRklFRBAAEiMKH1RBSUxTQ0FMRV9ESVNDT1ZFUllfU1RBVEVfUkVBRFkQARIlCiFUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX01JU1NJTkcQAhIlCiFUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX1NUT1BQRUQQAxIoCiRUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX0xPR0dFRF9PVVQQBBIvCitUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX1BFUk1JU1NJT05fREVOSUVEEAUSJwojVEFJTFNDQUxFX0RJU0NPVkVSWV9TVEFURV9NQUxGT1JNRUQQBhIoCiRUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX0lOQ09NUExFVEUQByq3AQoSVGFpbHNjYWxlT3duZXJzaGlwEiMKH1RBSUxTQ0FMRV9PV05FUlNISVBfVU5TUEVDSUZJRUQQABIbChdUQUlMU0NBTEVfT1dORVJTSElQX09XThABEh4KGlRBSUxTQ0FMRV9PV05FUlNISVBfU0hBUkVEEAISHgoaVEFJTFNDQUxFX09XTkVSU0hJUF9UQUdHRUQQAxIfChtUQUlMU0NBTEVfT1dORVJTSElQX1VOS05PV04QBCqUAgoSVGFpbHNjYWxlUGVlclN0YXRlEiQKIFRBSUxTQ0FMRV9QRUVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASJAogVEFJTFNDQUxFX1BFRVJfU1RBVEVfTk9UX0NIRUNLRUQQARIiCh5UQUlMU0NBTEVfUEVFUl9TVEFURV9BQ0NFUFRJTkcQAhIgChxUQUlMU0NBTEVfUEVFUl9TVEFURV9PRkZMSU5FEAMSJAogVEFJTFNDQUxFX1BFRVJfU1RBVEVfVExTX0ZBSUxVUkUQBBIgChxUQUlMU0NBTEVfUEVFUl9TVEFURV9CTE9DS0VEEAUSJAogVEFJTFNDQUxFX1BFRVJfU1RBVEVfVU5TVVBQT1JURUQQBiqBAgoWVGFpbHNjYWxlQXBwcm92YWxTdGF0ZRIoCiRUQUlMU0NBTEVfQVBQUk9WQUxfU1RBVEVfVU5TUEVDSUZJRUQQABIkCiBUQUlMU0NBTEVfQVBQUk9WQUxfU1RBVEVfUEVORElORxABEiUKIVRBSUxTQ0FMRV9BUFBST1ZBTF9TVEFURV9BUFBST1ZFRBACEiMKH1RBSUxTQ0FMRV9BUFBST1ZBTF9TVEFURV9ERU5JRUQQAxIkCiBUQUlMU0NBTEVfQVBQUk9WQUxfU1RBVEVfRVhQSVJFRBAEEiUKIVRBSUxTQ0FMRV9BUFBST1ZBTF9TVEFURV9DQU5DRUxFRBAFKvoBChRUYWlsc2NhbGVBY2Nlc3NTdGF0ZRImCiJUQUlMU0NBTEVfQUNDRVNTX1NUQVRFX1VOU1BFQ0lGSUVEEAASHgoaVEFJTFNDQUxFX0FDQ0VTU19TVEFURV9PRkYQARIjCh9UQUlMU0NBTEVfQUNDRVNTX1NUQVRFX1NUQVJUSU5HEAISIAocVEFJTFNDQUxFX0FDQ0VTU19TVEFURV9SRUFEWRADEiYKIlRBSUxTQ0FMRV9BQ0NFU1NfU1RBVEVfVU5BVkFJTEFCTEUQBBIrCidUQUlMU0NBTEVfQUNDRVNTX1NUQVRFX0NMRUFOVVBfUkVRVUlSRUQQBTLLDgoQVGFpbHNjYWxlU2VydmljZRJ5ChxMaXN0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb25zEisuZGVsaWRldi52MS5MaXN0VGFpbHNjYWxlQ29ubmVjdGlvbnNSZXF1ZXN0GiwuZGVsaWRldi52MS5MaXN0VGFpbHNjYWxlQ29ubmVjdGlvbnNSZXNwb25zZRJ4Ch1DYW5jZWxUYWlsc2NhbGVQZWVyQ29ubmVjdGlvbhIuLmRlbGlkZXYudjEuUG9sbFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVxdWVzdBonLmRlbGlkZXYudjEuVGFpbHNjYWxlQ29ubmVjdGlvblJlc3BvbnNlEn4KG0RlbGl2ZXJUYWlsc2NhbGVXb3JrZXJHcmFudBIuLmRlbGlkZXYudjEuRGVsaXZlclRhaWxzY2FsZVdvcmtlckdyYW50UmVxdWVzdBovLmRlbGlkZXYudjEuRGVsaXZlclRhaWxzY2FsZVdvcmtlckdyYW50UmVzcG9uc2USYwoSR2V0VGFpbHNjYWxlU3RhdHVzEiUuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVTdGF0dXNSZXF1ZXN0GiYuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVTdGF0dXNSZXNwb25zZRJpChRSZWFkVGFpbHNjYWxlRGV2aWNlcxInLmRlbGlkZXYudjEuUmVhZFRhaWxzY2FsZURldmljZXNSZXF1ZXN0GiguZGVsaWRldi52MS5SZWFkVGFpbHNjYWxlRGV2aWNlc1Jlc3BvbnNlEmkKFENoZWNrVGFpbHNjYWxlRGV2aWNlEicuZGVsaWRldi52MS5DaGVja1RhaWxzY2FsZURldmljZVJlcXVlc3QaKC5kZWxpZGV2LnYxLkNoZWNrVGFpbHNjYWxlRGV2aWNlUmVzcG9uc2USYwoSR2V0VGFpbHNjYWxlQWNjZXNzEiUuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVBY2Nlc3NSZXF1ZXN0GiYuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVBY2Nlc3NSZXNwb25zZRJjChJTZXRUYWlsc2NhbGVBY2Nlc3MSJS5kZWxpZGV2LnYxLlNldFRhaWxzY2FsZUFjY2Vzc1JlcXVlc3QaJi5kZWxpZGV2LnYxLkdldFRhaWxzY2FsZUFjY2Vzc1Jlc3BvbnNlEnQKGlJlcXVlc3RUYWlsc2NhbGVDb25uZWN0aW9uEi0uZGVsaWRldi52MS5SZXF1ZXN0VGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLlRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRJsChZHZXRUYWlsc2NhbGVDb25uZWN0aW9uEikuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVDb25uZWN0aW9uUmVxdWVzdBonLmRlbGlkZXYudjEuVGFpbHNjYWxlQ29ubmVjdGlvblJlc3BvbnNlEnUKGExpc3RUYWlsc2NhbGVDb25uZWN0aW9ucxIrLmRlbGlkZXYudjEuTGlzdFRhaWxzY2FsZUNvbm5lY3Rpb25zUmVxdWVzdBosLmRlbGlkZXYudjEuTGlzdFRhaWxzY2FsZUNvbm5lY3Rpb25zUmVzcG9uc2UScgoZRGVjaWRlVGFpbHNjYWxlQ29ubmVjdGlvbhIsLmRlbGlkZXYudjEuRGVjaWRlVGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QaJy5kZWxpZGV2LnYxLlRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRJvChlDYW5jZWxUYWlsc2NhbGVDb25uZWN0aW9uEikuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVDb25uZWN0aW9uUmVxdWVzdBonLmRlbGlkZXYudjEuVGFpbHNjYWxlQ29ubmVjdGlvblJlc3BvbnNlEngKHFN0YXJ0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb24SLy5kZWxpZGV2LnYxLlN0YXJ0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXF1ZXN0GicuZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uUmVzcG9uc2USdgobUG9sbFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uEi4uZGVsaWRldi52MS5Qb2xsVGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXF1ZXN0GicuZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uUmVzcG9uc2USigEKH0NvbXBsZXRlVGFpbHNjYWxlUGVlckNvbm5lY3Rpb24SMi5kZWxpZGV2LnYxLkNvbXBsZXRlVGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXF1ZXN0GjMuZGVsaWRldi52MS5Db21wbGV0ZVRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVzcG9uc2VCPFo6Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZWxpZGV2L3YxO2RlbGlkZXZ2MWIGcHJvdG8z", [file_delidev_v1_device]);
+  fileDesc("ChpkZWxpZGV2L3YxL3RhaWxzY2FsZS5wcm90bxIKZGVsaWRldi52MSJ8Cg1UYWlsc2NhbGVQZWVyEgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSDgoGb3JpZ2luGAMgASgJEg4KBm9ubGluZRgEIAEoCBIxCglvd25lcnNoaXAYBSABKA4yHi5kZWxpZGV2LnYxLlRhaWxzY2FsZU93bmVyc2hpcCIbChlHZXRUYWlsc2NhbGVTdGF0dXNSZXF1ZXN0ImYKGkdldFRhaWxzY2FsZVN0YXR1c1Jlc3BvbnNlEhEKCXNlcnZlcl9pZBgBIAEoCRIOCgZvcmlnaW4YAiABKAkSEgoKcHVibGljX2tleRgDIAEoDBIRCglhY2NlcHRpbmcYBCABKAgiHQobUmVhZFRhaWxzY2FsZURldmljZXNSZXF1ZXN0IroBChxSZWFkVGFpbHNjYWxlRGV2aWNlc1Jlc3BvbnNlEjIKBXN0YXRlGAEgASgOMiMuZGVsaWRldi52MS5UYWlsc2NhbGVEaXNjb3ZlcnlTdGF0ZRInCgRzZWxmGAIgASgLMhkuZGVsaWRldi52MS5UYWlsc2NhbGVQZWVyEigKBXBlZXJzGAMgAygLMhkuZGVsaWRldi52MS5UYWlsc2NhbGVQZWVyEhMKC2h0dHBzX3JlYWR5GAQgASgIIkcKG0NoZWNrVGFpbHNjYWxlRGV2aWNlUmVxdWVzdBIPCgdwZWVyX2lkGAEgASgJEhcKD2V4cGVjdGVkX29yaWdpbhgCIAEoCSJgChxDaGVja1RhaWxzY2FsZURldmljZVJlc3BvbnNlEi0KBXN0YXRlGAEgASgOMh4uZGVsaWRldi52MS5UYWlsc2NhbGVQZWVyU3RhdGUSEQoJc2VydmVyX2lkGAIgASgJIhsKGUdldFRhaWxzY2FsZUFjY2Vzc1JlcXVlc3QibgoaR2V0VGFpbHNjYWxlQWNjZXNzUmVzcG9uc2USLwoFc3RhdGUYASABKA4yIC5kZWxpZGV2LnYxLlRhaWxzY2FsZUFjY2Vzc1N0YXRlEg4KBm9yaWdpbhgCIAEoCRIPCgdlbmFibGVkGAMgASgIImIKGVNldFRhaWxzY2FsZUFjY2Vzc1JlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIOCgZlbmFibGUYAiABKAgSEQoJc2VydmVyX2lkGAMgASgJEg4KBm9yaWdpbhgEIAEoCSKEAgohUmVxdWVzdFRhaWxzY2FsZUNvbm5lY3Rpb25SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFgoOcmVxdWVzdGVyX25hbWUYAiABKAkSFQoNcmVxdWVzdGVyX2tleRgDIAEoDBIRCglzZXJ2ZXJfaWQYBCABKAkSDgoGb3JpZ2luGAUgASgJEiQKBHJvbGUYBiABKA4yFi5kZWxpZGV2LnYxLkRldmljZVR5cGUSGwoTb2JzZXJ2ZWRfdGFyZ2V0X2tleRgHIAEoDBIYChB3b3JrZXJfc2VydmVyX2lkGAggASgJEhwKFHdvcmtlcl9zZXJ2ZXJfb3JpZ2luGAkgASgJIpUDChNUYWlsc2NhbGVDb25uZWN0aW9uEhIKCnJlcXVlc3RfaWQYASABKAkSFgoOcmVxdWVzdGVyX25hbWUYAiABKAkSFQoNcmVxdWVzdGVyX2tleRgDIAEoDBISCgp0YXJnZXRfa2V5GAQgASgMEhEKCXNlcnZlcl9pZBgFIAEoCRIOCgZvcmlnaW4YBiABKAkSJAoEcm9sZRgHIAEoDjIWLmRlbGlkZXYudjEuRGV2aWNlVHlwZRIZChFjb25maXJtYXRpb25fY29kZRgIIAEoCRISCgpleHBpcmVzX2F0GAkgASgJEjEKBXN0YXRlGAogASgOMiIuZGVsaWRldi52MS5UYWlsc2NhbGVBcHByb3ZhbFN0YXRlEhcKD2VuY3J5cHRlZF9ncmFudBgLIAEoDBIYChB3b3JrZXJfc2VydmVyX2lkGAwgASgJEhwKFHdvcmtlcl9zZXJ2ZXJfb3JpZ2luGA0gASgJEhMKC2RlY2lzaW9uX2lkGA4gASgJEhYKDmRlY2lzaW9uX2FsbG93GA8gASgIIlIKG1RhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRIzCgpjb25uZWN0aW9uGAEgASgLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uIkoKHUdldFRhaWxzY2FsZUNvbm5lY3Rpb25SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFQoNcmVxdWVzdGVyX2tleRgCIAEoDCIhCh9MaXN0VGFpbHNjYWxlQ29ubmVjdGlvbnNSZXF1ZXN0IlgKIExpc3RUYWlsc2NhbGVDb25uZWN0aW9uc1Jlc3BvbnNlEjQKC2Nvbm5lY3Rpb25zGAEgAygLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uInUKIERlY2lkZVRhaWxzY2FsZUNvbm5lY3Rpb25SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSEwoLZGVjaXNpb25faWQYAiABKAkSGQoRY29uZmlybWF0aW9uX2NvZGUYAyABKAkSDQoFYWxsb3cYBCABKAgioQEKI1N0YXJ0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSDwoHcGVlcl9pZBgCIAEoCRIkCgRyb2xlGAMgASgOMhYuZGVsaWRldi52MS5EZXZpY2VUeXBlEhUKDXRhcmdldF9vcmlnaW4YBCABKAkSGAoQdGFyZ2V0X3NlcnZlcl9pZBgFIAEoCSI4CiJQb2xsVGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkiVwomQ29tcGxldGVUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRIZChFjb25maXJtYXRpb25fY29kZRgCIAEoCSJqCidDb21wbGV0ZVRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVzcG9uc2USEgoKcHJvZmlsZV9pZBgBIAEoCRIYChB3b3JrZXJfZGV2aWNlX2lkGAIgASgJEhEKCWNvbXBsZXRlZBgDIAEoCCJoCiJEZWxpdmVyVGFpbHNjYWxlV29ya2VyR3JhbnRSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFQoNcmVxdWVzdGVyX2tleRgCIAEoDBIXCg9lbmNyeXB0ZWRfZ3JhbnQYAyABKAwiUgojRGVsaXZlclRhaWxzY2FsZVdvcmtlckdyYW50UmVzcG9uc2USGAoQd29ya2VyX2RldmljZV9pZBgBIAEoCRIRCgljb21wbGV0ZWQYAiABKAgiJQojTGlzdFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uc1JlcXVlc3QiXAokTGlzdFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uc1Jlc3BvbnNlEjQKC2Nvbm5lY3Rpb25zGAEgAygLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uIjoKJENhbmNlbFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJIlwKJUNhbmNlbFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVzcG9uc2USMwoKY29ubmVjdGlvbhgBIAEoCzIfLmRlbGlkZXYudjEuVGFpbHNjYWxlQ29ubmVjdGlvbiJuChpTZXRUYWlsc2NhbGVBY2Nlc3NSZXNwb25zZRIvCgVzdGF0ZRgBIAEoDjIgLmRlbGlkZXYudjEuVGFpbHNjYWxlQWNjZXNzU3RhdGUSDgoGb3JpZ2luGAIgASgJEg8KB2VuYWJsZWQYAyABKAgiWQoiUmVxdWVzdFRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRIzCgpjb25uZWN0aW9uGAEgASgLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uIlUKHkdldFRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRIzCgpjb25uZWN0aW9uGAEgASgLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uIlgKIURlY2lkZVRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRIzCgpjb25uZWN0aW9uGAEgASgLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uIk0KIENhbmNlbFRhaWxzY2FsZUNvbm5lY3Rpb25SZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSFQoNcmVxdWVzdGVyX2tleRgCIAEoDCJYCiFDYW5jZWxUYWlsc2NhbGVDb25uZWN0aW9uUmVzcG9uc2USMwoKY29ubmVjdGlvbhgBIAEoCzIfLmRlbGlkZXYudjEuVGFpbHNjYWxlQ29ubmVjdGlvbiJbCiRTdGFydFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVzcG9uc2USMwoKY29ubmVjdGlvbhgBIAEoCzIfLmRlbGlkZXYudjEuVGFpbHNjYWxlQ29ubmVjdGlvbiJaCiNQb2xsVGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXNwb25zZRIzCgpjb25uZWN0aW9uGAEgASgLMh8uZGVsaWRldi52MS5UYWlsc2NhbGVDb25uZWN0aW9uIjgKGUdldFRhaWxzY2FsZVdvcmtlclJlcXVlc3QSGwoTYXBwcm92YWxfcmVxdWVzdF9pZBgBIAEoCSJhChpHZXRUYWlsc2NhbGVXb3JrZXJSZXNwb25zZRIvCgVzdGF0ZRgBIAEoDjIgLmRlbGlkZXYudjEuVGFpbHNjYWxlV29ya2VyU3RhdGUSEgoKZ2VuZXJhdGlvbhgCIAEoCSJrChtTdGFydFRhaWxzY2FsZVdvcmtlclJlcXVlc3QSGwoTYXBwcm92YWxfcmVxdWVzdF9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhsKE2V4cGVjdGVkX2dlbmVyYXRpb24YAyABKAkidwocU3RhcnRUYWlsc2NhbGVXb3JrZXJSZXNwb25zZRIvCgVzdGF0ZRgBIAEoDjIgLmRlbGlkZXYudjEuVGFpbHNjYWxlV29ya2VyU3RhdGUSEgoKZ2VuZXJhdGlvbhgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJImoKGlN0b3BUYWlsc2NhbGVXb3JrZXJSZXF1ZXN0EhsKE2FwcHJvdmFsX3JlcXVlc3RfaWQYASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRIbChNleHBlY3RlZF9nZW5lcmF0aW9uGAMgASgJInYKG1N0b3BUYWlsc2NhbGVXb3JrZXJSZXNwb25zZRIvCgVzdGF0ZRgBIAEoDjIgLmRlbGlkZXYudjEuVGFpbHNjYWxlV29ya2VyU3RhdGUSEgoKZ2VuZXJhdGlvbhgCIAEoCRISCgpyZXF1ZXN0X2lkGAMgASgJKuUCChdUYWlsc2NhbGVEaXNjb3ZlcnlTdGF0ZRIpCiVUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX1VOU1BFQ0lGSUVEEAASIwofVEFJTFNDQUxFX0RJU0NPVkVSWV9TVEFURV9SRUFEWRABEiUKIVRBSUxTQ0FMRV9ESVNDT1ZFUllfU1RBVEVfTUlTU0lORxACEiUKIVRBSUxTQ0FMRV9ESVNDT1ZFUllfU1RBVEVfU1RPUFBFRBADEigKJFRBSUxTQ0FMRV9ESVNDT1ZFUllfU1RBVEVfTE9HR0VEX09VVBAEEi8KK1RBSUxTQ0FMRV9ESVNDT1ZFUllfU1RBVEVfUEVSTUlTU0lPTl9ERU5JRUQQBRInCiNUQUlMU0NBTEVfRElTQ09WRVJZX1NUQVRFX01BTEZPUk1FRBAGEigKJFRBSUxTQ0FMRV9ESVNDT1ZFUllfU1RBVEVfSU5DT01QTEVURRAHKrcBChJUYWlsc2NhbGVPd25lcnNoaXASIwofVEFJTFNDQUxFX09XTkVSU0hJUF9VTlNQRUNJRklFRBAAEhsKF1RBSUxTQ0FMRV9PV05FUlNISVBfT1dOEAESHgoaVEFJTFNDQUxFX09XTkVSU0hJUF9TSEFSRUQQAhIeChpUQUlMU0NBTEVfT1dORVJTSElQX1RBR0dFRBADEh8KG1RBSUxTQ0FMRV9PV05FUlNISVBfVU5LTk9XThAEKpQCChJUYWlsc2NhbGVQZWVyU3RhdGUSJAogVEFJTFNDQUxFX1BFRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIkCiBUQUlMU0NBTEVfUEVFUl9TVEFURV9OT1RfQ0hFQ0tFRBABEiIKHlRBSUxTQ0FMRV9QRUVSX1NUQVRFX0FDQ0VQVElORxACEiAKHFRBSUxTQ0FMRV9QRUVSX1NUQVRFX09GRkxJTkUQAxIkCiBUQUlMU0NBTEVfUEVFUl9TVEFURV9UTFNfRkFJTFVSRRAEEiAKHFRBSUxTQ0FMRV9QRUVSX1NUQVRFX0JMT0NLRUQQBRIkCiBUQUlMU0NBTEVfUEVFUl9TVEFURV9VTlNVUFBPUlRFRBAGKoECChZUYWlsc2NhbGVBcHByb3ZhbFN0YXRlEigKJFRBSUxTQ0FMRV9BUFBST1ZBTF9TVEFURV9VTlNQRUNJRklFRBAAEiQKIFRBSUxTQ0FMRV9BUFBST1ZBTF9TVEFURV9QRU5ESU5HEAESJQohVEFJTFNDQUxFX0FQUFJPVkFMX1NUQVRFX0FQUFJPVkVEEAISIwofVEFJTFNDQUxFX0FQUFJPVkFMX1NUQVRFX0RFTklFRBADEiQKIFRBSUxTQ0FMRV9BUFBST1ZBTF9TVEFURV9FWFBJUkVEEAQSJQohVEFJTFNDQUxFX0FQUFJPVkFMX1NUQVRFX0NBTkNFTEVEEAUq+gEKFFRhaWxzY2FsZUFjY2Vzc1N0YXRlEiYKIlRBSUxTQ0FMRV9BQ0NFU1NfU1RBVEVfVU5TUEVDSUZJRUQQABIeChpUQUlMU0NBTEVfQUNDRVNTX1NUQVRFX09GRhABEiMKH1RBSUxTQ0FMRV9BQ0NFU1NfU1RBVEVfU1RBUlRJTkcQAhIgChxUQUlMU0NBTEVfQUNDRVNTX1NUQVRFX1JFQURZEAMSJgoiVEFJTFNDQUxFX0FDQ0VTU19TVEFURV9VTkFWQUlMQUJMRRAEEisKJ1RBSUxTQ0FMRV9BQ0NFU1NfU1RBVEVfQ0xFQU5VUF9SRVFVSVJFRBAFKsECChRUYWlsc2NhbGVXb3JrZXJTdGF0ZRImCiJUQUlMU0NBTEVfV09SS0VSX1NUQVRFX1VOU1BFQ0lGSUVEEAASJgoiVEFJTFNDQUxFX1dPUktFUl9TVEFURV9OT1RfU1RBUlRFRBABEiMKH1RBSUxTQ0FMRV9XT1JLRVJfU1RBVEVfU1RBUlRJTkcQAhIiCh5UQUlMU0NBTEVfV09SS0VSX1NUQVRFX1JVTk5JTkcQAxIjCh9UQUlMU0NBTEVfV09SS0VSX1NUQVRFX1NUT1BQSU5HEAQSIgoeVEFJTFNDQUxFX1dPUktFUl9TVEFURV9TVE9QUEVEEAUSJAogVEFJTFNDQUxFX1dPUktFUl9TVEFURV9VTkNFUlRBSU4QBhIhCh1UQUlMU0NBTEVfV09SS0VSX1NUQVRFX0VYSVRFRBAHMsQRChBUYWlsc2NhbGVTZXJ2aWNlEmMKEkdldFRhaWxzY2FsZVdvcmtlchIlLmRlbGlkZXYudjEuR2V0VGFpbHNjYWxlV29ya2VyUmVxdWVzdBomLmRlbGlkZXYudjEuR2V0VGFpbHNjYWxlV29ya2VyUmVzcG9uc2USaQoUU3RhcnRUYWlsc2NhbGVXb3JrZXISJy5kZWxpZGV2LnYxLlN0YXJ0VGFpbHNjYWxlV29ya2VyUmVxdWVzdBooLmRlbGlkZXYudjEuU3RhcnRUYWlsc2NhbGVXb3JrZXJSZXNwb25zZRJmChNTdG9wVGFpbHNjYWxlV29ya2VyEiYuZGVsaWRldi52MS5TdG9wVGFpbHNjYWxlV29ya2VyUmVxdWVzdBonLmRlbGlkZXYudjEuU3RvcFRhaWxzY2FsZVdvcmtlclJlc3BvbnNlEoEBChxMaXN0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb25zEi8uZGVsaWRldi52MS5MaXN0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb25zUmVxdWVzdBowLmRlbGlkZXYudjEuTGlzdFRhaWxzY2FsZVBlZXJDb25uZWN0aW9uc1Jlc3BvbnNlEoQBCh1DYW5jZWxUYWlsc2NhbGVQZWVyQ29ubmVjdGlvbhIwLmRlbGlkZXYudjEuQ2FuY2VsVGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXF1ZXN0GjEuZGVsaWRldi52MS5DYW5jZWxUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlc3BvbnNlEn4KG0RlbGl2ZXJUYWlsc2NhbGVXb3JrZXJHcmFudBIuLmRlbGlkZXYudjEuRGVsaXZlclRhaWxzY2FsZVdvcmtlckdyYW50UmVxdWVzdBovLmRlbGlkZXYudjEuRGVsaXZlclRhaWxzY2FsZVdvcmtlckdyYW50UmVzcG9uc2USYwoSR2V0VGFpbHNjYWxlU3RhdHVzEiUuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVTdGF0dXNSZXF1ZXN0GiYuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVTdGF0dXNSZXNwb25zZRJpChRSZWFkVGFpbHNjYWxlRGV2aWNlcxInLmRlbGlkZXYudjEuUmVhZFRhaWxzY2FsZURldmljZXNSZXF1ZXN0GiguZGVsaWRldi52MS5SZWFkVGFpbHNjYWxlRGV2aWNlc1Jlc3BvbnNlEmkKFENoZWNrVGFpbHNjYWxlRGV2aWNlEicuZGVsaWRldi52MS5DaGVja1RhaWxzY2FsZURldmljZVJlcXVlc3QaKC5kZWxpZGV2LnYxLkNoZWNrVGFpbHNjYWxlRGV2aWNlUmVzcG9uc2USYwoSR2V0VGFpbHNjYWxlQWNjZXNzEiUuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVBY2Nlc3NSZXF1ZXN0GiYuZGVsaWRldi52MS5HZXRUYWlsc2NhbGVBY2Nlc3NSZXNwb25zZRJjChJTZXRUYWlsc2NhbGVBY2Nlc3MSJS5kZWxpZGV2LnYxLlNldFRhaWxzY2FsZUFjY2Vzc1JlcXVlc3QaJi5kZWxpZGV2LnYxLlNldFRhaWxzY2FsZUFjY2Vzc1Jlc3BvbnNlEnsKGlJlcXVlc3RUYWlsc2NhbGVDb25uZWN0aW9uEi0uZGVsaWRldi52MS5SZXF1ZXN0VGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QaLi5kZWxpZGV2LnYxLlJlcXVlc3RUYWlsc2NhbGVDb25uZWN0aW9uUmVzcG9uc2USbwoWR2V0VGFpbHNjYWxlQ29ubmVjdGlvbhIpLmRlbGlkZXYudjEuR2V0VGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QaKi5kZWxpZGV2LnYxLkdldFRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRJ1ChhMaXN0VGFpbHNjYWxlQ29ubmVjdGlvbnMSKy5kZWxpZGV2LnYxLkxpc3RUYWlsc2NhbGVDb25uZWN0aW9uc1JlcXVlc3QaLC5kZWxpZGV2LnYxLkxpc3RUYWlsc2NhbGVDb25uZWN0aW9uc1Jlc3BvbnNlEngKGURlY2lkZVRhaWxzY2FsZUNvbm5lY3Rpb24SLC5kZWxpZGV2LnYxLkRlY2lkZVRhaWxzY2FsZUNvbm5lY3Rpb25SZXF1ZXN0Gi0uZGVsaWRldi52MS5EZWNpZGVUYWlsc2NhbGVDb25uZWN0aW9uUmVzcG9uc2USeAoZQ2FuY2VsVGFpbHNjYWxlQ29ubmVjdGlvbhIsLmRlbGlkZXYudjEuQ2FuY2VsVGFpbHNjYWxlQ29ubmVjdGlvblJlcXVlc3QaLS5kZWxpZGV2LnYxLkNhbmNlbFRhaWxzY2FsZUNvbm5lY3Rpb25SZXNwb25zZRKBAQocU3RhcnRUYWlsc2NhbGVQZWVyQ29ubmVjdGlvbhIvLmRlbGlkZXYudjEuU3RhcnRUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlcXVlc3QaMC5kZWxpZGV2LnYxLlN0YXJ0VGFpbHNjYWxlUGVlckNvbm5lY3Rpb25SZXNwb25zZRJ+ChtQb2xsVGFpbHNjYWxlUGVlckNvbm5lY3Rpb24SLi5kZWxpZGV2LnYxLlBvbGxUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlcXVlc3QaLy5kZWxpZGV2LnYxLlBvbGxUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlc3BvbnNlEooBCh9Db21wbGV0ZVRhaWxzY2FsZVBlZXJDb25uZWN0aW9uEjIuZGVsaWRldi52MS5Db21wbGV0ZVRhaWxzY2FsZVBlZXJDb25uZWN0aW9uUmVxdWVzdBozLmRlbGlkZXYudjEuQ29tcGxldGVUYWlsc2NhbGVQZWVyQ29ubmVjdGlvblJlc3BvbnNlQjxaOmdpdGh1Yi5jb20vZGVsaW5vaW8vb3NzL3Byb3Rvcy9nZW4vZ28vZGVsaWRldi92MTtkZWxpZGV2djFiBnByb3RvMw", [file_delidev_v1_device]);
 
 /**
  * @generated from message delidev.v1.TailscalePeer
@@ -149,6 +149,11 @@ export type CheckTailscaleDeviceRequest = Message<"delidev.v1.CheckTailscaleDevi
    * @generated from field: string peer_id = 1;
    */
   peerId: string;
+
+  /**
+   * @generated from field: string expected_origin = 2;
+   */
+  expectedOrigin: string;
 };
 
 /**
@@ -377,6 +382,16 @@ export type TailscaleConnection = Message<"delidev.v1.TailscaleConnection"> & {
    * @generated from field: string worker_server_origin = 13;
    */
   workerServerOrigin: string;
+
+  /**
+   * @generated from field: string decision_id = 14;
+   */
+  decisionId: string;
+
+  /**
+   * @generated from field: bool decision_allow = 15;
+   */
+  decisionAllow: boolean;
 };
 
 /**
@@ -640,6 +655,368 @@ export const DeliverTailscaleWorkerGrantResponseSchema: GenMessage<DeliverTailsc
   messageDesc(file_delidev_v1_tailscale, 22);
 
 /**
+ * @generated from message delidev.v1.ListTailscalePeerConnectionsRequest
+ */
+export type ListTailscalePeerConnectionsRequest = Message<"delidev.v1.ListTailscalePeerConnectionsRequest"> & {
+};
+
+/**
+ * Describes the message delidev.v1.ListTailscalePeerConnectionsRequest.
+ * Use `create(ListTailscalePeerConnectionsRequestSchema)` to create a new message.
+ */
+export const ListTailscalePeerConnectionsRequestSchema: GenMessage<ListTailscalePeerConnectionsRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 23);
+
+/**
+ * @generated from message delidev.v1.ListTailscalePeerConnectionsResponse
+ */
+export type ListTailscalePeerConnectionsResponse = Message<"delidev.v1.ListTailscalePeerConnectionsResponse"> & {
+  /**
+   * @generated from field: repeated delidev.v1.TailscaleConnection connections = 1;
+   */
+  connections: TailscaleConnection[];
+};
+
+/**
+ * Describes the message delidev.v1.ListTailscalePeerConnectionsResponse.
+ * Use `create(ListTailscalePeerConnectionsResponseSchema)` to create a new message.
+ */
+export const ListTailscalePeerConnectionsResponseSchema: GenMessage<ListTailscalePeerConnectionsResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 24);
+
+/**
+ * @generated from message delidev.v1.CancelTailscalePeerConnectionRequest
+ */
+export type CancelTailscalePeerConnectionRequest = Message<"delidev.v1.CancelTailscalePeerConnectionRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.CancelTailscalePeerConnectionRequest.
+ * Use `create(CancelTailscalePeerConnectionRequestSchema)` to create a new message.
+ */
+export const CancelTailscalePeerConnectionRequestSchema: GenMessage<CancelTailscalePeerConnectionRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 25);
+
+/**
+ * @generated from message delidev.v1.CancelTailscalePeerConnectionResponse
+ */
+export type CancelTailscalePeerConnectionResponse = Message<"delidev.v1.CancelTailscalePeerConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.CancelTailscalePeerConnectionResponse.
+ * Use `create(CancelTailscalePeerConnectionResponseSchema)` to create a new message.
+ */
+export const CancelTailscalePeerConnectionResponseSchema: GenMessage<CancelTailscalePeerConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 26);
+
+/**
+ * @generated from message delidev.v1.SetTailscaleAccessResponse
+ */
+export type SetTailscaleAccessResponse = Message<"delidev.v1.SetTailscaleAccessResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleAccessState state = 1;
+   */
+  state: TailscaleAccessState;
+
+  /**
+   * @generated from field: string origin = 2;
+   */
+  origin: string;
+
+  /**
+   * @generated from field: bool enabled = 3;
+   */
+  enabled: boolean;
+};
+
+/**
+ * Describes the message delidev.v1.SetTailscaleAccessResponse.
+ * Use `create(SetTailscaleAccessResponseSchema)` to create a new message.
+ */
+export const SetTailscaleAccessResponseSchema: GenMessage<SetTailscaleAccessResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 27);
+
+/**
+ * @generated from message delidev.v1.RequestTailscaleConnectionResponse
+ */
+export type RequestTailscaleConnectionResponse = Message<"delidev.v1.RequestTailscaleConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.RequestTailscaleConnectionResponse.
+ * Use `create(RequestTailscaleConnectionResponseSchema)` to create a new message.
+ */
+export const RequestTailscaleConnectionResponseSchema: GenMessage<RequestTailscaleConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 28);
+
+/**
+ * @generated from message delidev.v1.GetTailscaleConnectionResponse
+ */
+export type GetTailscaleConnectionResponse = Message<"delidev.v1.GetTailscaleConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.GetTailscaleConnectionResponse.
+ * Use `create(GetTailscaleConnectionResponseSchema)` to create a new message.
+ */
+export const GetTailscaleConnectionResponseSchema: GenMessage<GetTailscaleConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 29);
+
+/**
+ * @generated from message delidev.v1.DecideTailscaleConnectionResponse
+ */
+export type DecideTailscaleConnectionResponse = Message<"delidev.v1.DecideTailscaleConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.DecideTailscaleConnectionResponse.
+ * Use `create(DecideTailscaleConnectionResponseSchema)` to create a new message.
+ */
+export const DecideTailscaleConnectionResponseSchema: GenMessage<DecideTailscaleConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 30);
+
+/**
+ * @generated from message delidev.v1.CancelTailscaleConnectionRequest
+ */
+export type CancelTailscaleConnectionRequest = Message<"delidev.v1.CancelTailscaleConnectionRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bytes requester_key = 2;
+   */
+  requesterKey: Uint8Array;
+};
+
+/**
+ * Describes the message delidev.v1.CancelTailscaleConnectionRequest.
+ * Use `create(CancelTailscaleConnectionRequestSchema)` to create a new message.
+ */
+export const CancelTailscaleConnectionRequestSchema: GenMessage<CancelTailscaleConnectionRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 31);
+
+/**
+ * @generated from message delidev.v1.CancelTailscaleConnectionResponse
+ */
+export type CancelTailscaleConnectionResponse = Message<"delidev.v1.CancelTailscaleConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.CancelTailscaleConnectionResponse.
+ * Use `create(CancelTailscaleConnectionResponseSchema)` to create a new message.
+ */
+export const CancelTailscaleConnectionResponseSchema: GenMessage<CancelTailscaleConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 32);
+
+/**
+ * @generated from message delidev.v1.StartTailscalePeerConnectionResponse
+ */
+export type StartTailscalePeerConnectionResponse = Message<"delidev.v1.StartTailscalePeerConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.StartTailscalePeerConnectionResponse.
+ * Use `create(StartTailscalePeerConnectionResponseSchema)` to create a new message.
+ */
+export const StartTailscalePeerConnectionResponseSchema: GenMessage<StartTailscalePeerConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 33);
+
+/**
+ * @generated from message delidev.v1.PollTailscalePeerConnectionResponse
+ */
+export type PollTailscalePeerConnectionResponse = Message<"delidev.v1.PollTailscalePeerConnectionResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleConnection connection = 1;
+   */
+  connection?: TailscaleConnection | undefined;
+};
+
+/**
+ * Describes the message delidev.v1.PollTailscalePeerConnectionResponse.
+ * Use `create(PollTailscalePeerConnectionResponseSchema)` to create a new message.
+ */
+export const PollTailscalePeerConnectionResponseSchema: GenMessage<PollTailscalePeerConnectionResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 34);
+
+/**
+ * @generated from message delidev.v1.GetTailscaleWorkerRequest
+ */
+export type GetTailscaleWorkerRequest = Message<"delidev.v1.GetTailscaleWorkerRequest"> & {
+  /**
+   * @generated from field: string approval_request_id = 1;
+   */
+  approvalRequestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetTailscaleWorkerRequest.
+ * Use `create(GetTailscaleWorkerRequestSchema)` to create a new message.
+ */
+export const GetTailscaleWorkerRequestSchema: GenMessage<GetTailscaleWorkerRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 35);
+
+/**
+ * @generated from message delidev.v1.GetTailscaleWorkerResponse
+ */
+export type GetTailscaleWorkerResponse = Message<"delidev.v1.GetTailscaleWorkerResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleWorkerState state = 1;
+   */
+  state: TailscaleWorkerState;
+
+  /**
+   * @generated from field: string generation = 2;
+   */
+  generation: string;
+};
+
+/**
+ * Describes the message delidev.v1.GetTailscaleWorkerResponse.
+ * Use `create(GetTailscaleWorkerResponseSchema)` to create a new message.
+ */
+export const GetTailscaleWorkerResponseSchema: GenMessage<GetTailscaleWorkerResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 36);
+
+/**
+ * @generated from message delidev.v1.StartTailscaleWorkerRequest
+ */
+export type StartTailscaleWorkerRequest = Message<"delidev.v1.StartTailscaleWorkerRequest"> & {
+  /**
+   * @generated from field: string approval_request_id = 1;
+   */
+  approvalRequestId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string expected_generation = 3;
+   */
+  expectedGeneration: string;
+};
+
+/**
+ * Describes the message delidev.v1.StartTailscaleWorkerRequest.
+ * Use `create(StartTailscaleWorkerRequestSchema)` to create a new message.
+ */
+export const StartTailscaleWorkerRequestSchema: GenMessage<StartTailscaleWorkerRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 37);
+
+/**
+ * @generated from message delidev.v1.StartTailscaleWorkerResponse
+ */
+export type StartTailscaleWorkerResponse = Message<"delidev.v1.StartTailscaleWorkerResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleWorkerState state = 1;
+   */
+  state: TailscaleWorkerState;
+
+  /**
+   * @generated from field: string generation = 2;
+   */
+  generation: string;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.StartTailscaleWorkerResponse.
+ * Use `create(StartTailscaleWorkerResponseSchema)` to create a new message.
+ */
+export const StartTailscaleWorkerResponseSchema: GenMessage<StartTailscaleWorkerResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 38);
+
+/**
+ * @generated from message delidev.v1.StopTailscaleWorkerRequest
+ */
+export type StopTailscaleWorkerRequest = Message<"delidev.v1.StopTailscaleWorkerRequest"> & {
+  /**
+   * @generated from field: string approval_request_id = 1;
+   */
+  approvalRequestId: string;
+
+  /**
+   * @generated from field: string request_id = 2;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string expected_generation = 3;
+   */
+  expectedGeneration: string;
+};
+
+/**
+ * Describes the message delidev.v1.StopTailscaleWorkerRequest.
+ * Use `create(StopTailscaleWorkerRequestSchema)` to create a new message.
+ */
+export const StopTailscaleWorkerRequestSchema: GenMessage<StopTailscaleWorkerRequest> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 39);
+
+/**
+ * @generated from message delidev.v1.StopTailscaleWorkerResponse
+ */
+export type StopTailscaleWorkerResponse = Message<"delidev.v1.StopTailscaleWorkerResponse"> & {
+  /**
+   * @generated from field: delidev.v1.TailscaleWorkerState state = 1;
+   */
+  state: TailscaleWorkerState;
+
+  /**
+   * @generated from field: string generation = 2;
+   */
+  generation: string;
+
+  /**
+   * @generated from field: string request_id = 3;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message delidev.v1.StopTailscaleWorkerResponse.
+ * Use `create(StopTailscaleWorkerResponseSchema)` to create a new message.
+ */
+export const StopTailscaleWorkerResponseSchema: GenMessage<StopTailscaleWorkerResponse> = /*@__PURE__*/
+  messageDesc(file_delidev_v1_tailscale, 40);
+
+/**
  * @generated from enum delidev.v1.TailscaleDiscoveryState
  */
 export enum TailscaleDiscoveryState {
@@ -855,24 +1232,99 @@ export const TailscaleAccessStateSchema: GenEnum<TailscaleAccessState> = /*@__PU
   enumDesc(file_delidev_v1_tailscale, 4);
 
 /**
+ * @generated from enum delidev.v1.TailscaleWorkerState
+ */
+export enum TailscaleWorkerState {
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_NOT_STARTED = 1;
+   */
+  NOT_STARTED = 1,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_STARTING = 2;
+   */
+  STARTING = 2,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_RUNNING = 3;
+   */
+  RUNNING = 3,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_STOPPING = 4;
+   */
+  STOPPING = 4,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_STOPPED = 5;
+   */
+  STOPPED = 5,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_UNCERTAIN = 6;
+   */
+  UNCERTAIN = 6,
+
+  /**
+   * @generated from enum value: TAILSCALE_WORKER_STATE_EXITED = 7;
+   */
+  EXITED = 7,
+}
+
+/**
+ * Describes the enum delidev.v1.TailscaleWorkerState.
+ */
+export const TailscaleWorkerStateSchema: GenEnum<TailscaleWorkerState> = /*@__PURE__*/
+  enumDesc(file_delidev_v1_tailscale, 5);
+
+/**
  * @generated from service delidev.v1.TailscaleService
  */
 export const TailscaleService: GenService<{
+  /**
+   * @generated from rpc delidev.v1.TailscaleService.GetTailscaleWorker
+   */
+  getTailscaleWorker: {
+    methodKind: "unary";
+    input: typeof GetTailscaleWorkerRequestSchema;
+    output: typeof GetTailscaleWorkerResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.TailscaleService.StartTailscaleWorker
+   */
+  startTailscaleWorker: {
+    methodKind: "unary";
+    input: typeof StartTailscaleWorkerRequestSchema;
+    output: typeof StartTailscaleWorkerResponseSchema;
+  },
+  /**
+   * @generated from rpc delidev.v1.TailscaleService.StopTailscaleWorker
+   */
+  stopTailscaleWorker: {
+    methodKind: "unary";
+    input: typeof StopTailscaleWorkerRequestSchema;
+    output: typeof StopTailscaleWorkerResponseSchema;
+  },
   /**
    * @generated from rpc delidev.v1.TailscaleService.ListTailscalePeerConnections
    */
   listTailscalePeerConnections: {
     methodKind: "unary";
-    input: typeof ListTailscaleConnectionsRequestSchema;
-    output: typeof ListTailscaleConnectionsResponseSchema;
+    input: typeof ListTailscalePeerConnectionsRequestSchema;
+    output: typeof ListTailscalePeerConnectionsResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.CancelTailscalePeerConnection
    */
   cancelTailscalePeerConnection: {
     methodKind: "unary";
-    input: typeof PollTailscalePeerConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    input: typeof CancelTailscalePeerConnectionRequestSchema;
+    output: typeof CancelTailscalePeerConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.DeliverTailscaleWorkerGrant
@@ -920,7 +1372,7 @@ export const TailscaleService: GenService<{
   setTailscaleAccess: {
     methodKind: "unary";
     input: typeof SetTailscaleAccessRequestSchema;
-    output: typeof GetTailscaleAccessResponseSchema;
+    output: typeof SetTailscaleAccessResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.RequestTailscaleConnection
@@ -928,7 +1380,7 @@ export const TailscaleService: GenService<{
   requestTailscaleConnection: {
     methodKind: "unary";
     input: typeof RequestTailscaleConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    output: typeof RequestTailscaleConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.GetTailscaleConnection
@@ -936,7 +1388,7 @@ export const TailscaleService: GenService<{
   getTailscaleConnection: {
     methodKind: "unary";
     input: typeof GetTailscaleConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    output: typeof GetTailscaleConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.ListTailscaleConnections
@@ -952,15 +1404,15 @@ export const TailscaleService: GenService<{
   decideTailscaleConnection: {
     methodKind: "unary";
     input: typeof DecideTailscaleConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    output: typeof DecideTailscaleConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.CancelTailscaleConnection
    */
   cancelTailscaleConnection: {
     methodKind: "unary";
-    input: typeof GetTailscaleConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    input: typeof CancelTailscaleConnectionRequestSchema;
+    output: typeof CancelTailscaleConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.StartTailscalePeerConnection
@@ -968,7 +1420,7 @@ export const TailscaleService: GenService<{
   startTailscalePeerConnection: {
     methodKind: "unary";
     input: typeof StartTailscalePeerConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    output: typeof StartTailscalePeerConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.PollTailscalePeerConnection
@@ -976,7 +1428,7 @@ export const TailscaleService: GenService<{
   pollTailscalePeerConnection: {
     methodKind: "unary";
     input: typeof PollTailscalePeerConnectionRequestSchema;
-    output: typeof TailscaleConnectionResponseSchema;
+    output: typeof PollTailscalePeerConnectionResponseSchema;
   },
   /**
    * @generated from rpc delidev.v1.TailscaleService.CompleteTailscalePeerConnection

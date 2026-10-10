@@ -31,7 +31,7 @@ func (s *Service) completeOutgoingWorker(ctx context.Context, id string, value *
 		return &pb.CompleteTailscalePeerConnectionResponse{WorkerDeviceId: string(value.WorkerDevice), Completed: true}, nil
 	}
 	approved := outgoingApproval(v, original)
-	if approved.Input.WorkerServerID != s.Identity.ServerID || s.tailscale.access.Origin() != approved.Input.WorkerServerOrigin {
+	if approved.Input.WorkerServerID != s.Identity.ServerID || len(value.WorkerDelivery) == 0 && s.tailscale.access.Origin() != approved.Input.WorkerServerOrigin {
 		return nil, installationFailure(domain.Conflict)
 	}
 	if len(value.WorkerDelivery) == 0 {
@@ -123,7 +123,15 @@ func (s *Service) DeliverTailscaleWorkerGrant(ctx context.Context, req *connect.
 		// A retained start fence makes lost replies reconcile the original generation;
 		// the same approval cannot start a replacement after exit or lost evidence.
 		fence := filepath.Join(filepath.Dir(scope), "start-request.json")
-		_, existing := security.ReadPrivate(fence, 8<<10)
+		markerRaw, existing := security.ReadPrivate(fence, 8<<10)
+		if existing == nil {
+			var marker struct {
+				Device domain.ID `json:"device"`
+			}
+			if domain.Decode(markerRaw, &marker) != nil || marker.Device != credential.DeviceID {
+				return "", installationFailure(domain.RecoveryRequired)
+			}
+		}
 		if existing != nil && !os.IsNotExist(existing) {
 			return "", existing
 		}
@@ -163,4 +171,133 @@ func (s *Service) DeliverTailscaleWorkerGrant(ctx context.Context, req *connect.
 	}
 	s.logger.InfoContext(ctx, "tailscale_worker_delivery_completed", "operation_id", req.Msg.RequestId)
 	return connect.NewResponse(&pb.DeliverTailscaleWorkerGrantResponse{WorkerDeviceId: string(device), Completed: true}), nil
+}
+
+// Worker controls address only the credential captured by an original approved
+// delivery. Explicit Start may reserve a new controller generation, but it never
+// pairs a replacement device or expands the captured server authority.
+func (s *Service) ownedTailscaleWorker(input tailscale.ApprovalInput) (string, worker.RuntimeStatus, error) {
+	scope := filepath.Join(s.Store.Root(), "tailscale-workers", string(input.ID), "worker")
+	credential, err := worker.LoadCredential(scope)
+	if err != nil {
+		return "", worker.RuntimeStatus{}, err
+	}
+	if credential.Type != domain.WorkerDevice || credential.ServerID != input.WorkerServerID || credential.Endpoint != input.WorkerServerOrigin {
+		return "", worker.RuntimeStatus{}, installationFailure(domain.RecoveryRequired)
+	}
+	markerRaw, err := security.ReadPrivate(filepath.Join(filepath.Dir(scope), "start-request.json"), 8<<10)
+	var marker struct {
+		Device domain.ID `json:"device"`
+	}
+	if err != nil || domain.Decode(markerRaw, &marker) != nil || marker.Device != credential.DeviceID {
+		return "", worker.RuntimeStatus{}, installationFailure(domain.RecoveryRequired)
+	}
+	status, err := worker.Status(scope)
+	return scope, status, err
+}
+func tailscaleWorkerState(v worker.RuntimeStatus) pb.TailscaleWorkerState {
+	switch v.State {
+	case worker.StateIdle:
+		return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_NOT_STARTED
+	case worker.StateStarting:
+		return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_STARTING
+	case worker.StateRunning:
+		return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_RUNNING
+	case worker.StateStopping:
+		return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_STOPPING
+	case worker.StateExited:
+		if v.Lifecycle.Desired == worker.WorkerStopped {
+			return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_STOPPED
+		}
+		return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_EXITED
+	default:
+		return pb.TailscaleWorkerState_TAILSCALE_WORKER_STATE_UNCERTAIN
+	}
+}
+func (s *Service) GetTailscaleWorker(ctx context.Context, req *connect.Request[pb.GetTailscaleWorkerRequest]) (*connect.Response[pb.GetTailscaleWorkerResponse], error) {
+	if err := s.tailscaleLocal(ctx); err != nil {
+		return nil, rpc.Error(err, "")
+	}
+	input, err := s.tailscale.approvals.OwnedWorker(domain.ID(req.Msg.ApprovalRequestId))
+	if err != nil {
+		return nil, rpc.Error(err, "")
+	}
+	_, status, err := s.ownedTailscaleWorker(input)
+	if err != nil {
+		return nil, rpc.Error(err, "")
+	}
+	return connect.NewResponse(&pb.GetTailscaleWorkerResponse{State: tailscaleWorkerState(status), Generation: string(status.Lifecycle.Generation)}), nil
+}
+func (s *Service) controlTailscaleWorker(ctx context.Context, approval, request, generation string, action tailscale.WorkerAction) (worker.RuntimeStatus, error) {
+	if err := s.tailscaleLocal(ctx); err != nil {
+		return worker.RuntimeStatus{}, err
+	}
+	actor, _ := domain.PrincipalFrom(ctx)
+	var status worker.RuntimeStatus
+	err := s.tailscale.approvals.ControlWorker(ctx, domain.ID(approval), tailscale.WorkerControl{ID: domain.ID(request), Action: action, Generation: domain.ID(generation), Actor: string(actor.Type) + ":" + string(actor.DeviceID)}, func(ctx context.Context, input tailscale.ApprovalInput, phase tailscale.WorkerControlPhase) error {
+		scope, current, err := s.ownedTailscaleWorker(input)
+		if err != nil {
+			return err
+		}
+		status = current
+		if phase == tailscale.WorkerObserve {
+			return nil
+		}
+		if current.Lifecycle.Generation != domain.ID(generation) {
+			return installationFailure(domain.Conflict)
+		}
+		if action == tailscale.WorkerStart && current.State != worker.StateIdle && current.State != worker.StateExited {
+			return installationFailure(domain.Conflict)
+		}
+		if action == tailscale.WorkerStop && generation == "" {
+			return installationFailure(domain.Conflict)
+		}
+		if phase == tailscale.WorkerValidate {
+			return nil
+		}
+		if action == tailscale.WorkerStop {
+			err = worker.RequestStop(scope, domain.ID(generation))
+		} else {
+			if s.tailscale.startWorker != nil {
+				err = s.tailscale.startWorker(ctx, scope)
+			} else {
+				err = s.launchTailscaleWorker(ctx, scope)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		_, status, err = s.ownedTailscaleWorker(input)
+		return err
+	})
+	s.logger.InfoContext(ctx, "tailscale_worker_control", "operation_id", request, "action", action, "failed", err != nil)
+	return status, err
+}
+func (s *Service) launchTailscaleWorker(ctx context.Context, scope string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	command := exec.CommandContext(bounded, executable, "--json", "--data-dir", s.Store.Root(), "worker", "start", "--worker-dir", scope, "--detach")
+	command.Stdout, command.Stderr = io.Discard, io.Discard
+	if command.Run() != nil {
+		return installationFailure(domain.RecoveryRequired)
+	}
+	return nil
+}
+func (s *Service) StartTailscaleWorker(ctx context.Context, req *connect.Request[pb.StartTailscaleWorkerRequest]) (*connect.Response[pb.StartTailscaleWorkerResponse], error) {
+	status, err := s.controlTailscaleWorker(ctx, req.Msg.ApprovalRequestId, req.Msg.RequestId, req.Msg.ExpectedGeneration, tailscale.WorkerStart)
+	if err != nil {
+		return nil, rpc.Error(err, "")
+	}
+	return connect.NewResponse(&pb.StartTailscaleWorkerResponse{State: tailscaleWorkerState(status), Generation: string(status.Lifecycle.Generation), RequestId: req.Msg.RequestId}), nil
+}
+func (s *Service) StopTailscaleWorker(ctx context.Context, req *connect.Request[pb.StopTailscaleWorkerRequest]) (*connect.Response[pb.StopTailscaleWorkerResponse], error) {
+	status, err := s.controlTailscaleWorker(ctx, req.Msg.ApprovalRequestId, req.Msg.RequestId, req.Msg.ExpectedGeneration, tailscale.WorkerStop)
+	if err != nil {
+		return nil, rpc.Error(err, "")
+	}
+	return connect.NewResponse(&pb.StopTailscaleWorkerResponse{State: tailscaleWorkerState(status), Generation: string(status.Lifecycle.Generation), RequestId: req.Msg.RequestId}), nil
 }

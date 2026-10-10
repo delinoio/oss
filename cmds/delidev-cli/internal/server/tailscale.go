@@ -6,7 +6,6 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"os/exec"
 	"time"
@@ -23,10 +22,11 @@ import (
 
 type tailscaleIngressKey struct{}
 type tailscaleController struct {
-	runner    tailscale.Runner
-	access    *tailscale.AccessManager
-	offer     []byte
-	approvals *tailscale.Approvals
+	runner      tailscale.Runner
+	access      *tailscale.AccessManager
+	offer       []byte
+	approvals   *tailscale.Approvals
+	startWorker func(context.Context, string) error
 }
 
 func (s *Service) initializeTailscale(ctx context.Context, config Config) error {
@@ -40,13 +40,14 @@ func (s *Service) initializeTailscale(ctx context.Context, config Config) error 
 		return err
 	}
 	controller := &tailscaleController{runner: runner, offer: key.PublicKey().Bytes(), approvals: &tailscale.Approvals{Root: s.Store.Root(), ServerID: s.Identity.ServerID}}
+	businessHandler := s.Handler(config.AllowedOrigins, false)
 	ingress := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == desktopruntime.ProofPath || len(r.URL.Path) < len("/delidev.v1.") || r.URL.Path[:len("/delidev.v1.")] != "/delidev.v1." {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), tailscaleIngressKey{}, true))
-		s.Handler(config.AllowedOrigins, false).ServeHTTP(w, r)
+		businessHandler.ServeHTTP(w, r)
 	})
 	controller.access = &tailscale.AccessManager{Root: s.Store.Root(), ServerID: s.Identity.ServerID, Parent: ctx, Runner: runner, Launcher: tailscale.ProcessLauncher{Executable: path, Root: s.Store.Root(), Logger: s.logger}, Handler: ingress, Logger: s.logger}
 	s.tailscale = controller
@@ -150,7 +151,7 @@ func (s *Service) GetTailscaleAccess(ctx context.Context, req *connect.Request[p
 	}
 	return connect.NewResponse(accessMessage(v)), nil
 }
-func (s *Service) SetTailscaleAccess(ctx context.Context, req *connect.Request[pb.SetTailscaleAccessRequest]) (*connect.Response[pb.GetTailscaleAccessResponse], error) {
+func (s *Service) SetTailscaleAccess(ctx context.Context, req *connect.Request[pb.SetTailscaleAccessRequest]) (*connect.Response[pb.SetTailscaleAccessResponse], error) {
 	if err := s.tailscaleLocal(ctx); err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
@@ -159,7 +160,7 @@ func (s *Service) SetTailscaleAccess(ctx context.Context, req *connect.Request[p
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	return connect.NewResponse(accessMessage(v)), nil
+	return connect.NewResponse(&pb.SetTailscaleAccessResponse{State: accessMessage(v).State, Origin: v.Origin, Enabled: v.Enabled}), nil
 }
 func approvalMessage(a tailscale.Approval) *pb.TailscaleConnection {
 	role := pb.DeviceType_DEVICE_TYPE_CLIENT
@@ -167,9 +168,9 @@ func approvalMessage(a tailscale.Approval) *pb.TailscaleConnection {
 		role = pb.DeviceType_DEVICE_TYPE_WORKER
 	}
 	state := map[tailscale.ApprovalState]pb.TailscaleApprovalState{tailscale.ApprovalPending: pb.TailscaleApprovalState_TAILSCALE_APPROVAL_STATE_PENDING, tailscale.ApprovalApproved: pb.TailscaleApprovalState_TAILSCALE_APPROVAL_STATE_APPROVED, tailscale.ApprovalDenied: pb.TailscaleApprovalState_TAILSCALE_APPROVAL_STATE_DENIED, tailscale.ApprovalExpired: pb.TailscaleApprovalState_TAILSCALE_APPROVAL_STATE_EXPIRED, tailscale.ApprovalCanceled: pb.TailscaleApprovalState_TAILSCALE_APPROVAL_STATE_CANCELED}[a.State]
-	return &pb.TailscaleConnection{RequestId: string(a.Input.ID), RequesterName: a.Input.RequesterName, RequesterKey: a.Input.RequesterKey, TargetKey: a.TargetKey, ServerId: string(a.Input.ServerID), Origin: a.Input.Origin, Role: role, ConfirmationCode: a.Code, ExpiresAt: a.ExpiresAt.Format(time.RFC3339Nano), State: state, EncryptedGrant: a.EncryptedGrant, WorkerServerId: string(a.Input.WorkerServerID), WorkerServerOrigin: a.Input.WorkerServerOrigin}
+	return &pb.TailscaleConnection{RequestId: string(a.Input.ID), RequesterName: a.Input.RequesterName, RequesterKey: a.Input.RequesterKey, TargetKey: a.TargetKey, ServerId: string(a.Input.ServerID), Origin: a.Input.Origin, Role: role, ConfirmationCode: a.Code, ExpiresAt: a.ExpiresAt.Format(time.RFC3339Nano), State: state, EncryptedGrant: a.EncryptedGrant, DecisionId: string(a.DecisionID), DecisionAllow: a.DecisionAllow, WorkerServerId: string(a.Input.WorkerServerID), WorkerServerOrigin: a.Input.WorkerServerOrigin}
 }
-func (s *Service) RequestTailscaleConnection(ctx context.Context, req *connect.Request[pb.RequestTailscaleConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) RequestTailscaleConnection(ctx context.Context, req *connect.Request[pb.RequestTailscaleConnectionRequest]) (*connect.Response[pb.RequestTailscaleConnectionResponse], error) {
 	a, err := s.tailscaleApprovals(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -185,7 +186,7 @@ func (s *Service) RequestTailscaleConnection(ctx context.Context, req *connect.R
 			return nil, rpc.Error(e, req.Header().Get(rpc.CorrelationHeader))
 		}
 		_ = previous
-		return connect.NewResponse(&pb.TailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
+		return connect.NewResponse(&pb.RequestTailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
 	}
 	if !ecdhPublicEqual(req.Msg.ObservedTargetKey, s.tailscale.offer) {
 		return nil, rpc.Error(domain.Fail(domain.Conflict, "The original target capability changed.", "Check the target before starting a new explicit request."), req.Header().Get(rpc.CorrelationHeader))
@@ -195,7 +196,7 @@ func (s *Service) RequestTailscaleConnection(ctx context.Context, req *connect.R
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	s.logger.InfoContext(ctx, "tailscale_approval_requested", "operation_id", input.ID, "role", role)
-	return connect.NewResponse(&pb.TailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
+	return connect.NewResponse(&pb.RequestTailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
 }
 func ecdhPublicEqual(a, b []byte) bool {
 	if len(a) != 32 || len(b) != 32 {
@@ -207,7 +208,7 @@ func ecdhPublicEqual(a, b []byte) bool {
 	}
 	return diff == 0
 }
-func (s *Service) GetTailscaleConnection(ctx context.Context, req *connect.Request[pb.GetTailscaleConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) GetTailscaleConnection(ctx context.Context, req *connect.Request[pb.GetTailscaleConnectionRequest]) (*connect.Response[pb.GetTailscaleConnectionResponse], error) {
 	a, err := s.tailscaleApprovals(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -216,9 +217,9 @@ func (s *Service) GetTailscaleConnection(ctx context.Context, req *connect.Reque
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	return connect.NewResponse(&pb.TailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
+	return connect.NewResponse(&pb.GetTailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
 }
-func (s *Service) CancelTailscaleConnection(ctx context.Context, req *connect.Request[pb.GetTailscaleConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) CancelTailscaleConnection(ctx context.Context, req *connect.Request[pb.CancelTailscaleConnectionRequest]) (*connect.Response[pb.CancelTailscaleConnectionResponse], error) {
 	a, err := s.tailscaleApprovals(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -227,29 +228,32 @@ func (s *Service) CancelTailscaleConnection(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	return connect.NewResponse(&pb.TailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
+	return connect.NewResponse(&pb.CancelTailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
 }
 func (s *Service) ListTailscaleConnections(ctx context.Context, req *connect.Request[pb.ListTailscaleConnectionsRequest]) (*connect.Response[pb.ListTailscaleConnectionsResponse], error) {
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) || s.tailscale == nil {
 		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Original client authority is required.", "Use the authenticated target connection."), req.Header().Get(rpc.CorrelationHeader))
 	}
-	origin := s.tailscale.access.Origin()
-	s.tailscale.approvals.SetOrigin(origin)
-	if origin == "" {
-		return connect.NewResponse(&pb.ListTailscaleConnectionsResponse{}), nil
+	access, err := s.tailscale.access.Status()
+	if err != nil {
+		return nil, rpc.Error(err, "")
 	}
+	s.tailscale.approvals.SetOrigin(access.Origin)
 	values, err := s.tailscale.approvals.List()
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
 	response := &pb.ListTailscaleConnectionsResponse{}
 	for _, v := range values {
+		if access.State != tailscale.AccessReady && !(v.State == tailscale.ApprovalApproved && v.Input.Role == domain.WorkerDevice) {
+			continue
+		}
 		response.Connections = append(response.Connections, approvalMessage(v))
 	}
 	return connect.NewResponse(response), nil
 }
-func (s *Service) DecideTailscaleConnection(ctx context.Context, req *connect.Request[pb.DecideTailscaleConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) DecideTailscaleConnection(ctx context.Context, req *connect.Request[pb.DecideTailscaleConnectionRequest]) (*connect.Response[pb.DecideTailscaleConnectionResponse], error) {
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) || s.tailscale == nil || s.tailscale.access.Origin() == "" {
 		return nil, rpc.Error(domain.Fail(domain.PermissionDenied, "Original target client approval is required.", "Approve from the authenticated target connection."), req.Header().Get(rpc.CorrelationHeader))
@@ -274,8 +278,7 @@ func (s *Service) DecideTailscaleConnection(ctx context.Context, req *connect.Re
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
 	}
-	return connect.NewResponse(&pb.TailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
+	return connect.NewResponse(&pb.DecideTailscaleConnectionResponse{Connection: approvalMessage(v)}), nil
 }
 
-var _ = slog.LevelInfo
 var _ delidevv1connect.TailscaleServiceHandler = (*Service)(nil)

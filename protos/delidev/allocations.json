@@ -14115,6 +14115,326 @@
       "member": "completed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "ListTailscalePeerConnectionsResponse",
+      "member": "connections",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CancelTailscalePeerConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CancelTailscalePeerConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessResponse",
+      "member": "origin",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessResponse",
+      "member": "enabled",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DecideTailscaleConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CancelTailscaleConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CancelTailscaleConnectionRequest",
+      "member": "requester_key",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CancelTailscaleConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscalePeerConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "PollTailscalePeerConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "decision_id",
+      "number": 14,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "decision_allow",
+      "number": 15,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CheckTailscaleDeviceRequest",
+      "member": "expected_origin",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_NOT_STARTED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_STARTING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_RUNNING",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_STOPPING",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_STOPPED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_UNCERTAIN",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleWorkerState",
+      "member": "TAILSCALE_WORKER_STATE_EXITED",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleWorkerRequest",
+      "member": "approval_request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleWorkerResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleWorkerResponse",
+      "member": "generation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscaleWorkerRequest",
+      "member": "approval_request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscaleWorkerRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscaleWorkerRequest",
+      "member": "expected_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscaleWorkerResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscaleWorkerResponse",
+      "member": "generation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscaleWorkerResponse",
+      "member": "request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StopTailscaleWorkerRequest",
+      "member": "approval_request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StopTailscaleWorkerRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StopTailscaleWorkerRequest",
+      "member": "expected_generation",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StopTailscaleWorkerResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StopTailscaleWorkerResponse",
+      "member": "generation",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StopTailscaleWorkerResponse",
+      "member": "request_id",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -14393,7 +14713,7 @@
       "service": "TailscaleService",
       "method": "SetTailscaleAccess",
       "input": "SetTailscaleAccessRequest",
-      "output": "GetTailscaleAccessResponse",
+      "output": "SetTailscaleAccessResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14402,7 +14722,7 @@
       "service": "TailscaleService",
       "method": "RequestTailscaleConnection",
       "input": "RequestTailscaleConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "output": "RequestTailscaleConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14411,7 +14731,7 @@
       "service": "TailscaleService",
       "method": "GetTailscaleConnection",
       "input": "GetTailscaleConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "output": "GetTailscaleConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14429,7 +14749,7 @@
       "service": "TailscaleService",
       "method": "DecideTailscaleConnection",
       "input": "DecideTailscaleConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "output": "DecideTailscaleConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14437,8 +14757,8 @@
       "issue": 2136,
       "service": "TailscaleService",
       "method": "CancelTailscaleConnection",
-      "input": "GetTailscaleConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "input": "CancelTailscaleConnectionRequest",
+      "output": "CancelTailscaleConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14447,7 +14767,7 @@
       "service": "TailscaleService",
       "method": "StartTailscalePeerConnection",
       "input": "StartTailscalePeerConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "output": "StartTailscalePeerConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14456,7 +14776,7 @@
       "service": "TailscaleService",
       "method": "PollTailscalePeerConnection",
       "input": "PollTailscalePeerConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "output": "PollTailscalePeerConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14473,8 +14793,8 @@
       "issue": 2136,
       "service": "TailscaleService",
       "method": "ListTailscalePeerConnections",
-      "input": "ListTailscaleConnectionsRequest",
-      "output": "ListTailscaleConnectionsResponse",
+      "input": "ListTailscalePeerConnectionsRequest",
+      "output": "ListTailscalePeerConnectionsResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14482,8 +14802,8 @@
       "issue": 2136,
       "service": "TailscaleService",
       "method": "CancelTailscalePeerConnection",
-      "input": "PollTailscalePeerConnectionRequest",
-      "output": "TailscaleConnectionResponse",
+      "input": "CancelTailscalePeerConnectionRequest",
+      "output": "CancelTailscalePeerConnectionResponse",
       "clientStreaming": false,
       "serverStreaming": false
     },
@@ -14493,6 +14813,33 @@
       "method": "DeliverTailscaleWorkerGrant",
       "input": "DeliverTailscaleWorkerGrantRequest",
       "output": "DeliverTailscaleWorkerGrantResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "GetTailscaleWorker",
+      "input": "GetTailscaleWorkerRequest",
+      "output": "GetTailscaleWorkerResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "StartTailscaleWorker",
+      "input": "StartTailscaleWorkerRequest",
+      "output": "StartTailscaleWorkerResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "StopTailscaleWorker",
+      "input": "StopTailscaleWorkerRequest",
+      "output": "StopTailscaleWorkerResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

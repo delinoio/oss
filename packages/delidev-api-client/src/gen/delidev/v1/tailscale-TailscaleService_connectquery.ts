@@ -5,6 +5,21 @@
 import { TailscaleService } from "./tailscale_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.TailscaleService.GetTailscaleWorker
+ */
+export const getTailscaleWorker = TailscaleService.method.getTailscaleWorker;
+
+/**
+ * @generated from rpc delidev.v1.TailscaleService.StartTailscaleWorker
+ */
+export const startTailscaleWorker = TailscaleService.method.startTailscaleWorker;
+
+/**
+ * @generated from rpc delidev.v1.TailscaleService.StopTailscaleWorker
+ */
+export const stopTailscaleWorker = TailscaleService.method.stopTailscaleWorker;
+
+/**
  * @generated from rpc delidev.v1.TailscaleService.ListTailscalePeerConnections
  */
 export const listTailscalePeerConnections = TailscaleService.method.listTailscalePeerConnections;

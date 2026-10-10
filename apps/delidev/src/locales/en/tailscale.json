@@ -61,5 +61,15 @@
   "tailscale.ready": "Ready",
   "tailscale.unavailable": "Unavailable. Check Tailscale HTTPS, permissions and existing Serve configuration.",
   "tailscale.cleanup": "Original ingress cleanup requires reconciliation.",
-  "tailscale.sshServer": "This SSH Worker joins the selected current server."
+  "tailscale.sshServer": "This SSH Worker joins the selected current server.",
+  "tailscale.readFailed": "Device information is unavailable. Refresh to repeat this read.",
+  "tailscale.ownedWorkers": "Approved Workers",
+  "tailscale.workerIdle": "Not started",
+  "tailscale.workerRunning": "Running",
+  "tailscale.workerStopping": "Stopping",
+  "tailscale.workerStopped": "Stopped",
+  "tailscale.workerExited": "Exited; native cleanup is unconfirmed",
+  "tailscale.workerStart": "Start original Worker",
+  "tailscale.workerStop": "Stop original Worker",
+  "tailscale.workerScopeHelp": "This controls the original approved Worker and its existing credential. Stop does not confirm native session cleanup."
 }

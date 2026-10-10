@@ -46,6 +46,8 @@ type ApprovalInput struct {
 	Role               domain.DeviceType `json:"role"`
 }
 type Approval struct {
+	DecisionID     domain.ID     `json:"decision_id,omitempty"`
+	DecisionAllow  bool          `json:"decision_allow,omitempty"`
 	Input          ApprovalInput `json:"input"`
 	TargetKey      []byte        `json:"target_key"`
 	Code           string        `json:"code"`
@@ -54,15 +56,16 @@ type Approval struct {
 	EncryptedGrant []byte        `json:"encrypted_grant,omitempty"`
 }
 type approvalIntent struct {
-	DeliveryDigest []byte    `json:"delivery_digest,omitempty"`
-	WorkerDeviceID domain.ID `json:"worker_device_id,omitempty"`
-	DecisionActor  string    `json:"decision_actor,omitempty"`
-	Approval       Approval  `json:"approval"`
-	PrivateKey     []byte    `json:"private_key"`
-	PairingRequest domain.ID `json:"pairing_request"`
-	GrantCode      string    `json:"grant_code"`
-	DecisionID     domain.ID `json:"decision_id,omitempty"`
-	DecisionAllow  bool      `json:"decision_allow,omitempty"`
+	WorkerControls []WorkerControl `json:"worker_controls,omitempty"`
+	DeliveryDigest []byte          `json:"delivery_digest,omitempty"`
+	WorkerDeviceID domain.ID       `json:"worker_device_id,omitempty"`
+	DecisionActor  string          `json:"decision_actor,omitempty"`
+	Approval       Approval        `json:"approval"`
+	PrivateKey     []byte          `json:"private_key"`
+	PairingRequest domain.ID       `json:"pairing_request"`
+	GrantCode      string          `json:"grant_code"`
+	DecisionID     domain.ID       `json:"decision_id,omitempty"`
+	DecisionAllow  bool            `json:"decision_allow,omitempty"`
 }
 type approvalJournal struct {
 	ServerID domain.ID        `json:"server_id"`
@@ -85,6 +88,9 @@ func (a *Approvals) SetOrigin(origin string) {
 const maxApprovalRecords = 256
 
 func (i ApprovalInput) Validate() error {
+	if len(i.ObservedTargetKey) != 0 && len(i.ObservedTargetKey) != 32 {
+		return invalid()
+	}
 	if i.Role == domain.WorkerDevice {
 		if i.WorkerServerID.Validate() != nil || ValidateOrigin(i.WorkerServerOrigin) != nil {
 			return invalid()
@@ -110,10 +116,17 @@ func (a *Approvals) load() (approvalJournal, error) {
 	}
 	raw, err := security.ReadPrivate(filepath.Join(a.Root, "tailscale-approvals.json"), 2<<20)
 	if errors.Is(err, os.ErrNotExist) {
+		if _, markerError := security.ReadPrivate(filepath.Join(a.Root, "tailscale-approvals.owner"), 4<<10); !errors.Is(markerError, os.ErrNotExist) {
+			return approvalJournal{}, recovery()
+		}
 		return approvalJournal{ServerID: a.ServerID, Requests: []approvalIntent{}}, nil
 	}
 	if err != nil {
 		return approvalJournal{}, err
+	}
+	marker, markerError := security.ReadPrivate(filepath.Join(a.Root, "tailscale-approvals.owner"), 4<<10)
+	if markerError != nil || string(marker) != string(a.ServerID) {
+		return approvalJournal{}, recovery()
 	}
 	var j approvalJournal
 	if domain.Decode(raw, &j) != nil || j.ServerID != a.ServerID || len(j.Requests) > maxApprovalRecords {
@@ -121,8 +134,22 @@ func (a *Approvals) load() (approvalJournal, error) {
 	}
 	seen := map[domain.ID]bool{}
 	for _, r := range j.Requests {
+		codeBytes, codeError := base64.RawURLEncoding.DecodeString(r.GrantCode)
+		if codeError != nil || len(codeBytes) != 32 || base64.RawURLEncoding.EncodeToString(codeBytes) != r.GrantCode || len(r.DeliveryDigest) != 0 && len(r.DeliveryDigest) != 32 || r.WorkerDeviceID != "" && r.WorkerDeviceID.Validate() != nil {
+			return approvalJournal{}, recovery()
+		}
 		if r.Approval.Input.Validate() != nil || r.Approval.Input.ServerID != a.ServerID || len(r.PrivateKey) != 32 || len(r.Approval.TargetKey) != 32 || r.PairingRequest.Validate() != nil || seen[r.Approval.Input.ID] || r.Approval.ExpiresAt.IsZero() {
 			return approvalJournal{}, recovery()
+		}
+		controls := map[domain.ID]bool{}
+		if len(r.WorkerControls) > 64 {
+			return approvalJournal{}, recovery()
+		}
+		for _, c := range r.WorkerControls {
+			if c.ID.Validate() != nil || controls[c.ID] || (c.Action != WorkerStart && c.Action != WorkerStop) || (c.Generation != "" && c.Generation.Validate() != nil) || domain.Text(c.Actor, "original actor", 256, true) != nil || r.Approval.Input.Role != domain.WorkerDevice || len(r.DeliveryDigest) != 32 {
+				return approvalJournal{}, recovery()
+			}
+			controls[c.ID] = true
 		}
 		seen[r.Approval.Input.ID] = true
 		key, err := ecdh.X25519().NewPrivateKey(r.PrivateKey)
@@ -143,8 +170,14 @@ func (a *Approvals) load() (approvalJournal, error) {
 }
 func (a *Approvals) save(j approvalJournal) error {
 	raw, err := json.Marshal(j)
-	if err != nil || len(raw) > 2<<20 {
+	if err != nil {
 		return recovery()
+	}
+	if len(raw) > 2<<20 {
+		return domain.Fail(domain.ResourceExhausted, "The original approval history is full.", "Preserve accepted original approval and Worker records.")
+	}
+	if err := security.WriteAtomic(filepath.Join(a.Root, "tailscale-approvals.owner"), []byte(a.ServerID)); err != nil {
+		return err
 	}
 	return security.WriteAtomic(filepath.Join(a.Root, "tailscale-approvals.json"), raw)
 }
@@ -224,6 +257,8 @@ func (a *Approvals) Request(i ApprovalInput) (Approval, error) {
 }
 func (a *Approvals) project(r approvalIntent) Approval {
 	v := r.Approval
+	v.DecisionID = r.DecisionID
+	v.DecisionAllow = r.DecisionAllow
 	v.Input.RequesterKey = append([]byte(nil), v.Input.RequesterKey...)
 	v.TargetKey = append([]byte(nil), v.TargetKey...)
 	v.EncryptedGrant = append([]byte(nil), v.EncryptedGrant...)
@@ -368,7 +403,7 @@ func grantCipher(private, public, associated []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 func sealGrant(r approvalIntent, grant []byte) ([]byte, error) {
-	if len(grant) > 32<<10 {
+	if len(grant) > 4<<10 {
 		return nil, invalid()
 	}
 	associated, err := transcript(r.Approval.Input, r.Approval.TargetKey)
@@ -496,4 +531,85 @@ func (a *Approvals) DeliverWorker(ctx context.Context, id domain.ID, requester, 
 		return device, nil
 	}
 	return "", invalid()
+}
+
+type WorkerAction string
+
+const (
+	WorkerStart WorkerAction = "start"
+	WorkerStop  WorkerAction = "stop"
+)
+
+type WorkerControlPhase int
+
+const (
+	WorkerValidate WorkerControlPhase = iota
+	WorkerMutate
+	WorkerObserve
+)
+
+type WorkerControl struct {
+	ID         domain.ID    `json:"id"`
+	Action     WorkerAction `json:"action"`
+	Generation domain.ID    `json:"generation,omitempty"`
+	Actor      string       `json:"actor"`
+}
+
+func (a *Approvals) OwnedWorker(id domain.ID) (ApprovalInput, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	j, err := a.load()
+	if err != nil {
+		return ApprovalInput{}, err
+	}
+	for _, r := range j.Requests {
+		if r.Approval.Input.ID == id && r.Approval.State == ApprovalApproved && r.Approval.Input.Role == domain.WorkerDevice && len(r.DeliveryDigest) == 32 {
+			return r.Approval.Input, nil
+		}
+	}
+	return ApprovalInput{}, domain.Fail(domain.NotFound, "The original approved Worker delivery is unavailable.", "Complete its original delivery; do not register a replacement.")
+}
+
+// ControlWorker retains the original action before controller I/O. Receipt
+// replay only observes its original scope; it cannot repeat Start or Stop.
+func (a *Approvals) ControlWorker(ctx context.Context, id domain.ID, action WorkerControl, run func(context.Context, ApprovalInput, WorkerControlPhase) error) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if action.ID.Validate() != nil || (action.Action != WorkerStart && action.Action != WorkerStop) || action.Generation != "" && action.Generation.Validate() != nil || domain.Text(action.Actor, "original actor", 256, true) != nil {
+		return invalid()
+	}
+	j, err := a.load()
+	if err != nil {
+		return err
+	}
+	for n, r := range j.Requests {
+		if r.Approval.Input.ID != id {
+			continue
+		}
+		if r.Approval.State != ApprovalApproved || r.Approval.Input.Role != domain.WorkerDevice || len(r.DeliveryDigest) != 32 {
+			return invalid()
+		}
+		for _, old := range r.WorkerControls {
+			if old.ID == action.ID {
+				if old != action {
+					return domain.Fail(domain.Conflict, "The original Worker action changed.", "Read the original Worker scope and action.")
+				}
+				return run(ctx, r.Approval.Input, WorkerObserve)
+			}
+		}
+		if len(r.WorkerControls) >= 64 {
+			return domain.Fail(domain.ResourceExhausted, "The original Worker control history is full.", "Preserve its lifecycle and accepted actions.")
+		}
+		// The callback verifies original credential/generation before retention.
+		if err = run(ctx, r.Approval.Input, WorkerValidate); err != nil {
+			return err
+		}
+		r.WorkerControls = append(r.WorkerControls, action)
+		j.Requests[n] = r
+		if err = a.save(j); err != nil {
+			return err
+		}
+		return run(ctx, r.Approval.Input, WorkerMutate)
+	}
+	return invalid()
 }

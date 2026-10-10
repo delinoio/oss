@@ -63,7 +63,7 @@ func (s *Service) readOutgoing(ctx context.Context, id string) (tailscaleOutgoin
 		return value, installationFailure(domain.RecoveryRequired)
 	}
 	var request pb.RequestTailscaleConnectionRequest
-	if protojson.Unmarshal(value.Request, &request) != nil || request.RequestId != id || request.Origin != value.Peer.Origin {
+	if protojson.Unmarshal(value.Request, &request) != nil || request.RequestId != id || request.Origin != value.Peer.Origin || value.Completed && request.Role == pb.DeviceType_DEVICE_TYPE_WORKER && value.WorkerDevice.Validate() != nil {
 		return value, installationFailure(domain.RecoveryRequired)
 	}
 	key, err := ecdh.X25519().NewPrivateKey(value.PrivateKey)
@@ -93,19 +93,31 @@ func (s *Service) updateOutgoing(ctx context.Context, id string, value *tailscal
 	if protojson.Unmarshal(value.Request, &original) != nil {
 		return nil, installationFailure(domain.RecoveryRequired)
 	}
-	var response *connect.Response[pb.TailscaleConnectionResponse]
+	var v *pb.TailscaleConnection
 	var err error
 	if value.CancellationRequested {
-		response, err = peerClient(value.Peer.Origin).CancelTailscaleConnection(ctx, connect.NewRequest(&pb.GetTailscaleConnectionRequest{RequestId: id, RequesterKey: original.RequesterKey}))
+		response, problem := peerClient(value.Peer.Origin).CancelTailscaleConnection(ctx, connect.NewRequest(&pb.CancelTailscaleConnectionRequest{RequestId: id, RequesterKey: original.RequesterKey}))
+		err = problem
+		if problem == nil {
+			v = response.Msg.Connection
+		}
 	} else if start || len(value.Response) == 0 {
-		response, err = peerClient(value.Peer.Origin).RequestTailscaleConnection(ctx, connect.NewRequest(&original))
+		response, problem := peerClient(value.Peer.Origin).RequestTailscaleConnection(ctx, connect.NewRequest(&original))
+		err = problem
+		if problem == nil {
+			v = response.Msg.Connection
+		}
 	} else {
-		response, err = peerClient(value.Peer.Origin).GetTailscaleConnection(ctx, connect.NewRequest(&pb.GetTailscaleConnectionRequest{RequestId: id, RequesterKey: original.RequesterKey}))
+		response, problem := peerClient(value.Peer.Origin).GetTailscaleConnection(ctx, connect.NewRequest(&pb.GetTailscaleConnectionRequest{RequestId: id, RequesterKey: original.RequesterKey}))
+		err = problem
+		if problem == nil {
+			v = response.Msg.Connection
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	v := response.Msg.Connection
+	response := &pb.TailscaleConnectionResponse{Connection: v}
 	if v == nil || v.RequestId != id || v.ServerId != original.ServerId || v.Origin != original.Origin || v.Role != original.Role || v.RequesterName != original.RequesterName || !ecdhPublicEqual(v.RequesterKey, original.RequesterKey) || len(v.TargetKey) != 32 || v.WorkerServerId != original.WorkerServerId || v.WorkerServerOrigin != original.WorkerServerOrigin {
 		return nil, installationFailure(domain.Conflict)
 	}
@@ -115,7 +127,7 @@ func (s *Service) updateOutgoing(ctx context.Context, id string, value *tailscal
 			return nil, installationFailure(domain.Conflict)
 		}
 	}
-	raw, err := protojson.Marshal(response.Msg)
+	raw, err := protojson.Marshal(response)
 	if err != nil {
 		return nil, err
 	}
@@ -125,9 +137,9 @@ func (s *Service) updateOutgoing(ctx context.Context, id string, value *tailscal
 	}
 	// The renderer receives confirmation and status. Protected grants stay in Go.
 	v.EncryptedGrant = nil
-	return response.Msg, nil
+	return response, nil
 }
-func (s *Service) StartTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.StartTailscalePeerConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) StartTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.StartTailscalePeerConnectionRequest]) (*connect.Response[pb.StartTailscalePeerConnectionResponse], error) {
 	lock, err := s.outgoingLock(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -194,9 +206,9 @@ func (s *Service) StartTailscalePeerConnection(ctx context.Context, req *connect
 	if err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	return connect.NewResponse(response), nil
+	return connect.NewResponse(&pb.StartTailscalePeerConnectionResponse{Connection: response.Connection}), nil
 }
-func (s *Service) PollTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.PollTailscalePeerConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) PollTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.PollTailscalePeerConnectionRequest]) (*connect.Response[pb.PollTailscalePeerConnectionResponse], error) {
 	lock, err := s.outgoingLock(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, "")
@@ -210,7 +222,7 @@ func (s *Service) PollTailscalePeerConnection(ctx context.Context, req *connect.
 	if err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	return connect.NewResponse(response), nil
+	return connect.NewResponse(&pb.PollTailscalePeerConnectionResponse{Connection: response.Connection}), nil
 }
 func (s *Service) CompleteTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.CompleteTailscalePeerConnectionRequest]) (*connect.Response[pb.CompleteTailscalePeerConnectionResponse], error) {
 	lock, err := s.outgoingLock(ctx)
@@ -275,7 +287,7 @@ func (s *Service) CompleteTailscalePeerConnection(ctx context.Context, req *conn
 	return connect.NewResponse(&pb.CompleteTailscalePeerConnectionResponse{ProfileId: string(value.Profile), Completed: true}), nil
 }
 
-func (s *Service) CancelTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.PollTailscalePeerConnectionRequest]) (*connect.Response[pb.TailscaleConnectionResponse], error) {
+func (s *Service) CancelTailscalePeerConnection(ctx context.Context, req *connect.Request[pb.CancelTailscalePeerConnectionRequest]) (*connect.Response[pb.CancelTailscalePeerConnectionResponse], error) {
 	lock, err := s.outgoingLock(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, "")
@@ -296,9 +308,9 @@ func (s *Service) CancelTailscalePeerConnection(ctx context.Context, req *connec
 	if err != nil {
 		return nil, rpc.Error(err, "")
 	}
-	return connect.NewResponse(response), nil
+	return connect.NewResponse(&pb.CancelTailscalePeerConnectionResponse{Connection: response.Connection}), nil
 }
-func (s *Service) ListTailscalePeerConnections(ctx context.Context, req *connect.Request[pb.ListTailscaleConnectionsRequest]) (*connect.Response[pb.ListTailscaleConnectionsResponse], error) {
+func (s *Service) ListTailscalePeerConnections(ctx context.Context, req *connect.Request[pb.ListTailscalePeerConnectionsRequest]) (*connect.Response[pb.ListTailscalePeerConnectionsResponse], error) {
 	lock, err := s.outgoingLock(ctx)
 	if err != nil {
 		return nil, rpc.Error(err, "")
@@ -306,7 +318,7 @@ func (s *Service) ListTailscalePeerConnections(ctx context.Context, req *connect
 	defer lock.Close()
 	entries, err := os.ReadDir(filepath.Join(s.Store.Root(), "tailscale-outgoing"))
 	if os.IsNotExist(err) {
-		return connect.NewResponse(&pb.ListTailscaleConnectionsResponse{}), nil
+		return connect.NewResponse(&pb.ListTailscalePeerConnectionsResponse{}), nil
 	}
 	if err != nil {
 		return nil, rpc.Error(err, "")
@@ -314,7 +326,7 @@ func (s *Service) ListTailscalePeerConnections(ctx context.Context, req *connect
 	if len(entries) > 256 {
 		return nil, rpc.Error(installationFailure(domain.RecoveryRequired), "")
 	}
-	response := &pb.ListTailscaleConnectionsResponse{}
+	response := &pb.ListTailscalePeerConnectionsResponse{}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			return nil, rpc.Error(installationFailure(domain.RecoveryRequired), "")

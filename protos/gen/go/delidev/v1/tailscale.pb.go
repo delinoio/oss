@@ -317,6 +317,70 @@ func (TailscaleAccessState) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{4}
 }
 
+type TailscaleWorkerState int32
+
+const (
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_UNSPECIFIED TailscaleWorkerState = 0
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_NOT_STARTED TailscaleWorkerState = 1
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_STARTING    TailscaleWorkerState = 2
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_RUNNING     TailscaleWorkerState = 3
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_STOPPING    TailscaleWorkerState = 4
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_STOPPED     TailscaleWorkerState = 5
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_UNCERTAIN   TailscaleWorkerState = 6
+	TailscaleWorkerState_TAILSCALE_WORKER_STATE_EXITED      TailscaleWorkerState = 7
+)
+
+// Enum value maps for TailscaleWorkerState.
+var (
+	TailscaleWorkerState_name = map[int32]string{
+		0: "TAILSCALE_WORKER_STATE_UNSPECIFIED",
+		1: "TAILSCALE_WORKER_STATE_NOT_STARTED",
+		2: "TAILSCALE_WORKER_STATE_STARTING",
+		3: "TAILSCALE_WORKER_STATE_RUNNING",
+		4: "TAILSCALE_WORKER_STATE_STOPPING",
+		5: "TAILSCALE_WORKER_STATE_STOPPED",
+		6: "TAILSCALE_WORKER_STATE_UNCERTAIN",
+		7: "TAILSCALE_WORKER_STATE_EXITED",
+	}
+	TailscaleWorkerState_value = map[string]int32{
+		"TAILSCALE_WORKER_STATE_UNSPECIFIED": 0,
+		"TAILSCALE_WORKER_STATE_NOT_STARTED": 1,
+		"TAILSCALE_WORKER_STATE_STARTING":    2,
+		"TAILSCALE_WORKER_STATE_RUNNING":     3,
+		"TAILSCALE_WORKER_STATE_STOPPING":    4,
+		"TAILSCALE_WORKER_STATE_STOPPED":     5,
+		"TAILSCALE_WORKER_STATE_UNCERTAIN":   6,
+		"TAILSCALE_WORKER_STATE_EXITED":      7,
+	}
+)
+
+func (x TailscaleWorkerState) Enum() *TailscaleWorkerState {
+	p := new(TailscaleWorkerState)
+	*p = x
+	return p
+}
+
+func (x TailscaleWorkerState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TailscaleWorkerState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_tailscale_proto_enumTypes[5].Descriptor()
+}
+
+func (TailscaleWorkerState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_tailscale_proto_enumTypes[5]
+}
+
+func (x TailscaleWorkerState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TailscaleWorkerState.Descriptor instead.
+func (TailscaleWorkerState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{5}
+}
+
 type TailscalePeer struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -602,10 +666,11 @@ func (x *ReadTailscaleDevicesResponse) GetHttpsReady() bool {
 }
 
 type CheckTailscaleDeviceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PeerId        string                 `protobuf:"bytes,1,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PeerId         string                 `protobuf:"bytes,1,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`
+	ExpectedOrigin string                 `protobuf:"bytes,2,opt,name=expected_origin,json=expectedOrigin,proto3" json:"expected_origin,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CheckTailscaleDeviceRequest) Reset() {
@@ -641,6 +706,13 @@ func (*CheckTailscaleDeviceRequest) Descriptor() ([]byte, []int) {
 func (x *CheckTailscaleDeviceRequest) GetPeerId() string {
 	if x != nil {
 		return x.PeerId
+	}
+	return ""
+}
+
+func (x *CheckTailscaleDeviceRequest) GetExpectedOrigin() string {
+	if x != nil {
+		return x.ExpectedOrigin
 	}
 	return ""
 }
@@ -984,6 +1056,8 @@ type TailscaleConnection struct {
 	EncryptedGrant     []byte                 `protobuf:"bytes,11,opt,name=encrypted_grant,json=encryptedGrant,proto3" json:"encrypted_grant,omitempty"`
 	WorkerServerId     string                 `protobuf:"bytes,12,opt,name=worker_server_id,json=workerServerId,proto3" json:"worker_server_id,omitempty"`
 	WorkerServerOrigin string                 `protobuf:"bytes,13,opt,name=worker_server_origin,json=workerServerOrigin,proto3" json:"worker_server_origin,omitempty"`
+	DecisionId         string                 `protobuf:"bytes,14,opt,name=decision_id,json=decisionId,proto3" json:"decision_id,omitempty"`
+	DecisionAllow      bool                   `protobuf:"varint,15,opt,name=decision_allow,json=decisionAllow,proto3" json:"decision_allow,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1107,6 +1181,20 @@ func (x *TailscaleConnection) GetWorkerServerOrigin() string {
 		return x.WorkerServerOrigin
 	}
 	return ""
+}
+
+func (x *TailscaleConnection) GetDecisionId() string {
+	if x != nil {
+		return x.DecisionId
+	}
+	return ""
+}
+
+func (x *TailscaleConnection) GetDecisionAllow() bool {
+	if x != nil {
+		return x.DecisionAllow
+	}
+	return false
 }
 
 type TailscaleConnectionResponse struct {
@@ -1697,6 +1785,886 @@ func (x *DeliverTailscaleWorkerGrantResponse) GetCompleted() bool {
 	return false
 }
 
+type ListTailscalePeerConnectionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTailscalePeerConnectionsRequest) Reset() {
+	*x = ListTailscalePeerConnectionsRequest{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTailscalePeerConnectionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTailscalePeerConnectionsRequest) ProtoMessage() {}
+
+func (x *ListTailscalePeerConnectionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTailscalePeerConnectionsRequest.ProtoReflect.Descriptor instead.
+func (*ListTailscalePeerConnectionsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{23}
+}
+
+type ListTailscalePeerConnectionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connections   []*TailscaleConnection `protobuf:"bytes,1,rep,name=connections,proto3" json:"connections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTailscalePeerConnectionsResponse) Reset() {
+	*x = ListTailscalePeerConnectionsResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTailscalePeerConnectionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTailscalePeerConnectionsResponse) ProtoMessage() {}
+
+func (x *ListTailscalePeerConnectionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTailscalePeerConnectionsResponse.ProtoReflect.Descriptor instead.
+func (*ListTailscalePeerConnectionsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ListTailscalePeerConnectionsResponse) GetConnections() []*TailscaleConnection {
+	if x != nil {
+		return x.Connections
+	}
+	return nil
+}
+
+type CancelTailscalePeerConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelTailscalePeerConnectionRequest) Reset() {
+	*x = CancelTailscalePeerConnectionRequest{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelTailscalePeerConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelTailscalePeerConnectionRequest) ProtoMessage() {}
+
+func (x *CancelTailscalePeerConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelTailscalePeerConnectionRequest.ProtoReflect.Descriptor instead.
+func (*CancelTailscalePeerConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CancelTailscalePeerConnectionRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type CancelTailscalePeerConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelTailscalePeerConnectionResponse) Reset() {
+	*x = CancelTailscalePeerConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelTailscalePeerConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelTailscalePeerConnectionResponse) ProtoMessage() {}
+
+func (x *CancelTailscalePeerConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelTailscalePeerConnectionResponse.ProtoReflect.Descriptor instead.
+func (*CancelTailscalePeerConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CancelTailscalePeerConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type SetTailscaleAccessResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         TailscaleAccessState   `protobuf:"varint,1,opt,name=state,proto3,enum=delidev.v1.TailscaleAccessState" json:"state,omitempty"`
+	Origin        string                 `protobuf:"bytes,2,opt,name=origin,proto3" json:"origin,omitempty"`
+	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTailscaleAccessResponse) Reset() {
+	*x = SetTailscaleAccessResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTailscaleAccessResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTailscaleAccessResponse) ProtoMessage() {}
+
+func (x *SetTailscaleAccessResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTailscaleAccessResponse.ProtoReflect.Descriptor instead.
+func (*SetTailscaleAccessResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *SetTailscaleAccessResponse) GetState() TailscaleAccessState {
+	if x != nil {
+		return x.State
+	}
+	return TailscaleAccessState_TAILSCALE_ACCESS_STATE_UNSPECIFIED
+}
+
+func (x *SetTailscaleAccessResponse) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *SetTailscaleAccessResponse) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type RequestTailscaleConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestTailscaleConnectionResponse) Reset() {
+	*x = RequestTailscaleConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestTailscaleConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestTailscaleConnectionResponse) ProtoMessage() {}
+
+func (x *RequestTailscaleConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestTailscaleConnectionResponse.ProtoReflect.Descriptor instead.
+func (*RequestTailscaleConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *RequestTailscaleConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type GetTailscaleConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTailscaleConnectionResponse) Reset() {
+	*x = GetTailscaleConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTailscaleConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTailscaleConnectionResponse) ProtoMessage() {}
+
+func (x *GetTailscaleConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTailscaleConnectionResponse.ProtoReflect.Descriptor instead.
+func (*GetTailscaleConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GetTailscaleConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type DecideTailscaleConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecideTailscaleConnectionResponse) Reset() {
+	*x = DecideTailscaleConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecideTailscaleConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecideTailscaleConnectionResponse) ProtoMessage() {}
+
+func (x *DecideTailscaleConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecideTailscaleConnectionResponse.ProtoReflect.Descriptor instead.
+func (*DecideTailscaleConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *DecideTailscaleConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type CancelTailscaleConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequesterKey  []byte                 `protobuf:"bytes,2,opt,name=requester_key,json=requesterKey,proto3" json:"requester_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelTailscaleConnectionRequest) Reset() {
+	*x = CancelTailscaleConnectionRequest{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelTailscaleConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelTailscaleConnectionRequest) ProtoMessage() {}
+
+func (x *CancelTailscaleConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelTailscaleConnectionRequest.ProtoReflect.Descriptor instead.
+func (*CancelTailscaleConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *CancelTailscaleConnectionRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *CancelTailscaleConnectionRequest) GetRequesterKey() []byte {
+	if x != nil {
+		return x.RequesterKey
+	}
+	return nil
+}
+
+type CancelTailscaleConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelTailscaleConnectionResponse) Reset() {
+	*x = CancelTailscaleConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelTailscaleConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelTailscaleConnectionResponse) ProtoMessage() {}
+
+func (x *CancelTailscaleConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelTailscaleConnectionResponse.ProtoReflect.Descriptor instead.
+func (*CancelTailscaleConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *CancelTailscaleConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type StartTailscalePeerConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartTailscalePeerConnectionResponse) Reset() {
+	*x = StartTailscalePeerConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartTailscalePeerConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartTailscalePeerConnectionResponse) ProtoMessage() {}
+
+func (x *StartTailscalePeerConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartTailscalePeerConnectionResponse.ProtoReflect.Descriptor instead.
+func (*StartTailscalePeerConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *StartTailscalePeerConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type PollTailscalePeerConnectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connection    *TailscaleConnection   `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PollTailscalePeerConnectionResponse) Reset() {
+	*x = PollTailscalePeerConnectionResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PollTailscalePeerConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PollTailscalePeerConnectionResponse) ProtoMessage() {}
+
+func (x *PollTailscalePeerConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PollTailscalePeerConnectionResponse.ProtoReflect.Descriptor instead.
+func (*PollTailscalePeerConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *PollTailscalePeerConnectionResponse) GetConnection() *TailscaleConnection {
+	if x != nil {
+		return x.Connection
+	}
+	return nil
+}
+
+type GetTailscaleWorkerRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalRequestId string                 `protobuf:"bytes,1,opt,name=approval_request_id,json=approvalRequestId,proto3" json:"approval_request_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *GetTailscaleWorkerRequest) Reset() {
+	*x = GetTailscaleWorkerRequest{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTailscaleWorkerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTailscaleWorkerRequest) ProtoMessage() {}
+
+func (x *GetTailscaleWorkerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTailscaleWorkerRequest.ProtoReflect.Descriptor instead.
+func (*GetTailscaleWorkerRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *GetTailscaleWorkerRequest) GetApprovalRequestId() string {
+	if x != nil {
+		return x.ApprovalRequestId
+	}
+	return ""
+}
+
+type GetTailscaleWorkerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         TailscaleWorkerState   `protobuf:"varint,1,opt,name=state,proto3,enum=delidev.v1.TailscaleWorkerState" json:"state,omitempty"`
+	Generation    string                 `protobuf:"bytes,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTailscaleWorkerResponse) Reset() {
+	*x = GetTailscaleWorkerResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTailscaleWorkerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTailscaleWorkerResponse) ProtoMessage() {}
+
+func (x *GetTailscaleWorkerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTailscaleWorkerResponse.ProtoReflect.Descriptor instead.
+func (*GetTailscaleWorkerResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *GetTailscaleWorkerResponse) GetState() TailscaleWorkerState {
+	if x != nil {
+		return x.State
+	}
+	return TailscaleWorkerState_TAILSCALE_WORKER_STATE_UNSPECIFIED
+}
+
+func (x *GetTailscaleWorkerResponse) GetGeneration() string {
+	if x != nil {
+		return x.Generation
+	}
+	return ""
+}
+
+type StartTailscaleWorkerRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalRequestId  string                 `protobuf:"bytes,1,opt,name=approval_request_id,json=approvalRequestId,proto3" json:"approval_request_id,omitempty"`
+	RequestId          string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ExpectedGeneration string                 `protobuf:"bytes,3,opt,name=expected_generation,json=expectedGeneration,proto3" json:"expected_generation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *StartTailscaleWorkerRequest) Reset() {
+	*x = StartTailscaleWorkerRequest{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartTailscaleWorkerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartTailscaleWorkerRequest) ProtoMessage() {}
+
+func (x *StartTailscaleWorkerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartTailscaleWorkerRequest.ProtoReflect.Descriptor instead.
+func (*StartTailscaleWorkerRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *StartTailscaleWorkerRequest) GetApprovalRequestId() string {
+	if x != nil {
+		return x.ApprovalRequestId
+	}
+	return ""
+}
+
+func (x *StartTailscaleWorkerRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *StartTailscaleWorkerRequest) GetExpectedGeneration() string {
+	if x != nil {
+		return x.ExpectedGeneration
+	}
+	return ""
+}
+
+type StartTailscaleWorkerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         TailscaleWorkerState   `protobuf:"varint,1,opt,name=state,proto3,enum=delidev.v1.TailscaleWorkerState" json:"state,omitempty"`
+	Generation    string                 `protobuf:"bytes,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	RequestId     string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartTailscaleWorkerResponse) Reset() {
+	*x = StartTailscaleWorkerResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartTailscaleWorkerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartTailscaleWorkerResponse) ProtoMessage() {}
+
+func (x *StartTailscaleWorkerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartTailscaleWorkerResponse.ProtoReflect.Descriptor instead.
+func (*StartTailscaleWorkerResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *StartTailscaleWorkerResponse) GetState() TailscaleWorkerState {
+	if x != nil {
+		return x.State
+	}
+	return TailscaleWorkerState_TAILSCALE_WORKER_STATE_UNSPECIFIED
+}
+
+func (x *StartTailscaleWorkerResponse) GetGeneration() string {
+	if x != nil {
+		return x.Generation
+	}
+	return ""
+}
+
+func (x *StartTailscaleWorkerResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type StopTailscaleWorkerRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ApprovalRequestId  string                 `protobuf:"bytes,1,opt,name=approval_request_id,json=approvalRequestId,proto3" json:"approval_request_id,omitempty"`
+	RequestId          string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ExpectedGeneration string                 `protobuf:"bytes,3,opt,name=expected_generation,json=expectedGeneration,proto3" json:"expected_generation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *StopTailscaleWorkerRequest) Reset() {
+	*x = StopTailscaleWorkerRequest{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopTailscaleWorkerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopTailscaleWorkerRequest) ProtoMessage() {}
+
+func (x *StopTailscaleWorkerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopTailscaleWorkerRequest.ProtoReflect.Descriptor instead.
+func (*StopTailscaleWorkerRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *StopTailscaleWorkerRequest) GetApprovalRequestId() string {
+	if x != nil {
+		return x.ApprovalRequestId
+	}
+	return ""
+}
+
+func (x *StopTailscaleWorkerRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *StopTailscaleWorkerRequest) GetExpectedGeneration() string {
+	if x != nil {
+		return x.ExpectedGeneration
+	}
+	return ""
+}
+
+type StopTailscaleWorkerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         TailscaleWorkerState   `protobuf:"varint,1,opt,name=state,proto3,enum=delidev.v1.TailscaleWorkerState" json:"state,omitempty"`
+	Generation    string                 `protobuf:"bytes,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	RequestId     string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopTailscaleWorkerResponse) Reset() {
+	*x = StopTailscaleWorkerResponse{}
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopTailscaleWorkerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopTailscaleWorkerResponse) ProtoMessage() {}
+
+func (x *StopTailscaleWorkerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_tailscale_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopTailscaleWorkerResponse.ProtoReflect.Descriptor instead.
+func (*StopTailscaleWorkerResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_tailscale_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *StopTailscaleWorkerResponse) GetState() TailscaleWorkerState {
+	if x != nil {
+		return x.State
+	}
+	return TailscaleWorkerState_TAILSCALE_WORKER_STATE_UNSPECIFIED
+}
+
+func (x *StopTailscaleWorkerResponse) GetGeneration() string {
+	if x != nil {
+		return x.Generation
+	}
+	return ""
+}
+
+func (x *StopTailscaleWorkerResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 var File_delidev_v1_tailscale_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_tailscale_proto_rawDesc = "" +
@@ -1722,9 +2690,10 @@ const file_delidev_v1_tailscale_proto_rawDesc = "" +
 	"\x04self\x18\x02 \x01(\v2\x19.delidev.v1.TailscalePeerR\x04self\x12/\n" +
 	"\x05peers\x18\x03 \x03(\v2\x19.delidev.v1.TailscalePeerR\x05peers\x12\x1f\n" +
 	"\vhttps_ready\x18\x04 \x01(\bR\n" +
-	"httpsReady\"6\n" +
+	"httpsReady\"_\n" +
 	"\x1bCheckTailscaleDeviceRequest\x12\x17\n" +
-	"\apeer_id\x18\x01 \x01(\tR\x06peerId\"q\n" +
+	"\apeer_id\x18\x01 \x01(\tR\x06peerId\x12'\n" +
+	"\x0fexpected_origin\x18\x02 \x01(\tR\x0eexpectedOrigin\"q\n" +
 	"\x1cCheckTailscaleDeviceResponse\x124\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1e.delidev.v1.TailscalePeerStateR\x05state\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\tR\bserverId\"\x1b\n" +
@@ -1749,7 +2718,7 @@ const file_delidev_v1_tailscale_proto_rawDesc = "" +
 	"\x04role\x18\x06 \x01(\x0e2\x16.delidev.v1.DeviceTypeR\x04role\x12.\n" +
 	"\x13observed_target_key\x18\a \x01(\fR\x11observedTargetKey\x12(\n" +
 	"\x10worker_server_id\x18\b \x01(\tR\x0eworkerServerId\x120\n" +
-	"\x14worker_server_origin\x18\t \x01(\tR\x12workerServerOrigin\"\x8b\x04\n" +
+	"\x14worker_server_origin\x18\t \x01(\tR\x12workerServerOrigin\"\xd3\x04\n" +
 	"\x13TailscaleConnection\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -1767,7 +2736,10 @@ const file_delidev_v1_tailscale_proto_rawDesc = "" +
 	" \x01(\x0e2\".delidev.v1.TailscaleApprovalStateR\x05state\x12'\n" +
 	"\x0fencrypted_grant\x18\v \x01(\fR\x0eencryptedGrant\x12(\n" +
 	"\x10worker_server_id\x18\f \x01(\tR\x0eworkerServerId\x120\n" +
-	"\x14worker_server_origin\x18\r \x01(\tR\x12workerServerOrigin\"^\n" +
+	"\x14worker_server_origin\x18\r \x01(\tR\x12workerServerOrigin\x12\x1f\n" +
+	"\vdecision_id\x18\x0e \x01(\tR\n" +
+	"decisionId\x12%\n" +
+	"\x0edecision_allow\x18\x0f \x01(\bR\rdecisionAllow\"^\n" +
 	"\x1bTailscaleConnectionResponse\x12?\n" +
 	"\n" +
 	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
@@ -1812,7 +2784,80 @@ const file_delidev_v1_tailscale_proto_rawDesc = "" +
 	"\x0fencrypted_grant\x18\x03 \x01(\fR\x0eencryptedGrant\"m\n" +
 	"#DeliverTailscaleWorkerGrantResponse\x12(\n" +
 	"\x10worker_device_id\x18\x01 \x01(\tR\x0eworkerDeviceId\x12\x1c\n" +
-	"\tcompleted\x18\x02 \x01(\bR\tcompleted*\xe5\x02\n" +
+	"\tcompleted\x18\x02 \x01(\bR\tcompleted\"%\n" +
+	"#ListTailscalePeerConnectionsRequest\"i\n" +
+	"$ListTailscalePeerConnectionsResponse\x12A\n" +
+	"\vconnections\x18\x01 \x03(\v2\x1f.delidev.v1.TailscaleConnectionR\vconnections\"E\n" +
+	"$CancelTailscalePeerConnectionRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"h\n" +
+	"%CancelTailscalePeerConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"\x86\x01\n" +
+	"\x1aSetTailscaleAccessResponse\x126\n" +
+	"\x05state\x18\x01 \x01(\x0e2 .delidev.v1.TailscaleAccessStateR\x05state\x12\x16\n" +
+	"\x06origin\x18\x02 \x01(\tR\x06origin\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\"e\n" +
+	"\"RequestTailscaleConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"a\n" +
+	"\x1eGetTailscaleConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"d\n" +
+	"!DecideTailscaleConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"f\n" +
+	" CancelTailscaleConnectionRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12#\n" +
+	"\rrequester_key\x18\x02 \x01(\fR\frequesterKey\"d\n" +
+	"!CancelTailscaleConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"g\n" +
+	"$StartTailscalePeerConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"f\n" +
+	"#PollTailscalePeerConnectionResponse\x12?\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\v2\x1f.delidev.v1.TailscaleConnectionR\n" +
+	"connection\"K\n" +
+	"\x19GetTailscaleWorkerRequest\x12.\n" +
+	"\x13approval_request_id\x18\x01 \x01(\tR\x11approvalRequestId\"t\n" +
+	"\x1aGetTailscaleWorkerResponse\x126\n" +
+	"\x05state\x18\x01 \x01(\x0e2 .delidev.v1.TailscaleWorkerStateR\x05state\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\tR\n" +
+	"generation\"\x9d\x01\n" +
+	"\x1bStartTailscaleWorkerRequest\x12.\n" +
+	"\x13approval_request_id\x18\x01 \x01(\tR\x11approvalRequestId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12/\n" +
+	"\x13expected_generation\x18\x03 \x01(\tR\x12expectedGeneration\"\x95\x01\n" +
+	"\x1cStartTailscaleWorkerResponse\x126\n" +
+	"\x05state\x18\x01 \x01(\x0e2 .delidev.v1.TailscaleWorkerStateR\x05state\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\tR\n" +
+	"generation\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"\x9c\x01\n" +
+	"\x1aStopTailscaleWorkerRequest\x12.\n" +
+	"\x13approval_request_id\x18\x01 \x01(\tR\x11approvalRequestId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12/\n" +
+	"\x13expected_generation\x18\x03 \x01(\tR\x12expectedGeneration\"\x94\x01\n" +
+	"\x1bStopTailscaleWorkerResponse\x126\n" +
+	"\x05state\x18\x01 \x01(\x0e2 .delidev.v1.TailscaleWorkerStateR\x05state\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\tR\n" +
+	"generation\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId*\xe5\x02\n" +
 	"\x17TailscaleDiscoveryState\x12)\n" +
 	"%TAILSCALE_DISCOVERY_STATE_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fTAILSCALE_DISCOVERY_STATE_READY\x10\x01\x12%\n" +
@@ -1849,23 +2894,35 @@ const file_delidev_v1_tailscale_proto_rawDesc = "" +
 	"\x1fTAILSCALE_ACCESS_STATE_STARTING\x10\x02\x12 \n" +
 	"\x1cTAILSCALE_ACCESS_STATE_READY\x10\x03\x12&\n" +
 	"\"TAILSCALE_ACCESS_STATE_UNAVAILABLE\x10\x04\x12+\n" +
-	"'TAILSCALE_ACCESS_STATE_CLEANUP_REQUIRED\x10\x052\xcb\x0e\n" +
-	"\x10TailscaleService\x12y\n" +
-	"\x1cListTailscalePeerConnections\x12+.delidev.v1.ListTailscaleConnectionsRequest\x1a,.delidev.v1.ListTailscaleConnectionsResponse\x12x\n" +
-	"\x1dCancelTailscalePeerConnection\x12..delidev.v1.PollTailscalePeerConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12~\n" +
+	"'TAILSCALE_ACCESS_STATE_CLEANUP_REQUIRED\x10\x05*\xc1\x02\n" +
+	"\x14TailscaleWorkerState\x12&\n" +
+	"\"TAILSCALE_WORKER_STATE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"TAILSCALE_WORKER_STATE_NOT_STARTED\x10\x01\x12#\n" +
+	"\x1fTAILSCALE_WORKER_STATE_STARTING\x10\x02\x12\"\n" +
+	"\x1eTAILSCALE_WORKER_STATE_RUNNING\x10\x03\x12#\n" +
+	"\x1fTAILSCALE_WORKER_STATE_STOPPING\x10\x04\x12\"\n" +
+	"\x1eTAILSCALE_WORKER_STATE_STOPPED\x10\x05\x12$\n" +
+	" TAILSCALE_WORKER_STATE_UNCERTAIN\x10\x06\x12!\n" +
+	"\x1dTAILSCALE_WORKER_STATE_EXITED\x10\a2\xc4\x11\n" +
+	"\x10TailscaleService\x12c\n" +
+	"\x12GetTailscaleWorker\x12%.delidev.v1.GetTailscaleWorkerRequest\x1a&.delidev.v1.GetTailscaleWorkerResponse\x12i\n" +
+	"\x14StartTailscaleWorker\x12'.delidev.v1.StartTailscaleWorkerRequest\x1a(.delidev.v1.StartTailscaleWorkerResponse\x12f\n" +
+	"\x13StopTailscaleWorker\x12&.delidev.v1.StopTailscaleWorkerRequest\x1a'.delidev.v1.StopTailscaleWorkerResponse\x12\x81\x01\n" +
+	"\x1cListTailscalePeerConnections\x12/.delidev.v1.ListTailscalePeerConnectionsRequest\x1a0.delidev.v1.ListTailscalePeerConnectionsResponse\x12\x84\x01\n" +
+	"\x1dCancelTailscalePeerConnection\x120.delidev.v1.CancelTailscalePeerConnectionRequest\x1a1.delidev.v1.CancelTailscalePeerConnectionResponse\x12~\n" +
 	"\x1bDeliverTailscaleWorkerGrant\x12..delidev.v1.DeliverTailscaleWorkerGrantRequest\x1a/.delidev.v1.DeliverTailscaleWorkerGrantResponse\x12c\n" +
 	"\x12GetTailscaleStatus\x12%.delidev.v1.GetTailscaleStatusRequest\x1a&.delidev.v1.GetTailscaleStatusResponse\x12i\n" +
 	"\x14ReadTailscaleDevices\x12'.delidev.v1.ReadTailscaleDevicesRequest\x1a(.delidev.v1.ReadTailscaleDevicesResponse\x12i\n" +
 	"\x14CheckTailscaleDevice\x12'.delidev.v1.CheckTailscaleDeviceRequest\x1a(.delidev.v1.CheckTailscaleDeviceResponse\x12c\n" +
 	"\x12GetTailscaleAccess\x12%.delidev.v1.GetTailscaleAccessRequest\x1a&.delidev.v1.GetTailscaleAccessResponse\x12c\n" +
-	"\x12SetTailscaleAccess\x12%.delidev.v1.SetTailscaleAccessRequest\x1a&.delidev.v1.GetTailscaleAccessResponse\x12t\n" +
-	"\x1aRequestTailscaleConnection\x12-.delidev.v1.RequestTailscaleConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12l\n" +
-	"\x16GetTailscaleConnection\x12).delidev.v1.GetTailscaleConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12u\n" +
-	"\x18ListTailscaleConnections\x12+.delidev.v1.ListTailscaleConnectionsRequest\x1a,.delidev.v1.ListTailscaleConnectionsResponse\x12r\n" +
-	"\x19DecideTailscaleConnection\x12,.delidev.v1.DecideTailscaleConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12o\n" +
-	"\x19CancelTailscaleConnection\x12).delidev.v1.GetTailscaleConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12x\n" +
-	"\x1cStartTailscalePeerConnection\x12/.delidev.v1.StartTailscalePeerConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12v\n" +
-	"\x1bPollTailscalePeerConnection\x12..delidev.v1.PollTailscalePeerConnectionRequest\x1a'.delidev.v1.TailscaleConnectionResponse\x12\x8a\x01\n" +
+	"\x12SetTailscaleAccess\x12%.delidev.v1.SetTailscaleAccessRequest\x1a&.delidev.v1.SetTailscaleAccessResponse\x12{\n" +
+	"\x1aRequestTailscaleConnection\x12-.delidev.v1.RequestTailscaleConnectionRequest\x1a..delidev.v1.RequestTailscaleConnectionResponse\x12o\n" +
+	"\x16GetTailscaleConnection\x12).delidev.v1.GetTailscaleConnectionRequest\x1a*.delidev.v1.GetTailscaleConnectionResponse\x12u\n" +
+	"\x18ListTailscaleConnections\x12+.delidev.v1.ListTailscaleConnectionsRequest\x1a,.delidev.v1.ListTailscaleConnectionsResponse\x12x\n" +
+	"\x19DecideTailscaleConnection\x12,.delidev.v1.DecideTailscaleConnectionRequest\x1a-.delidev.v1.DecideTailscaleConnectionResponse\x12x\n" +
+	"\x19CancelTailscaleConnection\x12,.delidev.v1.CancelTailscaleConnectionRequest\x1a-.delidev.v1.CancelTailscaleConnectionResponse\x12\x81\x01\n" +
+	"\x1cStartTailscalePeerConnection\x12/.delidev.v1.StartTailscalePeerConnectionRequest\x1a0.delidev.v1.StartTailscalePeerConnectionResponse\x12~\n" +
+	"\x1bPollTailscalePeerConnection\x12..delidev.v1.PollTailscalePeerConnectionRequest\x1a/.delidev.v1.PollTailscalePeerConnectionResponse\x12\x8a\x01\n" +
 	"\x1fCompleteTailscalePeerConnection\x122.delidev.v1.CompleteTailscalePeerConnectionRequest\x1a3.delidev.v1.CompleteTailscalePeerConnectionResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
@@ -1880,89 +2937,126 @@ func file_delidev_v1_tailscale_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_tailscale_proto_rawDescData
 }
 
-var file_delidev_v1_tailscale_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_delidev_v1_tailscale_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_delidev_v1_tailscale_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_delidev_v1_tailscale_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_delidev_v1_tailscale_proto_goTypes = []any{
 	(TailscaleDiscoveryState)(0),                    // 0: delidev.v1.TailscaleDiscoveryState
 	(TailscaleOwnership)(0),                         // 1: delidev.v1.TailscaleOwnership
 	(TailscalePeerState)(0),                         // 2: delidev.v1.TailscalePeerState
 	(TailscaleApprovalState)(0),                     // 3: delidev.v1.TailscaleApprovalState
 	(TailscaleAccessState)(0),                       // 4: delidev.v1.TailscaleAccessState
-	(*TailscalePeer)(nil),                           // 5: delidev.v1.TailscalePeer
-	(*GetTailscaleStatusRequest)(nil),               // 6: delidev.v1.GetTailscaleStatusRequest
-	(*GetTailscaleStatusResponse)(nil),              // 7: delidev.v1.GetTailscaleStatusResponse
-	(*ReadTailscaleDevicesRequest)(nil),             // 8: delidev.v1.ReadTailscaleDevicesRequest
-	(*ReadTailscaleDevicesResponse)(nil),            // 9: delidev.v1.ReadTailscaleDevicesResponse
-	(*CheckTailscaleDeviceRequest)(nil),             // 10: delidev.v1.CheckTailscaleDeviceRequest
-	(*CheckTailscaleDeviceResponse)(nil),            // 11: delidev.v1.CheckTailscaleDeviceResponse
-	(*GetTailscaleAccessRequest)(nil),               // 12: delidev.v1.GetTailscaleAccessRequest
-	(*GetTailscaleAccessResponse)(nil),              // 13: delidev.v1.GetTailscaleAccessResponse
-	(*SetTailscaleAccessRequest)(nil),               // 14: delidev.v1.SetTailscaleAccessRequest
-	(*RequestTailscaleConnectionRequest)(nil),       // 15: delidev.v1.RequestTailscaleConnectionRequest
-	(*TailscaleConnection)(nil),                     // 16: delidev.v1.TailscaleConnection
-	(*TailscaleConnectionResponse)(nil),             // 17: delidev.v1.TailscaleConnectionResponse
-	(*GetTailscaleConnectionRequest)(nil),           // 18: delidev.v1.GetTailscaleConnectionRequest
-	(*ListTailscaleConnectionsRequest)(nil),         // 19: delidev.v1.ListTailscaleConnectionsRequest
-	(*ListTailscaleConnectionsResponse)(nil),        // 20: delidev.v1.ListTailscaleConnectionsResponse
-	(*DecideTailscaleConnectionRequest)(nil),        // 21: delidev.v1.DecideTailscaleConnectionRequest
-	(*StartTailscalePeerConnectionRequest)(nil),     // 22: delidev.v1.StartTailscalePeerConnectionRequest
-	(*PollTailscalePeerConnectionRequest)(nil),      // 23: delidev.v1.PollTailscalePeerConnectionRequest
-	(*CompleteTailscalePeerConnectionRequest)(nil),  // 24: delidev.v1.CompleteTailscalePeerConnectionRequest
-	(*CompleteTailscalePeerConnectionResponse)(nil), // 25: delidev.v1.CompleteTailscalePeerConnectionResponse
-	(*DeliverTailscaleWorkerGrantRequest)(nil),      // 26: delidev.v1.DeliverTailscaleWorkerGrantRequest
-	(*DeliverTailscaleWorkerGrantResponse)(nil),     // 27: delidev.v1.DeliverTailscaleWorkerGrantResponse
-	(DeviceType)(0),                                 // 28: delidev.v1.DeviceType
+	(TailscaleWorkerState)(0),                       // 5: delidev.v1.TailscaleWorkerState
+	(*TailscalePeer)(nil),                           // 6: delidev.v1.TailscalePeer
+	(*GetTailscaleStatusRequest)(nil),               // 7: delidev.v1.GetTailscaleStatusRequest
+	(*GetTailscaleStatusResponse)(nil),              // 8: delidev.v1.GetTailscaleStatusResponse
+	(*ReadTailscaleDevicesRequest)(nil),             // 9: delidev.v1.ReadTailscaleDevicesRequest
+	(*ReadTailscaleDevicesResponse)(nil),            // 10: delidev.v1.ReadTailscaleDevicesResponse
+	(*CheckTailscaleDeviceRequest)(nil),             // 11: delidev.v1.CheckTailscaleDeviceRequest
+	(*CheckTailscaleDeviceResponse)(nil),            // 12: delidev.v1.CheckTailscaleDeviceResponse
+	(*GetTailscaleAccessRequest)(nil),               // 13: delidev.v1.GetTailscaleAccessRequest
+	(*GetTailscaleAccessResponse)(nil),              // 14: delidev.v1.GetTailscaleAccessResponse
+	(*SetTailscaleAccessRequest)(nil),               // 15: delidev.v1.SetTailscaleAccessRequest
+	(*RequestTailscaleConnectionRequest)(nil),       // 16: delidev.v1.RequestTailscaleConnectionRequest
+	(*TailscaleConnection)(nil),                     // 17: delidev.v1.TailscaleConnection
+	(*TailscaleConnectionResponse)(nil),             // 18: delidev.v1.TailscaleConnectionResponse
+	(*GetTailscaleConnectionRequest)(nil),           // 19: delidev.v1.GetTailscaleConnectionRequest
+	(*ListTailscaleConnectionsRequest)(nil),         // 20: delidev.v1.ListTailscaleConnectionsRequest
+	(*ListTailscaleConnectionsResponse)(nil),        // 21: delidev.v1.ListTailscaleConnectionsResponse
+	(*DecideTailscaleConnectionRequest)(nil),        // 22: delidev.v1.DecideTailscaleConnectionRequest
+	(*StartTailscalePeerConnectionRequest)(nil),     // 23: delidev.v1.StartTailscalePeerConnectionRequest
+	(*PollTailscalePeerConnectionRequest)(nil),      // 24: delidev.v1.PollTailscalePeerConnectionRequest
+	(*CompleteTailscalePeerConnectionRequest)(nil),  // 25: delidev.v1.CompleteTailscalePeerConnectionRequest
+	(*CompleteTailscalePeerConnectionResponse)(nil), // 26: delidev.v1.CompleteTailscalePeerConnectionResponse
+	(*DeliverTailscaleWorkerGrantRequest)(nil),      // 27: delidev.v1.DeliverTailscaleWorkerGrantRequest
+	(*DeliverTailscaleWorkerGrantResponse)(nil),     // 28: delidev.v1.DeliverTailscaleWorkerGrantResponse
+	(*ListTailscalePeerConnectionsRequest)(nil),     // 29: delidev.v1.ListTailscalePeerConnectionsRequest
+	(*ListTailscalePeerConnectionsResponse)(nil),    // 30: delidev.v1.ListTailscalePeerConnectionsResponse
+	(*CancelTailscalePeerConnectionRequest)(nil),    // 31: delidev.v1.CancelTailscalePeerConnectionRequest
+	(*CancelTailscalePeerConnectionResponse)(nil),   // 32: delidev.v1.CancelTailscalePeerConnectionResponse
+	(*SetTailscaleAccessResponse)(nil),              // 33: delidev.v1.SetTailscaleAccessResponse
+	(*RequestTailscaleConnectionResponse)(nil),      // 34: delidev.v1.RequestTailscaleConnectionResponse
+	(*GetTailscaleConnectionResponse)(nil),          // 35: delidev.v1.GetTailscaleConnectionResponse
+	(*DecideTailscaleConnectionResponse)(nil),       // 36: delidev.v1.DecideTailscaleConnectionResponse
+	(*CancelTailscaleConnectionRequest)(nil),        // 37: delidev.v1.CancelTailscaleConnectionRequest
+	(*CancelTailscaleConnectionResponse)(nil),       // 38: delidev.v1.CancelTailscaleConnectionResponse
+	(*StartTailscalePeerConnectionResponse)(nil),    // 39: delidev.v1.StartTailscalePeerConnectionResponse
+	(*PollTailscalePeerConnectionResponse)(nil),     // 40: delidev.v1.PollTailscalePeerConnectionResponse
+	(*GetTailscaleWorkerRequest)(nil),               // 41: delidev.v1.GetTailscaleWorkerRequest
+	(*GetTailscaleWorkerResponse)(nil),              // 42: delidev.v1.GetTailscaleWorkerResponse
+	(*StartTailscaleWorkerRequest)(nil),             // 43: delidev.v1.StartTailscaleWorkerRequest
+	(*StartTailscaleWorkerResponse)(nil),            // 44: delidev.v1.StartTailscaleWorkerResponse
+	(*StopTailscaleWorkerRequest)(nil),              // 45: delidev.v1.StopTailscaleWorkerRequest
+	(*StopTailscaleWorkerResponse)(nil),             // 46: delidev.v1.StopTailscaleWorkerResponse
+	(DeviceType)(0),                                 // 47: delidev.v1.DeviceType
 }
 var file_delidev_v1_tailscale_proto_depIdxs = []int32{
 	1,  // 0: delidev.v1.TailscalePeer.ownership:type_name -> delidev.v1.TailscaleOwnership
 	0,  // 1: delidev.v1.ReadTailscaleDevicesResponse.state:type_name -> delidev.v1.TailscaleDiscoveryState
-	5,  // 2: delidev.v1.ReadTailscaleDevicesResponse.self:type_name -> delidev.v1.TailscalePeer
-	5,  // 3: delidev.v1.ReadTailscaleDevicesResponse.peers:type_name -> delidev.v1.TailscalePeer
+	6,  // 2: delidev.v1.ReadTailscaleDevicesResponse.self:type_name -> delidev.v1.TailscalePeer
+	6,  // 3: delidev.v1.ReadTailscaleDevicesResponse.peers:type_name -> delidev.v1.TailscalePeer
 	2,  // 4: delidev.v1.CheckTailscaleDeviceResponse.state:type_name -> delidev.v1.TailscalePeerState
 	4,  // 5: delidev.v1.GetTailscaleAccessResponse.state:type_name -> delidev.v1.TailscaleAccessState
-	28, // 6: delidev.v1.RequestTailscaleConnectionRequest.role:type_name -> delidev.v1.DeviceType
-	28, // 7: delidev.v1.TailscaleConnection.role:type_name -> delidev.v1.DeviceType
+	47, // 6: delidev.v1.RequestTailscaleConnectionRequest.role:type_name -> delidev.v1.DeviceType
+	47, // 7: delidev.v1.TailscaleConnection.role:type_name -> delidev.v1.DeviceType
 	3,  // 8: delidev.v1.TailscaleConnection.state:type_name -> delidev.v1.TailscaleApprovalState
-	16, // 9: delidev.v1.TailscaleConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
-	16, // 10: delidev.v1.ListTailscaleConnectionsResponse.connections:type_name -> delidev.v1.TailscaleConnection
-	28, // 11: delidev.v1.StartTailscalePeerConnectionRequest.role:type_name -> delidev.v1.DeviceType
-	19, // 12: delidev.v1.TailscaleService.ListTailscalePeerConnections:input_type -> delidev.v1.ListTailscaleConnectionsRequest
-	23, // 13: delidev.v1.TailscaleService.CancelTailscalePeerConnection:input_type -> delidev.v1.PollTailscalePeerConnectionRequest
-	26, // 14: delidev.v1.TailscaleService.DeliverTailscaleWorkerGrant:input_type -> delidev.v1.DeliverTailscaleWorkerGrantRequest
-	6,  // 15: delidev.v1.TailscaleService.GetTailscaleStatus:input_type -> delidev.v1.GetTailscaleStatusRequest
-	8,  // 16: delidev.v1.TailscaleService.ReadTailscaleDevices:input_type -> delidev.v1.ReadTailscaleDevicesRequest
-	10, // 17: delidev.v1.TailscaleService.CheckTailscaleDevice:input_type -> delidev.v1.CheckTailscaleDeviceRequest
-	12, // 18: delidev.v1.TailscaleService.GetTailscaleAccess:input_type -> delidev.v1.GetTailscaleAccessRequest
-	14, // 19: delidev.v1.TailscaleService.SetTailscaleAccess:input_type -> delidev.v1.SetTailscaleAccessRequest
-	15, // 20: delidev.v1.TailscaleService.RequestTailscaleConnection:input_type -> delidev.v1.RequestTailscaleConnectionRequest
-	18, // 21: delidev.v1.TailscaleService.GetTailscaleConnection:input_type -> delidev.v1.GetTailscaleConnectionRequest
-	19, // 22: delidev.v1.TailscaleService.ListTailscaleConnections:input_type -> delidev.v1.ListTailscaleConnectionsRequest
-	21, // 23: delidev.v1.TailscaleService.DecideTailscaleConnection:input_type -> delidev.v1.DecideTailscaleConnectionRequest
-	18, // 24: delidev.v1.TailscaleService.CancelTailscaleConnection:input_type -> delidev.v1.GetTailscaleConnectionRequest
-	22, // 25: delidev.v1.TailscaleService.StartTailscalePeerConnection:input_type -> delidev.v1.StartTailscalePeerConnectionRequest
-	23, // 26: delidev.v1.TailscaleService.PollTailscalePeerConnection:input_type -> delidev.v1.PollTailscalePeerConnectionRequest
-	24, // 27: delidev.v1.TailscaleService.CompleteTailscalePeerConnection:input_type -> delidev.v1.CompleteTailscalePeerConnectionRequest
-	20, // 28: delidev.v1.TailscaleService.ListTailscalePeerConnections:output_type -> delidev.v1.ListTailscaleConnectionsResponse
-	17, // 29: delidev.v1.TailscaleService.CancelTailscalePeerConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	27, // 30: delidev.v1.TailscaleService.DeliverTailscaleWorkerGrant:output_type -> delidev.v1.DeliverTailscaleWorkerGrantResponse
-	7,  // 31: delidev.v1.TailscaleService.GetTailscaleStatus:output_type -> delidev.v1.GetTailscaleStatusResponse
-	9,  // 32: delidev.v1.TailscaleService.ReadTailscaleDevices:output_type -> delidev.v1.ReadTailscaleDevicesResponse
-	11, // 33: delidev.v1.TailscaleService.CheckTailscaleDevice:output_type -> delidev.v1.CheckTailscaleDeviceResponse
-	13, // 34: delidev.v1.TailscaleService.GetTailscaleAccess:output_type -> delidev.v1.GetTailscaleAccessResponse
-	13, // 35: delidev.v1.TailscaleService.SetTailscaleAccess:output_type -> delidev.v1.GetTailscaleAccessResponse
-	17, // 36: delidev.v1.TailscaleService.RequestTailscaleConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	17, // 37: delidev.v1.TailscaleService.GetTailscaleConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	20, // 38: delidev.v1.TailscaleService.ListTailscaleConnections:output_type -> delidev.v1.ListTailscaleConnectionsResponse
-	17, // 39: delidev.v1.TailscaleService.DecideTailscaleConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	17, // 40: delidev.v1.TailscaleService.CancelTailscaleConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	17, // 41: delidev.v1.TailscaleService.StartTailscalePeerConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	17, // 42: delidev.v1.TailscaleService.PollTailscalePeerConnection:output_type -> delidev.v1.TailscaleConnectionResponse
-	25, // 43: delidev.v1.TailscaleService.CompleteTailscalePeerConnection:output_type -> delidev.v1.CompleteTailscalePeerConnectionResponse
-	28, // [28:44] is the sub-list for method output_type
-	12, // [12:28] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	17, // 9: delidev.v1.TailscaleConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	17, // 10: delidev.v1.ListTailscaleConnectionsResponse.connections:type_name -> delidev.v1.TailscaleConnection
+	47, // 11: delidev.v1.StartTailscalePeerConnectionRequest.role:type_name -> delidev.v1.DeviceType
+	17, // 12: delidev.v1.ListTailscalePeerConnectionsResponse.connections:type_name -> delidev.v1.TailscaleConnection
+	17, // 13: delidev.v1.CancelTailscalePeerConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	4,  // 14: delidev.v1.SetTailscaleAccessResponse.state:type_name -> delidev.v1.TailscaleAccessState
+	17, // 15: delidev.v1.RequestTailscaleConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	17, // 16: delidev.v1.GetTailscaleConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	17, // 17: delidev.v1.DecideTailscaleConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	17, // 18: delidev.v1.CancelTailscaleConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	17, // 19: delidev.v1.StartTailscalePeerConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	17, // 20: delidev.v1.PollTailscalePeerConnectionResponse.connection:type_name -> delidev.v1.TailscaleConnection
+	5,  // 21: delidev.v1.GetTailscaleWorkerResponse.state:type_name -> delidev.v1.TailscaleWorkerState
+	5,  // 22: delidev.v1.StartTailscaleWorkerResponse.state:type_name -> delidev.v1.TailscaleWorkerState
+	5,  // 23: delidev.v1.StopTailscaleWorkerResponse.state:type_name -> delidev.v1.TailscaleWorkerState
+	41, // 24: delidev.v1.TailscaleService.GetTailscaleWorker:input_type -> delidev.v1.GetTailscaleWorkerRequest
+	43, // 25: delidev.v1.TailscaleService.StartTailscaleWorker:input_type -> delidev.v1.StartTailscaleWorkerRequest
+	45, // 26: delidev.v1.TailscaleService.StopTailscaleWorker:input_type -> delidev.v1.StopTailscaleWorkerRequest
+	29, // 27: delidev.v1.TailscaleService.ListTailscalePeerConnections:input_type -> delidev.v1.ListTailscalePeerConnectionsRequest
+	31, // 28: delidev.v1.TailscaleService.CancelTailscalePeerConnection:input_type -> delidev.v1.CancelTailscalePeerConnectionRequest
+	27, // 29: delidev.v1.TailscaleService.DeliverTailscaleWorkerGrant:input_type -> delidev.v1.DeliverTailscaleWorkerGrantRequest
+	7,  // 30: delidev.v1.TailscaleService.GetTailscaleStatus:input_type -> delidev.v1.GetTailscaleStatusRequest
+	9,  // 31: delidev.v1.TailscaleService.ReadTailscaleDevices:input_type -> delidev.v1.ReadTailscaleDevicesRequest
+	11, // 32: delidev.v1.TailscaleService.CheckTailscaleDevice:input_type -> delidev.v1.CheckTailscaleDeviceRequest
+	13, // 33: delidev.v1.TailscaleService.GetTailscaleAccess:input_type -> delidev.v1.GetTailscaleAccessRequest
+	15, // 34: delidev.v1.TailscaleService.SetTailscaleAccess:input_type -> delidev.v1.SetTailscaleAccessRequest
+	16, // 35: delidev.v1.TailscaleService.RequestTailscaleConnection:input_type -> delidev.v1.RequestTailscaleConnectionRequest
+	19, // 36: delidev.v1.TailscaleService.GetTailscaleConnection:input_type -> delidev.v1.GetTailscaleConnectionRequest
+	20, // 37: delidev.v1.TailscaleService.ListTailscaleConnections:input_type -> delidev.v1.ListTailscaleConnectionsRequest
+	22, // 38: delidev.v1.TailscaleService.DecideTailscaleConnection:input_type -> delidev.v1.DecideTailscaleConnectionRequest
+	37, // 39: delidev.v1.TailscaleService.CancelTailscaleConnection:input_type -> delidev.v1.CancelTailscaleConnectionRequest
+	23, // 40: delidev.v1.TailscaleService.StartTailscalePeerConnection:input_type -> delidev.v1.StartTailscalePeerConnectionRequest
+	24, // 41: delidev.v1.TailscaleService.PollTailscalePeerConnection:input_type -> delidev.v1.PollTailscalePeerConnectionRequest
+	25, // 42: delidev.v1.TailscaleService.CompleteTailscalePeerConnection:input_type -> delidev.v1.CompleteTailscalePeerConnectionRequest
+	42, // 43: delidev.v1.TailscaleService.GetTailscaleWorker:output_type -> delidev.v1.GetTailscaleWorkerResponse
+	44, // 44: delidev.v1.TailscaleService.StartTailscaleWorker:output_type -> delidev.v1.StartTailscaleWorkerResponse
+	46, // 45: delidev.v1.TailscaleService.StopTailscaleWorker:output_type -> delidev.v1.StopTailscaleWorkerResponse
+	30, // 46: delidev.v1.TailscaleService.ListTailscalePeerConnections:output_type -> delidev.v1.ListTailscalePeerConnectionsResponse
+	32, // 47: delidev.v1.TailscaleService.CancelTailscalePeerConnection:output_type -> delidev.v1.CancelTailscalePeerConnectionResponse
+	28, // 48: delidev.v1.TailscaleService.DeliverTailscaleWorkerGrant:output_type -> delidev.v1.DeliverTailscaleWorkerGrantResponse
+	8,  // 49: delidev.v1.TailscaleService.GetTailscaleStatus:output_type -> delidev.v1.GetTailscaleStatusResponse
+	10, // 50: delidev.v1.TailscaleService.ReadTailscaleDevices:output_type -> delidev.v1.ReadTailscaleDevicesResponse
+	12, // 51: delidev.v1.TailscaleService.CheckTailscaleDevice:output_type -> delidev.v1.CheckTailscaleDeviceResponse
+	14, // 52: delidev.v1.TailscaleService.GetTailscaleAccess:output_type -> delidev.v1.GetTailscaleAccessResponse
+	33, // 53: delidev.v1.TailscaleService.SetTailscaleAccess:output_type -> delidev.v1.SetTailscaleAccessResponse
+	34, // 54: delidev.v1.TailscaleService.RequestTailscaleConnection:output_type -> delidev.v1.RequestTailscaleConnectionResponse
+	35, // 55: delidev.v1.TailscaleService.GetTailscaleConnection:output_type -> delidev.v1.GetTailscaleConnectionResponse
+	21, // 56: delidev.v1.TailscaleService.ListTailscaleConnections:output_type -> delidev.v1.ListTailscaleConnectionsResponse
+	36, // 57: delidev.v1.TailscaleService.DecideTailscaleConnection:output_type -> delidev.v1.DecideTailscaleConnectionResponse
+	38, // 58: delidev.v1.TailscaleService.CancelTailscaleConnection:output_type -> delidev.v1.CancelTailscaleConnectionResponse
+	39, // 59: delidev.v1.TailscaleService.StartTailscalePeerConnection:output_type -> delidev.v1.StartTailscalePeerConnectionResponse
+	40, // 60: delidev.v1.TailscaleService.PollTailscalePeerConnection:output_type -> delidev.v1.PollTailscalePeerConnectionResponse
+	26, // 61: delidev.v1.TailscaleService.CompleteTailscalePeerConnection:output_type -> delidev.v1.CompleteTailscalePeerConnectionResponse
+	43, // [43:62] is the sub-list for method output_type
+	24, // [24:43] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_tailscale_proto_init() }
@@ -1976,8 +3070,8 @@ func file_delidev_v1_tailscale_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_tailscale_proto_rawDesc), len(file_delidev_v1_tailscale_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   23,
+			NumEnums:      6,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

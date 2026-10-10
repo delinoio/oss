@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -205,8 +207,54 @@ func TestWorkerDeliveryRetainsTargetServerAndOriginalAttempt(t *testing.T) {
 	if _, err = restarted.DeliverWorker(context.Background(), input.ID, input.RequesterKey, sealed, consume); err != nil || calls != 2 {
 		t.Fatal("completed delivery repeated mutation")
 	}
+	action := WorkerControl{ID: domain.NewID(), Action: WorkerStart, Actor: "original-client"}
+	phases := []WorkerControlPhase{}
+	run := func(_ context.Context, selected ApprovalInput, phase WorkerControlPhase) error {
+		if selected.ID != input.ID {
+			t.Fatal("changed scope")
+		}
+		phases = append(phases, phase)
+		if phase == WorkerMutate {
+			return errors.New("lost controller reply")
+		}
+		return nil
+	}
+	if restarted.ControlWorker(context.Background(), input.ID, action, run) == nil {
+		t.Fatal("lost control reply passed")
+	}
+	if err = restarted.ControlWorker(context.Background(), input.ID, action, run); err != nil {
+		t.Fatal(err)
+	}
+	if len(phases) != 3 || phases[0] != WorkerValidate || phases[1] != WorkerMutate || phases[2] != WorkerObserve {
+		t.Fatal("action replay repeated mutation", phases)
+	}
+	changed := action
+	changed.Actor = "different-client"
+	if restarted.ControlWorker(context.Background(), input.ID, changed, run) == nil {
+		t.Fatal("changed principal accepted")
+	}
 	sealed[len(sealed)-1] ^= 1
 	if _, err = restarted.DeliverWorker(context.Background(), input.ID, input.RequesterKey, sealed, consume); err == nil {
 		t.Fatal("changed delivery accepted")
+	}
+}
+
+func TestApprovalJournalLossAndOwnerMismatchFailClosed(t *testing.T) {
+	a, input, _ := approvalFixture(t)
+	if _, err := a.Request(input); err != nil {
+		t.Fatal(err)
+	}
+	owner := filepath.Join(a.Root, "tailscale-approvals.owner")
+	if err := os.WriteFile(owner, []byte(domain.NewID()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.List(); err == nil {
+		t.Fatal("changed owner accepted")
+	}
+	if err := os.Remove(filepath.Join(a.Root, "tailscale-approvals.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Request(input); err == nil {
+		t.Fatal("missing original journal recreated")
 	}
 }

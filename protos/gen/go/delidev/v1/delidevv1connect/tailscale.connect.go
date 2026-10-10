@@ -33,6 +33,15 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// TailscaleServiceGetTailscaleWorkerProcedure is the fully-qualified name of the TailscaleService's
+	// GetTailscaleWorker RPC.
+	TailscaleServiceGetTailscaleWorkerProcedure = "/delidev.v1.TailscaleService/GetTailscaleWorker"
+	// TailscaleServiceStartTailscaleWorkerProcedure is the fully-qualified name of the
+	// TailscaleService's StartTailscaleWorker RPC.
+	TailscaleServiceStartTailscaleWorkerProcedure = "/delidev.v1.TailscaleService/StartTailscaleWorker"
+	// TailscaleServiceStopTailscaleWorkerProcedure is the fully-qualified name of the
+	// TailscaleService's StopTailscaleWorker RPC.
+	TailscaleServiceStopTailscaleWorkerProcedure = "/delidev.v1.TailscaleService/StopTailscaleWorker"
 	// TailscaleServiceListTailscalePeerConnectionsProcedure is the fully-qualified name of the
 	// TailscaleService's ListTailscalePeerConnections RPC.
 	TailscaleServiceListTailscalePeerConnectionsProcedure = "/delidev.v1.TailscaleService/ListTailscalePeerConnections"
@@ -85,21 +94,24 @@ const (
 
 // TailscaleServiceClient is a client for the delidev.v1.TailscaleService service.
 type TailscaleServiceClient interface {
-	ListTailscalePeerConnections(context.Context, *connect.Request[v1.ListTailscaleConnectionsRequest]) (*connect.Response[v1.ListTailscaleConnectionsResponse], error)
-	CancelTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
+	GetTailscaleWorker(context.Context, *connect.Request[v1.GetTailscaleWorkerRequest]) (*connect.Response[v1.GetTailscaleWorkerResponse], error)
+	StartTailscaleWorker(context.Context, *connect.Request[v1.StartTailscaleWorkerRequest]) (*connect.Response[v1.StartTailscaleWorkerResponse], error)
+	StopTailscaleWorker(context.Context, *connect.Request[v1.StopTailscaleWorkerRequest]) (*connect.Response[v1.StopTailscaleWorkerResponse], error)
+	ListTailscalePeerConnections(context.Context, *connect.Request[v1.ListTailscalePeerConnectionsRequest]) (*connect.Response[v1.ListTailscalePeerConnectionsResponse], error)
+	CancelTailscalePeerConnection(context.Context, *connect.Request[v1.CancelTailscalePeerConnectionRequest]) (*connect.Response[v1.CancelTailscalePeerConnectionResponse], error)
 	DeliverTailscaleWorkerGrant(context.Context, *connect.Request[v1.DeliverTailscaleWorkerGrantRequest]) (*connect.Response[v1.DeliverTailscaleWorkerGrantResponse], error)
 	GetTailscaleStatus(context.Context, *connect.Request[v1.GetTailscaleStatusRequest]) (*connect.Response[v1.GetTailscaleStatusResponse], error)
 	ReadTailscaleDevices(context.Context, *connect.Request[v1.ReadTailscaleDevicesRequest]) (*connect.Response[v1.ReadTailscaleDevicesResponse], error)
 	CheckTailscaleDevice(context.Context, *connect.Request[v1.CheckTailscaleDeviceRequest]) (*connect.Response[v1.CheckTailscaleDeviceResponse], error)
 	GetTailscaleAccess(context.Context, *connect.Request[v1.GetTailscaleAccessRequest]) (*connect.Response[v1.GetTailscaleAccessResponse], error)
-	SetTailscaleAccess(context.Context, *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.GetTailscaleAccessResponse], error)
-	RequestTailscaleConnection(context.Context, *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	GetTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
+	SetTailscaleAccess(context.Context, *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.SetTailscaleAccessResponse], error)
+	RequestTailscaleConnection(context.Context, *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.RequestTailscaleConnectionResponse], error)
+	GetTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.GetTailscaleConnectionResponse], error)
 	ListTailscaleConnections(context.Context, *connect.Request[v1.ListTailscaleConnectionsRequest]) (*connect.Response[v1.ListTailscaleConnectionsResponse], error)
-	DecideTailscaleConnection(context.Context, *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	CancelTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	StartTailscalePeerConnection(context.Context, *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	PollTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
+	DecideTailscaleConnection(context.Context, *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.DecideTailscaleConnectionResponse], error)
+	CancelTailscaleConnection(context.Context, *connect.Request[v1.CancelTailscaleConnectionRequest]) (*connect.Response[v1.CancelTailscaleConnectionResponse], error)
+	StartTailscalePeerConnection(context.Context, *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.StartTailscalePeerConnectionResponse], error)
+	PollTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.PollTailscalePeerConnectionResponse], error)
 	CompleteTailscalePeerConnection(context.Context, *connect.Request[v1.CompleteTailscalePeerConnectionRequest]) (*connect.Response[v1.CompleteTailscalePeerConnectionResponse], error)
 }
 
@@ -114,13 +126,31 @@ func NewTailscaleServiceClient(httpClient connect.HTTPClient, baseURL string, op
 	baseURL = strings.TrimRight(baseURL, "/")
 	tailscaleServiceMethods := v1.File_delidev_v1_tailscale_proto.Services().ByName("TailscaleService").Methods()
 	return &tailscaleServiceClient{
-		listTailscalePeerConnections: connect.NewClient[v1.ListTailscaleConnectionsRequest, v1.ListTailscaleConnectionsResponse](
+		getTailscaleWorker: connect.NewClient[v1.GetTailscaleWorkerRequest, v1.GetTailscaleWorkerResponse](
+			httpClient,
+			baseURL+TailscaleServiceGetTailscaleWorkerProcedure,
+			connect.WithSchema(tailscaleServiceMethods.ByName("GetTailscaleWorker")),
+			connect.WithClientOptions(opts...),
+		),
+		startTailscaleWorker: connect.NewClient[v1.StartTailscaleWorkerRequest, v1.StartTailscaleWorkerResponse](
+			httpClient,
+			baseURL+TailscaleServiceStartTailscaleWorkerProcedure,
+			connect.WithSchema(tailscaleServiceMethods.ByName("StartTailscaleWorker")),
+			connect.WithClientOptions(opts...),
+		),
+		stopTailscaleWorker: connect.NewClient[v1.StopTailscaleWorkerRequest, v1.StopTailscaleWorkerResponse](
+			httpClient,
+			baseURL+TailscaleServiceStopTailscaleWorkerProcedure,
+			connect.WithSchema(tailscaleServiceMethods.ByName("StopTailscaleWorker")),
+			connect.WithClientOptions(opts...),
+		),
+		listTailscalePeerConnections: connect.NewClient[v1.ListTailscalePeerConnectionsRequest, v1.ListTailscalePeerConnectionsResponse](
 			httpClient,
 			baseURL+TailscaleServiceListTailscalePeerConnectionsProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("ListTailscalePeerConnections")),
 			connect.WithClientOptions(opts...),
 		),
-		cancelTailscalePeerConnection: connect.NewClient[v1.PollTailscalePeerConnectionRequest, v1.TailscaleConnectionResponse](
+		cancelTailscalePeerConnection: connect.NewClient[v1.CancelTailscalePeerConnectionRequest, v1.CancelTailscalePeerConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServiceCancelTailscalePeerConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("CancelTailscalePeerConnection")),
@@ -156,19 +186,19 @@ func NewTailscaleServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(tailscaleServiceMethods.ByName("GetTailscaleAccess")),
 			connect.WithClientOptions(opts...),
 		),
-		setTailscaleAccess: connect.NewClient[v1.SetTailscaleAccessRequest, v1.GetTailscaleAccessResponse](
+		setTailscaleAccess: connect.NewClient[v1.SetTailscaleAccessRequest, v1.SetTailscaleAccessResponse](
 			httpClient,
 			baseURL+TailscaleServiceSetTailscaleAccessProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("SetTailscaleAccess")),
 			connect.WithClientOptions(opts...),
 		),
-		requestTailscaleConnection: connect.NewClient[v1.RequestTailscaleConnectionRequest, v1.TailscaleConnectionResponse](
+		requestTailscaleConnection: connect.NewClient[v1.RequestTailscaleConnectionRequest, v1.RequestTailscaleConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServiceRequestTailscaleConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("RequestTailscaleConnection")),
 			connect.WithClientOptions(opts...),
 		),
-		getTailscaleConnection: connect.NewClient[v1.GetTailscaleConnectionRequest, v1.TailscaleConnectionResponse](
+		getTailscaleConnection: connect.NewClient[v1.GetTailscaleConnectionRequest, v1.GetTailscaleConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServiceGetTailscaleConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("GetTailscaleConnection")),
@@ -180,25 +210,25 @@ func NewTailscaleServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(tailscaleServiceMethods.ByName("ListTailscaleConnections")),
 			connect.WithClientOptions(opts...),
 		),
-		decideTailscaleConnection: connect.NewClient[v1.DecideTailscaleConnectionRequest, v1.TailscaleConnectionResponse](
+		decideTailscaleConnection: connect.NewClient[v1.DecideTailscaleConnectionRequest, v1.DecideTailscaleConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServiceDecideTailscaleConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("DecideTailscaleConnection")),
 			connect.WithClientOptions(opts...),
 		),
-		cancelTailscaleConnection: connect.NewClient[v1.GetTailscaleConnectionRequest, v1.TailscaleConnectionResponse](
+		cancelTailscaleConnection: connect.NewClient[v1.CancelTailscaleConnectionRequest, v1.CancelTailscaleConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServiceCancelTailscaleConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("CancelTailscaleConnection")),
 			connect.WithClientOptions(opts...),
 		),
-		startTailscalePeerConnection: connect.NewClient[v1.StartTailscalePeerConnectionRequest, v1.TailscaleConnectionResponse](
+		startTailscalePeerConnection: connect.NewClient[v1.StartTailscalePeerConnectionRequest, v1.StartTailscalePeerConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServiceStartTailscalePeerConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("StartTailscalePeerConnection")),
 			connect.WithClientOptions(opts...),
 		),
-		pollTailscalePeerConnection: connect.NewClient[v1.PollTailscalePeerConnectionRequest, v1.TailscaleConnectionResponse](
+		pollTailscalePeerConnection: connect.NewClient[v1.PollTailscalePeerConnectionRequest, v1.PollTailscalePeerConnectionResponse](
 			httpClient,
 			baseURL+TailscaleServicePollTailscalePeerConnectionProcedure,
 			connect.WithSchema(tailscaleServiceMethods.ByName("PollTailscalePeerConnection")),
@@ -215,31 +245,49 @@ func NewTailscaleServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // tailscaleServiceClient implements TailscaleServiceClient.
 type tailscaleServiceClient struct {
-	listTailscalePeerConnections    *connect.Client[v1.ListTailscaleConnectionsRequest, v1.ListTailscaleConnectionsResponse]
-	cancelTailscalePeerConnection   *connect.Client[v1.PollTailscalePeerConnectionRequest, v1.TailscaleConnectionResponse]
+	getTailscaleWorker              *connect.Client[v1.GetTailscaleWorkerRequest, v1.GetTailscaleWorkerResponse]
+	startTailscaleWorker            *connect.Client[v1.StartTailscaleWorkerRequest, v1.StartTailscaleWorkerResponse]
+	stopTailscaleWorker             *connect.Client[v1.StopTailscaleWorkerRequest, v1.StopTailscaleWorkerResponse]
+	listTailscalePeerConnections    *connect.Client[v1.ListTailscalePeerConnectionsRequest, v1.ListTailscalePeerConnectionsResponse]
+	cancelTailscalePeerConnection   *connect.Client[v1.CancelTailscalePeerConnectionRequest, v1.CancelTailscalePeerConnectionResponse]
 	deliverTailscaleWorkerGrant     *connect.Client[v1.DeliverTailscaleWorkerGrantRequest, v1.DeliverTailscaleWorkerGrantResponse]
 	getTailscaleStatus              *connect.Client[v1.GetTailscaleStatusRequest, v1.GetTailscaleStatusResponse]
 	readTailscaleDevices            *connect.Client[v1.ReadTailscaleDevicesRequest, v1.ReadTailscaleDevicesResponse]
 	checkTailscaleDevice            *connect.Client[v1.CheckTailscaleDeviceRequest, v1.CheckTailscaleDeviceResponse]
 	getTailscaleAccess              *connect.Client[v1.GetTailscaleAccessRequest, v1.GetTailscaleAccessResponse]
-	setTailscaleAccess              *connect.Client[v1.SetTailscaleAccessRequest, v1.GetTailscaleAccessResponse]
-	requestTailscaleConnection      *connect.Client[v1.RequestTailscaleConnectionRequest, v1.TailscaleConnectionResponse]
-	getTailscaleConnection          *connect.Client[v1.GetTailscaleConnectionRequest, v1.TailscaleConnectionResponse]
+	setTailscaleAccess              *connect.Client[v1.SetTailscaleAccessRequest, v1.SetTailscaleAccessResponse]
+	requestTailscaleConnection      *connect.Client[v1.RequestTailscaleConnectionRequest, v1.RequestTailscaleConnectionResponse]
+	getTailscaleConnection          *connect.Client[v1.GetTailscaleConnectionRequest, v1.GetTailscaleConnectionResponse]
 	listTailscaleConnections        *connect.Client[v1.ListTailscaleConnectionsRequest, v1.ListTailscaleConnectionsResponse]
-	decideTailscaleConnection       *connect.Client[v1.DecideTailscaleConnectionRequest, v1.TailscaleConnectionResponse]
-	cancelTailscaleConnection       *connect.Client[v1.GetTailscaleConnectionRequest, v1.TailscaleConnectionResponse]
-	startTailscalePeerConnection    *connect.Client[v1.StartTailscalePeerConnectionRequest, v1.TailscaleConnectionResponse]
-	pollTailscalePeerConnection     *connect.Client[v1.PollTailscalePeerConnectionRequest, v1.TailscaleConnectionResponse]
+	decideTailscaleConnection       *connect.Client[v1.DecideTailscaleConnectionRequest, v1.DecideTailscaleConnectionResponse]
+	cancelTailscaleConnection       *connect.Client[v1.CancelTailscaleConnectionRequest, v1.CancelTailscaleConnectionResponse]
+	startTailscalePeerConnection    *connect.Client[v1.StartTailscalePeerConnectionRequest, v1.StartTailscalePeerConnectionResponse]
+	pollTailscalePeerConnection     *connect.Client[v1.PollTailscalePeerConnectionRequest, v1.PollTailscalePeerConnectionResponse]
 	completeTailscalePeerConnection *connect.Client[v1.CompleteTailscalePeerConnectionRequest, v1.CompleteTailscalePeerConnectionResponse]
 }
 
+// GetTailscaleWorker calls delidev.v1.TailscaleService.GetTailscaleWorker.
+func (c *tailscaleServiceClient) GetTailscaleWorker(ctx context.Context, req *connect.Request[v1.GetTailscaleWorkerRequest]) (*connect.Response[v1.GetTailscaleWorkerResponse], error) {
+	return c.getTailscaleWorker.CallUnary(ctx, req)
+}
+
+// StartTailscaleWorker calls delidev.v1.TailscaleService.StartTailscaleWorker.
+func (c *tailscaleServiceClient) StartTailscaleWorker(ctx context.Context, req *connect.Request[v1.StartTailscaleWorkerRequest]) (*connect.Response[v1.StartTailscaleWorkerResponse], error) {
+	return c.startTailscaleWorker.CallUnary(ctx, req)
+}
+
+// StopTailscaleWorker calls delidev.v1.TailscaleService.StopTailscaleWorker.
+func (c *tailscaleServiceClient) StopTailscaleWorker(ctx context.Context, req *connect.Request[v1.StopTailscaleWorkerRequest]) (*connect.Response[v1.StopTailscaleWorkerResponse], error) {
+	return c.stopTailscaleWorker.CallUnary(ctx, req)
+}
+
 // ListTailscalePeerConnections calls delidev.v1.TailscaleService.ListTailscalePeerConnections.
-func (c *tailscaleServiceClient) ListTailscalePeerConnections(ctx context.Context, req *connect.Request[v1.ListTailscaleConnectionsRequest]) (*connect.Response[v1.ListTailscaleConnectionsResponse], error) {
+func (c *tailscaleServiceClient) ListTailscalePeerConnections(ctx context.Context, req *connect.Request[v1.ListTailscalePeerConnectionsRequest]) (*connect.Response[v1.ListTailscalePeerConnectionsResponse], error) {
 	return c.listTailscalePeerConnections.CallUnary(ctx, req)
 }
 
 // CancelTailscalePeerConnection calls delidev.v1.TailscaleService.CancelTailscalePeerConnection.
-func (c *tailscaleServiceClient) CancelTailscalePeerConnection(ctx context.Context, req *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) CancelTailscalePeerConnection(ctx context.Context, req *connect.Request[v1.CancelTailscalePeerConnectionRequest]) (*connect.Response[v1.CancelTailscalePeerConnectionResponse], error) {
 	return c.cancelTailscalePeerConnection.CallUnary(ctx, req)
 }
 
@@ -269,17 +317,17 @@ func (c *tailscaleServiceClient) GetTailscaleAccess(ctx context.Context, req *co
 }
 
 // SetTailscaleAccess calls delidev.v1.TailscaleService.SetTailscaleAccess.
-func (c *tailscaleServiceClient) SetTailscaleAccess(ctx context.Context, req *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.GetTailscaleAccessResponse], error) {
+func (c *tailscaleServiceClient) SetTailscaleAccess(ctx context.Context, req *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.SetTailscaleAccessResponse], error) {
 	return c.setTailscaleAccess.CallUnary(ctx, req)
 }
 
 // RequestTailscaleConnection calls delidev.v1.TailscaleService.RequestTailscaleConnection.
-func (c *tailscaleServiceClient) RequestTailscaleConnection(ctx context.Context, req *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) RequestTailscaleConnection(ctx context.Context, req *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.RequestTailscaleConnectionResponse], error) {
 	return c.requestTailscaleConnection.CallUnary(ctx, req)
 }
 
 // GetTailscaleConnection calls delidev.v1.TailscaleService.GetTailscaleConnection.
-func (c *tailscaleServiceClient) GetTailscaleConnection(ctx context.Context, req *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) GetTailscaleConnection(ctx context.Context, req *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.GetTailscaleConnectionResponse], error) {
 	return c.getTailscaleConnection.CallUnary(ctx, req)
 }
 
@@ -289,22 +337,22 @@ func (c *tailscaleServiceClient) ListTailscaleConnections(ctx context.Context, r
 }
 
 // DecideTailscaleConnection calls delidev.v1.TailscaleService.DecideTailscaleConnection.
-func (c *tailscaleServiceClient) DecideTailscaleConnection(ctx context.Context, req *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) DecideTailscaleConnection(ctx context.Context, req *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.DecideTailscaleConnectionResponse], error) {
 	return c.decideTailscaleConnection.CallUnary(ctx, req)
 }
 
 // CancelTailscaleConnection calls delidev.v1.TailscaleService.CancelTailscaleConnection.
-func (c *tailscaleServiceClient) CancelTailscaleConnection(ctx context.Context, req *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) CancelTailscaleConnection(ctx context.Context, req *connect.Request[v1.CancelTailscaleConnectionRequest]) (*connect.Response[v1.CancelTailscaleConnectionResponse], error) {
 	return c.cancelTailscaleConnection.CallUnary(ctx, req)
 }
 
 // StartTailscalePeerConnection calls delidev.v1.TailscaleService.StartTailscalePeerConnection.
-func (c *tailscaleServiceClient) StartTailscalePeerConnection(ctx context.Context, req *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) StartTailscalePeerConnection(ctx context.Context, req *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.StartTailscalePeerConnectionResponse], error) {
 	return c.startTailscalePeerConnection.CallUnary(ctx, req)
 }
 
 // PollTailscalePeerConnection calls delidev.v1.TailscaleService.PollTailscalePeerConnection.
-func (c *tailscaleServiceClient) PollTailscalePeerConnection(ctx context.Context, req *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (c *tailscaleServiceClient) PollTailscalePeerConnection(ctx context.Context, req *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.PollTailscalePeerConnectionResponse], error) {
 	return c.pollTailscalePeerConnection.CallUnary(ctx, req)
 }
 
@@ -316,21 +364,24 @@ func (c *tailscaleServiceClient) CompleteTailscalePeerConnection(ctx context.Con
 
 // TailscaleServiceHandler is an implementation of the delidev.v1.TailscaleService service.
 type TailscaleServiceHandler interface {
-	ListTailscalePeerConnections(context.Context, *connect.Request[v1.ListTailscaleConnectionsRequest]) (*connect.Response[v1.ListTailscaleConnectionsResponse], error)
-	CancelTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
+	GetTailscaleWorker(context.Context, *connect.Request[v1.GetTailscaleWorkerRequest]) (*connect.Response[v1.GetTailscaleWorkerResponse], error)
+	StartTailscaleWorker(context.Context, *connect.Request[v1.StartTailscaleWorkerRequest]) (*connect.Response[v1.StartTailscaleWorkerResponse], error)
+	StopTailscaleWorker(context.Context, *connect.Request[v1.StopTailscaleWorkerRequest]) (*connect.Response[v1.StopTailscaleWorkerResponse], error)
+	ListTailscalePeerConnections(context.Context, *connect.Request[v1.ListTailscalePeerConnectionsRequest]) (*connect.Response[v1.ListTailscalePeerConnectionsResponse], error)
+	CancelTailscalePeerConnection(context.Context, *connect.Request[v1.CancelTailscalePeerConnectionRequest]) (*connect.Response[v1.CancelTailscalePeerConnectionResponse], error)
 	DeliverTailscaleWorkerGrant(context.Context, *connect.Request[v1.DeliverTailscaleWorkerGrantRequest]) (*connect.Response[v1.DeliverTailscaleWorkerGrantResponse], error)
 	GetTailscaleStatus(context.Context, *connect.Request[v1.GetTailscaleStatusRequest]) (*connect.Response[v1.GetTailscaleStatusResponse], error)
 	ReadTailscaleDevices(context.Context, *connect.Request[v1.ReadTailscaleDevicesRequest]) (*connect.Response[v1.ReadTailscaleDevicesResponse], error)
 	CheckTailscaleDevice(context.Context, *connect.Request[v1.CheckTailscaleDeviceRequest]) (*connect.Response[v1.CheckTailscaleDeviceResponse], error)
 	GetTailscaleAccess(context.Context, *connect.Request[v1.GetTailscaleAccessRequest]) (*connect.Response[v1.GetTailscaleAccessResponse], error)
-	SetTailscaleAccess(context.Context, *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.GetTailscaleAccessResponse], error)
-	RequestTailscaleConnection(context.Context, *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	GetTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
+	SetTailscaleAccess(context.Context, *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.SetTailscaleAccessResponse], error)
+	RequestTailscaleConnection(context.Context, *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.RequestTailscaleConnectionResponse], error)
+	GetTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.GetTailscaleConnectionResponse], error)
 	ListTailscaleConnections(context.Context, *connect.Request[v1.ListTailscaleConnectionsRequest]) (*connect.Response[v1.ListTailscaleConnectionsResponse], error)
-	DecideTailscaleConnection(context.Context, *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	CancelTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	StartTailscalePeerConnection(context.Context, *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
-	PollTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error)
+	DecideTailscaleConnection(context.Context, *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.DecideTailscaleConnectionResponse], error)
+	CancelTailscaleConnection(context.Context, *connect.Request[v1.CancelTailscaleConnectionRequest]) (*connect.Response[v1.CancelTailscaleConnectionResponse], error)
+	StartTailscalePeerConnection(context.Context, *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.StartTailscalePeerConnectionResponse], error)
+	PollTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.PollTailscalePeerConnectionResponse], error)
 	CompleteTailscalePeerConnection(context.Context, *connect.Request[v1.CompleteTailscalePeerConnectionRequest]) (*connect.Response[v1.CompleteTailscalePeerConnectionResponse], error)
 }
 
@@ -341,6 +392,24 @@ type TailscaleServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewTailscaleServiceHandler(svc TailscaleServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	tailscaleServiceMethods := v1.File_delidev_v1_tailscale_proto.Services().ByName("TailscaleService").Methods()
+	tailscaleServiceGetTailscaleWorkerHandler := connect.NewUnaryHandler(
+		TailscaleServiceGetTailscaleWorkerProcedure,
+		svc.GetTailscaleWorker,
+		connect.WithSchema(tailscaleServiceMethods.ByName("GetTailscaleWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tailscaleServiceStartTailscaleWorkerHandler := connect.NewUnaryHandler(
+		TailscaleServiceStartTailscaleWorkerProcedure,
+		svc.StartTailscaleWorker,
+		connect.WithSchema(tailscaleServiceMethods.ByName("StartTailscaleWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
+	tailscaleServiceStopTailscaleWorkerHandler := connect.NewUnaryHandler(
+		TailscaleServiceStopTailscaleWorkerProcedure,
+		svc.StopTailscaleWorker,
+		connect.WithSchema(tailscaleServiceMethods.ByName("StopTailscaleWorker")),
+		connect.WithHandlerOptions(opts...),
+	)
 	tailscaleServiceListTailscalePeerConnectionsHandler := connect.NewUnaryHandler(
 		TailscaleServiceListTailscalePeerConnectionsProcedure,
 		svc.ListTailscalePeerConnections,
@@ -439,6 +508,12 @@ func NewTailscaleServiceHandler(svc TailscaleServiceHandler, opts ...connect.Han
 	)
 	return "/delidev.v1.TailscaleService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case TailscaleServiceGetTailscaleWorkerProcedure:
+			tailscaleServiceGetTailscaleWorkerHandler.ServeHTTP(w, r)
+		case TailscaleServiceStartTailscaleWorkerProcedure:
+			tailscaleServiceStartTailscaleWorkerHandler.ServeHTTP(w, r)
+		case TailscaleServiceStopTailscaleWorkerProcedure:
+			tailscaleServiceStopTailscaleWorkerHandler.ServeHTTP(w, r)
 		case TailscaleServiceListTailscalePeerConnectionsProcedure:
 			tailscaleServiceListTailscalePeerConnectionsHandler.ServeHTTP(w, r)
 		case TailscaleServiceCancelTailscalePeerConnectionProcedure:
@@ -480,11 +555,23 @@ func NewTailscaleServiceHandler(svc TailscaleServiceHandler, opts ...connect.Han
 // UnimplementedTailscaleServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedTailscaleServiceHandler struct{}
 
-func (UnimplementedTailscaleServiceHandler) ListTailscalePeerConnections(context.Context, *connect.Request[v1.ListTailscaleConnectionsRequest]) (*connect.Response[v1.ListTailscaleConnectionsResponse], error) {
+func (UnimplementedTailscaleServiceHandler) GetTailscaleWorker(context.Context, *connect.Request[v1.GetTailscaleWorkerRequest]) (*connect.Response[v1.GetTailscaleWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.GetTailscaleWorker is not implemented"))
+}
+
+func (UnimplementedTailscaleServiceHandler) StartTailscaleWorker(context.Context, *connect.Request[v1.StartTailscaleWorkerRequest]) (*connect.Response[v1.StartTailscaleWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.StartTailscaleWorker is not implemented"))
+}
+
+func (UnimplementedTailscaleServiceHandler) StopTailscaleWorker(context.Context, *connect.Request[v1.StopTailscaleWorkerRequest]) (*connect.Response[v1.StopTailscaleWorkerResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.StopTailscaleWorker is not implemented"))
+}
+
+func (UnimplementedTailscaleServiceHandler) ListTailscalePeerConnections(context.Context, *connect.Request[v1.ListTailscalePeerConnectionsRequest]) (*connect.Response[v1.ListTailscalePeerConnectionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.ListTailscalePeerConnections is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) CancelTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) CancelTailscalePeerConnection(context.Context, *connect.Request[v1.CancelTailscalePeerConnectionRequest]) (*connect.Response[v1.CancelTailscalePeerConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.CancelTailscalePeerConnection is not implemented"))
 }
 
@@ -508,15 +595,15 @@ func (UnimplementedTailscaleServiceHandler) GetTailscaleAccess(context.Context, 
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.GetTailscaleAccess is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) SetTailscaleAccess(context.Context, *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.GetTailscaleAccessResponse], error) {
+func (UnimplementedTailscaleServiceHandler) SetTailscaleAccess(context.Context, *connect.Request[v1.SetTailscaleAccessRequest]) (*connect.Response[v1.SetTailscaleAccessResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.SetTailscaleAccess is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) RequestTailscaleConnection(context.Context, *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) RequestTailscaleConnection(context.Context, *connect.Request[v1.RequestTailscaleConnectionRequest]) (*connect.Response[v1.RequestTailscaleConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.RequestTailscaleConnection is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) GetTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) GetTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.GetTailscaleConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.GetTailscaleConnection is not implemented"))
 }
 
@@ -524,19 +611,19 @@ func (UnimplementedTailscaleServiceHandler) ListTailscaleConnections(context.Con
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.ListTailscaleConnections is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) DecideTailscaleConnection(context.Context, *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) DecideTailscaleConnection(context.Context, *connect.Request[v1.DecideTailscaleConnectionRequest]) (*connect.Response[v1.DecideTailscaleConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.DecideTailscaleConnection is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) CancelTailscaleConnection(context.Context, *connect.Request[v1.GetTailscaleConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) CancelTailscaleConnection(context.Context, *connect.Request[v1.CancelTailscaleConnectionRequest]) (*connect.Response[v1.CancelTailscaleConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.CancelTailscaleConnection is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) StartTailscalePeerConnection(context.Context, *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) StartTailscalePeerConnection(context.Context, *connect.Request[v1.StartTailscalePeerConnectionRequest]) (*connect.Response[v1.StartTailscalePeerConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.StartTailscalePeerConnection is not implemented"))
 }
 
-func (UnimplementedTailscaleServiceHandler) PollTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.TailscaleConnectionResponse], error) {
+func (UnimplementedTailscaleServiceHandler) PollTailscalePeerConnection(context.Context, *connect.Request[v1.PollTailscalePeerConnectionRequest]) (*connect.Response[v1.PollTailscalePeerConnectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.TailscaleService.PollTailscalePeerConnection is not implemented"))
 }
 

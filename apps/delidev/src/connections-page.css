@@ -37,3 +37,6 @@
 .tailscale-access { margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
 .tailscale-access h3 { margin: 0; }
 .tailscale-code { font-variant-numeric: tabular-nums; letter-spacing: .12em; }
+
+.tailscale-approval-notice { position: fixed; inset-inline-end: 16px; bottom: 16px; z-index: 30; max-width: min(420px, calc(100vw - 32px)); display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.tailscale-approval-notice button { min-height: 40px; border-radius: 8px; }
