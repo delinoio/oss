@@ -39,7 +39,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line
 .sidebar-header-actions { display: flex; gap: 2px; }
 .sidebar-header-button { display: grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
 .sidebar-header-button .sidebar-icon { width: 18px; height: 18px; }
-.sidebar-new-session, .sidebar-new-general-chat { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 36px; min-height: 36px; padding: 5px 9px; border-color: var(--on-inverse-muted); border-radius: 7px; background: var(--surface); font-size: 13px; font-weight: 550; }
+.sidebar-new-session, .sidebar-new-general-chat { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; height: 36px; min-height: 36px; padding: 5px 9px; border-color: var(--control-border); border-radius: 7px; background: var(--surface); font-size: 13px; font-weight: 550; }
 .sidebar-new-session .sidebar-icon, .sidebar-new-general-chat .sidebar-icon { width: 16px; height: 16px; }
 .sidebar-new-session[aria-current="page"], .sidebar-new-general-chat[aria-current="page"] { border-color: var(--selected-border); background: var(--selected-background); color: var(--selected-text); }
 .sidebar-session-title-state { min-width: 0; flex: 0 1 auto; max-width: 132px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -326,7 +326,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .usage-table small { display: block; color: var(--muted); overflow-wrap: anywhere; }
 .usage-table p { margin-block: 5px; }
 .usage-row-measures { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; margin: 8px 0 0; }
-.usage-row-measures .usage-metric { padding: 5px; border-color: var(--on-inverse-muted); background: var(--surface-muted); }
+.usage-row-measures .usage-metric { padding: 5px; border-color: var(--border); background: var(--surface-muted); }
 .usage-row-measures .usage-metric dt { color: var(--muted); font-size: .8rem; }
 .usage-row-measures .usage-metric dd { margin: 2px 0; color: var(--text); font-size: .95rem; }
 .usage-row-measures .usage-metric small { color: var(--muted); }
@@ -382,7 +382,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .inbox-items li { margin: 0; padding: 0; }
 .inbox-row { white-space: normal; width: 100%; min-height: 72px; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; border-radius: 0; background: var(--surface-subtle); text-align: left; }
 .inbox-row:hover { background: var(--selected-background); }
-.inbox-row[aria-current] { background: var(--selected-background); color: var(--text); border-color: var(--on-inverse-muted); border-left-color: var(--accent); }
+.inbox-row[aria-current] { background: var(--selected-background); color: var(--text); border-color: var(--selected-border); border-left-color: var(--accent); }
 .inbox-row[aria-current]:hover { background: var(--selected-background); }
 .inbox-kind-icon { width: 16px; font-size: 16px; line-height: 1; text-align: center; color: var(--muted); }
 .inbox-kind-icon.is-success { color: var(--success-text); }
@@ -974,7 +974,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .integration-token-guidance summary { cursor: pointer; color: var(--text); font-weight: 500; }
 .integration-token-guidance section { margin-top: 14px; }
 .integration-token-guidance section p:last-child { margin-bottom: 0; }
-.github-integrations button.primary[disabled] { color: var(--muted); background: var(--surface-inset); border-color: var(--on-inverse-muted); opacity: 1; }
+.github-integrations button.primary[disabled] { color: var(--muted); background: var(--surface-inset); border-color: var(--control-border); opacity: 1; }
 .github-integrations button.integration-danger { color: var(--danger-text); border-color: var(--danger-border); }
 .github-integrations button.integration-danger:hover { background: var(--danger-background); }
 @media (max-width: 1099px) {
