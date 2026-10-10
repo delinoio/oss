@@ -365,6 +365,45 @@ async fn open_provider_guidance(
     result
 }
 
+#[tauri::command]
+async fn open_app_information_link(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    action: delidev_desktop::app_information::AppInformationLink,
+) -> Result<(), NativeFailure> {
+    let response_window = window.clone();
+    let original_authority = capture_authority(&response_window)?;
+    let result = async {
+        let original = if is_local(&window) {
+            trusted_local(&window)?;
+            None
+        } else {
+            Some(saved_binding(&window, &windows)?)
+        };
+        // Capture authority on the native loop; dispatch runs on a bounded
+        // worker.
+        let connector = Arc::clone(connector.inner());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            connector.open_app_information_link(action)
+        })
+        .await
+        .map_err(|_| NativeFailure::SidecarFailed)?;
+        if let Some(original) = original {
+            let current = saved_binding(&window, &windows)?;
+            if current.instance != original.instance {
+                return Err(NativeFailure::InvalidEvidence);
+            }
+        } else {
+            trusted_local(&window)?;
+        }
+        result
+    }
+    .await;
+    recheck_authority(&response_window, &original_authority)?;
+    result
+}
+
 // Observation joins the native-owned attempt; it never bootstraps or pairs.
 #[tauri::command]
 async fn launch_local(
@@ -1919,6 +1958,7 @@ fn run() -> Result<(), NativeFailure> {
                 browser_tab_shortcuts,
                 open_github,
                 open_provider_guidance,
+                open_app_information_link,
                 connect_local,
                 launch_local,
                 retry_local,

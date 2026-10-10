@@ -42,6 +42,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev storage operations](../../../docs/cmds-delidev-storage-contract.md)
 - [DeliDev native subagent observations](../../../docs/cmds-delidev-subagents-contract.md)
 - [DeliDev native subscriptions](../../../docs/cmds-delidev-subscription-contract.md)
+- [DeliDev signed updates](../../../docs/cmds-delidev-updates-contract.md)
 - [DeliDev native usage ledger](../../../docs/cmds-delidev-usage-contract.md)
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)

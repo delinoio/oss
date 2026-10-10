@@ -1,10 +1,13 @@
+import { useState } from "react";
+import { Updates } from "./updates";
+import { PersistentConnectionView } from "./connections-page";
 // SPDX-License-Identifier: Apache-2.0
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ResourceService, ProviderService } from "@delinoio/delidev-api-client";
+import { ResourceService, ProviderService, SystemService, SystemCapability, InstallationService } from "@delinoio/delidev-api-client";
 import { Settings, type SettingsNavigationEntry } from "./settings";
 import { SettingsCategory } from "./settings-category";
 import { SettingsSearchTarget } from "./settings-search";
@@ -28,4 +31,14 @@ it('retains an uncommitted Git policy draft and read identity through same-categ
  const first={category:SettingsCategory.GitWorkflow,target:SettingsSearchTarget.AutomaticFetch,generation:'fetch'},value=fixture(first),view=render(value.tree(first));
  const checkbox=await screen.findByRole('checkbox',{name:'Allow automatic fetch before Worktree preparation'});await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('automatic-fetch'));fireEvent.click(checkbox);const checked=(checkbox as HTMLInputElement).checked,reads=value.list.mock.calls.length;
  view.rerender(value.tree({category:SettingsCategory.GitWorkflow,target:SettingsSearchTarget.Worktree,generation:'worktree'}));await waitFor(()=>expect(document.activeElement?.getAttribute('data-settings-search-target')).toBe('worktree'));expect(screen.getByRole('checkbox',{name:'Allow automatic fetch before Worktree preparation'})).toBe(checkbox);expect((checkbox as HTMLInputElement).checked).toBe(checked);expect(value.list).toHaveBeenCalledTimes(reads);
+});
+
+it('focuses the retained App information check without activating it and replaces only Settings presentation',async()=>{
+ const check=vi.fn(()=>({})),native=vi.fn(),readContext=vi.fn(async()=>({current_version:'0.1.0',target:'darwin-arm64'}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SIGNED_UPDATES_V1]})});router.service(InstallationService,{checkUpdate:check});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}}),entry={category:SettingsCategory.AppInformation,target:SettingsSearchTarget.AppUpdates,generation:'app-check'};
+ function Harness(){const [slot,setSlot]=useState<HTMLElement>(),[shown,setShown]=useState(true);return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><button onClick={()=>setShown(value=>!value)}>Toggle Settings</button><Settings visible={shown} entryDestination={entry} readAppContext={readContext} onAppUpdatesSlot={setSlot}/><PersistentConnectionView target={slot} hidden><Updates direct active={Boolean(slot)} controls={{readContext,control:native}}/></PersistentConnectionView></MutationIntents></QueryClientProvider></TransportProvider>;}
+ render(<Harness/>);const button=await screen.findByRole('button',{name:'Check for updates'});await waitFor(()=>expect(document.activeElement).toBe(button));expect(check).not.toHaveBeenCalled();expect(native).not.toHaveBeenCalled();
+ const draft=screen.getByLabelText<HTMLInputElement>('Original update ID');fireEvent.change(draft,{target:{value:'019dd377-6f72-7557-80fe-bd6ce0d27711'}});
+ fireEvent.click(screen.getByRole('button',{name:'Toggle Settings'}));fireEvent.click(screen.getByRole('button',{name:'Toggle Settings'}));await screen.findByRole('heading',{name:'App information'});expect(screen.getByLabelText('Original update ID')).toBe(draft);expect(draft.value).toBe('019dd377-6f72-7557-80fe-bd6ce0d27711');expect(check).not.toHaveBeenCalled();expect(native).not.toHaveBeenCalled();
 });

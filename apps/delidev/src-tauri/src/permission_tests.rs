@@ -81,6 +81,77 @@ fn provider_guidance_allows_only_trusted_local_webviews() {
     }
 }
 
+const APP_INFORMATION_COMMAND: &str = "open_app_information_link";
+#[test]
+fn app_information_has_one_closed_declared_command() {
+    let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+    let app = &manifests[APP_ACL_KEY];
+    assert!(
+        app.commands
+            .iter()
+            .any(|command| command == APP_INFORMATION_COMMAND)
+    );
+    let permission = &app.permissions["app-information"];
+    assert_eq!(permission.commands.allow, [APP_INFORMATION_COMMAND]);
+    assert!(permission.commands.deny.is_empty());
+}
+
+#[test]
+fn app_information_allows_only_trusted_local_webviews() {
+    for target in [Target::MacOS, Target::Windows, Target::Linux] {
+        let manifests: BTreeMap<String, Manifest> = serde_json::from_str(MANIFESTS).unwrap();
+        let capabilities: BTreeMap<String, Capability> =
+            serde_json::from_str(CAPABILITIES).unwrap();
+        let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
+        assert!(resolved.has_app_acl);
+        assert!(!resolved.allowed_commands.contains_key("*"));
+        let authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            manifests,
+            resolved,
+        );
+        for label in ["main", "server-fixture"] {
+            assert!(
+                authority
+                    .resolve_access(APP_INFORMATION_COMMAND, label, label, &Origin::Local)
+                    .is_some(),
+                "trusted webview must receive provider guidance on {target}"
+            );
+            for child in ["external-fixture", "browser-fixture"] {
+                assert!(
+                    authority
+                        .resolve_access(APP_INFORMATION_COMMAND, label, child, &Origin::Local)
+                        .is_none(),
+                    "parent window cannot grant its child provider guidance on {target}"
+                );
+            }
+            assert!(
+                authority
+                    .resolve_access(
+                        APP_INFORMATION_COMMAND,
+                        label,
+                        label,
+                        &Origin::Remote {
+                            url: "https://untrusted.invalid/".parse().unwrap(),
+                        },
+                    )
+                    .is_none(),
+                "remote origin cannot receive provider guidance on {target}"
+            );
+        }
+        assert!(
+            authority
+                .resolve_access(APP_INFORMATION_COMMAND, "other", "other", &Origin::Local)
+                .is_none()
+        );
+        assert!(
+            authority
+                .resolve_access("open_arbitrary_url", "main", "main", &Origin::Local)
+                .is_none()
+        );
+    }
+}
+
 const SHORTCUT_COMMANDS: [&str; 3] = [
     "read_shortcut_preferences",
     "update_shortcut_preferences",

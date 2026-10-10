@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "app-information"
+description = "Open only the compiled DeliDev releases, license and source notices destinations selected by a closed action."
+commands.allow = ["open_app_information_link"]

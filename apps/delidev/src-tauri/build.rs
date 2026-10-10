@@ -31,6 +31,7 @@ fn main() {
             "update_language",
             "open_github",
             "open_provider_guidance",
+            "open_app_information_link",
             "connect_local",
             "launch_local",
             "retry_local",

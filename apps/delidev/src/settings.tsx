@@ -1,3 +1,4 @@
+import { AppInformation, type AppInformationProps } from "./app-information";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 // SPDX-License-Identifier: Apache-2.0
@@ -241,7 +242,7 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
 
 export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string; resourceId?: string; resourceKind?: EntityKind };
 export enum SettingsEntryDestination { ConnectionDiagnostics="connection-diagnostics", Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
-enum SettingsArea { Network, Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
+enum SettingsArea { Network, Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts, AppInformation }
 
 enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
 
@@ -264,6 +265,7 @@ export const settingsCategories: Record<SettingsCategory, { label: string; descr
   [SettingsCategory.Integrations]: { get label() { return copy("settings.integrations_090512"); }, get description() { return copy("settings.manageGithubProfilesForRepositoryAccess_42adb1"); }, area: SettingsArea.Integrations },
   [SettingsCategory.Diagnostics]: { get label() { return copy("settings.connectionDiagnostics_b30b0d"); }, get description() { return copy("settings.connectionDescription"); }, area: SettingsArea.Diagnostics },
   [SettingsCategory.Notifications]: { get label() { return copy("settings.notifications_788011"); }, get description() { return copy("settings.thesePreferencesBelongToThisClient_082e1e"); }, area: SettingsArea.Notifications },
+  [SettingsCategory.AppInformation]: { get label() { return copy("app-information.title"); }, get description() { return copy("app-information.description"); }, area: SettingsArea.AppInformation },
   [SettingsCategory.Transfer]: { get label() { return copy("settings.importExport_6e061f"); }, get description() { return copy("settings.moveConfigurationBetweenDelidevServers_749ed7"); }, area: SettingsArea.Transfer },
 };
 
@@ -271,7 +273,7 @@ export const settingsGroups: { label: SettingsGroup; categories: SettingsCategor
   { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
   { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
-  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.KeyboardShortcuts, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
+  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.KeyboardShortcuts, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups, SettingsCategory.AppInformation] },
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
@@ -292,6 +294,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
   [SettingsCategory.GitWorkflow]: "M6 4v6m0 0a3 3 0 1 0 0 6m0-6h7a3 3 0 1 1 0 6h5m-12 0v4",
   [SettingsCategory.ServerPreferences]: "M4 6h16M4 12h16M4 18h16M9 4v4m6 2v4m-3 2v4",
   [SettingsCategory.Integrations]: "M9 15l6-6m-8 9H5a4 4 0 0 1 0-8h4m6-4h4a4 4 0 0 1 0 8h-4",
+  [SettingsCategory.AppInformation]: "M12 11v6m0-10h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
   [SettingsCategory.Diagnostics]: "M3 12h4l3-7 4 14 3-7h4",
   [SettingsCategory.Notifications]: "M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4",
   [SettingsCategory.Transfer]: "M7 7h13m0 0-4-4m4 4-4 4M17 17H4m0 0 4 4m-4-4 4-4",
@@ -303,7 +306,7 @@ function SettingsIcon({ category }: { category: SettingsCategory }) {
 }
 
 
-interface SettingsProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsNavigationEntry; destinationConsumed?: () => void }
+interface SettingsProps extends AppInformationProps { openUsage?: (entry: UsageEntry) => void; readLocalWorker?: ReadLocalWorkerProof; chooseRepositoryFolder?: ChooseRepositoryFolder; connectionSettings?: React.ReactNode; pairingAuthority?: PairingAuthority; visible?: boolean; controlLocalWorker?: ControlLocalWorker; currentDeviceId?: string; entryDestination?: SettingsNavigationEntry; destinationConsumed?: () => void }
 enum SettingsEntryKind { NewProject, ManageAccounts, AddAccount, NotificationTarget }
 type SettingsCategoryEntry = {kind:SettingsEntryKind.NotificationTarget;resourceId:string;resourceKind:EntityKind} | { kind: SettingsEntryKind.NewProject } | { kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount; providerId: string; provider?: AccountProviderSummary; startOAuth?: boolean };
 interface SettingsSelection { category: SettingsCategory; key: string; entry?: SettingsCategoryEntry }
@@ -363,7 +366,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
   </>;
 }
 
-function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, searchRequest, entry, navigate }: SettingsProps & { searchRequest?: SettingsSearchRequest; selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
+function SettingsWorkspace({ readAppContext, openAppInformationLink, onAppUpdatesSlot, openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, searchRequest, entry, navigate }: SettingsProps & { searchRequest?: SettingsSearchRequest; selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
   useLocale();
 
   const [device, setDevice] = useState<Resource>();
@@ -534,7 +537,8 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
           {notificationTarget&&notificationResource.error?<><Problem error={notificationResource.error}/><p role="status">{copy("inbox.operational.unavailable")}</p></>:null}
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} openSubscriptions={()=>navigate(SettingsCategory.SubscriptionAccounts)} /></div> : null}
-          {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
+          {area === SettingsArea.AppInformation ? <AppInformation readAppContext={readAppContext} openAppInformationLink={openAppInformationLink} onAppUpdatesSlot={onAppUpdatesSlot} /> : null}
+          {area === SettingsArea.Diagnostics ? <div><SettingsActionButton icon={SettingsActionIcon.Inspect} onClick={() => navigate(SettingsCategory.AppInformation)}>{copy("app-information.title")}</SettingsActionButton>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
           {area === SettingsArea.Configuration ? <div>
             {controlLocalWorker && isRunnerDevices ? <div data-settings-search-target="local-worker"><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}

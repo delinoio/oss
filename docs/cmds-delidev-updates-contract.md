@@ -22,7 +22,7 @@ Checks retain an original signed candidate under its request ID. Worker acceptan
 
 A Worker claims once under its current device/instance and journals before the RPC. It verifies and downloads independently, joins all execution and control lanes, retains the exact old binary, then journals the replacement generation before spawn. Failed starts restore only after positive exit of the exact generation and no superseding Stop. A report that might already have committed success never grants rollback. Successful signed history can verify an installed version but cannot replace a live controller; later explicit starts verify/select the installed private generation. After claim response loss, read the exact original accepted claim and resume reversible preparation only; never resend the claim or installation. After a possibly accepted success report, exact original update inspection may settle the retained local journal without another report or rollback. Later explicit detached starts dispatch to the independently verified installed controller before that controller reserves its own native version. Missing or conflicting original proof preserves the admission fence and both binaries.
 
-Desktop controls remain in Connection & diagnostics. Native chooses the main or exact saved-window scope, epoch and generation; renderer input contains only original opaque ID/revision and a closed action. The original trusted window confirms the concrete prepared version. Go independently verifies and claims installation, then Rust hashes the exact stream copied into exclusive native staging. Mac installation checks the fixed bundle ID/version and code signature before a same-volume atomic swap that retains the old bundle. Windows installer failure/timeout retains possible committed-install uncertainty. Linux correlates AppImage environment, mounted executable and kernel mount source before retaining a backup and replacing the image. Installation records its result offline and never restarts a server/harness. Read-only original inspection accepts the retained exact ID/revision independently of live server negotiation and survives native process restart; installing/uncertain journals cannot be resent.
+Desktop controls are presented in Settings > App information. Connection diagnostics retains a labeled navigation action to that category. The connection-owned controller and stable portal remain outside disposable Settings. Native chooses the main or exact saved-window scope, epoch and generation; renderer input contains only original opaque ID/revision and a closed action. The original trusted window confirms the concrete prepared version. Go independently verifies and claims installation, then Rust hashes the exact stream copied into exclusive native staging. Mac installation checks the fixed bundle ID/version and code signature before a same-volume atomic swap that retains the old bundle. Windows installer failure/timeout retains possible committed-install uncertainty. Linux correlates AppImage environment, mounted executable and kernel mount source before retaining a backup and replacing the image. Installation records its result offline and never restarts a server/harness. Read-only original inspection accepts the retained exact ID/revision independently of live server negotiation and survives native process restart; installing/uncertain journals cannot be resent.
 
 Linux mount correlation retains the 1 MiB mountinfo inventory limit. Split records before decoding their mount-point and source fields. Decode the kernel's space, tab, newline, backslash and source `#` octal escapes exactly once; reject incomplete, non-octal and unsupported escapes. Both decoded paths must match the original APPDIR/APPIMAGE in the same record. Absolute-path, executable-under-APPDIR, regular-file and non-symlink-ancestor checks remain required. Parser fixtures do not establish installed Linux package acceptance.
 
@@ -120,3 +120,45 @@ the currently unset root. The packaging contract owns the new release workflow a
 GitHub Environment configuration.
 
 Public CLI `update check` uses a 35-second outer context and response-header limit so the original bounded 30-second release lookup can return its typed result. A shorter caller deadline wins. Checks never retry automatically after timeout; exact original request identities, update reads, Worker acceptance/cancellation and native installation deadlines retain their existing semantics.
+
+## App information presentation
+
+App information reads the running native app version and normalized target through
+`desktop_update_context`; server and Worker versions cannot replace this context.
+An admitted disconnected product document can perform the read. Removed or invalid
+saved bindings, external documents and stopped/Quit admission remain denied.
+
+The original desktop update controller stays connection/process owned. Settings
+owns only a destination slot. Closing, category changes and locale updates retain
+portal identity, original requests/revisions, candidate, drafts, native phases and
+uncertainty. Entering App information performs ordinary context/support reads only;
+it never checks, downloads, installs or restarts. Existing automatic-check cadence,
+suppression, signature and production-root rules remain unchanged. A completed
+successful check with no candidate is distinct from unchecked, checking, failed or
+uncertain states. Missing manifests remain failures, not install candidates.
+
+App updates is directly visible with a labeled Check for updates control. Original
+ID/revision inspection and local installation recovery are in initially collapsed
+Update recovery. Attention, failure and uncertainty reveal relevant recovery.
+Native installation remains trusted-window confirmed; lost replies expose only
+inspection of the original operation, never another installation. Recovery IDs are
+functional internal operands, not product text; masked fields retain their original
+bytes and exact bigint revisions. Focus returns to the summary before collapse.
+
+`open_app_information_link` accepts only the closed `AppInformationLink` actions
+`releases`, `license` and `notices`. The native owner compiles these destinations:
+
+- Official releases: `https://github.com/delinoio/oss/releases?q=delidev-v&expanded=true`
+- License: `https://github.com/delinoio/oss/blob/main/LICENSE`
+- Open-source notices: `https://github.com/delinoio/oss/tree/main/apps/delidev/public`
+
+No renderer URL or path is accepted. The dedicated permission belongs only to
+registered local/saved product documents; original lifetime/saved authority and
+stopped/Quit guards remain enforced. Existing credential-free `browser_opener`
+dispatches the fixed destination. Logs contain only typed operation/phase/error
+metadata. Opening failures are localized and require another explicit selection.
+These source links describe current repository notices, not a complete installed
+package inventory. Packaged LICENSE, NOTICE, CEF, Chromium and asset notices remain
+unchanged. Add no business RPC, allocation, persistence, channel, preference or
+dependency. Fixture/static checks and real signed installation/packaged browser
+acceptance remain separate in PR/CI records.

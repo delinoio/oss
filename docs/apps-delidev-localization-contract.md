@@ -273,3 +273,17 @@ English and Korean. Theme names and semantic token identifiers remain original
 user/machine values. Locale changes preserve device revisions, dirty custom drafts,
 exact pending saves, focus and committed color/layout preferences. Synthetic theme
 previews use bundled example text and contain no live conversation data.
+
+## App information copy
+
+The System App information category bundles English/Korean app version/platform,
+context loading/unavailable/error, update check state, recovery, external links and
+source-notices guidance in `src/locales/{en,ko}/app-information.json`. Platform
+labels describe the six confirmed native OS/architecture targets; native version
+bytes retain their original value. Never translate a server/Worker version into an
+app observation or label unchecked/failed/uncertain checks as current. Category,
+search and command names use the same bundled static catalog. Locale changes
+retain the desktop update controller, exact drafts, request identity and native
+uncertainty. Fixed link actions stay closed native enum values; failures use safe
+localized copy without raw URLs, paths or automatic retry. Source notices are
+explicitly distinguished from an installed package inventory.

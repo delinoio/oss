@@ -1110,7 +1110,7 @@ A new OAuth Start can expose `oauth_start_not_admitted` only for a typed rejecti
 
 If the saved provider changes after OAuth Start admission, replay returns the original attempt in interrupted state with no authorization URL. Preserve its exact ID/receipt and permit explicit original cancellation; transient provider reads retain uncertainty. This transition sends no exchange and cannot grant native callback authority.
 
-- Signed desktop updates are available under Connections outside disposable Settings, with native confirmation and original outcome inspection. Runner Device updates expose pending/draining/uncertain states and explicit cancellation before claim. Generated Connect Query reads/mutations retain original IDs, and missing System/Worker capabilities show an update requirement before effects.
+- Signed desktop updates are presented under App information while their controller remains outside disposable Settings, with native confirmation and original outcome inspection. Runner Device updates expose pending/draining/uncertain states and explicit cancellation before claim. Generated Connect Query reads/mutations retain original IDs, and missing System/Worker capabilities show an update requirement before effects.
 
 - Retained local desktop installation inspection stays available in Connections independently of live server support. Pass only the exact original ID/revision to native read-only inspection; it grants no preparation, installation or restart.
 
@@ -4616,7 +4616,7 @@ Current connection shows This computer, Local server, the actual safe endpoint a
 
 Saved servers reads the bounded local inventory and exposes Refresh, Add server, Open or the original pending pairing retry, and a keyboard-operable row disclosure for Rename/Remove. Saved denotes persisted pairing, never remote readiness. Failed reads retain confirmed rows with stale guidance. The existing private pairing form stays masked and opens in a contained dialog. Rename, removal and pairing keep their original request bytes and confirmations across page movement. Menu Escape restores its summary. Task-dialog Close/Escape hides only presentation and leaves an explicit Continue action; original drafts, confirmations and uncertain requests remain retained. Deliberate Discard/Keep controls retain their original semantics. Dialog focus and restoration use the shared Modal owner.
 
-Advanced contains registration inspection/recovery, app updates and retained installation inspection, removed-profile history and independent retained Worker cleanup. An external text indicator exposes pending, failed or uncertain controller conditions while Advanced is collapsed. Expanding Advanced itself neither retries work nor admits native operations. Existing child disclosures retain their original read and operation gates. No RPC, protocol allocation, migration, dependency or native authority changes. Component and browser evidence remain separate from installed-native and real-account acceptance.
+Advanced contains registration inspection/recovery, removed-profile history and independent retained Worker cleanup. App updates and retained installation inspection are presented in App information through their original desktop-owned controller; Connections offers labeled navigation. An external text indicator exposes pending, failed or uncertain controller conditions while Advanced is collapsed. Expanding Advanced itself neither retries work nor admits native operations. Existing child disclosures retain their original read and operation gates. No RPC, protocol allocation, migration, dependency or native authority changes. Component and browser evidence remain separate from installed-native and real-account acceptance.
 
 ### API Providers retained refresh
 Refreshing accepted API Providers inventory does not insert a transient provider-state paragraph, replacement banner or reserved gap above the rows. Preserve initial loading, confirmed switches and identities, persistent Off-provider guidance, all-disabled notice, sanitized failures, uncertainty and exact original-request retries.
@@ -5098,3 +5098,40 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## App information Settings
+
+The closed AppInformation category is last in the System group and uses
+**App information** / **앱 정보**. Ordinary Settings opening defaults, category
+navigation, drawer behavior and focus ownership stay unchanged. The static
+Settings search/command catalog includes the category, App updates, Update
+recovery, Official releases, License and Open-source notices. Selection focuses
+the target without activation or update effects.
+
+Content order is app information, app updates, related information. DeliDev has
+semantic Current version / 현재 버전 and Platform / 실행 환경 definition rows.
+Read only the running native context; show localized loading, unavailable and
+error states without substituting a server/Worker version. The three understated
+bordered groups reuse semantic themes, the left-aligned 1040px content cap,
+18px section headings, 14px body, 24px group gaps, 8px corners and 40px actions.
+Narrow layouts stack rows/actions and wrap complete content without overflow.
+Keep English/Korean, system/light/dark themes, visible focus, descriptive external
+link actions, decorative icons, keyboard activation, polite status and alert errors.
+
+The original update controller/portal remains outside disposable Settings and
+moves only its presentation to the category. Release of a slot never recreates or
+replays updates. Direct App updates shows unchecked, checking, authoritative no
+candidate, available, preparation, installation, installed, failed and uncertain
+observations. Initially collapsed Update recovery retains exact original inspection
+and local recovery; relevant attention opens it and focus returns before collapse.
+Connection diagnostics retains navigation and original connection diagnostics;
+Worker updates remain in machine Settings. Follow the [signed updates contract](cmds-delidev-updates-contract.md#app-information-presentation)
+for original request/revision, native confirmation and inspect-only uncertainty.
+
+Related information uses the closed native releases/license/notices action only.
+The source notices guidance explicitly excludes a complete installed-package
+inventory claim. Existing packaged notices are unchanged. No new business API,
+protocol allocation, preference, migration or dependency is introduced. Native
+product-window/saved-scope/Quit guards remain authoritative. Validation records
+separate focused fixtures/static checks from packaged CEF opening, real signed
+installation and platform/layout/account acceptance.
