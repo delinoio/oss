@@ -497,7 +497,7 @@ it("links every tab to a mounted panel while the initial summary is pending", ()
 
 it.each([SupportedLanguage.English, SupportedLanguage.Korean].flatMap(language => ["Asia/Seoul", "UTC", "America/Argentina/Buenos_Aires"].map(timeZone => ({ language, timeZone }))))("shows the exact noninteractive timezone chip in $language for $timeZone", async ({ language, timeZone }) => {
   const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
-  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function () { return { ...resolved.call(this), timeZone }; });
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function (this: Intl.DateTimeFormat) { return { ...resolved.call(this), timeZone }; });
   await i18n.changeLanguage(language);
   const f = fixture(); const view = render(f.view());
   await waitFor(() => expect(f.read).toHaveBeenCalled());
@@ -517,7 +517,7 @@ it.each([SupportedLanguage.English, SupportedLanguage.Korean].flatMap(language =
 
 it.each(["loading", "empty", "error"] as const)("retains the selected timezone chip during %s", async state => {
   const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
-  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function () { return { ...resolved.call(this), timeZone: "Asia/Seoul" }; });
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function (this: Intl.DateTimeFormat) { return { ...resolved.call(this), timeZone: "Asia/Seoul" }; });
   const f = fixture();
   if (state === "loading") f.read.mockImplementation(() => new Promise(() => {}));
   if (state === "empty") f.read.mockResolvedValue(create(GetUsageSummaryResponseSchema, { fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs }));
@@ -530,7 +530,7 @@ it.each(["loading", "empty", "error"] as const)("retains the selected timezone c
 it("keeps the timezone pinned across navigation and language changes until the existing Reset action", async () => {
   let timeZone = "Asia/Seoul";
   const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
-  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function () { return { ...resolved.call(this), timeZone }; });
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function (this: Intl.DateTimeFormat) { return { ...resolved.call(this), timeZone }; });
   const f = fixture(); const view = render(f.view());
   await waitFor(() => expect(f.read).toHaveBeenCalled());
   timeZone = "UTC";
