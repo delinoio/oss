@@ -515,6 +515,24 @@ This presentation adds no creation entry, RPC, allocation, migration, native
 support, feature flag or saved preference. Fixtures do not prove packaged CEF,
 real-account or platform acceptance.
 
+Issue #2532 projects only literal `awaiting_user_response: true` from a supported
+Session list document into navigation metadata. Missing, malformed or unsupported
+metadata yields no indicator. This response-only observation grants no answer,
+execution or native authority. Add one static, nonfocusable 14px blue outlined
+question mark immediately before the existing execution/Archive glyphs. Keep
+semantic information-color contrast in light/dark themes, 32px rows, title
+truncation, action controls and focus outlines in both wide Home and its compact
+drawer, including 200% reflow. Existing unknown-state question marks remain
+independent.
+
+The accessible row description and read-only hover card include **Waiting for
+your response** / **응답 대기 중**; the SVG remains decorative. Accepted list
+refreshes and same-identity reconnects update this state even when the Session
+revision is unchanged, without changing selection, focus, drafts or pagination
+order. Add no polling, telemetry, separate icon action or feature flag. The
+predicate belongs to the sessions contract; this presentation changes no response
+form, approval policy or native waiting interpretation.
+
 Active, visible global and expanded named scopes refresh every 15 seconds, reading only as many ranges as already accepted. Refresh uses accepted request tokens verbatim and retains those opaque continuations while validating continuation presence (including final exhaustion) and the end-row identity of nonterminal ranges; cursor-expiry renewal alone is allowed, and boundary drift retains the accepted chain and offers scope-local Reload list. It never discovers an unseen trailing range. Commit successful refresh ranges atomically, and preserve previous rows with a previous-data label after failure. Read failures stop automatic retries. Global-session failure/previous-data notices and recovery stay outside the General Chat disclosure, because global-derived fallback rows can remain visible while General Chat is collapsed. Retry repeats the exact failed scope/token, including a failed refresh range; changed refresh boundaries require explicit Reload list. Typed expiry is `clientFailure(error).code === FailureCode.CursorExpired`, never a numeric status guess. Reload reads that scope's first token and replaces the stale chain only after accepted success; other scopes, selected conversation and drafts remain intact. Distinguish first/additional loading, successful exhaustion, permission denial, connection failure and previous data. Additional loading appears at its continuation; successful exhaustion shows no routine completion notice. The mounted anchor remains, and exhausted empty copy is **No projects loaded.** or **No conversations loaded.** No First/Next page-replacement controls or invented totals are present. The shared keyboard Load more fallback remains available.
 
 The always-visible New project plus and the successful-empty **Create a project** action open the existing project creation dialog directly over Home, without selecting or mounting Settings. Follow the independent opening ownership in [Project creation outside Settings](#project-creation-outside-settings). The anchored keyboard-accessible Project and conversation options popup owns Include archived and an **Archived included** indicator. Escape closes it and restores its opener. Archive changes reset only global/named session chains, preserving catalog ranges, selection and the mounted conversation/composer; they do not close the navigation drawer. Successful project saves from Home or Settings invalidate loaded navigation without changing archive selection, accepted cursors or scroll, or creating another Settings visit.

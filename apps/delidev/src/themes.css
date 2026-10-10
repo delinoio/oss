@@ -27,6 +27,7 @@
   --accent: #2563d8;
   --accent-hover: #1c55bd;
   --link: #2563d8;
+  --information: #2563d8;
   --focus: #266bdc;
   --on-accent: #ffffff;
   --inverse-surface: #202632;
@@ -80,6 +81,7 @@
   --accent: #245fc1;
   --accent-hover: #1e54ac;
   --link: #9ec2ff;
+  --information: #9ec2ff;
   --focus: #aacaff;
   --on-accent: #ffffff;
   --inverse-surface: #28364b;
@@ -134,6 +136,7 @@
     --accent: #245fc1;
     --accent-hover: #1e54ac;
     --link: #9ec2ff;
+    --information: #9ec2ff;
     --focus: #aacaff;
     --on-accent: #ffffff;
     --inverse-surface: #28364b;

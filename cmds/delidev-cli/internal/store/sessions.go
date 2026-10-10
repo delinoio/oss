@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -20,6 +22,9 @@ func (s *Store) Sessions(ctx context.Context, f SessionFilter) ([]Record, bool, 
 	var result []Record
 	more := false
 	err := s.Read(ctx, func(tx *Tx) error {
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
 		query := "SELECT " + recordColumns + " FROM entities WHERE kind='session' AND id>?"
 		args := []any{f.After}
 		if f.ProjectID != "" {
@@ -33,9 +38,66 @@ func (s *Store) Sessions(ctx context.Context, f SessionFilter) ([]Record, bool, 
 		args = append(args, f.Limit+1)
 		var err error
 		result, more, err = tx.sessionPage(f.Limit, query, args...)
+		if err != nil || len(result) == 0 {
+			return err
+		}
+		result, more, err = tx.sessionResponseWaiting(result, more)
 		return err
 	})
 	return result, more, err
+}
+
+// Join only the IDs of the already byte-bounded source page in the same
+// authorized transaction. There are no per-session database or RPC reads.
+func (tx *Tx) sessionResponseWaiting(records []Record, more bool) ([]Record, bool, error) {
+	args := make([]any, len(records))
+	for index, record := range records {
+		args[index] = record.ID
+	}
+	query := `SELECT DISTINCT i.session_id FROM entities i JOIN entities s ON s.id=i.session_id AND s.kind='session'
+WHERE s.id IN (` + strings.Repeat("?,", len(records)-1) + `?) AND ` + unansweredSessionInteraction
+	rows, err := tx.tx.QueryContext(tx.ctx, query, args...)
+	if err != nil {
+		return nil, false, storageError(err)
+	}
+	defer rows.Close()
+	waiting := map[domain.ID]bool{}
+	for rows.Next() {
+		var id domain.ID
+		if err := rows.Scan(&id); err != nil {
+			return nil, false, storageError(err)
+		}
+		waiting[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, storageError(err)
+	}
+	result := make([]Record, 0, len(records))
+	size := 0
+	for _, record := range records {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(record.Data, &fields) != nil || fields == nil {
+			return nil, false, corrupt()
+		}
+		fields["awaiting_user_response"] = json.RawMessage("false")
+		if waiting[record.ID] {
+			fields["awaiting_user_response"] = json.RawMessage("true")
+		}
+		projected, err := json.Marshal(fields)
+		if err != nil {
+			return nil, false, storageError(err)
+		}
+		if len(projected) > 1<<20 {
+			return nil, false, domain.Fail(domain.ResourceExhausted, "Session list metadata exceeds its document bound.", "Retain the original session and inspect its current metadata before retrying.")
+		}
+		if len(result) > 0 && size+len(projected) > 3<<20 {
+			return result, true, nil
+		}
+		record.Data = projected
+		result = append(result, record)
+		size += len(projected)
+	}
+	return result, more, nil
 }
 
 // Queue is ordered by transaction-assigned acceptance sequence, not UUID or

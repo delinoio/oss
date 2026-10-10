@@ -30,6 +30,7 @@ export interface NavigationRow {
   workspace: string;
   outcome: string;
   archive: string;
+  awaitingUserResponse?: boolean;
   title?: ReturnType<typeof sessionTitlePresentation>;
   conversationKind: ConversationKind;
   parentId?: string;
@@ -38,7 +39,7 @@ export interface NavigationRow {
 export function navigationRow(row: Resource): NavigationRow {
   const data = document(row);
   const provenance = conversationProvenance(row, data);
-  return { id: row.id, projectId: row.projectId, revision: row.revision, name: resourceName(row), workspace: text(data.workspace), outcome: text(data.outcome), archive: text(data.archive), title: sessionTitlePresentation(data), ...provenance };
+  return { id: row.id, projectId: row.projectId, revision: row.revision, name: resourceName(row), workspace: text(data.workspace), outcome: text(data.outcome), archive: text(data.archive), awaitingUserResponse: row.kind === EntityKind.SESSION && data.awaiting_user_response === true, title: sessionTitlePresentation(data), ...provenance };
 }
 export { ReadStage } from "./scroll-pagination";
 import { PaginationChain, type PaginationBatch, type PaginationPage, type PaginationFailure, type PaginationSnapshot, type PaginationReader } from "./scroll-pagination";

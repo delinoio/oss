@@ -1169,3 +1169,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-project-more { position:absolute; top:3px; right:3px; display:grid; place-items:center; width:28px; height:28px; min-width:28px; min-height:28px; padding:0; border:0; background:transparent; color:var(--muted); }
 .sidebar-project-more:hover:not(:disabled),.sidebar-project-more[aria-expanded="true"] { background:var(--surface-hover); }
 .sidebar-project-more:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+
+/* Response waiting remains independent of execution and Archive glyphs. */
+.sidebar-icon.sidebar-awaiting-response { width: 14px; height: 14px; flex: 0 0 14px; color: var(--information); }
+.sidebar-session-card-waiting { color: var(--information); }

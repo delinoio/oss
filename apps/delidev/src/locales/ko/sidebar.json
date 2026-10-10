@@ -1,4 +1,5 @@
 {
+  "sidebar.waitingForResponse": "응답 대기 중",
   "sidebar.hover.execution": "실행",
   "sidebar.hover.archive": "보관",
   "sidebar.hover.notStarted": "시작 전",

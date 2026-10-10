@@ -940,3 +940,52 @@ it("keeps the drawer close affordance outside the compact Home header and creati
   const header = value.container.querySelector(".sidebar-header")!;
   expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
 });
+
+it.each([true, false])("keeps one decorative response indicator before statuses in wide/compact navigation (%s)", async compact => {
+  vi.stubGlobal("matchMedia", vi.fn((query: string) => ({ matches: compact && query === "(max-width: 759px)", media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const session = resource(EntityKind.SESSION, "A very long original session name ".repeat(12), "", { workspace: "general-chat", outcome: "running", archive: "active", awaiting_user_response: true });
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }), props: { drawerOpen: compact, setDrawerOpen: vi.fn() } });
+  const row = await screen.findByRole("button", { name: /Waiting for your response/ });
+  expect(row.querySelectorAll(".sidebar-awaiting-response")).toHaveLength(1);
+  const indicator = row.querySelector(".sidebar-awaiting-response")!;
+  expect(indicator.getAttribute("aria-hidden")).toBe("true");
+  expect(indicator.hasAttribute("tabindex")).toBe(false);
+  expect(indicator.getAttribute("focusable")).toBe("false");
+  expect(indicator.nextElementSibling?.className).toBe("sidebar-statuses");
+  expect(row.querySelector(".sidebar-statuses")?.getAttribute("data-outcome")).toBe("running");
+  expect(row.querySelector(".sidebar-session-title")?.textContent).toBe("A very long original session name ".repeat(12));
+  act(() => row.focus());
+  const card = screen.getByRole("tooltip");
+  expect(within(card).getByText("Waiting for your response")).toBeTruthy();
+  expect(card.querySelector("button, a, input, [tabindex]")).toBeNull();
+  const reads = value.sessionRequests.length;
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+  expect(row.getAttribute("aria-label")).toContain("응답 대기 중");
+  expect(within(card).getByText("응답 대기 중")).toBeTruthy();
+  expect(document.activeElement).toBe(row);
+  expect(value.sessionRequests).toHaveLength(reads);
+  await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); });
+});
+
+it("refreshes response metadata at unchanged session revision without changing selection or focus", async () => {
+  const session = resource(EntityKind.SESSION, "Original response target", "", { workspace: "general-chat", outcome: "running", archive: "active", awaiting_user_response: true });
+  let waiting = true;
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [{ ...session, documentJson: encode({ name: "Original response target", workspace: "general-chat", outcome: "running", archive: "active", awaiting_user_response: waiting }) }] }), props: { selectedSessionId: session.id } });
+  const row = await screen.findByRole("button", { name: /Waiting for your response/ });
+  act(() => row.focus());
+  waiting = false;
+  await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
+  await waitFor(() => expect(row.querySelector(".sidebar-awaiting-response")).toBeNull());
+  expect(row.getAttribute("aria-current")).toBe("true");
+  expect(document.activeElement).toBe(row);
+  expect(row.querySelector(".sidebar-statuses")?.getAttribute("data-outcome")).toBe("running");
+  expect(value.openSession).not.toHaveBeenCalled();
+});
+
+it.each([undefined, false, "true"])("keeps legacy/malformed response metadata %s separate from unknown-state glyphs", async waiting => {
+  const session = resource(EntityKind.SESSION, "Unknown native state", "", { workspace: "general-chat", outcome: "future", archive: "future", awaiting_user_response: waiting });
+  mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [session] }) });
+  const row = await screen.findByRole("button", { name: /Unknown native state/ });
+  expect(row.querySelector(".sidebar-awaiting-response")).toBeNull();
+  expect(row.querySelectorAll(".sidebar-status-unknown")).toHaveLength(2);
+});

@@ -13,6 +13,13 @@ type OverviewCounts struct {
 	ConnectedWorkers    uint64
 }
 
+// Shared current unanswered predicate for Overview counts and bounded session-list
+// presentation. Aliases i and s are the original interaction and session rows.
+const unansweredSessionInteraction = `i.kind='interaction' AND json_extract(i.body,'$.closure')='open'
+AND json_extract(i.body,'$.response') IS NULL AND json_extract(i.body,'$.approval_response') IS NULL
+AND json_extract(s.body,'$.archive')='active'
+AND json_extract(s.body,'$.active_execution_id')=json_extract(i.body,'$.execution_id')`
+
 // Count retained execution ownership, including uncertain cleanup, rather than
 // guessing which processes are running. Read state never resolves a request.
 func (t *Tx) Overview(active map[domain.ID]bool, now time.Time) (OverviewCounts, error) {
@@ -26,10 +33,7 @@ func (t *Tx) Overview(active map[domain.ID]bool, now time.Time) (OverviewCounts,
 	}{
 		{`SELECT COUNT(*) FROM entities WHERE kind='session' AND COALESCE(json_extract(body,'$.active_execution_id'),'')<>''`, &result.ActiveSessions},
 		{`SELECT COUNT(*) FROM entities i JOIN entities s ON s.id=i.session_id AND s.kind='session'
-WHERE i.kind='interaction' AND json_extract(i.body,'$.closure')='open'
-AND json_extract(i.body,'$.response') IS NULL AND json_extract(i.body,'$.approval_response') IS NULL
-AND json_extract(s.body,'$.archive')='active'
-AND json_extract(s.body,'$.active_execution_id')=json_extract(i.body,'$.execution_id')`, &result.PendingInteractions},
+WHERE ` + unansweredSessionInteraction, &result.PendingInteractions},
 		{`SELECT COUNT(*) FROM entities WHERE kind='machine'`, &result.RegisteredWorkers},
 	} {
 		if err := t.tx.QueryRowContext(t.ctx, query.sql).Scan(query.out); err != nil {

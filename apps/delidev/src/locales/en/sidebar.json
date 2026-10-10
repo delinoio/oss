@@ -1,4 +1,5 @@
 {
+  "sidebar.waitingForResponse": "Waiting for your response",
   "sidebar.hover.execution": "Execution",
   "sidebar.hover.archive": "Archive",
   "sidebar.hover.notStarted": "Not started",

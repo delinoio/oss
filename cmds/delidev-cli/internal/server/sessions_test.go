@@ -104,6 +104,10 @@ func TestSessionAcceptanceRestartAndCurrentReceipt(t *testing.T) {
 	if err != nil || len(listed.Msg.Sessions) != 1 {
 		t.Fatal("retry duplicated session")
 	}
+	var listMetadata map[string]json.RawMessage
+	if json.Unmarshal(listed.Msg.Sessions[0].DocumentJson, &listMetadata) != nil || string(listMetadata["awaiting_user_response"]) != "false" {
+		t.Fatal("ListSessions did not retain the response-only boolean projection")
+	}
 	for _, kind := range []pb.EntityKind{pb.EntityKind_ENTITY_KIND_SESSION, pb.EntityKind_ENTITY_KIND_QUEUE} {
 		_, err := f.config.SaveConfiguration(context.Background(), ownerRequest(f.identity, &pb.SaveConfigurationRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, Kind: kind, SchemaVersion: 1, DocumentJson: []byte(`{}`)}))
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {

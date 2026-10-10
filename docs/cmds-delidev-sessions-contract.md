@@ -60,7 +60,27 @@ Creation validates the selected Agent Worker's current relationships and the pro
 
 The first-execution transaction and private remediation planner share one read-only configuration/template/account resolver. Its preview owns no input, account reservation, immutable snapshot or routing update; only a subsequent claim may commit those facts after resolving current configuration again. Native account/installation compatibility checks are likewise shared with assignment construction. A preview followed by configuration changes cannot freeze its former account or bypass the ordinary first-dispatch checks.
 
-`session get --id ID` reads current metadata. `session list` supports `--project-id`, `--include-archived`, `--limit` and `--page-token`; ordinary lists hide only fully archived sessions. Generic explicit resource reads/snapshots can still retrieve retained archived records. Lists use canonical identity order and signed filter-bound cursors, with at most 200 records and 3 MiB of stored document bodies per page.
+`session get --id ID` reads current metadata. `session list` supports `--project-id`, `--include-archived`, `--limit` and `--page-token`; ordinary lists hide only fully archived sessions. Generic explicit resource reads/snapshots can still retrieve retained archived records. Lists use canonical identity order and signed filter-bound cursors, with at most 200 records and 3 MiB of returned document bodies per page.
+
+Issue #2532 adds a response-only `awaiting_user_response` boolean to each
+`ListSessions` Session Resource document. One authorized read transaction
+reads only the requested byte-bounded page and joins original unanswered
+interactions for those IDs in one additional batch query. Reuse the Overview predicate: the session is active,
+the interaction is open for its current `active_execution_id`, and neither
+`response` nor `approval_response` is recorded. Questions, permission requests
+and Plan requests share this source ownership across supported harnesses.
+Recorded automatic Plan responses do not count; unanswered manual or unavailable
+automatic Plan requests do. Several unanswered requests yield one boolean.
+Native waiting flags and Inbox read state cannot produce this metadata.
+
+Keep the original 1 MiB document bound and count projected bytes within the
+existing page bound. An oversized projection fails through the list-read path
+without truncating original metadata. Keep original identity
+order, signed filter-bound cursors and the existing read-error path. Never persist
+the field or change Session revisions, receipts, events or response authority.
+Explicit Resource reads retain the stored document. The additive list metadata
+requires no RPC, allocation or migration; clients that do not use it retain their
+existing presentation.
 
 `session enqueue --id ID --input FILE|-` accepts `{"prompt":"...","mode":"execute"}`. Its transaction increments a session-owned acceptance sequence and retains the exact intended mode, content revision and `queued` delivery state. Concurrent requests use this durable order, never client clocks or UUID generation order. Queues are capped at 1,000 pending inputs and 4 MiB of pending prompt text; one input is at most 256 KiB of well-formed NUL-free UTF-8. Accepted blocked/paused sessions retain follow-ups; archiving/archived sessions reject new input. Queueing never supplies an approval or resumes paused work.
 
