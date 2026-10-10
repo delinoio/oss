@@ -84,7 +84,7 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
       return { scope, transport, count: unavailableCount };
     });
   }, [scope, transport, inventoryKnown, unavailableCount, composing.current]);
-  const announcedCount = active && enabled && !disabled && !contextChanged && announcement.scope === scope && announcement.transport === transport ? announcement.count : undefined;
+  const announcedCount = announcement.scope === scope && announcement.transport === transport ? announcement.count : undefined;
   const accept = (entry: SkillEntry) => {
     if (!canEdit() || !enabled || !token || !entry.selection || composing.current || contextChanged || !inventoryKnown || !inventory.some(current => current.selection === entry.selection)) return;
     const replacement = `$${entry.name}`, next = value.slice(0, token.start) + replacement + value.slice(token.end), end = token.start + replacement.length;

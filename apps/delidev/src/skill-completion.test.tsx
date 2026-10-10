@@ -11,11 +11,11 @@ import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(), agent = newRequestId(), inventory = newRequestId(), worker = newRequestId();
 const entries = ["add-issue", "add-note"].map(name => ({ name, description: `${name} fixture`, provenance: SkillProvenance.USER, selection: { $typeName: "delidev.v1.SkillSelection" as const, inventoryId: inventory, workerDeviceId: worker, skillId: newRequestId(), contentRevision: "a".repeat(64) } }));
-function Composer({ runner = machine, locked = false, enabled = true, retainTransportContext = false, send }: { runner?: string; locked?: boolean; enabled?: boolean; retainTransportContext?: boolean; send: (value: unknown) => void }) {
- const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked,enabled,retainTransportContext});
+function Composer({ runner = machine, locked = false, active = true, enabled = true, retainTransportContext = false, send }: { runner?: string; locked?: boolean; active?: boolean; enabled?: boolean; retainTransportContext?: boolean; send: (value: unknown) => void }) {
+ const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,active,disabled:locked,enabled,retainTransportContext});
  return <><fieldset disabled={locked}>{skills.wrap(<textarea aria-label="Message" ref={textarea} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}{skills.list}{skills.warning}</fieldset><button disabled={skills.blocked} onClick={()=>send({value,skills:skills.selections})}>Send</button></>;
 }
-function fixture() {const send=vi.fn(),read=vi.fn(async()=>({skills:entries}));const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));const client=new QueryClient();const view=(runner=machine,locked=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} locked={locked} send={send}/></QueryClientProvider></TransportProvider>;return{send,read,view};}
+function fixture() {const send=vi.fn(),read=vi.fn(async()=>({skills:entries}));const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));const client=new QueryClient();const view=(runner=machine,locked=false,active=true)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} locked={locked} active={active} send={send}/></QueryClientProvider></TransportProvider>;return{send,read,view};}
 it("finds whitespace-delimited caret tokens without consuming surrounding Unicode",()=>{expect(skillToken("한글\n$add-iss trailing",11)).toEqual({start:3,end:11,prefix:"add-iss"});expect(skillToken("email$add",9)).toBeUndefined();});
 it("binds keyboard selection separately, replaces only the token and does not send",async()=>{const f=fixture();render(f.view());const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"한글\n$add-iss",selectionStart:11}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Enter"});expect((input as HTMLTextAreaElement).value).toBe("한글\n$add-issue");expect(f.send).not.toHaveBeenCalled();fireEvent.click(screen.getByText("Send"));expect(f.send.mock.calls[0]![0]).toMatchObject({skills:[entries[0]!.selection]});});
 it("removes an edited binding and requires reselection on Runner changes",async()=>{const f=fixture();const view=render(f.view());const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Tab"});view.rerender(f.view(newRequestId()));await screen.findByText("The selected skills need reselection before sending.");expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);fireEvent.change(input,{target:{value:"manual",selectionStart:6}});await waitFor(()=>expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(false));fireEvent.click(screen.getByText("Send"));expect(f.send.mock.calls[0]![0]).toMatchObject({skills:[]});});
@@ -188,7 +188,8 @@ it.each([SupportedLanguage.English, SupportedLanguage.Korean])("announces deferr
   const pending=new Promise<void>(resolve=>{release=resolve;}),client=new QueryClient();
   const read=vi.fn(async()=>{await pending;return {skills:entries};});
   const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));
-  const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+  const tree=(locked=false,active=true)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer locked={locked} active={active} send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+  const view=render(tree());
   const input=screen.getByRole("textbox");input.focus();
   const status=view.container.querySelector("[data-skill-availability-status]")!;
   expect(status.getAttribute("role")).toBe("status");expect(status.getAttribute("aria-live")).toBe("polite");expect(status.textContent).toBe("");
@@ -198,6 +199,10 @@ it.each([SupportedLanguage.English, SupportedLanguage.Korean])("announces deferr
   await waitFor(()=>expect(status.textContent).toBe(unavailable));
   expect(document.activeElement).toBe(input);expect(screen.getByRole("textbox",{description:unavailable})).toBe(input);expect(view.container.querySelector(".skill-completion")).toBeNull();
   const mutations: MutationRecord[]=[];const observer=new MutationObserver(records=>mutations.push(...records));observer.observe(status,{childList:true,characterData:true,subtree:true});
+  view.rerender(tree(false,false));expect(status.textContent).toBe(unavailable);
+  view.rerender(tree(true,false));expect(status.textContent).toBe(unavailable);
+  view.rerender(tree(true,true));expect(status.textContent).toBe(unavailable);
+  view.rerender(tree(false,true));await Promise.resolve();expect(status.textContent).toBe(unavailable);expect(mutations).toHaveLength(0);
   await client.invalidateQueries();await waitFor(()=>expect(read).toHaveBeenCalledTimes(2));
   fireEvent.change(input,{target:{value:"ordinary text $missing",selectionStart:0}});await Promise.resolve();
   expect(status.textContent).toBe(unavailable);expect(mutations).toHaveLength(0);observer.disconnect();
