@@ -53,9 +53,12 @@ import { ShortcutId, ShortcutInput, ShortcutScope, globalShortcutBindings } from
 function Shell({ localServer, serverPresentation, connectionReady, connectionSettings, connectionTarget, onConnectionHelp, readLocalWorker, controlLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority }: { pairingAuthority?: PairingAuthority; currentDeviceId?: string; controlLocalWorker?: ControlLocalWorker; chooseRepositoryFolder?: ChooseRepositoryFolder; localServer?: ReactNode; serverPresentation?: ServerPresentation; connectionReady: boolean; connectionSettings?: ReactNode; connectionTarget?: HTMLElement; onConnectionHelp?: (target: HTMLElement | undefined) => void; readLocalWorker?: ReadLocalWorkerProof }) {
   const queryClient = useQueryClient();
   const transport = useTransport();
+  const latestTransport = useRef(transport);
+  useLayoutEffect(() => { latestTransport.current = transport; }, [transport]);
   const sessionCreated = useCallback((session: Resource) => {
-    void refreshCreatedSessionNavigation(queryClient, transport, session);
-  }, [queryClient, transport]);
+    // A retained creation can settle after a same-identity reconnect replaces its transport.
+    void refreshCreatedSessionNavigation(queryClient, latestTransport.current, session);
+  }, [queryClient]);
   useLocale();
   const [surface, setSurface] = useState(Surface.Sessions);
   useShortcutSurface(surface);
