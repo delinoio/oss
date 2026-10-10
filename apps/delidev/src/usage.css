@@ -35,7 +35,7 @@
 .usage-sidebar:not([hidden]) { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 0; }
 .usage-sidebar > h2, .usage-sidebar > p { flex-shrink: 0; }
 .usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
+.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: none; padding-inline: 4px; scrollbar-gutter: stable; }
 .usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
 .usage-sidebar legend { color: var(--muted); font-weight: 650; font-size: .8rem; }
 .usage-sidebar .actions { flex-shrink: 0; padding-block: 12px; border-top: 1px solid var(--border); background: var(--surface); }

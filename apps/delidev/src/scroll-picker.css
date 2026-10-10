@@ -11,3 +11,8 @@
 .scroll-picker-content > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .scroll-picker-decoration { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
 .scroll-picker-decoration .worker-harness-mark { width: 16px; height: 16px; flex-basis: 16px; margin: 0; }
+
+/* Top-layer pickers stay in their original sidebar DOM owner, including drawers.
+ * Other task/dialog pickers retain the ordinary shared boundary policy. */
+.sidebar-pane .scroll-picker-popup,
+.sidebar-surface-content .scroll-picker-popup { overscroll-behavior: none; }
