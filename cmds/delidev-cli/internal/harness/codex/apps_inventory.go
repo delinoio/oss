@@ -40,6 +40,21 @@ type installedAppsWire struct {
 	} `json:"apps"`
 }
 
+type appsMetadataWire struct {
+	Apps []struct {
+		ID                  string          `json:"id"`
+		Name                string          `json:"name"`
+		Description         *string         `json:"description"`
+		IconURL             *string         `json:"iconUrl"`
+		IconURLDark         *string         `json:"iconUrlDark"`
+		DistributionChannel *string         `json:"distributionChannel"`
+		InstallURL          *string         `json:"installUrl"`
+		PluginDisplayNames  []string        `json:"pluginDisplayNames"`
+		ToolSummaries       json.RawMessage `json:"toolSummaries"`
+	} `json:"apps"`
+	Missing []string `json:"missingAppIds"`
+}
+
 type nativeAppsCall func(context.Context, domain.ID, string, any) (nativewire.Response, error)
 
 func readAppsInventory(ctx context.Context, scope domain.NativeAppScope, thread domain.ID, force bool, call nativeAppsCall) (domain.NativeAppInventory, error) {
@@ -89,6 +104,54 @@ func readAppsInventory(ctx context.Context, scope domain.NativeAppScope, thread 
 		}
 		seenCursors[*page.NextCursor] = true
 		cursor = page.NextCursor
+	}
+	// Native app/read owns canonical names. Its display metadata and optional
+	// tool summaries never establish installed or callable authority.
+	for start := 0; start < len(result.Discovered); start += 100 {
+		end := min(start+100, len(result.Discovered))
+		ids := make([]string, 0, end-start)
+		requested := map[string]int{}
+		for index := start; index < end; index++ {
+			ids = append(ids, result.Discovered[index].ID)
+			requested[result.Discovered[index].ID] = index
+		}
+		response, err := call(ctx, domain.NewID(), "app/read", struct {
+			AppIDs       []string  `json:"appIds"`
+			ThreadID     domain.ID `json:"threadId"`
+			IncludeTools bool      `json:"includeTools"`
+		}{ids, thread, false})
+		if err != nil || response.ErrorCode != nil {
+			return empty, domain.NativeAppsUnavailable()
+		}
+		bytes += len(response.Result)
+		if bytes > 8<<20 {
+			return empty, domain.NativeAppsUnavailable()
+		}
+		var metadata appsMetadataWire
+		if domain.DecodeWithLimit(response.Result, &metadata, 8<<20) != nil || metadata.Apps == nil || metadata.Missing == nil {
+			return empty, domain.NativeAppsUnavailable()
+		}
+		observed := map[string]bool{}
+		for _, app := range metadata.Apps {
+			index, known := requested[app.ID]
+			if !known || observed[app.ID] || domain.Text(app.Name, "native app name", 1024, true) != nil || (len(app.ToolSummaries) > 0 && string(app.ToolSummaries) != "null") {
+				return empty, domain.NativeAppsUnavailable()
+			}
+			observed[app.ID] = true
+			result.Discovered[index].Name = app.Name
+		}
+		for _, id := range metadata.Missing {
+			index, known := requested[id]
+			if !known || observed[id] {
+				return empty, domain.NativeAppsUnavailable()
+			}
+			observed[id] = true
+			// An unavailable canonical record cannot lend authority from a stale list.
+			result.Discovered[index].Accessible = false
+		}
+		if len(observed) != len(requested) {
+			return empty, domain.NativeAppsUnavailable()
+		}
 	}
 	response, err := call(ctx, domain.NewID(), "app/installed", struct {
 		ThreadID domain.ID `json:"threadId"`

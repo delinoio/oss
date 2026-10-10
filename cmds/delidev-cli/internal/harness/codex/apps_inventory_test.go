@@ -20,13 +20,15 @@ func TestSessionNativeAppsInventorySeparatesDiscoveryInstallationAndCallability(
 	call := func(_ context.Context, _ domain.ID, method string, params any) (nativewire.Response, error) {
 		calls = append(calls, method)
 		raw, _ := json.Marshal(params)
-		if !strings.Contains(string(raw), string(thread)) || !strings.Contains(string(raw), "true") {
+		if !strings.Contains(string(raw), string(thread)) || (method != "app/read" && !strings.Contains(string(raw), "true")) {
 			t.Fatal("original thread or explicit refresh lost")
 		}
 		var result string
 		switch method {
 		case "app/list":
 			result = `{"data":[{"id":"available","name":"Available App","isAccessible":true,"isEnabled":true,"installUrl":"https://private-inventory.example/secret"},{"id":"callable","name":"Callable App","isAccessible":true,"isEnabled":true}],"nextCursor":null}`
+		case "app/read":
+			result = `{"apps":[{"id":"available","name":"Available App"},{"id":"callable","name":"Callable App"}],"missingAppIds":[]}`
 		case "app/installed":
 			result = `{"apps":[{"id":"callable","runtimeName":"Untrusted runtime name","enabled":true,"callable":true}]}`
 		default:
@@ -49,12 +51,12 @@ func TestSessionNativeAppsInventorySeparatesDiscoveryInstallationAndCallability(
 	if domain.AdmitNativeAppCall(selection, selection, snapshot, "available") == nil || domain.AdmitNativeAppCall(selection, selection, snapshot, "callable") != nil {
 		t.Fatal("available app borrowed callable authority")
 	}
-	if len(calls) != 2 || calls[0] != "app/list" || calls[1] != "app/installed" {
+	if len(calls) != 3 || calls[0] != "app/list" || calls[1] != "app/read" || calls[2] != "app/installed" {
 		t.Fatal("unexpected read/effect order")
 	}
 }
 func TestSessionNativeAppsInventoryRejectsUnknownPartialAndUncertainNativeResults(t *testing.T) {
-	for _, scenario := range []string{"missing-list", "duplicate-list", "unknown-list", "cursor-loop", "missing-installed", "unknown-installed", "contradictory-installed", "refresh-error", "foreign-id"} {
+	for _, scenario := range []string{"missing-list", "duplicate-list", "unknown-list", "cursor-loop", "missing-installed", "unknown-installed", "contradictory-installed", "refresh-error", "foreign-id", "missing-read", "foreign-read", "duplicate-read", "uncertain-read", "display-tools"} {
 		t.Run(scenario, func(t *testing.T) {
 			pages := 0
 			call := func(_ context.Context, _ domain.ID, method string, _ any) (nativewire.Response, error) {
@@ -72,6 +74,21 @@ func TestSessionNativeAppsInventoryRejectsUnknownPartialAndUncertainNativeResult
 						raw = `{"data":[{"id":"original","name":"Original App"}],"nextCursor":"same"}`
 					case "foreign-id":
 						raw = `{"data":[{"id":" original ","name":"Original App"}],"nextCursor":null}`
+					}
+				} else if method == "app/read" {
+					raw = `{"apps":[{"id":"original","name":"Original App"}],"missingAppIds":[]}`
+					switch scenario {
+					case "missing-read":
+						raw = `{"apps":[],"missingAppIds":[]}`
+					case "foreign-read":
+						raw = `{"apps":[{"id":"foreign","name":"Foreign App"}],"missingAppIds":[]}`
+					case "duplicate-read":
+						raw = `{"apps":[{"id":"original","name":"Original App"}],"missingAppIds":["original"]}`
+					case "uncertain-read":
+						code := int64(-32603)
+						return nativewire.Response{ErrorCode: &code}, nil
+					case "display-tools":
+						raw = `{"apps":[{"id":"original","name":"Original App","toolSummaries":[{"name":"callable"}]}],"missingAppIds":[]}`
 					}
 				} else {
 					raw = `{"apps":[{"id":"original","enabled":true,"callable":true}]}`
