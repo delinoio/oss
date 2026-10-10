@@ -4509,7 +4509,12 @@ Names match exactly; a valid caret completion prefix and a bare `$` remain ordin
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
-status describes affected tokens without exposing prompt content in logs.
+status describes affected tokens without exposing prompt content in logs. Keep a
+mounted polite atomic status region separate from the textarea description and
+hidden painted mirror. Announce only changes in the confirmed unavailable count
+for the current scope and transport. Unknown inventory, composition and retired
+scope clear the announcement; unchanged refresh results and ordinary edits with
+the same count do not repeat it. Neither channel changes focus or draft ownership.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized

@@ -72,6 +72,23 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   const enabledIndices = candidates.flatMap((entry,index) => entry.availability === SkillAvailability.Available ? [index] : []);
   const validIndex = enabledIndices.includes(selected) ? selected : enabledIndices[0] ?? -1;
   const unavailable = inventoryKnown && !composing.current ? ranges.filter(range => !inventory.some(entry => entry.name === range.prefix) && !(token && range.start === token.start && inventory.some(entry => entry.name.toLocaleLowerCase().startsWith(token.prefix.toLocaleLowerCase())))) : [];
+  const statusOwner = useRef<{ scope: string; transport: typeof transport; count?: number }>({ scope, transport });
+  const [status, setStatus] = useState<{ scope: string; transport: typeof transport; count?: number }>({ scope, transport });
+  const statusKnown = inventoryKnown && !composing.current;
+  const unavailableCount = unavailable.length;
+  useEffect(() => {
+    if (statusOwner.current.scope !== scope || statusOwner.current.transport !== transport) statusOwner.current = { scope, transport };
+    if (!statusKnown) {
+      // Unknown inventory retires the message, but retains the last proven count
+      // so an unchanged refresh does not announce the same result again.
+      setStatus(previous => previous.count !== undefined ? { scope, transport } : previous);
+      return;
+    }
+    if (statusOwner.current.count === unavailableCount) return;
+    statusOwner.current.count = unavailableCount;
+    setStatus({ scope, transport, count: unavailableCount || undefined });
+  }, [scope, transport, statusKnown, unavailableCount]);
+  const announcement = statusKnown && status.scope === scope && status.transport === transport && status.count === unavailableCount && status.count > 0 ? copy("skills.tokensUnavailable", { count: status.count }) : "";
   const accept = (entry: SkillEntry) => {
     if (!canEdit() || !enabled || !token || !entry.selection || composing.current || contextChanged || !inventoryKnown || !inventory.some(current => current.selection === entry.selection)) return;
     const replacement = `$${entry.name}`, next = value.slice(0, token.start) + replacement + value.slice(token.end), end = token.start + replacement.length;
@@ -117,14 +134,14 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
     onSelect: () => { if (!canEdit()) return; setCaret(textarea.current?.selectionStart ?? 0); },
     onCompositionStart: () => { if (!canEdit()) return; composing.current = true; setComposition(true); setDismissed(true); }, onCompositionEnd: () => { composing.current = false; setComposition(false); if (!canEdit()) return; setCaret(textarea.current?.selectionStart ?? 0); setDismissed(false); },
     attributes: { "aria-describedby": unavailable.length ? `${id}-unavailable` : undefined, "aria-controls": visible && candidates.length ? id : undefined, "aria-autocomplete": "list" as const, "aria-expanded": visible, "aria-activedescendant": visible && validIndex >= 0 ? `${id}-${validIndex}` : undefined },
-    unavailable, availability: inventoryKnown ? SkillAvailability.Available : SkillAvailability.Unknown, wrap: (child: ReactNode) => <SkillText textarea={textarea} value={value} ranges={unavailable} descriptionId={`${id}-unavailable`}>{child}</SkillText>,
+    unavailable, availability: inventoryKnown ? SkillAvailability.Available : SkillAvailability.Unknown, wrap: (child: ReactNode) => <SkillText textarea={textarea} value={value} ranges={unavailable} announcement={announcement} descriptionId={`${id}-unavailable`}>{child}</SkillText>,
     warning: blocked ? <p role="status">{copy("skills.reselect")}</p> : null,
   };
 }
 
 
 // The textarea retains editing, selection and undo ownership; this sibling only paints text.
-function SkillText({ textarea, value, ranges, descriptionId, children }: { textarea: RefObject<HTMLTextAreaElement | null>; value: string; ranges: SkillToken[]; descriptionId: string; children: ReactNode }) {
+function SkillText({ textarea, value, ranges, announcement, descriptionId, children }: { textarea: RefObject<HTMLTextAreaElement | null>; value: string; ranges: SkillToken[]; announcement: string; descriptionId: string; children: ReactNode }) {
   const frame = useRef<HTMLDivElement>(null), content = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const input = textarea.current, viewport = frame.current, text = content.current;
@@ -140,5 +157,5 @@ function SkillText({ textarea, value, ranges, descriptionId, children }: { texta
   }, [textarea, value, ranges.length]);
   let end = 0;
   const segments = ranges.map(range => { const preceding=value.slice(end,range.start); end=range.end; return <span key={range.start}>{preceding}<span className="skill-token-unavailable" data-skill-start={range.start}>{value.slice(range.start,range.end)}</span></span>; });
-  return <div className="skill-textarea" data-skill-overlay={ranges.length > 0 || undefined}>{children}{ranges.length ? <><div ref={frame} className="skill-text-overlay" aria-hidden="true"><div ref={content}>{segments}{value.slice(end)}{"\u200b"}</div></div><span id={descriptionId} className="sidebar-sr-only" aria-hidden="true">{copy("skills.tokensUnavailable", { count: ranges.length })}</span></> : null}</div>;
+  return <div className="skill-textarea" data-skill-overlay={ranges.length > 0 || undefined}>{children}<span className="sidebar-sr-only" role="status" aria-live="polite" aria-atomic="true" data-skill-availability-status>{announcement}</span>{ranges.length ? <><div ref={frame} className="skill-text-overlay" aria-hidden="true"><div ref={content}>{segments}{value.slice(end)}{"\u200b"}</div></div><span id={descriptionId} className="sidebar-sr-only" aria-hidden="true">{copy("skills.tokensUnavailable", { count: ranges.length })}</span></> : null}</div>;
 }
