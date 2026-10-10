@@ -494,3 +494,50 @@ it("links every tab to a mounted panel while the initial summary is pending", ()
  for (const tab of screen.getAllByRole("tab")) expect(document.getElementById(tab.getAttribute("aria-controls")!)).toBeTruthy();
  fireEvent.click(screen.getByRole("tab",{name:"Usage history"}));expect(screen.getByRole("tabpanel",{name:"Usage history"})).toBeTruthy();
 });
+
+it.each([SupportedLanguage.English, SupportedLanguage.Korean].flatMap(language => ["Asia/Seoul", "UTC", "America/Argentina/Buenos_Aires"].map(timeZone => ({ language, timeZone }))))("shows the exact noninteractive timezone chip in $language for $timeZone", async ({ language, timeZone }) => {
+  const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function () { return { ...resolved.call(this), timeZone }; });
+  await i18n.changeLanguage(language);
+  const f = fixture(); const view = render(f.view());
+  await waitFor(() => expect(f.read).toHaveBeenCalled());
+  const chip = view.container.querySelector<HTMLElement>(".usage-timezone-chip")!;
+  expect(chip.querySelector('[aria-hidden="true"]')?.textContent).toBe(timeZone);
+  expect(chip.querySelector(".visually-hidden")?.textContent).toBe(`${language === SupportedLanguage.Korean ? "시간대" : "Timezone"}: ${timeZone}`);
+  expect(chip.tabIndex).toBe(-1);
+  expect(chip.hasAttribute("role")).toBe(false);
+  expect(chip.hasAttribute("tabindex")).toBe(false);
+  expect(chip.querySelector("button,input,a,svg")).toBeNull();
+  expect(view.container.textContent).not.toContain("Last 30 days by default · Times use");
+  expect(view.container.textContent).not.toContain("기본 범위는 최근 30일 · 시간대");
+  const labels = [...view.container.querySelectorAll(".usage-sidebar label")].map(label => label.textContent);
+  expect(labels.some(label => label?.includes(timeZone))).toBe(true);
+  expect(f.read.mock.calls[0][0].timeZone).toBe(timeZone);
+});
+
+it.each(["loading", "empty", "error"] as const)("retains the selected timezone chip during %s", async state => {
+  const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function () { return { ...resolved.call(this), timeZone: "Asia/Seoul" }; });
+  const f = fixture();
+  if (state === "loading") f.read.mockImplementation(() => new Promise(() => {}));
+  if (state === "empty") f.read.mockResolvedValue(create(GetUsageSummaryResponseSchema, { fromUnixMs: f.data.fromUnixMs, untilUnixMs: f.data.untilUnixMs }));
+  if (state === "error") f.read.mockRejectedValue(new ConnectError("Unavailable", Code.Unavailable));
+  const view = render(f.view());
+  await waitFor(() => expect(f.read).toHaveBeenCalled());
+  expect(view.container.querySelector('.usage-timezone-chip [aria-hidden="true"]')?.textContent).toBe("Asia/Seoul");
+});
+
+it("keeps the timezone pinned across navigation and language changes until the existing Reset action", async () => {
+  let timeZone = "Asia/Seoul";
+  const resolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockImplementation(function () { return { ...resolved.call(this), timeZone }; });
+  const f = fixture(); const view = render(f.view());
+  await waitFor(() => expect(f.read).toHaveBeenCalled());
+  timeZone = "UTC";
+  view.rerender(f.view(false)); view.rerender(f.view());
+  expect(view.container.querySelector('.usage-timezone-chip [aria-hidden="true"]')?.textContent).toBe("Asia/Seoul");
+  await i18n.changeLanguage(SupportedLanguage.Korean);
+  await waitFor(() => expect(view.container.querySelector(".usage-timezone-chip .visually-hidden")?.textContent).toBe("시간대: Asia/Seoul"));
+  fireEvent.click(screen.getByRole("button", { name: "최근 30일로 초기화" }));
+  await waitFor(() => expect(view.container.querySelector('.usage-timezone-chip [aria-hidden="true"]')?.textContent).toBe("UTC"));
+});
