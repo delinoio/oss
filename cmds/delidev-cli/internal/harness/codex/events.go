@@ -17,6 +17,7 @@ type eventValidationStage string
 
 const (
 	validationOther          eventValidationStage = "other"
+	validationWindowsSandbox eventValidationStage = "windows-sandbox"
 	validationNativeError    eventValidationStage = "native-error"
 	validationSettings       eventValidationStage = "thread-settings"
 	validationItem           eventValidationStage = "message-item"
@@ -44,6 +45,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return validationWindowsSandbox
 	case "error":
 		return validationNativeError
 	case "thread/settings/updated":
@@ -153,41 +156,43 @@ type Message struct {
 }
 
 type Event struct {
-	NativeError      *NativeErrorObservation `json:"-"`
-	AutoReview       *domain.AutoReviewObservation
-	ImageGeneration  *ImageGeneration `json:"-"`
-	Compaction       *CompactionObservation
-	AgentThreadID    domain.ID
-	Subagents        []domain.SubagentObservation
-	Kind             EventKind
-	ThreadID         domain.ID
-	TurnID           domain.ID
-	Turn             *Turn
-	Status           *ThreadStatus
-	Message          *Message
-	TextDelta        string
-	ItemID           string
-	RequestID        domain.ID
-	InputID          domain.ID
-	Action           TurnAction
-	Problem          *domain.Error
-	Late             bool
-	Correlated       bool
-	EmittedAtMS      *int64
-	Metadata         MetadataKind
-	Usage            *domain.NativeTokenUsage
-	ResponseUsage    *domain.NativeResponseUsage
-	Notice           domain.NativeNotice
-	ToolOutputKind   ToolKind
-	Tool             *Tool
-	ToolInput        *ToolInput
-	Artifact         *Artifact
-	ArtifactDelta    *ArtifactDelta
-	Plan             *PlanUpdate
-	Diff             *string
-	Interaction      *Interaction
-	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	WindowsSandboxWarning *WindowsSandboxWarning          `json:"-"`
+	WindowsSandboxSetup   *WindowsSandboxSetupObservation `json:"-"`
+	NativeError           *NativeErrorObservation         `json:"-"`
+	AutoReview            *domain.AutoReviewObservation
+	ImageGeneration       *ImageGeneration `json:"-"`
+	Compaction            *CompactionObservation
+	AgentThreadID         domain.ID
+	Subagents             []domain.SubagentObservation
+	Kind                  EventKind
+	ThreadID              domain.ID
+	TurnID                domain.ID
+	Turn                  *Turn
+	Status                *ThreadStatus
+	Message               *Message
+	TextDelta             string
+	ItemID                string
+	RequestID             domain.ID
+	InputID               domain.ID
+	Action                TurnAction
+	Problem               *domain.Error
+	Late                  bool
+	Correlated            bool
+	EmittedAtMS           *int64
+	Metadata              MetadataKind
+	Usage                 *domain.NativeTokenUsage
+	ResponseUsage         *domain.NativeResponseUsage
+	Notice                domain.NativeNotice
+	ToolOutputKind        ToolKind
+	Tool                  *Tool
+	ToolInput             *ToolInput
+	Artifact              *Artifact
+	ArtifactDelta         *ArtifactDelta
+	Plan                  *PlanUpdate
+	Diff                  *string
+	Interaction           *Interaction
+	InteractionState      *InteractionStatus
+	Steer                 *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -278,6 +283,13 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	if c.logger != nil && (event.Metadata == AuthRecoveryStartedObserved || event.Metadata == AuthRecoveryCompletedObserved) {
 		c.logger.InfoContext(ctx, "Codex native authentication recovery observed", "owner_id", c.ownerID, "phase", event.Metadata)
 	}
+	if c.logger != nil && event.WindowsSandboxWarning != nil {
+		warning := event.WindowsSandboxWarning
+		c.logger.WarnContext(ctx, "Codex Windows sandbox warning observed", "owner_id", c.ownerID, "stage", validationWindowsSandbox, "classification", warning.Classification, "sample_count", warning.SampleCount, "extra_count", warning.ExtraCount, "failed_scan", warning.FailedScan)
+	}
+	if c.logger != nil && event.WindowsSandboxSetup != nil {
+		c.logger.InfoContext(ctx, "Codex Windows sandbox setup policy observed", "owner_id", c.ownerID, "stage", validationWindowsSandbox, "mode", event.WindowsSandboxSetup.Mode, "native_success", event.WindowsSandboxSetup.Success, "policy", "observed-only")
+	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
 }
@@ -290,6 +302,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 	}
 	if native.Kind == nativewire.ServerRequest && c.execution != nil {
 		return c.observeInteractionLocked(native)
+	}
+	if native.Kind == nativewire.Notification && (native.Method == "windows/worldWritableWarning" || native.Method == "windowsSandbox/setupCompleted") {
+		return c.observeWindowsSandboxLocked(native)
 	}
 	if native.Kind != nativewire.Notification || c.execution == nil {
 		return privateNative(native), nil

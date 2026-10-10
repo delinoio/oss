@@ -255,8 +255,11 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		}
 		switch event.Kind {
 		case codex.MetadataEvent:
+			if event.Metadata == codex.WindowsSandboxSetupDiscarded && (event.WindowsSandboxSetup == nil || !event.WindowsSandboxSetup.Valid()) || event.Metadata == codex.WindowsSandboxWarningDiscarded && (event.WindowsSandboxWarning == nil || !event.WindowsSandboxWarning.Valid()) {
+				return nil, publicationUncertain()
+			}
 			switch event.Metadata {
-			case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent:
+			case codex.WindowsSandboxSetupDiscarded, codex.WindowsSandboxWarningDiscarded, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent:
 			default:
 				return nil, domain.Fail(domain.Unsupported, "Codex emitted an unsupported title-runtime metadata event.", "Preserve the isolated runtime; the title profile accepts no auxiliary capability or interaction.")
 			}

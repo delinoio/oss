@@ -2339,3 +2339,37 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+### Codex Windows sandbox observations
+
+The original native process accepts only notification envelopes for
+`windows/worldWritableWarning` and `windowsSandbox/setupCompleted`. Their
+[pinned warning schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsWorldWritableWarningNotification.json)
+and [pinned setup schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsSandboxSetupCompletedNotification.json)
+define required non-null warning fields and setup mode/success. Setup error may
+be omitted, null or a private string. Decode within the native frame limit,
+reject unknown or duplicate keys, and bound samples to 1,000 paths of 4,096
+bytes each. Extra count is an unsigned 64-bit integer; do not add counts in a
+way that can overflow. Discard every sample path and native error after validation.
+
+World-writable paths or a failed scan publish the existing generic native
+warning notice. Keep only closed paths, scan-failed, combined or no-warning
+classification and bounded counts for private diagnostics. An identical retained
+warning summary becomes discarded metadata on replay. Empty successful scans
+are also discarded metadata. No native path or error enters product publication
+or logs. Structured diagnostics include only closed classification/counts or
+closed elevated/unelevated mode, native success and observed-only policy.
+
+No dedicated setup operation owner exists. Unsolicited completion remains typed
+discarded metadata, including elevated success. It proves no readiness, privilege,
+execution outcome, recovery or cleanup. These observations preserve original
+settings, account, input, immutable receipts and independent cleanup authority.
+They neither start setup nor repair ACLs, invoke privileged commands, create
+network calls, answer same-name server requests or resend input. The ordinary
+original turn still owns completion. Private metadata requires no protocol or
+storage allocation; existing publication scope and recovery fences remain intact.
+
+Focused decoder regressions cover strict shape/bounds and redaction. Harness and
+Worker integration regressions cover replay, unchanged original state and normal
+completion; their execution belongs to CI. Fixtures establish no installed
+Windows, native-account or privilege acceptance.

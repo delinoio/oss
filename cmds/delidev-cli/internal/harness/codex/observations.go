@@ -12,6 +12,8 @@ import (
 type MetadataKind string
 
 const (
+	WindowsSandboxWarningDiscarded   MetadataKind = "windows-sandbox-warning-discarded"
+	WindowsSandboxSetupDiscarded     MetadataKind = "windows-sandbox-setup-discarded"
 	AuthRecoveryStartedObserved      MetadataKind = "auth-recovery-started-observed"
 	AuthRecoveryCompletedObserved    MetadataKind = "auth-recovery-completed-observed"
 	AutoReviewReplayChecked          MetadataKind = "auto-review-replay-checked"
