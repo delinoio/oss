@@ -127,6 +127,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		// Retain immutable operational observations/independent reads with their
 		// retained source rather than restoring an old presentation backlog.
 		"INSERT OR REPLACE INTO entities SELECT * FROM current_state.entities WHERE kind='inbox' AND json_extract(body,'$.source')='operational'",
+		// Clean scan classifications are verified current-image observations, not
+		// restore input authority. Retire candidate-only cache before overlaying
+		// the synchronized current rows; absent rows require fresh inspection.
+		"DELETE FROM metadata WHERE key LIKE 'session-deletion-backup-scan:%'",
 		"INSERT OR REPLACE INTO metadata SELECT * FROM current_state.metadata WHERE key<>'event_floor' AND key NOT LIKE 'session-queue-order:%' AND key NOT LIKE 'fork-image-snapshot:%' AND key<>'fork-image-snapshot-cutover'",
 		"DELETE FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')='operational' AND (id IN (SELECT id FROM tombstones) OR (json_extract(body,'$.operational.machine_id') IS NOT NULL AND json_extract(body,'$.operational.machine_id') NOT IN (SELECT id FROM entities WHERE kind='machine')) OR (json_extract(body,'$.operational.account_id') IS NOT NULL AND json_extract(body,'$.operational.account_id') NOT IN (SELECT id FROM entities WHERE kind='account')) OR (json_extract(body,'$.operational.occurrence_id') IS NOT NULL AND json_extract(body,'$.operational.occurrence_id') NOT IN (SELECT id FROM entities WHERE kind='occurrence')))",
 		"DELETE FROM metadata WHERE key LIKE 'notification-delivery-v1:%' AND substr(key,length('notification-delivery-v1:')+1,36) NOT IN (SELECT id FROM entities WHERE kind='inbox')",

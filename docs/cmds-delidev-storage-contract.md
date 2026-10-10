@@ -353,7 +353,9 @@ receipt, RPC or schema. External intent remains independently authoritative.
 Every completed image checkpoint commits before the next content inspection,
 so bounded passes and restart resume progress rather than re-copying earlier
 unchanged images. Missing/restored cache rows grant no completion authority;
-missing rows require inspection. Reuse checks fresh private-file/open-handle
+missing rows require inspection. Restore discards all candidate-only scan cache
+rows before overlaying the synchronized current metadata, so historical or
+forged restore input cannot grant a clean classification. Reuse checks fresh private-file/open-handle
 identity and original metadata, sidecar absence and current source identity under
 the publication gate. Changed/replaced images invalidate only their own record;
 new images must be classified before completion. The immutable source digest

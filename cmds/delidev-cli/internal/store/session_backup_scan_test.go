@@ -289,3 +289,58 @@ func TestSessionBackupCheckpointRejectsForeignIntentDigestAndOversizedMetadata(t
 		t.Fatal("oversized progress interpreted as verified")
 	}
 }
+
+func TestSessionBackupScanRestoreDropsHistoricalOnlyCacheAndPreservesCurrentRows(t *testing.T) {
+	s, root, ctx, in, _ := restoreFixture(t)
+	historical := "session-deletion-backup-scan:" + string(domain.NewID()) + ":" + string(domain.NewID())
+	current := "session-deletion-backup-scan:" + string(domain.NewID()) + ":" + string(domain.NewID())
+	s.gate.Lock()
+	_, err := s.db.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES(?,?)", historical, "untrusted historical fixture")
+	s.gate.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := s.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspected, err := s.InspectBackup(ctx, source, in.ServerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.gate.Lock()
+	_, err = s.db.ExecContext(ctx, "DELETE FROM metadata WHERE key=?", historical)
+	if err == nil {
+		_, err = s.db.ExecContext(ctx, "INSERT INTO metadata(key,value) VALUES(?,?)", current, "original current fixture")
+	}
+	s.gate.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Backup, in.SHA256 = inspected.Backup, inspected.SHA256
+	in.ExpectedRevision, err = s.RestoreRevision(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.RestoreBackup(ctx, domain.NewID(), in); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	var value string
+	var count int
+	if err := reopened.Read(ctx, func(tx *Tx) error {
+		if err := tx.tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM metadata WHERE key=?", historical).Scan(&count); err != nil {
+			return err
+		}
+		return tx.tx.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key=?", current).Scan(&value)
+	}); err != nil || count != 0 || value != "original current fixture" {
+		t.Fatal("restore granted historical cache authority or lost current proof", count, value, err)
+	}
+}
