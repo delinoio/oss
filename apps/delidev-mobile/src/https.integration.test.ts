@@ -23,6 +23,7 @@ import {
   SystemService,
   ResourceService,
   ConfigurationService,
+  AccountService,
   SessionService,
   EntityKind,
   CreateSessionRequestSchema,
@@ -443,26 +444,28 @@ it("creates Worktree and General Chat and exactly replays Create/Send after ackn
   const provider = await save(EntityKind.PROVIDER, {
     name: "Owned keyless",
     endpoint: "http://127.0.0.1:9/v1",
-    protocol: "openai-chat",
+    protocol: "openai-responses",
     authentication: "keyless",
     discovery: false,
   });
-  const model = await save(EntityKind.MODEL, {
-    name: "Fixture model",
-    provider_id: provider.id,
-    native_id: "fixture",
-    harnesses: ["codex"],
-    manual: true,
-    metadata_source: "unknown",
+  const account = await save(EntityKind.ACCOUNT, {
+    alias: "Fixture keyless", type: "api", provider_id: provider.id,
+    enabled: true, health: "disconnected",
   });
-  const agent = await save(EntityKind.AGENT, {
-    name: "Owned accountless Agent",
-    harness: "codex",
-    model_id: model.id,
-    accounts: [],
-    templates: [],
-    options: { permission: "default" },
+  await createClient(AccountService, transport).connectAccount({
+    keyless: true,
+    mutation: { id: account.id, expectedRevision: account.revision, requestId: uuid() },
   });
+  const agent = (await config.saveAgentWorker({
+    mutation: { requestId: uuid() }, schemaVersion: 4,
+    routeModels: [{ selection: { case: "nativeId", value: "fixture" } }],
+    documentJson: documentBytes({
+      name: "Owned keyless Agent", harness: "codex",
+      routes: [{ model: { provider_id: provider.id, native_id: "fixture", metadata_source: "unknown" },
+        accounts: [{ id: account.id, weight: 1 }] }],
+      templates: [], options: { permission: "default" },
+    }),
+  })).resource!;
   const repository = await save(EntityKind.REPOSITORY, {
     name: "Remote fixture",
     remote_url: "git@github.com:fixture/mobile.git",

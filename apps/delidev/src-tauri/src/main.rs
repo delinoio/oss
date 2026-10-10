@@ -1799,14 +1799,10 @@ fn run() -> Result<(), NativeFailure> {
     let endpoint = connector.runtime_endpoint().inspect_err(|code| {
         use delidev_desktop::{
             language::{LanguagePreference, resolve},
-            localization::{Message, text_in},
+            localization::{initial_startup_message, text_in},
         };
         let locale = resolve(LanguagePreference::System, sys_locale::get_locale());
-        let message = match *code {
-            NativeFailure::Busy | NativeFailure::ServiceManaged => Message::StartupConflict,
-            NativeFailure::Incompatible => Message::StartupIncompatible,
-            _ => Message::StartupUnavailable,
-        };
+        let message = initial_startup_message(*code);
         rfd::MessageDialog::new()
             .set_title("DeliDev")
             .set_description(text_in(message, locale))

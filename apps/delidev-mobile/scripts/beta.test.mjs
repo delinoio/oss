@@ -11,6 +11,7 @@ import {
   retainCandidate,
   distribute,
   credentials,
+  validateInputs,
 } from "./beta.mjs";
 const input = {
   identity: Identity,
@@ -23,6 +24,22 @@ const input = {
   appleSigner: "b".repeat(64),
   androidSigner: "c".repeat(64),
 };
+test("iOS-only candidates require no Android authority and preserve legacy both-platform schema", () => {
+  const appleOnly = { ...input, target: "ios", androidCode: "", androidSigner: undefined };
+  const m = candidate(appleOnly, ios);
+  assert.equal(m.schema, 2);
+  assert.equal(m.target, "ios");
+  assert.deepEqual(Object.keys(m.artifacts), ["ios"]);
+  assert.equal(Object.hasOwn(m, "androidCode"), false);
+  assert.equal(candidate(input, ios, android).schema, 1);
+  assert.throws(() => validateInputs({ ...appleOnly, androidCode: "8" }));
+  assert.throws(() => candidate({ ...appleOnly, target: "foreign" }, ios));
+  const environment = Object.fromEntries([
+    "ISSUER", "KEY_ID", "PRIVATE_KEY", "TEAM", "APP_ID", "INTERNAL_GROUP",
+  ].map((name) => [`DELIDEV_MOBILE_APPLE_${name}`, "fixture"]));
+  assert.equal(credentials(environment, "ios"), true);
+  assert.throws(() => credentials(environment));
+});
 const ios = {
   identity: Identity,
   version: input.version,

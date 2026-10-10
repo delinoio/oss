@@ -10,7 +10,7 @@ export interface CurrentTurn extends TurnProjection { running: boolean }
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const identity = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && new TextEncoder().encode(value).length <= 1024 && !/[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(value);
 function utc(value: unknown): number | undefined {
-  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(value)) return;
+  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z$/.test(value)) return;
   const parsed = Date.parse(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19)) return;
   return parsed;
@@ -21,6 +21,9 @@ export function retainedTurnTiming(value: unknown): TurnTiming | undefined {
   if (!Object.hasOwn(timing, "terminal_at")) return { accepted };
   const terminal = utc(timing.terminal_at);
   if (terminal === undefined || terminal < accepted || !Number.isSafeInteger(terminal - accepted)) return;
+  // Millisecond conversion discards native submillisecond precision. Preserve
+  // the original interval order before allowing that loss in display metadata.
+  if (terminal === accepted && String(timing.terminal_at).slice(20, -1).padEnd(9, "0") < String(timing.accepted_at).slice(20, -1).padEnd(9, "0")) return;
   return { accepted, terminal };
 }
 function owner(session: string, execution: string, thread: string, turn: string) { return JSON.stringify([session, execution, thread, turn]); }
