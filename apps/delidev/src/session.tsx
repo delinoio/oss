@@ -9,7 +9,7 @@ import { isImageStartupRejectedInput } from "./startup-rejection";
 import { SessionActivityProvider } from "./session-activity";
 import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
-import { initialExecutionPending, SessionProgressPhase, sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
+import { initialStartupInformationHidden, initialExecutionPending, SessionProgressPhase, sessionProgress, progressMessages, progressResponseOwner, responseSuppressesProgress } from "./session-progress";
 import { useStartupPresence } from "./session-startup-presence";
 import { startupOperations, startupWorkerCurrent } from "./session-startup-operations";
 import { SessionProgressStatus, StartupObservedOperation } from "./session-progress-status";
@@ -323,6 +323,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const diagnosticsButton = useRef<HTMLButtonElement>(null);
   const browserButton = useRef<HTMLButtonElement>(null);
   const infoHeading = useRef<HTMLHeadingElement>(null);
+  const sessionHeading = useRef<HTMLHeadingElement>(null);
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLElement>(null);
   const information = useRef<HTMLElement>(null);
@@ -567,14 +568,26 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     observeStartupOwner && Boolean(startupMachine.data) && !startupMachine.error && !startupMachine.isPending && !startupMachine.isFetching,
     startupMachine.data?.observedAt, startupMachine.data ? performance.now() - startupMachine.data.startedAt : NaN);
   const progress = startupOwnerCurrent ? observedProgress : undefined;
-  return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
+  const startupInformationHidden = !embedded && conversationActive && initialStartupInformationHidden(session, progress, queued);
+  useLayoutEffect(() => {
+    const info = information.current;
+    if (!info) return;
+    // Hand off focus before applying hidden: browsers may blur hidden content.
+    if (startupInformationHidden && info.contains(document.activeElement)) {
+      const target = composer.current && !composer.current.disabled ? composer.current : sessionHeading.current;
+      target?.focus({ preventScroll: true });
+    }
+    info.hidden = startupInformationHidden || tabs.tab.kind === SessionTabKind.Sidechat;
+    info.toggleAttribute("inert", info.hidden);
+  }, [startupInformationHidden, tabs.tab.kind]);
+  return <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><section className="session-workspace session-tabbed" data-startup-information-hidden={startupInformationHidden || undefined} aria-label={copy("session.currentSession_a32789")} onKeyDown={event => {
     if (event.key === "Escape" && event.target instanceof Node && upperContent.current?.contains(event.target) && !(event.target instanceof Element && event.target.closest("[data-shortcuts=passthrough]")) && tabs.tab.kind !== SessionTabKind.Conversation && !(event.target instanceof Element && event.target.closest("dialog[open]"))) {
       event.stopPropagation(); if (event.target instanceof Element && event.target.closest(".terminal-dock")) closeTerminal(); else if (panel !== SessionPanel.Closed) closePanel(); else closeTerminal();
     }
   }}>
     <header className="session-header">
       <div className="session-heading">
-        <SessionHarness resource={session}><div className="session-heading-line"><h2 tabIndex={-1} onDoubleClick={event => { if (session) editName?.(session.id, event.currentTarget); }}>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
+        <SessionHarness resource={session}><div className="session-heading-line"><h2 ref={sessionHeading} tabIndex={-1} onDoubleClick={event => { if (session) editName?.(session.id, event.currentTarget); }}>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
       </div>
       <div className="session-controls" hidden={!embedded && tabs.tab.kind===SessionTabKind.Sidechat} inert={!embedded && tabs.tab.kind===SessionTabKind.Sidechat}>
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
@@ -680,7 +693,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     {tabs.store.sidechats(id).map(tab=>tab.kind===SessionTabKind.Sidechat?<div key={tab.id} hidden={!active||tabs.selected!==sessionTabKey(tab)} inert={!active||tabs.selected!==sessionTabKey(tab)} className="session-sidechat-pane"><SidechatPane id={tab.id} active={active&&tabs.selected===sessionTabKey(tab)}/></div>:null)}
     </div>
     </div>
-    <aside hidden={tabs.tab.kind===SessionTabKind.Sidechat} ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
+    <aside ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
       <FlatDisclosureScope><div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />

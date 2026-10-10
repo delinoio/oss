@@ -1964,7 +1964,21 @@ cancel publication and discard bytes through their original read owners. Accepte
 or uncertain mutations retain original connection-owned request/controller identity;
 selection, closure and reopening never create a resource or retry a mutation.
 
-Info remains persistent beside the active pane, with the original section focus,
+Issue #2515 adds a presentation exception for ordinary Session and General Chat:
+while the active Conversation has a validated original initial startup projection,
+keep the same Info DOM and all controllers mounted but hide and inert the panel.
+Preparing workspace, Waiting to start, Starting agent and Waiting for response
+(including the compact row after initial input publication) reclaim the 360px rail,
+24px gap or compact upper band. The unchanged startup list stays centered with its
+380px maximum width. Unknown initial ownership and later follow-up turns retain
+Info. Existing response suppression, revision, connection, budget, approval,
+user-input, recovery, failure, Stop/archive and uncertain-operation guards restore
+its original layout. Tool tabs retain Info; Sidechat keeps its existing behavior.
+Hand focused Info content to the original enabled composer or session heading
+before the hidden view is painted; restoration never steals focus. This changes
+no requests, native lifetime, mutation authority or retained drafts.
+
+Otherwise, Info remains persistent beside the active pane, with the original section focus,
 recovery and budget controls. At 900px available session width reserve its 360px
 right rail; below 900px reflow the same Info DOM into the bounded scrolling band
 above content. Each active resource occupies the remaining full-width region,
@@ -2096,7 +2110,7 @@ migration, native behavior, feature flag or content logging is introduced.
 
 Info groups status/recovery, existing Agent-linked PR associations, execution settings, context, Subagents, usage/budget and workspace storage. Issues #2145/#2146 replace primary and nested technical disclosures with flat, always-expanded groups, approximately 12px semibold headings and subtle separators. Status/recovery shows only independent Workspace, Result and Archive values with existing safe failure guidance and original remedies. Technical Session ID/revision, dispatch/preparation/recovery, complete safe automatic-title evidence, snapshot/account/execution/input/model identities, PR provenance, native Subagent source evidence, recorded usage identities and successful operation references appear in Diagnostics. This projection is independent of REQUEST_DIAGNOSTICS support and adds no reader or mutation owner. Retain the original applied instructions, native interactive controls, hierarchy/status/model/output/usage and budget gates in Info.
 
-Hide an empty PR or Subagent group only after its complete successful read has no continuation, read failure or unsettled original operation. Keep the owner mounted and active for existing invalidation/polling so later associations or observations reveal it. Remove unconditional Refresh controls from Info and Diagnostics while preserving existing reads, event invalidation, polling, mutation refresh and failed-read Retry. Remove the new manual PR linking form; exact original uncertain link/unlink receipts and retry controls remain independently retained. Session hiding still pauses or disposes only the original eligible readers; temporary tool switches do not remount these owners. Preserve the original 360px rail, upper band, scrolling, Show details/recovery focus and native Browser/terminal lifetimes.
+Hide an empty PR or Subagent group only after its complete successful read has no continuation, read failure or unsettled original operation. Keep the owner mounted and active for existing invalidation/polling so later associations or observations reveal it. Remove unconditional Refresh controls from Info and Diagnostics while preserving existing reads, event invalidation, polling, mutation refresh and failed-read Retry. Remove the new manual PR linking form; exact original uncertain link/unlink receipts and retry controls remain independently retained. Session hiding still pauses or disposes only the original eligible readers; temporary tool switches do not remount these owners. Preserve the original 360px rail and upper band outside the validated initial-startup presentation exception (#2515), scrolling, Show details/recovery focus and native Browser/terminal lifetimes.
 
 Session names open one connection-owned editor only on double-click of the sidebar name text or the conversation header name text. Ordinary single-click navigation stays immediate and unchanged. The owner prioritizes #2146: remove Info Rename without any replacement button or menu entry. Bind retained drafts and the session-name mutation key to the original session UUID. Read its current confirmed resource before Save, preserve the captured revision through conflicts and exact original request bytes through uncertainty, and require explicit draft discard before a new revision is admitted. A verified original acknowledgment refreshes header/sidebar and closes the dialog. The modal has 480px maximum width, 24px padding, 12px corners, 40px controls, 16px viewport margins and 12% backdrop with no blur; select the full initial name, contain Tab focus, guard composing Enter, support Close/Escape and restore an available original opener. Do not close on backdrop clicks. Validate a nonempty, NUL-free valid Unicode name of at most 256 UTF-8 bytes without truncation. Closing and reopening in the same connection retains the draft; replacing the connection retires its owners.
 

@@ -122,3 +122,18 @@ export function progressResponseOwner(row: Resource | undefined, sessionId: stri
 export function responseSuppressesProgress(messages: readonly ProgressMessage[], owner: ReturnType<typeof progressResponseOwner>): boolean {
   return Boolean(owner && messages.some(row => row.response && row.response.executionId === owner.executionId && row.response.threadId === owner.threadId && row.response.turnId === owner.turnId && (row.response.kind === ResponseEvidenceKind.Unavailable || row.response.kind === ResponseEvidenceKind.Visible && row.response.lastSequence !== undefined && row.response.lastSequence <= owner.lastSequence)));
 }
+
+/** Presentation exception only after the existing complete startup projection. */
+export function initialStartupInformationHidden(row: Resource | undefined, phase: SessionProgressPhase | undefined, queue: readonly Resource[]): boolean {
+  if (!row || !phase) return false;
+  const d = readDocument(row), initial = object(d.initial_execution), selected = object(d.current_execution ?? d.initial_execution), execution = object(d.execution);
+  if (!["local", "worktree", "general-chat"].includes(String(d.workspace)) || d.last_input_sequence != null && d.last_input_sequence !== 1) return false;
+  if (!d.active_execution_id) {
+    // An ordinary later queued turn must never impersonate initial preparation.
+    return d.last_input_sequence === 1 && d.initial_execution == null && d.current_execution == null
+      && queue.length === 1 && originalQueue(queue[0]!, row.id)
+      && readDocument(queue[0]!).sequence === 1 && readDocument(queue[0]!).delivery === "queued";
+  }
+  return uuid(initial.id) && uuid(initial.input_id) && initial.id === selected.id && initial.input_id === selected.input_id
+    && initial.id === d.active_execution_id && (execution.accepted_inputs === undefined || Array.isArray(execution.accepted_inputs) && execution.accepted_inputs.length === 1);
+}

@@ -5,7 +5,7 @@ import { act, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { encode } from "./documents";
 import { conversationProjection } from "./tool-turn-projection";
-import { initialExecutionPending, progressMessages, progressResponseOwner, responseSuppressesProgress, responseEvidence, ResponseEvidenceKind, SessionProgressPhase, sessionProgress, type ProgressObservation } from "./session-progress";
+import { initialStartupInformationHidden, initialExecutionPending, progressMessages, progressResponseOwner, responseSuppressesProgress, responseEvidence, ResponseEvidenceKind, SessionProgressPhase, sessionProgress, type ProgressObservation } from "./session-progress";
 import { SessionProgressStatus } from "./session-progress-status";
 import { i18n } from "./localization";
 const sessionId = newRequestId(), executionId = newRequestId(), inputId = newRequestId(), jobId = newRequestId();
@@ -93,4 +93,22 @@ it.each([{ current: false }, { complete: false }, { blocked: true }, { queueCurr
 it.each([{ sequence: 2 }, { delivery: "uncertain" }, { execution_id: executionId }, { native_request_id: inputId }, { mode: "unknown" }])("requires untouched original initial queue proof %j", extra => {
  const queue = resource(EntityKind.QUEUE, { delivery: "queued", sequence: 1, content_revision: 1, mode: "execute", prompt: "Initial queued input", ...extra }, inputId);
  expect(sessionProgress(observation(originalInitial, { queue: [queue] }))).toBeUndefined();
+});
+
+it("limits hidden information to proven original initial startup", () => {
+ const initial = observation({ workspace: "general-chat" });
+ expect(initialStartupInformationHidden(initial.session, sessionProgress(initial), [])).toBe(true);
+ for (const extra of [{ last_input_sequence: 2 }, { workspace: "unknown" }, { initial_execution: undefined }, { current_execution: { id: newRequestId(), input_id: newRequestId() } }, { execution: { ...progress, accepted_inputs: [...progress.accepted_inputs, { input_id: newRequestId(), prompt_digest: "b".repeat(64) }] } }]) {
+  const later = observation({ workspace: "general-chat", ...extra });
+  expect(initialStartupInformationHidden(later.session, sessionProgress(later), [])).toBe(false);
+ }
+ const queued = resource(EntityKind.QUEUE, { delivery: "queued", sequence: 1, content_revision: 1, mode: "execute", prompt: "Initial input" }, inputId);
+ const pending = observation({ workspace: "worktree", last_input_sequence: 1, active_execution_id: undefined, initial_execution: undefined, execution: undefined, outcome: "not-started", dispatch: "ready", pending_inputs: 1 }, { queue: [queued] });
+ expect(initialStartupInformationHidden(pending.session, sessionProgress(pending), [queued])).toBe(true);
+ expect(initialStartupInformationHidden(pending.session, sessionProgress(pending), [])).toBe(false);
+ for (const options of [{ current: false }, { complete: false }, { blocked: true }]) expect(initialStartupInformationHidden(initial.session, sessionProgress({ ...initial, ...options }), [])).toBe(false);
+});
+it.each([{ dispatch: "paused" }, { archive: "archived" }, { recovery: "required" }, { outcome: "failed" }, { outcome: "stopped" }, { execution: { ...progress, waiting: { approval: true, user_input: false } } }, { execution: { ...progress, waiting: { approval: false, user_input: true } } }, { execution: { ...progress, unconfirmed_responses: 1 } }])("restores information for original attention state %o", extra => {
+ const attention = observation({ workspace: "local", ...extra });
+ expect(initialStartupInformationHidden(attention.session, sessionProgress(attention), [])).toBe(false);
 });
