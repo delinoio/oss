@@ -82,6 +82,12 @@ func TestForkChildRetirementPreservesReplacedOrUncertainOwners(t *testing.T) {
 	for _, scenario := range []string{"replacement", "malformed", "busy", "native-possible", "recovery"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "worker")
+			// Owner journals and sibling recovery locks require private ancestors.
+			for _, directory := range []string{root, filepath.Join(root, "processes")} {
+				if err := security.CreatePrivateDirExclusive(directory); err != nil {
+					t.Fatal(err)
+				}
+			}
 			owner := domain.NewID()
 			path := filepath.Join(root, "processes", string(owner))
 			if err := security.PrivateDir(path); err != nil {

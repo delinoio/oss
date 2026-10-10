@@ -7,14 +7,17 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestCurrentInlineLayout(t *testing.T) {
-	root := t.TempDir()
-	os.Chmod(root, 0700)
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.CreatePrivateDirExclusive(root); err != nil {
+		t.Fatal(err)
+	}
 	s, e := Open(context.Background(), root)
 	if e != nil {
 		t.Fatal(e)
@@ -45,8 +48,8 @@ func TestCurrentInlineLayout(t *testing.T) {
 func TestEarlierDatabaseIsRejectedWithoutChangingOriginalBytes(t *testing.T) {
 	for _, version := range []int{1, 26, 27, 28, 29, 30, 31} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.Chmod(root, 0700); err != nil {
+			root := filepath.Join(t.TempDir(), "private")
+			if err := security.CreatePrivateDirExclusive(root); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(root, "state.sqlite")

@@ -130,6 +130,10 @@ func TestLocalPairingNameMetadataPreservesOriginalRuntimeProof(t *testing.T) {
 		t.Run("name="+name, func(t *testing.T) {
 			target := fixtureTarget("http://127.0.0.1:46310")
 			target.Root = filepath.Join(t.TempDir(), "owner")
+			// LocalRoot validates the owner as well as the final worker directory.
+			if err := security.CreatePrivateDirExclusive(target.Root); err != nil {
+				t.Fatal(err)
+			}
 			root := filepath.Join(target.Root, "worker")
 			if err := security.PrivateDir(root); err != nil {
 				t.Fatal(err)

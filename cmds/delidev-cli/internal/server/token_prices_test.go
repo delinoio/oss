@@ -5,19 +5,20 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/tokenprices"
 	"io"
 	"net/http"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
-	root := t.TempDir()
-	if e := os.Chmod(root, 0700); e != nil {
+	root := filepath.Join(t.TempDir(), "private")
+	if e := security.CreatePrivateDirExclusive(root); e != nil {
 		t.Fatal(e)
 	}
 	db, e := store.Open(context.Background(), root)
@@ -215,8 +216,8 @@ func TestExactAutomaticPricingRetainsManualAndImmutableHistory(t *testing.T) {
 }
 
 func TestAutomaticPricingUsesOnlyReviewedUnchangedPresetNamespaces(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Chmod(root, 0700); err != nil {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.CreatePrivateDirExclusive(root); err != nil {
 		t.Fatal(err)
 	}
 	db, err := store.Open(context.Background(), root)
@@ -291,8 +292,8 @@ func TestAutomaticPricingUsesOnlyReviewedUnchangedPresetNamespaces(t *testing.T)
 }
 
 func TestManualPriceWinsAgainstInFlightAutomaticRefresh(t *testing.T) {
-	root := t.TempDir()
-	if err := os.Chmod(root, 0700); err != nil {
+	root := filepath.Join(t.TempDir(), "private")
+	if err := security.CreatePrivateDirExclusive(root); err != nil {
 		t.Fatal(err)
 	}
 	db, err := store.Open(context.Background(), root)
@@ -360,8 +361,8 @@ func TestManualPriceWinsAgainstInFlightAutomaticRefresh(t *testing.T) {
 }
 
 func TestRetiredProviderPricesRemainReadOnlyAcrossRefresh(t *testing.T) {
-	root := t.TempDir()
-	if e := os.Chmod(root, 0700); e != nil {
+	root := filepath.Join(t.TempDir(), "private")
+	if e := security.CreatePrivateDirExclusive(root); e != nil {
 		t.Fatal(e)
 	}
 	db, e := store.Open(context.Background(), root)
@@ -439,8 +440,8 @@ func TestRetiredProviderPricesRemainReadOnlyAcrossRefresh(t *testing.T) {
 }
 
 func TestPricingModeRejectsUnseenAutomaticVersionBeforePolicyMutation(t *testing.T) {
-	root := t.TempDir()
-	if e := os.Chmod(root, 0700); e != nil {
+	root := filepath.Join(t.TempDir(), "private")
+	if e := security.CreatePrivateDirExclusive(root); e != nil {
 		t.Fatal(e)
 	}
 	db, e := store.Open(context.Background(), root)

@@ -46,6 +46,10 @@ func TestRetireCompletedOwnerFailureDoesNotClaimCleanup(t *testing.T) {
 	for _, scenario := range []string{"remove", "sync", "foreign-journal", "held-controller", "canceled"} {
 		t.Run(scenario, func(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "processes")
+			// Sibling recovery locks inherit this fixture-owned parent DACL on Windows.
+			if err := security.CreatePrivateDirExclusive(root); err != nil {
+				t.Fatal(err)
+			}
 			owner := domain.NewID()
 			path := filepath.Join(root, string(owner))
 			if err := security.PrivateDir(path); err != nil {

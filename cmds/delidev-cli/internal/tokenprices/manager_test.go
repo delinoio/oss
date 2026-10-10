@@ -4,9 +4,10 @@ package tokenprices
 import (
 	"context"
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"io"
 	"net/http"
-	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,8 +20,8 @@ type transport func(*http.Request) (*http.Response, error)
 func (f transport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func private(t *testing.T) string {
 	t.Helper()
-	p := t.TempDir()
-	if e := os.Chmod(p, 0700); e != nil {
+	p := filepath.Join(t.TempDir(), "private")
+	if e := security.CreatePrivateDirExclusive(p); e != nil {
 		t.Fatal(e)
 	}
 	return p

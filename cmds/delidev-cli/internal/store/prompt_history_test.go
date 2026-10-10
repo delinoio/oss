@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,7 +187,7 @@ func TestProjectPromptHistorySurvivesRestartAndSessionDeletionAndRestoresCapture
 	// Opening an immutable captured database copy validates the same stored history
 	// used by managed restore, without replacing the original live database.
 	restoredRoot := filepath.Join(t.TempDir(), "restored")
-	if err := os.MkdirAll(restoredRoot, 0700); err != nil {
+	if err := security.CreatePrivateDirExclusive(restoredRoot); err != nil {
 		t.Fatal(err)
 	}
 	image, err := os.ReadFile(filepath.Join(root, "backups", string(backup)+".sqlite"))

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,8 +160,8 @@ func TestFrozenHistoricalSchemasRejectWithoutChangingOriginalFiles(t *testing.T)
 	}
 	for _, entry := range entries {
 		t.Run(entry.Name(), func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.Chmod(root, 0700); err != nil {
+			root := filepath.Join(t.TempDir(), "private")
+			if err := security.CreatePrivateDirExclusive(root); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(root, "state.sqlite")
