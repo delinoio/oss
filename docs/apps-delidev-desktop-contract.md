@@ -1,5 +1,102 @@
 # DeliDev desktop client
 
+## Known subscription model autocomplete
+
+### Preserved pre-reset requirements
+
+The following complete requirements describe the pre-reset Model-resource wizard.
+The current protocol-2 amendment below supersedes only the retired resource and
+compatibility behavior; it does not authorize restoring that runtime support.
+
+The Agent Worker wizard keeps the existing Model heading, Choose a model heading,
+Model form label, 720px column, 40px controls, theme and footer structure. Its helper
+is `Search known and saved models, or enter an exact model ID.` System capability
+`KNOWN_SUBSCRIPTION_MODELS_V1 = 35` independently enables the known-model read. An
+older server retains saved/direct selection and shows server-update guidance.
+
+Focus opens a keyboard-operated listbox with names, exact IDs and Known/Saved
+labels. Name/ID search filters the bounded complete known list; saved resources
+use the existing source-scoped server search and pagination. A saved same-service
+native ID takes precedence in the displayed candidate set. Known selection keeps
+only the native ID until the existing atomic Worker save; saved selection retains
+its exact ID/revision. Queries never register models. Escape dismisses the list;
+arrow/Enter selection, accessible active descendants and narrow-width wrapping
+remain intact. Source/harness changes clear incompatible selections.
+
+Show `Known models · Catalog updated {date}` with built-in/cached source when
+applicable, and `Availability depends on your plan and installed harness.` Remove
+the unsupported subscription-discovery warning. `Reload models` rereads known
+and saved server state; it does not force an external download. Show saved-list
+page controls only when a continuation or current page exists. Loading/failure
+keeps typed input and the last successful same-source candidates; no-match states
+retain exact-ID entry. Invalid service echoes cannot become candidates. Existing
+API discovery and saved-model stale-revision guards remain unchanged. Recommendation
+removal cannot delete saved configurations or execution history. These browser
+interactions do not establish installed native/account/platform acceptance.
+
+
+### Current protocol-2 source-model amendment
+
+The complete reset and inline source-model ownership follow the [catalog
+contract](cmds-delidev-catalog-contract.md) and [automatic source-specific
+pricing contract](cmds-delidev-usage-contract.md#automatic-source-specific-token-prices--issue-2138).
+`AgentWorkerWizard` admits the current `AgentWorkerSourceWizard` only for protocol
+2 with `INLINE_WORKER_MODELS_V1`. Missing support shows checking/update guidance
+and dismissal; it cannot mount the retired saved-Model wizard. Current source
+routes save exact Provider-or-SubscriptionService/native-ID model identities and
+original Account revisions atomically, without Model resource creation or reads.
+Historical Saved-over-Known precedence, saved Model IDs/revisions, saved-model
+pagination and older-server fallback above do not restore those retired APIs.
+
+Capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35` remains an independent advisory
+read gate for eligible subscription sources. OpenCode Go keeps its separate
+source-specific behavior. Validate the original service echo, unique nonempty
+native IDs/display names, at most 200 entries, catalog hash, actual UTC date and
+closed bundled/cache/online source before admitting candidates. Preserve the
+catalog date/source and plan/installed-harness availability guidance. API endpoint
+hints remain separate, explicit revision-bound reads of the original selected
+Account and Provider. Refresh rereads the owning server observations; it does not
+grant external download, Account readiness or native execution authority.
+
+The Model input retains direct exact-ID entry, original source identity and
+mounted draft ownership while loading, failed or unavailable suggestions are
+reported. Retain the last successful same-source candidates as stale observations
+when their original source identity remains valid; unknown or mismatched echoes
+cannot supply candidates. No match preserves exact-ID entry. A valid selection retains that exact native ID until atomic Worker
+save. Name/ID filtering, focus-open listbox, keyboard arrows/Enter, Escape,
+accessible active descendants, option visibility and narrow-width wrapping remain
+required. Source changes clear incompatible Account/model selections; ordered
+source-group keys retain their independent drafts and read/receipt lifetimes.
+Suggestion removal cannot delete saved Worker configuration or execution history.
+Keep original account/source revision checks, byte-identical uncertain save
+receipts and independent cleanup. Suggestions and browser fixtures establish no
+installed native/account/platform acceptance. Structured diagnostics retain closed
+failure classifications without credentials, user state or raw native content.
+
+## Desktop validation ownership
+
+PR validation is owned by the desktop Turbo task graph and the private CI
+workspace under the [repository workflow contract](repository-workflow-contract.md).
+Cache type checks, complete pure UI assertions and deterministic frontend output;
+execute Go-server integration, QA, widget and native packaging fixtures every time.
+Retain complete tests in the desktop checks/tests-1/tests-2 owners: each shard's
+cached pure UI half precedes its uncached Go integration half, and client pure
+tests precede client integration. Preserve the independent runner-owned Go fixture
+build with private process/data/credential lifetimes. QA owns its same-checkout
+API client rebuild: `ci:qa` waits for desktop typecheck and release validation,
+which follows frontend build; combined `test:qa` also waits for unit/integration
+readers. Do not allow QA's declaration rewrite to race any of those readers.
+
+Keep the current jsdom `maxWorkers: 2` under the owning app instructions; preserve
+focus/lifetime and product deadlines independently. The earlier four-worker
+setting does not authorize raising the current limit without peak native-build
+validation. Local `pnpm test` retains the complete client-build, typecheck, unit,
+integration, bundle, desktop-launch, widget, QA, frontend-build and release-check
+sequence. Cache authentication grants no release authority. Fixtures, builds and
+packaging remain distinct from actual native/account/platform acceptance; record
+exact revision, commands, results and unresolved limits in PRs/issues/CI artifacts,
+without repository evidence documents.
+
 ## Startup Keychain access
 
 Each fresh macOS app launch shows the Keychain access notice and starts checking
