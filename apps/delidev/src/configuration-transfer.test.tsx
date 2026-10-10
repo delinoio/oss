@@ -314,7 +314,7 @@ it("releases export-only failures while retaining error visibility, retry and im
   expect((screen.getByRole("button", { name: "Export configuration" }) as HTMLButtonElement).disabled).toBe(false);
   value.exported.mockResolvedValueOnce({ documentJson: encode({ version: 999, entries: [], machines: [] }) });
   fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
-  await screen.findByText("Use a current version 4 DeliDev configuration export.");
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Use a current version 4 DeliDev configuration export."));
   await waitFor(() => expect(workflow).toHaveBeenLastCalledWith(false));
   fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
   await screen.findByRole("textbox", { name: "Exported configuration" });
