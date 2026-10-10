@@ -361,11 +361,35 @@ func (c *Connection) RefuseExternalTokenRefresh(ctx context.Context, event Event
 	return c.replyEnvelope(ctx, event, key, raw)
 }
 
+// ReplyGenerated samples a technical service result only after atomically
+// claiming the original arrival under the existing reply/write gate. It never
+// retries a claimed response, including uncertain delivery.
+func (c *Connection) ReplyGenerated(ctx context.Context, event Event, result func() any) error {
+	key, err := idKey(event.ID)
+	if err != nil || event.Kind != ServerRequest || result == nil {
+		return protocolFailure()
+	}
+	return c.replyPrepared(ctx, event, key, func() ([]byte, error) {
+		value, err := json.Marshal(result())
+		if err != nil {
+			return nil, protocolFailure()
+		}
+		raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Result: value})
+		if err != nil || len(raw) > MaxFrame {
+			return nil, protocolFailure()
+		}
+		return raw, nil
+	})
+}
+
 func (c *Connection) replyEnvelope(ctx context.Context, event Event, key string, raw []byte) error {
 	var checked envelope
 	if err := domain.Decode(raw, &checked); err != nil {
 		return err
 	}
+	return c.replyPrepared(ctx, event, key, func() ([]byte, error) { return raw, nil })
+}
+func (c *Connection) replyPrepared(ctx context.Context, event Event, key string, prepare func() ([]byte, error)) error {
 	if err := c.acquire(ctx); err != nil {
 		return err
 	}
@@ -379,6 +403,14 @@ func (c *Connection) replyEnvelope(ctx context.Context, event Event, key string,
 	original.replying = true
 	c.incoming[key] = original
 	c.mu.Unlock()
+	raw, err := prepare()
+	if err != nil {
+		return err
+	}
+	var checked envelope
+	if err := domain.Decode(raw, &checked); err != nil {
+		return err
+	}
 	if err := c.write(ctx, raw); err != nil {
 		return err
 	}

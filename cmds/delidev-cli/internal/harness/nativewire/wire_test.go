@@ -590,3 +590,59 @@ func TestOriginalImageObservationTransportBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeWireGeneratedReplySamplesOnlyAtomicWinner(t *testing.T) {
+	c, _, _ := startFixture(t, "normal")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := c.Call(ctx, domain.NewID(), "interactions", struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	event, err := c.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Next(ctx); err != nil {
+		t.Fatal(err)
+	}
+	samples := 0
+	canceled, stop := context.WithCancel(ctx)
+	stop()
+	if err := c.ReplyGenerated(canceled, event, func() any { samples++; return nil }); err == nil || samples != 0 {
+		t.Fatal("canceled unclaimed request sampled")
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- c.ReplyGenerated(ctx, event, func() any {
+				mu.Lock()
+				defer mu.Unlock()
+				samples++
+				return map[string]int64{"currentTimeAt": 1700000000}
+			})
+		}()
+	}
+	wg.Wait()
+	close(results)
+	success, conflict := 0, 0
+	for err := range results {
+		if err == nil {
+			success++
+		} else if domain.SafeError(err).Code == domain.Conflict {
+			conflict++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if samples != 1 || success != 1 || conflict != 1 {
+		t.Fatal("lost original atomic reply ownership", samples, success, conflict)
+	}
+	result, err := c.Next(ctx)
+	if err != nil || string(result.Params) != `{"currentTimeAt":1700000000}` {
+		t.Fatal("wrong retained result", err)
+	}
+}

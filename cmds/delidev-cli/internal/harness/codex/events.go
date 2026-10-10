@@ -202,6 +202,15 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 		return Event{}, domain.SafeError(ctx.Err())
 	}
 	defer func() { <-c.eventGate }()
+	for {
+		event, err := c.nextEvent(ctx)
+		if err != nil || event.Kind != currentTimeRepliedEvent {
+			return event, err
+		}
+	}
+}
+
+func (c *Client) nextEvent(ctx context.Context) (Event, error) {
 	if err := c.wire.Err(); err != nil {
 		return Event{}, err
 	}
@@ -248,6 +257,16 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	native := *c.pendingEvent
 	c.pendingEvent = nil
+	if native.Kind == nativewire.ServerRequest && native.Method == "currentTime/read" {
+		event, err := c.replyCurrentTimeLocked(ctx, native)
+		if err != nil && domain.SafeError(err).Code == domain.RecoveryRequired {
+			c.problem = turnUncertain()
+			if c.execution != nil {
+				c.execution.paused = true
+			}
+		}
+		return event, err
+	}
 	event, err := c.observeEventLocked(native)
 	if err != nil {
 		c.problem = turnUncertain()

@@ -125,6 +125,36 @@ Callers allocate and durably record UUID-v7 operation identities before side-eff
 
 Server requests carry a per-arrival token in addition to their native numeric/string identity. Exactly one concurrent reply may claim that outstanding request, and replaced/already-claimed interactions fail. The adapter must validate answers against the original typed request and current authorization before replying. Successful pipe delivery proves only transmission; native acknowledgment/state must establish semantic acceptance. The transport now exposes exact-arrival request retirement for native cancellation/resolution: it writes no response, cannot remove a replacement arrival and refuses in-flight response ownership. An already absent request is not semantic acceptance. The adapter must establish native ownership before invoking this primitive. Notifications and late replies use the bounded event path; no automatic answer, approval or prompt is synthesized.
 
+### Codex current-time technical service
+
+An emitted `currentTime/read` server request is an automatic technical service,
+not a human question or approval. Validate the complete bounded
+`{threadId:string}` params, original numeric/string request identity and retained
+arrival token. Respond only on the same live native connection for the current
+owned root execution thread. Child/unowned threads, malformed params, duplicate
+keys, notifications and late responses grant no successful reply.
+
+Use the existing nativewire reply/write gate. Atomically claim the original
+pending arrival before sampling the executing Worker's clock once and send only
+`{currentTimeAt:i64}` in whole Unix seconds under the original request ID. An
+answered, replaced, already claimed or stopped arrival cannot sample or send
+another reply. Never use desktop time, emitted notification provenance, retained
+timestamps or external clock services. This consumes observed protocol support;
+it does not enable native external-clock configuration or alter native polling.
+The [pinned native request schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/src/protocol/v2/current_time.rs)
+and [original subscriber implementation](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server/src/current_time.rs)
+own this experimental emitted-request shape; numeric version order grants no
+support.
+
+A successfully transmitted service reply is consumed privately; the ordered
+reader continues to ordinary original turn observations. It creates no product
+interaction or input and grants no account, tool, retry, model or completion
+authority. Pipe uncertainty preserves execution recovery and independently
+verified cleanup, never a replacement timestamp or automatic resend. Logs retain
+only the closed service kind and delivery classification. This adds no public
+RPC, schema allocation or migration. Controlled fixtures are separate from
+installed native/account/platform acceptance.
+
 ### Codex app-server profile
 The initial schema and native evidence baseline is Codex `0.151.0`. Native processes attempt their actual protocol without a numeric version gate. Invalid bounded version metadata, strict schema violations, effective configuration mismatches or changed ownership still fail. This is not evidence of other operating systems, account combinations, or execution features.
 

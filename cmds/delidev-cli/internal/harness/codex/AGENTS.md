@@ -4,6 +4,15 @@
 - This file covers `cmds/delidev-cli/internal/harness/codex/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+## Development and validation
+
+Automatic technical responders must validate the original typed request and live
+execution ownership, sample mutable response values only after the transport's
+atomic arrival claim, and preserve uncertain-delivery recovery without replay.
+Keep service payloads and untrusted native content out of logs; follow the owning
+harness contract and distinguish controlled transport fixtures from installed
+native acceptance.
+
 ## Owning contracts
 
 - [API account browser OAuth](../../../../../docs/cmds-delidev-account-oauth-contract.md)
