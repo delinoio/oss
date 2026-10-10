@@ -18,7 +18,7 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 			if err != nil {
 				return false, err
 			}
-			original := input.Configuration.CodexApps
+			original := input.CodexApps
 			if original == nil || tool.State != domain.MessageStreaming || tool.Tool.Completed != nil || tool.Tool.Started.CodexApp == nil || !tool.Tool.Started.CodexApp.Identity.SameOriginal(u.Questions.CodexApp.Identity) {
 				return false, executionEventConflict()
 			}

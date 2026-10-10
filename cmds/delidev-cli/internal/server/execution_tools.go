@@ -23,7 +23,7 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		}
 	}
 	if update.Snapshot != nil && update.Snapshot.Kind == domain.CodexAppTool {
-		original := input.Configuration.CodexApps
+		original := input.CodexApps
 		call := update.Snapshot.CodexApp
 		if original == nil || input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || update.NativeParentID != "" || call == nil || original.SessionID != input.SessionID || original.AccountID != input.AccountID || call.Identity.AccountID != input.AccountID || call.Identity.Generation != original.Generation || !slices.Contains(original.AppIDs, call.Identity.AppID) {
 			return executionEventConflict()

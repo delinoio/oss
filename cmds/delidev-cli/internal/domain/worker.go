@@ -96,6 +96,9 @@ const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configurat
 
 const SessionStartupProgressV1 WorkerCapability = "session-startup-progress-v1"
 
+// Codex Apps owns allocation 59; declarations alone do not advertise support.
+const CodexAppsV1 WorkerCapability = "codex-apps-v1"
+
 type WorkerCapability string
 
 const (

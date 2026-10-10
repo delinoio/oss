@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	CodexApps           *CodexAppConfiguration     `json:"codex_apps,omitempty"`
 	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
 	ContextRevision     uint64                     `json:"context_revision,omitempty"`
 	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
@@ -91,7 +92,7 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
-	if i.Configuration.CodexApps != nil && (i.Configuration.CodexApps.SessionID != i.SessionID || i.Configuration.CodexApps.AccountID != i.AccountID) {
+	if i.CodexApps != nil && (i.CodexApps.Validate() != nil || i.CodexApps.SessionID != i.SessionID || i.CodexApps.AccountID != i.AccountID || i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "" || i.Fork != nil) {
 		return invalidCodexApps()
 	}
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
