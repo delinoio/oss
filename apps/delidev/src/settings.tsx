@@ -247,7 +247,7 @@ enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management"
 
 export const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
   [SettingsCategory.KeyboardShortcuts]: { get label() { return copy("shortcuts.title"); }, get description() { return copy("shortcut-settings.scope"); }, area: SettingsArea.KeyboardShortcuts },
-  [SettingsCategory.Appearance]: { get label() { return copy("settings.appearance_3907fa"); }, get description() { return copy("settings.savedOnThisComputer_11cb50"); }, area: SettingsArea.Appearance },
+  [SettingsCategory.Appearance]: { get label() { return copy("settings.appearance_3907fa"); }, get description() { return copy("appearance.body.savedOnComputer"); }, area: SettingsArea.Appearance },
   [SettingsCategory.Backups]: { get label() { return copy("settings.backups_3334fe"); }, get description() { return copy("settings.inspectManagedDatabaseImagesAndFollow_b28b20"); }, area: SettingsArea.Backups },
   [SettingsCategory.SubscriptionAccounts]: { get label() { return copy("settings.aiSubscription_ec8b7a"); }, get description() { return copy("settings.manageYourSubscriptionsAndConnectMore_f0b9fe"); }, kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
   [SettingsCategory.ApiAccounts]: { get label() { return copy("settings.aiApiKeys_da1a0f"); }, get description() { return copy("settings.manageAiApiKeysAndKeyless_372629"); }, kind: EntityKind.ACCOUNT, area: SettingsArea.Configuration },
@@ -528,7 +528,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         <div className="settings-panels">
           {area === SettingsArea.Network ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} onPresentationChange={setNetworkPresentationOpen} /> : null}
           {area === SettingsArea.KeyboardShortcuts ? <ShortcutSettings /> : null}
-          {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
+          {area === SettingsArea.Appearance ? <div className="appearance-body"><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}

@@ -2,6 +2,7 @@
 import { StrictMode, useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
+import { i18n, SupportedLanguage } from "./localization";
 import { AppearanceProblem, AppearanceProvider, AppearanceSettings, Theme, parseAppearance, type AppearanceBridge, type AppearanceSnapshot } from "./appearance";
 
 function deferred<T>() {
@@ -204,4 +205,66 @@ test("custom theme save waits for the positively committed native map identity",
  const [theme,revision,preferences]=vi.mocked(value.bridge.update).mock.calls[0];const sorted={...preferences!,custom_themes:preferences!.custom_themes.map(t=>({...t,light:Object.fromEntries(Object.entries(t.light).sort()),dark:Object.fromEntries(Object.entries(t.dark).sort())}))};
  await act(async()=>pending.resolve({theme,revision:revision+1,problem:null,preferences:sorted}));
  expect(screen.queryByRole("textbox",{name:"Theme name"})).toBeNull();expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
+});
+
+
+test("Appearance keeps ordered search sections, separate disclosure names and every disabled renderer with associated explanations", async () => {
+  scheme(false);const value=fixture();
+  render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /></AppearanceProvider>);
+  await waitFor(()=>expect((screen.getByRole("radio",{name:"System"}) as HTMLInputElement).disabled).toBe(false));
+  const root=screen.getByRole("region",{name:"Device appearance"});
+  expect([...root.querySelectorAll(":scope > fieldset")].map(node=>node.getAttribute("data-settings-search-target"))).toEqual(["theme","composer","status","display","images"]);
+  for (const name of ["Tool details default","Reasoning default","Compaction history default"]) {
+    const control=screen.getByRole("combobox",{name});
+    expect(control.closest(".appearance-disclosure-controls")).not.toBeNull();
+    expect(document.getElementById(control.getAttribute("aria-describedby")!)?.textContent).toBeTruthy();
+  }
+  for (const name of ["Markdown","Mermaid diagrams","SVG visualizations","Automatic table charts"]) {
+    const control=screen.getByRole("checkbox",{name}) as HTMLInputElement;
+    expect(control.matches(":disabled")).toBe(true);
+    expect(document.getElementById(control.getAttribute("aria-describedby")!)?.textContent).toBeTruthy();
+  }
+  expect(screen.getByText("Changes save automatically.")).toBeTruthy();
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});
+
+test("Appearance explanations localize without saving or replacing committed selections", async () => {
+  scheme(false);const value=fixture();
+  render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /></AppearanceProvider>);
+  await waitFor(()=>expect((screen.getByRole("radio",{name:"System"}) as HTMLInputElement).checked).toBe(true));
+  try {
+    await act(async()=>{await i18n.changeLanguage(SupportedLanguage.Korean);});
+    expect(screen.getByText("변경사항은 자동으로 저장됩니다.")).toBeTruthy();
+    expect(screen.getByText("입력 영역 주변의 간격입니다.")).toBeTruthy();
+    expect(value.bridge.update).not.toHaveBeenCalled();
+  } finally { await act(async()=>{await i18n.changeLanguage(SupportedLanguage.English);}); }
+});
+
+
+test("redesigned ordinary rows keep one complete original snapshot per choice and an independent composer draft", async () => {
+  const {defaultPreferences}=await import("./appearance-preferences");scheme(false);const value=fixture();
+  vi.mocked(value.bridge.read).mockResolvedValue({revision:1,theme:Theme.System,problem:null,preferences:defaultPreferences()});
+  vi.mocked(value.bridge.update).mockImplementation(async(theme,revision,preferences)=>({theme,revision:revision+1,problem:null,preferences}));
+  render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /><textarea aria-label="Redesign draft" defaultValue="Unsent text" /></AppearanceProvider>);
+  const draft=screen.getByRole("textbox",{name:"Redesign draft"});let expected=defaultPreferences(),calls=0;
+  for (const [name,key,next] of [
+    ["Light palette","light_palette","titanium"],["Dark palette","dark_palette","nord"],
+    ["Composer layout","composer_layout","compact"],["Input text size","composer_size",16],
+    ["Session status","status","minimal"],["Display density","density","compact"],
+    ["Conversation text size","conversation_size",14],["Tool details default","tool_disclosure","collapsed"],
+    ["Reasoning default","reasoning_disclosure","expanded"],["Compaction history default","compaction_disclosure","collapsed"],
+    ["Image size","image_size","original"],
+  ] as const) {
+    const control=screen.getByRole("combobox",{name});await waitFor(()=>expect(control.matches(":disabled")).toBe(false));
+    expected={...expected,[key]:next};fireEvent.change(control,{target:{value:String(next)}});calls++;
+    await waitFor(()=>expect(value.bridge.update).toHaveBeenCalledTimes(calls));
+    expect(vi.mocked(value.bridge.update).mock.calls[calls-1]).toEqual([Theme.System,calls,expected]);
+    expect(screen.getByRole("textbox",{name:"Redesign draft"})).toBe(draft);expect((draft as HTMLTextAreaElement).value).toBe("Unsent text");
+  }
+  for (const [name,key] of [["Color-vision assistance","color_assistance"],["Session accent","session_accent"],["Show observed tokens","show_tokens"],["Show observed time","show_time"],["Animation","animation"],["Inline images","inline_images"]] as const) {
+    const control=screen.getByRole("checkbox",{name});await waitFor(()=>expect(control.matches(":disabled")).toBe(false));
+    expected={...expected,[key]:!expected[key]};fireEvent.click(control);calls++;
+    await waitFor(()=>expect(value.bridge.update).toHaveBeenCalledTimes(calls));
+    expect(vi.mocked(value.bridge.update).mock.calls[calls-1]).toEqual([Theme.System,calls,expected]);
+  }
 });

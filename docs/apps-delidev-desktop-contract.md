@@ -1116,7 +1116,7 @@ Every body shares one left anchor, `width: 100%` and `max-width: 1040px`, white/
 
 Successful empty regions have at least 160px height, a 32px decorative vector at the left and left-aligned title/help at the right, growing with text. Backup-table empties and singleton notices stay compact semantic rows. Loading uses exactly two static decorative skeleton rows where a list is expected. Successful-empty predicates remain with each controller; initial errors/loading, unsupported/denied states, retained refresh failures and scoped later/continuation empty pages stay distinct. No duplicate empty-state create action is added; pagination hides only on a successful final empty first page.
 
-Forms share the category anchor and a 720px maximum, using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance alone retains autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Git Profiles keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
+Forms share the category anchor and a 720px maximum (Appearance alone uses the issue #2287 880px body), using two columns only at available form widths >=640px. Remove enclosing/nested form cards in favor of flat semantic groups and thin rules. Keep complete documents, every field/help/default/unknown value, mounted independent disclosures, invalid-field reveal/focus and Save/Cancel/original retry in ordinary flow. Subscription services use flat ChatGPT/Claude/Grok rows with negotiated service-only account creation and explicit unsupported lifecycle guidance. Managed Codex authentication follows the independent subscription-settings contract; authentication refresh never implies quota refresh. Appearance alone retains autosave, with native System/Light/Dark radios, decorative CSS miniatures and choices stacked below 640px available width. Git Profiles keeps its single New GitHub profile action in the category header even when empty; profile storage/identity/access distinctions remain visible.
 
 Notifications renders saved Enabled/Disabled values as noninteractive label/value rows. Explicit Edit focuses the first checkbox; Save/Cancel return once to the enabled Edit action within the same active visit. A delayed refetch may postpone return, but deliberate focus transfer, another dialog/drawer, inactivity, window loss or departure discards that intent. Native status and server/client preferences remain independent, with visible Inbox/no-implicit-approval guidance as the final content block; issue #2126 removes the supplementary delivery disclosure and its search destination. Appearance/device controller and persistent Connection controls remain outside visit disposal. Backups retains semantic inventory, independently observed accepted jobs and manual history tabs, with failed-read-only retry and terminal Dismiss tracking controls named by backup resource identity. Diagnostics keeps its original 1100px/1200px viewport breakpoints, exact canonical BigInt values and independent caveats.
 
@@ -1440,7 +1440,26 @@ from actual supported-platform CEF OS/theme/restart/multiwindow, keyboard contai
 and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explicitly.
 #### Device styling and custom themes (issue #2025)
 
-Appearance uses five flat sections: Theme, Composer, Status, Display and Images.
+Appearance uses five flat sections: Theme, Composer, Session status, Display and Images.
+Issue #2287 presents these sections, then Language and Date format, on one
+left-aligned fluid 880px column. This Appearance-only cap supersedes the generic
+720px form cap; shared desktop/medium/compact padding remains unchanged. Use
+26px/32px category titles, 16px/24px section headings, 14px/20px labels and
+12px/18px explanations with system fonts and semantic theme tokens. Separate
+sections with thin dividers and 24px gaps. Ordinary rows have a 64px minimum
+height, a flexible wrapping label/explanation and a 220px control column with a
+16px gap, 40px targets and 8px corners. Tool, reasoning and compaction defaults
+share one row but retain three separately labelled selectors and values.
+An Appearance-scoped container stacks rows, theme tiles and disclosure selectors
+below 640px available width; actions wrap and the body scrolls vertically.
+Keep all four unavailable renderer controls visible and disabled. Beneath the
+title show Saved on this computer. and Changes save automatically., with dynamic
+Reading/Saving/Saved/failure status from the original controller. Keep the native
+radio tiles, decorative synthetic miniatures, palette/assistance rows, grouped
+Duplicate/Import actions and every custom operation/recovery message. Associate
+explanations with their original controls and preserve Settings search targets,
+native radio keyboard behavior and the shared input focus policy. This changes
+no preference schema, controller, CSP, native storage or execution authority.
 Language and Date format retain their existing ownership. Ordinary selections
 save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.

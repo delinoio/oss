@@ -153,13 +153,15 @@ export function AppearanceSettings() {
   useLocale();
   const { snapshot, operation, select, reload } = useContext(AppearanceContext);
   return <section data-settings-search-target="theme" className="appearance-settings" aria-label={copy("appearance.deviceAppearance_880cb9")}>
-    <AppearanceControls modeControls={<div className="appearance-choices">{[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>
-        <input type="radio" name="device-theme" value={theme} checked={snapshot.theme === theme} onChange={() => select(theme)} />
-        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span className="appearance-choice-label">{theme === Theme.System ? copy("appearance.system_6725e7") : theme === Theme.Light ? copy("appearance.light_dbcd5e") : copy("appearance.dark_60acc5")}</span>
-      </label>)}</div>} />
-    <p id="appearance-scope">{copy("appearance.systemFollowsThisComputerSAppearance_edf3db")}</p>
+    <header className="appearance-status"><p>{copy("appearance.body.autosave")}</p>
     <p role="status" aria-live="polite">{operation === AppearanceOperation.Reading ? copy("appearance.readingAppearance_04736c") : operation === AppearanceOperation.Saving ? copy("appearance.savingTheme_26a81f") : snapshot.problem ? copy("appearance.appearanceIsNotSavedInspectThe_76382e") : copy("appearance.themeSaved_5d20dd")}</p>
     {snapshot.problem ? <><p role="alert">{problemMessages[snapshot.problem]}</p><SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={Boolean(operation)} onClick={reload}>{copy("appearance.reloadAppearance_c3f2b4")}</SettingsActionButton></> : null}
+    </header>
+    <AppearanceControls modeControls={<><div className="appearance-choices">{[Theme.System, Theme.Light, Theme.Dark].map((theme) => <label className="appearance-choice" key={theme}>
+        <input type="radio" aria-describedby="appearance-scope" name="device-theme" value={theme} checked={snapshot.theme === theme} onChange={() => select(theme)} />
+        <span className="appearance-miniature" data-preview={theme} aria-hidden="true" /><span className="appearance-choice-label">{theme === Theme.System ? copy("appearance.system_6725e7") : theme === Theme.Light ? copy("appearance.light_dbcd5e") : copy("appearance.dark_60acc5")}</span>
+      </label>)}</div><p id="appearance-scope" className="appearance-section-help">{copy("appearance.systemFollowsThisComputerSAppearance_edf3db")}</p></>} />
+
   </section>;
 }
 
