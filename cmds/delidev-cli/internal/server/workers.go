@@ -358,6 +358,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	var cancellationSent domain.ID
 	responseControlsSent := map[domain.ID]bool{}
 	steerControlsSent := map[domain.ID]bool{}
+	appsControlsSent := map[domain.ID]bool{}
 	for {
 		changed := s.Store.Changed()
 		var records []store.Record
@@ -365,6 +366,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		var responseControls []*pb.QuestionResponseControl
 		var approvalControls []*pb.ApprovalResponseControl
 		var steerControl *pb.SteerInputControl
+		var appsControls []*pb.CodexAppsControl
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
@@ -396,6 +398,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 						if err == nil {
 							steerControl, err = s.pendingSteer(tx, record, job, steerControlsSent)
 						}
+						if err == nil {
+							appsControls, err = codexAppsControls(tx, machine, instance)
+						}
 					}
 					return err
 				}
@@ -404,6 +409,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				cancellationSent = ""
 				responseControlsSent = map[domain.ID]bool{}
 				steerControlsSent = map[domain.ID]bool{}
+				appsControlsSent = map[domain.ID]bool{}
 			}
 			if err := tx.WorkerUpdateAdmission(machine); err != nil {
 				return nil
@@ -453,6 +459,19 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				return err
 			}
 			steerControlsSent[domain.ID(steerControl.SteerId)] = true
+		}
+		for _, control := range appsControls {
+			id := domain.ID(control.AppsOperationId)
+			if control.ExecutionJobId != string(inFlight) || appsControlsSent[id] {
+				continue
+			}
+			if len(appsControlsSent) >= 4096 {
+				return rpc.Error(codexAppsUnavailable(), correlation)
+			}
+			if err := send(&pb.WatchWorkResponse{CodexAppsControl: control}); err != nil {
+				return err
+			}
+			appsControlsSent[id] = true
 		}
 		assigned := false
 		waitForNetwork := false

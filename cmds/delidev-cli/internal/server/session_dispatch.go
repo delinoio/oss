@@ -331,6 +331,25 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	}
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
 	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
+	// Apps are an explicit per-assignment authority. General session settings
+	// and their initial digest remain immutable across later selections.
+	input.CodexApps = nil
+	if input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && input.Fork == nil {
+		_, account, accountErr := executionAccountFromTx(tx, input.AccountID, input.ConnectionID)
+		if accountErr != nil {
+			return empty, accountErr
+		}
+		if account.Subscription == nil || account.Connection == nil {
+			return empty, continuationConflict()
+		}
+		input.CodexApps, err = tx.CodexAppsAssignmentSelection(input.SessionID, input.AccountID, account.Subscription.Generation, input.ConnectionID)
+		if err != nil {
+			return empty, err
+		}
+		if input.CodexApps != nil && !slices.Contains(machine.WorkerCapabilities, domain.CodexAppsV1) {
+			return empty, domain.Fail(domain.Unsupported, "The original Runner Device does not support Codex Apps.", "Update that Worker before accepting the explicit app selection.")
+		}
+	}
 	input.Preparation, input.Manifest = job.Input, job.Output
 	return input, input.Validate()
 }

@@ -152,6 +152,9 @@ func finishNativeExecution(tx *store.Tx, record store.Record, job domain.Job, ex
 	if err != nil {
 		return store.Record{}, err
 	}
+	if err := tx.CancelUnclaimedCodexAppsControl(record.ID); err != nil {
+		return store.Record{}, err
+	}
 	// The native completion receipt is a reference, not another prompt-bearing
 	// copy of the immutable assignment. ReportWork expands it after commit.
 	return store.Record{ID: saved.ID}, nil
