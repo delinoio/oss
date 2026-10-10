@@ -24,8 +24,9 @@ export function sessionNativeAppViews(v: ReadSessionAppsResponse, scope: Session
   if (!text(a.id) || installed.has(a.id) || a.callable && !a.enabled) return undefined;
   installed.add(a.id); const row=rows.get(a.id);
   if (row) Object.assign(row,{installed:true,enabled:a.enabled,callable:a.callable});
-  // No source-backed discovery name means no safe product label. Do not
-  // substitute an internal identifier for an undiscovered app's name.
+  else rows.set(a.id,{id:a.id,name:`Installed app ${installed.size}`,discovered:false,accessible:false,installed:true,enabled:a.enabled,callable:a.callable,selected:v.selection?.appIds.includes(a.id) ?? false});
+  // Preserve installed-only observations with safe ordinal labels. An absent
+  // discovery name must not expose an internal identifier as product text.
  }
  return [...rows.values()];
 }
