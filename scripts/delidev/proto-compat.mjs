@@ -15,6 +15,21 @@ export function retireCompatibility() {
     if (filename === 'delidev_pb.ts' || /^delidev-.*_connectquery\.ts$/.test(filename)) rmSync(resolve(directory, filename), { force: true });
   }
   for (const filename of ['delidev.pb.go', 'zz_delidev_compat.go']) rmSync(resolve(root, 'protos/gen/go/delidev/v1', filename), { force: true });
+  normalizeNativeAppsBinding(directory);
+}
+
+export function normalizeNativeAppsBinding(directory) {
+  // The pinned ES generator adds an empty EOF line. Normalize this new profile
+  // after generation so its additive binding passes cumulative whitespace checks
+  // without rewriting established generated outputs. Remove this normalization
+  // when the pinned generator itself emits exactly one terminal newline.
+  const appsBinding = 'session_native_apps_pb.ts';
+  if (readdirSync(directory).includes(appsBinding)) {
+    const path = resolve(directory, appsBinding);
+    const generated = readFileSync(path, 'utf8');
+    const normalized = generated.replace(/\n+$/, '\n');
+    if (generated !== normalized) writeFileSync(path, normalized);
+  }
 }
 
 // Only explicitly inventoried declarations can move. Their descriptor contents,

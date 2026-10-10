@@ -15,7 +15,7 @@ Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to remove retired historical aggregate
 module, Connect Query and Go descriptor facades. Protocol-2 consumers import the
 canonical split service modules or package-root exports. Earlier facade paths
-are unsupported; original field and capability allocations keep their meanings.
+are unsupported; original field and capability allocations keep their meanings. The same post-generation step normalizes the new session-native Apps TypeScript binding to exactly one terminal newline; existing generated modules retain their tool output.
 
 ## Scope
 `packages/delidev-api-client` owns private `@delinoio/delidev-api-client`, generated messages and service-specific Connect Query namespaces, explicit transport, typed errors, UUID-v7 request identities and bounded resource synchronization. This is the client integration boundary for desktop implementation; it does not itself constitute a desktop app or complete the feature.
