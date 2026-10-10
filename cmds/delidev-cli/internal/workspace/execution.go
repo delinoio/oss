@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -41,6 +42,8 @@ type executionClaim struct {
 // The durable claim lives outside the workspace so a missing/replaced workspace
 // cannot erase uncertainty after a Worker crash. It grants no server authority.
 type ExecutionLease struct {
+	closed     atomic.Bool
+	manifest   Manifest
 	once       sync.Once
 	manager    *Manager
 	claim      executionClaim
@@ -279,7 +282,7 @@ func (m *Manager) claimExecution(ctx context.Context, jobID, executionID domain.
 		return nil, err
 	}
 	m.Logger.InfoContext(ctx, "workspace_execution_claimed", "session_id", input.SessionID, "job_id", jobID, "execution_id", executionID, "continuation", previous != nil)
-	return &ExecutionLease{manager: m, claim: claim, cwd: manifest.PrimaryPath, release: lock.Close}, nil
+	return &ExecutionLease{manager: m, claim: claim, cwd: manifest.PrimaryPath, manifest: manifest, release: lock.Close}, nil
 }
 
 func (l *ExecutionLease) WorkingDirectory() string { return l.cwd }
@@ -305,6 +308,7 @@ func (l *ExecutionLease) ReconcileNative(ctx context.Context) error {
 // neither case authorizes repeating the first execution.
 func (l *ExecutionLease) Close() error {
 	l.once.Do(func() {
+		l.closed.Store(true)
 		defer func() {
 			if err := l.release(); err != nil {
 				l.closeError = ResultUncertain()

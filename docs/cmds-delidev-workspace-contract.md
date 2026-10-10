@@ -573,3 +573,5 @@ verification. Selecting a directory does not mutate the preparation manifest,
 primary path, root inventory, repository source or execution cleanup claim.
 This private filesystem check supplies no native settings, instruction reload,
 trust, historical continuation or fresh-input authority.
+
+Subsequent execution may derive an anchored directory selection from its live original execution lease. The lease retains the original prepared manifest and primary path; selecting a nested directory does not rewrite either or alter its cleanup claim. Closing the lease invalidates all derived selections. Directory-generation and native history/settings proof remain independent requirements before input.

@@ -113,22 +113,9 @@ func (i *ClosedExecutionInspection) SelectDirectory(repository domain.ID, relati
 	if i.closed.Load() {
 		return nil, directoryChanged()
 	}
-	root := i.manifest.PrimaryPath
-	if len(i.manifest.Repositories) == 0 {
-		if repository != "" {
-			return nil, directoryChanged()
-		}
-	} else {
-		root = ""
-		for _, prepared := range i.manifest.Repositories {
-			if prepared.ID == repository {
-				root = prepared.Path
-				break
-			}
-		}
-		if root == "" {
-			return nil, directoryChanged()
-		}
+	root, err := originalDirectoryRoot(i.manifest, repository)
+	if err != nil {
+		return nil, err
 	}
 	selection, err := selectDirectory(root, relative)
 	if err != nil {

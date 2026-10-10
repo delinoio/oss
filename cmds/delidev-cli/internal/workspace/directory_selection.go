@@ -116,3 +116,41 @@ func selectDirectory(originalRoot, relative string) (selection *DirectorySelecti
 	}
 	return selection, selection.Verify()
 }
+
+func originalDirectoryRoot(manifest Manifest, repository domain.ID) (string, error) {
+	if len(manifest.Repositories) == 0 {
+		if repository != "" {
+			return "", directoryChanged()
+		}
+		return manifest.PrimaryPath, nil
+	}
+	for _, prepared := range manifest.Repositories {
+		if prepared.ID == repository {
+			return prepared.Path, nil
+		}
+	}
+	return "", directoryChanged()
+}
+
+// SelectDirectory preserves the preparation and execution cleanup claim. It
+// returns an anchored selection under the same live lease, never a new root or
+// a replacement primary directory. Native generation proof remains independent.
+func (l *ExecutionLease) SelectDirectory(repository domain.ID, relative string) (*DirectorySelection, error) {
+	if l.closed.Load() {
+		return nil, directoryChanged()
+	}
+	root, err := originalDirectoryRoot(l.manifest, repository)
+	if err != nil {
+		return nil, err
+	}
+	selection, err := selectDirectory(root, relative)
+	if err != nil {
+		return nil, err
+	}
+	selection.ownerAlive = func() bool { return !l.closed.Load() }
+	if err := selection.Verify(); err != nil {
+		_ = selection.Close()
+		return nil, err
+	}
+	return selection, nil
+}

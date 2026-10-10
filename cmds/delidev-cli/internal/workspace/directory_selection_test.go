@@ -104,3 +104,30 @@ func TestWorkingDirectorySelectionUsesManifestRepositoryAndClosedOwner(t *testin
 		t.Fatal("closed owner authorized another selection")
 	}
 }
+
+func TestWorkingDirectorySelectionExecutionLeasePreservesPrimary(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "nested"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	lease := &ExecutionLease{cwd: root, manifest: Manifest{PrimaryPath: root}}
+	selection, err := lease.SelectDirectory("", "nested")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer selection.Close()
+	if lease.WorkingDirectory() != root || selection.Path() != filepath.Join(root, "nested") {
+		t.Fatal("selected directory rewrote source root")
+	}
+	lease.closed.Store(true)
+	if selection.Verify() == nil {
+		t.Fatal("closed lease preserved selection authority")
+	}
+	if other, err := lease.SelectDirectory("", "nested"); err == nil {
+		_ = other.Close()
+		t.Fatal("closed lease admitted new selection")
+	}
+}
