@@ -6,9 +6,11 @@ import { QueryClient,QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent,render,screen,waitFor,within } from "@testing-library/react";
 import { useRef,useState } from "react";
 import { expect,it,vi } from "vitest";
-import { EntityKind,ResourceSchema,ResourceService,SessionService,SystemService,SystemCapability,newRequestId,type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind,SessionQuery,ResourceSchema,ResourceService,SessionService,SystemService,SystemCapability,newRequestId,type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { MutationIntents } from "./mutation";
+import { dispatchShortcut,ShortcutId,ShortcutInput,ShortcutPlatform } from "./shortcuts";
+import { Surface } from "./surface";
+import { MutationIntents,useRetainedMutation } from "./mutation";
 import { useSessionRevert } from "./session-revert";
 
 it.each([false,true])("keeps one original Revert request and restores only an unsent guarded draft (changed=%s)",async changed=>{
@@ -28,10 +30,56 @@ it.each([false,true])("keeps one original Revert request and restores only an un
  const view=(session:Resource)=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Harness session={session}/></MutationIntents></QueryClientProvider></TransportProvider>;
  const rendered=render(view(original));await waitFor(()=>expect(screen.getByRole("button",{name:"Revert and edit"})).toHaveProperty("disabled",false));
  fireEvent.click(screen.getByRole("button",{name:"Revert and edit"}));const dialog=screen.getByRole("dialog");expect(within(dialog).getByText(/Your current draft will be replaced/)).toBeDefined();fireEvent.click(within(dialog).getByRole("button",{name:"Revert and edit"}));
+ await screen.findByRole("button",{name:"Retry the same Revert request"});
+ const away=create(ResourceSchema,{...original,id:newRequestId()});rendered.rerender(view(away));rendered.rerender(view(original));
+ expect(screen.getByRole("button",{name:"Revert and edit"})).toHaveProperty("disabled",true);
  fireEvent.click(await screen.findByRole("button",{name:"Retry the same Revert request"}));await waitFor(()=>expect(revert).toHaveBeenCalledTimes(2));expect(requests[1]).toEqual(requests[0]);
  if(changed)fireEvent.change(screen.getByRole("textbox",{name:"Unsent prompt"}),{target:{value:"edited during Revert"}});
  const completed=create(ResourceSchema,{...original,revision:4n,documentJson:encode({...body,context_revision:1,revert:{action_id:requests[0].mutation.requestId,job_id:job,result:{context_revision:1,retained_turn_ids:[],target:{message_id:message,native_turn_id:turn,context_revision:0,prompt:{prompt:"earlier prompt",mode:"execute"}}}}})});
  rendered.rerender(view(completed));
  if(changed){await screen.findByText(/Your edited draft was preserved/);expect(screen.getByRole("textbox",{name:"Unsent prompt"})).toHaveProperty("value","edited during Revert");fireEvent.click(screen.getByRole("button",{name:"Restore earlier prompt"}));}
  await waitFor(()=>expect(screen.getByRole("textbox",{name:"Unsent prompt"})).toHaveProperty("value","earlier prompt"));expect(document.activeElement).toBe(screen.getByRole("textbox",{name:"Unsent prompt"}));expect(revert).toHaveBeenCalledTimes(2);
+});
+
+// The shell retains keyed presenters today. Exercise the connection contract
+// independently when a presenter is reused or replaced under that same owner.
+it.each([["reuse",false,false],["remount",false,false],["remount",false,true],["reuse",true,false],["remount",true,false]] as const)("retains the exact busy Revert across %s navigation (rejected=%s, edited=%s)", async (lifetime,rejected,edited) => {
+ const a=newRequestId(),b=newRequestId(),machine=newRequestId(),message=newRequestId(),turn=newRequestId(),thread=newRequestId(),job=newRequestId();
+ const body={machine_id:machine,initial_execution:{configuration:{harness:"codex"}},archive:"active",recovery:"none",execution:{cleanup_verified:true,native_thread_id:thread}};
+ const session=(id:string)=>create(ResourceSchema,{kind:EntityKind.SESSION,id,sessionId:id,revision:2n,schemaVersion:1,documentJson:encode(body)});
+ const original=session(a),other=session(b);
+ const target=create(ResourceSchema,{kind:EntityKind.MESSAGE,id:message,sessionId:a,revision:1n,schemaVersion:1,documentJson:encode({role:"user",state:"complete",text:"earlier prompt",input_id:newRequestId(),native_thread_id:thread,native_turn_id:turn})});
+ let settle!:()=>void;
+ const held=new Promise<void>(resolve=>{settle=resolve;});
+ const requests:any[]=[];
+ const revert=vi.fn(async request=>{requests.push(request);await held;if(rejected)throw new ConnectError("original request rejected",Code.InvalidArgument);return{requestId:request.mutation.requestId,job:create(ResourceSchema,{kind:EntityKind.JOB,id:job,sessionId:a,revision:1n,schemaVersion:1,documentJson:encode({input:{version:4,action_id:request.mutation.requestId,revert:{message_id:message,native_turn_id:turn,context_revision:0}}})})};});
+ const enqueue=vi.fn(async()=>({}));
+ const transport=createRouterTransport(router=>{
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.CODEX_SESSION_REVERT_V1]})});
+  router.service(ResourceService,{getResource:request=>({resource:request.kind===EntityKind.MACHINE?create(ResourceSchema,{kind:EntityKind.MACHINE,id:machine,revision:1n,schemaVersion:1,documentJson:encode({worker_capabilities:["codex-session-revert-v1"]})}):request.id===a?original:other})});
+  router.service(SessionService,{revertSession:revert,enqueueInput:enqueue});
+ });
+ const drafts=new Map([[a,"A draft"],[b,"B draft"]]);
+ function Harness({row}:{row:Resource}){
+  const[draft,setDraft]=useState(drafts.get(row.id)!);
+  const previous=useRef(row.id);if(previous.current!==row.id){previous.current=row.id;setDraft(drafts.get(row.id)!);}
+  const composer=useRef<HTMLTextAreaElement>(null);
+  const state=useSessionRevert({session:row,sessionId:row.id,active:true,draft,composer,blocked:false,changed:()=>{},restore:prompt=>{drafts.set(row.id,prompt);setDraft(prompt);}});
+  const send=useRetainedMutation(`enqueue:${row.id}`,SessionQuery.enqueueInput);
+  const fenced=state.pending||state.busy||state.uncertain;
+  const submit=()=>{if(!fenced)void send.send({requestId:newRequestId(),sessionId:row.id,documentJson:encode({prompt:draft,mode:"execute"})});};
+  return <><textarea aria-label="Navigation draft" ref={composer} value={draft} onChange={event=>{drafts.set(row.id,event.target.value);setDraft(event.target.value);}} onKeyDown={event=>dispatchShortcut(event.nativeEvent,[{id:ShortcutId.SessionSend,scope:Surface.Sessions,label:"shortcuts.queueMessage",bindings:[{key:"Enter",primary:true}],target:composer,input:ShortcutInput.Target,enabled:!fenced,run:submit}],Surface.Sessions,ShortcutPlatform.Other)}/><button disabled={fenced} onClick={submit}>Send navigation input</button><output aria-label="Revert busy">{String(state.busy)}</output>{state.action(target)}{state.content}</>;
+ }
+ const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+ const view=(row:Resource)=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Harness key={lifetime==="remount"?row.id:"presenter"} row={row}/></MutationIntents></QueryClientProvider></TransportProvider>;
+ const rendered=render(view(original));await waitFor(()=>expect(screen.getByRole("button",{name:"Revert and edit"})).toHaveProperty("disabled",false));
+ fireEvent.click(screen.getByRole("button",{name:"Revert and edit"}));fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"Revert and edit"}));await waitFor(()=>expect(revert).toHaveBeenCalledTimes(1));
+ rendered.rerender(view(other));await waitFor(()=>expect(screen.getByRole("button",{name:"Send navigation input"})).toHaveProperty("disabled",false));expect(screen.getByRole("textbox")).toHaveProperty("value","B draft");
+ rendered.rerender(view(original));await waitFor(()=>expect(screen.getByRole("button",{name:"Send navigation input"})).toHaveProperty("disabled",true));expect(screen.getByLabelText("Revert busy").textContent).toBe("true");
+ fireEvent.click(screen.getByRole("button",{name:"Send navigation input"}));fireEvent.keyDown(screen.getByRole("textbox"),{key:"Enter",ctrlKey:true});expect(enqueue).not.toHaveBeenCalled();expect(revert).toHaveBeenCalledTimes(1);
+ if(edited)fireEvent.change(screen.getByRole("textbox"),{target:{value:"edited A draft"}});
+ if(rejected){rendered.rerender(view(other));settle();await waitFor(()=>expect(screen.getByLabelText("Revert busy").textContent).toBe("false"));await waitFor(()=>expect(revert).toHaveBeenCalledTimes(1));rendered.rerender(view(original));await waitFor(()=>expect(screen.getByRole("button",{name:"Send navigation input"})).toHaveProperty("disabled",false));expect(screen.getByRole("textbox")).toHaveProperty("value","A draft");expect(drafts.get(b)).toBe("B draft");expect(enqueue).not.toHaveBeenCalled();return;}
+ settle();await waitFor(()=>expect(screen.getByLabelText("Revert busy").textContent).toBe("false"));expect(screen.getByRole("button",{name:"Send navigation input"})).toHaveProperty("disabled",true);
+ const completed=create(ResourceSchema,{...original,revision:4n,documentJson:encode({...body,context_revision:1,revert:{action_id:requests[0].mutation.requestId,job_id:job,result:{context_revision:1,retained_turn_ids:[],target:{message_id:message,native_turn_id:turn,context_revision:0,prompt:{prompt:"earlier prompt",mode:"execute"}}}}})});
+ rendered.rerender(view(completed));if(edited){await screen.findByText(/Your edited draft was preserved/);expect(screen.getByRole("textbox")).toHaveProperty("value","edited A draft");fireEvent.click(screen.getByRole("button",{name:"Restore earlier prompt"}));}await waitFor(()=>expect(screen.getByRole("textbox")).toHaveProperty("value","earlier prompt"));expect(screen.getByRole("button",{name:"Send navigation input"})).toHaveProperty("disabled",false);expect(drafts.get(b)).toBe("B draft");expect(revert).toHaveBeenCalledTimes(1);expect(enqueue).not.toHaveBeenCalled();
 });

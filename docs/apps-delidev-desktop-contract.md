@@ -3435,6 +3435,15 @@ this and later turns from working context, unchanged files, preserved prior
 history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
 Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
+The connection-owned Revert controller retains the original action, target,
+context and draft guard across presenter reuse or replacement. Its exact busy
+or uncertain intent fences Send and fresh-input shortcuts even when the current
+session row predates admission. Other sessions keep independent drafts and
+fences. Presenter disposal and stale rows prove no completion; only verified
+original completion or definitive rejection releases the original pending fence.
+The controller bounds retained presentation to 1000 sessions and 8 MiB per
+connection and discards it only with that connection. The main shell already
+retains keyed root session presenters during ordinary session navigation.
 
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Preserve a draft edited during the operation or

@@ -4,7 +4,7 @@ import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionQuery, SystemCapability, SystemQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 import { copy, useLocale } from "./localization";
-import { useRetainedMutation } from "./mutation";
+import { useRetainedMutation, useRetainedRevertPresentation } from "./mutation";
 import { Modal, Problem } from "./ui";
 
 const revision = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : value === undefined ? 0n : undefined;
@@ -18,21 +18,23 @@ export function verifiedRevertDraft(session: Resource | undefined, action: strin
  if (p.action_id !== action || target.message_id !== message || revision(target.context_revision) !== context || revision(result.context_revision) !== context + 1n || revision(s.context_revision) !== context + 1n || s.compaction_job_id || s.recovery !== "none" || !text(p.job_id) || !Array.isArray(result.retained_turn_ids) || result.retained_turn_ids.includes(target.native_turn_id) || typeof prompt.prompt !== "string" || !["execute", "plan"].includes(text(prompt.mode))) return;
  return prompt;
 }
-export function useSessionRevert({session,active,draft,restore,composer,blocked,changed}:{session?:Resource;active:boolean;draft:string;restore:(prompt:string,mode:string)=>boolean|void;composer:RefObject<HTMLTextAreaElement|null>;blocked:boolean;changed:(resource:Resource)=>void}) {
+export function useSessionRevert({session,sessionId=session?.id ?? "",active,draft,restore,composer,blocked,changed}:{session?:Resource;sessionId?:string;active:boolean;draft:string;restore:(prompt:string,mode:string)=>boolean|void;composer:RefObject<HTMLTextAreaElement|null>;blocked:boolean;changed:(resource:Resource)=>void}) {
  useLocale();
  const status=useQuery(SystemQuery.getStatus,{}, {enabled:active});
  const machine=useQuery(ResourceQuery.getResource,{kind:EntityKind.MACHINE,id:text(document(session).machine_id)},{enabled:active && Boolean(session)});
  const supported=Boolean(status.data?.capabilities.includes(SystemCapability.CODEX_SESSION_REVERT_V1) && !status.error && !machine.error && Array.isArray(document(machine.data?.resource).worker_capabilities) && (document(machine.data?.resource).worker_capabilities as unknown[]).includes("codex-session-revert-v1"));
  const [selected,setSelected]=useState<{row:Resource;source:Resource}>();
- const [pending,setPending]=useState<{action:string;message:string;context:bigint;draft:string}>();
- const [replacement,setReplacement]=useState<Document>();
- const restoredAction=useRef<string | undefined>(undefined);
- const originalSession=useRef(session?.id);
- useEffect(()=>{if(originalSession.current!==session?.id){originalSession.current=session?.id;setSelected(undefined);setPending(undefined);setReplacement(undefined);restoredAction.current=undefined;}},[session?.id]);
+ const retained=useRetainedRevertPresentation(sessionId);
+ const {pending,replacement,restoredAction}=retained.state;
+ const setPending=(pending:typeof retained.state.pending)=>retained.set(current=>({...current,pending}));
+ const setReplacement=(replacement:Document|undefined)=>retained.set(current=>({...current,replacement}));
+ const [error,setError]=useState<unknown>();
+ const originalSession=useRef(sessionId);
+ useEffect(()=>{if(originalSession.current!==sessionId){originalSession.current=sessionId;setSelected(undefined);setError(undefined);}},[sessionId]);
  const latestDraft=useRef(draft);latestDraft.current=draft;
- const current=useQuery(ResourceQuery.getResource,{kind:EntityKind.SESSION,id:session?.id ?? ""},{enabled:active && Boolean(pending),refetchInterval:pending?2000:false});
+ const current=useQuery(ResourceQuery.getResource,{kind:EntityKind.SESSION,id:sessionId},{enabled:active && Boolean(pending),refetchInterval:pending?2000:false});
  useEffect(()=>{const row=current.data?.resource;if(row && row.id===session?.id && row.revision>session.revision)changed(row);},[current.data?.resource,session,changed]);
- const mutation=useRetainedMutation(`revert:${session?.id ?? ""}`,SessionQuery.revertSession,()=>{},(reply,request)=>{
+ const mutation=useRetainedMutation(`revert:${sessionId}`,SessionQuery.revertSession,()=>{},(reply,request)=>{
   const input=object(document(reply.job).input),target=object(input.revert);
   return reply.requestId===request.mutation?.requestId && reply.job?.kind===EntityKind.JOB && reply.job.sessionId===request.mutation.id && input.version===4 && input.action_id===request.mutation.requestId && target.message_id===request.messageId && target.native_turn_id===request.beforeTurnId && revision(target.context_revision)===request.expectedContextRevision;
  });
@@ -42,16 +44,18 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
   const prompt=verifiedRevertDraft(original,pending.action,pending.message,pending.context);if(!prompt)return;
   // Native completion cannot overwrite a draft edited while the original job
   // was pending, or restore text into an inactive conversation.
-  if(latestDraft.current===pending.draft && restore(text(prompt.prompt),text(prompt.mode))!==false){composer.current?.focus();restoredAction.current=pending.action;setReplacement(undefined);}else setReplacement(prompt);
-  setPending(undefined);setSelected(undefined);
+  try{
+   if(latestDraft.current===pending.draft && restore(text(prompt.prompt),text(prompt.mode))!==false){composer.current?.focus();retained.set(current=>({...current,pending:undefined,restoredAction:pending.action,replacement:undefined}));}
+   else retained.set(current=>({...current,pending:undefined,replacement:prompt}));
+   setSelected(undefined);
+  }catch(reason){setError(reason);}
  },[original,pending,active]);
- useEffect(()=>{if(mutation.error && !mutation.uncertain && !mutation.busy)setPending(undefined);},[mutation.error,mutation.uncertain,mutation.busy]);
- useEffect(()=>{if(pending || replacement)return;const retained=object(document(original).revert),result=object(retained.result),target=object(result.target),context=revision(target.context_revision);if(text(retained.action_id) && restoredAction.current!==retained.action_id && context!==undefined){const prompt=verifiedRevertDraft(original,text(retained.action_id),text(target.message_id),context);if(prompt)setReplacement(prompt);}},[original,pending,replacement]);
+ useEffect(()=>{if(pending || replacement)return;const retained=object(document(original).revert),result=object(retained.result),target=object(result.target),context=revision(target.context_revision);if(text(retained.action_id) && restoredAction!==retained.action_id && context!==undefined){const prompt=verifiedRevertDraft(original,text(retained.action_id),text(target.message_id),context);if(prompt){try{setReplacement(prompt);}catch(reason){setError(reason);}}}},[original,pending,replacement]);
  const open=(row:Resource)=>{if(session && !blocked && !mutation.busy && !mutation.uncertain && !pending && revertEligible(session,row,supported))setSelected({row,source:session});};
  const confirm=()=>{
   if(!selected || !session || selected.source.id!==session.id || selected.source.revision!==session.revision || blocked || mutation.busy || mutation.uncertain || pending || !revertEligible(session,selected.row,supported))return;
   const action=newRequestId(),target=document(selected.row),context=revision(document(session).context_revision)!;
-  setPending({action,message:selected.row.id,context,draft:latestDraft.current});
+  try{setPending({action,message:selected.row.id,context,draft:latestDraft.current});setError(undefined);}catch(reason){setError(reason);return;}
   setSelected(undefined);
   void mutation.send({mutation:{id:session.id,expectedRevision:session.revision,requestId:action},messageId:selected.row.id,beforeTurnId:text(target.native_turn_id),expectedContextRevision:context});
  };
@@ -59,9 +63,9 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
  const content=<>
  {selected ? <Modal title={copy("session.revertAndEdit")} close={()=>setSelected(undefined)} focusClose trapFocus><p>{copy("session.revertConfirmation")}</p><pre className="revert-prompt">{text(document(selected.row).text)}</pre>{draft ? <p>{copy("session.revertDraftWarning")}</p>:null}<button type="button" disabled={blocked || mutation.busy || mutation.uncertain || Boolean(pending) || selected.source.revision!==session?.revision} onClick={confirm}>{copy("session.revertAndEdit")}</button></Modal>:null}
  {pending ? <p role="status">{copy("session.revertPending")}</p>:null}
- {replacement ? <div role="status"><p>{copy("session.revertDraftChanged")}</p><button type="button" onClick={()=>{if(restore(text(replacement.prompt),text(replacement.mode))!==false){restoredAction.current=text(object(document(original).revert).action_id);setReplacement(undefined);composer.current?.focus();}}}>{copy("session.restoreRevertedPrompt")}</button></div>:null}
+ {replacement ? <div role="status"><p>{copy("session.revertDraftChanged")}</p><button type="button" onClick={()=>{if(restore(text(replacement.prompt),text(replacement.mode))!==false){retained.set(current=>({...current,restoredAction:text(object(document(original).revert).action_id),replacement:undefined}));composer.current?.focus();}}}>{copy("session.restoreRevertedPrompt")}</button></div>:null}
  {object(object(document(original).revert).result).target ? <p>{copy("session.revertHistoricalAttachments")}</p>:null}
- <Problem error={mutation.error || current.error}/>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("session.retrySameRevert")}</button>:null}
+ <Problem error={error || mutation.error || current.error}/>{mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("session.retrySameRevert")}</button>:null}
  </>;
- return {action,content,pending:Boolean(pending),uncertain:mutation.uncertain};
+ return {action,content,pending:Boolean(pending),busy:mutation.busy,uncertain:mutation.uncertain};
 }

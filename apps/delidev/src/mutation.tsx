@@ -1,3 +1,4 @@
+import { SessionRevertController } from "./session-revert-controller";
 import { useLocale } from "./localization";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { create, fromBinary, toBinary, type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
@@ -14,6 +15,7 @@ function bindAcknowledgement<I extends DescMessage, O extends DescMessage>(ackno
   return (result: unknown) => acknowledge(result as MessageShape<O>, request);
 }
 class IntentRegistry {
+  reverts = new SessionRevertController();
   alive = true;
   revision = 0;
   entries = new Map<string, Intent>();
@@ -40,6 +42,7 @@ class IntentRegistry {
     for (const listener of [...(this.acceptedListeners.get(key) ?? [])]) listener();
   }
   notifyOutcome(key: string, request: object, phase: RetainedMutationPhase) {
+    if (phase === RetainedMutationPhase.Rejected) this.reverts.rejected(key, request);
     for (const observer of this.outcomeObservers) {
       try { observer(key, request, phase); } catch (error) { console.warn("delidev.mutation.outcome_observer_failed", { classification: clientFailure(error).code }); }
     }
@@ -73,12 +76,20 @@ export function MutationIntents({ children }: { children: ReactNode }) {
   const opening = useSettingsOpening();
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => {
-    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
+    const dispose = () => { registry.alive = false; registry.reverts.clear(); registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
     registry.alive = !opening?.disposed;
     opening?.controller.signal.addEventListener("abort", dispose, { once: true });
     return () => { opening?.controller.signal.removeEventListener("abort", dispose); dispose(); };
   }, [registry, opening]);
   return <Context.Provider value={registry}>{children}</Context.Provider>;
+}
+
+// Revert presentation follows the same original connection as its wire intent.
+export function useRetainedRevertPresentation(sessionId: string) {
+  const registry = useContext(Context);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  const state = useSyncExternalStore(registry.reverts.subscribe, () => registry.reverts.get(sessionId));
+  return { state, set: (update: Parameters<SessionRevertController["set"]>[1]) => registry.reverts.set(sessionId, update) };
 }
 
 // Connection-owned attachment drafts observe the exact accepted request even

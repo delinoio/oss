@@ -435,8 +435,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     return () => { observer?.disconnect(); workspace?.style.removeProperty("--session-composer-cap"); window.removeEventListener("resize", fit); };
   }, [session?.id]);
   const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active: conversationActive, disabled: locked });
-  const revert = useSessionRevert({ session, active:conversationActive, draft, composer, blocked:locked || images.images.length>0, changed:setAcknowledged, restore:(prompt,nextMode)=>{if(images.images.length || images.busy)return false;if(setDraft(prompt,[])===false)return false;skills.clearAccepted();setMode(nextMode as Mode);return true;} });
-  const contextLocked = Boolean(data.compaction_job_id) || revert.pending || revert.uncertain;
+  const revert = useSessionRevert({ session, sessionId:id, active:conversationActive, draft, composer, blocked:locked || images.images.length>0, changed:setAcknowledged, restore:(prompt,nextMode)=>{if(images.images.length || images.busy)return false;if(setDraft(prompt,[])===false)return false;skills.clearAccepted();setMode(nextMode as Mode);return true;} });
+  const contextLocked = Boolean(data.compaction_job_id) || revert.pending || revert.busy || revert.uncertain;
   const canSend = !contextLocked && !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
   const enqueue = async () => {
     if (!canSend) return;
