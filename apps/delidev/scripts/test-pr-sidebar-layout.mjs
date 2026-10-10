@@ -112,6 +112,7 @@ try {
     await assertLayout(pane, `${language}/${theme}/${width}: details`);
     await assertPopup(pane, details, beforeDetails, `${language}/${theme}/${width}: details`);
     await details.press("Space");
+    assert.deepEqual(await layoutSnapshot(pane), beforeDetails, "Closing Details preserves sibling geometry and sidebar scrolling");
     await row.click();
     const open = pane.getByRole("radio", { name: language === "ko" ? "열림" : "Open", exact: true });
     const closed = pane.getByRole("radio", { name: language === "ko" ? "닫힘" : "Closed", exact: true });
