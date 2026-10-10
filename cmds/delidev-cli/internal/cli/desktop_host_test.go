@@ -15,6 +15,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 )
 
@@ -25,6 +26,27 @@ type residentFixture struct {
 	done   chan error
 	root   string
 	target desktopruntime.Target
+}
+
+func TestDesktopStartedReportsActiveRPCVersion(t *testing.T) {
+	raw, err := json.Marshal(desktopStarted(desktopruntime.Target{}, domain.NewID()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Server struct {
+			Status struct {
+				Version  string `json:"version"`
+				Protocol uint32 `json:"protocol_version"`
+			} `json:"status"`
+		} `json:"server"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Server.Status.Version != rpc.Version || result.Server.Status.Protocol != rpc.ProtocolVersion {
+		t.Fatal("resident startup did not report the active RPC version")
+	}
 }
 
 func startResidentFixture(t *testing.T, root, listen string) *residentFixture {

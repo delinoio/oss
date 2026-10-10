@@ -20,6 +20,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/desktopruntime"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/server"
 )
@@ -461,7 +462,7 @@ func (h *desktopHostState) start(ctx context.Context, op desktopOperation) (any,
 	}
 }
 func desktopStarted(t desktopruntime.Target, generation domain.ID) any {
-	return map[string]any{"started": true, "generation": generation, "server": map[string]any{"status": map[string]any{"version": "0.1.0", "protocol_version": 1, "listener": t.Endpoint, "server_id": t.ServerID}}}
+	return map[string]any{"started": true, "generation": generation, "server": map[string]any{"status": map[string]any{"version": rpc.Version, "protocol_version": rpc.ProtocolVersion, "listener": t.Endpoint, "server_id": t.ServerID}}}
 }
 func (h *desktopHostState) shutdown(suppressRestart bool) {
 	h.mu.Lock()

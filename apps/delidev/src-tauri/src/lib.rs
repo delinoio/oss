@@ -38,6 +38,9 @@ pub mod window_registry;
 
 // Covers 32 bounded profile records, including JSON-escaped display names.
 const OUTPUT_LIMIT: u64 = 128 << 10;
+// Match the active Go RPC protocol; the private control and CLI envelopes are
+// separate.
+const SERVER_PROTOCOL_VERSION: u64 = 2;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(40);
 const ORIGINS: &str = "tauri://localhost,http://tauri.localhost,http://127.0.0.1:46311";
 
@@ -828,7 +831,8 @@ impl Connector {
         }
         .ok_or(NativeFailure::InvalidEvidence)?;
         if status.get("version").and_then(|v| v.as_str()) != Some(env!("CARGO_PKG_VERSION"))
-            || status.get("protocol_version").and_then(|v| v.as_u64()) != Some(1)
+            || status.get("protocol_version").and_then(|v| v.as_u64())
+                != Some(SERVER_PROTOCOL_VERSION)
             || (self.listen != "127.0.0.1:0"
                 && status.get("listener").and_then(|v| v.as_str())
                     != Some(format!("http://{}", self.listen).as_str()))

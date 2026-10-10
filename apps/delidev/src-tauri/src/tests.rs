@@ -847,7 +847,7 @@ if [ "$3" = server ]; then
   if [ -f "$2/stopped" ]; then
     printf '%s' '{{"version":1,"result":{{"state":"stopped"}}}}'
   else
-    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"{package_version}","protocol_version":1,"listener":"http://127.0.0.1:46310"}}}}}}'
+    printf '%s' '{{"version":1,"result":{{"reused":true,"status":{{"version":"{package_version}","protocol_version":2,"listener":"http://127.0.0.1:46310"}}}}}}'
   fi
 else
   printf '%s' '{{"version":1,"result":{body}}}'
@@ -1263,11 +1263,14 @@ fn local_server_compatibility_uses_the_compiled_package_version() {
     )
     .unwrap();
     for (version, protocol, accepted) in [
-        (env!("CARGO_PKG_VERSION"), 1, true),
-        ("0.0.0", 1, false),
-        (env!("CARGO_PKG_VERSION"), 2, false),
+        (env!("CARGO_PKG_VERSION"), 2, true),
+        ("0.0.0", 2, false),
+        (env!("CARGO_PKG_VERSION"), 1, false),
+        (env!("CARGO_PKG_VERSION"), 3, false),
     ] {
         let value = serde_json::json!({"reused":true,"status":{"version":version,"protocol_version":protocol}});
+        assert_eq!(connector.server_state(&value).is_ok(), accepted);
+        let value = serde_json::json!({"started":true,"server":{"status":{"version":version,"protocol_version":protocol}}});
         assert_eq!(connector.server_state(&value).is_ok(), accepted);
     }
 }
@@ -1302,9 +1305,10 @@ fn saved_server_compatibility_uses_the_compiled_package_version() {
     let connector = fixture_connector(executable.clone(), root).unwrap();
     let operation = executable.with_extension("operation");
     for (version, protocol, accepted) in [
-        (env!("CARGO_PKG_VERSION"), 1, true),
-        ("0.0.0", 1, false),
-        (env!("CARGO_PKG_VERSION"), 2, false),
+        (env!("CARGO_PKG_VERSION"), 2, true),
+        ("0.0.0", 2, false),
+        (env!("CARGO_PKG_VERSION"), 1, false),
+        (env!("CARGO_PKG_VERSION"), 3, false),
     ] {
         let response = serde_json::json!({"version":1,"result":{"profile":expected,"server_version":version,"protocol_version":protocol,"observed_at":"2026-10-08T00:00:00Z"}});
         fs::write(
