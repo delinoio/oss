@@ -210,6 +210,33 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   return { transport, session, message, enqueues, controls, creates, status, githubQuery, saveConfiguration, saveNotificationPreferences, projectRequests, sessionRequests, agent, machine, searches, inboxReads, readStates, responses };
 }
 
+it("refreshes Home through the latest transport when accepted creation settles after same-identity reconnect", async () => {
+  const original = fixture([], [], [], true, true), replacement = fixture([], [], [], true, true);
+  const pairingAuthority = { endpoint: "http://127.0.0.1:46310", serverId: newRequestId() };
+  const currentDeviceId = newRequestId();
+  let accept!: (response: { change: { session: Resource } }) => void;
+  original.creates.mockImplementationOnce(() => new Promise(resolve => { accept = resolve; }));
+  const props = { pairingAuthority, currentDeviceId };
+  const view = render(<App transport={original.transport} {...props} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+  const firstMessage = await screen.findByRole("textbox", { name: "First message" });
+  const form = within(firstMessage.closest("form")!);
+  await chooseScrollOption(form.getByRole("combobox", { name: "Agent Worker" }), original.agent.id);
+  await chooseScrollOption(form.getByRole("combobox", { name: "Runs on" }), original.machine.id);
+  fireEvent.change(firstMessage, { target: { value: "Create while reconnecting" } });
+  fireEvent.click(form.getByRole("button", { name: "Create session" }));
+  await waitFor(() => expect(original.creates).toHaveBeenCalledTimes(1));
+
+  fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
+  view.rerender(<App transport={replacement.transport} {...props} />);
+  await waitFor(() => expect(replacement.sessionRequests.length).toBeGreaterThan(0));
+  const replacementReadsBeforeAcceptance = replacement.sessionRequests.length;
+
+  await act(async () => accept({ change: { session: original.session } }));
+  await waitFor(() => expect(replacement.sessionRequests.length).toBeGreaterThan(replacementReadsBeforeAcceptance));
+});
+
 it("creates an automatically named session from the first message and explicit Workers", async () => {
   const value = fixture([], [], [], false, true);
   render(<App transport={value.transport} />);

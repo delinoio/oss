@@ -203,8 +203,8 @@ async fn export_generated_image(
     window: WebviewWindow<CefRuntime>,
     windows: tauri::State<'_, Arc<ProductWindows>>,
     request: delidev_desktop::image_export::Request,
-) -> Result<delidev_desktop::image_export::Outcome, NativeFailure> {
-    use delidev_desktop::image_export::Outcome;
+) -> Result<delidev_desktop::image_export::SaveResult, NativeFailure> {
+    use delidev_desktop::image_export::{Admission, Outcome, SaveResult};
     let authority = capture_authority(&window)?;
     let binding = if is_local(&window) {
         trusted_local(&window)?;
@@ -216,10 +216,21 @@ async fn export_generated_image(
         "{}:{}:{}",
         authority.entry.label, authority.entry.instance, authority.local_revision
     );
-    let bytes = request.bytes()?;
-    if let Some(outcome) = IMAGE_EXPORTS.begin(&scope, &request)? {
-        return Ok(outcome);
-    }
+    let bytes = match IMAGE_EXPORTS.begin(&scope, &request)? {
+        Admission::New(bytes) => bytes,
+        Admission::Retained(outcome) => return Ok(SaveResult::Receipt(outcome)),
+        Admission::Rejected(reason) => {
+            // This exact operation has no native receipt; generic/late failures
+            // remain errors and cannot release its renderer fence.
+            tracing::info!(
+                operation = "generated_image_export",
+                phase = "not_admitted",
+                ?reason
+            );
+            recheck_authority(&window, &authority)?;
+            return Ok(SaveResult::not_admitted(request.operation_id, reason));
+        }
+    };
     tracing::info!(operation = "generated_image_export", phase = "choosing");
     let chosen = rfd::AsyncFileDialog::new()
         .set_title(delidev_desktop::localization::text(
@@ -271,7 +282,7 @@ async fn export_generated_image(
         ?outcome
     );
     recheck_authority(&window, &authority)?;
-    Ok(outcome)
+    Ok(SaveResult::Receipt(outcome))
 }
 
 #[tauri::command]

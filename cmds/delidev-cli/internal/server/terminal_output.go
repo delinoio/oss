@@ -60,6 +60,15 @@ func (s *Service) terminalRing(id domain.ID) *terminalOutputRing {
 	return ring
 }
 
+// Call only under terminalOutputMu. One broadcast serves all output observers,
+// including rings evicted or recreated between an observation and its wait.
+func (s *Service) terminalOutputNotification() <-chan struct{} {
+	if s.terminalOutputChanged == nil {
+		s.terminalOutputChanged = make(chan struct{})
+	}
+	return s.terminalOutputChanged
+}
+
 func (s *Service) PublishTerminalOutput(ctx context.Context, req *connect.Request[pb.PublishTerminalOutputRequest]) (*connect.Response[pb.PublishTerminalOutputResponse], error) {
 	fail := func(err error) (*connect.Response[pb.PublishTerminalOutputResponse], error) {
 		return nil, rpc.Error(err, req.Header().Get(rpc.CorrelationHeader))
@@ -122,6 +131,11 @@ func (s *Service) PublishTerminalOutput(ctx context.Context, req *connect.Reques
 		ring.chunks[0] = terminalOutputChunk{}
 		ring.chunks = ring.chunks[1:]
 	}
+	// Publish only after authorization, ordering and byte checks have accepted
+	// a new frame. Exact retries and rejected frames leave observers asleep.
+	s.terminalOutputNotification()
+	close(s.terminalOutputChanged)
+	s.terminalOutputChanged = make(chan struct{})
 	return connect.NewResponse(&pb.PublishTerminalOutputResponse{}), nil
 }
 
@@ -146,10 +160,11 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 	}
 	after, epoch, revision := req.Msg.AfterSequence, domain.ID(req.Msg.Epoch), uint64(0)
 	observedOutputLoss := false
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(s.terminalSafetyInterval())
 	defer ticker.Stop()
 	nextHeartbeat := time.Time{}
 	for {
+		changed := s.Store.Changed()
 		var record store.Record
 		var value domain.Terminal
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -167,6 +182,7 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 			return rpc.Error(err, correlation)
 		}
 		s.terminalOutputMu.Lock()
+		outputChanged := s.terminalOutputNotification()
 		ring := s.terminalRing(id)
 		first := ring.sequence + 1
 		if len(ring.chunks) != 0 {
@@ -210,9 +226,14 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 		if value.CleanupVerified {
 			return nil
 		}
+		waitStarted := time.Now()
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-changed:
+			s.logger.DebugContext(ctx, "terminal_watch_woken", "stage", "output", "cause", "store_changed", "wait_ms", time.Since(waitStarted).Milliseconds())
+		case <-outputChanged:
+			s.logger.DebugContext(ctx, "terminal_watch_woken", "stage", "output", "cause", "output_published", "wait_ms", time.Since(waitStarted).Milliseconds())
 		case <-ticker.C:
 		}
 	}

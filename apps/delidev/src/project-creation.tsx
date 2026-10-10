@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { ProjectRepositoryOrder, RepositorySecondaryID } from "./project-repository-order";
@@ -116,13 +117,13 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     setProblem(""); setValidationField(undefined); setStep(step + 1);
   };
   const selected = (editable: boolean) => <ProjectRepositoryOrder ids={ids} names={names} editable={editable} active={active && visible && !blocked && step === Step.Repositories} change={repositories} />;
-  return <><form id={formId} ref={form} className="project-editor project-creation" onSubmit={event => {
+  return <><form id={formId} ref={form} className="project-editor project-creation desktop-wizard" onSubmit={event => {
     event.preventDefault();
     // Enter in search/name fields must never bypass the explicit wizard steps.
     if (step === Step.Restrictions && !saveDisabled && validate()) submit();
   }}>
-    <ol className="project-creation-steps" aria-label={copy("project-creation.steps")}>
-      {steps.map(value => <li key={value} aria-current={value === step ? "step" : undefined} data-complete={value < step}><span aria-hidden="true">{value < step ? "✓" : value}</span>{stepName(value)}</li>)}
+    <ol className="project-creation-steps wizard-progress" aria-label={copy("project-creation.steps")}>
+      {steps.map(value => <li key={value} aria-current={value === step ? "step" : undefined} data-complete={value < step}><span className="wizard-step-number" aria-hidden="true">{value}</span>{stepName(value)}</li>)}
     </ol>
     <section hidden={step !== Step.Repositories}>
       <div className="project-repository-heading"><h3>{stepName(Step.Repositories)}</h3><SettingsActionButton icon={SettingsActionIcon.Add} ref={registrationOpener} type="button" disabled={blocked || !active || !visible} aria-disabled={Boolean(confirmed) || undefined} aria-haspopup="dialog" onClick={event => { if (confirmed) return; event.currentTarget.focus({ preventScroll: true }); setRegistration(true); }}>{copy("project-creation.addRepository")}</SettingsActionButton></div><p>{copy("project-creation.selectHelp")}</p>

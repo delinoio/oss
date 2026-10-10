@@ -1,7 +1,6 @@
 {
   "usage.measuredUnavailableResponses_5145e5": "응답 <s0/>개 측정됨 · <s1/>개 사용 불가",
   "usage.usage_8d5982": "사용량",
-  "usage.last30DaysByDefaultTimes_70537d": "기본 범위는 최근 30일 · 시간대: <s0/>.",
   "usage.fromTime_b9f8b1": "시작(<s0/> 시각)",
   "usage.untilTimeExclusive_4c9f27": "종료(<s0/> 시각, 종료 시각 제외)",
   "usage.session_6959b4": "세션",
