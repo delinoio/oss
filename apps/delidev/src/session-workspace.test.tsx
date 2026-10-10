@@ -530,12 +530,16 @@ it("keeps evicted waiting payload restoration reachable even after all current v
 
 
 it("returns selected shared File close to retained Files and preserves inactive close selection",async()=>{
+ const pendingFrames: FrameRequestCallback[]=[];
+ const requestFrame=vi.spyOn(window,"requestAnimationFrame").mockImplementation(callback=>{pendingFrames.push(callback);return pendingFrames.length;});
  const f=fixture(undefined,false,{},undefined,false,undefined,true);render(f.view());await screen.findByRole("heading",{name:"Original session"});
  fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Files"}));
  const row=await screen.findByRole("treeitem",{name:"note.txt 4 bytes"});
  fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
  fireEvent.click(screen.getByRole("tab",{name:"Files"}));row.focus();fireEvent.keyDown(row,{key:"Enter"});
- expect(await screen.findByRole("heading",{name:"note.txt"})).toBe(document.activeElement);
+ const preview=await screen.findByRole("heading",{name:"note.txt"});
+ for(const callback of pendingFrames.splice(0))callback(0);
+ expect(preview).toBe(document.activeElement);requestFrame.mockRestore();
  fireEvent.click(screen.getByRole("button",{name:"Close note.txt tab"}));
  await waitFor(()=>expect(document.activeElement).toBe(row));expect(screen.getByRole("tab",{name:"Files"}).getAttribute("aria-selected")).toBe("true");
  fireEvent.click(row);await screen.findByRole("heading",{name:"note.txt"});
