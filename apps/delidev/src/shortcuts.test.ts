@@ -136,3 +136,19 @@ it.each([{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { shiftKey: 
   const event = dispatch([item], { key: "ㅏ", code: "KeyK", ...flags });
   expect(item.run).not.toHaveBeenCalled(); expect(event.defaultPrevented).toBe(false);
 });
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("targets new-terminal chords before terminal input on %s", platform => {
+ const host=document.createElement("div"), input=document.createElement("textarea"), outside=document.createElement("input");
+ host.dataset.shortcuts="passthrough";host.append(input);document.body.append(host,outside);
+ const run=vi.fn(), item:ShortcutDefinition={id:ShortcutId.TerminalCreate,scope:Surface.Sessions,label:"shortcuts.newTerminal",bindings:[{key:"t",primary:true}],target:{current:host},input:ShortcutInput.Target,terminal:true,run};
+ const fire=(target:HTMLElement, extra:KeyboardEventInit={}, enabled=true)=>{
+  const event=new KeyboardEvent("keydown",{key:"t",code:"KeyT",cancelable:true,bubbles:true,...(platform===ShortcutPlatform.Mac?{metaKey:true}:{ctrlKey:true}),...extra});
+  target.addEventListener("keydown",()=>dispatchShortcut(event,[{...item,enabled}],Surface.Sessions,platform),{once:true});target.dispatchEvent(event);return event;
+ };
+ expect(fire(input).defaultPrevented).toBe(true);expect(run).toHaveBeenCalledOnce();
+ expect(fire(input,{},false).defaultPrevented).toBe(true);expect(run).toHaveBeenCalledOnce();
+ expect(fire(outside).defaultPrevented).toBe(false);
+ for(const flags of [{repeat:true},{isComposing:true},{keyCode:229},{shiftKey:true},{altKey:true},{metaKey:true,ctrlKey:true}])expect(fire(input,flags).defaultPrevented).toBe(false);
+ host.hidden=true;expect(fire(input).defaultPrevented).toBe(false);host.hidden=false;
+ expect(run).toHaveBeenCalledOnce();host.remove();outside.remove();
+});

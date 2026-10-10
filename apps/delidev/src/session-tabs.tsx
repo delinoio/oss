@@ -5,11 +5,11 @@ import { Comparison, type BaseReference } from "./session-diff-model";
 
 export enum SessionTabKind {
   Conversation = "conversation", Files = "files", File = "file", Diff = "diff",
-  Comparison = "comparison", Terminals = "terminals", Terminal = "terminal",
+  Comparison = "comparison", Terminal = "terminal",
   Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat", PendingSidechat = "pending-sidechat",
 }
 export type SessionTab =
-  | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Browser | SessionTabKind.Diagnostics }
+  | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Browser | SessionTabKind.Diagnostics }
   | { kind: SessionTabKind.File; repository: string; path: string }
   | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string; base_ref?: BaseReference }
   | { kind: SessionTabKind.Terminal; id: string }
@@ -55,6 +55,7 @@ export class SessionTabsStore {
   }
   open(id: string, tab: SessionTab) {
     if (tab.kind === SessionTabKind.Terminal && this.terminalPresentation(id).hidden(tab.id)) return;
+    if (tab.kind === SessionTabKind.Terminal) this.terminalPresentation(id).number(tab.id);
     if (tab.kind === SessionTabKind.Sidechat) {
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();

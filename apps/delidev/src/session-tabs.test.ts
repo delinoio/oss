@@ -43,3 +43,13 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
  store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
  expect(store.snapshot("session").tabs).toHaveLength(1); expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+
+it("uses independent session numbering without consuming numbers for other tabs", () => {
+ const store = new SessionTabsStore();
+ store.open("a", {kind:SessionTabKind.Terminal,id:"first"}); store.open("a", {kind:SessionTabKind.Files});
+ store.open("a", {kind:SessionTabKind.Terminal,id:"second"});
+ store.close("a",sessionTabKey({kind:SessionTabKind.Terminal,id:"first"})); store.open("a", {kind:SessionTabKind.Terminal,id:"first"});
+ expect(store.terminalPresentation("a").number("first")).toBe(1); expect(store.terminalPresentation("a").number("second")).toBe(2);
+ store.open("b",{kind:SessionTabKind.Terminal,id:"second"}); expect(store.terminalPresentation("b").number("second")).toBe(1);
+ expect(new SessionTabsStore().terminalPresentation("a").number("second")).toBe(1);
+});

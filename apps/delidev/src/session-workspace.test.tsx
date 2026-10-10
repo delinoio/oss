@@ -31,7 +31,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   const releases = new Map<string, () => void>();
   const terminalHeld = new Map(terminals.map(row => [row.id, new Promise<void>(resolve => { releases.set(row.id, resolve); })]));
   const releaseTerminal = (index = 0) => releases.get(terminals[index]!.id)?.();
-  const terminalControl = vi.fn(), terminalCreate = vi.fn((request: { preferredTerminalId?: string }) => ({ terminal: terminals.find(row => row.id === request.preferredTerminalId) ?? terminal })), terminalWatches = vi.fn();
+  const terminalControl = vi.fn(), terminalCreate = vi.fn((request: { preferredTerminalId?: string }): { terminal: typeof terminal } | Promise<{ terminal: typeof terminal }> => ({ terminal: terminals.find(row => row.id === request.preferredTerminalId) ?? terminal })), terminalWatches = vi.fn();
   const retained = new Map([[id, session]]);
   const events: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] = [];
   let wake = () => {};
@@ -258,14 +258,14 @@ it("keeps malformed startup evidence visible and does not grant retry", async ()
 
 it("keeps Info independent of all tabs with one active content region and retained authoring", async()=>{
  const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});const info=screen.getByRole("complementary",{name:"Session information"});
- for(const name of ["Files","Diff","Terminals","Browser","Diagnostics"]){fireEvent.click(screen.getByRole("button", { name: "Open tool" }));fireEvent.click(screen.getByRole("menuitem",{name}));expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");expect(screen.getAllByRole("tabpanel")).toHaveLength(1);expect(info).toHaveProperty("hidden",false);expect(composer.isConnected).toBe(true);expect(composer.closest("[hidden]")).not.toBeNull();info.focus();fireEvent.keyDown(info,{key:"Escape"});expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");}
+ for(const name of ["Files","Diff","Browser","Diagnostics"]){fireEvent.click(screen.getByRole("button", { name: "Open tool" }));fireEvent.click(screen.getByRole("menuitem",{name}));expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");expect(screen.getAllByRole("tabpanel")).toHaveLength(1);expect(info).toHaveProperty("hidden",false);expect(composer.isConnected).toBe(true);expect(composer.closest("[hidden]")).not.toBeNull();info.focus();fireEvent.keyDown(info,{key:"Escape"});expect(screen.getByRole("tab",{name}).getAttribute("aria-selected")).toBe("true");}
  fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
 });
 it("replaces dock/split coexistence with exact selection and presentation-only close",async()=>{
- const f=fixture();render(f.view());await screen.findByRole("heading",{name:"Original session"});fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");expect(screen.queryByRole("region",{name:"Session browser"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Close Browser tab"}));expect(screen.getByRole("tab",{name:"Terminals"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"Close Terminals tab"}));expect(screen.getByRole("tab",{name:"Conversation"}).getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(screen.getByRole("tab",{name:"Conversation"}));expect(f.control).not.toHaveBeenCalled();
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{},()=>[],true);render(f.view());await screen.findByRole("heading",{name:"Original session"});fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));await screen.findByRole("tab",{name:"Terminal 1"});expect(screen.getByRole("tab",{name:"Terminal 1"}).getAttribute("aria-selected")).toBe("true");expect(screen.queryByRole("region",{name:"Session browser"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Close Browser tab"}));expect(screen.getByRole("tab",{name:"Terminal 1"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("button",{name:"Close Terminal 1 tab"}));expect(screen.getByRole("tab",{name:"Conversation"}).getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(screen.getByRole("tab",{name:"Conversation"}));expect(f.control).not.toHaveBeenCalled();
 });
 it.each([580,120])("keeps retained composer isolated from terminal pane at body height %s",async height=>{
- const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));expect(composer.isConnected).toBe(true);expect(composer.closest("[inert]")).not.toBeNull();expect(screen.queryByRole("button",{name:"Maximize terminal dock"})).toBeNull();expect(screen.getAllByRole("tabpanel")).toHaveLength(1);fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(composer).toHaveProperty("value","Original draft");expect(height).toBeGreaterThan(0);expect(f.control).not.toHaveBeenCalled();
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{},()=>[],true);render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));await screen.findByRole("tab",{name:"Terminal 1"});expect(composer.isConnected).toBe(true);expect(composer.closest("[inert]")).not.toBeNull();expect(screen.queryByRole("button",{name:"Maximize terminal dock"})).toBeNull();expect(screen.getAllByRole("tabpanel")).toHaveLength(1);fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);expect(composer).toHaveProperty("value","Original draft");expect(height).toBeGreaterThan(0);expect(f.control).not.toHaveBeenCalled();
 });
 
 it.each([false, true])("shows only waiting queue inputs while retaining accepted history (mixed=%s)", async mixed => {
@@ -387,7 +387,7 @@ it("last verified terminal exit restores the actual Session conversation, focus 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const info = screen.getByRole("complementary", { name: "Session information" });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-  fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+  await screen.findByRole("tab", { name: "Terminal 1" });
   await waitFor(() => expect(document.querySelector(".terminal-view")).not.toBeNull());
   expect(composer.closest("[inert]")).not.toBeNull();
   await act(async () => f.releaseTerminal());
@@ -417,29 +417,30 @@ it("verified terminal removal skips intervening Files and selects the original l
  try {
   await screen.findByRole("textbox", { name: "Message" });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-  fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+  await screen.findByRole("tab", { name: "Terminal 1" });
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-  fireEvent.click(await screen.findByRole("button", { name: /Terminal 2/ }));
+  await screen.findByRole("tab",{name:"Terminal 1"});
+  f.terminalCreate.mockReturnValue({terminal:f.terminals[1]!}); fireEvent.click(screen.getByRole("button", {name:"Create terminal"})); await screen.findByRole("tab",{name:"Terminal 2"});
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id));
-  fireEvent.click(await screen.findByRole("button", { name: /Terminal 3/ }));
+  f.terminalCreate.mockReturnValue({terminal:f.terminals[2]!}); fireEvent.click(screen.getByRole("button", {name:"Create terminal"})); await screen.findByRole("tab",{name:"Terminal 3"});
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id));
-  const terminalTabs = screen.getAllByRole("tab", { name: /^Terminals ·/ });
+  const terminalTabs = screen.getAllByRole("tab", { name: /^Terminal [0-9]+$/ });
   expect(terminalTabs).toHaveLength(3);
   const beforeSelection = f.terminalWatches.mock.calls.length; fireEvent.click(terminalTabs[1]!);
   await waitFor(() => expect(f.terminalWatches.mock.calls.length).toBeGreaterThan(beforeSelection));
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id));
   await act(async () => f.releaseTerminal(1));
-  await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(2));
-  const remaining = screen.getAllByRole("tab", { name: /^Terminals ·/ });
+  await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminal [0-9]+$/ })).toHaveLength(2));
+  const remaining = screen.getAllByRole("tab", { name: /^Terminal [0-9]+$/ });
   expect(remaining[0]).toBe(terminalTabs[0]); expect(remaining[0]!.getAttribute("aria-selected")).toBe("true");
   await waitFor(() => expect(document.activeElement === remaining[0] || !!document.querySelector(".terminal-view")?.contains(document.activeElement)).toBe(true));
   await waitFor(() => expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id));
   await act(async () => f.releaseTerminal(0));
-  await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminals ·/ })).toHaveLength(1));
-  expect(screen.getByRole("tab", { name: /^Terminals ·/ }).getAttribute("aria-selected")).toBe("true");
-  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(screen.getAllByRole("tab", { name: /^Terminal [0-9]+$/ })).toHaveLength(1));
+  expect(screen.getByRole("tab", { name: /^Terminal [0-9]+$/ }).getAttribute("aria-selected")).toBe("true");
+  expect(f.terminalControl).not.toHaveBeenCalled(); expect(f.terminalCreate).toHaveBeenCalledTimes(4);
  } finally { view.unmount(); for (let index = 0; index < 3; index++) f.releaseTerminal(index); f.client.clear(); }
 });
 
@@ -546,4 +547,23 @@ it("returns selected shared File close to retained Files and preserves inactive 
  const diagnostics=screen.getByRole("tab",{name:"Diagnostics"});diagnostics.focus();fireEvent.click(diagnostics);
  fireEvent.click(screen.getByRole("button",{name:"Close note.txt tab"}));
  expect(diagnostics.getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(diagnostics);
+});
+
+it("keeps the original pane during terminal admission and fences a late receipt after explicit reselection", async () => {
+ const f=fixture(BudgetState.ALLOW_INCOMPLETE,false,{},()=>[],true);
+ let accept=()=>{};const pending=new Promise<void>(resolve=>{accept=resolve;});
+ f.terminalCreate.mockImplementation(async()=>{await pending;return {terminal:f.terminals[0]!};});
+ const view=render(f.view());
+ try {
+  const composer=await screen.findByRole("textbox",{name:"Message"});
+  fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Terminals"}));
+  await waitFor(()=>expect(f.terminalCreate).toHaveBeenCalledOnce());
+  expect(screen.getByRole("tab",{name:"Conversation"}).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByText("Opening terminal…")).toBeTruthy();expect(composer.closest("[hidden]")).toBeNull();
+  expect(screen.queryByRole("tab",{name:"Terminals"})).toBeNull();
+  fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));await act(async()=>accept());
+  await waitFor(()=>expect(screen.queryByText("Opening terminal…")).toBeNull());
+  expect(screen.queryByRole("tab",{name:"Terminal 1"})).toBeNull();expect(f.terminalWatches).not.toHaveBeenCalled();
+  expect(f.terminalCreate).toHaveBeenCalledOnce();expect(f.terminalControl).not.toHaveBeenCalled();
+ }finally{accept();view.unmount();f.releaseTerminal();f.client.clear();}
 });

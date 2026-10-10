@@ -8,7 +8,7 @@ export interface ShortcutChord { key: string; shift: boolean }
 export type ShortcutOverride = { state: ShortcutOverrideState.Disabled } | { state: ShortcutOverrideState.Binding; chord: ShortcutChord };
 export type ShortcutOverrides = Partial<Record<ShortcutId, ShortcutOverride>>;
 export enum ShortcutGroup { Common = "common", Session = "session", Creation = "creation", Search = "search" }
-export enum ShortcutTargetContext { SessionMessage = "session-message", CreationMessage = "creation-message", Search = "search", Files = "files", Diff = "diff", Diagnostics = "diagnostics" }
+export enum ShortcutTargetContext { Terminal = "terminal", SessionMessage = "session-message", CreationMessage = "creation-message", Search = "search", Files = "files", Diff = "diff", Diagnostics = "diagnostics" }
 interface CatalogAction { fixed?: readonly ShortcutBinding[]; target?: ShortcutTargetContext; id: ShortcutId; label: MessageKey; group: ShortcutGroup; scopes: readonly (Surface | ShortcutScope)[]; priority: number; input: ShortcutInput; defaults: readonly ShortcutBinding[] }
 export const editableShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.Help, label: "shortcuts.help", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Ignore, defaults: [{ key: "?", ariaKey: "/", ariaShift: true }] },
@@ -22,6 +22,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.ToggleSidebar, label: "sidebar-preference.toggle", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.ToggleSidebar] },
   { id: ShortcutId.CommandMenu, label: "command-menu.title", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.CommandMenu] },
+  { target: ShortcutTargetContext.Terminal, id: ShortcutId.TerminalCreate, label: "shortcuts.newTerminal", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "t", primary: true }] },
   { target: ShortcutTargetContext.SessionMessage, id: ShortcutId.SessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
   { target: ShortcutTargetContext.CreationMessage, id: ShortcutId.NewSessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Creation, scopes: [Surface.NewSession, Surface.NewGeneralChat], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
   { target: ShortcutTargetContext.Search, id: ShortcutId.SearchSubmit, label: "shortcuts.searchSubmit", group: ShortcutGroup.Search, scopes: [Surface.Search], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter" }] },
