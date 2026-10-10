@@ -80,6 +80,9 @@ func init() {
 			fmt.Fprintf(os.Stdout, "{\"id\":%s,\"result\":{},\"error\":null}\n", request.ID)
 		case "invalid-error":
 			fmt.Fprintf(os.Stdout, "{\"id\":%s,\"error\":{\"message\":\"private-error\"}}\n", request.ID)
+		case "large-notification":
+			write(map[string]any{"method": "image-history", "params": map[string]string{"original": strings.Repeat("x", MaxFrame)}})
+			write(map[string]any{"id": request.ID, "result": map[string]bool{"accepted": true}})
 		case "oversize":
 			_, _ = os.Stdout.Write(bytes.Repeat([]byte("x"), MaxFrame+1))
 		case "events":
@@ -164,6 +167,8 @@ func startFixture(t *testing.T, mode string, protected ...string) (*Connection, 
 	start := Start
 	if strings.HasPrefix(mode, "jsonrpc") {
 		start = StartJSONRPC
+	} else if mode == "image-observations" {
+		start = StartImageObservations
 	}
 	c, err := start(context.Background(), cfg)
 	if err != nil {
@@ -543,5 +548,45 @@ func TestExplicitOmittedNativeParametersPreservesCommonBounds(t *testing.T) {
 	}
 	if _, err := marshal(envelope{Method: "account/rateLimits/read"}, nil); err == nil {
 		t.Fatal("ordinary nil silently became omission authority")
+	}
+}
+
+func TestOriginalImageObservationTransportBounds(t *testing.T) {
+	for _, mode := range []string{"normal", "image-observations"} {
+		t.Run(mode, func(t *testing.T) {
+			c, config, _ := startFixture(t, mode)
+			frame, queue := MaxFrame, 8<<20
+			if mode == "image-observations" {
+				frame, queue = 16<<20, 32<<20
+			}
+			if c.frameLimit() != frame || c.eventLimit() != queue {
+				t.Fatal("transport frame and queue do not match the selected profile")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, err := c.Call(ctx, domain.NewID(), "large-notification", struct{}{})
+			if mode == "normal" {
+				if err == nil || c.Err() == nil || c.Err().Code != domain.ResourceExhausted {
+					t.Fatal("oversized ordinary native input was not rejected", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal("bounded original image history was rejected", err)
+				}
+				event, err := c.Next(ctx)
+				var payload struct {
+					Original string `json:"original"`
+				}
+				if err != nil || domain.DecodeBounded(event.Params, &payload, frame) != nil || payload.Original != strings.Repeat("x", MaxFrame) {
+					t.Fatal("original enlarged history was lost or truncated", err)
+				}
+			}
+			if err := c.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := process.ReconcileOwner(config.Directory, config.OwnerID); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
