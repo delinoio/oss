@@ -299,16 +299,18 @@ it("keeps a compact header and all independent status/title evidence in the expa
  render(f.view());await screen.findByRole("heading",{name:"Original session"});
  const header=document.querySelector(".session-header")!,info=screen.getByRole("complementary",{name:"Session information"});
  expect(header.querySelector(".session-title-status")).toBeNull();expect(header.textContent).not.toContain("Succeeded");expect(header.textContent).not.toContain("Title generation unsupported");
- const values=info.querySelector(".session-status-values")!;
- expect([...values.querySelectorAll("dt")].map(node=>node.textContent)).toEqual(["Workspace","Result","Archive"]);
- expect([...values.querySelectorAll("dd")].slice(0,7).map(node=>node.textContent)).toEqual(["Worktree","succeeded","active"]);
+ expect(info.querySelector(".session-status-values")).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
+ const values=document.querySelector(".session-diagnostics .session-information-section dl")!;
+ expect([...values.querySelectorAll("dt")].map(node=>node.textContent)).toEqual(["Session ID","Workspace","Result","Archive","Dispatch","Preparation","Recovery","Automatic title"]);
+ expect([...values.querySelectorAll("dd")].slice(1,4).map(node=>node.textContent)).toEqual(["Worktree","succeeded","active"]);
  expect(info.textContent).not.toContain("The original Worker did not prove the required title capability.");
  fireEvent.click(screen.getByRole("button",{name:"Open tool"})); fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
  await screen.findByText("The original Worker did not prove the required title capability.");
  expect(screen.getByText(/Session details/)).toBeTruthy();
  expect(screen.getByText(/Request diagnostics are unavailable/)).toBeTruthy();
  expect(info.querySelector(".session-tools")?.tagName).toBe("SECTION");expect(info.querySelector(".session-information-section details")).toBeNull();
- expect(info.querySelectorAll(".session-information-section").length).toBeGreaterThanOrEqual(5);
+ expect(info.querySelectorAll(".session-information-section").length).toBeGreaterThanOrEqual(4);
  expect(screen.queryByRole("button",{name:"Show PR associations"})).toBeNull();
  expect(info.querySelector(".execution-configuration")?.tagName).toBe("DIV");expect(info.querySelector(".conversation-page-scroll")?.tagName).toBe("DIV");
  expect(f.control).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
@@ -317,11 +319,11 @@ it("keeps a compact header and all independent status/title evidence in the expa
 it("retains primary section choices and editor/input identities across tools and locale changes",async()=>{
  const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});
  const info=screen.getByRole("complementary",{name:"Session information"});
- const execution=[...info.querySelectorAll<HTMLDetailsElement>(".session-information-section")].find(node=>node.querySelector(".execution-configuration"))!;
+ const execution=info.querySelector<HTMLElement>(".execution-configuration")!;
  const projection=info.querySelector(".execution-configuration");
- await act(async()=>{execution.open=false;fireEvent(execution,new Event("toggle"));});
- fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
- await act(async()=>{await i18n.changeLanguage("ko");});expect(execution.open).toBe(false);expect(info.querySelector(".execution-configuration")).toBe(projection);
+ expect(execution.closest("details")).toBeNull();
+ fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));expect(execution.closest("details")).toBeNull();expect(info.querySelector(".execution-configuration")).toBe(projection);
+ await act(async()=>{await i18n.changeLanguage("ko");});expect(execution.closest("details")).toBeNull();expect(info.querySelector(".execution-configuration")).toBe(projection);
  await act(async()=>{await i18n.changeLanguage("en");});fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(screen.getByRole("textbox",{name:"Message"})).toBe(composer);
  expect(f.control).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
 });

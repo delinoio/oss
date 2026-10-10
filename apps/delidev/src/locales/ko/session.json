@@ -142,8 +142,8 @@
   "session.startupImageInput": "이미지 초안을 유지하고 이미지를 명시적으로 지원하는 Agent Worker와 Runner Device를 선택하거나 텍스트만 보내세요.",
   "session.sleepDuration": "대기 시간: <s0/>밀리초",
   "session.lifetimeTokens": "알려진 전체 세션 응답 토큰",
-  "session.tokensIn": "In",
-  "session.tokensOut": "Out",
+  "session.tokensIn": "입력",
+  "session.tokensOut": "출력",
   "session.responseSubtotals": "알려진 응답 소계이며 전체 네이티브 사용량이나 실제 청구액이 아닙니다.",
   "session.incompleteUsage": "사용량 범위가 불완전합니다. 자세한 증거는 진단에서 확인할 수 있습니다.",
   "session.staleUsage": "이전에 완료된 사용량이 오래되었습니다. 읽기를 재시도하여 갱신하세요.",
@@ -151,11 +151,12 @@
   "session.usageRangeLimits": "범위는 겹치지 않는 반개구간이며 각각 별도 시점에 읽습니다. 응답 없는 실행 수는 범위별 값이므로 합산하면 안 됩니다. 소계 뒤의 수는 측정된 / 확인 불가능한 응답 수입니다.",
   "session.rangeMissingExecutions": "이 범위에서 응답 없는 실행",
   "session.rangeMissingCompactions": "이 범위에서 응답 없는 컨텍스트 작업",
-  "session.savedModelChip": "저장된 모델: {v0}",
-  "session.savedEffortChip": "저장된 추론 수준: {v0}",
+  "session.savedModelChip": "저장된 모델: {{v0}}",
+  "session.savedEffortChip": "저장된 추론 수준: {{v0}}",
   "session.savedSelections": "저장된 선택",
   "session.prStateOpen": "열린 풀 리퀘스트",
   "session.prStateMerged": "병합된 풀 리퀘스트",
   "session.prStateClosed": "병합 없이 닫힌 풀 리퀘스트",
-  "session.prStateUnavailable": "풀 리퀘스트 상태 확인 불가"
+  "session.prStateUnavailable": "풀 리퀘스트 상태 확인 불가",
+  "session.savedAccountNumber": "저장된 계정 {{v0}}"
 }

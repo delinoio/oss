@@ -69,7 +69,7 @@ it("keeps a committed unlink recoverable after refresh, reopen and session navig
   await screen.findByText("No PR associations on this page.");
   expect(screen.queryByRole("button", { name: "Unlink #17" })).toBeNull();
   expect(screen.getByRole("button", { name: "Retry original PR unlink" })).toBeTruthy();
-  expect(screen.getByText(`Original association: ${original.mutation!.id}`)).toBeTruthy();
+  expect(screen.getByText("Original association:")).toBeTruthy();
 
   closeAssociations();
   openAssociations();

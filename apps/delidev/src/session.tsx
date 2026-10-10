@@ -51,6 +51,7 @@ import { NativeBuiltin, NativeWorkspaceEvent } from "./native-builtin";
 import { NativeChanges, NativeRevision } from "./native-changes";
 import { NativeTodo, NativeTodoProgress } from "./native-todo";
 import { NativeUsage } from "./native-usage";
+import { SessionLifetimeUsage } from "./session-lifetime-usage";
 import { NativeRead } from "./native-read";
 import { NativeShell } from "./native-shell";
 import { NativeClaudeMessage, validNativeClaudeMessage } from "./native-claude-message";
@@ -61,7 +62,7 @@ import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
-import { ExecutionConfiguration } from "./execution-configuration";
+import { ExecutionConfiguration, SavedExecutionSelections } from "./execution-configuration";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
@@ -685,14 +686,16 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     </div>
     <aside hidden={tabs.tab.kind===SessionTabKind.Sidechat} ref={information} id={`info-${id}`} className="session-information" aria-labelledby={`info-title-${id}`}>
       <header><h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>{copy("session.sessionInformation")}</h2></header>
+      {session ? <SavedExecutionSelections resource={session}/> : null}
       <FlatDisclosureScope><div className="session-information-body">
         <div ref={setInfoToolsTarget} tabIndex={-1} />
         {session ? <>
           <section hidden={prEmpty} className="session-information-section"><h3>{copy("session.pullRequests")}</h3><SessionPullRequests key={id} session={session} emptyChanged={setPREmpty} diagnosticsTarget={diagnosticsTarget} /></section>
-          <section className="session-information-section"><h3>{copy("session.executionSettings")}</h3><ExecutionConfiguration resource={session} diagnosticsTarget={diagnosticsTarget} /></section>
-          <section className="session-information-section"><h3>{copy("session.context")}</h3><SessionContext key={id} session={session} /></section>
           <section hidden={subagentsEmpty} className="session-information-section"><h3>{copy("session.subagents")}</h3><Subagents key={id} sessionId={id} revision={session.revision.toString()} emptyChanged={setSubagentsEmpty} diagnosticsTarget={diagnosticsTarget} /></section>
-          <section ref={budgetDetails} className="session-information-section" tabIndex={-1}><h3>{copy("session.usageAndBudget")}</h3><NativeUsage session={session} diagnosticsTarget={diagnosticsTarget} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></section>
+          <section className="session-information-section"><h3>{copy("session.context")}</h3><SessionContext key={id} session={session} /></section>
+          <section ref={budgetDetails} className="session-information-section" tabIndex={-1}><h3>{copy("session.usageAndBudget")}</h3><SessionLifetimeUsage session={session} diagnosticsTarget={diagnosticsTarget} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></section>
+          <ExecutionConfiguration resource={session} diagnosticsTarget={diagnosticsTarget} compact/>
+          <NativeUsage session={session} diagnosticsTarget={diagnosticsTarget} diagnosticsOnly/>
           <SessionStorageAction source={session} />
         </> : null}
       </div></FlatDisclosureScope>

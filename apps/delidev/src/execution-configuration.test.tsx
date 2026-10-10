@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { ExecutionConfiguration as OriginalExecutionConfiguration } from "./execution-configuration";
+import { SavedExecutionSelections, ExecutionConfiguration as OriginalExecutionConfiguration } from "./execution-configuration";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(props: ComponentProps<typeof OriginalExecutionConfiguration>) { const [target, setTarget] = useState<HTMLDivElement | null>(null); return <><div ref={setTarget}/><OriginalExecutionConfiguration {...props} diagnosticsTarget={target}/></>; }
 
@@ -72,7 +72,7 @@ it("shows the immutable ordered instructions as inert read-only text without nat
   expect(detail(saved, "Requested concurrency")).toBe("4");
   expect(detail(saved, "Requested approval review model")).toBe("original-review");
   expect(detail(saved, "Requested service tier")).toBe("priority");
-  expect(screen.getByLabelText("Saved account order").children[0].textContent).toContain(value.configuration.accounts[0].id);
+  expect(screen.getByLabelText("Saved account order").children[0].textContent).toContain("Saved account 1");
 });
 
 it("distinguishes missing native values from requested settings and empty native observations", () => {
@@ -97,8 +97,8 @@ it("preserves first-execution choices while separately identifying retained prio
   expect(screen.getByText(/retained observations belong to an earlier execution/)).toBeTruthy();
   expect(screen.getByLabelText("Combined applied instructions").textContent).toBe(value.configuration.instructions);
   const saved = screen.getByRole("region", { name: "Saved execution configuration" });
-  expect(detail(document.body, "First account")).toBe(value.data.initial_execution.initial_account_id);
-  expect(detail(document.body, "Selected execution account")).toBe(next.current_execution.account_id);
+  expect(detail(document.body, "First account")).toBe("Saved account 1");
+  expect(detail(document.body, "Selected execution account")).toBe("Selected execution account");
   const bound = { ...next, execution: { ...next.execution, execution_id: next.current_execution.id, input_id: next.current_execution.input_id } };
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, revision: 11n, documentJson: encode(bound) }} />);
   expect(screen.queryByText(/retained observations belong to an earlier execution/)).toBeNull();
@@ -131,7 +131,7 @@ it("keeps unavailable snapshots, unknown options and imprecise revisions explici
   expect(screen.queryByText("private unknown data")).toBeNull();
   expect(screen.getByText(/No native settings have been observed/)).toBeTruthy();
   expect(screen.queryByText("unbound-model")).toBeNull();
-  expect(screen.getByText(`${value.configuration.agent_id} · revision Unavailable`)).toBeTruthy();
+  expect(screen.getByText("Agent Worker · revision Unavailable")).toBeTruthy();
   view.rerender(<ExecutionConfiguration resource={{ ...value.resource, schemaVersion: 2 }} />);
   expect(screen.getByText(/session document version is not supported/)).toBeTruthy();
   expect(screen.queryByLabelText("Combined applied instructions")).toBeNull();
@@ -166,4 +166,12 @@ it("shows the original Fast execution tier independently of later Worker default
  value.configuration.options.service_tier = "";
  expect(detail(saved,"Requested service tier")).toBe("fast");
  expect(detail(screen.getByRole("region",{name:"Native execution observations"}),"Observed service tier")).toBe("Unavailable");
+});
+
+it("keeps saved chips compact and technical missing-value evidence in Diagnostics",()=>{
+ const value=fixture();const data={...value.data,initial_execution:{...value.data.initial_execution,configuration:{...value.configuration,effort:""}}};const resource={...value.resource,documentJson:encode(data)};
+ const view=render(<><SavedExecutionSelections resource={resource}/><ExecutionConfiguration resource={resource} compact/></>);
+ expect(screen.getByLabelText("Saved model: original-model")).toBeTruthy();expect(screen.queryByLabelText(/Saved reasoning effort:/)).toBeNull();
+ const info=view.container.querySelector(".execution-configuration")!;expect(within(info as HTMLElement).queryByText("Saved configuration")).toBeNull();expect(within(info as HTMLElement).queryByText("Requested reasoning effort")).toBeNull();expect(screen.getByText("Requested reasoning effort")).toBeTruthy();expect(screen.getByLabelText("Combined applied instructions").textContent).toBe(value.configuration.instructions);
+ for(const id of [value.configuration.agent_id,value.configuration.provider_id,value.configuration.accounts[0].id,value.data.initial_execution.id])expect(view.container.textContent).not.toContain(id);
 });

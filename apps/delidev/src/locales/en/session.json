@@ -151,11 +151,12 @@
   "session.usageRangeLimits": "Ranges are disjoint and half-open. Reads are separate snapshots. Missing-execution counts are range-local and must not be summed. Counts after each subtotal are measured / unavailable responses.",
   "session.rangeMissingExecutions": "Executions without a response in this range",
   "session.rangeMissingCompactions": "Context actions without a response in this range",
-  "session.savedModelChip": "Saved model: {v0}",
-  "session.savedEffortChip": "Saved reasoning effort: {v0}",
+  "session.savedModelChip": "Saved model: {{v0}}",
+  "session.savedEffortChip": "Saved reasoning effort: {{v0}}",
   "session.savedSelections": "Saved selections",
   "session.prStateOpen": "Open pull request",
   "session.prStateMerged": "Merged pull request",
   "session.prStateClosed": "Closed pull request without merge",
-  "session.prStateUnavailable": "Pull request state unavailable"
+  "session.prStateUnavailable": "Pull request state unavailable",
+  "session.savedAccountNumber": "Saved account {{v0}}"
 }

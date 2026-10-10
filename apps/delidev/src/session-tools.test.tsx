@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -11,6 +12,7 @@ import { MutationIntents } from "./mutation";
 import { SessionTools } from "./session-tools";
 import { NewSession, NewSessionKind } from "./new-session";
 
+function DiagnosticTools({resource}:{resource:Resource}){const[target,setTarget]=useState<HTMLElement|null>(null);return <><div aria-label="Diagnostic evidence" ref={setTarget}/><SessionTools resource={resource} changed={()=>{}} initiallyOpen diagnosticsTarget={target}/></>;}
 function fixture(automaticTitles = true) {
   const execution = newRequestId();
   const session = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Session", archive: "active", outcome: "not-started", dispatch: "paused", recovery: "required", preparation: { state: "uncertain" }, execution: { execution_id: execution } }) });
@@ -38,7 +40,6 @@ it("requires explicit incomplete preparation cleanup and retains its original re
   const value = fixture();
   value.workspace.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   const rendered = render(value.view(<SessionTools resource={value.session} changed={() => {}} />));
-  fireEvent.click(screen.getByText("Session details and recovery"));
   fireEvent.click(screen.getByRole("button", { name: "Clean incomplete preparation" }));
   expect(value.workspace).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Confirm selected recovery action" }));
@@ -137,7 +138,6 @@ it("retries only the original General Chat request after uncertainty and reentry
 it("binds execution recovery to the original execution without resending input or resuming", async () => {
   const value = fixture();
   render(value.view(<SessionTools resource={value.session} changed={() => {}} />));
-  fireEvent.click(screen.getByText("Session details and recovery"));
   fireEvent.click(screen.getByRole("button", { name: "Reconcile original execution" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm selected recovery action" }));
   await waitFor(() => expect(value.recover).toHaveBeenCalledTimes(1));
@@ -154,7 +154,6 @@ it("inspects a pre-native Worktree interruption with the original first identity
   retained.initial_execution = { id: value.execution };
   const session = create(ResourceSchema, { ...value.session, documentJson: encode(retained) });
   const view = render(value.view(<SessionTools resource={session} changed={() => {}} />));
-  fireEvent.click(screen.getByText("Session details and recovery"));
   fireEvent.click(screen.getByRole("button", { name: "Reconcile original execution" }));
   expect(screen.getByText(/startup or native cleanup evidence/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Confirm selected recovery action" }));
@@ -169,7 +168,6 @@ it("inspects a pre-native Worktree interruption with the original first identity
 
 it("blocks a recovery confirmation selected before a peer revision without an Info rename entry", async () => {
   const value = fixture(), rendered = render(value.view(<SessionTools resource={value.session} changed={() => {}} />));
-  fireEvent.click(screen.getByText("Session details and recovery"));
   expect(screen.queryByRole("button", { name: "Rename session" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Inspect original workspace recovery" }));
   rendered.rerender(value.view(<SessionTools resource={create(ResourceSchema, { ...value.session, revision: 9n })} changed={() => {}} />));
@@ -371,9 +369,9 @@ it("retains an unavailable Runner Device's original identity through paginated i
 
 it("labels missing and malformed status without inferring readiness or automatic title ownership",()=>{
  const f=fixture();const row=create(ResourceSchema,{...f.session,documentJson:encode({name:"Manual",name_mode:"manual",title_state:"failed",outcome:17,archive:"archived",dispatch:"unknown-state"})});
- render(f.view(<SessionTools resource={row} changed={()=>{}} initiallyOpen/>));
- const values=globalThis.document.querySelector(".session-status-values")!;const terms=[...values.querySelectorAll("dt")].map(node=>node.textContent);const descriptions=[...values.querySelectorAll("dd")].map(node=>node.textContent);
- expect(terms).toEqual(["Workspace","Result","Archive"]);expect(descriptions).toEqual(["Workspace","Unavailable","archived"]);expect(f.control).not.toHaveBeenCalled();expect(f.prepare).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
+ render(f.view(<DiagnosticTools resource={row}/>));
+ const values=globalThis.document.querySelector('[aria-label="Diagnostic evidence"]')!;const terms=[...values.querySelectorAll("dt")].map(node=>node.textContent);const descriptions=[...values.querySelectorAll("dd")].map(node=>node.textContent);
+ expect(terms).toEqual(["Session ID","Workspace","Result","Archive","Dispatch","Preparation","Recovery"]);expect(descriptions.slice(1,4)).toEqual(["Workspace","Unavailable","archived"]);expect(globalThis.document.querySelector(".session-tools")!.querySelectorAll("dt")).toHaveLength(0);expect(f.control).not.toHaveBeenCalled();expect(f.prepare).not.toHaveBeenCalled();expect(f.rename).not.toHaveBeenCalled();
 });
 
 it("restores the surviving recovery opener after canceling flat confirmation", () => {

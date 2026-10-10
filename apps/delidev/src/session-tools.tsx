@@ -25,7 +25,7 @@ function RetainedJob({ id, title, diagnosticsTarget, sessionId }: { id: string; 
   const active = useSessionActive();
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id });
   const row = result.data?.resource, succeeded = row?.id === id && row.kind === EntityKind.JOB && row.sessionId === sessionId && row.schemaVersion === 1 && row.revision > 0n && document(row).state === "succeeded" && !text(object(document(row).problem).message) && !result.error;
-  return <><section hidden={succeeded}><h4>{title}</h4><Problem error={result.error} />{row ? <TrackedJob initial={row} active={active} /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>{diagnosticsTarget ? createPortal(<section><h3>{title}</h3><p>{id} · {row?.revision.toString()} · {text(document(row).state)}</p><Problem error={result.error}/></section>, diagnosticsTarget) : null}</>;
+  return <><section hidden={succeeded}><h4>{title}</h4><Problem error={result.error} />{row ? <TrackedJob initial={row} active={active} /> : <p>{copy("session-tools.loadingRetainedOperation_e36e04")}</p>}</section>{diagnosticsTarget ? createPortal(<section><h3>{title}</h3><p>{title} · {row?.revision.toString()} · {text(document(row).state)}</p><Problem error={result.error}/></section>, diagnosticsTarget) : null}</>;
 }
 export function SessionTools({ resource, changed, initiallyOpen = false, children, target, launcherTarget, openRecovery, diagnosticsTarget }: { resource: Resource; changed: (resource: Resource) => void; initiallyOpen?: boolean; children?: ReactNode; target?: HTMLElement | null; launcherTarget?: HTMLElement | null; openRecovery?: (opener: HTMLButtonElement) => void; diagnosticsTarget?: HTMLElement | null }) {
   useLocale();
@@ -60,17 +60,16 @@ export function SessionTools({ resource, changed, initiallyOpen = false, childre
   };
   const recoveryActions = <div className="actions">{!sidechat && data.archive === "active" && ["failed", "canceled"].includes(text(preparation.state)) && data.recovery === "none" ? <button disabled={blocked} onClick={event => { request(RecoveryAction.Prepare, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.prepareWorkspaceAgain_3a819b")}</button> : null}{!sidechat && data.archive !== "archived" && preparation.state === "uncertain" ? <><button disabled={blocked} onClick={event => { request(RecoveryAction.InspectWorkspace, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.inspectOriginalWorkspaceRecovery_b53ede")}</button><button disabled={blocked} onClick={event => { request(RecoveryAction.CleanupWorkspace, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.cleanIncompletePreparation_bc39ad")}</button></> : null}{data.archive !== "archived" && data.recovery === "required" && executionId ? <button disabled={blocked} onClick={event => { request(RecoveryAction.Execution, event.currentTarget); openRecovery?.(event.currentTarget); }}>{copy("session-tools.reconcileOriginalExecution_71e689")}</button> : null}</div>;
   const technical = <section className="session-information-section"><h3>{copy("session-name.sessionDetails")}</h3><dl>
-      <dt>{copy("session-tools.sessionId")}</dt><dd>{resource.id} · {resource.revision.toString()}</dd>
-      <dt>{copy("session-tools.dispatch")}</dt><dd>{statusValue(data.dispatch)}</dd>
+      <dt>{copy("session-tools.sessionId")}</dt><dd>{resourceName(resource)} · {resource.revision.toString()}</dd>
+      <dt>{copy("session-tools.workspace")}</dt><dd>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")}</dd>
+      <dt>{copy("session-tools.result")}</dt><dd>{statusValue(data.outcome)}</dd>
+      <dt>{copy("session-tools.archive")}</dt><dd>{statusValue(data.archive)}</dd>
+    <dt>{copy("session-tools.dispatch")}</dt><dd>{statusValue(data.dispatch)}</dd>
       <dt>{copy("session-tools.preparation")}</dt><dd>{statusValue(preparation.state)}</dd>
       <dt>{copy("session-tools.recovery")}</dt><dd>{statusValue(data.recovery)}</dd>
       {title ? <><dt>{copy("session-tools.automaticTitle")}</dt><dd>{title.label}{title.detail ? <p>{title.detail}</p> : null}</dd></> : null}
     </dl></section>;
-  const body = <FlatDisclosureScope><section className="session-tools session-information-section"><h3>{initiallyOpen ? copy("session.statusAndRecovery") : copy("session-tools.sessionDetailsAndRecovery_8025d7")}</h3><dl className="session-status-values">
-      <dt>{copy("session-tools.workspace")}</dt><dd>{workspaceNames[text(data.workspace) as Workspace] || copy("session.extra.87bb59ba2f92")}</dd>
-      <dt>{copy("session-tools.result")}</dt><dd>{statusValue(data.outcome)}</dd>
-      <dt>{copy("session-tools.archive")}</dt><dd>{statusValue(data.archive)}</dd>
-    </dl>{children}
+  const body = <FlatDisclosureScope><section className="session-tools">{children}
     {launcherTarget ? null : recoveryActions}
 
     {confirm ? <div className="notice"><p>{confirm.action === RecoveryAction.Prepare ? copy("session-tools.retryPreparationUsingThisSessionS_ac022c") : confirm.action === RecoveryAction.CleanupWorkspace ? copy("session-tools.allowTheOwningWorkerToClean_a165e0") : confirm.action === RecoveryAction.Execution ? copy("session-tools.inspectTheOriginalExecutionSRetained_6b6a1d") : copy("session-tools.inspectTheOriginalPreparationWithoutPermitting_f893b8")}</p>{confirm.revision !== resource.revision ? <p role="alert">{copy("session-tools.theSessionChangedAfterThisAction_98d778")}</p> : null}<button disabled={blocked || confirm.revision !== resource.revision} onClick={submit}>{copy("session-tools.confirmSelectedRecoveryAction_958097")}</button><button disabled={blocked} onClick={() => { setConfirm(undefined); const opener = recoveryOpener.current; if (opener?.isConnected && !opener.disabled && !opener.closest("[hidden],[inert]")) opener.focus(); }}>{copy("session-tools.cancelRecoveryAction_1e7a94")}</button></div> : null}

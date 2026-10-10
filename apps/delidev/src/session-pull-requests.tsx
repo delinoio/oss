@@ -1,4 +1,6 @@
 import { createPortal } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { SessionPRStatus, SessionPRReadQueue } from "./session-pr-state";
 import { SessionActivityProvider, useSessionActive, useSessionQuery as useQuery } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -8,7 +10,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { useConnectPaginationReader, usePaginationChain, usePaginationRefresh } from "./scroll-pagination-query";
 import { useStablePageRevisions, paginationError, invalidGitHubPage, resourceProjection, useGitHubScrollRoot, visiblePageIds } from "./github-scroll";
 import { LocalizedText, copy, useLocale  } from "./localization";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState } from "react";
 
 import { EntityKind, FailureCode, ResourceQuery, SessionQuery, newRequestId, type Resource, type UnlinkSessionPullRequestRequest } from "@delinoio/delidev-api-client";
 import { document, text, type Document } from "./documents";
@@ -34,8 +36,8 @@ function PendingUnlink({ sessionId, associationId, refreshed }: { sessionId: str
   const remove = usePRUnlink(sessionId, associationId, refreshed);
   const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
   const valid = original?.sessionId === sessionId && original.mutation?.id === associationId && uuid(original.mutation.requestId) && original.mutation.expectedRevision > 0n && original.mutation.expectedRevision < 1n << 63n;
-  return <article aria-label={`Pending PR unlink ${associationId}`}>
-    <p>{copy("session-pull-requests.inline.60c1498ca3")} {associationId}</p>
+  return <article aria-label={copy("session-pull-requests.inline.e3faf29ec8")}>
+    <p>{copy("session-pull-requests.inline.60c1498ca3")}</p>
     <p role="status">{remove.busy ? "Submitting original PR unlink…" : "PR unlink acknowledgment is uncertain."}</p>
     <Problem error={remove.error} />
     {!valid ? <p role="alert">{copy("session-pull-requests.inline.a4c646bacf")}</p> : remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>{copy("session-pull-requests.retryOriginalPrUnlink_29e215")}</button> : null}
@@ -53,19 +55,26 @@ function PendingUnlinks({ sessionId, refreshed }: { sessionId: string; refreshed
   </section> : null;
 }
 
-function LinkRow({ row, value, sessionId, refreshed, diagnosticsTarget }: { row: Resource; value: Document; sessionId: string; refreshed: () => void; diagnosticsTarget?: HTMLElement | null }) {
+function LinkRow({ row, value, sessionId, refreshed, diagnosticsTarget, queue }: { row: Resource; value: Document; sessionId: string; refreshed: () => void; diagnosticsTarget?: HTMLElement | null; queue: SessionPRReadQueue }) {
   const remove = usePRUnlink(sessionId, row.id, refreshed);
-  return <article aria-label={copy("session-pull-requests.linkedPr_299ef1", { v0: text(value.owner), v1: text(value.name), v2: text(value.number) })}>
-    <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
+  const active = useSessionActive(), element = useRef<HTMLElement>(null);
+  const [visible,setVisible] = useState(typeof IntersectionObserver !== "function");
+  useEffect(() => {
+    if(!active || !element.current || typeof IntersectionObserver !== "function")return;
+    const observer = new IntersectionObserver(entries => setVisible(entries.some(entry=>entry.isIntersecting)));
+    observer.observe(element.current); return () => observer.disconnect();
+  },[active,row.id]);
+  return <article ref={element} aria-label={copy("session-pull-requests.linkedPr_299ef1", { v0: text(value.owner), v1: text(value.name), v2: text(value.number) })}>
+    <div className="session-pr-heading"><SessionPRStatus row={row} association={value} active={active&&visible} queue={queue}/><h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4></div><p>{text(value.title)}</p>
     <p><LocalizedText id="session-pull-requests.linkedObservationCurrentPrStateAnd_e8d519" components={{ s0: <><Timestamp value={text(value.observed_at)} /></> }} /></p>
-    {diagnosticsTarget ? createPortal(<section><h3>{copy("session-pull-requests.originalPrIdentity_92b511")}</h3><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <>{text(value.repository_id)}</> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></section>, diagnosticsTarget) : null}
+    {diagnosticsTarget ? createPortal(<section><h3>{copy("session-pull-requests.originalPrIdentity_92b511")}</h3><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <>{text(value.owner)}/{text(value.name)}</> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></section>, diagnosticsTarget) : null}
     <OpenPRProblemHistory routineRefresh={false} selection={{ repositoryId: text(value.repository_id), remoteRepositoryId: text(value.remote_repository_id), pullRequestId: text(value.pull_request_id), number: text(value.number) }} />
     <button disabled={remove.busy || remove.uncertain} onClick={() => void remove.send({ sessionId, mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() } })}><LocalizedText id="session-pull-requests.unlink_1c427a" components={{ s0: <>{text(value.number)}</> }} /></button>
     {!remove.busy && !remove.uncertain ? <Problem error={remove.error} /> : null}
   </article>;
 }
 
-function RetainedLinks({ session, refreshOwner, emptyChanged, diagnosticsTarget }: { session: Resource; refreshOwner: { current: () => void }; emptyChanged?: (value: boolean) => void; diagnosticsTarget?: HTMLElement | null }) {
+function RetainedLinks({ session, refreshOwner, emptyChanged, diagnosticsTarget, queue }: { session: Resource; refreshOwner: { current: () => void }; emptyChanged?: (value: boolean) => void; diagnosticsTarget?: HTMLElement | null; queue: SessionPRReadQueue }) {
   const active=useSessionActive();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
@@ -86,7 +95,7 @@ function RetainedLinks({ session, refreshOwner, emptyChanged, diagnosticsTarget 
   useEffect(() => { emptyChanged?.(list.loaded && !list.error && !list.loading && !list.nextPageToken && list.rows.length === 0 && !blocked); }, [list.loaded, list.error, list.loading, list.nextPageToken, list.rows.length, blocked, emptyChanged]);
   return <section ref={bindRoot} aria-label={copy("session-pull-requests.sessionPrAssociations_1143d2")}><p>{copy("session-pull-requests.associationsRemainAfterArchiveOrProblem_909961")}</p>
     {list.error ? <button disabled={Boolean(list.loading)} onClick={refresh}>{copy("session-name.retryRead")}</button> : null}<Problem error={paginationError(list.error?.failure)} />{list.error && list.loaded ? <p>{copy("session-pull-requests.previousAssociationsAreShownRefreshFailed_8dbbd3")}</p> : null}
-    <ScrollPayloadWindow query={list} root={root} active={active && !blocked}>{(rows, projections) => { const ids = visiblePageIds(list.pages, projections); return rows.filter(row => ids.has(row.id)).map(row => <LinkRow key={row.id} row={row} value={readSessionPR(row, session.id)!} sessionId={session.id} refreshed={refresh} diagnosticsTarget={diagnosticsTarget} />); }}</ScrollPayloadWindow>
+    <ScrollPayloadWindow query={list} root={root} active={active && !blocked}>{(rows, projections) => { const ids = visiblePageIds(list.pages, projections); return rows.filter(row => ids.has(row.id)).map(row => <LinkRow key={row.id} row={row} value={readSessionPR(row, session.id)!} sessionId={session.id} refreshed={refresh} diagnosticsTarget={diagnosticsTarget} queue={queue} />); }}</ScrollPayloadWindow>
     {list.loaded && !list.rows.length ? <p>{copy("session-pull-requests.noPrAssociationsOnThisPage_83305f")}</p> : null}
     <ScrollContinuation query={list} root={root} active={active && !blocked} label={copy("session-pull-requests.sessionPrAssociations_1143d2")} />
   </section>;
@@ -97,10 +106,12 @@ function RetainedLinks({ session, refreshOwner, emptyChanged, diagnosticsTarget 
 export function SessionPullRequests({ session, visible = true, emptyChanged, diagnosticsTarget }: { session: Resource; visible?: boolean; emptyChanged?: (value: boolean) => void; diagnosticsTarget?: HTMLElement | null }) {
   useLocale();
   const active = useSessionActive();
+  const client = useQueryClient();
+  const queue = useMemo(()=>new SessionPRReadQueue(),[client,session.id]);
   const refreshOwner = useRef<() => void>(() => undefined);
   const refreshed = useCallback(() => refreshOwner.current(), []);
   return <section>
-    {visible && active ? <RetainedLinks key={session.id} session={session} refreshOwner={refreshOwner} emptyChanged={emptyChanged} diagnosticsTarget={diagnosticsTarget} /> : null}
+    {visible && active ? <RetainedLinks key={session.id} session={session} refreshOwner={refreshOwner} emptyChanged={emptyChanged} diagnosticsTarget={diagnosticsTarget} queue={queue} /> : null}
     <PendingUnlinks sessionId={session.id} refreshed={refreshed} />
     <OriginalLinkRecovery sessionId={session.id} refreshed={refreshed} />
 
