@@ -1,3 +1,4 @@
+import { readAutomaticCreationMode } from "./automatic-creation-mode";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
 import { useId } from "react";
 import { useProjectPromptHistory } from "./project-prompt-history";
@@ -76,6 +77,13 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState(Mode.Execute);
  const [manualMode, setManualMode] = useState(false);
+ const [preparingMode, setPreparingMode] = useState(false);
+ const [automaticModeProblem, setAutomaticModeProblem] = useState<unknown>();
+ const submissionClaim = useRef(false);
+ const submissionGeneration = useRef(0);
+ const submissionScope = useRef({ active, activation, transport });
+ submissionScope.current = { active, activation, transport };
+ useEffect(() => () => { submissionGeneration.current++; }, [active, transport]);
   const [starting, setStarting] = useState<unknown[]>([]);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsContentId = useId();
@@ -111,6 +119,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     endHistoryCycle.current();
     setPrompt("");
  setManualMode(false);
+ setAutomaticModeProblem(undefined);
     skills.clearAccepted();
     setCreatedElsewhere(undefined);
     created();
@@ -124,7 +133,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   const mutation = useRetainedMutation(generalChat ? "create-general-chat" : "create-session", SessionQuery.createSession, accepted);
   useEffect(() => { if (mutation.error && !mutation.uncertain && !mutation.busy) images.controller.operationId = undefined; }, [mutation.error, mutation.uncertain, mutation.busy, images.controller]);
   const restrictions = object(document(selectedProject.data?.resource).agents);
-  const blocked = mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment || images.busy;
+  const blocked = preparingMode || mutation.busy || mutation.uncertain || local.busy || invalidAcknowledgment || images.busy;
   const projectChanged = useCallback((id: string) => {
     touched.current = false;
     restoration.current = { agent: false, machine: false };
@@ -212,14 +221,14 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
  const globalDefaultValid = !defaultSettings.isFetching && !defaultSettings.error && defaultRows !== undefined && defaultRows.length <= 1 && !defaultSettings.data?.nextPageToken && (!defaultRow || defaultRow.kind === EntityKind.SETTINGS && defaultRow.revision > 0n && supportsResourceSchema(defaultRow) && (document(defaultRow).plan_mode_default === undefined || typeof document(defaultRow).plan_mode_default === "boolean"));
  const selectedForMode = !project || generalChat || !selectedProject.isFetching && !selectedProject.error && selectedProject.data?.resource?.id === project && selectedProject.data.resource.kind === EntityKind.PROJECT && supportsResourceSchema(selectedProject.data.resource);
  const overrideMode = generalChat || !project ? "inherit" : text(object(document(selectedProject.data?.resource).settings).plan_mode_default) || "inherit";
- const modeReady = manualMode || !supportsDefaults || globalDefaultValid && selectedForMode && ["inherit", "enabled", "disabled"].includes(overrideMode);
+ const modeReady = manualMode || !automaticModeProblem && (!supportsDefaults || globalDefaultValid && selectedForMode && ["inherit", "enabled", "disabled"].includes(overrideMode));
  const effectiveMode = manualMode || blocked ? mode : supportsDefaults && globalDefaultValid && selectedForMode ? (overrideMode === "enabled" || overrideMode === "inherit" && document(defaultRow).plan_mode_default === true ? Mode.Plan : Mode.Execute) : mode;
  useEffect(() => { if (!blocked && !manualMode && modeReady) setMode(effectiveMode); }, [blocked, manualMode, modeReady, effectiveMode]);
  const [branchValid,setBranchValid]=useState(true);
  const canCreate = (generalChat || !project || workspace!==Workspace.Worktree || branchValid) && modeReady && active && automaticTitles && Boolean(agent && machine && (prompt.trim() || images.images.length)) && (!images.images.length || imageRoute.ready) && !blocked && !skills.blocked && automaticChoicesEligible;
 
   const submit = async () => {
-    if (!canCreate) return;
+    if (!canCreate || submissionClaim.current) return;
     let estimatedBudget;
     try {
       estimatedBudget = budgetInput(budget);
@@ -228,29 +237,50 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       setBudgetProblem(productError(error, "new-session.extra.08fb485eeaf6"));
       return;
     }
-    const selectedProjectId = generalChat ? "" : project;
-    const workspaceType = selectedProjectId ? workspace : Workspace.GeneralChat;
-    const selection = {
-      name_mode: "automatic",
-      estimated_cost_budget: estimatedBudget,
-      prompt,
-      agent_id: agent,
-      machine_id: machine,
-      project_id: selectedProjectId || undefined,
-      workspace: workspaceType,
-      starting: selectedProjectId && workspaceType === Workspace.Worktree ? starting : undefined,
-      mode: effectiveMode,
-      source: "MANUAL",
-    };
-    const proof = workspaceType === Workspace.Local ? await local.load(machine) : undefined;
-    if (workspaceType === Workspace.Local && !proof) return;
-    touched.current = true;
-    setMode(effectiveMode);
-    submittedActivation.current = navigation.current.activation;
-    const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
-    let attachments;
-    try { attachments = images.images.length && imageRoute.machine ? await images.controller.prepare(imageRoute.machine, requestId) : []; } catch { return; }
-    void mutation.send({ requestId, documentJson: encode(selection), localWorkerToken: proof?.token, skills: skills.selections.length ? { selections: skills.selections } : undefined, attachments }, attachments.length ? (result, request) => acknowledgeImages(result.change, request.requestId, request.attachments) : undefined);
+    submissionClaim.current = true;
+    setPreparingMode(true);
+    const generation = submissionGeneration.current;
+    try {
+      const selectedProjectId = generalChat ? "" : project;
+      let creationMode = effectiveMode;
+      if (!manualMode && supportsDefaults) {
+        try {
+          creationMode = await readAutomaticCreationMode(transport, selectedProjectId, agent, defaultRow, selectedProject.data?.resource);
+        } catch (error) {
+          if (generation === submissionGeneration.current) setAutomaticModeProblem(error);
+          return;
+        }
+      }
+      const scope = submissionScope.current;
+      if (generation !== submissionGeneration.current || !scope.active || scope.activation !== activation || scope.transport !== transport) return;
+
+      const workspaceType = selectedProjectId ? workspace : Workspace.GeneralChat;
+      const selection = {
+        name_mode: "automatic",
+        estimated_cost_budget: estimatedBudget,
+        prompt,
+        agent_id: agent,
+        machine_id: machine,
+        project_id: selectedProjectId || undefined,
+        workspace: workspaceType,
+        starting: selectedProjectId && workspaceType === Workspace.Worktree ? starting : undefined,
+        mode: creationMode,
+        source: "MANUAL",
+      };
+      const proof = workspaceType === Workspace.Local ? await local.load(machine) : undefined;
+      if (workspaceType === Workspace.Local && !proof) return;
+      touched.current = true;
+      setMode(creationMode);
+      submittedActivation.current = navigation.current.activation;
+      const requestId = images.images.length ? images.controller.operationId ?? newRequestId() : newRequestId();
+      let attachments;
+      try { attachments = images.images.length && imageRoute.machine ? await images.controller.prepare(imageRoute.machine, requestId) : []; } catch { return; }
+      if (generation !== submissionGeneration.current || !submissionScope.current.active || submissionScope.current.activation !== activation || submissionScope.current.transport !== transport) return;
+      void mutation.send({ requestId, documentJson: encode(selection), localWorkerToken: proof?.token, skills: skills.selections.length ? { selections: skills.selections } : undefined, attachments }, attachments.length ? (result, request) => acknowledgeImages(result.change, request.requestId, request.attachments) : undefined);
+    } finally {
+      submissionClaim.current = false;
+      setPreparingMode(false);
+    }
   };
 
   const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;
@@ -309,7 +339,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
                 <ResourceChoice label={copy("new-session.agentWorker_a4caa7")} kind={EntityKind.AGENT} value={agent} active={active} showStatus required allowed={restrictions.configured === true ? items(restrictions.ids) : undefined} resolvedChoice={agentChoice} change={editAgent} />
                 <ResourceChoice label={copy("new-session.runsOn_88a550")} resourceLabel={copy("new-session.runnerDevice_37efe3")} kind={EntityKind.MACHINE} value={machine} active={active} showStatus disabled={Boolean(project) && workspace === Workspace.Local} required resolvedChoice={machineChoice} change={editMachine} />
                 <label className="new-session-mode plan-mode"><input type="checkbox" checked={effectiveMode === Mode.Plan} onChange={(event) => { touched.current = true; setManualMode(true); setMode(event.target.checked ? Mode.Plan : Mode.Execute); }} />{copy("new-session.planMode")}</label>
- {!modeReady ? <div><p role="status">{copy("new-session.planDefaultUnavailable")}</p><button type="button" disabled={blocked || defaultSettings.isFetching || selectedProject.isFetching} onClick={() => { void defaultSettings.refetch(); if (project && !generalChat) void selectedProject.refetch(); }}>{copy("new-session.retryPlanDefaults")}</button></div> : null}
+ {!modeReady ? <div><p role="status">{copy("new-session.planDefaultUnavailable")}</p><button type="button" disabled={blocked || defaultSettings.isFetching || selectedProject.isFetching} onClick={() => { setAutomaticModeProblem(undefined); void defaultSettings.refetch(); if (project && !generalChat) void selectedProject.refetch(); }}>{copy("new-session.retryPlanDefaults")}</button></div> : null}
               </div>
               <div className="new-session-submit-row">
                 <DisclosureButton density={DisclosureDensity.Settings} type="button" className="new-session-options-toggle" aria-expanded={optionsOpen} aria-controls={optionsContentId} onClick={() => setOptionsOpen((value) => !value)}>{copy("new-session.options_d0db8b")}</DisclosureButton>
@@ -343,7 +373,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
       {budgetProblem ? <p role="alert">{budgetProblem}</p> : null}
       {promptLimit ? <p role="alert">{copy("new-session.theFirstMessageExceeds256Kib_9ced04")}</p> : null}
       {local.problem ? <p role="alert">{local.problem}</p> : null}
-      <Problem error={selectedProject.error || mutation.error} />
+      <Problem error={automaticModeProblem} /><Problem error={selectedProject.error || mutation.error} />
       {mutation.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("new-session.retryTheSameSessionCreation_c70ddb")}</button> : null}
       {invalidAcknowledgment ? <div className="problem" role="alert"><strong>{copy("new-session.creationWasAcknowledgedWithoutAReadable_4432e2")}</strong><p>{copy("new-session.yourMessageIsRetainedRefreshThe_295fd7")}</p><button type="button" onClick={back}>{copy("new-session.inspectSessions_aa8dcc")}</button></div> : null}
       {createdElsewhere ? <p className="new-session-open-notice" role="status"><LocalizedText id={generalChat ? "new-session.conversationCreatedAs" : "new-session.sessionCreatedAs_362cd1"} components={{ s0: <>{title}</> }} /><button type="button" onClick={() => open(createdElsewhere.id)}>{generalChat ? copy("new-session.openConversation") : copy("new-session.openSession_b205bb")}</button></p> : null}

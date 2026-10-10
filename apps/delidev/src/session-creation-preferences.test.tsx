@@ -20,18 +20,19 @@ function fixture(initial = true, includeRemembered = false, defaults?: { global:
  const projects=[resource(EntityKind.PROJECT,"Allowed project",{repositories:[],agents:{configured:true,ids:[agent.id]}}),resource(EntityKind.PROJECT,"Forbidden project",{repositories:[],agents:{configured:true,ids:[otherAgent.id]}}),resource(EntityKind.PROJECT,"Empty restriction",{repositories:[],agents:{configured:true,ids:[]}})];
  const defaultSettings = create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SETTINGS,revision:1n,schemaVersion:3,documentJson:encode({automatic_plan_approval:false,plan_mode_default:defaults?.global ?? false,branch_prefix:"delidev/"})});
  if(defaults) for(const row of projects) { row.schemaVersion=3;row.documentJson=encode({...JSON.parse(new TextDecoder().decode(row.documentJson)),settings:{plan_mode_default:defaults.project??"inherit"}}); }
+ let settingsReads=0;
  const scope={server_id:newRequestId(),device_id:newRequestId()};let revision=1;
  const memory=new Map<NewSessionKind,CreationPreferencePair>();if(initial)memory.set(NewSessionKind.Session,{agent_id:agent.id,machine_id:machine.id});
  const bridge={read:vi.fn(async(kind:NewSessionKind):Promise<unknown>=>({revision,scope,pair:memory.get(kind)??null,problem:null})),update:vi.fn(async(kind:NewSessionKind,pair:CreationPreferencePair,expected:number):Promise<unknown>=>{expect(expected).toBe(revision);memory.set(kind,pair);return {revision:++revision,scope,pair,problem:null};})};
  const get=vi.fn((request:{kind:EntityKind;id:string})=>({resource:[agent,machine,otherAgent,otherMachine,...projects].find(row=>row.id===request.id&&row.kind===request.kind)}));
  const createSession=vi.fn(async(_request:CreateSessionRequest)=>({change:{session:resource(EntityKind.SESSION,"Accepted")}}));
  const transport=createRouterTransport(router=>{
-  router.service(ResourceService,{getResource:get,listResources:request=>{ if(request.filter?.kind===EntityKind.SETTINGS && defaults?.fail) throw new ConnectError("defaults unavailable",Code.Unavailable);return ({resources:request.filter?.kind===EntityKind.SETTINGS && defaults?[defaultSettings]:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})}});
+  router.service(ResourceService,{getResource:get,listResources:request=>{ if(request.filter?.kind===EntityKind.SETTINGS) settingsReads++; if(request.filter?.kind===EntityKind.SETTINGS && defaults?.fail) throw new ConnectError("defaults unavailable",Code.Unavailable);return ({resources:request.filter?.kind===EntityKind.SETTINGS && defaults?[defaultSettings]:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})}});
   router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.AUTOMATIC_TITLES_V1,...(defaults?[SystemCapability.SESSION_DEFAULTS_V1]:[])]})});router.service(SessionService,{createSession});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=(kind=NewSessionKind.Session, readLocalWorker?: () => Promise<{machineId:string;token:string}>)=><StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NewSession kind={kind} active ownsActivation activation={1} back={()=>{}} openSettings={()=>{}} open={()=>{}} created={()=>{}} preferenceBridge={bridge} preferenceScope={scope} readLocalWorker={readLocalWorker}/></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
- return {agent,machine,otherAgent,otherMachine,projects,scope,bridge,memory,get,createSession,client,view};
+ return {agent,machine,otherAgent,otherMachine,projects,defaultSettings,get settingsReads(){return settingsReads;},scope,bridge,memory,get,createSession,client,view};
 }
 
 // Agent and Runner restoration settle independently. Submit only after the
@@ -200,4 +201,72 @@ it("does not submit a provisional default after a failed settings read",async()=
  expect(create.disabled).toBe(true);expect(f.createSession).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("checkbox",{name:"Plan Mode"}));
  await waitFor(()=>expect(create.disabled).toBe(false));
+});
+
+
+it.each(["global", "project"])("rereads changed %s Plan defaults before untouched automatic creation", async source => {
+ const f=fixture(true,false,{global:false,project:"inherit"}); render(f.view());
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
+ if(source==="project") await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Synthetic fresh-default input"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ const settingsReads=f.settingsReads, projectReads=f.get.mock.calls.filter(([request])=>request.id===f.projects[0].id).length;
+ const row=source==="global"?f.defaultSettings:f.projects[0]; row.revision++;
+ const data=JSON.parse(new TextDecoder().decode(row.documentJson));
+ row.documentJson=encode(source==="global"?{...data,plan_mode_default:true}:{...data,settings:{...data.settings,plan_mode_default:"enabled"}});
+ expect((screen.getByRole("checkbox",{name:"Plan Mode"}) as HTMLInputElement).checked).toBe(false);
+ await submitCreation(); await waitFor(()=>expect(f.createSession).toHaveBeenCalledTimes(1));
+ expect(f.settingsReads).toBe(settingsReads+1);
+ if(source==="project") expect(f.get.mock.calls.filter(([request])=>request.id===f.projects[0].id)).toHaveLength(projectReads+1);
+ expect(JSON.parse(new TextDecoder().decode(f.createSession.mock.calls[0][0].documentJson)).mode).toBe("plan");
+});
+
+it("blocks failed submit-time default reads and preserves explicit manual Execute",async()=>{
+ const defaults={global:false,fail:false};const f=fixture(true,false,defaults);render(f.view());
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Synthetic retained input"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ defaults.fail=true;await submitCreation();
+ await screen.findByRole("button",{name:"Retry Plan Mode defaults"});
+ expect(f.createSession).not.toHaveBeenCalled();
+ expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(true);
+ const plan=screen.getByRole("checkbox",{name:"Plan Mode"});fireEvent.click(plan);fireEvent.click(plan);
+ const reads=f.settingsReads;
+ await submitCreation();await waitFor(()=>expect(f.createSession).toHaveBeenCalledTimes(1));
+ expect(f.settingsReads).toBe(reads);
+ expect(JSON.parse(new TextDecoder().decode(f.createSession.mock.calls[0][0].documentJson)).mode).toBe("execute");
+});
+
+it("freezes the fresh automatic mode and exact request after uncertain creation",async()=>{
+ const f=fixture(true,false,{global:false});render(f.view());
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Synthetic original request"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ f.defaultSettings.revision++;f.defaultSettings.documentJson=encode({...JSON.parse(new TextDecoder().decode(f.defaultSettings.documentJson)),plan_mode_default:true});
+ f.createSession.mockRejectedValueOnce(new ConnectError("Synthetic acknowledgment unavailable",Code.Unavailable));
+ await submitCreation();const retry=await screen.findByRole("button",{name:"Retry the same session creation"});
+ const original=f.createSession.mock.calls[0][0],reads=f.settingsReads;
+ expect(JSON.parse(new TextDecoder().decode(original.documentJson)).mode).toBe("plan");
+ f.defaultSettings.revision++;f.defaultSettings.documentJson=encode({...JSON.parse(new TextDecoder().decode(f.defaultSettings.documentJson)),plan_mode_default:false});
+ expect((screen.getByRole("checkbox",{name:"Plan Mode"}).closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+ fireEvent.click(retry);await waitFor(()=>expect(f.createSession).toHaveBeenCalledTimes(2));
+ expect(f.settingsReads).toBe(reads);
+ expect(f.createSession.mock.calls[1][0].requestId).toBe(original.requestId);
+ expect(f.createSession.mock.calls[1][0].documentJson).toEqual(original.documentJson);
+});
+
+
+it.each(["stale", "unsupported", "incomplete", "ineligible"])("rejects %s submit-time automatic default observations",async outcome=>{
+ const f=fixture(true,false,{global:false,project:"inherit"});if(outcome==="stale") f.defaultSettings.revision=2n;render(f.view());
+ await waitFor(()=>expect(scrollChoiceValue(screen.getByRole("combobox",{name:"Agent Worker"}))).toBe(f.agent.id));
+ await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Synthetic bounded observation"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ if(outcome==="stale") f.defaultSettings.revision=1n;
+ if(outcome==="unsupported") f.defaultSettings.schemaVersion=999;
+ if(outcome==="incomplete") f.defaultSettings.documentJson=encode({name:"Synthetic",plan_mode_default:"enabled"});
+ if(outcome==="ineligible") f.projects[0].documentJson=encode({...JSON.parse(new TextDecoder().decode(f.projects[0].documentJson)),disabled:true});
+ await submitCreation();await screen.findByRole("button",{name:"Retry Plan Mode defaults"});
+ expect(f.createSession).not.toHaveBeenCalled();
+ expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(true);
 });

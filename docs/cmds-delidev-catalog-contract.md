@@ -679,7 +679,7 @@ Server `plan_mode_default` defaults to false. The project's typed
 `settings.plan_mode_default` inherits or explicitly enables/disables it.
 New Session follows the selected project override and then the global value;
 General Chat follows the global value. Defaults apply until an explicit mode
-checkbox edit. Prompt, Agent, Runner and budget edits do not count as mode edits.
+checkbox edit. Before untouched automatic creation, directly reread the complete current Settings singleton and exact selected Project, validate original identities, supported schemas, positive/nonregressing revisions and Project eligibility, and resolve mode from those fresh observations. Failed, incomplete or malformed reads block automatic creation without falling back to Execute. Explicit mode choices bypass this automatic resolution. Preserve a single submission owner across these reads and discard results after departure or connection/activation replacement. Prompt, Agent, Runner and budget edits do not count as mode edits.
 Loading, failed, incomplete, stale or malformed reads cannot authorize a
 provisional mode. Explicit mode selection remains available. Freeze original
 mode during pending/uncertain creation, preserve exact retries and mounted draft
