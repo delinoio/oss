@@ -9,6 +9,7 @@ import (
 	"filippo.io/age"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,35 +118,7 @@ func TestEncryptedWorkerNetworkGenerationControlsDispatchAndOriginalScope(t *tes
 
 func TestWorkerNativeRouteKeepsOriginalGenerationAndDoesNotGrantAnotherLaunch(t *testing.T) {
 	f := newAuthorityFixture(t, "http://127.0.0.1:46311")
-	identity, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	key, routeID, profileID := domain.NewID(), domain.NewID(), domain.NewID()
-	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-route", nil, func(tx *store.Tx) (any, error) {
-		profile := domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 46319}}
-		if _, err := tx.Put(domain.NetworkProfileKind, profileID, 0, "", "", profile); err != nil {
-			return nil, err
-		}
-		_, err := tx.Put(domain.NetworkRouteKind, routeID, 0, "", "", domain.NetworkRoute{MachineID: f.input.MachineID, ProfileID: profileID, ProfileRevision: 1, Profile: profile, Binding: &domain.WorkerNetworkBinding{DeviceID: f.device, PairingID: domain.NewID(), KeyID: key, Recipient: identity.Recipient().String(), Endpoint: f.http.URL}})
-		if err != nil {
-			return nil, err
-		}
-		mr, err := tx.Get(domain.MachineKind, f.input.MachineID)
-		if err != nil {
-			return nil, err
-		}
-		machine, err := store.Decode[domain.Machine](mr)
-		if err != nil {
-			return nil, err
-		}
-		machine.WorkerCapabilities = []domain.WorkerCapability{domain.NetworkBootstrapV1, domain.CodexAPIProxyV1}
-		machine.Network = &domain.WorkerNetworkState{InstanceID: f.instance, KeyID: key, Recipient: identity.Recipient().String(), RouteID: routeID, EffectiveGeneration: 1, NativeState: domain.WorkerRouteNotApplied, ObservedAt: time.Now().UTC()}
-		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	routeID, profileID := nativeRouteFixture(t, f)
 	f.registerGrant(t)
 	request := &pb.ReportWorkerNativeRouteRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), ExecutionId: string(f.input.ExecutionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_OBSERVED}
 	if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err == nil {
@@ -255,5 +228,119 @@ func TestPendingWorkerBootstrapCanExportBeforePairingAndPinsOneOriginalRecipient
 	}
 	if _, err := network.ExportWorkerNetworkMetadata(ctx, ownerRequest(f.service.Identity, &pb.ExportWorkerNetworkMetadataRequest{MachineId: string(authority.MachineID), DesiredGeneration: exported.Msg.Route.Revision})); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatal("legacy metadata gained pending bootstrap authority", err)
+	}
+}
+
+func nativeRouteFixture(t *testing.T, f *authorityFixture) (domain.ID, domain.ID) {
+	t.Helper()
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, routeID, profileID := domain.NewID(), domain.NewID(), domain.NewID()
+	_, err = f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.native-route", nil, func(tx *store.Tx) (any, error) {
+		profile := domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Fixture", Mode: domain.ProxyHTTP, Host: "127.0.0.1", Port: 46319}}
+		if _, err := tx.Put(domain.NetworkProfileKind, profileID, 0, "", "", profile); err != nil {
+			return nil, err
+		}
+		_, err := tx.Put(domain.NetworkRouteKind, routeID, 0, "", "", domain.NetworkRoute{MachineID: f.input.MachineID, ProfileID: profileID, ProfileRevision: 1, Profile: profile, Binding: &domain.WorkerNetworkBinding{DeviceID: f.device, PairingID: domain.NewID(), KeyID: key, Recipient: identity.Recipient().String(), Endpoint: f.http.URL}})
+		if err != nil {
+			return nil, err
+		}
+		mr, err := tx.Get(domain.MachineKind, f.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine, err := store.Decode[domain.Machine](mr)
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.NetworkBootstrapV1, domain.CodexAPIProxyV1)
+		machine.Network = &domain.WorkerNetworkState{InstanceID: f.instance, KeyID: key, Recipient: identity.Recipient().String(), RouteID: routeID, EffectiveGeneration: 1, NativeState: domain.WorkerRouteNotApplied, ObservedAt: time.Now().UTC()}
+		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return routeID, profileID
+}
+
+func TestV4NativeRouteRegistersBeforeReadyWithoutGrantingInference(t *testing.T) {
+	f := directStartupFixture(t)
+	routeID, _ := nativeRouteFixture(t, f)
+	f.registerGrant(t)
+	request := &pb.ReportWorkerNativeRouteRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), ExecutionId: string(f.input.ExecutionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_UNVERIFIED}
+	if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err != nil {
+		t.Fatal("v4 original route could not initialize", err)
+	}
+	if lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token); err == nil {
+		lease.Release()
+		t.Fatal("route registration authorized unready inference")
+	}
+	o := domain.ExecutionStartupObservation{State: domain.StartupReady, Phase: domain.StartupSettings, Harness: domain.Codex, ExecutableSHA256: strings.Repeat("a", 64), Protocol: domain.CodexAppServer, CorrelationID: f.job, InputDelivery: domain.StartupNotSent}
+	if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f, o)); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := f.service.executionAuthority.Acquire(context.Background(), f.token)
+	if err != nil {
+		t.Fatal("original ready process could not infer", err)
+	}
+	lease.Release()
+	record, err := f.service.Store.Get(context.Background(), domain.JobKind, f.job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](record)
+	original, marshalErr := json.Marshal(f.input)
+	if err != nil || marshalErr != nil || string(job.Input) != string(original) || record.Revision != 1 {
+		t.Fatal("route/startup rewrote the immutable assignment or empty v4 installation", err, marshalErr)
+	}
+}
+
+func TestV4NativeRoutePreservesOriginalGrantAndCapabilityDenials(t *testing.T) {
+	for _, change := range []string{"epoch", "capability", "instance", "execution", "revision", "direct"} {
+		t.Run(change, func(t *testing.T) {
+			f := directStartupFixture(t)
+			routeID, _ := nativeRouteFixture(t, f)
+			f.registerGrant(t)
+			request := &pb.ReportWorkerNativeRouteRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(f.job), ExpectedRevision: 1}, MachineId: string(f.input.MachineID), InstanceId: string(f.instance), ExecutionId: string(f.input.ExecutionID), RouteId: string(routeID), Generation: 1, State: pb.WorkerNativeRouteState_WORKER_NATIVE_ROUTE_STATE_UNVERIFIED}
+			switch change {
+			case "epoch":
+				f.service.executionAuthority.epoch = domain.NewID()
+			case "instance":
+				request.InstanceId = string(domain.NewID())
+			case "execution":
+				request.ExecutionId = string(domain.NewID())
+			case "revision":
+				request.Mutation.ExpectedRevision++
+			case "capability", "direct":
+				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.route-denial", nil, func(tx *store.Tx) (any, error) {
+					if change == "capability" {
+						mr, machine, err := activeMachine(tx, f.input.MachineID)
+						if err != nil {
+							return nil, err
+						}
+						machine.WorkerCapabilities = []domain.WorkerCapability{domain.NetworkBootstrapV1, domain.ExecutionStartupV1, domain.InlineModelExecutionV1}
+						return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+					}
+					r, err := tx.NetworkRoute(f.input.MachineID)
+					if err != nil {
+						return nil, err
+					}
+					route, err := store.Decode[domain.NetworkRoute](r)
+					if err != nil {
+						return nil, err
+					}
+					route.Profile = domain.NetworkProfile{ProxyDefinition: domain.ProxyDefinition{Name: "Direct", Mode: domain.ProxyDirect}}
+					return tx.Put(domain.NetworkRouteKind, r.ID, r.Revision, "", "", route)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := f.client.ReportWorkerNativeRoute(context.Background(), subscriptionRequest(f.workerToken, request)); err == nil {
+				t.Fatal("foreign/unsupported route accepted")
+			}
+		})
 	}
 }

@@ -91,6 +91,17 @@ authorization activate only that assignment. Subscription execution preserves
 its original protected generation and account lease, with no login or exchange.
 Startup observation never substitutes for selected-account authority.
 
+Native Codex route admission (#2414) recognizes the immutable v4 startup
+selection without legacy Installation metadata or a numeric native-version
+gate. The epoch-bound original execution scope permits the pre-ready route
+needed to initialize that actual process; route observation never grants relay
+inference. Steer acceptance and its original Worker claim require validated
+ready startup for the same job/execution in addition to the current
+account/connection, epoch, queued input and native-turn ownership. Legacy
+v1/v2/v3 consumers retain their original installation version/protocol checks.
+Neither consumer refreshes installation, replaces the process or replays input.
+
+
 Continuation and native source operations additionally retain original
 checkpoint, executable identity, account, Worker, workspace and history checks.
 No installation refresh can silently replace historical native ownership. Title

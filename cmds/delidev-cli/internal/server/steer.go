@@ -94,6 +94,7 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 		return steerReceipt{SteerID: attemptID}, nil
 	})
 	if err != nil {
+		s.logger.WarnContext(ctx, "steer_admission_denied", "session_id", identity.Session, "execution_id", identity.Execution, "input_id", identity.Input, "code", domain.SafeError(err).Code)
 		return nil, rpc.Error(err, correlation)
 	}
 	var receipt steerReceipt
@@ -168,7 +169,7 @@ func (s *Service) steerScope(tx *store.Tx, sr store.Record, session domain.Sessi
 	if jr.ID != p.JobID || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || !session.OwnsExecution(input) {
 		return input, store.ExecutionGrant{}, steerConflict()
 	}
-	if input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified {
+	if input.Configuration.Harness != domain.Codex || (input.Version != 4 && (!domain.CodexVersionAllowed(input.Installation.Version) || !input.Installation.ProtocolVerified)) {
 		return input, store.ExecutionGrant{}, domain.SessionExecutionUnavailable()
 	}
 	grant, err := tx.ExecutionGrantForJob(jr.ID)
@@ -176,6 +177,12 @@ func (s *Service) steerScope(tx *store.Tx, sr store.Record, session domain.Sessi
 		return input, grant, err
 	}
 	if _, err := s.executionAuthority.scope(tx, grant); err != nil {
+		return input, grant, err
+	}
+	// Steering is input delivery, unlike pre-ready native route registration.
+	// V4 uses actual original startup evidence instead of legacy installation
+	// metadata; legacy assignments retain their original protocol checks above.
+	if err := requireExecutionStartupReady(tx, jr.ID); err != nil {
 		return input, grant, err
 	}
 	return input, grant, nil

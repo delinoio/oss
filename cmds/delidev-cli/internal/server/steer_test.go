@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 
@@ -14,10 +15,21 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func newSteerFixture(t *testing.T) (*publicationFixture, *pb.SteerQueuedInputRequest) {
+func newSteerFixture(t *testing.T, authority ...*authorityFixture) (*publicationFixture, *pb.SteerQueuedInputRequest) {
 	t.Helper()
-	f := newPublicationFixture(t)
+	var f *publicationFixture
+	if len(authority) == 0 {
+		f = newPublicationFixture(t)
+	} else {
+		f = publicationFixtureFromAuthority(t, authority[0])
+	}
 	f.registerGrant(t)
+	if f.input.Version == 4 {
+		o := domain.ExecutionStartupObservation{State: domain.StartupReady, Phase: domain.StartupSettings, Harness: domain.Codex, NativeVersion: "future-compatible", ExecutableSHA256: strings.Repeat("a", 64), Protocol: domain.CodexAppServer, CorrelationID: f.job, InputDelivery: domain.StartupNotSent}
+		if _, err := f.client.ReportExecutionStartup(context.Background(), startupRequest(f.authorityFixture, o)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
 	_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.steer-queue-sequence", nil, func(tx *store.Tx) (any, error) {
@@ -450,6 +462,47 @@ func TestSteerRecoveryKeepsEarlierDiagnostic(t *testing.T) {
 			session, _ := store.Decode[domain.Session](sr)
 			if session.Problem == nil || session.Problem.Code != earliest.Code || session.Problem.Message != earliest.Message || session.Recovery != domain.NeedsRecovery || session.Dispatch != domain.DispatchPaused {
 				t.Fatal("Steer overwrote an unrelated failure/recovery")
+			}
+		})
+	}
+}
+
+func TestV4SteerUsesOriginalReadyStartupAndRetainsExecutionFences(t *testing.T) {
+	for _, change := range []string{"ready", "absent", "foreign-startup", "epoch", "foreign-turn", "input-revision"} {
+		t.Run(change, func(t *testing.T) {
+			f, request := newSteerFixture(t, directStartupFixture(t))
+			switch change {
+			case "epoch":
+				f.service.executionAuthority.epoch = domain.NewID()
+			case "foreign-turn":
+				request.ExpectedTurnId = string(domain.NewID())
+			case "input-revision":
+				request.Mutation.ExpectedRevision++
+			case "absent", "foreign-startup":
+				_, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.steer-startup", nil, func(tx *store.Tx) (any, error) {
+					r, session, err := sessionRecord(tx, f.input.SessionID)
+					if err != nil {
+						return nil, err
+					}
+					if change == "absent" {
+						session.Startup.Ready = nil
+					} else {
+						session.Startup.ExecutionID = domain.NewID()
+					}
+					return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, session)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			response, err := callSteer(f, request)
+			if change == "ready" {
+				if err != nil || response.Msg.Steer == nil {
+					t.Fatal("v4 original ready turn rejected", err)
+				}
+				claimSteer(t, f, response.Msg.Steer)
+			} else if err == nil {
+				t.Fatal("unready/foreign Steer accepted")
 			}
 		})
 	}
