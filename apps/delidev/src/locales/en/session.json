@@ -140,5 +140,22 @@
   "session.revertHistoricalAttachments": "Earlier images and skill selections remain in history. Select them again for a new input; the restored prompt has not been submitted.",
   "session.previousContext": "Earlier context",
   "session.startupImageInput": "Keep the image draft and choose an Agent Worker and Runner Device that explicitly support images, or send text only.",
-  "session.sleepDuration": "Sleep duration: <s0/> milliseconds"
+  "session.sleepDuration": "Sleep duration: <s0/> milliseconds",
+  "session.lifetimeTokens": "Known lifetime response tokens",
+  "session.tokensIn": "In",
+  "session.tokensOut": "Out",
+  "session.responseSubtotals": "Known response subtotals; not complete native usage or actual charges.",
+  "session.incompleteUsage": "Usage coverage is incomplete. Details are available in Diagnostics.",
+  "session.staleUsage": "Previously completed usage is stale. Retry the read to refresh it.",
+  "session.usageRangeEvidence": "Session usage range evidence",
+  "session.usageRangeLimits": "Ranges are disjoint and half-open. Reads are separate snapshots. Missing-execution counts are range-local and must not be summed. Counts after each subtotal are measured / unavailable responses.",
+  "session.rangeMissingExecutions": "Executions without a response in this range",
+  "session.rangeMissingCompactions": "Context actions without a response in this range",
+  "session.savedModelChip": "Saved model: {v0}",
+  "session.savedEffortChip": "Saved reasoning effort: {v0}",
+  "session.savedSelections": "Saved selections",
+  "session.prStateOpen": "Open pull request",
+  "session.prStateMerged": "Merged pull request",
+  "session.prStateClosed": "Closed pull request without merge",
+  "session.prStateUnavailable": "Pull request state unavailable"
 }
