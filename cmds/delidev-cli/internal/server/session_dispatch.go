@@ -339,6 +339,13 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 // converting or replacing the original native assignment. Legacy operations
 // retain their existing capability contract; only new executions require v4.
 func checkedExecutionSource(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput) error {
+	var preparation workspace.PrepareRequest
+	if domain.Decode(input.Preparation, &preparation) != nil {
+		return workspace.ResultUncertain()
+	}
+	if preparation.HasNamedDirectories() && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+		return workspace.NamedDirectoriesUnsupported()
+	}
 	if input.NativeImageGeneration && !slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1) {
 		return domain.Fail(domain.Unsupported, "The original Runner Device no longer supports generated images.", "Restore its original Worker profile before continuing this execution.")
 	}
@@ -385,6 +392,9 @@ func checkedExecutionWorkspace(tx *store.Tx, sr store.Record, session domain.Ses
 	var manifest workspace.Manifest
 	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID || request.MachineID != session.MachineID || request.Type != session.Workspace || workspace.ValidateResult(request, manifest, machine.OS) != nil {
 		return empty, workspace.ResultUncertain()
+	}
+	if request.HasNamedDirectories() && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+		return empty, workspace.NamedDirectoriesUnsupported()
 	}
 	if err := validateLocalOrigin(tx, session); err != nil {
 		return empty, err

@@ -101,6 +101,7 @@ type WorkerCapability string
 const (
 	CodexReadOnlySidechatWorkerV1 WorkerCapability = "codex-read-only-sidechat-v1"
 	ManagedCodexSidechatV1        WorkerCapability = "managed-codex-sidechat-v1"
+	NamedManagedDirectoriesV1     WorkerCapability = "named-managed-directories-v1"
 	RemoteWorkspaceCloneV1        WorkerCapability = "remote-workspace-clone-v1"
 	BranchPrefixInstructionsV1    WorkerCapability = "branch-prefix-instructions-v1"
 

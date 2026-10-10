@@ -519,6 +519,9 @@ func (m *Manager) Storage(ctx context.Context, r StorageRequest) (result Storage
 	return result, nil
 }
 func validateStorageRoot(root string, manifest Manifest) error {
+	if ValidateManifestDirectoryNames(manifest) != nil {
+		return ResultUncertain()
+	}
 	// The managed root has a fixed private writable mode. Reject a changed root
 	// before capture or rename; a snapshot cannot authorize a foreign mode.
 	info, err := os.Lstat(root)
@@ -534,10 +537,10 @@ func validateStorageRoot(root string, manifest Manifest) error {
 		allowed["chat"] = true
 	}
 	for _, repo := range manifest.Repositories {
-		if !repo.Owned || repo.Path != filepath.Join(root, string(repo.ID)) {
+		if !repo.Owned || repo.Path != filepath.Join(root, repositoryDirectory(repo.ID, repo.DirectoryName)) {
 			return ResultUncertain()
 		}
-		allowed[string(repo.ID)] = true
+		allowed[repositoryDirectory(repo.ID, repo.DirectoryName)] = true
 	}
 	for _, entry := range entries {
 		if !allowed[entry.Name()] {

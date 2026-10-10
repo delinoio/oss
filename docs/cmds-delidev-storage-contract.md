@@ -1,5 +1,11 @@
 # DeliDev storage operations
 
+## Frozen managed-directory layouts
+
+Worker snapshots, cleanup, permanent deletion and restore use the immutable preparation's optional `directory_name` and matching prepared repository field under the [workspace contract](cmds-delidev-workspace-contract.md#immutable-named-managed-directories). UUIDs remain repository identities; historical omission preserves existing UUID live components and serialized version 1. Named snapshots preserve the exact frozen live components, Git stores and designated primary cwd. Restore never derives paths from current Repository registration or renames accepted resources.
+
+Require the original native directory/publication proofs, immutable request and manifest digests, no-replace publication and independently joined cleanup. Validate portable components and complete case-folded membership before path derivation; tampered names, links and foreign directories grant no execution or removal authority. Named storage acceptance, assignment and Worker execution require separate named-directory negotiation. Unsupported peers receive no named restore request or UUID substitution. Local and Sidechat references retain independent non-owned paths. These optional private JSON fields add no SQLite migration.
+
 ## API format generation storage
 
 Capability 9 keeps bounded server-owned generations in account JSON, with no

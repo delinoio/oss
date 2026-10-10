@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -225,6 +226,15 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		input := workspace.StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: action}
 		if domain.Decode(job.Input, &input.Preparation) != nil || domain.Decode(job.Output, &input.Manifest) != nil {
 			return nil, workspace.ResultUncertain()
+		}
+		if input.Preparation.HasNamedDirectories() {
+			_, machine, err := activeMachine(tx, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+				return nil, workspace.NamedDirectoriesUnsupported()
+			}
 		}
 		wasStored := session.Storage != nil && session.Storage.State == domain.WorkspaceStored
 		if wasStored {

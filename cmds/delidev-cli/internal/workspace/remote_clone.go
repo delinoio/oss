@@ -297,7 +297,7 @@ func verifyIndependentDirectory(repo PreparedRepository, ready bool) error {
 }
 
 func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, root string, spec RepositorySpec, manifest *Manifest, write func() error) (PreparedRepository, *forkCopy, error) {
-	prepared := PreparedRepository{ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Path: filepath.Join(root, string(spec.ID)), Owned: true, Base: spec.Base, Starting: spec.Starting, PRTarget: spec.PRTarget}
+	prepared := PreparedRepository{ID: spec.ID, DirectoryName: spec.DirectoryName, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Path: filepath.Join(root, repositoryDirectory(spec.ID, spec.DirectoryName)), Owned: true, Base: spec.Base, Starting: spec.Starting, PRTarget: spec.PRTarget}
 	prepared.Source = prepared.Path
 	manifest.Repositories = append(manifest.Repositories, prepared)
 	entry := &manifest.Repositories[len(manifest.Repositories)-1]

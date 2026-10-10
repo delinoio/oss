@@ -19,7 +19,7 @@ func restoredDirectoryIdentity(root string, manifest Manifest) (string, error) {
 		paths = append(paths, filepath.Join(root, "chat"))
 	}
 	for _, repo := range manifest.Repositories {
-		path := filepath.Join(root, string(repo.ID))
+		path := filepath.Join(root, repositoryDirectory(repo.ID, repo.DirectoryName))
 		paths = append(paths, path, filepath.Join(path, ".git"))
 	}
 	identities := make([]string, 0, len(paths))
@@ -67,7 +67,7 @@ func sourceWorkspaceDirectoryIdentity(root string, manifest Manifest) (string, e
 		paths = append(paths, filepath.Join(root, "chat"))
 	}
 	for _, repo := range manifest.Repositories {
-		paths = append(paths, filepath.Join(root, string(repo.ID)))
+		paths = append(paths, filepath.Join(root, repositoryDirectory(repo.ID, repo.DirectoryName)))
 	}
 	identities := make([]string, 0, len(paths))
 	for _, path := range paths {

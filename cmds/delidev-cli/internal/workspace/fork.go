@@ -218,6 +218,7 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 			spec.SourceKind, spec.RemoteURL = LocalCheckoutSource, repo.RemoteURL
 		}
 		if kind == domain.Worktree {
+			spec.DirectoryName = repo.DirectoryName
 			if repo.SourceKind.managed() || repo.SourceKind == LocalCheckoutSource {
 				spec.SourceKind, spec.RemoteURL = IndependentForkSource, repo.RemoteURL
 			} else {

@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -178,6 +179,9 @@ func validateSessionSelection(tx *store.Tx, input domain.CreateSession) error {
 		if input.Workspace == domain.Worktree {
 			if _, err := domain.ParseRepositoryCloneURL(repo.RemoteURL); err != nil {
 				return err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+				return workspace.NamedDirectoriesUnsupported()
 			}
 			if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
 				return domain.Fail(domain.Unsupported, "The selected Runner Device does not support remote workspace cloning.", "Update and reconnect that Worker before starting a Worktree session.")

@@ -63,6 +63,10 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && project.EffectiveFetch(settings.AutomaticFetch) && repo.AutoFetch}
 		if session.Workspace == domain.Worktree {
 			spec.SourceKind, spec.RemoteURL = workspace.RemoteCloneSource, repo.RemoteURL
+			spec.DirectoryName, err = workspace.PortableRepositoryDirectory(repo.Name)
+			if err != nil {
+				return input, err
+			}
 		}
 		for _, checkout := range repo.Checkouts {
 			if session.Workspace == domain.Local && checkout.MachineID == session.MachineID {
@@ -85,6 +89,9 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		}
 		input.Repositories = append(input.Repositories, spec)
 	}
+	if err := workspace.ValidateDirectoryNames(input); err != nil {
+		return input, err
+	}
 	return input, nil
 }
 
@@ -92,6 +99,9 @@ func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, 
 	_, machine, err := activeMachine(tx, session.MachineID)
 	if err != nil {
 		return err
+	}
+	if input.HasNamedDirectories() && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+		return workspace.NamedDirectoriesUnsupported()
 	}
 	for _, repo := range input.Repositories {
 		if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {

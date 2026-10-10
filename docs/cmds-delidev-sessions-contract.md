@@ -1,5 +1,9 @@
 # DeliDev session acceptance and input queue contract
 
+## Frozen repository directory names
+
+Session and Schedule occurrence acceptance freeze each registered Worktree Repository name through the Go-owned portable conversion in the [workspace contract](cmds-delidev-workspace-contract.md#immutable-named-managed-directories). Reject complete layout collisions before preparation side effects and require named-directory Worker negotiation before new acceptance and assignment. Later registration renames affect only later sessions; accepted preparation bytes and original execution cwd remain unchanged. The designated primary repository controls cwd independently of repository order. Historical omission, Local folders, General Chat and Sidechat references retain their existing behavior and authority.
+
 ## API format generations
 
 Capability 9 changes only the current account generation for new sessions. All

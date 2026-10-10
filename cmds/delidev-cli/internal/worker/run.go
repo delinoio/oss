@@ -42,6 +42,7 @@ type Config struct {
 	quotaBlockSupported      bool
 	inspectionMetadata       bool
 	remoteWorkspaceClone     bool
+	namedManagedDirectories  bool
 	repositoryClone          bool
 	updatesEnabled           bool
 	terminals                *terminalManager
@@ -426,6 +427,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1)
 			}
@@ -552,6 +556,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
+			config.namedManagedDirectories = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1) && machineCapability(attached.Msg.Machine, domain.NamedManagedDirectoriesV1)
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
@@ -1127,6 +1132,13 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	return result, nil
 }
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
+	named, nameErr := workspace.JobHasNamedDirectories(job)
+	if nameErr != nil {
+		return nil, nameErr
+	}
+	if named && !config.namedManagedDirectories {
+		return nil, workspace.NamedDirectoriesUnsupported()
+	}
 	root := config.Root
 	switch job.Type {
 	case domain.CompactSessionJob:
@@ -1149,6 +1161,13 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if err := domain.Decode(job.Input, &input); err != nil {
 			return nil, err
 		}
+		named, err := workspace.ForkHasNamedDirectories(input)
+		if err != nil {
+			return nil, err
+		}
+		if named && !config.namedManagedDirectories {
+			return nil, workspace.NamedDirectoriesUnsupported()
+		}
 		clones, err := workspace.ForkRequiresManagedClone(input)
 		if err != nil {
 			return nil, err
@@ -1167,6 +1186,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		var input workspace.StorageRequest
 		if err := workspace.DecodeStorageRequest(job.Input, &input); err != nil {
 			return nil, err
+		}
+		if input.Preparation.HasNamedDirectories() && !config.namedManagedDirectories {
+			return nil, workspace.NamedDirectoriesUnsupported()
 		}
 		if input.Action == workspace.StorageRecover {
 			if input.Recovery == nil {
@@ -1243,6 +1265,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		}
 		if input.MachineID != job.MachineID {
 			return nil, domain.Fail(domain.PermissionDenied, "Workspace preparation targets another machine.", "Reconcile the accepted assignment before retrying.")
+		}
+		if input.HasNamedDirectories() && !config.namedManagedDirectories {
+			return nil, workspace.NamedDirectoriesUnsupported()
 		}
 		for _, repo := range input.Repositories {
 			if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !config.remoteWorkspaceClone {

@@ -54,7 +54,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 	}
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
-			if path == string(repo.ID)+"/.git" || strings.HasPrefix(path, string(repo.ID)+"/.git/") {
+			if path == repositoryDirectory(repo.ID, repo.DirectoryName)+"/.git" || strings.HasPrefix(path, repositoryDirectory(repo.ID, repo.DirectoryName)+"/.git/") {
 				return true
 			}
 		}
@@ -72,7 +72,7 @@ func (m *Manager) createSnapshot(ctx context.Context, r StorageRequest, identity
 		return empty, ResultUncertain()
 	}
 	for _, repo := range r.Manifest.Repositories {
-		if err := m.copySnapshotGitBudget(ctx, r.Preparation.SessionID, repo, filepath.Join(staging, "workspace", string(repo.ID)), &budget); err != nil {
+		if err := m.copySnapshotGitBudget(ctx, r.Preparation.SessionID, repo, filepath.Join(staging, "workspace", repositoryDirectory(repo.ID, repo.DirectoryName)), &budget); err != nil {
 			return empty, err
 		}
 	}
@@ -350,7 +350,7 @@ func (m *Manager) inspectSnapshotContent(ctx context.Context, id domain.ID) (sna
 		return snapshot, metadata, ResultUncertain()
 	}
 	for _, repo := range snapshot.Workspace.Repositories {
-		if err := m.validateSnapshotGit(ctx, snapshot.Workspace.SessionID, repo, filepath.Join(root, "workspace", string(repo.ID))); err != nil {
+		if err := m.validateSnapshotGit(ctx, snapshot.Workspace.SessionID, repo, filepath.Join(root, "workspace", repositoryDirectory(repo.ID, repo.DirectoryName))); err != nil {
 			return snapshot, metadata, err
 		}
 	}
@@ -432,7 +432,7 @@ func (m *Manager) storageObservation(ctx context.Context, r StorageRequest) (sto
 	root := filepath.Join(m.Root, "workspaces", string(r.Preparation.SessionID))
 	skip := func(path string) bool {
 		for _, repo := range r.Manifest.Repositories {
-			if path == string(repo.ID)+"/.git" || strings.HasPrefix(path, string(repo.ID)+"/.git/") {
+			if path == repositoryDirectory(repo.ID, repo.DirectoryName)+"/.git" || strings.HasPrefix(path, repositoryDirectory(repo.ID, repo.DirectoryName)+"/.git/") {
 				return true
 			}
 		}

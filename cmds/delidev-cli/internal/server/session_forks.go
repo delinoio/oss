@@ -205,6 +205,19 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
 		}
+		named, err := workspace.ForkHasNamedDirectories(input)
+		if err != nil {
+			return nil, err
+		}
+		if named {
+			_, machine, err := activeMachine(tx, session.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+				return nil, workspace.NamedDirectoriesUnsupported()
+			}
+		}
 		clones, err := workspace.ForkRequiresManagedClone(input)
 		if err != nil {
 			return nil, err
@@ -319,6 +332,19 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if input.Retry != nil {
 		return validateSidechatRetryForkAuthority(tx, input)
+	}
+	named, err := workspace.ForkHasNamedDirectories(input)
+	if err != nil {
+		return err
+	}
+	if named {
+		_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+			return workspace.NamedDirectoriesUnsupported()
+		}
 	}
 	clones, err := workspace.ForkRequiresManagedClone(input)
 	if err != nil {

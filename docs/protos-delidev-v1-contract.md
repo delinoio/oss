@@ -1,5 +1,11 @@
 # DeliDev v1 Connect contract
 
+## Named managed-directory negotiation
+
+WorkerCapability `NAMED_MANAGED_DIRECTORIES_V1` owns value 55, independently of remote clone capability 19. The allocation is recorded with the complete feature declaration and generated Go/TypeScript bindings. No System capability, public RPC/message field or database migration is added.
+
+Optional private RepositorySpec and PreparedRepository `directory_name` fields retain version 1 and historical serialized omission under the [workspace contract](cmds-delidev-workspace-contract.md#immutable-named-managed-directories). New named Session/Schedule acceptance, assignment and execution require value 55 in addition to existing clone/native eligibility. Named independent Fork and storage restore require the same separate gate at acceptance and current assignment; the Worker independently verifies negotiated support before side effects. Reconnection or capability loss cannot reinterpret accepted named requests as UUID requests. Historical omitted fields preserve their original UUID paths and capability contract. Capability advertisement grants implementation support only, not fixture/native/account/platform acceptance.
+
 ## Machine heartbeat read projection
 
 Machine Get, List and Snapshot Resources project the exact Machine's current

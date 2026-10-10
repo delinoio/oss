@@ -39,6 +39,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err := domain.Decode(job.Input, &input); err != nil {
 		return nil, err
 	}
+	var namedPreparation workspace.PrepareRequest
+	if domain.Decode(input.Preparation, &namedPreparation) != nil {
+		return nil, workspace.ResultUncertain()
+	}
+	if namedPreparation.HasNamedDirectories() && !config.namedManagedDirectories {
+		return nil, workspace.NamedDirectoriesUnsupported()
+	}
 	if err := input.Validate(); err != nil {
 		if config.Logger != nil {
 			config.Logger.WarnContext(ctx, "native_execution_settings_rejected", "job_id", owner, "stage", "assignment-validation", "options", input.Configuration.SelectedNativeOptionNames(), "code", domain.SafeError(err).Code)
