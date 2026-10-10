@@ -185,28 +185,11 @@ func (c *Client) ReadGoal(ctx context.Context, request domain.ID) (*Goal, error)
 	if err := c.verifyGoalsLocked(ctx); err != nil {
 		return nil, err
 	}
-	response, err := c.wire.Call(ctx, request, "thread/goal/get", struct {
-		Thread domain.ID `json:"threadId"`
-	}{c.thread})
-	if err != nil {
-		return nil, err
+	goal, err := c.readGoalLocked(ctx, request, c.thread)
+	if err == nil {
+		c.execution.goal, c.execution.goalKnown = goal, true
 	}
-	var observed struct {
-		Goal json.RawMessage `json:"goal"`
-	}
-	if response.ErrorCode != nil || domain.Decode(response.Result, &observed) != nil || len(observed.Goal) == 0 {
-		return nil, goalUncertain()
-	}
-	if string(observed.Goal) == "null" {
-		c.execution.goal, c.execution.goalKnown = nil, true
-		return nil, nil
-	}
-	goal, err := DecodeGoal(observed.Goal, c.thread)
-	if err != nil {
-		return nil, err
-	}
-	c.execution.goal, c.execution.goalKnown = &goal, true
-	return &goal, nil
+	return goal, err
 }
 
 // MutateGoal never retries the native wire, including after a definitive error.
@@ -353,4 +336,22 @@ func (c *Client) observeGoalLocked(native nativewire.Event) (Event, error) {
 	}
 	c.execution.goal, c.execution.goalKnown = observed.Goal, true
 	return Event{Kind: GoalObservedEvent, ThreadID: thread, TurnID: turn, Goal: observed, Correlated: true}, nil
+}
+
+// Goal tool outputs are private native content. Validate their closed original
+// shape and name but never treat their text/JSON as product authorization,
+// an action receipt, a budget override or a native completion observation.
+func nativeGoalToolOutput(raw json.RawMessage) bool {
+	var item struct {
+		Type      string          `json:"type"`
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Namespace json.RawMessage `json:"namespace"`
+		Output    json.RawMessage `json:"output"`
+	}
+	if domain.DecodeBounded(raw, &item, 32768) != nil || item.Type != "functionCallOutput" || domain.Text(item.ID, "native goal tool identity", 1024, true) != nil || !slices.Contains([]string{"create_goal", "get_goal", "update_goal"}, item.Name) || string(item.Namespace) != "null" {
+		return false
+	}
+	var text string
+	return domain.Decode(item.Output, &text) == nil && domain.Text(text, "native goal tool output", 20000, false) == nil
 }

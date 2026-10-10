@@ -114,9 +114,12 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if assignment.Fork != nil {
 		historyID = assignment.Fork.RuntimeID
 	}
-	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ContextRevision: assignment.ContextRevision, ApprovalsReviewer: assignment.Configuration.Options.ApprovalsReviewer, Subscription: assignment.Configuration.Subscription, JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+	checkpoint, err := ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{NativeGoals: assignment.NativeGoals, ContextRevision: assignment.ContextRevision, ApprovalsReviewer: assignment.Configuration.Options.ApprovalsReviewer, Subscription: assignment.Configuration.Subscription, JobID: input.SourceJobID, SessionID: input.SourceSessionID, MachineID: job.MachineID, HistoryExecutionID: historyID, AssignmentInputDigest: executionInputDigest(mustForkJSON(assignment)), ConfigurationDigest: assignment.ConfigurationDigest, AccountID: assignment.AccountID, ConnectionID: assignment.ConnectionID, Completion: input.Completion, InputMode: assignment.Input.Mode, PromptDigest: assignment.Input.InputDigest(), AcceptedInputs: input.Progress.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 	if err != nil {
 		return nil, err
+	}
+	if input.Purpose == domain.SidechatFork && checkpoint.Native.GoalHistory != nil {
+		return nil, domain.SidechatUnavailable()
 	}
 	if assignment.Version != 4 && !domain.CodexVersionAllowed(assignment.Installation.Version) {
 		return nil, executionCheckpointUncertain()
@@ -186,7 +189,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	}
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
-	sourceConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
+	sourceConfig := codex.Config{EnableNativeGoals: assignment.NativeGoals, RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
 		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
@@ -294,7 +297,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	nativeConfig := codex.Config{EnableNativeGoals: assignment.NativeGoals && input.Purpose == domain.IndependentFork, RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}
@@ -396,6 +399,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 		return nil, executionCheckpointUncertain()
 	}
 	native := checkpoint.Native
+	native.GoalHistory = bound.GoalHistory
 	native.ContextRevision = 0
 	native.PaginatedHistory = bound.Thread.History == codex.PaginatedHistory
 	native.ThreadID, native.SessionID, native.Effective = bound.Thread.ID, bound.Thread.SessionID, *bound.Effective

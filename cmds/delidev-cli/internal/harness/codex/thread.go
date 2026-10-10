@@ -103,6 +103,7 @@ type EffectiveSettings struct {
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
 	NativeGoalsEnabled bool
+	GoalHistory        *GoalHistoryCheckpoint
 	SkillInputs        []HistoricalInput `json:"-"`
 	RequestID          domain.ID
 	Thread             *Thread

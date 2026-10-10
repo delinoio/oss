@@ -331,6 +331,9 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	}
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
 	input.NativeGoals = input.Configuration.Harness == domain.Codex && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeCodexGoalsV1)
+	if input.Continuation != nil {
+		input.NativeGoals = input.Continuation.Previous.Observed.NativeGoalsEnabled
+	}
 	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
 	input.Preparation, input.Manifest = job.Input, job.Output
 	return input, input.Validate()

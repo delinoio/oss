@@ -52,6 +52,7 @@ func (p ForkHistoryCheckpoint) matches(turns []json.RawMessage) bool {
 }
 
 type ContinuationCheckpoint struct {
+	GoalHistory      *GoalHistoryCheckpoint         `json:",omitempty"`
 	PaginatedHistory bool                           `json:",omitempty"`
 	ContextRevision  uint64                         `json:",omitempty"`
 	Context          *ContinuationContextCheckpoint `json:",omitempty"`
@@ -70,6 +71,9 @@ func continuationUncertain() *domain.Error {
 }
 
 func (p ContinuationCheckpoint) validate(intent ContinuationIntent) error {
+	if p.GoalHistory != nil && p.GoalHistory.validate(p.ThreadID) != nil {
+		return goalUncertain()
+	}
 	for _, id := range []domain.ID{p.ThreadID, p.SessionID, p.TurnID} {
 		if err := id.Validate(); err != nil {
 			return err
@@ -137,6 +141,25 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
 		return result, err
 	}
+	if checkpoint.GoalHistory != nil {
+		if !c.nativeGoals {
+			return mismatch()
+		}
+		turns, err := c.compactionTurnsLocked(ctx)
+		if err != nil || !checkpoint.GoalHistory.matches(turns) {
+			return mismatch()
+		}
+		goal, err := c.readGoalLocked(ctx, domain.NewID(), c.thread)
+		if err != nil || !sameGoalSnapshot(checkpoint.GoalHistory.Goal, goal, c.thread) || goal != nil && goal.Status == GoalActive {
+			return mismatch()
+		}
+		state.goal, state.goalKnown = goal, true
+		raw, _ := json.Marshal(checkpoint.GoalHistory)
+		state.goalBase = &GoalHistoryCheckpoint{}
+		if domain.Decode(raw, state.goalBase) != nil {
+			return mismatch()
+		}
+	}
 	if checkpoint.ForkHistory != nil {
 		turns, err := c.forkTurnsLocked(ctx, c.thread)
 		if err != nil || !c.managedForkHistory || !checkpoint.ForkHistory.matches(turns) {
@@ -162,6 +185,21 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 		return result, nativeRejected(*response.ErrorCode)
 	}
 	turn, err := decodeContinuation(response.Result, checkpoint, c.nativeImageInput)
+	if checkpoint.GoalHistory != nil {
+		var page struct {
+			Data []json.RawMessage `json:"data"`
+			Next *string           `json:"nextCursor"`
+			Back *string           `json:"backwardsCursor"`
+		}
+		if domain.DecodeBounded(response.Result, &page, 16<<20) != nil || len(page.Data) != 1 {
+			return mismatch()
+		}
+		var inputs []HistoricalInput
+		turn, inputs, err = decodeGoalTurnInputs(page.Data[0], c.nativeImageInput)
+		if err != nil || turn.ID != checkpoint.TurnID || turn.Status != checkpoint.Status || slices.Contains(checkpoint.GoalHistory.OwnedTurns, turn.ID) && len(inputs) != 0 || !slices.Contains(checkpoint.GoalHistory.OwnedTurns, turn.ID) && !slices.Equal(inputs, checkpoint.Inputs) {
+			return mismatch()
+		}
+	}
 	if err != nil {
 		return mismatch()
 	}
@@ -175,8 +213,14 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	}
 	retained := trackedTurn{Turn: turn, Mode: checkpoint.Mode}
 	for _, input := range checkpoint.Inputs {
-		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, SkillDigest: input.SkillDigest, TurnID: turn.ID}
-		retained.Inputs = append(retained.Inputs, input.ID)
+		inputTurn := turn.ID
+		if checkpoint.GoalHistory != nil {
+			inputTurn = checkpoint.GoalHistory.InputTurnID
+		}
+		state.inputs[input.ID] = inputAttempt{Digest: input.PromptDigest, SkillDigest: input.SkillDigest, TurnID: inputTurn}
+		if checkpoint.GoalHistory == nil || checkpoint.GoalHistory.InputTurnID == turn.ID {
+			retained.Inputs = append(retained.Inputs, input.ID)
+		}
 	}
 	state.turns[turn.ID] = retained
 	state.continuationPending, state.paused = false, false

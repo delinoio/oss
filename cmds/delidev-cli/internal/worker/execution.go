@@ -178,7 +178,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if c.PreviousAccountID != "" {
 			account, connection = c.PreviousAccountID, c.PreviousConnectionID
 		}
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{NativeGoals: c.Previous.Observed.NativeGoalsEnabled, ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
 		if err != nil {
 			return nil, err
 		}
@@ -435,6 +435,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
+		if err := client.VerifyGoalBeforeResume(ctx, checkpoint.Native); err != nil {
+			return nil, err
+		}
 		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
 		if err == nil {
 			intent := codex.ContinueAfterSuccess
@@ -448,6 +451,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}
 	} else if f := input.Fork; f != nil {
+		if err := client.VerifyGoalBeforeResume(ctx, checkpoint.Native); err != nil {
+			return nil, err
+		}
 		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
 		if err == nil {
 			_, err = client.VerifyContinuation(ctx, f.HistoryRequestID, checkpoint.Native, codex.ContinueAfterSuccess)
@@ -645,6 +651,13 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 			original := codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
+			if input.NativeGoals {
+				bound.GoalHistory, err = client.RetainGoalHistory(ctx, original)
+				if err != nil {
+					return nil, err
+				}
+				original.GoalHistory = bound.GoalHistory
+			}
 			contextProof, err = client.RetainContinuationContext(ctx, original)
 			if err != nil {
 				return nil, err

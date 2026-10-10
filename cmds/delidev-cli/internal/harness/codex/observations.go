@@ -17,6 +17,7 @@ const (
 	RemoteControlDisabled    MetadataKind = "remote-control-disabled"
 	QuotaUnavailable         MetadataKind = "quota-unavailable"
 	RawSupplementDiscarded   MetadataKind = "raw-supplement-discarded"
+	NativeGoalToolObserved   MetadataKind = "native-goal-tool-observed"
 	NativeGoalAbsent         MetadataKind = "native-goal-absent"
 	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
 	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"

@@ -7,6 +7,7 @@ import (
 )
 
 type turnWire struct {
+	RootTurnID  *domain.ID        `json:"rootTurnId,omitempty"`
 	ID          domain.ID         `json:"id"`
 	Items       []json.RawMessage `json:"items"`
 	ItemsView   string            `json:"itemsView"`
@@ -19,7 +20,7 @@ type turnWire struct {
 
 func decodeTurn(raw json.RawMessage) (Turn, error) {
 	var wire turnWire
-	if domain.DecodeBounded(raw, &wire, 16<<20) != nil || wire.ID.Validate() != nil || wire.Items == nil {
+	if domain.DecodeBounded(raw, &wire, 16<<20) != nil || wire.ID.Validate() != nil || wire.RootTurnID != nil && wire.RootTurnID.Validate() != nil || wire.Items == nil {
 		return Turn{}, incompatible()
 	}
 	if wire.Status != TurnRunning && !wire.Status.terminal() {
@@ -38,7 +39,7 @@ func decodeTurn(raw json.RawMessage) (Turn, error) {
 	if wire.Status == TurnRunning && (wire.CompletedAt != nil || wire.DurationMS != nil) {
 		return Turn{}, incompatible()
 	}
-	result := Turn{ID: wire.ID, Status: wire.Status, StartedAt: wire.StartedAt, CompletedAt: wire.CompletedAt, DurationMS: wire.DurationMS}
+	result := Turn{RootTurnID: wire.RootTurnID, ID: wire.ID, Status: wire.Status, StartedAt: wire.StartedAt, CompletedAt: wire.CompletedAt, DurationMS: wire.DurationMS}
 	hasError := len(wire.Error) > 0 && string(wire.Error) != "null"
 	if hasError {
 		var failure struct {

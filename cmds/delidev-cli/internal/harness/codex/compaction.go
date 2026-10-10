@@ -426,6 +426,10 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 				}
 				items[item.ID] = true
 				switch item.Type {
+				case "functionCallOutput":
+					if !c.nativeGoals || !nativeGoalToolOutput(rawItem) {
+						return nil, goalUncertain()
+					}
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
 				case "commandExecution", "fileChange", "imageView":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {

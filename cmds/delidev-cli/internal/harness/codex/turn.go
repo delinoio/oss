@@ -24,6 +24,7 @@ func (s TurnStatus) terminal() bool {
 }
 
 type Turn struct {
+	RootTurnID  *domain.ID
 	QuotaBlock  domain.CodexQuotaBlock
 	ID          domain.ID
 	Status      TurnStatus
@@ -72,6 +73,7 @@ type inputAttempt struct {
 type executionState struct {
 	goal                *Goal
 	goalKnown           bool
+	goalBase            *GoalHistoryCheckpoint
 	goalTurns           map[domain.ID]bool
 	autoReviews         map[domain.ID]domain.AutoReviewState
 	autoReviewPayloads  map[string][32]byte

@@ -9,6 +9,7 @@ import (
 // ExecutionRecoveryRequest contains comparison facts only. It cannot authorize
 // native input, replace the original assignment, or mint execution credentials.
 type ExecutionRecoveryRequest struct {
+	NativeGoals           bool                        `json:"native_goals,omitempty"`
 	ApprovalsReviewer     ApprovalsReviewer           `json:"approvals_reviewer,omitempty"`
 	ContextRevision       uint64                      `json:"context_revision,omitempty"`
 	Revert                *SessionRevertRecovery      `json:"revert,omitempty"`
@@ -43,6 +44,9 @@ func ExecutionRecoveryUncertain() *Error {
 }
 
 func (r ExecutionRecoveryRequest) Validate() error {
+	if r.NativeGoals && r.NativeHarness() != Codex {
+		return ExecutionRecoveryUncertain()
+	}
 	if r.Revert != nil {
 		return r.validateRevertRecovery()
 	}

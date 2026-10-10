@@ -552,6 +552,15 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "functionCallOutput":
+		if !c.nativeGoals || !nativeGoalToolOutput(params.Item) {
+			return privateNative(native), nil
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known || turn.Turn.Status.terminal() {
+			return Event{}, goalUncertain()
+		}
+		return Event{Kind: MetadataEvent, Metadata: NativeGoalToolObserved, ThreadID: c.thread, TurnID: params.TurnID, Correlated: true}, nil
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

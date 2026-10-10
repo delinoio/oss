@@ -4,6 +4,7 @@ package codex
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -58,14 +59,33 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 	if err != nil || !forkableMetadata(wire, checkpoint) {
 		return nil, unsupportedFork()
 	}
-	if err := c.noForkWorkLocked(ctx, checkpoint.ThreadID); err != nil {
+	if checkpoint.GoalHistory != nil && (!c.nativeGoals || c.sidechat != "" || checkpoint.GoalHistory.validate(checkpoint.ThreadID) != nil) {
+		return nil, unsupportedFork()
+	}
+	var expectedGoal []json.RawMessage
+	if checkpoint.GoalHistory != nil {
+		expectedGoal = []json.RawMessage{checkpoint.GoalHistory.Goal}
+	}
+	if err := c.noForkWorkLocked(ctx, checkpoint.ThreadID, expectedGoal...); err != nil {
 		return nil, err
 	}
-	turns, err := c.forkTurnsLocked(ctx, checkpoint.ThreadID)
+	turns, err := c.forkTurnsProfileLocked(ctx, checkpoint.ThreadID, checkpoint.GoalHistory)
 	if err != nil {
 		return nil, err
 	}
 	last, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
+	if checkpoint.GoalHistory != nil {
+		if !checkpoint.GoalHistory.matches(turns) {
+			return nil, continuationUncertain()
+		}
+		last, inputs, err = decodeGoalTurnInputs(turns[len(turns)-1], c.nativeImageInput)
+		if slices.Contains(checkpoint.GoalHistory.OwnedTurns, checkpoint.TurnID) {
+			if len(inputs) != 0 {
+				return nil, continuationUncertain()
+			}
+			inputs = checkpoint.Inputs
+		}
+	}
 	if err != nil || last.ID != checkpoint.TurnID || last.Status != TurnCompleted || !slices.Equal(inputs, checkpoint.Inputs) {
 		return nil, continuationUncertain()
 	}
@@ -88,7 +108,10 @@ func forkableMetadata(wire threadWire, checkpoint ContinuationCheckpoint) bool {
 	return wire.ID == checkpoint.ThreadID && wire.SessionID == checkpoint.SessionID && wire.ParentThreadID == nil && (wire.summary().History == LegacyHistory || checkpoint.PaginatedHistory && wire.summary().History == PaginatedHistory) && (wire.Status.Type == ThreadIdle || wire.Status.Type == ThreadNotLoaded) && (wire.CanAcceptDirectInput == nil || *wire.CanAcceptDirectInput) && nativePathEqual(wire.Cwd, checkpoint.Effective.Cwd) && wire.ModelProvider == checkpoint.Effective.Provider && (len(wire.Extra) == 0 || string(wire.Extra) == "null")
 }
 
-func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID) error {
+func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID, expected ...json.RawMessage) error {
+	if len(expected) > 1 || len(expected) > 0 && (!c.nativeGoals || c.sidechat != "") {
+		return unsupportedFork()
+	}
 	// The original source independently proved an empty goal before Fork.
 	// Sidechat's verified disabled Goals feature prevents inheritance/dispatch,
 	// and this installed version rejects goal/get when that feature is disabled.
@@ -104,7 +127,19 @@ func (c *Client) noForkWorkLocked(ctx context.Context, thread domain.ID) error {
 		var g struct {
 			Goal json.RawMessage `json:"goal"`
 		}
-		if goal.ErrorCode != nil || domain.Decode(goal.Result, &g) != nil || string(g.Goal) != "null" {
+		if goal.ErrorCode != nil || domain.Decode(goal.Result, &g) != nil {
+			return unsupportedFork()
+		}
+		validGoal := string(g.Goal) == "null"
+		if len(expected) == 1 {
+			observed, err := DecodeGoal(g.Goal, thread)
+			if string(g.Goal) == "null" {
+				validGoal = string(expected[0]) == "null"
+			} else {
+				validGoal = err == nil && observed.Status != GoalActive && sameGoalSnapshot(expected[0], &observed, thread)
+			}
+		}
+		if goal.ErrorCode != nil || domain.Decode(goal.Result, &g) != nil || !validGoal {
 			return unsupportedFork()
 		}
 	}
@@ -135,6 +170,9 @@ func marshalForkPage(turns []json.RawMessage) json.RawMessage {
 }
 
 func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.RawMessage, error) {
+	return c.forkTurnsProfileLocked(ctx, thread, nil)
+}
+func (c *Client) forkTurnsProfileLocked(ctx context.Context, thread domain.ID, goalHistory *GoalHistoryCheckpoint) ([]json.RawMessage, error) {
 	var turns []json.RawMessage
 	var cursor *string
 	seen := map[string]bool{}
@@ -160,6 +198,9 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 		}
 		for _, raw := range page.Data {
 			turn, _, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{raw}), c.nativeImageInput)
+			if goalHistory != nil {
+				turn, _, err = decodeGoalTurnInputs(raw, c.nativeImageInput)
+			}
 			if err != nil || turn.Status != TurnCompleted || seen[string(turn.ID)] {
 				return nil, unsupportedFork()
 			}
@@ -175,6 +216,13 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 				}
 				if json.Unmarshal(item, &identity) != nil {
 					return nil, unsupportedFork()
+				}
+				if goalHistory != nil && identity.Type == "functionCallOutput" && nativeGoalToolOutput(item) {
+					if seen["item:"+identity.ID] {
+						return nil, unsupportedFork()
+					}
+					seen["item:"+identity.ID] = true
+					continue
 				}
 				if c.managedForkHistory {
 					if seen["item:"+identity.ID] || !managedForkItem(item, identity.Type) {
@@ -316,12 +364,28 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		c.problem.Guidance = domain.SafeError(err).Guidance
 		return result, c.problem
 	}
-	turns, err := c.forkTurnsLocked(ctx, thread.ID)
+	turns, err := c.forkTurnsProfileLocked(ctx, thread.ID, source.checkpoint.GoalHistory)
 	if err != nil || !slices.EqualFunc(turns, source.turns, equivalentForkJSON) {
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
-	if err := c.noForkWorkLocked(ctx, thread.ID); err != nil {
+	var inheritedGoal []json.RawMessage
+	if source.checkpoint.GoalHistory != nil {
+		if !c.nativeGoals || c.sidechat != "" {
+			return result, unsupportedFork()
+		}
+		raw := source.checkpoint.GoalHistory.Goal
+		if string(raw) != "null" {
+			goal, err := DecodeGoal(raw, source.checkpoint.ThreadID)
+			if err != nil {
+				return result, goalUncertain()
+			}
+			goal.ThreadID = thread.ID
+			raw = goalJSON(&goal)
+		}
+		inheritedGoal = []json.RawMessage{raw}
+	}
+	if err := c.noForkWorkLocked(ctx, thread.ID, inheritedGoal...); err != nil {
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
@@ -330,6 +394,27 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		return result, c.problem
 	}
 	c.execution = newExecutionState(*thread, *effective)
+	if source.checkpoint.GoalHistory != nil {
+		if err := c.verifyGoalsLocked(ctx); err != nil {
+			return result, goalUncertain()
+		}
+		raw, _ := json.Marshal(source.checkpoint.GoalHistory)
+		proof := &GoalHistoryCheckpoint{}
+		if domain.Decode(raw, proof) != nil {
+			return result, goalUncertain()
+		}
+		proof.Goal = inheritedGoal[0]
+		if json.Unmarshal(wire.Path, &proof.RolloutPath) != nil {
+			return result, goalUncertain()
+		}
+		digest, err := forkRolloutDigest(ctx, c.home, proof.RolloutPath)
+		if err != nil {
+			return result, err
+		}
+		proof.RolloutDigest = hex.EncodeToString(digest[:])
+		result.GoalHistory = proof
+		result.NativeGoalsEnabled = true
+	}
 	c.execution.continuationPending = true
 	return result, nil
 }

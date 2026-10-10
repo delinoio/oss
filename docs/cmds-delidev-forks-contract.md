@@ -408,3 +408,7 @@ Automated fixtures and builds validate these boundaries. Installed native, real-
 ## Inherited elapsed observations (issue #2052)
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.
+
+## Native Goals history — issue #1996
+
+An independent Codex Fork may copy the complete verified original goal-bearing history and non-active native goal snapshot. Preserve original input attribution, native goal-only turns, complete history/rollout digests and once-only Fork claims. Require exact original native goal state and source reads before creation, native `deferGoalContinuation`, the returned child thread identity, identical copied history and independently captured child goal/rollout evidence. Never treat text markers as user authorization or infer a goal acknowledgment/cleanup from an observed absence. The Sidechat profile remains excluded from goal-bearing history and retains disabled Goals.

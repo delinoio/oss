@@ -156,6 +156,12 @@ func (c *Client) RetainContinuationContext(ctx context.Context, source Continuat
 		return nil, err
 	}
 	turn, inputs, err := decodeLatestTurnInputs(marshalForkPage(turns[len(turns)-1:]), c.nativeImageInput)
+	if source.GoalHistory != nil {
+		turn, inputs, err = decodeGoalTurnInputs(turns[len(turns)-1], c.nativeImageInput)
+		if slices.Contains(source.GoalHistory.OwnedTurns, source.TurnID) {
+			inputs = source.Inputs
+		}
+	}
 	if err != nil || turn.ID != source.TurnID || !slices.Equal(inputs, source.Inputs) {
 		return nil, compactionUncertain()
 	}
@@ -172,7 +178,7 @@ func (c *Client) RetainContinuationContext(ctx context.Context, source Continuat
 	current := map[domain.ID][]string{}
 	for _, owned := range s.contextOrder {
 		state, ok := s.compactionItems[string(owned.TurnID)+"/"+owned.LiveItemID]
-		if !ok || state.completedAt == nil || state.observation.Trigger != AutomaticCompaction || state.observation.ActionID != "" || owned.TurnID != source.TurnID {
+		if !ok || state.completedAt == nil || state.observation.Trigger != AutomaticCompaction || state.observation.ActionID != "" || owned.TurnID != source.TurnID && !(source.GoalHistory != nil && slices.Contains(source.GoalHistory.OwnedTurns, owned.TurnID)) {
 			return nil, compactionUncertain()
 		}
 		current[owned.TurnID] = append(current[owned.TurnID], owned.LiveItemID)
