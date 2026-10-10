@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -101,8 +102,9 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
     } catch (error) { setError(error); if (error === "invalid-input") setAttempt(undefined); }
     finally { setBusy(false); }
   };
+  const directoryPending = useSessionDirectoryPending();
   const operate = async (profile: SavedConnection) => {
-    if (busy) return;
+    if (busy || directoryPending) return;
     readGeneration.current++;
     setBusy(true); setError(undefined); setMessage("");
     try {
@@ -158,7 +160,7 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
       <h3>{profile.name}</h3><p>{profile.endpoint}</p><p><LocalizedText id="saved-connections.server_90ff00" components={{ s0: <>{profile.server_id}</> }} /></p>
       <p>{profile.state === SavedConnectionState.Paired ? copy(target ? "settings.connections.saved" : "saved-connections.pairingSavedCurrentAuthorizationIsChecked_c6a54e") : profile.state === SavedConnectionState.Removing ? copy("saved-connections.removalAcceptedOriginalClientCredentialCleanup_31d574") : copy("saved-connections.originalPairingPendingRetryRetainsIts_240c96")}</p>
       </div><div className="connections-row-actions">{profile.state !== SavedConnectionState.Removing ? <>
-        <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={busy || Boolean(attempt || edit || removal)} onClick={() => void operate(profile)}>{profile.state === SavedConnectionState.Paired ? copy("saved-connections.open_afaef5", { v0: profile.name }) : copy("saved-connections.retry_37e45a", { v0: profile.name })}</SettingsActionButton>
+        <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={directoryPending || busy || Boolean(attempt || edit || removal)} onClick={() => void operate(profile)}>{profile.state === SavedConnectionState.Paired ? copy("saved-connections.open_afaef5", { v0: profile.name }) : copy("saved-connections.retry_37e45a", { v0: profile.name })}</SettingsActionButton>
         <details className="connections-row-menu" open={!target ? true : undefined} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}><summary aria-label={copy("settings.connections.menu", { name: profile.name })}>⋯</summary><div><SettingsActionButton icon={SettingsActionIcon.Edit} disabled={busy || Boolean(attempt || edit || removal)} onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); setEdit({ profile, name: profile.name }); setError(undefined); setMessage(""); }}>{copy("saved-connections.rename_089ce7", { v0: profile.name })}</SettingsActionButton>
       <SettingsActionButton icon={SettingsActionIcon.Delete} disabled={busy || Boolean(attempt || edit || removal)} onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); beginRemoval(profile); }}>{copy("saved-connections.remove_86790c", { v0: profile.name })}</SettingsActionButton></div></details></> : <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={busy || Boolean(attempt || edit || removal)} onClick={event => { event.currentTarget.closest("details")?.querySelector("summary")?.focus(); beginRemoval(profile); }}>{copy("saved-connections.retryRemovalOf_def714", { v0: profile.name })}</SettingsActionButton>}</div>
     </li>)}</ul> : <p>{copy("saved-connections.noSavedServers_b0a3d9")}</p> : <p>{copy(fetching ? "settings.connections.loading" : "saved-connections.savedServerInventoryIsUnavailable_4a30fe")}</p>}

@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { useSessionActive } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -23,6 +24,8 @@ const settled = (resource: Resource) => {
 export function SessionForkAction({ source, forkOnly = false, disabled = false, onOpen }: { source: Resource; forkOnly?: boolean; disabled?: boolean; onOpen?: () => void }) {
   useLocale();
   const show = useContext(Context);
+  const directoryPending = useSessionDirectoryPending(source.id);
+  disabled ||= directoryPending || Boolean(document(source).directory_job_id);
   const active=useSessionActive();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active && Boolean(show) });
   const openCode = sourceHarness(source) === "opencode";

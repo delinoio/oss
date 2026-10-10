@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -27,10 +28,11 @@ export function QueuedInput({ resource, session, refresh, draft, changeDraft, re
   const edit = changeDraft ? draft : localEdit;
   const setEdit = changeDraft ?? setLocalEdit;
   const saved = (input?: Resource) => { if (input) setAccepted(input); setEdit(undefined); refresh(); };
-  const update = useRetainedMutation(`edit-input:${resource.id}`, SessionQuery.editQueuedInput, (result) => saved(result.change?.input));
-  const remove = useRetainedMutation(`remove-input:${resource.id}`, SessionQuery.removeQueuedInput, (result) => saved(result.change?.input));
-  const steer = useRetainedMutation(`steer-input:${resource.id}`, SessionQuery.steerQueuedInput, (result) => saved(result.change?.input));
-  const busy = readOnly || [update, remove, steer].some((operation) => operation.busy || operation.uncertain);
+  const update = useRetainedMutation(`edit-input:${resource.id}`, SessionQuery.editQueuedInput, (result) => saved(result.change?.input), undefined, false, undefined, resource.sessionId);
+  const remove = useRetainedMutation(`remove-input:${resource.id}`, SessionQuery.removeQueuedInput, (result) => saved(result.change?.input), undefined, false, undefined, resource.sessionId);
+  const steer = useRetainedMutation(`steer-input:${resource.id}`, SessionQuery.steerQueuedInput, (result) => saved(result.change?.input), undefined, false, undefined, resource.sessionId);
+  const directoryPending = useSessionDirectoryPending(resource.sessionId);
+  const busy = directoryPending || readOnly || [update, remove, steer].some((operation) => operation.busy || operation.uncertain);
   const sessionData = document(session), execution = object(sessionData.execution);
   const canSteer = !items(data.skills).length && !imageBound && sessionData.outcome === "running" && sessionData.archive === "active" && text(sessionData.active_execution_id) === text(execution.execution_id) && Boolean(text(execution.execution_id) && text(execution.native_turn_id));
   const mutation = () => ({ id: resource.id, expectedRevision: current.revision, requestId: newRequestId() });

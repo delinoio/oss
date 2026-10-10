@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
@@ -27,8 +28,9 @@ export function SessionTerminals({ session, close, active = true, presentationCh
   useLocale();
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
-  const latest = useRef({ active, session, finishOpenIntent, openTerminal });
-  latest.current = { active, session, finishOpenIntent, openTerminal };
+  const directoryPending = useSessionDirectoryPending(session.id) || Boolean(document(session).directory_job_id);
+  const latest = useRef({ active, session, finishOpenIntent, openTerminal, directoryPending });
+  latest.current = { active, session, finishOpenIntent, openTerminal, directoryPending };
   const [openError, setOpenError] = useState<unknown>();
   const presentationRecords = tabsStore.terminalPresentation(session.id);
   const intents = useRetainedMutationIntents("terminal-control:");
@@ -64,11 +66,11 @@ export function SessionTerminals({ session, close, active = true, presentationCh
   const supported = status.data?.capabilities.includes(SystemCapability.SESSION_TERMINALS_V1) ?? false;
   const list = useConversationPages(EntityKind.TERMINAL, session.id, active && supported, 50, undefined, 1000);
   const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal && !presentationRecords.hidden(value.terminal.id)) { setCreatedTerminal(value.terminal); setSelectedTerminal(undefined); setSelected(value.terminal.id); if (latest.current.active) openTerminal?.(value.terminal.id); } if (supported) void list.refresh(); });
-  const blocked = !active || Boolean(openIntent) || !supported || create.busy || create.uncertain || text(document(session).archive) !== "active";
+  const blocked = directoryPending || !active || Boolean(openIntent) || !supported || create.busy || create.uncertain || text(document(session).archive) !== "active";
   const resolution = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!openIntent) return;
-    if (!active) { finishOpenIntent?.(); return; }
+    if (!active || directoryPending) { finishOpenIntent?.(); return; }
     if (status.error || status.data && !supported) { finishOpenIntent?.(); return; }
     if (!supported || status.isFetching) return;
     if (resolution.current === openIntent.requestId) return;
@@ -76,7 +78,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
     setOpenError(undefined);
     const controller = new AbortController();
     let sent = false;
-    const current = () => !controller.signal.aborted && latest.current.active && latest.current.session.id === session.id;
+    const current = () => !controller.signal.aborted && latest.current.active && !latest.current.directoryPending && latest.current.session.id === session.id;
     const run = async () => {
       try {
         if (create.busy || create.uncertain) return;
@@ -113,7 +115,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
     };
     void run();
     return () => { controller.abort(); if (!sent && resolution.current === openIntent.requestId) resolution.current = undefined; };
-  }, [openIntent, active, supported, status.error, status.isFetching]);
+  }, [openIntent, active, supported, status.error, status.isFetching, directoryPending]);
 
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.
@@ -193,12 +195,13 @@ function TerminalView({ resource, details, discarded, refresh, observe }: { reso
     if (value.terminal) { const accepted = value.terminal; if (accepted.revision >= current.current.revision) current.current = accepted; setObserved(previous => accepted.revision >= previous.revision ? accepted : previous); }
     queue.current.acknowledge(request.action === TerminalAction.RESIZE ? { rows: request.rows, columns: request.columns } : undefined);
     dispatching.current = false; setWake(value => value + 1); refresh();
-  }, (value, request) => !!value.terminal && value.terminal.id === request.mutation?.id && value.terminal.kind === EntityKind.TERMINAL && value.terminal.sessionId === resource.sessionId && value.terminal.revision >= (request.mutation?.expectedRevision ?? 1n));
+  }, (value, request) => !!value.terminal && value.terminal.id === request.mutation?.id && value.terminal.kind === EntityKind.TERMINAL && value.terminal.sessionId === resource.sessionId && value.terminal.revision >= (request.mutation?.expectedRevision ?? 1n), false, undefined, resource.sessionId);
   const observeLatest = useRef(observe); observeLatest.current = observe;
   useEffect(() => { if (!control.busy && !control.uncertain) observeLatest.current(terminal); }, [terminal, control.busy, control.uncertain]);
   const pending = Object.keys(object(data.pending)).length > 0;
-  const blocked = rendererUnavailable || deliveryError || control.busy || control.uncertain || pending || text(data.state) !== "running" || !!data.close_request_id || state !== OutputState.Attached;
-  const canType = !rendererUnavailable && !deliveryError && !control.uncertain && text(data.state) === "running" && !data.close_request_id && state === OutputState.Attached;
+  const directoryPending = useSessionDirectoryPending(terminal.sessionId);
+  const blocked = directoryPending || rendererUnavailable || deliveryError || control.busy || control.uncertain || pending || text(data.state) !== "running" || !!data.close_request_id || state !== OutputState.Attached;
+  const canType = !directoryPending && !rendererUnavailable && !deliveryError && !control.uncertain && text(data.state) === "running" && !data.close_request_id && state === OutputState.Attached;
   const focusPending = useRef(true), controlRef = useRef(control); controlRef.current = control;
   useLayoutEffect(() => {
     alive.current = true; let disposed = false;
@@ -260,8 +263,8 @@ function TerminalView({ resource, details, discarded, refresh, observe }: { reso
     </div>
     <Problem error={error || control.error} />
     {state === OutputState.Detached || rendererUnavailable || deliveryError ? <button type="button" onClick={reattach}>{copy("session-terminals.reattachOriginalTerminal_b22f08")}</button> : null}
-    {control.uncertain ? <><p role="status">{copy("session-terminals.uncertainInput")}</p><button type="button" disabled={control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button></> : null}
-    {details || rendererUnavailable ? <button type="button" disabled={control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => { if (queue.current.discard()) discarded(); void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action: TerminalAction.CLOSE }); }}>{copy("session-terminals.closeTerminal_7d02fb")}</button> : null}
+    {control.uncertain ? <><p role="status">{copy("session-terminals.uncertainInput")}</p><button type="button" disabled={directoryPending || control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button></> : null}
+    {details || rendererUnavailable ? <button type="button" disabled={directoryPending || control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => { if (queue.current.discard()) discarded(); void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action: TerminalAction.CLOSE }); }}>{copy("session-terminals.closeTerminal_7d02fb")}</button> : null}
     {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p role="alert">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p></ServiceProblem> : null}
   </section>;
 }

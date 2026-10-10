@@ -6,7 +6,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { clientFailure, FailureCode } from "@delinoio/delidev-api-client";
 import { useSettingsOpening } from "./settings-lifetime";
 
-interface Intent { input?: object; bytes?: number; acknowledge?: (result: unknown) => boolean; busy: boolean; uncertain: boolean; error?: unknown }
+interface Intent { input?: object; bytes?: number; label?: string; acknowledge?: (result: unknown) => boolean; settled?: (result: unknown) => boolean; busy: boolean; uncertain: boolean; error?: unknown }
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
 // Bind outside the hook so a retained verifier cannot keep the submitting
 // hook's mutation, presentation callback or view state alive.
@@ -126,7 +126,7 @@ export function useRetainedMutationAccepted(key: string, accepted: () => void) {
 // connection discards that registry. Settings categories, task dialogs, and
 // external project creation own nested opening registries; departure discards
 // their intents, and late results cannot reach a replacement.
-export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, retainOnError = false) {
+export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, retainOnError = false, settled?: (result: MessageShape<O>) => boolean, sessionOwner?: string) {
   const registry = useContext(Context);
   if (!registry) throw new Error("A connection-scoped mutation registry is required.");
   const opening = useSettingsOpening();
@@ -135,8 +135,11 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
   const mounted = useRef(true);
   const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const send = async (input?: MessageInitShape<I>, retainedAcknowledgement?: (result: MessageShape<O>, request: MessageShape<I>) => boolean) => {
+  const send = async (input?: MessageInitShape<I>, retainedAcknowledgement?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, label?: string) => {
     const current = registry.entries.get(key) ?? empty;
+    const proposed = (current.input ?? input) as { mutation?: { id?: string }; sessionId?: string; parentSessionId?: string } | undefined;
+    const target = sessionOwner ?? proposed?.sessionId ?? proposed?.parentSessionId ?? proposed?.mutation?.id;
+    if (!key.startsWith("session-directory:") && target && registry.entries.get(`session-directory:${target}`)?.input) return;
     if (current.busy || (current.input && input) || !registry.alive || opening?.disposed) return;
     if (!current.input && !input) return;
     let retained: MessageShape<I>;
@@ -145,7 +148,8 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       // Clone the wire request before acceptance so later form edits cannot
       // change an uncertain request. Bound retained content across all screens.
       const wire = toBinary(method.input, create(method.input, (current.input ?? input) as MessageInitShape<I>));
-      bytes = wire.byteLength;
+      if (label !== undefined && new TextEncoder().encode(label).byteLength > 4096) throw new ConnectError("The operation label exceeds its bound.", Code.ResourceExhausted);
+      bytes = wire.byteLength + new TextEncoder().encode(current.label ?? label ?? "").byteLength;
       registry.reserve(key, bytes);
       retained = fromBinary(method.input, wire);
     } catch (error) { setLocalError({ key, error, rejected: true }); registry.notifyOutcome(key, current.input ?? input!, RetainedMutationPhase.Rejected); return; }
@@ -153,8 +157,9 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     // when the submitting view has gone away or its current selection changed.
     const originalAcknowledgement = retainedAcknowledgement ?? acknowledge;
     const verify = current.acknowledge ?? (originalAcknowledgement ? bindAcknowledgement<I, O>(originalAcknowledgement, retained) : undefined);
+    const settlement = current.settled ?? settled as ((result: unknown) => boolean) | undefined;
     setLocalError(undefined);
-    registry.put(key, { ...current, input: retained, bytes, acknowledge: verify, busy: true, error: undefined });
+    registry.put(key, { ...current, input: retained, bytes, label: current.label ?? label, acknowledge: verify, settled: settlement, busy: true, error: undefined });
     registry.notifyOutcome(key, retained, RetainedMutationPhase.Sending);
     let result: MessageShape<O>;
     try {
@@ -167,7 +172,7 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       // A rejected replay cannot establish whether an earlier uncertain request
       // was admitted. Keep opt-in original verification until a matching receipt.
       const uncertain = retainOnError || Boolean(current.uncertain && current.acknowledge) || [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
-      registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, acknowledge: uncertain ? verify : undefined, error });
+      registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, label: uncertain ? current.label ?? label : undefined, acknowledge: uncertain ? verify : undefined, settled: uncertain ? settlement : undefined, error });
       registry.notifyOutcome(key, retained, uncertain ? RetainedMutationPhase.Uncertain : RetainedMutationPhase.Rejected);
       return;
     }
@@ -176,10 +181,14 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       try {
         if (!(verify ? verify(result) : acknowledge!(result, retained))) throw new ConnectError("The accepted response could not be verified. Retry only the original request or inspect retained attempts.", Code.Internal);
       } catch (error) {
-        registry.put(key, { busy: false, uncertain: true, input: retained, bytes, acknowledge: verify, error });
+        registry.put(key, { busy: false, uncertain: true, input: retained, bytes, label: current.label ?? label, acknowledge: verify, settled: settlement, error });
         registry.notifyOutcome(key, retained, RetainedMutationPhase.Uncertain);
         return;
       }
+    }
+    if (settlement && !settlement(result)) {
+      registry.put(key, { input: retained, bytes, label: current.label ?? label, acknowledge: verify, settled: settlement, busy: false, uncertain: false });
+      return;
     }
     // Publish verified result ownership before clearing the original intent.
     registry.notifyAcceptedResult(key, retained, result);
@@ -199,4 +208,31 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     setLocalError(previous => previous?.key === key && previous.rejected ? undefined : previous);
   };
   return { send, retry: () => send(), clearRejected, ...state, error: localError?.key === key ? localError.error : state.error };
+}
+
+// A receipt read uses the original retained verifier. It never sends a mutation
+// or substitutes the current form/session revision for the original request.
+export function useRetainedMutationReceipt(key: string) {
+  const registry = useContext(Context);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  return (result: unknown): boolean => {
+    const current = registry.entries.get(key);
+    if (!registry.alive || !current?.input || current.busy || !current.acknowledge) return false;
+    try { if (!current.acknowledge(result)) return false; }
+    catch (error) { console.warn("delidev.mutation.receipt_verifier_failed", { classification: clientFailure(error).code }); return false; }
+    if (current.settled && !current.settled(result)) {
+      registry.put(key, { ...current, uncertain: false, error: undefined });
+      return true;
+    }
+    registry.notifyAcceptedResult(key, current.input, result);
+    registry.put(key, empty);
+    registry.notifyAccepted(key);
+    return true;
+  };
+}
+
+export function useSessionDirectoryPending(sessionId?: string) {
+  const registry = useContext(Context);
+  useSyncExternalStore(registry?.subscribe ?? (() => () => {}), () => registry?.revision ?? 0, () => 0);
+  return Boolean(registry && [...registry.entries].some(([key, intent]) => key.startsWith("session-directory:") && intent.input && (sessionId === undefined || key === `session-directory:${sessionId}`)));
 }

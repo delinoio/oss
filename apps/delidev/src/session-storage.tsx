@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp } from "./timestamp-display";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
@@ -64,7 +65,8 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
   const cancel = useRetainedMutation(`workspace-storage-cancel:${source?.id ?? ""}`, WorkspaceStorageQuery.cancelWorkspaceStorageOperation, () => refresh(), (response, retained) => Boolean(response.job && retained.mutation && response.job.id === retained.mutation.id && response.job.revision >= retained.mutation.expectedRevision));
   const remove = useRetainedMutation(`session-delete:${source?.id ?? ""}`, SessionQuery.deleteSession, () => { setDeletionAccepted(true); setDeletionRevision(undefined); refresh(); }, (response, retained) => Boolean(response.job && retained.mutation && response.job.sessionId === retained.mutation.id && response.job.id));
   const mutations = [request, cancel, remove];
-  const blocked = mutations.some((mutation) => mutation.busy || mutation.uncertain);
+  const directoryPending = useSessionDirectoryPending(source?.id);
+  const blocked = directoryPending || mutations.some((mutation) => mutation.busy || mutation.uncertain);
   const operationPending = Boolean(!sourceMissing && operationId && (!job || !terminal(state)));
   const reset = () => { setSource(undefined); setJobId(undefined); setConfirm(undefined); setDeletionRevision(undefined); setDeletionAccepted(false); setVisible(false); refresh(); };
   const show = (row: Resource) => {

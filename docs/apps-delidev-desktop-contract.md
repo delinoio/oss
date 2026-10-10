@@ -5098,3 +5098,30 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Settled session directory control
+
+The directory action requires both the server session-directory capability and
+that capability on the original Worker. It uses the original settled Codex root,
+prepared repository set and session revision; native idle alone grants no
+eligibility. Unresolved input, Steer, native children, native compaction, review,
+cleanup or other context work keeps the action unavailable, with independent
+server and Worker admission remaining authoritative.
+
+The dialog selects a named original prepared repository and one canonical
+relative directory. General Chat has only its original root. Focus the directory
+input when it appears, and permit Escape to close the presentation. Preserve
+original connection, actor, session, revision, request bytes and source execution
+through navigation, popup dismissal and communication loss. Pending directory
+work fences input, Steer, Fork, context actions, archive, deletion, terminals,
+forwarding mutations and opening another connection. Receipt recovery reads the
+original actor-bound operation and cannot repeat Change or mint another request.
+
+Show human repository names and relative paths without UUIDs or absolute native
+paths. Retain the previous current directory during pending or uncertain work.
+Only a succeeded receipt with matching original request, session, job, source
+execution, predecessor generation and selected root/path publishes the new
+immutable generation. Queued admission and receipt lookup are not native
+completion. No capability is advertised until the owning complete integration
+meets its activation gates. Fixtures and static checks do not establish actual
+native/account/platform acceptance.

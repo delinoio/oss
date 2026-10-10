@@ -1,3 +1,4 @@
+import { useSessionDirectoryPending } from "./mutation";
 import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 
@@ -51,6 +52,7 @@ export function contextCapacity(resource: Resource | undefined, sessionId: strin
 
 export function SessionContext({ session }: { session: Resource }) {
   useLocale();
+  const directoryPending = useSessionDirectoryPending(session.id) || Boolean(document(session).directory_job_id);
   const status = useQuery(SystemQuery.getStatus, {});
   const supported = Boolean(status.data?.capabilities.includes(SystemCapability.NATIVE_SESSION_COMPACTION_V1));
   const context = useQuery(SessionQuery.getSessionContext, { sessionId: session.id }, { enabled: supported, refetchInterval: 5000 });
@@ -92,7 +94,7 @@ export function SessionContext({ session }: { session: Resource }) {
       {state === JobState.Uncertain ? <p role="alert">{copy("session-context.thisActionRequiresReconciliationPreserveThe_8ba4a5")}</p> : null}
     </div> : null}
     <p>{copy("session-context.compactTheNativeWorkingContextAt_69b0dd")}</p>
-    <button disabled={!eligible || pending || mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ mutation: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() } })}>{copy("session-context.compactContext_afbbb8")}</button>
+    <button disabled={directoryPending || !eligible || pending || mutation.busy || mutation.uncertain} onClick={() => void mutation.send({ mutation: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() } })}>{copy("session-context.compactContext_afbbb8")}</button>
     {!eligible && !pending ? <p>{copy("session-context.compactionRequiresASupportedHarnessAnd_ae76ff")}</p> : null}
     <Problem error={context.error || mutation.error} />
     {mutation.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("session-context.retryTheSameCompactionRequest_12667c")}</button> : null}

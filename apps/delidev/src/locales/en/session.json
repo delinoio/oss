@@ -140,5 +140,18 @@
   "session.revertHistoricalAttachments": "Earlier images and skill selections remain in history. Select them again for a new input; the restored prompt has not been submitted.",
   "session.previousContext": "Earlier context",
   "session.startupImageInput": "Keep the image draft and choose an Agent Worker and Runner Device that explicitly support images, or send text only.",
-  "session.sleepDuration": "Sleep duration: <s0/> milliseconds"
+  "session.sleepDuration": "Sleep duration: <s0/> milliseconds",
+  "session.directoryChange": "Change directory",
+  "session.directoryCurrent": "Current directory: {{repository}} · {{path}}",
+  "session.directoryPending": "Original directory change is pending: {{repository}} · {{path}}",
+  "session.directoryObserve": "Check original directory change",
+  "session.directoryUncertain": "The original outcome is unconfirmed. Check its status; do not repeat the change.",
+  "session.directoryVerified": "The original Worker verified the new directory.",
+  "session.directoryFailed": "The original directory change did not succeed. Inspect the session before another change.",
+  "session.directoryScope": "Select an original prepared repository and an existing directory within it. The Worker verifies native settings before the next input.",
+  "session.directoryRepository": "Prepared repository",
+  "session.directoryRelative": "Relative directory",
+  "session.directoryInvalid": "Use . for the root or a canonical relative path without empty, . or .. components, backslashes or absolute paths.",
+  "session.directoryRootsFailed": "Prepared repositories could not be verified. Close and inspect the original session.",
+  "session.directoryLoading": "Reading original prepared repositories…"
 }

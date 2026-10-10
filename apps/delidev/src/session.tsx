@@ -1,3 +1,5 @@
+import { useSessionDirectory } from "./session-directory";
+import { useSessionDirectoryPending } from "./mutation";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -405,7 +407,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const imageRoute = useImageRoute(text(data.machine_id), text(data.agent_id), conversationActive, images.images.length > 0, object(data.fork).sidechat_parent_snapshot ? "sidechat" : text(object(object(data.initial_execution).configuration).harness) || text(object(object(object(data.fork).snapshot).configuration).harness));
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, (_result, request) => { images.controller.accepted(request.requestId, request.attachments.map(image => image.id)); setDraft(""); skills.clearAccepted(); void queue.refresh(); }, acknowledgeSessionSubmission);
   useEffect(() => { if (send.error && !send.uncertain && !send.busy) images.controller.operationId = undefined; }, [send.error, send.uncertain, send.busy, images.controller]);
-  const locked = send.busy || send.uncertain || images.busy || submissions.store.preparing(id);
+  const directoryPending = useSessionDirectoryPending(id) || Boolean(data.directory_job_id);
+  const locked = directoryPending || send.busy || send.uncertain || images.busy || submissions.store.preparing(id);
   const composer = useRef<HTMLTextAreaElement>(null), composerComposing = useRef(false);
   useLayoutEffect(() => {
     const input = composer.current;
@@ -439,7 +442,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   }, [session?.id]);
   const skills = useSkillCompletion({ value: draft, change: (value, bindings) => { if (new TextEncoder().encode(value).byteLength > (256 << 10)) { setImageTextLimit(true); return false; } setImageTextLimit(false); return setDraft(value, bindings); }, textarea: composer, machineId: text(data.machine_id), agentId: text(data.agent_id), sessionId: id, initialBindings: initialSkills, bindingsChanged: changeSkills, retainTransportContext: Boolean(changeSkills), active: conversationActive, disabled: locked });
   const revert = useSessionRevert({ session, active:conversationActive, draft, composer, blocked:locked || images.images.length>0, changed:setAcknowledged, restore:(prompt)=>{if(images.images.length || images.busy)return false;if(setDraft(prompt,[])===false)return false;skills.clearAccepted();return true;} });
-  const contextLocked = Boolean(data.compaction_job_id) || revert.pending || revert.uncertain;
+  const directory = useSessionDirectory(session, active, send.busy || send.uncertain || images.busy || submissions.store.preparing(id) || revert.pending || revert.uncertain || Boolean(data.compaction_job_id));
+  const contextLocked = directory.pending || Boolean(data.compaction_job_id) || revert.pending || revert.uncertain;
   const canSend = !contextLocked && !locked && !skills.blocked && new TextEncoder().encode(draft).byteLength <= (256 << 10) && Boolean(draft.trim() || images.images.length) && (!images.images.length || imageRoute.ready) && text(data.archive) === "active";
   const enqueue = async () => {
     if (!canSend) return;
@@ -580,15 +584,15 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <SessionHarness resource={session}><div className="session-heading-line"><h2 tabIndex={-1} onDoubleClick={event => { if (session) editName?.(session.id, event.currentTarget); }}>{resourceName(session)}</h2><p className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`} role="status">{connectionLabel}</p></div></SessionHarness>
       </div>
       <div className="session-controls" hidden={!embedded && tabs.tab.kind===SessionTabKind.Sidechat} inert={!embedded && tabs.tab.kind===SessionTabKind.Sidechat}>
-        <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
-        <button type="button" disabled={!session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
+        <button type="button" disabled={directoryPending || !session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
+        <button type="button" disabled={directoryPending || !session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
-          {session ? <SessionForkAction source={session} disabled={control.busy || control.uncertain} /> : null}
-          <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
+          {session ? <SessionForkAction source={session} disabled={directoryPending || control.busy || control.uncertain} /> : null}
+          <button type="button" disabled={directoryPending || !session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&(directoryPending||Boolean(object(data.fork).sidechat_parent_snapshot))} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">
@@ -604,7 +608,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         {control.uncertain ? <SessionNotice details={opener => showInfo(opener)}><span>{copy("session.startupControlUncertain")}</span><button type="button" onClick={control.retry} disabled={control.busy}>{copy("session.retryTheSameControlRequest_609aff")}</button></SessionNotice> : null}
         {submissionError ? <SessionNotice>{failureSummary(clientFailure(submissionError).code)}</SessionNotice> : null}
         {send.error ? <SessionNotice details={opener => showInfo(opener)}>{failureSummary(clientFailure(send.error).code)}</SessionNotice> : null}
-      <RunnerTaskRemediation active={conversationActive} machineId={text(data.machine_id)} disabled={control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
+      <RunnerTaskRemediation active={conversationActive} machineId={text(data.machine_id)} disabled={directoryPending || control.busy || control.uncertain} visible={Boolean(startupFailure)} onPending={setRunnerRemediationPending} />
         <div ref={setRecoveryLauncherTarget} hidden={!inlineRecovery} />
       </div>
       {session ? <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen diagnosticsTarget={diagnosticsTarget} target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
@@ -689,7 +693,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <div ref={setInfoToolsTarget} tabIndex={-1} />
         {session ? <>
           <section hidden={prEmpty} className="session-information-section"><h3>{copy("session.pullRequests")}</h3><SessionPullRequests key={id} session={session} emptyChanged={setPREmpty} diagnosticsTarget={diagnosticsTarget} /></section>
-          <section className="session-information-section"><h3>{copy("session.executionSettings")}</h3><ExecutionConfiguration resource={session} diagnosticsTarget={diagnosticsTarget} /></section>
+          {directory.content}<section className="session-information-section"><h3>{copy("session.executionSettings")}</h3><ExecutionConfiguration resource={session} diagnosticsTarget={diagnosticsTarget} /></section>
           <section className="session-information-section"><h3>{copy("session.context")}</h3><SessionContext key={id} session={session} /></section>
           <section hidden={subagentsEmpty} className="session-information-section"><h3>{copy("session.subagents")}</h3><Subagents key={id} sessionId={id} revision={session.revision.toString()} emptyChanged={setSubagentsEmpty} diagnosticsTarget={diagnosticsTarget} /></section>
           <section ref={budgetDetails} className="session-information-section" tabIndex={-1}><h3>{copy("session.usageAndBudget")}</h3><NativeUsage session={session} diagnosticsTarget={diagnosticsTarget} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></section>
