@@ -17,6 +17,7 @@ import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
+import { nativeSleepDuration } from "./native-sleep";
 import { SessionHarness } from "./session-harness";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
@@ -219,6 +220,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const tool = object(data.tool);
   const toolStarted = object(tool.started);
   const toolCompleted = object(tool.completed);
+  const sleepDuration = nativeSleepDuration(toolStarted, toolCompleted);
   const command = object((tool.completed ? toolCompleted : toolStarted).command);
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
@@ -235,6 +237,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
     {data.role==="user"?actions:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
     {toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
+      {sleepDuration ? <p><LocalizedText id="session.sleepDuration" components={{ s0: <>{sleepDuration}</> }} /></p> : null}
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p><LocalizedText id="session.directory_369f13" components={{ s0: <>{text(command.cwd)}</> }} /></p> : null}
       {text(tool.output) ? <pre>{text(tool.output)}</pre> : null}
@@ -403,7 +406,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const send = useRetainedMutation(`enqueue:${id}`, SessionQuery.enqueueInput, (_result, request) => { images.controller.accepted(request.requestId, request.attachments.map(image => image.id)); setDraft(""); skills.clearAccepted(); void queue.refresh(); }, acknowledgeSessionSubmission);
   useEffect(() => { if (send.error && !send.uncertain && !send.busy) images.controller.operationId = undefined; }, [send.error, send.uncertain, send.busy, images.controller]);
   const locked = send.busy || send.uncertain || images.busy || submissions.store.preparing(id);
-  const composer = useRef<HTMLTextAreaElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null), composerComposing = useRef(false);
   useLayoutEffect(() => {
     const input = composer.current;
     if (!input) return;
@@ -458,8 +461,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const shortcuts = useShortcuts([
     ...(!embedded ? Array.from({length:9},(_,index)=>({id: tabShortcutIds[index]!,scope:Surface.Sessions,label:`shortcuts.tab${index+1}` as import("./localization").MessageKey,bindings:[{key:String(index+1),primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:index<tabs.tabs.length,run:()=>{document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});tabs.store.position(id,index+1);}})) : []),
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
-    { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, active: conversationActive, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
-    { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter" }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending" },
+    { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter" }, { key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, active: conversationActive, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
+    { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter", shift: true }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending" },
   ]);
   // Stream arrivals have exact identities even when their JSON sequence exceeds
   // JavaScript's safe-integer range. Append only arrivals on the final page.
@@ -652,7 +655,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           <label className="plan-mode"><input type="checkbox" checked={mode === Mode.Plan} disabled={locked} onChange={event => setMode(event.target.checked ? Mode.Plan : Mode.Execute)} />{copy("session.planMode")}</label>
           <button className="primary composer-submit" aria-label={copy("session.queueMessage_891d4e")} title={copy("session.queueMessage_891d4e")} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionSend)} disabled={!canSend}><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M10 16V4m-5 5 5-5 5 5" /></svg></button>
         </>}>
-        {skills.wrap(<textarea ref={composer} onKeyDown={event => { if (!skills.onKeyDown(event) && !event.nativeEvent.isComposing) shortcuts.onKeyDown(event); }} onSelect={skills.onSelect} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => skills.onChange(event.target.value,event.target.selectionStart)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={1} />)}
+        {skills.wrap(<textarea ref={composer} onKeyDown={event => { if (composerComposing.current || event.nativeEvent.isComposing) { event.stopPropagation(); return; } if (!skills.onKeyDown(event)) shortcuts.onKeyDown(event); }} onSelect={skills.onSelect} onCompositionStart={() => { composerComposing.current = true; skills.onCompositionStart(); }} onCompositionEnd={() => { composerComposing.current = false; skills.onCompositionEnd(); }} {...skills.attributes} aria-keyshortcuts={shortcuts.aria(ShortcutId.SessionFocus, ShortcutId.SessionSend, ShortcutId.SessionNewline)} id={`prompt-${id}`} value={draft} onChange={event => skills.onChange(event.target.value,event.target.selectionStart)} disabled={locked} placeholder={copy("session.sendAFollowUpToThis_c9d723")} rows={1} />)}
         {skills.list}{skills.warning}
         {imageTextLimit ? <p role="alert">{copy("image-input.textLimit")}</p> : null}
         </ImageAttachmentInput>

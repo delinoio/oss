@@ -45,3 +45,26 @@ it("clears only the original retained draft when its request accepts while hidde
  await act(async()=>resolve());await waitFor(()=>expect(other).toHaveProperty("value","Keep other draft"));
  fireEvent.click(sidebar().getByRole("button",{name:/General Chat Skill original/}));await waitFor(()=>expect(currentSession().getByRole("textbox",{name:"Message"})).toHaveProperty("value",""));
 });
+
+it("accepts a skill before fixed Enter sends the original General Chat draft once",async()=>{
+ const f=fixture();render(<App transport={f.transport}/>);
+ fireEvent.click(await sidebar().findByRole("button",{name:/General Chat Skill original/}));
+ const input=await currentSession().findByRole('textbox',{name:'Message'});input.focus();
+ fireEvent.change(input,{target:{value:'$ret',selectionStart:4}});await currentSession().findByRole('option',{name:/retained/});
+ fireEvent.keyDown(input,{key:'Enter'});expect(input).toHaveProperty('value','$retained');expect(f.enqueue).not.toHaveBeenCalled();
+ fireEvent.keyDown(input,{key:'Enter'});await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());
+ const request=f.enqueue.mock.calls[0]![0];expect(request.skills?.selections).toEqual([f.selection]);
+ expect(JSON.parse(new TextDecoder().decode(request.documentJson)).prompt).toBe('$retained');
+ fireEvent.keyDown(input,{key:'Enter',repeat:true});expect(f.enqueue).toHaveBeenCalledOnce();
+});
+
+it("keeps composition-confirmation Enter away from local and connection send owners",async()=>{
+ const f=fixture();render(<App transport={f.transport}/>);
+ fireEvent.click(await sidebar().findByRole("button",{name:/General Chat Skill original/}));
+ const input=await currentSession().findByRole('textbox',{name:'Message'});input.focus();fireEvent.change(input,{target:{value:'한글'}});
+ fireEvent.compositionStart(input);fireEvent.keyDown(input,{key:'Enter',isComposing:false});expect(f.enqueue).not.toHaveBeenCalled();
+ fireEvent.compositionEnd(input);
+ for(const flags of [{isComposing:true},{keyCode:229},{repeat:true}])fireEvent.keyDown(input,{key:'Enter',...flags});
+ expect(f.enqueue).not.toHaveBeenCalled();
+ fireEvent.keyDown(input,{key:'Enter'});await waitFor(()=>expect(f.enqueue).toHaveBeenCalledOnce());
+});

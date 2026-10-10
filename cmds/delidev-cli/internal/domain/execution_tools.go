@@ -15,6 +15,7 @@ const (
 	CommandTool         ToolKind = "command"
 	PatchTool           ToolKind = "patch"
 	ImageViewTool       ToolKind = "image-view"
+	SleepTool           ToolKind = "sleep"
 	OpenCodeReadTool    ToolKind = "opencode-read"
 	OpenCodeShellTool   ToolKind = "opencode-shell"
 	OpenCodeTodoTool    ToolKind = "opencode-todo"
@@ -70,7 +71,14 @@ type FileChangeObservation struct {
 	MovePath *string        `json:"move_path"`
 }
 
+// Sleep durations use exact decimal JSON strings so all uint64 values survive
+// browser parsing. This is an observation, never a timer or execution request.
+type SleepObservation struct {
+	DurationMS *uint64 `json:"duration_ms,string"`
+}
+
 type ToolSnapshot struct {
+	Sleep     *SleepObservation           `json:"sleep,omitempty"`
 	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
 	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
 	Todo      *OpenCodeTodoObservation    `json:"todo,omitempty"`
@@ -177,6 +185,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == SleepTool {
+		if s.Sleep == nil || s.Sleep.DurationMS == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || s.ImageView != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
+			return invalidTool()
+		}
+		return nil
+	}
+	if s.Sleep != nil {
+		return invalidTool()
+	}
 	if s.Kind == ImageViewTool {
 		if s.ImageView == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
 			return invalidTool()

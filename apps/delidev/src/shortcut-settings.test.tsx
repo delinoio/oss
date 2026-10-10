@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ShortcutPreferenceProvider, ShortcutPreferenceProblem, useShortcutPreferences, type ShortcutPreferenceBridge, type ShortcutPreferenceSnapshot } from "./shortcut-preference-controller";
 import { ShortcutSettings } from "./shortcut-settings";
@@ -119,4 +119,15 @@ it("shows fixed New Window N and permits saving former T without changing native
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"t",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"n",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  expect(screen.getByText("New Window").closest("div")?.querySelector("dd")?.textContent).toBe("Ctrl + N");
+});
+
+it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열에 추가','고정: Enter']])("shows fixed send independently of disabled primary in %s",async(language,label,fixed)=>{
+ await act(()=>i18n.changeLanguage(language));Object.defineProperty(navigator,'platform',{configurable:true,value:'Linux'});
+ const f=fixture();render(<Owner bridge={f.bridge}/>);
+ const row=screen.getByRole('heading',{name:label}).closest('.shortcut-settings-row')!;
+ expect(within(row as HTMLElement).getByText(fixed)).toBeTruthy();
+ fireEvent.click(within(row as HTMLElement).getByRole('button',{name:language==='en'?`Disable ${label} shortcut`:`${label} 단축키 사용 안 함`}));
+ expect(within(row as HTMLElement).getByText(fixed)).toBeTruthy();
+ expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
+ await act(()=>i18n.changeLanguage('en'));
 });

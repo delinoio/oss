@@ -2262,3 +2262,13 @@ Grok initialize responses confirm initialization and begin actual settings
 validation. Original successful settings publication confirms settings only.
 Preserve account/history/protocol/input claims and independent cleanup; no observer
 value grants readiness, native support, credential release or input acceptance.
+
+## Codex native sleep observations — issue #2393
+
+- Codex sleep observations (#2393) reuse the generic tool disclosure with original lifecycle and exact decimal-string milliseconds. They are passive transcript metadata; add no timer, retry or configuration controls. Follow the harness contract.
+
+- Native Codex sleep observations (#2393) share one strict u64 duration/item decoder across live lifecycle and full continuation/context/Fork history. Preserve original item/turn/execution, exact duration and receipt order; only matched completion may settle the tool. Sleep observations never schedule timers, accept input, settle a turn, change permissions or prove cleanup. Public durations use exact decimal strings to preserve uint64 values across browser parsing; no migration or numeric native gate. Follow the harness contract.
+
+The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
+
+Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
