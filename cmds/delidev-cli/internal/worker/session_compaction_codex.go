@@ -88,7 +88,7 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 			}
 		}
 		if preSendFailure != nil {
-			raw, e := completedRevertPreSendFailure(owner, job, i, preSendFailure, revertPreSendBoundary{claimInvoked, nativeClosed, proxyClosed, workspaceClosed, authenticationClosed, cleanupFailed})
+			raw, e := completedRevertPreSendFailure(owner, job, i, preSendFailure, revertPreSendBoundary{claimInvoked: claimInvoked, nativeClosed: nativeClosed, proxyClosed: proxyClosed, workspaceClosed: workspaceClosed, authenticationClosed: authenticationClosed, cleanupFailed: cleanupFailed})
 			if e == nil {
 				output, returned = raw, nil
 				logger.InfoContext(ctx, "codex_revert_presend_failure_cleanup_verified", "code", domain.SafeError(preSendFailure).Code)

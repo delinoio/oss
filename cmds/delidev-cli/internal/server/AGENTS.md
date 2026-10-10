@@ -106,7 +106,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 - Manual-compaction mutation receipts bind the original owner/client principal as well as session/revision/request. Recheck authorization before replay; another authorized client cannot reuse the accepted receipt. Keep credentials outside its digest input under `docs/cmds-delidev-claude-compaction-contract.md`.
 
-- A valid late native-checkpoint report cannot release a canceled claimed compaction. Only the separately verified Revert pre-send failure with complete no-claim/no-send and cleanup proof can settle its failed canceled action. Retain its observed result on the uncertain job, original ownership and prior checkpoint; require recovery and leave Archive pending. Cancellation cannot grant successor dispatch.
+- A valid late native-checkpoint report cannot release a canceled claimed compaction. Retain that observed native result on the uncertain job, original ownership and prior checkpoint; require recovery and leave Archive pending. Only the separately verified Revert pre-send failure with complete no-claim/no-send and cleanup proof can settle its failed canceled action. Cancellation cannot grant successor dispatch.
 
 - Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
 
