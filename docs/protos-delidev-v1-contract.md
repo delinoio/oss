@@ -1133,3 +1133,16 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. Issue #2138 records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. Issue #2112 owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Foreground session Inbox read (issue #2530)
+
+The complete feature owns System 81 `SESSION_INBOX_READ_V1` and
+`InboxService.MarkSessionInboxRead`. Request fields `request_id`/`session_id`
+are strings 1/2. Response fields `request_id`/`session_id` are strings 1/2,
+`marked_count` uint64 is 3, `observed_at` UTC string is 4 and `replayed` bool is 5.
+Record original issue #2530 provenance for the closed RPC/messages/fields and
+capability in `allocations.json`; regenerate Go/Connect/TypeScript/Connect Query
+from canonical schemas. Preserve System 80 count-only meaning and all existing
+wire numbers. Old servers use manual read controls. Actor-bound atomic receipt
+replay changes no later alerts or Session revision. No Worker allocation,
+native profile, database migration or execution/recovery authority is added.

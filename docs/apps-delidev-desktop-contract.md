@@ -3713,3 +3713,18 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Foreground conversation Inbox acknowledgment (issue #2530)
+
+Ordinary admitted desktop Project/General Chat conversations and independent
+Fork sessions follow the Inbox contract's System 81 policy. Only successful
+current authenticated Session and initial transcript loading in the active,
+visible, focused conversation permits one acknowledgment per selection or
+actual background return. Hidden/resource panes, Sidechat and mobile do not
+submit. Polling, reconnects, pagination, rerenders and later alerts never create
+a new acknowledgment in the same activation. Retain exact uncertain requests
+in the original connection registry; later qualifying activation reconciles
+only that request. Accepted results invalidate original Inbox/count queries
+after sender disposal; connection retirement fences successor effects. Keep
+manual Inbox controls and original badge selection/freshness/zero/99+ behavior.
+Add no settings, banner, badge redesign or universal Alt+Tab promise.

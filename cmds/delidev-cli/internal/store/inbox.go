@@ -282,3 +282,49 @@ func (t *Tx) UnreadInboxCount() (uint64, error) {
 	err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(body,'$.read_state')=?", domain.InboxUnread).Scan(&count)
 	return count, storageError(err)
 }
+
+// MarkSessionInboxRead uses internal keyset pages, not the public epoch cursor.
+// Each page closes its SQL rows before source validation and writes. The caller
+// owns one receipt transaction, so any later-page failure rolls back every mark.
+func (t *Tx) MarkSessionInboxRead(session domain.ID, validate func(Record) error) (uint64, error) {
+	if err := t.writeAllowed(); err != nil {
+		return 0, err
+	}
+	if session.Validate() != nil || validate == nil {
+		return 0, domain.Fail(domain.InvalidArgument, "Invalid session Inbox acknowledgment.", "Use the original session identity.")
+	}
+	original, err := t.Get(domain.SessionKind, session)
+	if err != nil {
+		return 0, err
+	}
+	var count uint64
+	var after domain.ID
+	for {
+		if err := t.Authorize(); err != nil {
+			return 0, err
+		}
+		if err := t.ctx.Err(); err != nil {
+			return 0, err
+		}
+		records, more, err := t.sessionPage(MaxPage, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND session_id=? AND id>? AND json_extract(body,'$.read_state')=? ORDER BY id LIMIT ?", session, after, domain.InboxUnread, MaxPage+1)
+		if err != nil {
+			return 0, err
+		}
+		for _, record := range records {
+			if record.ProjectID != original.ProjectID {
+				return 0, inboxConflict()
+			}
+			if err := validate(record); err != nil {
+				return 0, err
+			}
+			if _, err := t.SetInboxReadState(record.ID, record.Revision, domain.InboxRead); err != nil {
+				return 0, err
+			}
+			count++
+			after = record.ID
+		}
+		if !more {
+			return count, t.Authorize()
+		}
+	}
+}

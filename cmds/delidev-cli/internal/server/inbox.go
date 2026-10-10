@@ -295,3 +295,46 @@ func (s *Service) GetUnreadInboxCount(ctx context.Context, req *connect.Request[
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
+
+type sessionInboxReadIdentity struct {
+	SessionID domain.ID
+	Actor     domain.Principal
+}
+type sessionInboxReadReceipt struct {
+	SessionID   domain.ID `json:"session_id"`
+	MarkedCount uint64    `json:"marked_count"`
+	ObservedAt  string    `json:"observed_at"`
+}
+
+func (s *Service) MarkSessionInboxRead(ctx context.Context, req *connect.Request[pb.MarkSessionInboxReadRequest]) (*connect.Response[pb.MarkSessionInboxReadResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, err := inboxActor(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	requestID, sessionID := domain.ID(req.Msg.RequestId), domain.ID(req.Msg.SessionId)
+	if requestID.Validate() != nil || sessionID.Validate() != nil {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Invalid session Inbox acknowledgment identity.", "Use original UUID-v7 request and session identities."), correlation)
+	}
+	identity := sessionInboxReadIdentity{sessionID, actor}
+	s.logger.InfoContext(ctx, "session_inbox_read_admission", "correlation_id", correlation, "request_id", requestID, "session_id", sessionID)
+	result, err := s.Store.Mutate(ctx, requestID, "inbox.session-read", identity, func(tx *store.Tx) (any, error) {
+		count, err := tx.MarkSessionInboxRead(sessionID, func(record store.Record) error { _, err := currentInboxView(tx, record); return err })
+		if err != nil {
+			return nil, err
+		}
+		return sessionInboxReadReceipt{sessionID, count, tx.ObservationTime().UTC().Format(time.RFC3339Nano)}, nil
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "session_inbox_read_failed", "correlation_id", correlation, "request_id", requestID, "session_id", sessionID, "code", domain.SafeError(err).Code)
+		return nil, rpc.Error(err, correlation)
+	}
+	var receipt sessionInboxReadReceipt
+	if domain.Decode(result.Data, &receipt) != nil || receipt.SessionID != sessionID || receipt.ObservedAt == "" {
+		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The original session Inbox receipt is inconsistent.", "Retain the original request for reconciliation."), correlation)
+	}
+	s.logger.InfoContext(ctx, "session_inbox_read_recorded", "correlation_id", correlation, "request_id", requestID, "session_id", sessionID, "marked_count", receipt.MarkedCount, "replayed", result.Replayed)
+	response := connect.NewResponse(&pb.MarkSessionInboxReadResponse{RequestId: string(result.RequestID), SessionId: string(receipt.SessionID), MarkedCount: receipt.MarkedCount, ObservedAt: receipt.ObservedAt, Replayed: result.Replayed})
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}

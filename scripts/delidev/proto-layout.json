@@ -1433,6 +1433,14 @@
     "GetBrowserCapabilitiesResponse": {
       "kind": "message",
       "file": "delidev/v1/browser.proto"
+    },
+    "MarkSessionInboxReadRequest": {
+      "kind": "message",
+      "file": "delidev/v1/inbox.proto"
+    },
+    "MarkSessionInboxReadResponse": {
+      "kind": "message",
+      "file": "delidev/v1/inbox.proto"
     }
   }
 }

@@ -7,6 +7,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 
 // Inbox read state belongs to the server owner and is shared by paired clients.
 service InboxService {
+  rpc MarkSessionInboxRead(MarkSessionInboxReadRequest) returns (MarkSessionInboxReadResponse);
   rpc GetUnreadInboxCount(GetUnreadInboxCountRequest) returns (GetUnreadInboxCountResponse);
   rpc GetInboxEntry(GetInboxEntryRequest) returns (GetInboxEntryResponse);
   rpc ListInbox(ListInboxRequest) returns (ListInboxResponse);
@@ -234,4 +235,17 @@ message GetUnreadInboxCountRequest {}
 message GetUnreadInboxCountResponse {
   uint64 unread_count = 1;
   string observed_at = 2;
+}
+
+// One foreground activation acknowledges only entries in the original transaction.
+message MarkSessionInboxReadRequest {
+  string request_id = 1;
+  string session_id = 2;
+}
+message MarkSessionInboxReadResponse {
+  string request_id = 1;
+  string session_id = 2;
+  uint64 marked_count = 3;
+  string observed_at = 4;
+  bool replayed = 5;
 }

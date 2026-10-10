@@ -421,3 +421,10 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+- Foreground conversation Inbox acknowledgment (#2530) follows the Inbox,
+  desktop, protocol and storage contracts. System81 owns actor-bound atomic
+  session unread acknowledgment and immutable count/time receipts; System80
+  remains count-only. Preserve original connection retries/late invalidation,
+  manual controls, hidden/Sidechat/mobile exclusions and badge fences. No
+  Worker/native/migration or execution/recovery authority is added.

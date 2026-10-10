@@ -1911,6 +1911,135 @@ func (x *GetUnreadInboxCountResponse) GetObservedAt() string {
 	return ""
 }
 
+// One foreground activation acknowledges only entries in the original transaction.
+type MarkSessionInboxReadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkSessionInboxReadRequest) Reset() {
+	*x = MarkSessionInboxReadRequest{}
+	mi := &file_delidev_v1_inbox_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkSessionInboxReadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkSessionInboxReadRequest) ProtoMessage() {}
+
+func (x *MarkSessionInboxReadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_inbox_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkSessionInboxReadRequest.ProtoReflect.Descriptor instead.
+func (*MarkSessionInboxReadRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *MarkSessionInboxReadRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *MarkSessionInboxReadRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type MarkSessionInboxReadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	MarkedCount   uint64                 `protobuf:"varint,3,opt,name=marked_count,json=markedCount,proto3" json:"marked_count,omitempty"`
+	ObservedAt    string                 `protobuf:"bytes,4,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Replayed      bool                   `protobuf:"varint,5,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MarkSessionInboxReadResponse) Reset() {
+	*x = MarkSessionInboxReadResponse{}
+	mi := &file_delidev_v1_inbox_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarkSessionInboxReadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarkSessionInboxReadResponse) ProtoMessage() {}
+
+func (x *MarkSessionInboxReadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_inbox_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarkSessionInboxReadResponse.ProtoReflect.Descriptor instead.
+func (*MarkSessionInboxReadResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_inbox_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *MarkSessionInboxReadResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *MarkSessionInboxReadResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *MarkSessionInboxReadResponse) GetMarkedCount() uint64 {
+	if x != nil {
+		return x.MarkedCount
+	}
+	return 0
+}
+
+func (x *MarkSessionInboxReadResponse) GetObservedAt() string {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return ""
+}
+
+func (x *MarkSessionInboxReadResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 var File_delidev_v1_inbox_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_inbox_proto_rawDesc = "" +
@@ -2075,7 +2204,21 @@ const file_delidev_v1_inbox_proto_rawDesc = "" +
 	"\x1bGetUnreadInboxCountResponse\x12!\n" +
 	"\funread_count\x18\x01 \x01(\x04R\vunreadCount\x12\x1f\n" +
 	"\vobserved_at\x18\x02 \x01(\tR\n" +
-	"observedAt*j\n" +
+	"observedAt\"[\n" +
+	"\x1bMarkSessionInboxReadRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\xbc\x01\n" +
+	"\x1cMarkSessionInboxReadResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12!\n" +
+	"\fmarked_count\x18\x03 \x01(\x04R\vmarkedCount\x12\x1f\n" +
+	"\vobserved_at\x18\x04 \x01(\tR\n" +
+	"observedAt\x12\x1a\n" +
+	"\breplayed\x18\x05 \x01(\bR\breplayed*j\n" +
 	"\x0eInboxReadState\x12 \n" +
 	"\x1cINBOX_READ_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17INBOX_READ_STATE_UNREAD\x10\x01\x12\x19\n" +
@@ -2108,8 +2251,9 @@ const file_delidev_v1_inbox_proto_rawDesc = "" +
 	"\x1cNOTIFICATION_STATE_SUBMITTED\x10\x02\x12\x1d\n" +
 	"\x19NOTIFICATION_STATE_DENIED\x10\x03\x12\x1d\n" +
 	"\x19NOTIFICATION_STATE_FAILED\x10\x04\x12 \n" +
-	"\x1cNOTIFICATION_STATE_UNCERTAIN\x10\x052\xaa\b\n" +
-	"\fInboxService\x12f\n" +
+	"\x1cNOTIFICATION_STATE_UNCERTAIN\x10\x052\x95\t\n" +
+	"\fInboxService\x12i\n" +
+	"\x14MarkSessionInboxRead\x12'.delidev.v1.MarkSessionInboxReadRequest\x1a(.delidev.v1.MarkSessionInboxReadResponse\x12f\n" +
 	"\x13GetUnreadInboxCount\x12&.delidev.v1.GetUnreadInboxCountRequest\x1a'.delidev.v1.GetUnreadInboxCountResponse\x12T\n" +
 	"\rGetInboxEntry\x12 .delidev.v1.GetInboxEntryRequest\x1a!.delidev.v1.GetInboxEntryResponse\x12H\n" +
 	"\tListInbox\x12\x1c.delidev.v1.ListInboxRequest\x1a\x1d.delidev.v1.ListInboxResponse\x12`\n" +
@@ -2134,7 +2278,7 @@ func file_delidev_v1_inbox_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_inbox_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_delidev_v1_inbox_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_delidev_v1_inbox_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_delidev_v1_inbox_proto_goTypes = []any{
 	(InboxReadState)(0),                        // 0: delidev.v1.InboxReadState
 	(InboxSource)(0),                           // 1: delidev.v1.InboxSource
@@ -2166,21 +2310,23 @@ var file_delidev_v1_inbox_proto_goTypes = []any{
 	(*ReportNotificationResponse)(nil),         // 27: delidev.v1.ReportNotificationResponse
 	(*GetUnreadInboxCountRequest)(nil),         // 28: delidev.v1.GetUnreadInboxCountRequest
 	(*GetUnreadInboxCountResponse)(nil),        // 29: delidev.v1.GetUnreadInboxCountResponse
-	(*Resource)(nil),                           // 30: delidev.v1.Resource
-	(*Mutation)(nil),                           // 31: delidev.v1.Mutation
+	(*MarkSessionInboxReadRequest)(nil),        // 30: delidev.v1.MarkSessionInboxReadRequest
+	(*MarkSessionInboxReadResponse)(nil),       // 31: delidev.v1.MarkSessionInboxReadResponse
+	(*Resource)(nil),                           // 32: delidev.v1.Resource
+	(*Mutation)(nil),                           // 33: delidev.v1.Mutation
 }
 var file_delidev_v1_inbox_proto_depIdxs = []int32{
-	30, // 0: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
-	30, // 1: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
-	30, // 2: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
-	30, // 3: delidev.v1.InboxView.account:type_name -> delidev.v1.Resource
-	30, // 4: delidev.v1.InboxView.machine:type_name -> delidev.v1.Resource
-	30, // 5: delidev.v1.InboxView.occurrence:type_name -> delidev.v1.Resource
+	32, // 0: delidev.v1.InboxView.entry:type_name -> delidev.v1.Resource
+	32, // 1: delidev.v1.InboxView.session:type_name -> delidev.v1.Resource
+	32, // 2: delidev.v1.InboxView.interaction:type_name -> delidev.v1.Resource
+	32, // 3: delidev.v1.InboxView.account:type_name -> delidev.v1.Resource
+	32, // 4: delidev.v1.InboxView.machine:type_name -> delidev.v1.Resource
+	32, // 5: delidev.v1.InboxView.occurrence:type_name -> delidev.v1.Resource
 	4,  // 6: delidev.v1.GetInboxEntryResponse.view:type_name -> delidev.v1.InboxView
 	0,  // 7: delidev.v1.ListInboxRequest.read_state:type_name -> delidev.v1.InboxReadState
 	1,  // 8: delidev.v1.ListInboxRequest.source:type_name -> delidev.v1.InboxSource
 	4,  // 9: delidev.v1.ListInboxResponse.entries:type_name -> delidev.v1.InboxView
-	31, // 10: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
+	33, // 10: delidev.v1.SetInboxReadStateRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 11: delidev.v1.SetInboxReadStateRequest.read_state:type_name -> delidev.v1.InboxReadState
 	4,  // 12: delidev.v1.SetInboxReadStateResponse.view:type_name -> delidev.v1.InboxView
 	12, // 13: delidev.v1.NotificationPreferences.situations:type_name -> delidev.v1.SituationNotificationPreferences
@@ -2196,28 +2342,30 @@ var file_delidev_v1_inbox_proto_depIdxs = []int32{
 	14, // 23: delidev.v1.GetNotificationDeliveryResponse.delivery:type_name -> delidev.v1.NotificationDelivery
 	3,  // 24: delidev.v1.ReportNotificationRequest.state:type_name -> delidev.v1.NotificationState
 	14, // 25: delidev.v1.ReportNotificationResponse.delivery:type_name -> delidev.v1.NotificationDelivery
-	28, // 26: delidev.v1.InboxService.GetUnreadInboxCount:input_type -> delidev.v1.GetUnreadInboxCountRequest
-	5,  // 27: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
-	7,  // 28: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
-	9,  // 29: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
-	15, // 30: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
-	17, // 31: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
-	20, // 32: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
-	22, // 33: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
-	24, // 34: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
-	26, // 35: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
-	29, // 36: delidev.v1.InboxService.GetUnreadInboxCount:output_type -> delidev.v1.GetUnreadInboxCountResponse
-	6,  // 37: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
-	8,  // 38: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
-	10, // 39: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
-	16, // 40: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
-	19, // 41: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
-	21, // 42: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
-	23, // 43: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
-	25, // 44: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
-	27, // 45: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
-	36, // [36:46] is the sub-list for method output_type
-	26, // [26:36] is the sub-list for method input_type
+	30, // 26: delidev.v1.InboxService.MarkSessionInboxRead:input_type -> delidev.v1.MarkSessionInboxReadRequest
+	28, // 27: delidev.v1.InboxService.GetUnreadInboxCount:input_type -> delidev.v1.GetUnreadInboxCountRequest
+	5,  // 28: delidev.v1.InboxService.GetInboxEntry:input_type -> delidev.v1.GetInboxEntryRequest
+	7,  // 29: delidev.v1.InboxService.ListInbox:input_type -> delidev.v1.ListInboxRequest
+	9,  // 30: delidev.v1.InboxService.SetInboxReadState:input_type -> delidev.v1.SetInboxReadStateRequest
+	15, // 31: delidev.v1.InboxService.GetNotificationPreferences:input_type -> delidev.v1.GetNotificationPreferencesRequest
+	17, // 32: delidev.v1.InboxService.SetNotificationPreferences:input_type -> delidev.v1.SetNotificationPreferencesRequest
+	20, // 33: delidev.v1.InboxService.ListNotificationCandidates:input_type -> delidev.v1.ListNotificationCandidatesRequest
+	22, // 34: delidev.v1.InboxService.ClaimNotification:input_type -> delidev.v1.ClaimNotificationRequest
+	24, // 35: delidev.v1.InboxService.GetNotificationDelivery:input_type -> delidev.v1.GetNotificationDeliveryRequest
+	26, // 36: delidev.v1.InboxService.ReportNotification:input_type -> delidev.v1.ReportNotificationRequest
+	31, // 37: delidev.v1.InboxService.MarkSessionInboxRead:output_type -> delidev.v1.MarkSessionInboxReadResponse
+	29, // 38: delidev.v1.InboxService.GetUnreadInboxCount:output_type -> delidev.v1.GetUnreadInboxCountResponse
+	6,  // 39: delidev.v1.InboxService.GetInboxEntry:output_type -> delidev.v1.GetInboxEntryResponse
+	8,  // 40: delidev.v1.InboxService.ListInbox:output_type -> delidev.v1.ListInboxResponse
+	10, // 41: delidev.v1.InboxService.SetInboxReadState:output_type -> delidev.v1.SetInboxReadStateResponse
+	16, // 42: delidev.v1.InboxService.GetNotificationPreferences:output_type -> delidev.v1.GetNotificationPreferencesResponse
+	19, // 43: delidev.v1.InboxService.SetNotificationPreferences:output_type -> delidev.v1.SetNotificationPreferencesResponse
+	21, // 44: delidev.v1.InboxService.ListNotificationCandidates:output_type -> delidev.v1.ListNotificationCandidatesResponse
+	23, // 45: delidev.v1.InboxService.ClaimNotification:output_type -> delidev.v1.ClaimNotificationResponse
+	25, // 46: delidev.v1.InboxService.GetNotificationDelivery:output_type -> delidev.v1.GetNotificationDeliveryResponse
+	27, // 47: delidev.v1.InboxService.ReportNotification:output_type -> delidev.v1.ReportNotificationResponse
+	37, // [37:48] is the sub-list for method output_type
+	26, // [26:37] is the sub-list for method input_type
 	26, // [26:26] is the sub-list for extension type_name
 	26, // [26:26] is the sub-list for extension extendee
 	0,  // [0:26] is the sub-list for field type_name
@@ -2236,7 +2384,7 @@ func file_delidev_v1_inbox_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_inbox_proto_rawDesc), len(file_delidev_v1_inbox_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   26,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

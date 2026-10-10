@@ -10,7 +10,7 @@ Go and the server's existing private SQLite/Connect boundary. No independent cli
 One server owner and its authorized paired clients share read state. Execution Workers publish native observations but cannot mark requests read or authorize owner responses.
 
 ## Interfaces and Contracts
-Every inbox entry has its own UUID-v7 identity and revision, independent of its source interaction or execution. The initial closed source kinds are `interaction` and `execution-terminal`; read state is `unread` or `read`. Reading, listing, snapshotting and inspecting never change read state. Explicit read-state mutations cannot change source content, question revision, answer/claim/delivery, session state, routing, cleanup or execution authorization. Response acceptance never implicitly marks an entry read.
+Every inbox entry has its own UUID-v7 identity and revision, independent of its source interaction or execution. The initial closed source kinds are `interaction` and `execution-terminal`; read state is `unread` or `read`. Inbox reads, listing, snapshotting and inspection never change read state. The qualifying foreground-conversation activation below owns a separate authenticated mutation. Explicit read-state mutations cannot change source content, question revision, answer/claim/delivery, session state, routing, cleanup or execution authorization. Response acceptance never implicitly marks an entry read.
 
 A native question or typed native approval and its unread inbox reference must commit in the same publication transaction. A native terminal observation similarly retains an unread completion/failure/interruption entry with immutable execution/input/job/thread/turn identity, publication sequence and observed native outcome. Terminal outcome does not prove process cleanup and can differ from the independently retained session outcome after Stop or earlier failure. Original receipt replay never duplicates an entry or resets read state. Repeated native closure, cleanup, Archive/Restore and later state inspection preserve the original entry identity and current read state.
 
@@ -103,3 +103,58 @@ gets a fresh uncached read, followed by ten-second background refreshes. An
 unsupported capability, Unimplemented RPC, disconnected or revoked authority,
 invalid result, failed read or initial replacement clears presentation. It must
 not substitute notification candidates or partial Inbox pages.
+
+## Foreground session acknowledgment (issue #2530)
+
+System 81 `SESSION_INBOX_READ_V1` advertises complete authenticated
+owner/paired-client `InboxService.MarkSessionInboxRead` support. System 80
+remains count-only. Request fields are `request_id` string 1 and `session_id`
+string 2. Response fields are `request_id` string 1, `session_id` string 2,
+`marked_count` uint64 3, `observed_at` UTC string 4 and `replayed` bool 5.
+Both identities are UUID-v7. The durable `inbox.session-read` identity binds
+original session and actor. Fresh admission requires the original Session,
+but does not require or change its revision. No Worker allocation, migration,
+native adapter or notification-delivery claim is added.
+
+One transaction defines the acknowledgment instant. It scans all unread entries
+for the original session with internal keyset pages of `store.MaxPage` (200),
+closing query rows before source validation and updates. It preserves current
+source/session/project checks and each changed entry's existing revision/event
+behavior. There is no client-side total cap and no public epoch cursor in this
+mutation. Other sessions and unscoped operational/subscription-recovery alerts
+remain unchanged. Authorization loss, cancellation, inconsistent retained
+sources and storage failure roll back every mark and the receipt together.
+
+The compact session/count/time receipt commits atomically with the marks.
+Exact replay returns the original count/time without rescanning. Later alerts
+and later explicit Mark unread changes remain unread. The existing explicit
+Mark read/unread controls stay available. Reading Inbox alone, observing the
+aggregate and inspecting sources still perform no acknowledgment. Reading
+cannot answer an interaction, alter execution eligibility, grant recovery,
+claim notification delivery or prove process cleanup.
+
+The ordinary admitted desktop Project or General Chat conversation, including
+an independently opened Fork's own session, submits once per selection or
+actual return from background. It requires successful current authenticated
+Session and initial transcript loading, active conversation, visible document
+and focused product window. Sidechat, embedded/hidden conversations and mobile
+are excluded. Failed, stale or incomplete loading submits nothing. Rerenders,
+polling, reconnects, transcript pagination and new alerts do not submit again
+within the same activation. Unsupported servers retain manual read behavior.
+
+The connection-owned mutation registry retains the exact original uncertain
+request across navigation. Pending original input blocks replacement for that
+session; a later qualifying activation may reconcile only that exact receipt.
+Accepted results invalidate original-connection Inbox and unread-count queries
+through the connection observer even after sender disposal. Retiring the
+connection fences its observer and prevents successor-connection effects.
+Rejected or uncertain outcomes preserve authoritative presentation; the client
+never decrements a badge locally or adds a setting, banner or badge control.
+The original native selection, freshness, zero-clear and 99+ saturation fences
+remain unchanged. This feature promises no universal Alt+Tab presentation.
+
+Diagnostics retain only safe correlation/request/session IDs, result counts,
+replay flags and failure classification. They exclude transcript content,
+credentials and raw user data. Multi-page, receipt, actor, rollback, foreground
+activation and connection-disposal fixtures are implementation evidence;
+installed-platform badge observations remain separate acceptance.

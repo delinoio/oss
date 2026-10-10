@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
-import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
+import { createConnectQueryKey, createQueryOptions, useTransport } from "@connectrpc/connect-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -21,7 +21,11 @@ export function InboxBadgePresentation({ ready, supported }: { ready: boolean; s
   // This observer survives detail-pane disposal, but retires with the original
   // connection registry. Only acknowledged exact read-state mutations refresh.
   useRetainedMutationNotifications((key) => {
-    if (key.startsWith("inbox-read:")) void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.getUnreadInboxCount, {}, { transport }).queryKey });
+    if (key.startsWith("inbox-read:") || key.startsWith("inbox-session-read:")) {
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: InboxQuery.getUnreadInboxCount, transport, cardinality: "finite" }) });
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: InboxQuery.listInbox, transport, cardinality: "finite" }) });
+      void queryClient.invalidateQueries({ queryKey: createConnectQueryKey({ schema: InboxQuery.getInboxEntry, transport, cardinality: "finite" }) });
+    }
   });
   const service = useMemo(() => createClient(InboxService, transport), [transport]);
   const [selection, setSelection] = useState<Selection>();
