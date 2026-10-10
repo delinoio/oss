@@ -73,7 +73,7 @@ it("keeps the original OAuth authorization after dialog dismissal and never repe
   const link = await screen.findByRole("link", { name: "Open authorization page" });
   expect(link.getAttribute("href")).toBe("https://oauth.example/authorize");
   const attempt = f.original()!.requestId;
-  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close Authenticate", exact: true }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close Authenticate" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect((screen.getByRole("combobox", { name: "Runner Device" }) as HTMLSelectElement).disabled).toBe(true);
   open(); expect(screen.getByRole("link", { name: "Open authorization page" })).toBeTruthy();
