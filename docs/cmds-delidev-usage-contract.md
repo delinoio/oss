@@ -316,6 +316,12 @@ become actual charges. Uniform input pricing prices the combined input once;
 cached-discount pricing prices uncached/read independently and marks cache write
 unpriced because the current price schema supplies no creation rate.
 
+OpenCode API Provider identity and OpenCode Go service identity are mutually exclusive.
+Only the supported `opencode_go` step profile may retain an empty Provider ID;
+its original service/account/model identity survives accounting, service-filtered
+reads and immutable pricing attribution without a synthetic Provider resource.
+Foreign or mixed service identities fail before atomic usage publication.
+
 OpenCode retains raw normalized zero in the original observation, but treats
 zero categories as unavailable accounting evidence. Positive safe integers remain
 known. Uncached/read/write input and nonreasoning/reasoning output are disjoint;

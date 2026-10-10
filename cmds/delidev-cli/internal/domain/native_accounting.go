@@ -32,7 +32,16 @@ func (u NativeAccountingUnit) Validate() error {
 	if !ModelKeyMatchesSource(o.ModelID, o.ProviderID, o.SubscriptionService) {
 		return invalidObservation()
 	}
-	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID} {
+	// OpenCode Go has a service-owned model and no API Provider resource.
+	// Preserve the exclusive source identity instead of inventing a Provider ID.
+	if o.SubscriptionService != "" {
+		if u.Kind != OpenCodeStep || o.SubscriptionService != SubscriptionOpenCodeGo || o.ProviderID != "" {
+			return invalidObservation()
+		}
+	} else if o.ProviderID.Validate() != nil {
+		return invalidClaudeUsage()
+	}
+	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID} {
 		if id.Validate() != nil {
 			return invalidClaudeUsage()
 		}
@@ -150,7 +159,7 @@ func UnpricedNativeEstimate() NativeEstimate {
 	return NativeEstimate{Coverage: EstimateUnavailable, Input: c, CacheRead: c, CacheWrite: c, Output: c, Reasoning: NativeEstimateComponent{State: ComponentNotApplicable}}
 }
 func EstimateNativeInput(unit NativeAccountingUnit, price PricingVersion) (NativeEstimate, error) {
-	if unit.Validate() != nil || price.ID.Validate() != nil || price.Basis.Validate() != nil || price.ModelID != unit.Attribution().ModelID || price.ProviderID != unit.Attribution().ProviderID {
+	if unit.Validate() != nil || price.ID.Validate() != nil || price.Basis.Validate() != nil || price.ModelID != unit.Attribution().ModelID || price.ProviderID != unit.Attribution().ProviderID || price.SubscriptionService != unit.Attribution().SubscriptionService {
 		return NativeEstimate{}, invalidPricing()
 	}
 	c := unit.Counts()

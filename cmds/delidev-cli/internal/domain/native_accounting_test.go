@@ -129,3 +129,45 @@ func TestOpenCodeAccountingPricesDisjointStepsWithUnavailableZeros(t *testing.T)
 		t.Fatal("assistant summary fabricated a step")
 	}
 }
+
+func TestOpenCodeAccountingRetainsExclusiveServiceIdentity(t *testing.T) {
+	a := nativeUnitFixture()
+	o := a.Attribution()
+	serviceModel := (ModelIdentity{SubscriptionService: SubscriptionOpenCodeGo, NativeID: "fixture"}).Key()
+	unit := NativeAccountingUnit{Kind: OpenCodeStep, SourceID: NewID(), RequestID: NewID(), SessionID: a.SessionID, InputID: a.InputID, OpenCode: &OpenCodeUsageRecord{ExecutionID: o.ExecutionID, AccountID: o.AccountID, ConnectionID: o.ConnectionID, SubscriptionService: SubscriptionOpenCodeGo, ModelID: serviceModel, Harness: OpenCode, Version: OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 2, Usage: OpenCodeUsageObservation{Source: OpenCodeStepUsage, NativeID: "prt_01960dcbe1faABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: OpenCodeTokenCounts{Input: "12", CacheRead: "7", CacheWrite: "3", Output: "8", Reasoning: "2"}, NativeEstimate: "0"}}}
+	if err := unit.Validate(); err != nil || unit.Attribution().SubscriptionService != SubscriptionOpenCodeGo || unit.Attribution().ProviderID != "" {
+		t.Fatal("Go attribution required a synthetic Provider", unit.Attribution(), err)
+	}
+	for _, scenario := range []string{"missing-service", "foreign-service", "mixed-provider", "foreign-model", "wrong-kind"} {
+		t.Run(scenario, func(t *testing.T) {
+			invalid := unit
+			copy := *unit.OpenCode
+			invalid.OpenCode = &copy
+			switch scenario {
+			case "missing-service":
+				copy.SubscriptionService = ""
+			case "foreign-service":
+				copy.SubscriptionService = SubscriptionChatGPT
+				copy.ModelID = (ModelIdentity{SubscriptionService: copy.SubscriptionService, NativeID: "fixture"}).Key()
+			case "mixed-provider":
+				copy.ProviderID = NewID()
+			case "foreign-model":
+				copy.ModelID = o.ModelID
+			case "wrong-kind":
+				invalid.Kind = ClaudeMainLoopInput
+			}
+			if invalid.Validate() == nil {
+				t.Fatal("invalid source identity accepted")
+			}
+		})
+	}
+	rate := "1"
+	price := PricingVersion{ID: NewID(), ModelID: serviceModel, SubscriptionService: SubscriptionOpenCodeGo, Basis: TokenPricing{Currency: "USD", Source: "Fixture", AsOf: "2026-10-10", InputMode: UniformInputPrice, InputPerMillion: &rate, OutputPerMillion: &rate}}
+	if estimate, err := EstimateNativeInput(unit, price); err != nil || estimate.KnownAmount != "0.000032" {
+		t.Fatal("service pricing lost native counts", estimate, err)
+	}
+	price.SubscriptionService = SubscriptionChatGPT
+	if _, err := EstimateNativeInput(unit, price); err == nil {
+		t.Fatal("foreign service price accepted")
+	}
+}

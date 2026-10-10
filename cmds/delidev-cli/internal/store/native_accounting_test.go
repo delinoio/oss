@@ -429,3 +429,83 @@ func TestNativeAccountingCombinedModelInventoryBound(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenCodeGoAccountingAtomicPublicationAndServiceReads(t *testing.T) {
+	s, root := openTest(t)
+	r, _, input := nativeAccountingFixture(t, s)
+	model := (domain.ModelIdentity{SubscriptionService: domain.SubscriptionOpenCodeGo, NativeID: "fixture"}).Key()
+	o := domain.OpenCodeUsageRecord{ExecutionID: r.ExecutionID, AccountID: r.AccountID, ConnectionID: r.ConnectionID, SubscriptionService: domain.SubscriptionOpenCodeGo, ModelID: model, Harness: domain.OpenCode, Version: domain.OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 3, Usage: domain.OpenCodeUsageObservation{Source: domain.OpenCodeStepUsage, NativeID: "prt_01960dcbe1faABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: domain.OpenCodeTokenCounts{Input: "12", CacheRead: "7", CacheWrite: "3", Output: "8", Reasoning: "2"}, NativeEstimate: "0"}}
+	var price PricingVersion
+	_, err := s.Mutate(context.Background(), domain.NewID(), "fixture.go-price", nil, func(tx *Tx) (any, error) {
+		var err error
+		price, err = tx.PutPricing(model, 0, domain.NewID(), pricingFixture())
+		return price, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retain := func(request, source domain.ID, value domain.OpenCodeUsageRecord) (Result, error) {
+		return s.Mutate(context.Background(), request, "fixture.go-accounting", value, func(tx *Tx) (any, error) {
+			if err := tx.PutOpenCodeUsage(source, r.SessionID, r.ProjectID, value); err != nil {
+				return nil, err
+			}
+			return nil, tx.PutOpenCodeAccounting(source, input, r.SessionID, r.ProjectID, value)
+		})
+	}
+	for _, scenario := range []string{"missing-service", "foreign-service", "mixed-provider"} {
+		invalid := o
+		switch scenario {
+		case "missing-service":
+			invalid.SubscriptionService = ""
+		case "foreign-service":
+			invalid.SubscriptionService = domain.SubscriptionChatGPT
+			invalid.ModelID = (domain.ModelIdentity{SubscriptionService: invalid.SubscriptionService, NativeID: "fixture"}).Key()
+		case "mixed-provider":
+			invalid.ProviderID = r.ProviderID
+		}
+		source := domain.NewID()
+		if _, err := retain(domain.NewID(), source, invalid); err == nil {
+			t.Fatal("invalid accounting source accepted", scenario)
+		}
+		if _, err := s.Get(context.Background(), domain.UsageKind, source); domain.SafeError(err).Code != domain.NotFound {
+			t.Fatal("rejected accounting left partial usage", scenario, err)
+		}
+	}
+	request, source := domain.NewID(), domain.NewID()
+	if _, err := retain(request, source, o); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := retain(request, source, o); err != nil || !result.Replayed {
+		t.Fatal("original accounting receipt lost", result, err)
+	}
+	conflicting := o
+	conflicting.Usage.Counts.Input = "13"
+	if _, err := retain(domain.NewID(), domain.NewID(), conflicting); domain.SafeError(err).Code != domain.Conflict {
+		t.Fatal("conflicting native unit was republished", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	selection := nativeSelection()
+	selection.SubscriptionService = domain.SubscriptionOpenCodeGo
+	for _, service := range []domain.SubscriptionService{"", domain.SubscriptionOpenCodeGo} {
+		selection.SubscriptionService = service
+		summary, err := readUsage(s, selection)
+		if err != nil || len(summary.NativeAccounting) != 2 {
+			t.Fatal("service accounting read failed", err)
+		}
+		v := summary.NativeAccounting[1]
+		if v.Totals.Units != 1 || v.Totals.Input.KnownTotal != "22" || v.Totals.Output.KnownTotal != "10" || len(v.Groups) != 1 || v.Groups[0].AccountID != o.AccountID || v.Groups[0].ProviderID != "" || v.Groups[0].ModelID != model || len(v.Models) != 1 || v.Models[0].ModelID != model || len(v.Pricing) != 1 || v.Pricing[0].Pricing.ID != price.ID || v.Pricing[0].Pricing.SubscriptionService != domain.SubscriptionOpenCodeGo || v.Pricing[0].Pricing.ProviderID != "" {
+			t.Fatal("service/account/model/price identity changed", v)
+		}
+	}
+	selection.SubscriptionService = domain.SubscriptionChatGPT
+	if summary, err := readUsage(s, selection); err != nil || summary.NativeAccounting[1].Totals.Units != 0 {
+		t.Fatal("foreign service filter adopted Go accounting", summary, err)
+	}
+}

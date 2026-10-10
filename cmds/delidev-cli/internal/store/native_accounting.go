@@ -49,7 +49,7 @@ func (t *Tx) PutClaudeAccounting(source, input, session, project domain.ID, o do
 	}
 	e := domain.UnpricedNativeEstimate()
 	var priceID any
-	if p != nil && p.ProviderID == o.ProviderID {
+	if p != nil && p.ProviderID == o.ProviderID && p.SubscriptionService == o.SubscriptionService {
 		e, err = domain.EstimateNativeInput(u, *p)
 		if err != nil {
 			return err
@@ -123,7 +123,8 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		}
 	}
 	if f.SubscriptionService != "" {
-		where += " AND 0"
+		where += " AND provider_id='' AND json_extract(body,'$.opencode.subscription_service')=?"
+		args = append(args, f.SubscriptionService)
 	}
 	if f.GeneralChat {
 		where += " AND project_id=''"
@@ -289,7 +290,7 @@ func (t *Tx) PutOpenCodeAccounting(source, input, session, project domain.ID, o 
 	}
 	e := domain.UnpricedNativeEstimate()
 	var priceID any
-	if p != nil && p.ProviderID == o.ProviderID {
+	if p != nil && p.ProviderID == o.ProviderID && p.SubscriptionService == o.SubscriptionService {
 		e, err = domain.EstimateNativeInput(u, *p)
 		if err != nil {
 			return err
