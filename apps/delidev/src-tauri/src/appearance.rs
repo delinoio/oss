@@ -721,9 +721,11 @@ mod tests {
             light: light.clone(),
             dark: dark.clone(),
         };
-        let mut accepted = Preferences::default();
-        accepted.light_palette = accepted_theme.id.clone();
-        accepted.dark_palette = accepted_theme.id.clone();
+        let mut accepted = Preferences {
+            light_palette: accepted_theme.id.clone(),
+            dark_palette: accepted_theme.id.clone(),
+            ..Preferences::default()
+        };
         accepted.custom_themes.push(accepted_theme);
         assert!(accepted.valid());
         assert!(valid_new_theme_changes(&Preferences::default(), &accepted));
@@ -760,9 +762,11 @@ mod tests {
             light: weak_light,
             dark: weak_dark,
         };
-        let mut saved = Preferences::default();
-        saved.light_palette = theme.id.clone();
-        saved.dark_palette = theme.id.clone();
+        let mut saved = Preferences {
+            light_palette: theme.id.clone(),
+            dark_palette: theme.id.clone(),
+            ..Preferences::default()
+        };
         saved.custom_themes.push(theme.clone());
         assert!(saved.valid());
         assert!(valid_new_theme_changes(&saved, &saved));
