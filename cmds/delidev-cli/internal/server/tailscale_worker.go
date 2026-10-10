@@ -218,6 +218,11 @@ func (s *Service) GetTailscaleWorker(ctx context.Context, req *connect.Request[p
 	if err := s.tailscaleLocal(ctx); err != nil {
 		return nil, rpc.Error(err, "")
 	}
+	access, err := s.tailscale.access.Status()
+	if err != nil {
+		return nil, rpc.Error(err, "")
+	}
+	s.tailscale.approvals.SetOrigin(access.Origin)
 	input, err := s.tailscale.approvals.OwnedWorker(domain.ID(req.Msg.ApprovalRequestId))
 	if err != nil {
 		return nil, rpc.Error(err, "")
@@ -232,9 +237,14 @@ func (s *Service) controlTailscaleWorker(ctx context.Context, approval, request,
 	if err := s.tailscaleLocal(ctx); err != nil {
 		return worker.RuntimeStatus{}, err
 	}
+	access, err := s.tailscale.access.Status()
+	if err != nil {
+		return worker.RuntimeStatus{}, err
+	}
+	s.tailscale.approvals.SetOrigin(access.Origin)
 	actor, _ := domain.PrincipalFrom(ctx)
 	var status worker.RuntimeStatus
-	err := s.tailscale.approvals.ControlWorker(ctx, domain.ID(approval), tailscale.WorkerControl{ID: domain.ID(request), Action: action, Generation: domain.ID(generation), Actor: string(actor.Type) + ":" + string(actor.DeviceID)}, func(ctx context.Context, input tailscale.ApprovalInput, phase tailscale.WorkerControlPhase) error {
+	err = s.tailscale.approvals.ControlWorker(ctx, domain.ID(approval), tailscale.WorkerControl{ID: domain.ID(request), Action: action, Generation: domain.ID(generation), Actor: string(actor.Type) + ":" + string(actor.DeviceID)}, func(ctx context.Context, input tailscale.ApprovalInput, phase tailscale.WorkerControlPhase) error {
 		scope, current, err := s.ownedTailscaleWorker(input)
 		if err != nil {
 			return err
