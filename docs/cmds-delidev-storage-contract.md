@@ -340,6 +340,29 @@ remediation operands use existing durable backup deletion intents. Unrelated
 images remain. Published replacements, corrupt/foreign images, unpublished
 scratch or unresolved claimed images preserve uncertainty and block completion.
 The final backup acknowledgement follows confirmed removals and directory sync.
+Issue #2448 retains only completed clean-image classifications in the existing
+private SQLite `metadata` table under the original external deletion ID. Each
+strict version-1 record binds the original session/server/request/expected
+revision, backup UUID, inspected SHA-256 and open-handle file identity, mode,
+size and modification time. At most 4,096 records per original intent and 1,024
+bytes per record are accepted; reads bound projection bytes and use the metadata
+key index. Removed images retire only their derived checkpoints. This does not
+enlarge the immutable 4 MiB external Worker obligation or any public revision,
+receipt, RPC or schema. External intent remains independently authoritative.
+
+Every completed image checkpoint commits before the next content inspection,
+so bounded passes and restart resume progress rather than re-copying earlier
+unchanged images. Missing/restored cache rows grant no completion authority;
+missing rows require inspection. Reuse checks fresh private-file/open-handle
+identity and original metadata, sidecar absence and current source identity under
+the publication gate. Changed/replaced images invalidate only their own record;
+new images must be classified before completion. The immutable source digest
+remains bound to its original verified image, never an ID/size-only shortcut.
+Only a fully successful synchronous inspection can publish a clean checkpoint;
+cancellation joins original scratch cleanup and retains pending uncertainty for
+unknown scratch/claims. Target-containing images still use original durable
+backup deletion. A single inspection must fit its existing per-pass deadline;
+this progress boundary does not relax copy, inventory or cleanup deadlines.
 Under the publication gate, every remaining image must match the native identity,
 mode, size and modification time captured by its content inspection. New or
 replaced images stay pending until a fresh pass classifies their contents;

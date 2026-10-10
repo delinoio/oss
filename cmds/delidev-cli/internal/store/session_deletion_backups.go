@@ -15,10 +15,38 @@ import (
 
 // Classification uses the same private, identity-checked immutable SQLite copy
 // as user inspection. No original image is opened directly by SQLite.
+type sessionBackupInspector func(context.Context, domain.ID, domain.ID, func(*sql.DB) error) (BackupInspection, error)
+
+func (s *Store) inspectSessionBackup(ctx context.Context, id, server domain.ID, observe func(*sql.DB) error) (BackupInspection, error) {
+	return s.inspectBackupContent(ctx, id, server, nil, observe)
+}
+
 func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) error {
+	return s.removeSessionBackups(ctx, v, s.inspectSessionBackup)
+}
+
+// The injected inspector is private to deterministic bounded-pass fixtures.
+// Production retains the original synchronous copy/inspection/cleanup owner.
+func (s *Store) removeSessionBackups(ctx context.Context, v SessionDeletion, inspect sessionBackupInspector) error {
 	items, e := s.BackupInventory(ctx)
 	if e != nil {
 		return e
+	}
+	checkpoints, e := s.loadSessionBackupCheckpoints(ctx, v)
+	if e != nil {
+		return e
+	}
+	currentIDs := make(map[domain.ID]bool, len(items))
+	for _, item := range items {
+		currentIDs[item.ID] = true
+	}
+	for id := range checkpoints {
+		if !currentIDs[id] {
+			if e := s.discardSessionBackupCheckpoint(ctx, v, id); e != nil {
+				return e
+			}
+			delete(checkpoints, id)
+		}
 	}
 	classified := map[domain.ID]BackupInspection{}
 	for _, item := range items {
@@ -37,19 +65,44 @@ func (s *Store) RemoveSessionBackups(ctx context.Context, v SessionDeletion) err
 			return storageError(e)
 		}
 		if deletion != "" {
+			if _, ok := checkpoints[item.ID]; ok {
+				if e := s.discardSessionBackupCheckpoint(ctx, v, item.ID); e != nil {
+					return e
+				}
+			}
+
 			if _, e = s.RunBackupDeletion(ctx, deletion, v.ServerID); e != nil {
 				return e
 			}
 			continue
 		}
+		if prior, ok := checkpoints[item.ID]; ok {
+			checked, reusable, err := s.resumeSessionBackupCheckpoint(ctx, prior)
+			if err != nil {
+				return err
+			}
+			if reusable {
+				classified[item.ID] = checked
+				continue
+			}
+			if err := s.discardSessionBackupCheckpoint(ctx, v, item.ID); err != nil {
+				return err
+			}
+		}
 		contains := false
-		checked, e := s.inspectBackupContent(ctx, item.ID, v.ServerID, nil, func(db *sql.DB) error {
+		checked, e := inspect(ctx, item.ID, v.ServerID, func(db *sql.DB) error {
 			return db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=? OR session_id=? OR (kind='job' AND json_extract(body,'$.type')='image-attachment' AND EXISTS(SELECT 1 FROM json_each(entities.body,'$.input.owners') WHERE value=?)) OR (kind='problem' AND json_extract(body,'$.type')='pull-request-remediation-attempt' AND json_extract(body,'$.session_id')=?))", v.SessionID, v.SessionID, v.SessionID, v.SessionID).Scan(&contains)
 		})
 		if e != nil {
 			return e
 		}
+		if checked.sourceInfo == nil || checked.sourceIdentity == "" || checked.Backup.ID != item.ID || checked.ServerID != v.ServerID {
+			return domain.SessionDeletionPending()
+		}
 		if !contains {
+			if e := s.saveSessionBackupCheckpoint(ctx, v, checkpointForSessionBackup(v, checked)); e != nil {
+				return e
+			}
 			classified[item.ID] = checked
 			continue
 		}
