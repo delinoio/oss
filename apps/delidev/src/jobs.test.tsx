@@ -18,7 +18,7 @@ function fixture(state = "queued") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const children = vi.fn((_state: string, output: Record<string, unknown>) => <><label>Result draft<input defaultValue="Keep focus" /></label>{output.result === "ready" ? <button>Finish inspection</button> : null}</>);
   const view = <TransportProvider transport={transport}><QueryClientProvider client={client}><TrackedJob initial={initial} active>{children}</TrackedJob></QueryClientProvider></TransportProvider>;
-  return { initial, read, client, children, view, state: (state: string) => { current = create(ResourceSchema, { ...initial, revision: initial.revision + 1n, documentJson: encode({ state, output: { result: "ready" } }) }); } };
+  return { initial, read, client, children, view, state: (state: string, revision = initial.revision + 1n) => { current = create(ResourceSchema, { ...initial, revision, documentJson: encode({ state, output: { result: "ready" } }) }); } };
 }
 
 it("observes the original job automatically and removes only generic success presentation", async () => {
@@ -69,4 +69,22 @@ it("retains the original identity when a status response is foreign", async () =
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original status read" })).toBeNull());
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
+});
+
+it.each([
+ { kind: EntityKind.MACHINE }, { schemaVersion: 2 }, { revision: 0n }, { documentJson: encode({ state: "invented-terminal" }) }, { documentJson: new TextEncoder().encode("{invalid") },
+])("refuses unsupported, malformed or regressive original job observations %#", async override => {
+ const f=fixture();f.read.mockResolvedValueOnce({resource:create(ResourceSchema,{...f.initial,...override})});render(f.view);
+ expect(await screen.findByText("The original status could not be verified. Read it again before continuing.")).toBeTruthy();
+ expect(f.children.mock.calls.at(-1)?.[0]).toBe("queued");
+ f.client.clear();
+});
+
+it("does not let an older terminal read replace the highest accepted original job revision", async () => {
+ const f=fixture();render(f.view);await waitFor(()=>expect(f.read).toHaveBeenCalledOnce());
+ f.state("claimed",f.initial.revision+5n);await act(async()=>{await f.client.invalidateQueries()});
+ await waitFor(()=>expect(f.children.mock.calls.at(-1)?.[0]).toBe("claimed"));
+ f.state("succeeded",f.initial.revision+1n);await act(async()=>{await f.client.invalidateQueries()});
+ expect(await screen.findByText("The original status could not be verified. Read it again before continuing.")).toBeTruthy();
+ expect(f.children.mock.calls.at(-1)?.[0]).toBe("claimed");f.client.clear();
 });

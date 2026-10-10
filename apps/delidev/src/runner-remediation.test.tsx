@@ -9,6 +9,9 @@ import { EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestI
 import { encode } from "./documents";
 import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
 import { useCallback, useState } from "react";
+import { useMachineSettingsController } from "./machine-settings";
+import { SettingsLifetime } from "./settings-lifetime";
+import { MutationIntents } from "./mutation";
 import { ResourceChoice, ResourceSelectionPending } from "./configuration-fields";
 const machine = (name: string) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name, disabled: false, installations: [{ harness: "claude-code", state: "missing", explicit_path: "", problem: { message: "/private/native secret", guidance: "secret native instruction" } }] }) });
 it("retains one inspection draft and original uncertain request across presentation close, without replacing its Runner", async () => {
@@ -124,4 +127,64 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2)); expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
+});
+
+it.each(["succeeded", "failed", "canceled"])("releases consuming Schedule controls after original %s inspection without Finish, retaining results", async state => {
+  const row = machine("Original Schedule Runner"), other = machine("Different Runner");
+  const initialJob = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "queued" }) });
+  let observedJob = initialJob;
+  const discover = vi.fn(() => ({ machine: row, job: initialJob }));
+  const reads = vi.fn((request: { id: string }) => ({ resource: request.id === initialJob.id ? observedJob : request.id === row.id ? row : other }));
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: reads }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect Schedule Runner</button><button onClick={() => open?.(other)}>Inspect other Runner</button><fieldset disabled={open?.pendingFor(row.id)}><input aria-label="Schedule Task" defaultValue="Original schedule draft"/><button>Cancel Schedule</button><button>Next Schedule</button></fieldset>{open?.body}</>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect Schedule Runner"));fireEvent.click(await screen.findByRole("button",{name:"Edit executable paths"}));
+  fireEvent.change(screen.getByLabelText("claude-code executable path"), {target:{value:"/submitted/claude"}});
+  fireEvent.click(screen.getByRole("button",{name:"Run optional diagnostics"}));await waitFor(()=>expect(discover).toHaveBeenCalledOnce());
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Next Schedule"}).matches(":disabled")).toBe(true));
+  expect(reads.mock.calls.filter(([request])=>request.id===initialJob.id)).toHaveLength(1);
+  observedJob=create(ResourceSchema,{...initialJob,revision:2n,documentJson:encode({state,output:{result:"retained"}})});
+  await act(async()=>{await client.invalidateQueries()});await screen.findByRole("button",{name:"Finish inspection"});
+  await waitFor(()=>expect(screen.getByRole("button",{name:"Next Schedule"}).matches(":disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button",{name:"Close Inspect installed harnesses"}));
+  expect(screen.getByRole("textbox",{name:"Schedule Task"})).toHaveProperty("value","Original schedule draft");
+  expect(screen.getByRole("button",{name:"Cancel Schedule"}).matches(":disabled")).toBe(false);
+  fireEvent.click(screen.getByText("Inspect Schedule Runner"));expect(await screen.findByRole("button",{name:"Finish inspection"})).toBeTruthy();expect(discover).toHaveBeenCalledOnce();
+  client.clear();
+});
+
+// The controller must preserve fresh drafts even if another mounted owner updates
+// them while the submitted original inspection is still pending.
+it("settles only the original submitted paths and preserves fresh Verify and path edits", async () => {
+ const row=machine("Draft Runner"), accepted=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.JOB,schemaVersion:1,revision:1n,documentJson:encode({state:"queued"})});
+ let job=accepted;
+ const discover=vi.fn(()=>({machine:row,job:accepted}));
+ const transport=createRouterTransport(router=>{router.service(ResourceService,{getResource:request=>({resource:request.id===accepted.id?job:row})});router.service(WorkerService,{discoverHarnesses:discover})});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ let controller: import("./machine-settings").MachineSettingsController;
+ function Surface(){controller=useMachineSettingsController(row,true);return <span>{controller.locked?"Original gate held":"Original gate released"}</span>}
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><SettingsLifetime>{()=> <MutationIntents><Surface/></MutationIntents>}</SettingsLifetime></QueryClientProvider></TransportProvider>);
+ act(()=>controller.setEdit({revision:row.revision,paths:{"claude-code":"/submitted"}}));
+ await act(async()=>{await controller.discovery.send({mutation:{id:row.id,expectedRevision:row.revision,requestId:newRequestId()},selectionsJson:encode({executables:[{harness:"claude-code",path:"/submitted"}]})})});
+ act(()=>{controller.setEdit({revision:row.revision,paths:{"claude-code":"/unsent"}});controller.setVerify(true)});
+ job=create(ResourceSchema,{...accepted,revision:2n,documentJson:encode({state:"succeeded"})});await act(async()=>{await client.invalidateQueries()});
+ await waitFor(()=>expect(controller.pending).toBe(false));expect(controller.edit?.paths["claude-code"]).toBe("/unsent");expect(controller.locked).toBe(true);expect(controller.verify).toBe(true);
+ act(()=>controller.setJob(undefined));expect(controller.locked).toBe(true);expect(discover).toHaveBeenCalledOnce();client.clear();
+});
+
+it.each(["foreign-job", "foreign-machine", "missing", "schema", "regressive", "malformed", "failed-read", "uncertain"])("keeps original consuming gate for %s status evidence", async kind => {
+ const row=machine("Protected original Runner"), accepted=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.JOB,schemaVersion:1,revision:2n,documentJson:encode({state:"queued"})});
+ const terminal=create(ResourceSchema,{...accepted,revision:3n,documentJson:encode({state:"succeeded"})});
+ const candidate=kind==="foreign-job"?create(ResourceSchema,{...terminal,id:newRequestId()}):kind==="foreign-machine"?row:kind==="missing"?undefined:kind==="schema"?create(ResourceSchema,{...terminal,schemaVersion:2}):kind==="regressive"?create(ResourceSchema,{...terminal,revision:1n}):kind==="malformed"?create(ResourceSchema,{...terminal,documentJson:new TextEncoder().encode("invalid")}):kind==="uncertain"?create(ResourceSchema,{...terminal,documentJson:encode({state:"uncertain"})}):terminal;
+ const jobRead=vi.fn(()=>{if(kind==="failed-read")throw new ConnectError("Original status unavailable",Code.Unavailable);return {resource:candidate}});
+ const discover=vi.fn(()=>({machine:row,job:accepted}));
+ const transport=createRouterTransport(router=>{router.service(ResourceService,{getResource:request=>request.id===accepted.id?jobRead():{resource:row}});router.service(WorkerService,{discoverHarnesses:discover})});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ function Surface(){const open=useRunnerRemediation();return <><button onClick={()=>open?.(row)}>Inspect protected Runner</button><button disabled={open?.pendingFor(row.id)}>Continue protected schedule</button>{open?.body}</>}
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface/></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getByText("Inspect protected Runner"));fireEvent.click(await screen.findByRole("button",{name:"Run optional diagnostics"}));
+ await waitFor(()=>expect(jobRead).toHaveBeenCalledOnce());await waitFor(()=>expect(screen.getByText("Continue protected schedule")).toHaveProperty("disabled",true));
+ expect(screen.queryByRole("button",{name:"Finish inspection"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Close Inspect installed harnesses"}));
+ expect(screen.getByText("Continue protected schedule")).toHaveProperty("disabled",true);expect(discover).toHaveBeenCalledOnce();client.clear();
 });
