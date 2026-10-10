@@ -48,3 +48,9 @@ it("retains fixed Session Enter with default, custom and disabled primary overri
  expect(readOnlyShortcutCatalog.find(action=>action.id===ShortcutId.SessionNewline)?.defaults).toEqual([{key:"Enter",shift:true}]);
  expect(editableShortcutCatalog).toHaveLength(7);
 });
+
+it("keeps Settings fixed and excludes comma from capture and the seven-action document", () => {
+ expect(editableShortcutCatalog).toHaveLength(7);
+ expect(() => parseShortcutOverrides({ [ShortcutId.OpenSettings]: { state: ShortcutOverrideState.Disabled } })).toThrow();
+ for (const platform of [ShortcutPlatform.Mac, ShortcutPlatform.Other]) expect(captureShortcut(new KeyboardEvent("keydown", { key: ",", metaKey: platform === ShortcutPlatform.Mac, ctrlKey: platform === ShortcutPlatform.Other }), platform)).toBeUndefined();
+});

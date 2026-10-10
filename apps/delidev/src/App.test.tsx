@@ -1387,12 +1387,15 @@ it("keeps a New session draft and a selected conversation across both header des
 });
 
 
-it.each([false, true])("uses shared Settings navigation and preserves a visit through Escape, reselection and reflow (compact %s)", async (compact) => {
+it.each([{ compact: false, platform: "MacIntel" }, { compact: false, platform: "Win32" }, { compact: true, platform: "Linux" }])("opens Settings with its fixed local shortcut and preserves the visit ($platform, compact $compact)", async ({ compact, platform }) => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  const primary = platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true };
   const resize = viewport(compact);
   const value = fixture();
   const view = render(<StrictMode><App transport={value.transport} /></StrictMode>);
   const rail = within(screen.getByRole("navigation", { name: "Primary navigation" }));
-  fireEvent.click(rail.getByRole("button", { name: "Settings" }));
+  expect(rail.getByRole("button", { name: "Settings" }).getAttribute("aria-keyshortcuts")).toBe(platform === "MacIntel" ? "Meta+," : "Control+,");
+  fireEvent.keyDown(document.body, { key: ",", ...primary });
   expect(rail.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe("page");
   expect(rail.getByRole("button", { name: "Sessions" }).getAttribute("aria-current")).toBeNull();
   const main = screen.getByRole("main");
@@ -1414,8 +1417,9 @@ it.each([false, true])("uses shared Settings navigation and preserves a visit th
   fireEvent.keyDown(name, { key: "Escape" });
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
   expect(rail.getByRole("button", { name: "Usage" }).hasAttribute("disabled")).toBe(false);
-  fireEvent.click(rail.getByRole("button", { name: "Settings" }));
+  fireEvent.keyDown(name, { key: ",", ...primary });
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+  expect(document.activeElement).toBe(name);
   act(() => resize(!compact));
   expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
   view.rerender(<StrictMode><App transport={value.transport} connectionEpoch={1} /></StrictMode>);
@@ -1423,7 +1427,7 @@ it.each([false, true])("uses shared Settings navigation and preserves a visit th
   fireEvent.click(rail.getByRole("button", { name: "Usage" }));
   expect(screen.queryByRole("region", { name: "Settings content" })).toBeNull();
   expect(document.activeElement).toBe(!compact ? screen.getByRole("button", { name: "Open usage filters" }) : main);
-  fireEvent.click(rail.getByRole("button", { name: "Settings" }));
+  fireEvent.keyDown(document.body, { key: ",", ...primary });
   expect(within(main).getByRole("heading", { name: "AI Subscription", level: 1 })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expectNoNavigationWrites(value);

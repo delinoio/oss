@@ -104,3 +104,19 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps fixed send and na
  }
  input.remove();
 });
+
+ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("dispatches fixed Settings once from editable input with exact local modifiers on %s", platform => {
+  const input = document.createElement("textarea"); document.body.append(input);
+  const run = vi.fn(), action = definition({ id: ShortcutId.OpenSettings, label: "shortcuts.openSettings", input: ShortcutInput.Allow, bindings: globalShortcutBindings[ShortcutId.OpenSettings], run });
+  const primary = platform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
+  const press = (options: KeyboardEventInit = {}, handled = false) => {
+    const event = new KeyboardEvent("keydown", { key: ",", bubbles: true, cancelable: true, ...primary, ...options });
+    if (handled) event.preventDefault();
+    input.addEventListener("keydown", () => dispatchShortcut(event, [action], Surface.Search, platform), { once: true }); input.dispatchEvent(event); return event;
+  };
+  expect(press().defaultPrevented).toBe(true); expect(run).toHaveBeenCalledTimes(1);
+  for (const options of [{ metaKey: false, ctrlKey: false }, { metaKey: !primary.metaKey, ctrlKey: !primary.ctrlKey }, { shiftKey: true }, { altKey: true }, { repeat: true }, { isComposing: true }, { keyCode: 229 }]) press(options);
+  press({}, true); input.hidden = true; press(); input.hidden = false; input.setAttribute("inert", ""); press(); input.removeAttribute("inert"); input.dataset.shortcuts = "passthrough"; press(); delete input.dataset.shortcuts;
+  const modal = document.createElement("dialog"); modal.setAttribute("open", ""); document.body.append(modal); press(); modal.remove();
+  expect(run).toHaveBeenCalledTimes(1); expect(bindingAria(action.bindings[0]!, platform)).toBe(platform === ShortcutPlatform.Mac ? "Meta+," : "Control+,"); input.remove();
+ });

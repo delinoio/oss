@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+Keep renderer shortcut actions in shared typed declarations. Derive Help, fixed catalog rows and control ARIA from those declarations; route navigation through the existing visit owner. Preserve fixed actions outside editable preference IDs and keep platform selection local to the renderer. Follow the desktop contract for dispatch and focus guards.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

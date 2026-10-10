@@ -1,4 +1,5 @@
 {
+  "shortcuts.openSettings": "설정 열기",
   "shortcuts.title": "키보드 단축키",
   "shortcuts.currentScreen": "현재 화면: {{name}}",
   "shortcuts.close": "키보드 단축키 닫기",

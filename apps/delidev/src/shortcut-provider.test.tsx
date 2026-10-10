@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { i18n } from "./localization";
 import { ShortcutProvider, useShortcutHelp, useHeldShortcutHelp, useShortcutSurface, useShortcuts } from "./shortcut-provider";
-import { ShortcutId, ShortcutInput, ShortcutScope } from "./shortcuts";
+import { globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutScope } from "./shortcuts";
 import { ShortcutPreferenceProvider, type ShortcutPreferenceBridge } from "./shortcut-preference-controller";
 import { Surface } from "./surface";
 
@@ -199,4 +199,13 @@ it("connection replacement disposes held ownership and its release listeners", (
 it("discloses the exact external browser numeric exception without disabling ordinary tab shortcuts",()=>{
  function TabHelp(){const open=useShortcutHelp();useShortcutSurface(Surface.Sessions);useShortcuts([{id:ShortcutId.SessionTab1,scope:Surface.Sessions,label:"shortcuts.tab1",bindings:[{key:"1",primary:true}],terminal:true,run:()=>{}}]);return <button onClick={open}>Tab help</button>;}
  render(<ShortcutProvider><TabHelp/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Tab help"}));expect(screen.getByText("On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.")).toBeTruthy();expect(screen.getByText("Select tab 1")).toBeTruthy();
+});
+
+it.each(["en", "ko"])("dismisses owned Help before fixed Settings navigation in %s", async language => {
+ await act(() => i18n.changeLanguage(language)); const run = vi.fn(() => expect(screen.queryByRole("dialog")).toBeNull());
+ function SettingsAction() { useShortcuts([{ id: ShortcutId.OpenSettings, scope: ShortcutScope.Global, label: "shortcuts.openSettings", input: ShortcutInput.Allow, bindings: globalShortcutBindings[ShortcutId.OpenSettings], run }]); return null; }
+ render(<ShortcutProvider><Consumer /><SettingsAction /></ShortcutProvider>);
+ fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+ expect(screen.getByText(language === "en" ? "Open Settings" : "설정 열기")).toBeTruthy();
+ fireEvent.keyDown(screen.getByRole("dialog"), { key: ",", ctrlKey: true }); expect(run).toHaveBeenCalledTimes(1);
 });
