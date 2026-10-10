@@ -38,6 +38,44 @@ pub enum Outcome {
     Failed,
     Uncertain,
 }
+/// This result is minted only after the original controller proves that no
+/// receipt exists. Receipt observation can never produce retry authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RejectionReason {
+    Busy,
+    Stopped,
+    InvalidInput,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub enum Admission {
+    New(Vec<u8>),
+    Retained(Outcome),
+    Rejected(RejectionReason),
+}
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum NonAdmission {
+    NotAdmitted {
+        #[serde(rename = "operationId")]
+        operation_id: String,
+        reason: RejectionReason,
+    },
+}
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum SaveResult {
+    Receipt(Outcome),
+    Rejection(NonAdmission),
+}
+impl SaveResult {
+    pub fn not_admitted(operation_id: String, reason: RejectionReason) -> Self {
+        Self::Rejection(NonAdmission::NotAdmitted {
+            operation_id,
+            reason,
+        })
+    }
+}
 #[derive(Clone)]
 struct Receipt {
     scope: String,
@@ -88,21 +126,29 @@ impl Request {
 }
 impl Controller {
     /// Replays return the original receipt without opening another dialog.
-    pub fn begin(&self, scope: &str, request: &Request) -> Result<Option<Outcome>, NativeFailure> {
-        if self.stopped.load(Ordering::Acquire) {
-            return Err(NativeFailure::Stopped);
-        }
+    pub fn begin(&self, scope: &str, request: &Request) -> Result<Admission, NativeFailure> {
+        // A poisoned lock cannot prove non-admission. Inspect retained receipts
+        // before stopped/input checks so an admitted original never gains
+        // retry.
         let mut receipts = self.receipts.lock().map_err(|_| NativeFailure::Busy)?;
         if let Some(receipt) = receipts.get(&request.operation_id) {
             if receipt.scope != scope || receipt.identity != request.identity() {
                 return Err(NativeFailure::PermissionDenied);
             }
-            return Ok(Some(receipt.outcome));
+            request.bytes()?;
+            return Ok(Admission::Retained(receipt.outcome));
         }
+        if self.stopped.load(Ordering::Acquire) {
+            return Ok(Admission::Rejected(RejectionReason::Stopped));
+        }
+        let bytes = match request.bytes() {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(Admission::Rejected(RejectionReason::InvalidInput)),
+        };
         // Never evict an uncertain receipt and accidentally make its replay a
-        // write.
+        // write. No receipt is created for these positively proved refusals.
         if receipts.len() >= 128 || receipts.values().any(|v| v.outcome == Outcome::Pending) {
-            return Err(NativeFailure::Busy);
+            return Ok(Admission::Rejected(RejectionReason::Busy));
         }
         receipts.insert(
             request.operation_id.clone(),
@@ -112,7 +158,7 @@ impl Controller {
                 outcome: Outcome::Pending,
             },
         );
-        Ok(None)
+        Ok(Admission::New(bytes))
     }
 
     pub fn finish(
@@ -256,12 +302,21 @@ mod tests {
     fn replays_and_uncertainty_keep_original_scope() {
         let c = Controller::default();
         let mut r = request();
-        assert_eq!(c.begin("original", &r).unwrap(), None);
-        assert_eq!(c.begin("original", &r).unwrap(), Some(Outcome::Pending));
+        assert_eq!(
+            c.begin("original", &r).unwrap(),
+            Admission::New(r.bytes().unwrap())
+        );
+        assert_eq!(
+            c.begin("original", &r).unwrap(),
+            Admission::Retained(Outcome::Pending)
+        );
         assert!(c.begin("other", &r).is_err());
         c.finish("original", &r.operation_id, Outcome::Uncertain)
             .unwrap();
-        assert_eq!(c.begin("original", &r).unwrap(), Some(Outcome::Uncertain));
+        assert_eq!(
+            c.begin("original", &r).unwrap(),
+            Admission::Retained(Outcome::Uncertain)
+        );
         r.attachment_id = uuid::Uuid::now_v7().to_string();
         assert!(c.begin("original", &r).is_err());
     }
@@ -288,7 +343,10 @@ mod tests {
             Outcome::Canceled
         );
         assert!(!path.exists());
-        assert!(c.begin("original", &request()).is_err());
+        assert_eq!(
+            c.begin("original", &request()).unwrap(),
+            Admission::Rejected(RejectionReason::Stopped)
+        );
     }
     #[test]
     fn cancellation_is_a_terminal_receipt() {
@@ -301,6 +359,83 @@ mod tests {
             c.finish("original", &r.operation_id, Outcome::Saved)
                 .unwrap(),
             Outcome::Canceled
+        );
+    }
+    #[test]
+    fn pre_admission_busy_releases_only_the_absent_original() {
+        let c = Controller::default();
+        let a = request();
+        let b = request();
+        assert!(matches!(
+            c.begin("window-a", &a).unwrap(),
+            Admission::New(_)
+        ));
+        assert_eq!(
+            c.begin("window-b", &b).unwrap(),
+            Admission::Rejected(RejectionReason::Busy)
+        );
+        assert!(c.read("window-b", &b.operation_id).is_err());
+        assert_eq!(
+            c.begin("window-a", &a).unwrap(),
+            Admission::Retained(Outcome::Pending)
+        );
+        c.finish("window-a", &a.operation_id, Outcome::Canceled)
+            .unwrap();
+        assert!(matches!(
+            c.begin("window-b", &b).unwrap(),
+            Admission::New(_)
+        ));
+        c.finish("window-b", &b.operation_id, Outcome::Uncertain)
+            .unwrap();
+        c.request_stop();
+        assert_eq!(
+            c.begin("window-b", &b).unwrap(),
+            Admission::Retained(Outcome::Uncertain)
+        );
+        assert!(c.begin("window-a", &b).is_err());
+    }
+    #[test]
+    fn invalid_fresh_input_proves_absence_but_changed_receipt_does_not() {
+        let c = Controller::default();
+        let mut r = request();
+        r.png = "invalid".into();
+        assert_eq!(
+            c.begin("original", &r).unwrap(),
+            Admission::Rejected(RejectionReason::InvalidInput)
+        );
+        assert!(c.read("original", &r.operation_id).is_err());
+        let mut retained = request();
+        c.begin("original", &retained).unwrap();
+        retained.png = "invalid".into();
+        assert!(c.begin("original", &retained).is_err());
+        assert_eq!(
+            c.read("original", &retained.operation_id).unwrap(),
+            Outcome::Pending
+        );
+    }
+    #[test]
+    fn poisoned_lock_cannot_prove_non_admission() {
+        let c = Controller::default();
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = c.receipts.lock().unwrap();
+            panic!("fixture poison");
+        });
+        assert!(c.begin("original", &request()).is_err());
+    }
+    #[test]
+    fn non_admission_wire_is_closed_and_bound_to_original_operation() {
+        let value = serde_json::to_value(SaveResult::not_admitted(
+            "original-operation".into(),
+            RejectionReason::Busy,
+        ))
+        .unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({"status":"not-admitted","operationId":"original-operation","reason":"busy"})
+        );
+        assert_eq!(
+            serde_json::to_value(SaveResult::Receipt(Outcome::Saved)).unwrap(),
+            "saved"
         );
     }
 }
