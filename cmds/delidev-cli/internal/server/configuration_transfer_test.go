@@ -436,10 +436,24 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 }
 
 func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T) {
-	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity"} {
+	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "provider-disabled"} {
 		t.Run(outcome, func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
 			selection := transferSelection()
+			var providerID domain.ID
+			var provider domain.Provider
+			if outcome == "provider-disabled" {
+				for _, entry := range selection.Bundle.Entries {
+					if entry.Kind == domain.ProviderKind {
+						if err := domain.Decode(entry.Document, &provider); err != nil {
+							t.Fatal(err)
+						}
+						providerID = domain.NewID()
+						doctorPut(t, s, domain.ProviderKind, providerID, 0, provider)
+						selection.Bindings = append(selection.Bindings, domain.ConfigurationBinding{SourceID: entry.ID, TargetID: providerID, ExpectedRevision: 1, Action: domain.ConfigurationReuse})
+					}
+				}
+			}
 			sources := []domain.ID{domain.NewID(), domain.NewID()}
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
 			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
@@ -506,6 +520,11 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 					if input.ExpectedRemoteIdentity != "" {
 						t.Fatal("legacy Worker received the post-capability source identity")
 					}
+				}
+				if outcome == "provider-disabled" {
+					off := false
+					provider.Enabled = &off
+					doctorPut(t, s, domain.ProviderKind, providerID, 1, provider)
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
 			}
@@ -588,6 +607,21 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 		}
 	} else if job.State != domain.JobFailed || len(rows) != 0 {
 		t.Fatal("partial or unresolved failure", outcome, job.State)
+	}
+	if outcome == "provider-disabled" {
+		if job.Problem == nil || job.Problem.Code != domain.Conflict {
+			t.Fatal("deferred source revision failure was hidden", job.Problem)
+		}
+		for _, kind := range []domain.Kind{domain.AccountKind, domain.AgentKind, domain.RepositoryKind} {
+			entries, err := s.Store.List(context.Background(), store.Filter{Kind: kind, Limit: 10})
+			if err != nil || len(entries) != 0 {
+				t.Fatal("disabled-provider deferred import partially published", kind, err)
+			}
+		}
+		original, err := s.Store.Get(context.Background(), domain.SettingsKind, settingsID)
+		if err != nil || original.Revision != 1 {
+			t.Fatal("failed deferred import replaced settings", err)
+		}
 	}
 }
 func TestConfigurationTransferRealConnectRoundTrip(t *testing.T) {
