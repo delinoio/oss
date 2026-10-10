@@ -81,9 +81,18 @@ export function turnDuration(seconds: number): string {
   const days = Math.floor(seconds / 86400), hours = Math.floor(seconds / 3600) % 24, minutes = Math.floor(seconds / 60) % 60, rest = seconds % 60;
   return [days ? copy("turnTiming.days", { v0: days }) : "", hours ? copy("turnTiming.hours", { v0: hours }) : "", minutes ? copy("turnTiming.minutes", { v0: minutes }) : "", copy("turnTiming.seconds", { v0: rest })].filter(Boolean).join(" ");
 }
+/** Message timing may finish presentation before the independent Session outcome. */
+export function displayedTurnTiming(turn: TurnProjection, current?: CurrentTurn): TurnTiming | undefined {
+  const matches = current?.owner === turn.owner && current.inputId === turn.inputId;
+  if (!matches) return turn.timing;
+  const message = turn.timing, session = current.timing;
+  if (!turn.inherited && current.running && session && session.terminal === undefined && message?.terminal !== undefined && message.accepted === session.accepted && Number.isSafeInteger(message.terminal) && message.terminal >= message.accepted && Number.isSafeInteger(message.terminal - message.accepted)) return message;
+  return session;
+}
 const TurnClockContext = createContext<number | undefined>(undefined);
-export function TurnTimingProvider({ current, active, confirmed, children }: { current?: CurrentTurn; active: boolean; confirmed: boolean; children: ReactNode }) {
-  const seconds = useTurnClock(current, active, confirmed);
+export function TurnTimingProvider({ current, retained, active, confirmed, children }: { current?: CurrentTurn; retained?: TurnProjection; active: boolean; confirmed: boolean; children: ReactNode }) {
+  const terminal = retained && displayedTurnTiming(retained, current)?.terminal !== undefined;
+  const seconds = useTurnClock(current, active && !terminal, confirmed);
   return <TurnClockContext.Provider value={seconds}>{children}</TurnClockContext.Provider>;
 }
 function LiveTurnTime(props: { turn: TurnProjection; current?: CurrentTurn; confirmed: boolean }) {
@@ -91,11 +100,11 @@ function LiveTurnTime(props: { turn: TurnProjection; current?: CurrentTurn; conf
   return <TurnTimeLine {...props} seconds={seconds} />;
 }
 export function TurnTime(props: { turn: TurnProjection; current?: CurrentTurn; confirmed: boolean }) {
-  return props.current?.owner === props.turn.owner && props.current.inputId === props.turn.inputId && props.current.timing?.terminal === undefined ? <LiveTurnTime {...props} /> : <TurnTimeLine {...props} />;
+  return props.current?.owner === props.turn.owner && props.current.inputId === props.turn.inputId && displayedTurnTiming(props.turn, props.current)?.terminal === undefined ? <LiveTurnTime {...props} /> : <TurnTimeLine {...props} />;
 }
 function TurnTimeLine({ turn, current, seconds, confirmed }: { turn: TurnProjection; current?: CurrentTurn; seconds?: number; confirmed: boolean }) {
   const matches = current?.owner === turn.owner && current.inputId === turn.inputId;
-  const timing = matches ? current.timing : turn.timing;
+  const timing = displayedTurnTiming(turn, current);
   const terminal = timing?.terminal !== undefined;
   const value = terminal ? Math.floor((timing!.terminal! - timing!.accepted) / 1000) : matches ? seconds : undefined;
   const label = value === undefined ? copy("turnTiming.unavailable") : terminal ? copy("turnTiming.elapsed", { v0: turnDuration(value) }) : copy(matches && confirmed ? "turnTiming.inProgress" : "turnTiming.unconfirmed", { v0: turnDuration(value) });

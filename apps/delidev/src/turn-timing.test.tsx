@@ -99,3 +99,46 @@ it("anchors pre-user timing before the first original native row and relocates o
  const primary=message({first_sequence:8,last_sequence:9});rerender(<ToolTurnTranscript {...p} query={query([[prior,foreign],[early,primary]])}/>);
  expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(container.querySelector(".turn-time")?.nextElementSibling?.textContent).toContain(primary.id);expect(container.querySelector(".turn-time")?.textContent).toContain("12s");expect(vi.getTimerCount()).toBe(1);
 });
+
+it("uses terminal timing from a later matching primary part without moving the original anchor",()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date(start));
+ const first=message({text:"Original primary part",first_sequence:3,last_sequence:3});
+ const later=message({text:"Additional primary part",first_sequence:4,last_sequence:4});
+ const p=view(query([[first,later]]));const {container,rerender}=render(<ToolTurnTranscript {...p}/>);
+ act(()=>vi.advanceTimersByTime(4000));expect(container.textContent).toContain("In progress · 4s");expect(vi.getTimerCount()).toBe(1);
+ const mismatched=message({text:"Additional primary part",first_sequence:4,last_sequence:4,turn_timing:{accepted_at:"2026-10-09T10:00:01.123Z",terminal_at:"2026-10-09T10:00:10.123Z"}},later.id,2n);
+ rerender(<ToolTurnTranscript {...p} query={query([[first,mismatched]])}/>);expect(container.textContent).toContain("In progress · 4s");expect(vi.getTimerCount()).toBe(1);
+ const completed=message({text:"Additional primary part",first_sequence:4,last_sequence:4,turn_timing:{accepted_at:start,terminal_at:"2026-10-09T10:00:10.123Z"}},later.id,2n);
+ const conflicting=message({text:"Conflicting primary part",first_sequence:5,last_sequence:5,turn_timing:{accepted_at:start,terminal_at:"2026-10-09T10:00:11.123Z"}});
+ rerender(<ToolTurnTranscript {...p} query={query([[first,completed,conflicting]])}/>);expect(container.textContent).toContain("In progress · 4s");expect(vi.getTimerCount()).toBe(1);
+ const q=query([[first,completed]]);rerender(<ToolTurnTranscript {...p} query={q}/>);
+ expect(container.textContent).toContain("Elapsed · 10s");expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(vi.getTimerCount()).toBe(0);
+ expect(container.querySelector(".turn-time")?.nextElementSibling?.textContent).toContain(first.id);
+ rerender(<ToolTurnTranscript {...p} query={q} confirmed={false}/>);act(()=>vi.advanceTimersByTime(60000));
+ expect(container.textContent).toContain("Elapsed · 10s");expect(container.textContent).not.toContain("Unconfirmed");expect(vi.getTimerCount()).toBe(0);
+});
+
+it("freezes terminal Message timing before the Session update and across disconnect",()=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date(start));
+ const primary=message(),p=view(query([[primary]])),running=p.current!;
+ const {container,rerender}=render(<ToolTurnTranscript {...p}/>);
+ act(()=>vi.advanceTimersByTime(4000));expect(container.textContent).toContain("In progress · 4s");expect(vi.getTimerCount()).toBe(1);
+ const completed=message({turn_timing:{accepted_at:start,terminal_at:"2026-10-09T10:00:10.123Z"}},primary.id,2n);
+ const q=query([[completed]]);rerender(<ToolTurnTranscript {...p} query={q}/>);
+ expect(container.textContent).toContain("Elapsed · 10s");expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(vi.getTimerCount()).toBe(0);expect(running.running).toBe(true);
+ rerender(<ToolTurnTranscript {...p} query={q} confirmed={false}/>);act(()=>vi.advanceTimersByTime(60000));
+ expect(container.textContent).toContain("Elapsed · 10s");expect(container.textContent).not.toContain("Unconfirmed");expect(vi.getTimerCount()).toBe(0);
+ const terminal=currentTurn(session({outcome:"succeeded",turn_timing:{accepted_at:start,terminal_at:"2026-10-09T10:00:10.123Z"}}),sessionId);
+ rerender(<ToolTurnTranscript {...p} query={q} current={terminal}/>);expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(container.textContent).toContain("Elapsed · 10s");
+});
+
+it.each([
+ {input_id:newRequestId()}, {native_turn_id:"foreign-turn"},
+ {turn_timing:{accepted_at:"2026-10-09T10:00:01.123Z",terminal_at:"2026-10-09T10:00:10.123Z"}},
+ {turn_timing:{accepted_at:start,terminal_at:"invalid"}},
+])("rejects foreign/conflicting terminal Message timing without stopping the original clock %j",extra=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date(start));const p=view();
+ const row=message({turn_timing:{accepted_at:start,terminal_at:"2026-10-09T10:00:10.123Z"},...extra});
+ const {container}=render(<ToolTurnTranscript {...p} query={query([[row]])}/>);act(()=>vi.advanceTimersByTime(4000));
+ expect(container.textContent).toContain("In progress · 4s");expect(vi.getTimerCount()).toBe(1);expect(p.current?.running).toBe(true);
+});
