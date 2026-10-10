@@ -1,6 +1,9 @@
-import { useTerminalTabShortcuts } from "./shortcut-provider";
+import { useShortcuts, useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
+import { createPortal } from "react-dom";
+import { ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
@@ -23,12 +26,12 @@ export enum TerminalDockPresentation { Docked = "docked", CompactRestored = "com
 
 enum OutputState { Connecting = "connecting", Attached = "attached", Detached = "detached", Exited = "exited" }
 
-export function SessionTerminals({ session, close, active = true, presentationChanged, selectedId, openTerminal, dismissTerminal, hideEmpty, tabbed = false, openIntent, finishOpenIntent }: { session: Resource; close: () => void; active?: boolean; presentationChanged?: (value: TerminalDockPresentation) => void; selectedId?: string; openTerminal?: (id: string) => void; dismissTerminal?: (id: string, fallback: string) => void; hideEmpty?: () => void; tabbed?: boolean; openIntent?: { requestId: string; revision: bigint }; finishOpenIntent?: () => void }) {
+export function SessionTerminals({ session, close, active = true, surfaceActive = active, recoveryTarget, presentationChanged, selectedId, openTerminal, dismissTerminal, hideEmpty, tabbed = false, openIntent, finishOpenIntent }: { session: Resource; close: () => void; active?: boolean; surfaceActive?: boolean; recoveryTarget?: HTMLElement | null; presentationChanged?: (value: TerminalDockPresentation) => void; selectedId?: string; openTerminal?: (id: string) => void; dismissTerminal?: (id: string, fallback: string) => void; hideEmpty?: () => void; tabbed?: boolean; openIntent?: { requestId: string; revision: bigint }; finishOpenIntent?: () => void }) {
   useLocale();
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
-  const latest = useRef({ active, session, finishOpenIntent, openTerminal });
-  latest.current = { active, session, finishOpenIntent, openTerminal };
+  const latest = useRef({ active, surfaceActive, session, openIntent, finishOpenIntent, openTerminal });
+  latest.current = { active, surfaceActive, session, openIntent, finishOpenIntent, openTerminal };
   const [openError, setOpenError] = useState<unknown>();
   const presentationRecords = tabsStore.terminalPresentation(session.id);
   const intents = useRetainedMutationIntents("terminal-control:");
@@ -38,7 +41,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
   const visibleBefore = useRef<string[]>([]);
   const observeRef = useRef<(value: Resource) => void>(() => {});
   const dock = useRef<HTMLElement>(null);
-  const [details, setDetails] = useState(false), [maximized, setMaximized] = useState(false), [height, setHeight] = useState<number>();
+  const [maximized, setMaximized] = useState(false), [height, setHeight] = useState<number>();
   const [geometry, setGeometry] = useState({ width: 0, height: 0 }), [discarded, setDiscarded] = useState(false);
   useLayoutEffect(() => {
     const content = dock.current?.closest<HTMLElement>(".session-content"); if (!content) return;
@@ -51,24 +54,26 @@ export function SessionTerminals({ session, close, active = true, presentationCh
   useLayoutEffect(() => { presentationChanged?.(presentation); }, [presentation, presentationChanged]);
   useLayoutEffect(() => () => { presentationChanged?.(TerminalDockPresentation.Docked); }, [presentationChanged]);
   useLayoutEffect(() => { dock.current?.closest<HTMLElement>(".session-content")?.style.setProperty("--terminal-dock-height", `${actualHeight}px`); }, [actualHeight]);
-  const [shell, setShell] = useState("");
   const [internalSelected, setSelected] = useState("");
   const selected = selectedId ?? internalSelected;
   // Content-tab selection is owned by SessionTabBar. Retain it before the
-  // toolbar selects the inventory tab, whose selectedId is deliberately empty.
+  // current pane resolves an explicit open intent without changing selection.
   useLayoutEffect(() => { if (selectedId) setSelected(selectedId); }, [selectedId]);
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
-  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
+  // Admission may run while Conversation owns the pane. Polling and input
+  // remain selected-terminal work; the retained manager owns only recovery.
+  const status = useQuery(SystemQuery.getStatus, {}, { enabled: surfaceActive && (active || Boolean(openIntent)) });
   const supported = status.data?.capabilities.includes(SystemCapability.SESSION_TERMINALS_V1) ?? false;
   const list = useConversationPages(EntityKind.TERMINAL, session.id, active && supported, 50, undefined, 1000);
-  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal && !presentationRecords.hidden(value.terminal.id)) { setCreatedTerminal(value.terminal); setSelectedTerminal(undefined); setSelected(value.terminal.id); if (latest.current.active) openTerminal?.(value.terminal.id); } if (supported) void list.refresh(); });
+  const create = useRetainedMutation(`terminal-create:${session.id}`, TerminalQuery.createTerminal, (value) => { if (value.terminal && value.terminal.sessionId === latest.current.session.id && !presentationRecords.hidden(value.terminal.id)) { setCreatedTerminal(value.terminal); setSelectedTerminal(undefined); setSelected(value.terminal.id); tabsStore.terminalNumber(session.id, value.terminal.id); if (latest.current.surfaceActive) latest.current.openTerminal?.(value.terminal.id); } if (supported && latest.current.active) void list.refresh(); }, (value, request) => Boolean(value.terminal && value.terminal.kind === EntityKind.TERMINAL && value.terminal.schemaVersion === 1 && isEntityId(value.terminal.id) && value.terminal.sessionId === request.mutation?.id && value.terminal.revision > 0n));
   const blocked = !active || Boolean(openIntent) || !supported || create.busy || create.uncertain || text(document(session).archive) !== "active";
+  const createAdditional = () => { if (!blocked) void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: "", rows: 24, columns: 80 }); };
   const resolution = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!openIntent) return;
-    if (!active) { finishOpenIntent?.(); return; }
+    if (!surfaceActive) { finishOpenIntent?.(); return; }
     if (status.error || status.data && !supported) { finishOpenIntent?.(); return; }
     if (!supported || status.isFetching) return;
     if (resolution.current === openIntent.requestId) return;
@@ -76,7 +81,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
     setOpenError(undefined);
     const controller = new AbortController();
     let sent = false;
-    const current = () => !controller.signal.aborted && latest.current.active && latest.current.session.id === session.id;
+    const current = () => !controller.signal.aborted && latest.current.surfaceActive && latest.current.session.id === session.id && latest.current.openIntent?.requestId === openIntent.requestId;
     const run = async () => {
       try {
         if (create.busy || create.uncertain) return;
@@ -90,7 +95,7 @@ export function SessionTerminals({ session, close, active = true, presentationCh
             const data = document(row);
             if (row.kind !== EntityKind.TERMINAL || row.sessionId !== session.id || row.schemaVersion !== 1 || !isEntityId(row.id) || row.revision <= 0n || seen.has(row.id) || !["starting", "running", "exited", "closed", "uncertain"].includes(text(data.state)) || data.pending != null && (typeof data.pending !== "object" || Array.isArray(data.pending))) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
             if (data.close_request_id != null && (typeof data.close_request_id !== "string" || !isEntityId(data.close_request_id)) || data.cleanup_verified != null && typeof data.cleanup_verified !== "boolean" || Object.keys(object(data.pending)).length && !["create", "input", "resize", "close"].includes(text(object(data.pending).action))) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
-            seen.add(row.id); records.push(row);
+            seen.add(row.id); records.push(row); tabsStore.terminalNumber(session.id, row.id);
           }
           token = reply.nextPageToken;
           if (token && tokens.has(token)) throw new ConnectError("Terminal inventory is unavailable.", Code.DataLoss);
@@ -107,13 +112,13 @@ export function SessionTerminals({ session, close, active = true, presentationCh
         const original = latest.current.session;
         if (original.revision !== openIntent.revision || text(document(original).archive) !== "active") throw new ConnectError("The session changed before opening a terminal.", Code.Aborted);
         sent = true;
-        void create.send({ mutation: { requestId: openIntent.requestId, id: session.id, expectedRevision: openIntent.revision }, creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: reused?.id ?? "", shellOverride: shell, rows: 24, columns: 80 });
+        void create.send({ mutation: { requestId: openIntent.requestId, id: session.id, expectedRevision: openIntent.revision }, creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: reused?.id ?? "", shellOverride: "", rows: 24, columns: 80 });
       } catch (error) { if (current()) setOpenError(error); }
       finally { if (current()) latest.current.finishOpenIntent?.(); }
     };
     void run();
     return () => { controller.abort(); if (!sent && resolution.current === openIntent.requestId) resolution.current = undefined; };
-  }, [openIntent, active, supported, status.error, status.isFetching]);
+  }, [openIntent, surfaceActive, supported, status.error, status.isFetching]);
 
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.
@@ -150,39 +155,43 @@ export function SessionTerminals({ session, close, active = true, presentationCh
   useEffect(() => {
     // Keep known rows through payload eviction; an initial exited-only read
     // does not close the explicitly opened creation surface.
-    for (const value of [...(list.data?.resources ?? []), ...(resource ? [resource] : [])]) observeRef.current(value);
+    for (const value of [...(list.data?.resources ?? []), ...(resource ? [resource] : [])]) { tabsStore.terminalNumber(session.id, value.id); observeRef.current(value); }
     visibleBefore.current = tabs.filter(row => !presentationRecords.hidden(row.id)).map(row => row.id);
   }, [list.data, resource, intents, active]);
+  // Portal recovery above the hidden pane so original uncertain authority stays
+  // reachable without mounting a renderer or observing unrelated terminals.
+  const recovery = <div className="terminal-opening-recovery" hidden={!surfaceActive}>
+    {openIntent || create.busy ? <p role="status">{copy("session-terminals.openingTerminal")}</p> : null}
+    <Problem error={openError} actions={<button disabled={!surfaceActive || list.isFetching} onClick={() => { setOpenError(undefined); if (supported) void list.refetch(); }}>{copy("session-terminals.retryInventory")}</button>} />
+    {!supported && !status.error ? <p role="status">{copy("session-terminals.waitingForAServerThatSupports_e0becc")}</p> : null}
+    <Problem error={status.error} actions={<button disabled={!surfaceActive || status.isFetching} onClick={() => void status.refetch()}>{copy("session-terminals.retryCapability")}</button>} /><Problem error={create.error} />
+    {create.uncertain ? <button disabled={create.busy || !surfaceActive} onClick={create.retry}>{copy("session-terminals.retryTheSameTerminalCreation_bc3946")}</button> : null}
+    {intents.filter(intent => intent.uncertain && tabsStore.hasTerminal(session.id, intent.key.slice("terminal-control:".length)) && (!active || intent.key !== `terminal-control:${selected}`)).map(intent => <RetainedTerminalRecovery key={intent.key} originalKey={intent.key} active={surfaceActive} />)}
+  </div>;
   return <aside ref={dock} hidden={!active} className="terminal-dock" aria-label={copy("session-terminals.sessionTerminals_db991c")}>
     {!tabbed ? <div role="separator" tabIndex={0} aria-orientation="horizontal" aria-label={copy("session-terminals.resizeDock")} aria-valuemin={Math.min(200, geometry.height * .7)} aria-valuemax={Math.floor(geometry.height)} aria-valuenow={Math.round(actualHeight)} className="terminal-dock-separator" onPointerDown={event => { const target = event.currentTarget, start = event.clientY, initial = actualHeight; target.setPointerCapture(event.pointerId); const move = (next: PointerEvent) => { setMaximized(false); setHeight(initial + start - next.clientY); }; const stop = () => { target.removeEventListener("pointermove", move); target.removeEventListener("pointerup", stop); target.removeEventListener("pointercancel", stop); }; target.addEventListener("pointermove", move); target.addEventListener("pointerup", stop, { once: true }); target.addEventListener("pointercancel", stop, { once: true }); }} onKeyDown={event => { if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return; event.preventDefault(); setMaximized(false); setHeight(event.key === "Home" ? 200 : event.key === "End" ? geometry.height * .7 : actualHeight + (event.key === "ArrowUp" ? 20 : -20)); }} /> : null}
-    <header className="terminal-dock-header"><h3>{copy("session-terminals.terminals_7482c4")}</h3><button type="button" aria-label={copy("session-terminals.createTerminal_747b98")} disabled={blocked} onClick={() => void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: shell, rows: 24, columns: 80 })}>+</button><button type="button" aria-expanded={details} onClick={() => setDetails(value => !value)}>{copy("session-terminals.details")}</button>{!tabbed ? <button type="button" data-terminal-restore onClick={() => { if (actualHeight === geometry.height) { setMaximized(false); setHeight(geometry.height * .4); } else setMaximized(true); }}>{copy(actualHeight === geometry.height ? "session-terminals.restoreDock" : "session-terminals.maximizeDock")}</button> : null}<button type="button" onClick={close}>{copy("session-terminals.hideTerminals_522e2b")}</button></header>
-    {openIntent || create.busy ? <p role="status">{copy("session-terminals.openingTerminal")}</p> : null}
-    <Problem error={openError} actions={<button disabled={!active || list.isFetching} onClick={() => { setOpenError(undefined); void list.refetch(); }}>{copy("session-terminals.retryInventory")}</button>} />
+    <header className="terminal-dock-header"><h3>{copy("session-terminals.terminals_7482c4")}</h3><button type="button" aria-label={copy("session-terminals.createTerminal_747b98")} disabled={blocked} onClick={createAdditional}>+</button></header>
+    {recoveryTarget ? createPortal(recovery, recoveryTarget) : recovery}
     {discarded ? <p role="status">{copy("session-terminals.unsentDiscarded")}</p> : null}
-    <div className="terminal-dock-details" hidden={!details}>
-    <p>{copy("session-terminals.terminalsRunOnThisSessionS_0699b6")}</p>
-    <form onSubmit={(event) => { event.preventDefault(); void create.send({ mutation: { requestId: newRequestId(), id: session.id, expectedRevision: session.revision }, shellOverride: shell, rows: 24, columns: 80 }); }}>
-      <label>{copy("session-terminals.workerShellOverride_b27d25")}<input value={shell} onChange={(event) => setShell(event.target.value)} placeholder={copy("session-terminals.workerAccountDefaultShell_2fd88a")} disabled={blocked} autoComplete="off" spellCheck={false} /></label>
-      <button disabled={blocked}>{copy("session-terminals.createTerminal_747b98")}</button>
-    </form>
-    <button disabled={!active || !supported || list.isFetching} onClick={() => { if (active && supported) void list.refetch(); }}>{copy("session-terminals.refreshTerminals_6e87f2")}</button>
-    </div>
-    <div ref={listRoot} role={tabbed ? "group" : "tablist"} aria-label={copy("session-terminals.terminals_7482c4")} className="terminal-tabs">{tabs.map((row, index) => <button key={row.id} id={`terminal-tab-${row.id}`} role={tabbed ? undefined : "tab"} aria-selected={tabbed ? undefined : selected === row.id} aria-controls={selected === row.id ? `terminal-panel-${row.id}` : undefined} tabIndex={tabbed || selected === row.id || !selected && index === 0 ? 0 : -1} onKeyDown={event => { if (tabbed || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); const elements = [...(listRoot.current?.querySelectorAll<HTMLButtonElement>("[role=tab]") ?? [])], at = elements.indexOf(event.currentTarget), next = event.key === "Home" ? 0 : event.key === "End" ? elements.length - 1 : (at + (event.key === "ArrowRight" ? 1 : -1) + elements.length) % elements.length; elements[next]?.focus(); elements[next]?.click(); }} onClick={() => { openTerminal?.(row.id); setSelected(row.id); const value = list.data?.resources.find(value => value.id === row.id) ?? (createdTerminal?.id === row.id ? createdTerminal : selectedTerminal?.id === row.id ? selectedTerminal : undefined); if (value) { setSelectedTerminal(value); setCreatedTerminal(undefined); } else { const page = list.pages.find(page => page.rows.some(value => value.id === row.id)); if (page) list.restore(page.token); } }}><LocalizedText id="session-terminals.terminal_8058ce" components={{ s0: <>{index + 1}</>, s1: <>{statusLabel(text(document(list.data?.resources.find(value => value.id === row.id) ?? (resource?.id === row.id ? resource : undefined)).state))}</> }} /></button>)}</div>
+    <div ref={listRoot} role={tabbed ? "group" : "tablist"} aria-label={copy("session-terminals.terminals_7482c4")} className="terminal-tabs">{tabs.map((row, index) => <button key={row.id} id={`terminal-tab-${row.id}`} role={tabbed ? undefined : "tab"} aria-selected={tabbed ? undefined : selected === row.id} aria-controls={selected === row.id ? `terminal-panel-${row.id}` : undefined} tabIndex={tabbed || selected === row.id || !selected && index === 0 ? 0 : -1} onKeyDown={event => { if (tabbed || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); const elements = [...(listRoot.current?.querySelectorAll<HTMLButtonElement>("[role=tab]") ?? [])], at = elements.indexOf(event.currentTarget), next = event.key === "Home" ? 0 : event.key === "End" ? elements.length - 1 : (at + (event.key === "ArrowRight" ? 1 : -1) + elements.length) % elements.length; elements[next]?.focus(); elements[next]?.click(); }} onClick={() => { openTerminal?.(row.id); setSelected(row.id); const value = list.data?.resources.find(value => value.id === row.id) ?? (createdTerminal?.id === row.id ? createdTerminal : selectedTerminal?.id === row.id ? selectedTerminal : undefined); if (value) { setSelectedTerminal(value); setCreatedTerminal(undefined); } else { const page = list.pages.find(page => page.rows.some(value => value.id === row.id)); if (page) list.restore(page.token); } }}><LocalizedText id="session-terminals.terminal_8058ce" components={{ s0: <>{tabsStore.terminalNumber(session.id, row.id)}</>, s1: <>{statusLabel(text(document(list.data?.resources.find(value => value.id === row.id) ?? (resource?.id === row.id ? resource : undefined)).state))}</> }} /></button>)}</div>
     <ScrollContinuation showInitial={!(list.loaded && list.loading === ReadStage.Refresh)} query={list} root={listRoot} active={active && supported} label={copy("session-terminals.terminalHistoryPages_2ace98")} />
     {supported && list.loaded && !tabs.length && !list.error ? <p role="status">{copy("session-terminals.emptyInventory")}</p> : null}
-    {!supported && !status.error ? <p role="status">{copy("session-terminals.waitingForAServerThatSupports_e0becc")}</p> : null}
     <Problem error={selectedRead.error} />
-    <Problem error={status.error} actions={<button disabled={!active || status.isFetching} onClick={() => void status.refetch()}>{copy("session-terminals.retryCapability")}</button>} /><Problem error={create.error} />
     <Failure failure={supported ? list.error?.failure : undefined} />
-    {create.uncertain ? <button disabled={create.busy} onClick={create.retry}>{copy("session-terminals.retryTheSameTerminalCreation_bc3946")}</button> : null}
-    {active && resource ? <TerminalView key={resource.id} resource={resource} details={details} discarded={() => setDiscarded(true)} refresh={() => { if (supported) void list.refresh(); }} observe={value => observeRef.current(value)} /> : null}
+    {active && resource ? <TerminalView key={resource.id} resource={resource} createAdditional={createAdditional} creationBlocked={blocked} discarded={() => setDiscarded(true)} refresh={() => { if (supported) void list.refresh(); }} observe={value => observeRef.current(value)} /> : null}
   </aside>;
 }
 
-function TerminalView({ resource, details, discarded, refresh, observe }: { resource: Resource; details: boolean; discarded: () => void; refresh: () => void; observe: (value: Resource) => void }) {
+function RetainedTerminalRecovery({ originalKey, active }: { originalKey: string; active: boolean }) {
+  const control = useRetainedMutation(originalKey, TerminalQuery.controlTerminal);
+  return <><p role="status">{copy("session-terminals.uncertainInput")}</p><button type="button" disabled={!active || control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button></>;
+}
+
+function TerminalView({ resource, createAdditional, creationBlocked, discarded, refresh, observe }: { resource: Resource; createAdditional: () => void; creationBlocked: boolean; discarded: () => void; refresh: () => void; observe: (value: Resource) => void }) {
   useLocale();
   const tabShortcut = useTerminalTabShortcuts();
   const transport = useTransport(), host = useRef<HTMLDivElement>(null), screen = useRef<TerminalScreen | undefined>(undefined);
+  useShortcuts([{ id: ShortcutId.TerminalCreate, scope: Surface.Sessions, label: "shortcuts.createTerminal", bindings: [{ key: "t", primary: true }], input: ShortcutInput.Allow, target: host, terminal: true, enabled: !creationBlocked, unavailableReason: "shortcuts.terminalFocusOnly", run: createAdditional }]);
   const [observed, setObserved] = useState(resource), [state, setState] = useState(OutputState.Connecting), [error, setError] = useState<unknown>();
   const [ready, setReady] = useState(false);
   const [rendererUnavailable, setRendererUnavailable] = useState(false), [gap, setGap] = useState(false), [overflow, setOverflow] = useState(false), [restart, setRestart] = useState(0), [rendererRestart, setRendererRestart] = useState(0), [deliveryError, setDeliveryError] = useState(false), [wake, setWake] = useState(0);
@@ -254,14 +263,9 @@ function TerminalView({ resource, details, discarded, refresh, observe }: { reso
     {rendererUnavailable ? <p role="alert">{copy("session-terminals.rendererUnavailable")}</p> : null}
     <div ref={host} className="terminal-screen" data-shortcuts="passthrough" aria-label={copy("session-terminals.attribute.34ad7d49708a")} onKeyDown={event => event.stopPropagation()} />
     <footer role="status">{copy(`session-terminals.${state}`)} · {statusLabel(text(data.state))}</footer>
-    <div className="terminal-resource-details" hidden={!details}>
-      <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
-      <p>{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
-    </div>
     <Problem error={error || control.error} />
     {state === OutputState.Detached || rendererUnavailable || deliveryError ? <button type="button" onClick={reattach}>{copy("session-terminals.reattachOriginalTerminal_b22f08")}</button> : null}
     {control.uncertain ? <><p role="status">{copy("session-terminals.uncertainInput")}</p><button type="button" disabled={control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button></> : null}
-    {details || rendererUnavailable ? <button type="button" disabled={control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => { if (queue.current.discard()) discarded(); void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action: TerminalAction.CLOSE }); }}>{copy("session-terminals.closeTerminal_7d02fb")}</button> : null}
     {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p role="alert">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p></ServiceProblem> : null}
   </section>;
 }

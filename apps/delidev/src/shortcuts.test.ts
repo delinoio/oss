@@ -104,3 +104,11 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps fixed send and na
  }
  input.remove();
 });
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("routes terminal creation only through its original input target and consumes disabled chords (%s)", localPlatform => {
+ const host=document.createElement("div"), input=document.createElement("textarea"), outside=document.createElement("textarea");host.dataset.shortcuts="passthrough";host.append(input);document.body.append(host,outside);
+ const run=vi.fn(), item=definition({id:ShortcutId.TerminalCreate,scope:Surface.Sessions,label:"shortcuts.createTerminal",bindings:[{key:"t",primary:true}],input:ShortcutInput.Allow,target:{current:host},terminal:true,run});
+ const chord=localPlatform===ShortcutPlatform.Mac?{metaKey:true}:{ctrlKey:true};
+ const send=(target:HTMLElement,extra:KeyboardEventInit={},enabled=true)=>{const event=new KeyboardEvent("keydown",{key:"t",bubbles:true,cancelable:true,...chord,...extra});target.addEventListener("keydown",()=>dispatchShortcut(event,[{...item,enabled}],Surface.Sessions,localPlatform),{once:true});target.dispatchEvent(event);return event;};
+ try {expect(send(outside).defaultPrevented).toBe(false);expect(run).not.toHaveBeenCalled();expect(send(input).defaultPrevented).toBe(true);expect(run).toHaveBeenCalledOnce();expect(send(input,{},false).defaultPrevented).toBe(true);expect(run).toHaveBeenCalledOnce();for(const extra of [{repeat:true},{isComposing:true},{keyCode:229},{altKey:true},{shiftKey:true}])expect(send(input,extra).defaultPrevented).toBe(false);host.hidden=true;expect(send(input).defaultPrevented).toBe(false);expect(run).toHaveBeenCalledOnce();}finally{host.remove();outside.remove();}
+});

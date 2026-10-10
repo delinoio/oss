@@ -314,9 +314,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const conversationRegion = useRef<HTMLDivElement>(null);
   const upperContent = useRef<HTMLDivElement>(null);
   const [filesOpened,setFilesOpened]=useState(false);
-  const [terminalOpened, setTerminalOpened] = useState(false);
+  const [terminalOpened, setTerminalOpened] = useState(() => tabs.tabs.some(tab => tab.kind === SessionTabKind.Terminal));
   const [pendingTerminalOpen, setPendingTerminalOpen] = useState<string>();
   const [terminalOpenIntent, setTerminalOpenIntent] = useState<{ requestId: string; revision: bigint }>();
+  useEffect(() => { setTerminalOpenIntent(undefined); setPendingTerminalOpen(undefined); }, [tabs.selected, active]);
+  const [terminalRecoveryTarget, setTerminalRecoveryTarget] = useState<HTMLDivElement | null>(null);
   const [browserOpened,setBrowserOpened]=useState(false);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] = useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(null);
@@ -376,7 +378,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // remains selected; navigation cancels this unsent intent.
   useEffect(() => {
     if (!pendingTerminalOpen) return;
-    if (!active || ![SessionTabKind.Terminal, SessionTabKind.Terminals].includes(tabs.tab.kind)) { setPendingTerminalOpen(undefined); return; }
+    if (!active) { setPendingTerminalOpen(undefined); return; }
     if (session) { setTerminalOpenIntent(current => current ?? { requestId: pendingTerminalOpen, revision: session.revision }); setPendingTerminalOpen(undefined); }
   }, [pendingTerminalOpen, active, tabs.tab.kind, session]);
   const waitingRevision = `${session?.revision ?? 0n}:${live.generation}:${[...live.resources.values()].filter(row => row.kind === EntityKind.QUEUE).map(row => `${row.id}:${row.revision}`).join(",")}:${[...live.removed].join(",")}`;
@@ -459,7 +461,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     void send.send({ requestId, sessionId: id, documentJson: original, skills: selections.length ? { selections } : undefined, attachments });
   };
   const shortcuts = useShortcuts([
-    ...(!embedded ? Array.from({length:9},(_,index)=>({id: tabShortcutIds[index]!,scope:Surface.Sessions,label:`shortcuts.tab${index+1}` as import("./localization").MessageKey,bindings:[{key:String(index+1),primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:index<tabs.tabs.length,run:()=>{document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});tabs.store.position(id,index+1);}})) : []),
+    ...(!embedded ? Array.from({length:9},(_,index)=>({id: tabShortcutIds[index]!,scope:Surface.Sessions,label:`shortcuts.tab${index+1}` as import("./localization").MessageKey,bindings:[{key:String(index+1),primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:index<tabs.tabs.length,run:()=>{document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});setTerminalOpenIntent(undefined);setPendingTerminalOpen(undefined);tabs.store.position(id,index+1);}})) : []),
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter" }, { key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, active: conversationActive, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
     { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter", shift: true }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending" },
@@ -500,7 +502,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const closeTerminal = closePanel;
   const hideEmptyTerminals = () => {
     for (const tab of tabs.store.snapshot(id).tabs) {
-      if (tab.kind === SessionTabKind.Terminal || tab.kind === SessionTabKind.Terminals) tabs.store.close(id, sessionTabKey(tab));
+      if (tab.kind === SessionTabKind.Terminal) tabs.store.close(id, sessionTabKey(tab));
     }
     const current = tabs.store.snapshot(id);
     const index = current.tabs.findIndex(tab => sessionTabKey(tab) === current.selected);
@@ -508,9 +510,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   };
   const togglePanel = (next: Exclude<SessionPanel, SessionPanel.Closed>) => {
     if(next===SessionPanel.Files)setFilesOpened(true);
-    if(next === SessionPanel.Terminals) { setTerminalOpened(true); if (session) setTerminalOpenIntent(current => current ?? { requestId: newRequestId(), revision: session.revision }); else setPendingTerminalOpen(current => current ?? newRequestId()); }
+    if(next === SessionPanel.Terminals) { setTerminalOpened(true); if (session) setTerminalOpenIntent(current => current ?? { requestId: newRequestId(), revision: session.revision }); else setPendingTerminalOpen(current => current ?? newRequestId()); return; }
+    setTerminalOpenIntent(undefined); setPendingTerminalOpen(undefined);
     if(next === SessionPanel.Browser) setBrowserOpened(true);
-    const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Terminals]:SessionTabKind.Terminals,[SessionPanel.Browser]:SessionTabKind.Browser,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
+    const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Browser]:SessionTabKind.Browser,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
     tabs.store.open(id, {kind:kinds[next]});
     requestAnimationFrame(() => { const current = tabs.store.snapshot(id); const index = current.tabs.findIndex(tab => sessionTabKey(tab) === current.selected); document.getElementById(`session-tab-${id}-${index}`)?.focus({ preventScroll: true }); });
   };
@@ -588,7 +591,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation-container"><div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>{setTerminalOpenIntent(undefined);setPendingTerminalOpen(undefined);tabs.store.select(id,key);}} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div><div ref={setTerminalRecoveryTarget} className="session-terminal-recovery" /></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">
@@ -668,7 +671,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     {filesOpened ? <div hidden={!active||panel!==SessionPanel.Files} inert={!active||panel!==SessionPanel.Files} className="session-app-panel"><SessionFiles active={active&&panel===SessionPanel.Files} sessionId={id} close={closePanel} openFile={(repository,path)=>tabs.store.open(id,{kind:SessionTabKind.File,repository,path})}/></div>:null}
     {active && panel===SessionPanel.Diagnostics ? <div className="session-app-panel"><div className="session-diagnostics"><div ref={setDiagnosticsTarget}/><FlatDisclosureScope><RequestDiagnostics sessionId={id} close={closePanel}/></FlatDisclosureScope></div></div>:null}
     {session && browserOpened ? <div hidden={!active||panel!==SessionPanel.Browser} inert={!active||panel!==SessionPanel.Browser} className="session-app-panel"><SessionBrowser key={`${id}:${browserAccountId}`} session={session} accountId={browserAccountId} close={closePanel} active={active&&panel===SessionPanel.Browser} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(id,{kind:SessionTabKind.Page,...page})}/></div>:null}
-    {session && terminalOpened ? <div hidden={!active||![SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} openIntent={terminalOpenIntent} finishOpenIntent={() => setTerminalOpenIntent(undefined)} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}
+    {session && (terminalOpened || tabs.tabs.some(tab => tab.kind === SessionTabKind.Terminal)) ? <div hidden={!active||tabs.tab.kind!==SessionTabKind.Terminal} className="session-app-panel session-terminal-pane"><SessionTerminals session={session} close={closeTerminal} surfaceActive={active} recoveryTarget={terminalRecoveryTarget} openIntent={terminalOpenIntent} finishOpenIntent={() => setTerminalOpenIntent(undefined)} tabbed selectedId={tabs.tab.kind===SessionTabKind.Terminal?tabs.tab.id:""} openTerminal={terminalId=>tabs.store.open(id,{kind:SessionTabKind.Terminal,id:terminalId})}
               hideEmpty={hideEmptyTerminals}
               dismissTerminal={(terminalId, fallback) => {
                 const selected = tabs.store.snapshot(id).selected === sessionTabKey({ kind: SessionTabKind.Terminal, id: terminalId });
@@ -679,7 +682,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
                   const index = current.tabs.findIndex(tab => sessionTabKey(tab) === target);
                   document.getElementById(`session-tab-${id}-${index}`)?.focus({ preventScroll: true });
                 });
-              }} active={active&&[SessionTabKind.Terminal,SessionTabKind.Terminals].includes(tabs.tab.kind)}/></div>:null}
+              }} active={active&&tabs.tab.kind===SessionTabKind.Terminal}/></div>:null}
     {tabs.store.sidechats(id).map(tab=>tab.kind===SessionTabKind.Sidechat?<div key={tab.id} hidden={!active||tabs.selected!==sessionTabKey(tab)} inert={!active||tabs.selected!==sessionTabKey(tab)} className="session-sidechat-pane"><SidechatPane id={tab.id} active={active&&tabs.selected===sessionTabKey(tab)}/></div>:null)}
     </div>
     </div>

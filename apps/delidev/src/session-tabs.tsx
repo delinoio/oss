@@ -5,11 +5,11 @@ import { Comparison } from "./session-diff-model";
 
 export enum SessionTabKind {
   Conversation = "conversation", Files = "files", File = "file", Diff = "diff",
-  Comparison = "comparison", Terminals = "terminals", Terminal = "terminal",
+  Comparison = "comparison", Terminal = "terminal",
   Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat",
 }
 export type SessionTab =
-  | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Browser | SessionTabKind.Diagnostics }
+  | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Browser | SessionTabKind.Diagnostics }
   | { kind: SessionTabKind.File; repository: string; path: string }
   | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string }
   | { kind: SessionTabKind.Terminal; id: string }
@@ -32,6 +32,15 @@ type SidechatTab = Extract<SessionTab, { kind: SessionTabKind.Sidechat }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
+  private terminalNumbers = new Map<string, Map<string, number>>();
+  hasTerminal(sessionId: string, terminalId: string) { return this.terminalNumbers.get(sessionId)?.has(terminalId) === true; }
+  terminalNumber(sessionId: string, terminalId: string): number {
+    let numbers = this.terminalNumbers.get(sessionId);
+    if (!numbers) { numbers = new Map(); this.terminalNumbers.set(sessionId, numbers); }
+    let number = numbers.get(terminalId);
+    if (number === undefined) { number = numbers.size + 1; numbers.set(terminalId, number); }
+    return number;
+  }
   private terminals = new Map<string, TerminalPresentation>();
   terminalPresentation(id: string) {
     let value = this.terminals.get(id);
@@ -53,6 +62,7 @@ export class SessionTabsStore {
   }
   open(id: string, tab: SessionTab) {
     if (tab.kind === SessionTabKind.Terminal && this.terminalPresentation(id).hidden(tab.id)) return;
+    if (tab.kind === SessionTabKind.Terminal) this.terminalNumber(id, tab.id);
     if (tab.kind === SessionTabKind.Sidechat) {
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();

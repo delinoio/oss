@@ -145,6 +145,8 @@ Use semantic colors, a decorative spinner and one stable polite status announcem
 
 ## Screen shortcuts and help
 
+TerminalCreate is a read-only Session action with a Terminal target context, priority 2, input permission and primary+T. It is registered only by the original visible terminal-input host and runs through the renderer shortcut hook before PTY input. Command+T on macOS and Control+T on Windows/Linux share the + additional-creation callback: default Worker shell, original session/revision, fresh request ID and 24×80 dimensions. Matching disabled chords are consumed without creation or PTY bytes. Inactive, opening, unsupported, busy, uncertain and archived gates remain authoritative. Help identifies the terminal-focus restriction and cannot execute the target-bound action. Keep all seven custom T overrides valid, genuine same-context conflict detection, numeric terminal-tab shortcuts and handled/repeat/IME/229/AltGraph/modifier/modal/hidden/inert fences. This action does not reserve T globally or change custom-override suppression outside terminal input.
+
 The connection-owned `ShortcutProvider` and `useShortcuts` register stable enum action IDs, a Surface or global scope, logical key bindings, typed localization keys, active/enabled conditions, an unavailable reason, input policy and an existing action callback or explicit native behavior. Registration is memory-only. Connection-owned keydown/keyup, window blur and document visibility listeners serve the connection; Strict Mode and connection replacement remove the original listener/registrations. Surface navigation and same-identity reconnect preserve original drafts, queries and mutation receipts. The lightweight Surface module retains the existing enum values and the existing views export.
 
 Dispatch and the read-only help use the same declarations. Match input-target registrations before screen and global registrations. Conflicts at the winning priority execute nothing and log only the stable event classification, scope and action IDs. A disabled matching action cannot fall through. Preserve original button/form guards and original RPC/request authority; a shortcut is not a new execution capability. Never log key events, input, aliases or native/browser content.
@@ -941,7 +943,7 @@ connected original ancestors containing the returned tree may receive them.
 
 ### Session terminals
 
-The Terminals tool opens the terminal inventory in the shared session tab workspace.
+The Terminals tool retains the current pane while atomic reuse-or-create admission resolves. There is no standalone Terminals management tab. Opening, capability/read failures and original uncertain-request recovery appear in a non-modal strip directly below the tab row. Read Retry performs only an authenticated read; a fresh explicit gesture is required for new admission. Selected-terminal polling, output and input are independent of this resolver and the retained manager.
 Each explicit creation or retained-resource selection opens/selects the tab keyed
 by the original terminal ID. The active terminal occupies the complete content
 region beside persistent Info; the former independent bottom dock and its
@@ -950,7 +952,9 @@ original terminal mutation controllers remain mounted. Departure disposes only
 the output/input attachment, discards unsent bytes with its original notice and
 never closes the Worker-owned process. Reopening an original ID beyond the
 bounded inventory page uses an exact authenticated resource read before attachment.
-Presentation Close is separate from the explicit original process Close action.
+Presentation Close never sends process Close or creates a shell. The individual terminal panel retains the Terminals heading, right-aligned +, terminal selection, output, compact connection status, read errors, reattachment and exact uncertain retries. It contains no Details, Hide terminals, shell override, Create form, Refresh, Worker/shell/path/cleanup metadata or process-close control.
+
+The connection-owned tab store assigns one monotonic presentation number per original terminal ID per session, on first authenticated inventory encounter or admitted opening. Content tabs and inventory share localized Terminal N / 터미널 N names and accessible labels without UUIDs. Numbers survive paging, eviction, reorder, presentation close/reopen, navigation and same-identity reconnect; they are never reused. A replacement connection or restart resets memory. Original IDs still own RPCs, receipts, keys, selection and cleanup. Preserve 40px tab/close targets, maximum 320px tab width, truncation, scroll, roving focus and positional shortcuts. Label changes do not move focus.
 
 Original authenticated inventory or stream resources dismiss a terminal only
 when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
@@ -975,10 +979,8 @@ enables history reads/refresh/selection; capability errors remain distinct from
 missing support. Already-loaded background history Refresh does not insert a loading
 row or change the selected terminal geometry. Preserve Initial, Additional, Reload,
 Restore and error/retry guidance, unchanged polling, original output ownership and
-explicit user resize delivery. Opening, tab selection and reattachment cannot create shells.
-The compact dark header exposes explicit creation, retained-resource choices, Details and
-presentation Close. Details owns the future-creation shell override, Worker/shell/cwd, original
-state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
+explicit user resize delivery. Mounting, tab selection and reattachment cannot create shells.
+The compact dark header contains Terminals and a right-aligned + for default-shell additional creation. Retained-resource choices, output and compact status remain. Original read failures, reattachment and exact uncertain retries remain accessible; no Details, shell override, metadata, refresh or process-close presentation remains. Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
 Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
@@ -990,7 +992,7 @@ makes the DOM renderer fallback fail closed; its source and ESM changes route
 both package entrypoints to the same patched ESM on repository Node24. Load
 WebGL before opening, dispose Terminal before addon teardown, and leave
 production style-src self unchanged. Renderer failure or context loss disables
-input and offers explicit original reattachment/Close. Do not install clipboard,
+input and offers explicit original reattachment. Do not install clipboard,
 web-link or attach addons; consume OSC 52/OSC 8 and keep detected links inert.
 Screen-reader output remains enabled and xterm diagnostic logging stays off.
 
@@ -1011,7 +1013,7 @@ Tab departure, hiding or detachment discards unsent bytes with a visible notice,
 while dispatched uncertainty stays in the connection registry. Metadata/resize
 acknowledgment never steals focus; first explicit attachment focuses once.
 Hiding aborts observation only. Agent Stop preserves original processes;
-explicit Close, Archive and deletion retain independent native cleanup gates.
+CLI process Close, Archive and deletion retain independent native cleanup gates.
 
 ### Project requirements
 
@@ -3335,7 +3337,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected descriptor. Terminals instead retains the current pane until explicit atomic admission returns the verified original terminal, as defined in the terminal contract. Other tools add no resources or observation reads.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -5013,7 +5015,7 @@ Keep every existing expanded field, inspection/job/error/remediation/retry, URL 
 
 ### Explicit first-terminal opening
 
-The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
+The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for default-shell additional terminals, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
 
 ## Detailed session startup
 Ordinary Session and General Chat render authenticated original operation

@@ -10,14 +10,15 @@ import { EntityKind, ResourceSchema, ResourceService, TerminalService, TerminalA
 import { encode } from "./documents";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTabsProvider, useSessionTabsStore } from "./session-tabs";
+import { ShortcutProvider } from "./shortcut-provider";
 import { SessionTerminals } from "./session-terminals";
 
 // Component tests use a text fixture; real parser/WebGL/CSP acceptance runs in
 // the external Chrome fixture. This adapter exercises input ownership only.
-vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement, input: (bytes: Uint8Array) => void) => {
+vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement, input: (bytes: Uint8Array) => void, _resize: unknown, _unavailable: unknown, shortcut?: (event: KeyboardEvent) => boolean) => {
   const output = document.createElement("pre"), field = document.createElement("textarea");
   field.setAttribute("aria-label", "Terminal input"); field.disabled = true;
-  field.addEventListener("keydown", event => { if (!field.disabled && event.key === "Enter") input(new TextEncoder().encode(field.value + "\r")); });
+  field.addEventListener("keydown", event => { if (shortcut?.(event)) return; if (!field.disabled && event.key === "Enter") input(new TextEncoder().encode(field.value + "\r")); });
   host.append(output, field); let decoder = new TextDecoder();
   return { write: async (bytes: Uint8Array, gap: boolean) => { if (gap) { decoder = new TextDecoder(); output.textContent = ""; } output.textContent += decoder.decode(bytes, { stream: true }); }, enabled: (value: boolean) => { field.disabled = !value; }, focus: () => field.focus(), dispose: () => host.replaceChildren() };
 } }));
@@ -154,8 +155,7 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
   const waitForPoll = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)); });
   try {
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "Details" }));
-    const refresh = screen.getByRole("button", { name: "Refresh terminals" }) as HTMLButtonElement;
+        const refresh = screen.getByRole("button", { name: "Create terminal" }) as HTMLButtonElement;
     expect(refresh.disabled).toBe(true);
     fireEvent.click(refresh);
     await waitForPoll();
@@ -171,7 +171,7 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
     await act(async () => { await client.invalidateQueries(); });
     await waitFor(() => expect(listResources).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(refresh.disabled).toBe(false));
-    fireEvent.click(refresh);
+    await act(async () => { await client.invalidateQueries(); });
     await waitFor(() => expect(listResources).toHaveBeenCalledTimes(2));
     capabilities = [];
     // Refresh only status to avoid requesting one more supported history page.
@@ -213,7 +213,7 @@ it("keeps terminal input enabled while one control is pending and never steals f
     await waitFor(() => expect(controlTerminal).toHaveBeenCalledTimes(1));
     expect(input.disabled).toBe(false);
     // jsdom retains disabled focus; model the browser's focus loss explicitly.
-    const columns = screen.getByRole("button", { name: "Details" });
+    const columns = screen.getByRole("button", { name: "Create terminal" });
     columns.focus();
     expect(document.activeElement).not.toBe(input);
     await act(async () => acknowledge());
@@ -261,22 +261,20 @@ it("preserves the explicitly attached terminal and its draft after its history p
   expect(watch).toHaveBeenCalledTimes(1);
 });
 
-it("keeps failed terminal capability reads distinct from missing support and preserves the shell draft", async () => {
+it("keeps failed terminal capability reads distinct from missing support without exposing removed management controls", async () => {
  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
  const status = vi.fn().mockRejectedValueOnce(new ConnectError("private-native-status", Code.PermissionDenied)).mockResolvedValue({ capabilities: [] });
  const createTerminal = vi.fn();
  const transport = createRouterTransport(router => { router.service(SystemService, { getStatus: status }); router.service(TerminalService, { createTerminal }); });
  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
  render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></TransportProvider></QueryClientProvider>);
- fireEvent.click(screen.getByRole("button", { name: "Details" }));
- const shell = screen.getByRole("textbox");
- fireEvent.change(shell, { target: { value: "/original/shell" } });
+  expect(screen.queryByRole("textbox")).toBeNull();
  const retry = await screen.findByRole("button", { name: "Retry terminal capability read" });
  expect(screen.queryByText(/Waiting for a server that supports/)).toBeNull();
  expect(createTerminal).not.toHaveBeenCalled();
  fireEvent.click(retry);
  await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
- expect(shell).toHaveProperty("value", "/original/shell"); expect(createTerminal).not.toHaveBeenCalled();
+ expect(screen.queryByRole("button", { name: "Details" })).toBeNull(); expect(createTerminal).not.toHaveBeenCalled();
 });
 
 it("retains exact uncertain input across dock hiding and never closes or creates a shell", async () => {
@@ -510,4 +508,26 @@ it("selects only the atomically admitted replacement after a listed terminal ret
     expect(createTerminal).toHaveBeenCalledOnce();
     expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: stale.id });
   } finally { view.unmount(); client.clear(); }
+});
+
+it("admits a terminal from Conversation without attaching background output", async () => {
+ const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:7n,documentJson:encode({archive:"active"})});
+ const terminal=create(ResourceSchema,{id:newRequestId(),sessionId:session.id,kind:EntityKind.TERMINAL,schemaVersion:1,revision:1n,documentJson:encode({state:"running"})});
+ let acknowledge=()=>{};const held=new Promise<void>(resolve=>{acknowledge=resolve;});
+ const created=vi.fn(async()=>{await held;return {terminal};}),opened=vi.fn(),watch=vi.fn(async function*(){yield {terminal,epoch:newRequestId(),sequence:0n,heartbeat:true};}),list=vi.fn(()=>({resources:[]}));
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:list});router.service(TerminalService,{createTerminal:created,watchTerminalOutput:watch});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ function View(){const[target,setTarget]=useState<HTMLDivElement|null>(null),[intent,setIntent]=useState<{requestId:string;revision:bigint}>();return <><div ref={setTarget}/><textarea aria-label="Retained composer" defaultValue="original draft"/><button onClick={()=>setIntent(value=>value??{requestId:newRequestId(),revision:7n})}>Open fixture</button><SessionTerminals session={session} active={false} surfaceActive recoveryTarget={target} openIntent={intent} finishOpenIntent={()=>setIntent(undefined)} selectedId="" tabbed openTerminal={opened} close={()=>{}}/></>;}
+ const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View/></MutationIntents></TransportProvider></QueryClientProvider>);
+ try {const composer=screen.getByRole("textbox",{name:"Retained composer"});fireEvent.click(screen.getByRole("button",{name:"Open fixture"}));fireEvent.click(screen.getByRole("button",{name:"Open fixture"}));await waitFor(()=>expect(created).toHaveBeenCalledOnce());expect(screen.getByText("Opening terminal…")).toBeTruthy();expect(screen.getByRole("textbox",{name:"Retained composer"})).toBe(composer);expect(composer).toHaveProperty("value","original draft");expect(opened).not.toHaveBeenCalled();expect(watch).not.toHaveBeenCalled();expect(list).toHaveBeenCalledOnce();await act(async()=>acknowledge());await waitFor(()=>expect(opened).toHaveBeenCalledWith(terminal.id));expect(watch).not.toHaveBeenCalled();}finally{acknowledge();view.unmount();client.clear();}
+});
+
+it("shares default-shell additional creation between + and the terminal renderer shortcut", async () => {
+ const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:7n,documentJson:encode({archive:"active"})});
+ const terminal=create(ResourceSchema,{id:newRequestId(),sessionId:session.id,kind:EntityKind.TERMINAL,schemaVersion:1,revision:1n,documentJson:encode({state:"running"})});
+ const opened=vi.fn(),created=vi.fn((request:unknown)=>({terminal}));let release=()=>{};const held=new Promise<void>(resolve=>{release=resolve;});
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:()=>({resources:[terminal]})});router.service(TerminalService,{createTerminal:created,watchTerminalOutput:async function*(){yield {terminal,epoch:newRequestId(),sequence:0n,heartbeat:true};await held;}});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><ShortcutProvider><SessionTerminals session={session} selectedId={terminal.id} openTerminal={opened} close={()=>{}}/></ShortcutProvider></MutationIntents></TransportProvider></QueryClientProvider>);
+ try {const input=await screen.findByRole("textbox",{name:"Terminal input"});await waitFor(()=>expect(input).toHaveProperty("disabled",false));fireEvent.keyDown(screen.getByRole("button",{name:"Create terminal"}),{key:"t",ctrlKey:true});expect(created).not.toHaveBeenCalled();fireEvent.keyDown(input,{key:"t",ctrlKey:true});await waitFor(()=>expect(created).toHaveBeenCalledOnce());expect(created.mock.calls[0]?.[0]).toMatchObject({mutation:{id:session.id,expectedRevision:7n},shellOverride:"",rows:24,columns:80});await waitFor(()=>expect(opened).toHaveBeenCalledWith(terminal.id));fireEvent.click(screen.getByRole("button",{name:"Create terminal"}));await waitFor(()=>expect(created).toHaveBeenCalledTimes(2));const requests=created.mock.calls.map(([request])=>request as {mutation:{requestId:string}});expect(requests[1]?.mutation.requestId).not.toBe(requests[0]?.mutation.requestId);for(const name of ["Details","Hide terminals","Refresh terminals","Close terminal"])expect(screen.queryByRole("button",{name})).toBeNull();}finally{view.unmount();release();client.clear();}
 });

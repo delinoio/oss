@@ -344,3 +344,6 @@
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
 .session-name-dialog button, .session-name-dialog input { min-height:40px; }
 .session-name-dialog form > .primary { align-self:flex-end; }
+
+.session-navigation-container { grid-area: 2 / 1; min-width: 0; }
+.session-terminal-recovery:has(.terminal-opening-recovery:not(:empty):not([hidden])) { padding: 4px 12px; background: var(--surface-muted); border-bottom: 1px solid var(--border-subtle); max-height: 160px; overflow: auto; }

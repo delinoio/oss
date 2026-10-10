@@ -11,3 +11,15 @@ it("roves focus and selection without an absent-position alias and leaves pinned
  fireEvent.keyDown(tabs[1],{key:"End"});expect(document.activeElement).toBe(tabs[2]);fireEvent.keyDown(tabs[2],{key:"Home"});expect(document.activeElement).toBe(tabs[0]);expect(tabs[0].getAttribute("aria-controls")).toBe("session-pane-original");
  fireEvent.click(screen.getAllByRole("button")[0]);expect(close).toHaveBeenCalledWith("files");expect(tabs[0].getAttribute("aria-keyshortcuts")).toMatch(/1$/);
 });
+
+it("uses friendly numbered terminal labels and preserves original tab authority", () => {
+ const select=vi.fn(), close=vi.fn();
+ render(<SessionTabBar id="numbered-session" tabs={[{kind:SessionTabKind.Conversation},{kind:SessionTabKind.Terminal,id:"original-private-terminal"}]} selected="conversation" select={select} close={close}/>);
+ const terminal=screen.getByRole("tab",{name:"Terminal 1"});
+ expect(terminal.title).toBe("Terminal 1");
+ expect(screen.queryByText(/original-private-terminal/)).toBeNull();
+ fireEvent.click(terminal);
+ expect(select).toHaveBeenCalledWith(JSON.stringify(["terminal","original-private-terminal"]));
+ fireEvent.click(screen.getByRole("button",{name:"Close Terminal 1 tab"}));
+ expect(close).toHaveBeenCalledWith(JSON.stringify(["terminal","original-private-terminal"]));
+});
