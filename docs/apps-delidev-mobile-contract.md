@@ -60,7 +60,7 @@ refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
 Steer operates on an already queued input and its original revision, execution
 and native turn. Stop and Resume require current observations and confirmation.
-Question and approval responses retain the original interaction revision.
+Question and approval responses retain the original interaction revision. Conversation interaction reads own a session-keyed cursor independently of message and input-queue pagination. Explicit continuation retains exact tokens and stable resource IDs/order; show incomplete coverage, closed resources and read-only retry/refresh. Bound retained interactions to 20 pages of 50 resources and 8 MiB of document bytes. Reject duplicate IDs, invalid revisions and cyclic token chains without response authority; refresh restarts the read. Foreground/profile cancellation and original protected mutation recovery remain independent.
 Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before
 showing response controls; notification delivery never changes read state.

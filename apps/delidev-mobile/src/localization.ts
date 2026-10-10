@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 export const en = {
+  interactionRequests: "Questions and approvals",
+  interactionsIncomplete: "More requests remain. Loaded pages do not cover all questions and approvals.",
+  interactionsBound: "The loaded request limit was reached. Refresh to inspect current requests.",
+  refreshRead: "Retry this page",
   stale:
     "The server state changed. Inspect the current original target before retrying.",
   outcome: "Outcome",
@@ -162,6 +166,10 @@ export const en = {
     "Original pairing is retained. Retry it without generating another credential.",
 } as const;
 export const ko: Record<keyof typeof en, string> = {
+  interactionRequests: "질문 및 승인",
+  interactionsIncomplete: "추가 요청이 있습니다. 불러온 페이지는 모든 질문과 승인을 포함하지 않습니다.",
+  interactionsBound: "요청 표시 한도에 도달했습니다. 새로 고침하여 현재 요청을 확인하세요.",
+  refreshRead: "이 페이지 재시도",
   stale:
     "서버 상태가 변경되었습니다. 재시도하기 전에 현재 원래 대상을 확인하세요.",
   outcome: "실행 결과",

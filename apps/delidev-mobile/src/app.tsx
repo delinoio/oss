@@ -66,6 +66,7 @@ import {
 import { en, ko, type Labels } from "./localization";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
+import { acceptInteractionPage, emptyInteractionPages, interactionPageLimit } from "./interaction-pages";
 const owner = new ProtectedState(storage);
 const Copy = createContext<Labels>(en);
 const useCopy = () => useContext(Copy);
@@ -1139,6 +1140,82 @@ export function NewSession({
     </form>
   );
 }
+// Each original session owns its own bounded interaction cursor and response drafts.
+export function ConversationInteractions({ id, enabled, available, mutate }: { id: string; enabled: boolean; available: boolean; mutate: Mutate }) {
+  const c = useCopy(), transport = useTransport();
+  const [interactionPage, setInteractionPage] = useState("");
+  const [interactionHistory, setInteractionHistory] = useState(emptyInteractionPages);
+  const [interactionProblem, setInteractionProblem] = useState(false);
+  const interactionSnapshot = useRef(emptyInteractionPages());
+  const interactions = useQuery(
+    ResourceQuery.listResources,
+    { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 50, pageToken: interactionPage } },
+    { enabled },
+  );
+  useEffect(() => {
+    if (!enabled || interactions.isFetching || !interactions.data || interactions.isError) return;
+    try {
+      if (interactions.data.resources.some(row => row.kind !== EntityKind.INTERACTION || !supportsResourceSchema(row))) throw new Error("interaction-page-schema");
+      const next = acceptInteractionPage(interactionSnapshot.current, interactionPage, interactions.data.resources, interactions.data.nextPageToken);
+      interactionSnapshot.current = next;
+      setInteractionHistory(next);
+    } catch {
+      console.warn({ event: "delidev_mobile_interaction_page_rejected", operation: "list-interactions", outcome: "invalid-page" });
+      setInteractionProblem(true);
+    }
+  }, [enabled, interactionPage, interactions.data, interactions.isFetching, interactions.isError]);
+  const refreshInteractions = () => {
+    setInteractionProblem(false);
+    if (interactionPage) setInteractionPage("");
+    else void interactions.refetch();
+  };
+  return (
+      <section aria-label={c.interactionRequests}>
+      <h3>{c.interactionRequests}</h3>
+      {interactionHistory.next ? <p role="status">{c.interactionsIncomplete}</p> : null}
+      {interactions.isFetching ? <p role="status">{c.loading}</p> : null}
+      {interactions.isError || interactionProblem ? <p role="alert">{c.stale}</p> : null}
+      <button type="button" disabled={!enabled || interactions.isFetching} onClick={refreshInteractions}>{c.refresh}</button>
+      {interactions.isError ? <button type="button" disabled={!enabled || interactions.isFetching} onClick={() => void interactions.refetch()}>{c.refreshRead}</button> : null}
+      {interactionHistory.next && !interactionProblem && !interactions.isError && interactionHistory.pages.length < interactionPageLimit ? <button type="button" disabled={!enabled || interactions.isFetching} onClick={() => setInteractionPage(interactionHistory.next)}>{c.more}</button> : null}
+      {interactionHistory.next && interactionHistory.pages.length >= interactionPageLimit ? <p role="status">{c.interactionsBound}</p> : null}
+      {interactionHistory.resources.map((r) => value(r).closure !== "open" ? <p key={r.id}>{value(r).closure === "closed" ? c.closed : c.stale} <small>{r.id}</small></p> : (
+          <RequestResponse
+            key={r.id}
+            resource={r}
+            enabled={available && enabled && !interactions.isError && !interactionProblem}
+            copy={c}
+            send={async (question, response) => {
+              const fresh = await createClient(
+                ResourceService,
+                transport,
+              ).getResource({ kind: EntityKind.INTERACTION, id: r.id });
+              if (!fresh.resource || fresh.resource.revision !== r.revision)
+                throw new Error("stale-request");
+              await mutate(
+                question ? Operation.Question : Operation.Approval,
+                create(
+                  question
+                    ? RespondQuestionRequestSchema
+                    : RespondApprovalRequestSchema,
+                  {
+                    mutation: {
+                      id: r.id,
+                      expectedRevision: r.revision,
+                      requestId: uuid(),
+                    },
+                    responseJson: documentBytes(response),
+                  },
+                ),
+                r.id,
+              );
+            }}
+          />
+        ))}
+      </section>
+  );
+}
+
 function Conversation({
   id,
   enabled,
@@ -1152,7 +1229,6 @@ function Conversation({
   mutate: Mutate;
   back: () => void;
 }) {
-  const transport = useTransport();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [history, setHistory] = useState<Resource[]>([]),
@@ -1174,11 +1250,6 @@ function Conversation({
         pageToken: page,
       },
     },
-    { enabled },
-  );
-  const interactions = useQuery(
-    ResourceQuery.listResources,
-    { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 50 } },
     { enabled },
   );
   const queue = useQuery(
@@ -1243,41 +1314,7 @@ function Conversation({
           {c.more}
         </button>
       ) : null}
-      {interactions.data?.resources
-        .filter((r) => value(r).closure === "open")
-        .map((r) => (
-          <RequestResponse
-            key={r.id}
-            resource={r}
-            enabled={available}
-            copy={c}
-            send={async (question, response) => {
-              const fresh = await createClient(
-                ResourceService,
-                transport,
-              ).getResource({ kind: EntityKind.INTERACTION, id: r.id });
-              if (!fresh.resource || fresh.resource.revision !== r.revision)
-                throw new Error("stale-request");
-              await mutate(
-                question ? Operation.Question : Operation.Approval,
-                create(
-                  question
-                    ? RespondQuestionRequestSchema
-                    : RespondApprovalRequestSchema,
-                  {
-                    mutation: {
-                      id: r.id,
-                      expectedRevision: r.revision,
-                      requestId: uuid(),
-                    },
-                    responseJson: documentBytes(response),
-                  },
-                ),
-                r.id,
-              );
-            }}
-          />
-        ))}
+      <ConversationInteractions key={id} id={id} enabled={enabled} available={available} mutate={mutate} />
       <form
         onSubmit={(e) => {
           e.preventDefault();

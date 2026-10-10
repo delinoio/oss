@@ -18,3 +18,5 @@
   track, provision owner accounts or invent credentials as part of fixtures.
 
 - New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.
+
+- Conversation interactions own a session-keyed, independent bounded read cursor. Keep exact continuation tokens, stable original IDs/order, explicit page retry/refresh and incomplete/closed presentation; reject duplicate IDs and cyclic tokens. Preserve original response revisions, foreground/profile cancellation and protected mutation ownership. See the mobile contract for retained-page and byte bounds.
