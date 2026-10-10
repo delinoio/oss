@@ -105,6 +105,24 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		if id == "" {
 			id = domain.NewID()
 		}
+		if input.Kind == domain.TemplateKind {
+			if incoming, ok := value.(*domain.Template); ok && incoming.NativeSource != nil {
+				return nil, domain.NativeConfigurationInvalid()
+			}
+			if input.ExpectedRevision > 0 {
+				previous, err := tx.Get(domain.TemplateKind, id)
+				if err != nil {
+					return nil, err
+				}
+				original, err := store.Decode[domain.Template](previous)
+				if err != nil {
+					return nil, err
+				}
+				if original.NativeSource != nil {
+					return nil, domain.Fail(domain.Conflict, "Imported instruction packages are immutable.", "Create a new explicitly reviewed package instead of editing the original.")
+				}
+			}
+		}
 		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind) {
 			previous, err := tx.Get(input.Kind, id)
 			if err != nil {

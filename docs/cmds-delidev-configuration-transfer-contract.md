@@ -138,3 +138,58 @@ Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-beha
 ## New-session defaults and branch prefix declarations
 
 Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+
+## Selected Codex configuration import
+
+The CLI requests a bounded preview from one explicitly selected Worker through
+ConfigurationService. Ordered scopes contain at most one selected Codex home,
+followed by explicitly selected project directories from outermost to innermost.
+No unselected ancestor, authentication file, managed restriction or generated
+memory is opened. Each selected scope reads only config.toml (home) or
+.codex/config.toml (project), and AGENTS.override.md before AGENTS.md. Missing
+files and full original file digests participate in the source proof. As in native
+Codex, a blank override falls back to the ordinary nonempty instruction file
+in that same scope. Preview retains non-secret supported values and unsupported entry classifications;
+unknown entries expose no values. Hooks, plugins, MCP and credential-bearing
+entries grant no execution or credential authority.
+
+Explicit compatible selections update the original Codex Agent's supported
+reasoning effort, permission, approval policy or service tier at an exact
+revision, and append selected ordered immutable instruction templates. Import
+creates fresh packages and retains their exact source digest; existing templates
+and accepted execution snapshots remain unchanged. Imported instruction packages
+cannot be edited in place; a new explicit import creates another package.
+
+An actor/server-bound signed preview freezes the exact selected changes, source
+Worker device/instance, source digests and destination revision. Applying uses
+one durable original receipt and coordinator. The original Worker re-reads only
+those same scopes before one transaction publishes every selected setting and
+package. Changed source bytes, missing original authority, changed destination,
+unsupported selection or failed source recheck publishes nothing. Receipt replay
+observes the original outcome without another recheck or import. Unknown outcomes
+retain the original coordinator and cannot retry under a replacement identity.
+Host files are never written. Native compatibility and execution admission are
+still independently checked when a new execution uses the imported settings.
+
+The capability pair is CODEX_CONFIGURATION_IMPORT_V1: System 87 and Worker 57.
+New ConfigurationService requests use fresh message namespaces:
+RequestCodexConfigurationPreview fields request_id=1, machine_id=2,
+selection_json=3; response request_id=1, replayed=2, job=3.
+PreviewCodexConfigurationImport fields selection_json=1; response preview_json=1.
+ApplyCodexConfigurationImport fields request_id=1, preview_json=2; response
+request_id=1, replayed=2, job=3. Existing field allocations remain unchanged.
+
+The CLI flow is `configuration native-preview --machine ID --input PATH`,
+then `job get --id ID` to inspect its original retained read outcome,
+`configuration native-review --input PATH` for an exact entry selection, and
+`configuration native-apply --input PATH --request-id ID` for confirmation.
+Scope input is `{ "scopes": [{ "kind": "home", "path": "/selected/codex-home" },
+{ "kind": "project", "path": "/selected/project" }] }`. Review input supplies
+`preview_job_id`, `expected_preview_revision`, `agent_id`,
+`expected_agent_revision` and the exact `entries` keys from that snapshot.
+Only selected entries contribute to the plan. If multiple selected layers set
+the same supported option, the innermost selected layer wins; unselected layers
+never contribute. Save the exact review JSON privately and submit it unchanged.
+Every source read is at most 128 KiB per file and 384 KiB in total, with at most
+16 scopes and 256 preview entries. Paths must be explicit canonical absolute
+directories; symlink source files and oversized or malformed inputs fail closed.

@@ -11,6 +11,7 @@ export * from "./gen/delidev/v1/installation_pb.js";
 export * from "./gen/delidev/v1/integration_pb.js";
 export * from "./gen/delidev/v1/interaction_pb.js";
 export * from "./gen/delidev/v1/native_models_pb.js";
+export * from "./gen/delidev/v1/native_configuration_pb.js";
 export * from "./gen/delidev/v1/network_pb.js";
 export * from "./gen/delidev/v1/pr_fix_pb.js";
 export * from "./gen/delidev/v1/provider_pb.js";

@@ -17,7 +17,10 @@ func configurationTransfer(ctx context.Context, c client, o options, args []stri
 		return nil, usage()
 	}
 	operation := args[0]
-	if operation != "export" && operation != "preview" && operation != "apply" {
+	if operation == "native-preview" || operation == "native-review" || operation == "native-apply" {
+		return nativeConfigurationTransfer(ctx, c, o, args, streams)
+	}
+	if operation != "export" && operation != "preview" && operation != "apply" && operation != "native-preview" && operation != "native-review" && operation != "native-apply" {
 		return nil, usage()
 	}
 	f := flags("configuration " + operation)

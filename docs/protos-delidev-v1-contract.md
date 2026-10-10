@@ -1417,3 +1417,19 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+
+## Selected Codex configuration import
+
+System `CODEX_CONFIGURATION_IMPORT_V1 = 87` and Worker
+`CODEX_CONFIGURATION_IMPORT_V1 = 57` negotiate bounded selected-scope reads and
+original-Worker source rechecks. ConfigurationService owns
+`RequestCodexConfigurationPreview`, `PreviewCodexConfigurationImport` and
+`ApplyCodexConfigurationImport`. Fresh request/response fields and all RPC
+profiles are recorded in `protos/delidev/allocations.json`; existing declarations
+remain unchanged. Owner/client selection and a signed plan bind the actor,
+original Worker device/process, file digests and destination Agent revision.
+The final transaction imports only compatible selected settings and immutable
+instruction packages. This capability grants no hooks, plugin, MCP, credential,
+managed-policy or native execution trust. No database migration is introduced.
+Follow the [configuration transfer contract](cmds-delidev-configuration-transfer-contract.md#selected-codex-configuration-import).

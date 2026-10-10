@@ -69,6 +69,8 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		return nil, err
 	}
 	switch v := value.(type) {
+	case *domain.Template:
+		v.NativeSource = nil
 	case *domain.Agent:
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()

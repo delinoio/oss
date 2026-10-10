@@ -139,6 +139,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.CodexAPIProxyV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1:
 			capabilities = append(capabilities, domain.RepositoryInspectionMetadataV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_CODEX_CONFIGURATION_IMPORT_V1:
+			capabilities = append(capabilities, domain.CodexConfigurationImportV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1:
 			capabilities = append(capabilities, domain.NativeModelsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1:
@@ -263,7 +265,7 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 		return nil, rpc.Error(err, correlation)
 	}
 	s.logger.InfoContext(ctx, "worker attached", "machine_id", machine, "instance_id", instance, "replayed", result.Replayed)
-	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1}})
+	response := connect.NewResponse(&pb.AttachWorkerResponse{Machine: rpc.Resource(record), ServerId: string(s.Identity.ServerID), SupportedWorkerCapabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_CONFIGURATION_IMPORT_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1, pb.WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1, pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1, pb.WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1}})
 	var networkStatus domain.WorkerNetworkStatus
 	if err := s.Store.Read(ctx, func(tx *store.Tx) error {
 		if err := tx.Authorize(); err != nil {
@@ -558,6 +560,29 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							now := time.Now().UTC()
 							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
 							return tx.PutJob(r.ID, r.Revision, "", "", j)
+						}
+					}
+					if j.Type == domain.InspectCodexConfigurationJob {
+						var input domain.NativeConfigurationJobInput
+						problem := domain.Decode(j.Input, &input)
+						if problem == nil {
+							problem = nativeConfigurationAuthority(tx, input)
+						}
+						actor, _ := domain.PrincipalFrom(ctx)
+						if problem == nil && input.DeviceID != actor.DeviceID {
+							problem = domain.NativeConfigurationInvalid()
+						}
+						if problem != nil {
+							now := time.Now().UTC()
+							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+							saved, err := tx.PutJob(r.ID, r.Revision, "", "", j)
+							if err != nil {
+								return nil, err
+							}
+							if err = finishRepositorySave(tx, j.ParentID); err != nil {
+								return nil, err
+							}
+							return saved, nil
 						}
 					}
 					if j.Type == domain.NativeModelsJob {
@@ -857,6 +882,10 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 				}
 			case domain.DiscoverRepositoryBranchesJob:
 				if err := finishRepositoryBranches(tx, job, outputJSON); err != nil {
+					problem = domain.SafeError(err)
+				}
+			case domain.InspectCodexConfigurationJob:
+				if err := validateNativeConfigurationReport(tx, job, outputJSON); err != nil {
 					problem = domain.SafeError(err)
 				}
 			case domain.InspectRepositoryJob:

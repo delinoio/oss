@@ -21,6 +21,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/claude"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -268,7 +269,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_CONFIGURATION_IMPORT_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -425,7 +426,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_CODEX_CONFIGURATION_IMPORT_V1, pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1)
 			}
@@ -1016,6 +1017,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, domain.SessionDeletionPending()
 		}
 	}
+	if job.Type == domain.InspectCodexConfigurationJob {
+		var input domain.NativeConfigurationJobInput
+		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.InstanceID != instance || input.InstanceID != job.InstanceID || input.DeviceID != job.AssignedDeviceID || input.MachineID != job.MachineID || resource.SessionId != "" {
+			return journal{}, domain.NativeConfigurationInvalid()
+		}
+	}
 	if job.Type == domain.ForkSessionJob {
 		var input domain.ForkJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || string(input.SourceSessionID) != resource.SessionId || input.SourceAssignment.MachineID != job.MachineID {
@@ -1131,6 +1138,20 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 	switch job.Type {
 	case domain.CompactSessionJob:
 		return executeSessionCompaction(ctx, config, owner, job)
+	case domain.InspectCodexConfigurationJob:
+		var input domain.NativeConfigurationJobInput
+		if err := domain.Decode(job.Input, &input); err != nil {
+			return nil, err
+		}
+		if input.Validate() != nil || input.MachineID != job.MachineID || input.DeviceID != job.AssignedDeviceID || input.InstanceID != job.InstanceID {
+			return nil, domain.NativeConfigurationInvalid()
+		}
+		result, err := codex.ReadConfiguration(ctx, input.Read)
+		if err != nil {
+			return nil, err
+		}
+		config.Logger.InfoContext(ctx, "selected native configuration observed", "job_type", job.Type, "scope_count", len(input.Read.Scopes), "entry_count", len(result.Entries))
+		return json.Marshal(result)
 	case domain.NativeModelsJob:
 		var scope domain.NativeModelScope
 		if err := domain.Decode(job.Input, &scope); err != nil {

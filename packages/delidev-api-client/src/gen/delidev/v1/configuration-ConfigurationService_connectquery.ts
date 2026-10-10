@@ -54,3 +54,18 @@ export const deleteConfiguration = ConfigurationService.method.deleteConfigurati
  * @generated from rpc delidev.v1.ConfigurationService.PreviewRouting
  */
 export const previewRouting = ConfigurationService.method.previewRouting;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.RequestCodexConfigurationPreview
+ */
+export const requestCodexConfigurationPreview = ConfigurationService.method.requestCodexConfigurationPreview;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.PreviewCodexConfigurationImport
+ */
+export const previewCodexConfigurationImport = ConfigurationService.method.previewCodexConfigurationImport;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.ApplyCodexConfigurationImport
+ */
+export const applyCodexConfigurationImport = ConfigurationService.method.applyCodexConfigurationImport;

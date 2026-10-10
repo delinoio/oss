@@ -175,6 +175,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   configuration export [--output PATH]
   configuration preview --input PATH|- [--output PATH]
   configuration apply --input PATH|- [--request-id ID]
+  configuration native-preview --machine ID --input PATH|- [--request-id ID]
+  configuration native-review --input PATH|-
+  configuration native-apply --input PATH|- [--request-id ID]
   backup create [--wait]
   backup creation --id JOB-ID
   backup creations [--limit N] [--page-token TOKEN]

@@ -13293,6 +13293,124 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_CONFIGURATION_IMPORT_V1",
+      "number": 87
+    },
+    {
+      "issue": 1989,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_CONFIGURATION_IMPORT_V1",
+      "number": 57
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "RequestCodexConfigurationPreviewRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "RequestCodexConfigurationPreviewRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "RequestCodexConfigurationPreviewRequest",
+      "member": "selection_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "RequestCodexConfigurationPreviewResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "RequestCodexConfigurationPreviewResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "RequestCodexConfigurationPreviewResponse",
+      "member": "job",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "PreviewCodexConfigurationImportRequest",
+      "member": "selection_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "PreviewCodexConfigurationImportResponse",
+      "member": "preview_json",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "ApplyCodexConfigurationImportRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "ApplyCodexConfigurationImportRequest",
+      "member": "preview_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "ApplyCodexConfigurationImportResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "ApplyCodexConfigurationImportResponse",
+      "member": "replayed",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 1989,
+      "kind": "message",
+      "declaration": "ApplyCodexConfigurationImportResponse",
+      "member": "job",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13645,33 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1989,
+      "service": "ConfigurationService",
+      "method": "RequestCodexConfigurationPreview",
+      "input": "RequestCodexConfigurationPreviewRequest",
+      "output": "RequestCodexConfigurationPreviewResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1989,
+      "service": "ConfigurationService",
+      "method": "PreviewCodexConfigurationImport",
+      "input": "PreviewCodexConfigurationImportRequest",
+      "output": "PreviewCodexConfigurationImportResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 1989,
+      "service": "ConfigurationService",
+      "method": "ApplyCodexConfigurationImport",
+      "input": "ApplyCodexConfigurationImportRequest",
+      "output": "ApplyCodexConfigurationImportResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

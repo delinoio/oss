@@ -1138,7 +1138,7 @@ var File_delidev_v1_configuration_proto protoreflect.FileDescriptor
 const file_delidev_v1_configuration_proto_rawDesc = "" +
 	"\n" +
 	"\x1edelidev/v1/configuration.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\"\x9d\x02\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\x1a%delidev/v1/native_configuration.proto\"\x9d\x02\n" +
 	"\x16SaveAgentWorkerRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12#\n" +
 	"\rdocument_json\x18\x02 \x01(\fR\fdocumentJson\x12;\n" +
@@ -1222,7 +1222,7 @@ const file_delidev_v1_configuration_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x12#\n" +
-	"\rremoved_count\x18\x04 \x01(\rR\fremovedCount2\xe4\a\n" +
+	"\rremoved_count\x18\x04 \x01(\rR\fremovedCount2\x88\v\n" +
 	"\x14ConfigurationService\x12u\n" +
 	"\x18ListProjectPromptHistory\x12+.delidev.v1.ListProjectPromptHistoryRequest\x1a,.delidev.v1.ListProjectPromptHistoryResponse\x12x\n" +
 	"\x19ClearProjectPromptHistory\x12,.delidev.v1.ClearProjectPromptHistoryRequest\x1a-.delidev.v1.ClearProjectPromptHistoryResponse\x12f\n" +
@@ -1232,7 +1232,10 @@ const file_delidev_v1_configuration_proto_rawDesc = "" +
 	"\x0fSaveAgentWorker\x12\".delidev.v1.SaveAgentWorkerRequest\x1a%.delidev.v1.SaveConfigurationResponse\x12`\n" +
 	"\x11SaveConfiguration\x12$.delidev.v1.SaveConfigurationRequest\x1a%.delidev.v1.SaveConfigurationResponse\x12f\n" +
 	"\x13DeleteConfiguration\x12&.delidev.v1.DeleteConfigurationRequest\x1a'.delidev.v1.DeleteConfigurationResponse\x12W\n" +
-	"\x0ePreviewRouting\x12!.delidev.v1.PreviewRoutingRequest\x1a\".delidev.v1.PreviewRoutingResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"\x0ePreviewRouting\x12!.delidev.v1.PreviewRoutingRequest\x1a\".delidev.v1.PreviewRoutingResponse\x12\x8d\x01\n" +
+	" RequestCodexConfigurationPreview\x123.delidev.v1.RequestCodexConfigurationPreviewRequest\x1a4.delidev.v1.RequestCodexConfigurationPreviewResponse\x12\x8a\x01\n" +
+	"\x1fPreviewCodexConfigurationImport\x122.delidev.v1.PreviewCodexConfigurationImportRequest\x1a3.delidev.v1.PreviewCodexConfigurationImportResponse\x12\x84\x01\n" +
+	"\x1dApplyCodexConfigurationImport\x120.delidev.v1.ApplyCodexConfigurationImportRequest\x1a1.delidev.v1.ApplyCodexConfigurationImportResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_configuration_proto_rawDescOnce sync.Once
@@ -1248,28 +1251,34 @@ func file_delidev_v1_configuration_proto_rawDescGZIP() []byte {
 
 var file_delidev_v1_configuration_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_delidev_v1_configuration_proto_goTypes = []any{
-	(*SaveAgentWorkerRequest)(nil),             // 0: delidev.v1.SaveAgentWorkerRequest
-	(*AgentWorkerModelSelection)(nil),          // 1: delidev.v1.AgentWorkerModelSelection
-	(*SaveConfigurationRequest)(nil),           // 2: delidev.v1.SaveConfigurationRequest
-	(*SaveConfigurationResponse)(nil),          // 3: delidev.v1.SaveConfigurationResponse
-	(*DeleteConfigurationRequest)(nil),         // 4: delidev.v1.DeleteConfigurationRequest
-	(*DeleteConfigurationResponse)(nil),        // 5: delidev.v1.DeleteConfigurationResponse
-	(*PreviewRoutingRequest)(nil),              // 6: delidev.v1.PreviewRoutingRequest
-	(*PreviewRoutingResponse)(nil),             // 7: delidev.v1.PreviewRoutingResponse
-	(*ExportConfigurationRequest)(nil),         // 8: delidev.v1.ExportConfigurationRequest
-	(*ExportConfigurationResponse)(nil),        // 9: delidev.v1.ExportConfigurationResponse
-	(*PreviewConfigurationImportRequest)(nil),  // 10: delidev.v1.PreviewConfigurationImportRequest
-	(*PreviewConfigurationImportResponse)(nil), // 11: delidev.v1.PreviewConfigurationImportResponse
-	(*ApplyConfigurationImportRequest)(nil),    // 12: delidev.v1.ApplyConfigurationImportRequest
-	(*ApplyConfigurationImportResponse)(nil),   // 13: delidev.v1.ApplyConfigurationImportResponse
-	(*ProjectPromptHistoryEntry)(nil),          // 14: delidev.v1.ProjectPromptHistoryEntry
-	(*ListProjectPromptHistoryRequest)(nil),    // 15: delidev.v1.ListProjectPromptHistoryRequest
-	(*ListProjectPromptHistoryResponse)(nil),   // 16: delidev.v1.ListProjectPromptHistoryResponse
-	(*ClearProjectPromptHistoryRequest)(nil),   // 17: delidev.v1.ClearProjectPromptHistoryRequest
-	(*ClearProjectPromptHistoryResponse)(nil),  // 18: delidev.v1.ClearProjectPromptHistoryResponse
-	(*Mutation)(nil),                           // 19: delidev.v1.Mutation
-	(EntityKind)(0),                            // 20: delidev.v1.EntityKind
-	(*Resource)(nil),                           // 21: delidev.v1.Resource
+	(*SaveAgentWorkerRequest)(nil),                   // 0: delidev.v1.SaveAgentWorkerRequest
+	(*AgentWorkerModelSelection)(nil),                // 1: delidev.v1.AgentWorkerModelSelection
+	(*SaveConfigurationRequest)(nil),                 // 2: delidev.v1.SaveConfigurationRequest
+	(*SaveConfigurationResponse)(nil),                // 3: delidev.v1.SaveConfigurationResponse
+	(*DeleteConfigurationRequest)(nil),               // 4: delidev.v1.DeleteConfigurationRequest
+	(*DeleteConfigurationResponse)(nil),              // 5: delidev.v1.DeleteConfigurationResponse
+	(*PreviewRoutingRequest)(nil),                    // 6: delidev.v1.PreviewRoutingRequest
+	(*PreviewRoutingResponse)(nil),                   // 7: delidev.v1.PreviewRoutingResponse
+	(*ExportConfigurationRequest)(nil),               // 8: delidev.v1.ExportConfigurationRequest
+	(*ExportConfigurationResponse)(nil),              // 9: delidev.v1.ExportConfigurationResponse
+	(*PreviewConfigurationImportRequest)(nil),        // 10: delidev.v1.PreviewConfigurationImportRequest
+	(*PreviewConfigurationImportResponse)(nil),       // 11: delidev.v1.PreviewConfigurationImportResponse
+	(*ApplyConfigurationImportRequest)(nil),          // 12: delidev.v1.ApplyConfigurationImportRequest
+	(*ApplyConfigurationImportResponse)(nil),         // 13: delidev.v1.ApplyConfigurationImportResponse
+	(*ProjectPromptHistoryEntry)(nil),                // 14: delidev.v1.ProjectPromptHistoryEntry
+	(*ListProjectPromptHistoryRequest)(nil),          // 15: delidev.v1.ListProjectPromptHistoryRequest
+	(*ListProjectPromptHistoryResponse)(nil),         // 16: delidev.v1.ListProjectPromptHistoryResponse
+	(*ClearProjectPromptHistoryRequest)(nil),         // 17: delidev.v1.ClearProjectPromptHistoryRequest
+	(*ClearProjectPromptHistoryResponse)(nil),        // 18: delidev.v1.ClearProjectPromptHistoryResponse
+	(*Mutation)(nil),                                 // 19: delidev.v1.Mutation
+	(EntityKind)(0),                                  // 20: delidev.v1.EntityKind
+	(*Resource)(nil),                                 // 21: delidev.v1.Resource
+	(*RequestCodexConfigurationPreviewRequest)(nil),  // 22: delidev.v1.RequestCodexConfigurationPreviewRequest
+	(*PreviewCodexConfigurationImportRequest)(nil),   // 23: delidev.v1.PreviewCodexConfigurationImportRequest
+	(*ApplyCodexConfigurationImportRequest)(nil),     // 24: delidev.v1.ApplyCodexConfigurationImportRequest
+	(*RequestCodexConfigurationPreviewResponse)(nil), // 25: delidev.v1.RequestCodexConfigurationPreviewResponse
+	(*PreviewCodexConfigurationImportResponse)(nil),  // 26: delidev.v1.PreviewCodexConfigurationImportResponse
+	(*ApplyCodexConfigurationImportResponse)(nil),    // 27: delidev.v1.ApplyCodexConfigurationImportResponse
 }
 var file_delidev_v1_configuration_proto_depIdxs = []int32{
 	19, // 0: delidev.v1.SaveAgentWorkerRequest.mutation:type_name -> delidev.v1.Mutation
@@ -1291,17 +1300,23 @@ var file_delidev_v1_configuration_proto_depIdxs = []int32{
 	2,  // 16: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
 	4,  // 17: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
 	6,  // 18: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	16, // 19: delidev.v1.ConfigurationService.ListProjectPromptHistory:output_type -> delidev.v1.ListProjectPromptHistoryResponse
-	18, // 20: delidev.v1.ConfigurationService.ClearProjectPromptHistory:output_type -> delidev.v1.ClearProjectPromptHistoryResponse
-	9,  // 21: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
-	11, // 22: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
-	13, // 23: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
-	3,  // 24: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
-	3,  // 25: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	5,  // 26: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	7,  // 27: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	19, // [19:28] is the sub-list for method output_type
-	10, // [10:19] is the sub-list for method input_type
+	22, // 19: delidev.v1.ConfigurationService.RequestCodexConfigurationPreview:input_type -> delidev.v1.RequestCodexConfigurationPreviewRequest
+	23, // 20: delidev.v1.ConfigurationService.PreviewCodexConfigurationImport:input_type -> delidev.v1.PreviewCodexConfigurationImportRequest
+	24, // 21: delidev.v1.ConfigurationService.ApplyCodexConfigurationImport:input_type -> delidev.v1.ApplyCodexConfigurationImportRequest
+	16, // 22: delidev.v1.ConfigurationService.ListProjectPromptHistory:output_type -> delidev.v1.ListProjectPromptHistoryResponse
+	18, // 23: delidev.v1.ConfigurationService.ClearProjectPromptHistory:output_type -> delidev.v1.ClearProjectPromptHistoryResponse
+	9,  // 24: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
+	11, // 25: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
+	13, // 26: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
+	3,  // 27: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
+	3,  // 28: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	5,  // 29: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	7,  // 30: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	25, // 31: delidev.v1.ConfigurationService.RequestCodexConfigurationPreview:output_type -> delidev.v1.RequestCodexConfigurationPreviewResponse
+	26, // 32: delidev.v1.ConfigurationService.PreviewCodexConfigurationImport:output_type -> delidev.v1.PreviewCodexConfigurationImportResponse
+	27, // 33: delidev.v1.ConfigurationService.ApplyCodexConfigurationImport:output_type -> delidev.v1.ApplyCodexConfigurationImportResponse
+	22, // [22:34] is the sub-list for method output_type
+	10, // [10:22] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -1313,6 +1328,7 @@ func file_delidev_v1_configuration_proto_init() {
 		return
 	}
 	file_delidev_v1_common_proto_init()
+	file_delidev_v1_native_configuration_proto_init()
 	file_delidev_v1_configuration_proto_msgTypes[1].OneofWrappers = []any{
 		(*AgentWorkerModelSelection_ModelId)(nil),
 		(*AgentWorkerModelSelection_NativeId)(nil),

@@ -60,6 +60,15 @@ const (
 	// ConfigurationServicePreviewRoutingProcedure is the fully-qualified name of the
 	// ConfigurationService's PreviewRouting RPC.
 	ConfigurationServicePreviewRoutingProcedure = "/delidev.v1.ConfigurationService/PreviewRouting"
+	// ConfigurationServiceRequestCodexConfigurationPreviewProcedure is the fully-qualified name of the
+	// ConfigurationService's RequestCodexConfigurationPreview RPC.
+	ConfigurationServiceRequestCodexConfigurationPreviewProcedure = "/delidev.v1.ConfigurationService/RequestCodexConfigurationPreview"
+	// ConfigurationServicePreviewCodexConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's PreviewCodexConfigurationImport RPC.
+	ConfigurationServicePreviewCodexConfigurationImportProcedure = "/delidev.v1.ConfigurationService/PreviewCodexConfigurationImport"
+	// ConfigurationServiceApplyCodexConfigurationImportProcedure is the fully-qualified name of the
+	// ConfigurationService's ApplyCodexConfigurationImport RPC.
+	ConfigurationServiceApplyCodexConfigurationImportProcedure = "/delidev.v1.ConfigurationService/ApplyCodexConfigurationImport"
 )
 
 // ConfigurationServiceClient is a client for the delidev.v1.ConfigurationService service.
@@ -77,6 +86,9 @@ type ConfigurationServiceClient interface {
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
+	RequestCodexConfigurationPreview(context.Context, *connect.Request[v1.RequestCodexConfigurationPreviewRequest]) (*connect.Response[v1.RequestCodexConfigurationPreviewResponse], error)
+	PreviewCodexConfigurationImport(context.Context, *connect.Request[v1.PreviewCodexConfigurationImportRequest]) (*connect.Response[v1.PreviewCodexConfigurationImportResponse], error)
+	ApplyCodexConfigurationImport(context.Context, *connect.Request[v1.ApplyCodexConfigurationImportRequest]) (*connect.Response[v1.ApplyCodexConfigurationImportResponse], error)
 }
 
 // NewConfigurationServiceClient constructs a client for the delidev.v1.ConfigurationService
@@ -144,20 +156,41 @@ func NewConfigurationServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithSchema(configurationServiceMethods.ByName("PreviewRouting")),
 			connect.WithClientOptions(opts...),
 		),
+		requestCodexConfigurationPreview: connect.NewClient[v1.RequestCodexConfigurationPreviewRequest, v1.RequestCodexConfigurationPreviewResponse](
+			httpClient,
+			baseURL+ConfigurationServiceRequestCodexConfigurationPreviewProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("RequestCodexConfigurationPreview")),
+			connect.WithClientOptions(opts...),
+		),
+		previewCodexConfigurationImport: connect.NewClient[v1.PreviewCodexConfigurationImportRequest, v1.PreviewCodexConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServicePreviewCodexConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("PreviewCodexConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
+		applyCodexConfigurationImport: connect.NewClient[v1.ApplyCodexConfigurationImportRequest, v1.ApplyCodexConfigurationImportResponse](
+			httpClient,
+			baseURL+ConfigurationServiceApplyCodexConfigurationImportProcedure,
+			connect.WithSchema(configurationServiceMethods.ByName("ApplyCodexConfigurationImport")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // configurationServiceClient implements ConfigurationServiceClient.
 type configurationServiceClient struct {
-	listProjectPromptHistory   *connect.Client[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse]
-	clearProjectPromptHistory  *connect.Client[v1.ClearProjectPromptHistoryRequest, v1.ClearProjectPromptHistoryResponse]
-	exportConfiguration        *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
-	previewConfigurationImport *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
-	applyConfigurationImport   *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
-	saveAgentWorker            *connect.Client[v1.SaveAgentWorkerRequest, v1.SaveConfigurationResponse]
-	saveConfiguration          *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
-	deleteConfiguration        *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
-	previewRouting             *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+	listProjectPromptHistory         *connect.Client[v1.ListProjectPromptHistoryRequest, v1.ListProjectPromptHistoryResponse]
+	clearProjectPromptHistory        *connect.Client[v1.ClearProjectPromptHistoryRequest, v1.ClearProjectPromptHistoryResponse]
+	exportConfiguration              *connect.Client[v1.ExportConfigurationRequest, v1.ExportConfigurationResponse]
+	previewConfigurationImport       *connect.Client[v1.PreviewConfigurationImportRequest, v1.PreviewConfigurationImportResponse]
+	applyConfigurationImport         *connect.Client[v1.ApplyConfigurationImportRequest, v1.ApplyConfigurationImportResponse]
+	saveAgentWorker                  *connect.Client[v1.SaveAgentWorkerRequest, v1.SaveConfigurationResponse]
+	saveConfiguration                *connect.Client[v1.SaveConfigurationRequest, v1.SaveConfigurationResponse]
+	deleteConfiguration              *connect.Client[v1.DeleteConfigurationRequest, v1.DeleteConfigurationResponse]
+	previewRouting                   *connect.Client[v1.PreviewRoutingRequest, v1.PreviewRoutingResponse]
+	requestCodexConfigurationPreview *connect.Client[v1.RequestCodexConfigurationPreviewRequest, v1.RequestCodexConfigurationPreviewResponse]
+	previewCodexConfigurationImport  *connect.Client[v1.PreviewCodexConfigurationImportRequest, v1.PreviewCodexConfigurationImportResponse]
+	applyCodexConfigurationImport    *connect.Client[v1.ApplyCodexConfigurationImportRequest, v1.ApplyCodexConfigurationImportResponse]
 }
 
 // ListProjectPromptHistory calls delidev.v1.ConfigurationService.ListProjectPromptHistory.
@@ -205,6 +238,24 @@ func (c *configurationServiceClient) PreviewRouting(ctx context.Context, req *co
 	return c.previewRouting.CallUnary(ctx, req)
 }
 
+// RequestCodexConfigurationPreview calls
+// delidev.v1.ConfigurationService.RequestCodexConfigurationPreview.
+func (c *configurationServiceClient) RequestCodexConfigurationPreview(ctx context.Context, req *connect.Request[v1.RequestCodexConfigurationPreviewRequest]) (*connect.Response[v1.RequestCodexConfigurationPreviewResponse], error) {
+	return c.requestCodexConfigurationPreview.CallUnary(ctx, req)
+}
+
+// PreviewCodexConfigurationImport calls
+// delidev.v1.ConfigurationService.PreviewCodexConfigurationImport.
+func (c *configurationServiceClient) PreviewCodexConfigurationImport(ctx context.Context, req *connect.Request[v1.PreviewCodexConfigurationImportRequest]) (*connect.Response[v1.PreviewCodexConfigurationImportResponse], error) {
+	return c.previewCodexConfigurationImport.CallUnary(ctx, req)
+}
+
+// ApplyCodexConfigurationImport calls
+// delidev.v1.ConfigurationService.ApplyCodexConfigurationImport.
+func (c *configurationServiceClient) ApplyCodexConfigurationImport(ctx context.Context, req *connect.Request[v1.ApplyCodexConfigurationImportRequest]) (*connect.Response[v1.ApplyCodexConfigurationImportResponse], error) {
+	return c.applyCodexConfigurationImport.CallUnary(ctx, req)
+}
+
 // ConfigurationServiceHandler is an implementation of the delidev.v1.ConfigurationService service.
 type ConfigurationServiceHandler interface {
 	ListProjectPromptHistory(context.Context, *connect.Request[v1.ListProjectPromptHistoryRequest]) (*connect.Response[v1.ListProjectPromptHistoryResponse], error)
@@ -220,6 +271,9 @@ type ConfigurationServiceHandler interface {
 	SaveConfiguration(context.Context, *connect.Request[v1.SaveConfigurationRequest]) (*connect.Response[v1.SaveConfigurationResponse], error)
 	DeleteConfiguration(context.Context, *connect.Request[v1.DeleteConfigurationRequest]) (*connect.Response[v1.DeleteConfigurationResponse], error)
 	PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error)
+	RequestCodexConfigurationPreview(context.Context, *connect.Request[v1.RequestCodexConfigurationPreviewRequest]) (*connect.Response[v1.RequestCodexConfigurationPreviewResponse], error)
+	PreviewCodexConfigurationImport(context.Context, *connect.Request[v1.PreviewCodexConfigurationImportRequest]) (*connect.Response[v1.PreviewCodexConfigurationImportResponse], error)
+	ApplyCodexConfigurationImport(context.Context, *connect.Request[v1.ApplyCodexConfigurationImportRequest]) (*connect.Response[v1.ApplyCodexConfigurationImportResponse], error)
 }
 
 // NewConfigurationServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -283,6 +337,24 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 		connect.WithSchema(configurationServiceMethods.ByName("PreviewRouting")),
 		connect.WithHandlerOptions(opts...),
 	)
+	configurationServiceRequestCodexConfigurationPreviewHandler := connect.NewUnaryHandler(
+		ConfigurationServiceRequestCodexConfigurationPreviewProcedure,
+		svc.RequestCodexConfigurationPreview,
+		connect.WithSchema(configurationServiceMethods.ByName("RequestCodexConfigurationPreview")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServicePreviewCodexConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServicePreviewCodexConfigurationImportProcedure,
+		svc.PreviewCodexConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("PreviewCodexConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	configurationServiceApplyCodexConfigurationImportHandler := connect.NewUnaryHandler(
+		ConfigurationServiceApplyCodexConfigurationImportProcedure,
+		svc.ApplyCodexConfigurationImport,
+		connect.WithSchema(configurationServiceMethods.ByName("ApplyCodexConfigurationImport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.ConfigurationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ConfigurationServiceListProjectPromptHistoryProcedure:
@@ -303,6 +375,12 @@ func NewConfigurationServiceHandler(svc ConfigurationServiceHandler, opts ...con
 			configurationServiceDeleteConfigurationHandler.ServeHTTP(w, r)
 		case ConfigurationServicePreviewRoutingProcedure:
 			configurationServicePreviewRoutingHandler.ServeHTTP(w, r)
+		case ConfigurationServiceRequestCodexConfigurationPreviewProcedure:
+			configurationServiceRequestCodexConfigurationPreviewHandler.ServeHTTP(w, r)
+		case ConfigurationServicePreviewCodexConfigurationImportProcedure:
+			configurationServicePreviewCodexConfigurationImportHandler.ServeHTTP(w, r)
+		case ConfigurationServiceApplyCodexConfigurationImportProcedure:
+			configurationServiceApplyCodexConfigurationImportHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -346,4 +424,16 @@ func (UnimplementedConfigurationServiceHandler) DeleteConfiguration(context.Cont
 
 func (UnimplementedConfigurationServiceHandler) PreviewRouting(context.Context, *connect.Request[v1.PreviewRoutingRequest]) (*connect.Response[v1.PreviewRoutingResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewRouting is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) RequestCodexConfigurationPreview(context.Context, *connect.Request[v1.RequestCodexConfigurationPreviewRequest]) (*connect.Response[v1.RequestCodexConfigurationPreviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.RequestCodexConfigurationPreview is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) PreviewCodexConfigurationImport(context.Context, *connect.Request[v1.PreviewCodexConfigurationImportRequest]) (*connect.Response[v1.PreviewCodexConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.PreviewCodexConfigurationImport is not implemented"))
+}
+
+func (UnimplementedConfigurationServiceHandler) ApplyCodexConfigurationImport(context.Context, *connect.Request[v1.ApplyCodexConfigurationImportRequest]) (*connect.Response[v1.ApplyCodexConfigurationImportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.ConfigurationService.ApplyCodexConfigurationImport is not implemented"))
 }

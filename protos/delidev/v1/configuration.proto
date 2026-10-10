@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/native_configuration.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -19,6 +20,9 @@ service ConfigurationService {
   rpc SaveConfiguration(SaveConfigurationRequest) returns (SaveConfigurationResponse);
   rpc DeleteConfiguration(DeleteConfigurationRequest) returns (DeleteConfigurationResponse);
   rpc PreviewRouting(PreviewRoutingRequest) returns (PreviewRoutingResponse);
+  rpc RequestCodexConfigurationPreview(RequestCodexConfigurationPreviewRequest) returns (RequestCodexConfigurationPreviewResponse);
+  rpc PreviewCodexConfigurationImport(PreviewCodexConfigurationImportRequest) returns (PreviewCodexConfigurationImportResponse);
+  rpc ApplyCodexConfigurationImport(ApplyCodexConfigurationImportRequest) returns (ApplyCodexConfigurationImportResponse);
 }
 
 // Saves a Worker and resolves its source-scoped model atomically.

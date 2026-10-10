@@ -21,6 +21,7 @@ type configurationImportInspection struct {
 	Path         string    `json:"path"`
 }
 type configurationImportJob struct {
+	Native      *nativeConfigurationPending     `json:"native,omitempty"`
 	Actor       domain.Principal                `json:"actor"`
 	Plan        domain.ConfigurationImportPlan  `json:"plan"`
 	Inspections []configurationImportInspection `json:"inspections"`
@@ -250,6 +251,9 @@ func finishConfigurationImport(tx *store.Tx, record store.Record, parent domain.
 	var pending configurationImportJob
 	if err := domain.Decode(parent.Input, &pending); err != nil {
 		return err
+	}
+	if pending.Native != nil {
+		return finishNativeConfigurationImport(tx, record, parent, pending.Actor, *pending.Native)
 	}
 	var problem *domain.Error
 	waiting := false

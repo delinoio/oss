@@ -1,0 +1,25 @@
+syntax = "proto3";
+package delidev.v1;
+import "delidev/v1/common.proto";
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+message RequestCodexConfigurationPreviewRequest {
+  string request_id = 1;
+  string machine_id = 2;
+  bytes selection_json = 3;
+}
+message RequestCodexConfigurationPreviewResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  Resource job = 3;
+}
+message PreviewCodexConfigurationImportRequest { bytes selection_json = 1; }
+message PreviewCodexConfigurationImportResponse { bytes preview_json = 1; }
+message ApplyCodexConfigurationImportRequest {
+  string request_id = 1;
+  bytes preview_json = 2;
+}
+message ApplyCodexConfigurationImportResponse {
+  string request_id = 1;
+  bool replayed = 2;
+  Resource job = 3;
+}
