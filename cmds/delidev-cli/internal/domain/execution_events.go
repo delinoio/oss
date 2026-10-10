@@ -79,16 +79,17 @@ const MaxExecutionEvents = 100000
 // Observations remain distinct from the immutable requested configuration.
 // Nil effort/tier means unavailable, not a manufactured native default.
 type ObservedExecutionSettings struct {
-	ApprovalsReviewer ApprovalsReviewer    `json:"approvals_reviewer,omitempty"`
-	Model             string               `json:"model"`
-	Effort            *string              `json:"effort"`
-	ServiceTier       *string              `json:"service_tier"`
-	Permission        PermissionMode       `json:"permission"`
-	ApprovalPolicy    string               `json:"approval_policy"`
-	ClaudePermission  ClaudePermissionMode `json:"claude_permission,omitempty"`
-	OpenCodeAgent     OpenCodePrimaryAgent `json:"opencode_agent,omitempty"`
-	GrokMode          GrokMode             `json:"grok_mode,omitempty"`
-	GrokContextTokens uint64               `json:"grok_context_tokens,omitempty"`
+	NativeGoalsEnabled bool                 `json:"native_goals_enabled,omitempty"`
+	ApprovalsReviewer  ApprovalsReviewer    `json:"approvals_reviewer,omitempty"`
+	Model              string               `json:"model"`
+	Effort             *string              `json:"effort"`
+	ServiceTier        *string              `json:"service_tier"`
+	Permission         PermissionMode       `json:"permission"`
+	ApprovalPolicy     string               `json:"approval_policy"`
+	ClaudePermission   ClaudePermissionMode `json:"claude_permission,omitempty"`
+	OpenCodeAgent      OpenCodePrimaryAgent `json:"opencode_agent,omitempty"`
+	GrokMode           GrokMode             `json:"grok_mode,omitempty"`
+	GrokContextTokens  uint64               `json:"grok_context_tokens,omitempty"`
 }
 
 func (o ObservedExecutionSettings) Validate(configuration ExecutionConfiguration) error {
@@ -96,6 +97,9 @@ func (o ObservedExecutionSettings) Validate(configuration ExecutionConfiguration
 }
 
 func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfiguration, mode SessionMode) error {
+	if o.NativeGoalsEnabled && (configuration.Harness != Codex || configuration.SidechatPolicy != "") {
+		return invalidObservation()
+	}
 	if !mode.Valid() || o.Model != configuration.NativeModel {
 		return Fail(Unsupported, "The observed native settings are incompatible.", "Reconcile the accepted configuration and native profile before sending input.")
 	}

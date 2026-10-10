@@ -102,10 +102,11 @@ type EffectiveSettings struct {
 // ThreadResult retains a proven native identity even when effective settings
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
-	SkillInputs []HistoricalInput `json:"-"`
-	RequestID   domain.ID
-	Thread      *Thread
-	Effective   *EffectiveSettings
+	NativeGoalsEnabled bool
+	SkillInputs        []HistoricalInput `json:"-"`
+	RequestID          domain.ID
+	Thread             *Thread
+	Effective          *EffectiveSettings
 }
 
 type threadMethod string
@@ -400,6 +401,13 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	// input or completion. A fresh process must verify the retained checkpoint
 	// before it can send an ordinary input or mutate an existing turn.
 	c.execution.continuationPending = method == resumeThread
+	if c.nativeGoals {
+		if err := c.verifyGoalsLocked(ctx); err != nil {
+			c.problem = threadUncertain()
+			return result, c.problem
+		}
+		result.NativeGoalsEnabled = true
+	}
 	return result, nil
 }
 

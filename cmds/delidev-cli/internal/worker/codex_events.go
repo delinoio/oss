@@ -69,7 +69,7 @@ func (c *CodexEventPublisher) BindThread(ctx context.Context, result codex.Threa
 	if c.publisher == nil || c.thread != "" || result.RequestID != c.publisher.input.ThreadRequestID || result.Thread == nil || result.Thread.ID.Validate() != nil || result.Effective == nil {
 		return publicationUncertain()
 	}
-	observed := domain.ObservedExecutionSettings{Model: result.Effective.Model, Effort: result.Effective.Effort, ServiceTier: result.Effective.ServiceTier, ApprovalPolicy: string(result.Effective.ApprovalPolicy)}
+	observed := domain.ObservedExecutionSettings{NativeGoalsEnabled: result.NativeGoalsEnabled, Model: result.Effective.Model, Effort: result.Effective.Effort, ServiceTier: result.Effective.ServiceTier, ApprovalPolicy: string(result.Effective.ApprovalPolicy)}
 	if c.publisher.input.Configuration.Options.ApprovalsReviewer != "" {
 		observed.ApprovalsReviewer = domain.ApprovalsReviewer(result.Effective.ApprovalsReviewer)
 	}

@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	NativeGoals         bool                       `json:"native_goals,omitempty"`
 	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
 	ContextRevision     uint64                     `json:"context_revision,omitempty"`
 	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
@@ -91,6 +92,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
+	if i.NativeGoals && (i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "") {
+		return NativeGoalUncertain()
+	}
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
 	}

@@ -59,6 +59,7 @@ type Config struct {
 	questionControls <-chan *pb.QuestionResponseControl
 	approvalControls <-chan *pb.ApprovalResponseControl
 	steerControls    <-chan *pb.SteerInputControl
+	goalControls     <-chan *pb.GoalActionControl
 }
 type journalState string
 
@@ -88,6 +89,8 @@ type assignment struct {
 	approvals   chan *pb.ApprovalResponseControl
 	approvalIDs map[domain.ID]responseControlIdentity
 	responses   map[domain.ID]responseControlIdentity
+	goals       chan *pb.GoalActionControl
+	goalIDs     map[domain.ID]goalControlIdentity
 	steers      chan *pb.SteerInputControl
 	steerIDs    map[domain.ID]steerControlIdentity
 	native      bool
@@ -657,6 +660,52 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
+			if message.GoalActionControl != nil {
+				control := message.GoalActionControl
+				identity, err := goalControl(control)
+				if err != nil || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.QuestionResponse != nil || message.ApprovalResponse != nil || message.SteerInput != nil {
+					cancel(publicationUncertain())
+					return
+				}
+				value, ok := active.Load(control.JobId)
+				if !ok {
+					if control.JobId == lastAssigned {
+						continue
+					}
+					cancel(publicationUncertain())
+					return
+				}
+				work := value.(*assignment)
+				if !work.native {
+					cancel(publicationUncertain())
+					return
+				}
+				if work.context.Err() != nil {
+					continue
+				}
+				if prior, exists := work.goalIDs[identity.ActionID]; exists {
+					if prior != identity {
+						cancel(publicationUncertain())
+						return
+					}
+					continue
+				}
+				if len(work.goalIDs) >= 256 {
+					cancel(publicationUncertain())
+					return
+				}
+				work.goalIDs[identity.ActionID] = identity
+				select {
+				case work.goals <- proto.Clone(control).(*pb.GoalActionControl):
+				case <-work.context.Done():
+				case <-ctx.Done():
+					return
+				default:
+					cancel(publicationUncertain())
+					return
+				}
+				continue
+			}
 			if message.SteerInput != nil {
 				control := message.SteerInput
 				identity, err := steerControl(control)
@@ -834,7 +883,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				return
 			}
 			jobContext, stopJob := context.WithCancel(ctx)
-			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
+			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, goals: make(chan *pb.GoalActionControl, 1), goalIDs: map[domain.ID]goalControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
 			var envelope domain.Job
 			if decodeAssignedJob(resource.DocumentJson, &envelope) != nil {
 				stopJob()
@@ -963,6 +1012,7 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 	jobConfig.questionControls = work.controls
 	jobConfig.approvalControls = work.approvals
 	jobConfig.steerControls = work.steers
+	jobConfig.goalControls = work.goals
 	jobConfig.progress = newSessionStartupReporter(work.context, jobConfig, job)
 	defer jobConfig.progress.close()
 	result, err := runJob(work.context, jobConfig, instance, resource, job)

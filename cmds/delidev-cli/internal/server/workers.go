@@ -358,6 +358,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	var cancellationSent domain.ID
 	responseControlsSent := map[domain.ID]bool{}
 	steerControlsSent := map[domain.ID]bool{}
+	goalControlsSent := map[domain.ID]bool{}
 	for {
 		changed := s.Store.Changed()
 		var records []store.Record
@@ -365,6 +366,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 		var responseControls []*pb.QuestionResponseControl
 		var approvalControls []*pb.ApprovalResponseControl
 		var steerControl *pb.SteerInputControl
+		var goalControl *pb.GoalActionControl
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := currentInstance(tx, machine, instance); err != nil {
 				return err
@@ -396,6 +398,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 						if err == nil {
 							steerControl, err = s.pendingSteer(tx, record, job, steerControlsSent)
 						}
+						if err == nil {
+							goalControl, err = s.pendingGoalAction(tx, record, job, goalControlsSent)
+						}
 					}
 					return err
 				}
@@ -404,6 +409,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				cancellationSent = ""
 				responseControlsSent = map[domain.ID]bool{}
 				steerControlsSent = map[domain.ID]bool{}
+				goalControlsSent = map[domain.ID]bool{}
 			}
 			if err := tx.WorkerUpdateAdmission(machine); err != nil {
 				return nil
@@ -454,12 +460,24 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			steerControlsSent[domain.ID(steerControl.SteerId)] = true
 		}
+		if goalControl != nil {
+			if len(goalControlsSent) >= 256 {
+				return rpc.Error(domain.NativeGoalUncertain(), correlation)
+			}
+			if err := send(&pb.WatchWorkResponse{GoalActionControl: goalControl}); err != nil {
+				return err
+			}
+			goalControlsSent[domain.ID(goalControl.ActionId)] = true
+		}
 		assigned := false
 		waitForNetwork := false
 		for _, record := range records {
 			job, err := store.Decode[domain.Job](record)
 			if err != nil {
 				return rpc.Error(err, correlation)
+			}
+			if job.Type == domain.NativeGoalActionJob {
+				continue
 			}
 			// Automatic titles belong exclusively to the auxiliary admission lane,
 			// including already claimed jobs. Primary dispatch cannot acquire their

@@ -237,6 +237,9 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 		if event.Kind != domain.ExecutionThreadBound || event.Sequence != 1 || queued.Delivery != domain.InputClaimed {
 			return executionEventConflict()
 		}
+		if event.Observed.NativeGoalsEnabled != input.NativeGoals {
+			return executionEventConflict()
+		}
 		if err := event.Observed.ValidateForInput(input.Configuration, input.Input.Mode); err != nil {
 			return err
 		}
@@ -260,6 +263,9 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 		}
 		progress = &domain.ExecutionProgress{ContextRevision: input.ContextRevision, NativeHistory: session.CurrentNativeHistory, JobID: job.ID, ExecutionID: input.ExecutionID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, Observed: *event.Observed, Outcome: domain.ExecutionNotStarted}
 		session.Execution = progress
+		if input.NativeGoals {
+			session.NativeGoal = &domain.NativeGoalView{Enabled: event.Observed.NativeGoalsEnabled, SourceExecutionID: input.ExecutionID, SourceNativeThreadID: domain.ID(event.NativeThreadID)}
+		}
 	} else {
 		if event.Kind == domain.ExecutionThreadBound || progress.JobID != job.ID || progress.ExecutionID != input.ExecutionID || progress.InputID != input.InputID || progress.NativeThreadID != event.NativeThreadID || event.Sequence != progress.LastSequence+1 {
 			return executionEventConflict()

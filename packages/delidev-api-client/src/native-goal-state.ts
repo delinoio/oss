@@ -13,6 +13,8 @@ export interface NativeGoalSnapshot {
 /** Session document native_goal projection. Missing observation means unknown;
  * explicit null means observed absence. Neither acknowledges an uncertain action. */
 export interface NativeGoalView {
+  /** True only after the original native feature observation. */
+  readonly enabled: boolean;
   readonly source_execution_id: string;
   readonly source_native_thread_id: string;
   readonly observation?: NativeGoalSnapshot | null;
