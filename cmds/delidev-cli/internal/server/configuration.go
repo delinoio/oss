@@ -141,7 +141,7 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 	})
 }
 
-func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id domain.ID, value validatable) error {
+func validateNewProviderSelections(tx configurationView, input ConfigurationMutation, id domain.ID, value validatable) error {
 	previousIDs := func(kind domain.Kind) (map[domain.ID]bool, error) {
 		ids := map[domain.ID]bool{}
 		if input.ExpectedRevision == 0 {
@@ -212,6 +212,28 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 		}
 		return checkProvider(account.ProviderID)
 	}
+	checkModel := func(route domain.AgentSourceRoute) error {
+		// Current routes own inline identities. Their source keys are not saved
+		// Model UUIDs; legacy references retain their original read path.
+		if route.Model != nil {
+			if route.Model.ProviderID == "" {
+				return nil
+			}
+			return checkProvider(route.Model.ProviderID)
+		}
+		record, err := tx.Get(domain.ModelKind, route.ModelID)
+		if err != nil {
+			return err
+		}
+		model, err := store.Decode[domain.Model](record)
+		if err != nil {
+			return err
+		}
+		if model.SourceKind != domain.SubscriptionModel {
+			return checkProvider(model.ProviderID)
+		}
+		return nil
+	}
 	switch selected := value.(type) {
 	case *domain.Model:
 		if selected.SourceKind == domain.SubscriptionModel {
@@ -249,20 +271,9 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 				previousModels[modelID] = true
 			}
 		}
-		for _, modelID := range selected.ModelIDs() {
-			if previousModels[modelID] {
-				continue
-			}
-			record, err := tx.Get(domain.ModelKind, modelID)
-			if err != nil {
-				return err
-			}
-			model, err := store.Decode[domain.Model](record)
-			if err != nil {
-				return err
-			}
-			if model.SourceKind != domain.SubscriptionModel {
-				if err := checkProvider(model.ProviderID); err != nil {
+		for _, route := range selected.SourceRoutes() {
+			if !previousModels[route.ModelID] {
+				if err := checkModel(route); err != nil {
 					return err
 				}
 			}
@@ -295,19 +306,9 @@ func validateNewProviderSelections(tx *store.Tx, input ConfigurationMutation, id
 			if err != nil {
 				return err
 			}
-			for _, modelID := range agent.ModelIDs() {
-				modelRecord, err := tx.Get(domain.ModelKind, modelID)
-				if err != nil {
+			for _, route := range agent.SourceRoutes() {
+				if err := checkModel(route); err != nil {
 					return err
-				}
-				model, err := store.Decode[domain.Model](modelRecord)
-				if err != nil {
-					return err
-				}
-				if model.SourceKind != domain.SubscriptionModel {
-					if err := checkProvider(model.ProviderID); err != nil {
-						return err
-					}
 				}
 			}
 		}
