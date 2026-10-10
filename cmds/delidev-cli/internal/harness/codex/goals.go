@@ -161,9 +161,9 @@ func (c *Client) observeGoalsEnabledLocked(ctx context.Context) (bool, error) {
 			Enabled        *bool   `json:"enabled"`
 			DefaultEnabled *bool   `json:"defaultEnabled"`
 		} `json:"data"`
-		Next *string `json:"nextCursor"`
+		Next json.RawMessage `json:"nextCursor"`
 	}
-	if response.ErrorCode != nil || domain.Decode(response.Result, &observed) != nil || observed.Data == nil || len(observed.Data) > 256 || observed.Next != nil {
+	if response.ErrorCode != nil || domain.Decode(response.Result, &observed) != nil || observed.Data == nil || len(observed.Data) > 256 || string(observed.Next) != "null" {
 		return false, incompatible()
 	}
 	seen := map[string]bool{}
