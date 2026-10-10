@@ -73,5 +73,7 @@
   "schedule-creation.completed": "Completed",
   "schedule-creation.current": "Current",
   "schedule-creation.future": "Upcoming",
-  "schedule-creation.repeat": "Repeat"
+  "schedule-creation.repeat": "Repeat",
+  "schedule-creation.nameUnavailable": "Name unavailable",
+  "schedule-creation.repositoryOrdinal": "Repository {{number}}"
 }

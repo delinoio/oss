@@ -362,7 +362,7 @@ it("validates each wizard step, retains drafts through Back and Edit, and only R
  const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));const name=screen.getByLabelText("Schedule name");
  fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(globalThis.document.activeElement).toBe(name);expect(screen.queryByRole("button",{name:"Create schedule"})).toBeNull();expect(value.save).not.toHaveBeenCalled();
  fireEvent.keyDown(name,{key:"Enter"});expect(value.save).not.toHaveBeenCalled();await fillCreation(value);goStep(3);expect(screen.getByText("Review shows configured selections, not execution readiness.")).toBeTruthy();
- expect(screen.getByText(value.project.id)).toBeTruthy();expect(screen.getByText(value.agent.id)).toBeTruthy();expect(screen.getByText(value.machine.id)).toBeTruthy();expect(screen.getByText("Review project changes",{selector:"dd"})).toBeTruthy();
+ const review=globalThis.document.querySelector(".schedule-creation-review")!;for(const id of [value.project.id,value.agent.id,value.machine.id]) expect(review.outerHTML).not.toContain(id);expect(review.querySelectorAll(":scope > .schedule-creation-card")).toHaveLength(3);expect(screen.getByText("Review project changes",{selector:"dd"})).toBeTruthy();
  expect((screen.getByRole("button",{name:"Edit task"}) as HTMLButtonElement).disabled).toBe(false);fireEvent.click(screen.getByRole("button",{name:"Edit task"}));expect((name as HTMLInputElement).value).toBe("Morning review");expect(globalThis.document.activeElement?.textContent).toBe("Task");choose("Schedule name","Changed title");goStep(3);expect(screen.getByText("Changed title")).toBeTruthy();expect(value.save).not.toHaveBeenCalled();
  fireEvent.change(name,{target:{value:""}});fireEvent.click(screen.getByRole("button",{name:"Create schedule"}));expect(globalThis.document.activeElement).toBe(name);expect(screen.queryByRole("button",{name:"Create schedule"})).toBeNull();expect(value.save).not.toHaveBeenCalled();
 });
@@ -456,7 +456,7 @@ it.each([
   await waitFor(() => expect(picker.dataset.value).toBe(replacement.id));
   expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
   goStep(3); expect(globalThis.document.querySelector(".schedule-creation-review")?.textContent).toContain("Replacement selection");
-  expect(screen.getByText(replacement.id)).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
+  expect(globalThis.document.querySelector(".schedule-creation-review")?.outerHTML).not.toContain(replacement.id); expect(value.save).not.toHaveBeenCalled();
 });
 
 
@@ -517,10 +517,80 @@ it("resolves retained override names outside the current Project without changin
  value.resources.push(create(ResourceSchema,{id:retained,kind:EntityKind.REPOSITORY,schemaVersion:1,revision:1n,documentJson:encode({name})}));
  render(value.view(<StartingFixture project={value.project.id} initial={[{repository_id:retained,reference:{type:"local-branch",name:"saved-branch"}}]}/>));
  const field=await screen.findByLabelText(`Starting ${name} name`);expect((field as HTMLInputElement).value).toBe("saved-branch");
- expect(screen.getByRole("option",{name:"oss"}).getAttribute("value")).toBe(value.repositoryId);
+ expect((await screen.findByRole("option",{name:"oss"})).getAttribute("value")).toBe(value.repositoryId);
  await act(async()=>{await i18n.changeLanguage("ko");});expect((field as HTMLInputElement).value).toBe("saved-branch");expect(globalThis.document.body.textContent).toContain(name);expect(value.save).not.toHaveBeenCalled();
 });
 
+it("uses localized unavailable Review names for missing or mismatched cache without reads", async () => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); goStep(3);
+  const reads = value.get.mock.calls.length, lists = value.list.mock.calls.length;
+  const selected = value.client.getQueryCache().getAll().filter(query => {
+    const resource = (query.state.data as { resource?: Resource } | undefined)?.resource;
+    return resource && [value.project.id, value.agent.id, value.machine.id].includes(resource.id);
+  });
+  expect(selected).toHaveLength(3);
+  await act(async () => {
+    selected.forEach((query, index) => value.client.setQueryData(query.queryKey, index === 0 ? {} : { resource: create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, documentJson: encode({ name: "Wrong resource" }) }) }));
+  });
+  const review = globalThis.document.querySelector(".schedule-creation-review")!;
+  await waitFor(() => expect(within(review as HTMLElement).getAllByText("Name unavailable")).toHaveLength(3));
+  expect(review.textContent).not.toContain("Wrong resource");
+  await act(() => i18n.changeLanguage("ko"));
+  expect(within(review as HTMLElement).getAllByText("이름을 사용할 수 없음")).toHaveLength(3);
+  await act(() => i18n.changeLanguage("en"));
+  expect(value.get).toHaveBeenCalledTimes(reads); expect(value.list).toHaveBeenCalledTimes(lists);
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const request = value.save.mock.calls[0][0] as { definitionJson: Uint8Array };
+  expect(JSON.parse(new TextDecoder().decode(request.definitionJson))).toMatchObject({ project_id: value.project.id, agent_id: value.agent.id, machine_id: value.machine.id });
+});
+
+it("renders ordered name-only override rows and preserves complete user UUID text and exact submissions", async () => {
+  const value = fixture(), second = newRequestId(), userText = newRequestId();
+  value.resources.push(create(ResourceSchema, { id: second, kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "other" }) }));
+  value.project.documentJson = encode({ ...document(value.project), repositories: [value.repositoryId, second] });
+  render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); fireEvent.click(screen.getByRole("button", { name: /Starting reference overrides/ }));
+  await screen.findByRole("option", { name: "oss" });
+  choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
+  choose("Starting oss name", `feature/${userText}`);
+  choose("Add repository override", second); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
+  await screen.findByLabelText("Starting other name"); choose("Starting other type", "commit"); choose("Starting other name", "release/full-reference");
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  choose("Scheduled prompt", `First line\n${userText}\nLast line`); goStep(3);
+  const review = globalThis.document.querySelector(".schedule-creation-review")!;
+  for (const id of [value.project.id, value.agent.id, value.machine.id, value.repositoryId, second]) expect(review.outerHTML).not.toContain(id);
+  expect(review.querySelector(".schedule-review-prompt")?.textContent).toBe(`First line\n${userText}\nLast line`);
+  expect(within(review as HTMLElement).getByText("Repository 1")).toBeTruthy(); expect(within(review as HTMLElement).getByText("Repository 2")).toBeTruthy();
+  expect(within(review as HTMLElement).getByText(`feature/${userText}`)).toBeTruthy();
+  expect(within(review as HTMLElement).getByText("commit")).toBeTruthy();
+  await act(() => i18n.changeLanguage("ko")); expect(within(review as HTMLElement).getByText("저장소 2")).toBeTruthy();
+  await act(() => i18n.changeLanguage("en"));
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  const request = value.save.mock.calls[0][0] as { definitionJson: Uint8Array };
+  expect(JSON.parse(new TextDecoder().decode(request.definitionJson))).toMatchObject({ prompt: `First line\n${userText}\nLast line`, starting: [{ repository_id: value.repositoryId, reference: { type: "local-branch", name: `feature/${userText}` } }, { repository_id: second, reference: { type: "commit", name: "release/full-reference" } }] });
+});
+
+it("keeps same-named Review selections distinct by their original identity", async () => {
+  const value = fixture(), selectedId = newRequestId();
+  value.resources.push(create(ResourceSchema, { ...value.project, id: selectedId }));
+  render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  choose("Schedule name", "Equal names"); choose("Scheduled prompt", "Keep exact selection");
+  const { chooseScrollOption } = await import("./test-scroll-picker");
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Project" }), selectedId);
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Project" }).dataset.value).toBe(selectedId));
+  goStep(1);
+  for (const [label, resource] of [["Agent Worker", value.agent], ["Runner Device", value.machine]] as const) {
+    await chooseScrollOption(screen.getByRole("combobox", { name: label }), resource.id);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: label }).dataset.value).toBe(resource.id));
+  }
+  goStep(3);
+  const review = globalThis.document.querySelector(".schedule-creation-review")!;
+  expect(review.textContent).toContain("Selected project"); expect(review.outerHTML).not.toContain(selectedId);
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(new TextDecoder().decode(createRequest(value).definitionJson))).toMatchObject({ project_id: selectedId });
+});
 
 it.each([
   ["en", "New schedules enable future runs by default. Uncheck this option to create a paused schedule."],
