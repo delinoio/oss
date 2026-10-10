@@ -117,6 +117,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
     endHistoryCycle.current();
     setPrompt("");
  setManualMode(false);
+    setPlanDefaultProblem(undefined);
     skills.clearAccepted();
     setCreatedElsewhere(undefined);
     created();
