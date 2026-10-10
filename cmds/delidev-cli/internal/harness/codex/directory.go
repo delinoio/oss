@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -247,6 +248,9 @@ func (c *Client) ReadDirectoryReloadEvidence(ctx context.Context, requestID doma
 	if domain.Decode(response.Result, &config) != nil || config.Config == nil || config.Origins == nil || config.Layers == nil {
 		return empty, directoryUncertain()
 	}
+	if err := directoryConfigSourcesBefore(config.Layers, bound.DirectoryStartedAt); err != nil {
+		return empty, err
+	}
 	canonical, err := json.Marshal(config)
 	if err != nil {
 		return empty, directoryUncertain()
@@ -324,4 +328,59 @@ func (c *Client) VerifyDirectoryCompactedContinuation(ctx context.Context, reque
 		return Turn{}, err
 	}
 	return c.VerifyCompactedContinuation(ctx, request, comparison)
+}
+
+// File-layer metadata is supplied by the pinned native configuration schema.
+// A post-Resume write cannot establish what the native thread actually loaded.
+func directoryConfigSourcesBefore(layers []json.RawMessage, started time.Time) error {
+	if layers == nil || started.IsZero() {
+		return directoryUncertain()
+	}
+	for _, raw := range layers {
+		var layer struct {
+			Name struct {
+				Type    string  `json:"type"`
+				File    string  `json:"file,omitempty"`
+				Folder  string  `json:"dotCodexFolder,omitempty"`
+				Domain  string  `json:"domain,omitempty"`
+				Key     string  `json:"key,omitempty"`
+				ID      string  `json:"id,omitempty"`
+				Label   string  `json:"name,omitempty"`
+				Profile *string `json:"profile,omitempty"`
+			} `json:"name"`
+			Version  string          `json:"version"`
+			Config   json.RawMessage `json:"config"`
+			Disabled *string         `json:"disabledReason,omitempty"`
+		}
+		if domain.Decode(raw, &layer) != nil || layer.Version == "" || len(layer.Config) == 0 {
+			return directoryUncertain()
+		}
+		path := ""
+		switch layer.Name.Type {
+		case "packagedDefaults", "system", "user", "legacyManagedConfigTomlFromFile":
+			path = layer.Name.File
+		case "project":
+			path = filepath.Join(layer.Name.Folder, "config.toml")
+		case "mdm", "enterpriseManaged", "sessionFlags", "legacyManagedConfigTomlFromMdm":
+			continue
+		default:
+			return directoryUncertain()
+		}
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return directoryUncertain()
+		}
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			var absent map[string]json.RawMessage
+			if domain.Decode(layer.Config, &absent) != nil || absent == nil || len(absent) != 0 {
+				return directoryUncertain()
+			}
+			continue
+		}
+		resolved, resolveErr := filepath.EvalSymlinks(path)
+		if err != nil || resolveErr != nil || resolved != path || !info.Mode().IsRegular() || info.ModTime().After(started) {
+			return directoryUncertain()
+		}
+	}
+	return nil
 }

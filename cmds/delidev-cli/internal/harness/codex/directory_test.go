@@ -283,3 +283,42 @@ func TestDirectoryInstructionChangeDuringResumeIsRefused(t *testing.T) {
 		t.Fatal("stable earlier source refused", err)
 	}
 }
+
+func TestDirectoryConfigurationLayerChangeDuringResumeIsRefused(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "config.toml")
+	if err := os.WriteFile(path, []byte("model = 'fixture'"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, after := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+	if err := os.Chtimes(path, before, before); err != nil {
+		t.Fatal(err)
+	}
+	layer := func(name map[string]any, config map[string]any) []json.RawMessage {
+		raw, _ := json.Marshal(map[string]any{"name": name, "version": "retained-native-layer", "config": config})
+		return []json.RawMessage{raw}
+	}
+	stable := layer(map[string]any{"type": "user", "file": path, "profile": nil}, map[string]any{"model": "fixture"})
+	if err := directoryConfigSourcesBefore(stable, after); err != nil {
+		t.Fatal("stable source refused", err)
+	}
+	if err := os.Chtimes(path, after, after); err != nil {
+		t.Fatal(err)
+	}
+	if err := directoryConfigSourcesBefore(stable, before); err == nil {
+		t.Fatal("post-Resume config write accepted")
+	}
+	missing := filepath.Join(root, "missing.toml")
+	if err := directoryConfigSourcesBefore(layer(map[string]any{"type": "system", "file": missing}, map[string]any{}), after); err != nil {
+		t.Fatal("native proven absent default refused", err)
+	}
+	if err := directoryConfigSourcesBefore(layer(map[string]any{"type": "system", "file": missing}, map[string]any{"model": "foreign"}), after); err == nil {
+		t.Fatal("missing configured source accepted")
+	}
+	if err := directoryConfigSourcesBefore(layer(map[string]any{"type": "unknown"}, map[string]any{}), after); err == nil {
+		t.Fatal("unknown layer accepted")
+	}
+}
