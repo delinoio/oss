@@ -79,6 +79,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
 - [Saved client connections](cmds-delidev-connections-contract.md)
+- [Tailscale discovery and approved Worker access](cmds-delidev-tailscale-contract.md)
 - [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
 - [GitHub integration profiles](cmds-delidev-integrations-contract.md)
 - [Account lifecycle](cmds-delidev-accounts-contract.md)
