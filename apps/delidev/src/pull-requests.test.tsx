@@ -297,8 +297,24 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
   expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
   expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();
   expect(view.container.querySelector(".pending-pr-actions")?.getAttribute("data-empty")).toBe("true");
-  expect(screen.getAllByRole("button", { name: "Refresh GitHub results" })).toHaveLength(1);
+  const refresh = screen.getByRole("button", { name: "Refresh GitHub results" });
+  expect(refresh.textContent).toBe("");
+  expect(refresh.querySelector('svg[aria-hidden="true"][focusable="false"]')).toBeTruthy();
+  fireEvent.pointerEnter(refresh);
+  expect(screen.getByRole("tooltip").textContent).toBe("Refresh GitHub results");
+  expect(screen.getByRole("tooltip").getAttribute("tabindex")).toBeNull();
+  expect(value.query).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(refresh, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(refresh); fireEvent.blur(refresh);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerEnter(refresh); fireEvent.scroll(window);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(refresh); fireEvent.resize(window);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(refresh);
   await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  expect(screen.getByRole("tooltip").textContent).toBe(refresh.getAttribute("aria-label"));
   expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).textContent).toBe(observed); expect(value.query).toHaveBeenCalledTimes(1);
 });
 
