@@ -12,6 +12,7 @@ import (
 func sessionNativeAppsOwnerFixture(t *testing.T) (*Client, domain.ID, *decodedNativeAppsTool) {
 	t.Helper()
 	c, turn := observationClient()
+	c.version = "0.162.0"
 	scope := nativeAppsScopeFixture()
 	c.nativeApps = &domain.SessionNativeAppSelection{Scope: scope, InventoryID: domain.NewID(), Revision: 1, AppIDs: []string{"original"}}
 	c.nativeAppsCaller = func(_ context.Context, _ domain.ID, method string, _ any) (nativewire.Response, error) {
