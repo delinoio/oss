@@ -47,6 +47,41 @@ async function wheelChaining(page, context) {
  assert.deepEqual(await page.evaluate(()=>({reads:window.__usageFixture.summary,tabs:[...document.querySelectorAll('.usage-tabs [role=tab]')].map(n=>n.getAttribute('aria-selected')),details:[...document.querySelectorAll('.usage-page details')].map(n=>n.open),filters:[...document.querySelectorAll('.usage-sidebar input,.usage-sidebar select')].map(n=>n.value)})),before,`${context}: wheel input preserves data/filters/tabs/disclosures and reads`);
 }
 
+// Portable original-CSS reproduction. These synthetic geometry checks remain
+// separate from the ordinary App fixture and packaged/native acceptance.
+async function sidebarInlineBounds(browser, app) {
+ const probe = await browser.newPage();
+ const styles = await Promise.all(["styles.css", "usage.css", "themes.css"].map(file => readFile(join(app, "src", file), "utf8")));
+ let checks = 0;
+ try {
+  for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const width of [288, 256]) {
+   const context = `Usage sidebar inline bounds/${language}/${theme}/${width}px`;
+   const helper = language === "ko" ? "시간은 Asia/Seoul 기준입니다. 긴 도움말과 잘못된 날짜 안내를 모두 표시합니다. " : "Times use Asia/Seoul. Keep complete long helper text and invalid-date guidance visible. ";
+   await probe.setContent(`<html lang="${language}" data-theme="${theme}"><head><style>${styles.join("\n")}</style></head><body><div class="sidebar-pane" style="width:${width}px;height:600px"><div class="sidebar-list"><div class="sidebar-surface-outlet"><section class="sidebar-surface-content usage-sidebar"><h2>Usage</h2><form class="sidebar-form usage-sidebar-form"><div class="usage-filter-scroll"><fieldset><legend>Time range</legend><label>From (Asia/Seoul time)<input type="datetime-local" value="2026-10-09T10:19:54.733"></label><label>Until (Asia/Seoul time, exclusive)<input type="datetime-local" value="2026-10-10T10:19:54.733"></label>${Array.from({length:12}, (_,index) => `<label>${helper}<select><option>${helper}${index}</option></select></label>`).join("")}<p role="alert">${helper.repeat(3)}</p></fieldset></div><div class="actions"><button type="button">Reset to last 30 days</button></div></form></section></div></div></div></body></html>`);
+   const body = probe.locator(".usage-filter-scroll");
+   assert(await body.evaluate(node => node.scrollWidth <= node.clientWidth + 1), `${context}: no intrinsic horizontal overflow`);
+   const dates = probe.locator('input[type="datetime-local"]');
+   assert.deepEqual(await dates.evaluateAll(nodes => nodes.map(node => node.value)), ["2026-10-09T10:19:54.733", "2026-10-10T10:19:54.733"], `${context}: exact datetime precision`);
+   assert(await dates.evaluateAll(nodes => nodes.every(node => { const control=node.getBoundingClientRect(), label=node.parentElement.getBoundingClientRect(); return control.width <= label.width + 1 && control.left >= label.left - 1 && control.right <= label.right + 1 && control.height >= 40 && getComputedStyle(node).appearance !== "none"; })), `${context}: bounded native controls with calendar appearance`);
+   await body.evaluate(node => { node.scrollLeft=100; });
+   assert.equal(await body.evaluate(node => node.scrollLeft), 0, `${context}: no programmatic horizontal offset`);
+   await body.hover(); await probe.mouse.wheel(100, 0); await probe.waitForTimeout(100);
+   assert.equal(await body.evaluate(node => node.scrollLeft), 0, `${context}: no horizontal gesture movement`);
+   const controls = probe.locator(".usage-filter-scroll input, .usage-filter-scroll select");
+   for (let index=0; index<await controls.count(); index++) {
+    await controls.nth(index).focus(); await probe.keyboard.press("Tab");
+    assert.equal(await body.evaluate(node => node.scrollLeft), 0, `${context}: keyboard focus preserves horizontal origin`);
+   }
+   assert(await body.evaluate(node => node.scrollHeight > node.clientHeight), `${context}: independent vertical overflow`);
+   await body.evaluate(node => { node.scrollTop=100; });
+   assert(await body.evaluate(node => node.scrollTop > 0), `${context}: vertical scroll remains available`);
+   assert(await probe.locator(".actions").evaluate(node => !node.closest(".usage-filter-scroll") && node.getBoundingClientRect().bottom <= document.querySelector(".sidebar-pane").getBoundingClientRect().bottom + 1), `${context}: Reset outside scrolling filter body`);
+   checks++;
+  }
+ } finally { await probe.close(); }
+ return checks;
+}
+
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = { revision: execFileSync("git", ["rev-parse", "HEAD"], { cwd: app, encoding: "utf8" }).trim(), dirty: Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: app, encoding: "utf8" }).trim()) };
 const modulePath = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
@@ -70,6 +105,7 @@ try {
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   browser = await chromium.launch({ headless: true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
+  checks += await sidebarInlineBounds(browser, app);
   const page = await browser.newPage();
   page.on("pageerror", error => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -124,6 +160,18 @@ try {
     assert.equal(await sources.nth(0).locator("details").first().evaluate(node => node.open), true, context);
     const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); }
     const pane = page.locator(".usage-sidebar");
+    const filterBody = pane.locator(".usage-filter-scroll");
+    assert(await filterBody.evaluate(node => node.scrollWidth <= node.clientWidth + 1), `${context}: actual App filter inline bounds`);
+    await filterBody.evaluate(node => { node.scrollLeft=100; });
+    assert.equal(await filterBody.evaluate(node => node.scrollLeft), 0, `${context}: actual App horizontal origin`);
+    await filterBody.hover(); await page.mouse.wheel(100, 0); await page.waitForTimeout(100);
+    assert.equal(await filterBody.evaluate(node => node.scrollLeft), 0, `${context}: actual App horizontal gesture`);
+    for (const date of await pane.locator('input[type="datetime-local"]').all()) {
+      await date.focus();
+      assert.equal(await filterBody.evaluate(node => node.scrollLeft), 0, `${context}: actual App datetime focus`);
+      assert(await date.evaluate(node => node.getBoundingClientRect().width <= node.parentElement.getBoundingClientRect().width + 1 && node.getBoundingClientRect().height >= 40), `${context}: actual App bounded datetime`);
+    }
+
     assert.equal(await pane.getByRole("button", { name: /Apply filters|필터 적용/ }).count(), 0, context);
     const presets = pane.locator(".usage-range-presets button");
     assert.deepEqual(await presets.allTextContents(), language === "ko" ? ["24시간", "7일", "30일"] : ["24 hours", "7 days", "30 days"], context);

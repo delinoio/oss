@@ -36,6 +36,21 @@
 .usage-sidebar > h2, .usage-sidebar > p { flex-shrink: 0; }
 .usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
+/* Shrink intrinsic grid/control widths before fencing horizontal scroll. Native
+   datetime editing and its calendar affordance retain their original appearance. */
+.usage-sidebar, .usage-sidebar .usage-sidebar-form,
+.usage-sidebar .usage-filter-scroll, .usage-sidebar .resource-choice { min-width: 0; }
+.usage-sidebar label { min-width: 0; overflow-wrap: anywhere; }
+.usage-sidebar label:not(.checkbox) { grid-template-columns: minmax(0, 1fr); }
+.usage-sidebar input:not([type=checkbox]), .usage-sidebar select,
+.usage-sidebar .scroll-picker > button {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: 40px;
+}
+.usage-sidebar button { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.usage-sidebar .usage-filter-scroll { overflow-x: hidden; }
 .usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
 .usage-sidebar legend { color: var(--muted); font-weight: 650; font-size: .8rem; }
 .usage-sidebar .actions { flex-shrink: 0; padding-block: 12px; border-top: 1px solid var(--border); background: var(--surface); }
