@@ -43,6 +43,8 @@ export function validWorkspace(value: Document, seeds: string[]): boolean {
     edges.add(key); parentCounts.set(text(edge.child), (parentCounts.get(text(edge.child)) ?? 0) + 1); children.set(text(edge.parent), [...children.get(text(edge.parent)) ?? [], text(edge.child)]);
   }
   if (value.state === "complete") {
+    if (rows.some(row => object(object(row.item).head_repository).state !== "available")) return false;
+    if (items(value.edges).some(raw => { const edge = object(raw); return byNumber.get(text(edge.parent))?.head_sha !== byNumber.get(text(edge.child))?.base_sha; })) return false;
     if ([...parentCounts.values()].some(count => count > 1)) return false;
     const visited = new Set<string>(), visiting = new Set<string>();
     const visit = (number: string): boolean => { if (visiting.has(number)) return false; if (visited.has(number)) return true; visiting.add(number); for (const child of children.get(number) ?? []) if (!visit(child)) return false; visiting.delete(number); visited.add(number); return true; };

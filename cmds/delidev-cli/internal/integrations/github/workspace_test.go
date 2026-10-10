@@ -85,7 +85,8 @@ func TestPRWorkspaceAvatarIsSanitizedAndCredentialFree(t *testing.T) {
 }
 
 func TestPRWorkspaceDiscoversAllStateContextAndRechecksRelationships(t *testing.T) {
-	for _, drift := range []bool{false, true} {
+	for _, scenario := range []string{"stable", "branch-page", "sha"} {
+		drift := scenario != "stable"
 		client, _ := repositoryFixture(t, nil)
 		original := client.http.Transport
 		branchReads := map[string]int{}
@@ -115,6 +116,10 @@ func TestPRWorkspaceDiscoversAllStateContextAndRechecksRelationships(t *testing.
 				head["ref"] = "first"
 				if number == 18 {
 					item["base"].(map[string]any)["ref"] = "first"
+					item["base"].(map[string]any)["sha"] = strings.Repeat("b", 40)
+					if scenario == "sha" {
+						item["base"].(map[string]any)["sha"] = strings.Repeat("c", 40)
+					}
 					head["ref"] = "second"
 					item["state"] = "closed"
 				}
@@ -132,7 +137,7 @@ func TestPRWorkspaceDiscoversAllStateContextAndRechecksRelationships(t *testing.
 				key := request.URL.RawQuery
 				branchReads[key]++
 				body = []any{}
-				if request.URL.Query().Get("base") == "first" && (!drift || branchReads[key] == 1) {
+				if request.URL.Query().Get("base") == "first" && (scenario != "branch-page" || branchReads[key] == 1) {
 					body = []any{makeItem(18)}
 				}
 				if request.URL.Query().Get("head") == "fixture-owner:first" {

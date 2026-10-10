@@ -206,6 +206,15 @@ func (c *Client) PullRequestWorkspace(ctx context.Context, token []byte, owner, 
 		}
 		result.Rows = append(result.Rows, row)
 	}
+	// A same-name branch read with different exact operands is drift, not a
+	// complete stack observation. Keep its rows without claiming a tree.
+	for _, parent := range result.Rows {
+		for _, child := range result.Rows {
+			if parent.Item.Number != child.Item.Number && sameHeadRepository(parent.Item, repo) && parent.Item.HeadRef == child.Item.BaseRef && parent.Item.HeadSHA != child.Item.BaseSHA {
+				result.State = domain.PRWorkspaceIncomplete
+			}
+		}
+	}
 	edges, ambiguous := workspaceEdges(result.Rows, repo)
 	result.Edges = edges
 	if ambiguous {
