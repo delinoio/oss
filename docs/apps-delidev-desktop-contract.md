@@ -2834,7 +2834,10 @@ with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
 adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
-CSS injection or a CSP exception. Export captures one committed custom theme.
+CSS injection or a CSP exception. The resolved light/dark root selector must outrank
+the static dark and OS-fallback rules, so selected bundled and custom colors apply
+in explicit modes and System mode. Replacing or disposing the selected map removes
+only its owned constructed stylesheet. Export captures one committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
