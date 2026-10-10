@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"slices"
 	"sort"
 	"time"
@@ -645,6 +646,33 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 			overlay.staged[change.ID] = old
 		} else {
 			overlay.staged[change.ID] = store.Record{ID: change.ID, Kind: change.Kind, Data: change.After}
+		}
+	}
+	// Validate the final overlay, including imported peers and live targets.
+	// Explicit original IDs remain the sole authority for reuse.
+	for _, kind := range []domain.Kind{domain.ProjectKind, domain.RepositoryKind} {
+		records, err := all(overlay, kind)
+		if err != nil {
+			return err
+		}
+		names := map[string]store.Record{}
+		for _, record := range records {
+			var value struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(record.Data, &value); err != nil {
+				return err
+			}
+			key := domain.ConfigurationNameKey(value.Name)
+			if previous, exists := names[key]; exists && (overlay.staged[record.ID].ID != "" || overlay.staged[previous.ID].ID != "") {
+				slog.Warn("configuration_name_conflict", "kind", kind)
+				return domain.NameConflict(kind)
+			}
+			// Retain a staged representative so an unchanged legacy duplicate
+			// cannot hide a collision introduced by this plan.
+			if previous, exists := names[key]; !exists || overlay.staged[previous.ID].ID == "" {
+				names[key] = record
+			}
 		}
 	}
 	settings, err := all(overlay, domain.SettingsKind)

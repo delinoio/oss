@@ -1,3 +1,4 @@
+import { ConfigurationNameField } from "./configuration-name";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { ProjectRepositoryOrder, RepositorySecondaryID } from "./project-repository-order";
@@ -38,8 +39,8 @@ function focusControl(form: HTMLFormElement | null, field: string) {
   control?.scrollIntoView?.({ block: "nearest" });
 }
 
-export function ProjectCreationWizard({ data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children, registrationAdapters }: {
-  data: Document; change: (value: Document) => void; active: boolean; visible: boolean; blocked: boolean; saveDisabled: boolean;
+export function ProjectCreationWizard({ nameConflict, data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children, registrationAdapters }: {
+  nameConflict?: unknown; data: Document; change: (value: Document) => void; active: boolean; visible: boolean; blocked: boolean; saveDisabled: boolean;
   busy: boolean; submit: () => void; cancel: () => void; cancelDisabled: boolean; uncertain: boolean; retry: () => void; children?: ReactNode; registrationAdapters?: ProjectRegistrationAdapters;
 }) {
   useLocale();
@@ -102,6 +103,10 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     if (!ids.includes(row.id)) repositories([...ids, row.id]);
     setConfirmed(undefined);
   }, [confirmed, active, visible, blocked, catalog.loading, catalog.complete, catalog.rows, data]);
+  useEffect(() => {
+    if (!nameConflict || uncertain) return;
+    setStep(Step.Configure); setValidationField("name"); setFocusAttempt(value => value + 1);
+  }, [nameConflict, uncertain]);
   const validRepositories = ids.length > 0 && ids.length <= 1000 && new Set(ids).size === ids.length;
   const configured = validName(text(data.name)) && ids.includes(text(data.primary_repository));
   const validate = () => {
@@ -142,7 +147,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     </section>
     <section hidden={step !== Step.Configure}>
       <h3>{stepName(Step.Configure)}</h3><fieldset disabled={blocked || step !== Step.Configure}>
-        <label>{copy("project-creation.name")}<input data-project-focus="name" required maxLength={256} value={text(data.name)} onChange={event => { setNameEdited(true); change({ ...data, name: event.target.value }); setProblem(""); }} /></label>
+        <ConfigurationNameField focus={active && visible && !blocked} label={copy("project-creation.name")} kind={EntityKind.PROJECT} name={data.name} conflict={nameConflict} change={name => { setNameEdited(true); change({ ...data, name }); setProblem(""); }} />
         {!nameEdited ? <p>{copy("project-creation.nameHelp")}</p> : null}
         {nameEdited && !validName(text(data.name)) ? <p role="alert">{copy("project-creation.invalidName")}</p> : null}
         <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select data-project-focus="primary" required value={text(data.primary_repository)} onChange={event => { change({ ...data, primary_repository: event.target.value }); setProblem(""); }}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{ids.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>

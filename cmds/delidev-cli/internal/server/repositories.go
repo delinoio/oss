@@ -46,6 +46,9 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 		if err := validateRelationships(tx, domain.RepositoryKind, id, input.ExpectedRevision, &repository); err != nil {
 			return nil, err
 		}
+		if err := tx.RequireConfigurationName(domain.RepositoryKind, id, repository.Name); err != nil {
+			return nil, err
+		}
 		for _, checkout := range repository.Checkouts {
 			if _, _, err := activeMachine(tx, checkout.MachineID); err != nil {
 				return nil, err

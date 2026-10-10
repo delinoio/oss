@@ -295,3 +295,15 @@ it("uses labeled scoped registration actions while preserving original opener an
  const retry=await screen.findByRole("button",{name:"Retry repository read"});expect(retry.getAttribute("data-settings-action")).toBe("retry");expect(retry.getAttribute("data-settings-action-presentation")).toBe("label");
  expect(f.registrationSave).toHaveBeenCalledOnce();fireEvent.click(retry);await screen.findByRole("button",{name:/^Move repository 1:/});expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
 });
+
+it("returns a definitive name collision to Configure with the exact draft and selection retained", async () => {
+ const value = fixture();
+ value.save.mockImplementationOnce(async () => { const { ErrorDetailSchema } = await import("../../../packages/delidev-api-client/src/gen/delidev/v1/worker_pb.js"); const detail = create(ErrorDetailSchema, {code:"conflict", cause:"configuration_name_conflict"}); throw new ConnectError("Duplicate name", Code.Aborted, undefined, [{desc:ErrorDetailSchema,value:detail}]); });
+ render(value.view()); await choose("oss"); next(); fireEvent.change(name(), {target:{value:" Café "}}); next();
+ fireEvent.click(screen.getByRole("button",{name:"Save Project"}));
+ await screen.findByText("A project with this name already exists. Choose another name.");
+ await waitFor(()=>expect(document.activeElement).toBe(name()));
+ expect(name().value).toBe(" Café "); expect(primary().value).toBe(value.rows[0].id);
+ fireEvent.change(name(),{target:{value:"different"}}); next(); fireEvent.click(screen.getByRole("button",{name:"Save Project"}));
+ await waitFor(()=>expect(value.save).toHaveBeenCalledTimes(2));
+});

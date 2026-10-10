@@ -560,3 +560,7 @@ missing earlier observation. Callbacks carry no paths, remote URLs or Git output
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress).
+
+## Configuration display-name uniqueness
+
+Repository save acceptance and final asynchronous publication both check the server-owned normalized Repository name namespace. Clone admission checks the name and completion rechecks it after the Worker publishes its Local checkout. A definitive registration collision settles the original clone as failed with `configuration_name_conflict` and retains inspection metadata. It does not delete a checkout transferred to user-owned Local lifetime or initiate another clone; registration may continue from that retained checkout under a corrected name.

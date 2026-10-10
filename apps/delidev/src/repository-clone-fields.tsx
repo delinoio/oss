@@ -1,3 +1,5 @@
+import { ConfigurationNameField } from "./configuration-name";
+import { EntityKind } from "@delinoio/delidev-api-client";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { copy, useLocale } from "./localization";
@@ -45,8 +47,8 @@ export function repositoryClonePath(parent: string, directory: string): string {
   return `${parent.replace(/[\\/]+$/, "")}${separator}${directory}`;
 }
 
-export function RepositoryCloneFields({ draft, change, busy, browse, github, supported, showURL = true }: {
-  draft: RepositoryCloneDraft; change: (draft: RepositoryCloneDraft) => void; busy: boolean; browse: () => void; github?: ReactNode; supported: boolean; showURL?: boolean;
+export function RepositoryCloneFields({ nameConflict, draft, change, busy, browse, github, supported, showURL = true }: {
+  nameConflict?: unknown; draft: RepositoryCloneDraft; change: (draft: RepositoryCloneDraft) => void; busy: boolean; browse: () => void; github?: ReactNode; supported: boolean; showURL?: boolean;
 }) {
   useLocale();
   const parentId = useId();
@@ -58,7 +60,7 @@ export function RepositoryCloneFields({ draft, change, busy, browse, github, sup
     {github}</> : null}
     <div><label htmlFor={parentId}>{copy("repository-clone-fields.inline.274474037d")}</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder={copy("repository-clone-fields.inline.5dbae92725")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><SettingsActionButton icon={SettingsActionIcon.Folder} type="button" disabled={busy} onClick={browse}>{copy("repository-clone-fields.inline.93c6b664dc")}</SettingsActionButton></div></div>
     <p>{copy("repository-clone-fields.inline.50edff7c50")}</p>
-    {parsed ? <><label>{copy("repository-clone-fields.inline.734294b760")}<input type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{!repositoryCloneDirectory(directory) ? <p role="alert">{copy("repository-clone-fields.inline.ebb54b60a0")}</p> : null}</> : null}
+    {parsed ? <><ConfigurationNameField kind={EntityKind.REPOSITORY} label={copy("repository-clone-fields.inline.734294b760")} name={directory} max={255} disabled={busy} conflict={nameConflict} change={directory => change({ ...draft, directory })} />{!repositoryCloneDirectory(directory) ? <p role="alert">{copy("repository-clone-fields.inline.ebb54b60a0")}</p> : null}</> : null}
     {draft.parent && !repositoryCloneParent(draft.parent) ? <p role="alert">{copy("repository-clone-fields.inline.a0acf59b0f")}</p> : null}
     {parsed && repositoryCloneDirectory(directory) && repositoryCloneParent(draft.parent) ? <p className="repository-path">{copy("repository-clone-fields.inline.51d016541d")} {repositoryClonePath(draft.parent, directory)}</p> : null}
     <p>{copy("repository-clone-fields.inline.4df6bcbdda")}</p>

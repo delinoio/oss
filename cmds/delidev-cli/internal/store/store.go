@@ -702,6 +702,14 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	created := now
 	action := Created
 	if expected == 0 {
+		if kind == domain.ProjectKind || kind == domain.RepositoryKind {
+			if e := t.RequireUnusedID(id); e != nil {
+				return Record{}, e
+			}
+			if e := t.requireDocumentName(kind, id, body); e != nil {
+				return Record{}, e
+			}
+		}
 		_, err = t.tx.ExecContext(t.ctx, "INSERT INTO entities(id,kind,revision,session_id,project_id,body,created_at,updated_at) VALUES(?,?,1,?,?,?,?,?)", id, kind, sessionID, projectID, body, now, now)
 	} else {
 		old, e := t.Get(kind, id)
@@ -710,6 +718,9 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 		}
 		if old.Revision != expected {
 			return Record{}, domain.Fail(domain.Conflict, "The entity revision changed.", "Read its latest revision before editing.")
+		}
+		if e := t.requireDocumentName(kind, id, body); e != nil {
+			return Record{}, e
 		}
 		created = old.CreatedAt.UnixMilli()
 		action = Updated

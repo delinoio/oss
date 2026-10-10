@@ -96,6 +96,9 @@ func (s *Service) CloneRepository(ctx context.Context, req *connect.Request[pb.C
 		if err := cloneAuthority(tx, input); err != nil {
 			return nil, err
 		}
+		if err := tx.RequireConfigurationName(domain.RepositoryKind, input.RepositoryID, input.DirectoryName); err != nil {
+			return nil, err
+		}
 		raw, err := json.Marshal(input)
 		if err != nil {
 			return nil, err
@@ -194,9 +197,15 @@ func finishRepositoryClone(tx *store.Tx, record store.Record, job domain.Job, re
 		} else {
 			saved, e := tx.Put(domain.RepositoryKind, input.RepositoryID, 0, "", "", repository)
 			if e != nil {
-				return store.Record{}, e
+				// Registration conflicts settle the original clone. Its checkout
+				// has already transferred to user-owned Local lifetime.
+				if domain.SafeError(e).Code != domain.Conflict {
+					return store.Record{}, e
+				}
+				problem = domain.SafeError(e)
+			} else {
+				outcome.RepositoryID, outcome.RepositoryRevision = saved.ID, saved.Revision
 			}
-			outcome.RepositoryID, outcome.RepositoryRevision = saved.ID, saved.Revision
 		}
 	}
 	outcome.Problem = problem

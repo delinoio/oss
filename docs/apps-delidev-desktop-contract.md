@@ -5098,3 +5098,7 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Configuration display-name uniqueness
+
+Project and Repository name collisions are recognized only through a definitive Conflict with the typed `configuration_name_conflict` cause. Show localized kind-specific guidance beneath the existing name field: “A project with this name already exists. Choose another name.” and the corresponding Repository text. Retain display spelling, drafts and existing dialog geometry. Return a Project wizard to Configure or reveal the editor name panel and focus its name field. Deferred failures return to the retained draft; clone registration failures retain the user-owned checkout for ordinary registration. Unknown reads and uncertain mutations keep their original request unchanged. Loaded pages do not prove name availability and trigger no catalog-wide name scan.

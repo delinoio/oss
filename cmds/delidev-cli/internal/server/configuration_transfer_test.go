@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -764,5 +765,54 @@ func assertRejectedPortableVersion(t *testing.T, s *Service, selection domain.Co
 	case <-changed:
 		t.Fatal("rejected portable input mutated storage")
 	default:
+	}
+}
+
+func TestConfigurationImportNameCollisions(t *testing.T) {
+	for _, scenario := range []string{"imported-peers", "target", "late-target"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, _ := newDoctorFixture(t)
+			selection := transferSelection()
+			originalProviders, _, _ := s.Store.Snapshot(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: 100})
+			repo := transferEntry(domain.RepositoryKind, domain.Repository{Name: "Café", RemoteURL: "https://example.com/repo.git", AutoFetch: true})
+			selection.Bundle.Entries = append(selection.Bundle.Entries, repo)
+			if scenario == "imported-peers" {
+				selection.Bundle.Entries = append(selection.Bundle.Entries, transferEntry(domain.RepositoryKind, domain.Repository{Name: " CAFE\u0301 ", RemoteURL: "https://example.com/other.git", AutoFetch: true}))
+			}
+			if scenario == "target" {
+				doctorPut(t, s, domain.RepositoryKind, domain.NewID(), 0, domain.Repository{Name: "cafe\u0301", RemoteURL: "https://example.com/other.git", AutoFetch: true})
+			}
+			raw, _ := json.Marshal(selection)
+			response, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+			if scenario == "late-target" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				doctorPut(t, s, domain.RepositoryKind, domain.NewID(), 0, domain.Repository{Name: "cafe\u0301", RemoteURL: "https://example.com/other.git", AutoFetch: true})
+				_, err = s.ApplyConfigurationImport(transferOwner(), connect.NewRequest(&pb.ApplyConfigurationImportRequest{RequestId: string(domain.NewID()), PreviewJson: response.Msg.PreviewJson}))
+			}
+			if connect.CodeOf(err) != connect.CodeAborted {
+				t.Fatal("name collision accepted", err)
+			}
+			detailFound := false
+			var transport *connect.Error
+			if errors.As(err, &transport) {
+				for _, detail := range transport.Details() {
+					value, e := detail.Value()
+					if e == nil {
+						if typed, ok := value.(*pb.ErrorDetail); ok && typed.Cause == string(domain.ConfigurationNameConflict) {
+							detailFound = true
+						}
+					}
+				}
+			}
+			if !detailFound {
+				t.Fatal("collision lost typed cause", err)
+			}
+			rows, _, err := s.Store.Snapshot(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: 100})
+			if err != nil || len(rows) != len(originalProviders) {
+				t.Fatal("partial import", err, len(rows))
+			}
+		})
 	}
 }

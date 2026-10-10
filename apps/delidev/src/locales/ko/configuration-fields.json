@@ -224,5 +224,7 @@
   "configuration-fields.projectEdit.repositories": "저장소",
   "configuration-fields.projectEdit.execution": "실행 설정",
   "configuration-fields.projectEdit.access": "사용 제한",
-  "configuration-fields.planApprovalHeading": "계획 승인"
+  "configuration-fields.planApprovalHeading": "계획 승인",
+  "configuration-fields.nameConflict.project": "같은 이름의 프로젝트가 이미 있습니다. 다른 이름을 선택해 주세요.",
+  "configuration-fields.nameConflict.repository": "같은 이름의 저장소가 이미 있습니다. 다른 이름을 선택해 주세요."
 }

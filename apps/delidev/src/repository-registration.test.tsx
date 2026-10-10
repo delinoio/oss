@@ -717,3 +717,14 @@ it("preserves shared footer spacing when a nested remediation owns ordinary acti
  expect(footer.matches(selector)).toBe(true);const registrationActions=footer.querySelector(".repository-add-footer")!;registrationActions.remove();const nested=document.createElement("div");nested.className="actions";footer.append(nested);
  expect(dialog.querySelector(".repository-registration")).not.toBeNull();expect(footer.matches(selector)).toBe(false);nested.remove();footer.append(registrationActions);
 });
+
+it("returns a cloned checkout name collision to the retained registration draft without cloning again", async () => {
+ const f = fixture(metadata,true);
+ f.clone.mockImplementationOnce(async request => {const job=row(EntityKind.JOB,{type:"clone-repository",machine_id:request.machineId,state:"failed",output:{inspection:{...metadata,root:"/parent/oss"}},problem:{code:"conflict",cause:"configuration_name_conflict",message:"Duplicate repository name."}});f.resources.set(job.id,job);return {job,requestId:request.requestId};});
+ f.mount();await f.add();cloneInputs();const button=screen.getByRole("button",{name:"Clone & add repository"});await waitFor(()=>expect(button.hasAttribute("disabled")).toBe(false));fireEvent.click(button);
+ await screen.findByText("A repository with this name already exists. Choose another name.");
+ const input=screen.getByRole("textbox",{name:"Repository name"}) as HTMLInputElement;expect(input.value).toBe("oss");await waitFor(()=>expect(document.activeElement).toBe(input));
+ fireEvent.change(input,{target:{value:"different"}});fireEvent.click(within(screen.getByRole("dialog",{name:"Add repository"})).getByRole("button",{name:"Add repository"}));
+ await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(1));expect(f.clone).toHaveBeenCalledTimes(1);
+ expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson)).checkouts).toEqual([{machine_id:f.machine.id,path:"/parent/oss"}]);
+});
