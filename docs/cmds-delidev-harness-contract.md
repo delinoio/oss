@@ -1986,3 +1986,47 @@ Grok initialize responses confirm initialization and begin actual settings
 validation. Original successful settings publication confirms settings only.
 Preserve account/history/protocol/input claims and independent cleanup; no observer
 value grants readiness, native support, credential release or input acceptance.
+
+## Codex function-call output observations — issue #2396
+
+The official 0.162.0 `functionCallOutput` item has an original ID, name, required
+nullable namespace, and string or ordered structured output. The closed shared
+live/history decoder admits only `input_text`, `input_image`, `input_audio` and
+`encrypted_content`. Image references select exactly one `image_url` or `file_id`
+and may omit detail or use `auto`, `low`, `high` or `original`. Reject null or
+conflicting alternatives, duplicate/unknown fields, malformed variants and
+excessive bounds. Limit an item to 512 KiB, content to 1,024 parts, each text or
+private reference to 256 KiB, and names/identities to 1,024 bytes.
+
+Publish only the original root/active turn's safe typed artifact through the
+existing ordered receipts and durable outbox. Preserve item identity, exact
+name/nullable namespace, string/structured variant, text and content order.
+Started/completed observations keep the same function identity and variant;
+completion adds no dispatch, tool invocation, turn outcome or cleanup authority.
+There is no function-output delta or dynamic request/reply controller. Lost
+publication acknowledgments fence later observations; replay only the original
+outbox receipt, never native input or a new result.
+
+Image/audio public parts contain only the reference alternative and optional
+image detail. References stay inert: no URL fetch, file open, media decoding,
+attachment claim or download is permitted. Encrypted public parts expose only
+presence/type. Actual references and opaque encrypted bytes stay in the original
+protected native history, not public records, display payloads or logs. The
+renderer shows bounded text as inert text and ordered metadata labels, with no
+media sources or action controls.
+
+Latest continuation history, full context/compaction/Revert history, and the two
+managed independent Fork filters share the exact decoder. Normalize JSON only;
+retain all original private content, identities and order in whole-history and
+rollout comparisons/digests. Never reconstruct history from the safe projection.
+API Fork and Sidechat retain their separately restricted plain-history profile.
+Unknown or changed history remains unsupported/uncertain. Existing command/file
+output and plain assistant/reasoning eligibility are unchanged.
+
+This is an additive closed JSON artifact family under existing publication,
+account/Worker and managed Fork ownership. No RPC, protobuf number, capability
+allocation or migration is added. Old servers reject its unknown JSON field/kind
+and retain publication uncertainty; this does not authorize fallback flattening,
+retransmission or new execution. Old generic artifact displays receive no private
+bytes. Fixtures and syntax checks do not establish installed native, account or
+platform acceptance.

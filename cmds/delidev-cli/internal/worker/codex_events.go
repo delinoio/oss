@@ -212,6 +212,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, c.publishQuestionAcceptance(ctx, event)
 	case codex.InteractionRequestedEvent, codex.InteractionClosedEvent:
 		return true, c.publishInteraction(ctx, event)
+	case codex.FunctionOutputStartedEvent, codex.FunctionOutputCompletedEvent:
+		return true, c.publishFunctionOutput(ctx, event)
 	case codex.ImageGenerationStartedEvent, codex.ImageGenerationCompletedEvent:
 		return true, c.publishImageGeneration(ctx, event)
 	case codex.ArtifactStartedEvent, codex.ArtifactCompletedEvent, codex.ArtifactDeltaEvent:

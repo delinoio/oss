@@ -8,9 +8,10 @@ import (
 )
 
 type codexArtifactPublication struct {
-	ID        domain.ID
-	Kind      domain.ArtifactKind
-	Completed bool
+	ID                     domain.ID
+	Kind                   domain.ArtifactKind
+	Completed              bool
+	FunctionOutputIdentity string
 }
 
 func (c *CodexEventPublisher) itemKnown(native string) bool {

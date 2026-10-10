@@ -49,6 +49,9 @@ func publishExecutionArtifact(tx *store.Tx, input domain.ExecutionJobInput, sess
 			if artifact.Started.Kind == domain.OpenCodeRevisionArtifact && !reflect.DeepEqual(artifact.Started, *update.Snapshot) {
 				return executionEventConflict()
 			}
+			if artifact.Started.Kind == domain.FunctionOutputArtifact && !domain.SameFunctionOutputIdentity(artifact.Started.FunctionOutput, update.Snapshot.FunctionOutput) {
+				return executionEventConflict()
+			}
 			if artifact.Started.Kind == domain.ReasoningTextArtifact {
 				text, err := retainedReasoningText(*artifact)
 				if err != nil || update.Snapshot.Text != text {

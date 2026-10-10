@@ -200,6 +200,9 @@ func validateNativeMessageOrigin(input domain.ExecutionJobInput, event domain.Ex
 		}
 	}
 	if artifact := event.Artifact; artifact != nil {
+		if artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.FunctionOutputArtifact && input.Configuration.Harness != domain.Codex {
+			return executionEventConflict()
+		}
 		textReasoning := artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.ReasoningTextArtifact || artifact.Delta != nil && artifact.Delta.Kind == domain.ReasoningTextDelta
 		if input.Configuration.Harness == domain.OpenCode {
 			if !(textReasoning || artifact.Snapshot != nil && artifact.Snapshot.Kind == domain.OpenCodeRevisionArtifact) || domain.NativeIdentity(artifact.NativeID).Validate(domain.OpenCode, domain.NativePartIdentity) != nil || domain.NativeIdentity(artifact.NativeParentID).Validate(domain.OpenCode, domain.NativeMessageIdentity) != nil || artifact.NativeParentID == event.NativeTurnID {

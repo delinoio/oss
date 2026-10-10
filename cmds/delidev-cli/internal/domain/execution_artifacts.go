@@ -38,6 +38,7 @@ const (
 const MaxArtifactParts = 1024
 
 type ArtifactSnapshot struct {
+	FunctionOutput  *FunctionOutputObservation  `json:"function_output,omitempty"`
 	ImageGeneration *ImageGenerationObservation `json:"image_generation,omitempty"`
 	Revision        *OpenCodeRevision           `json:"revision,omitempty"`
 	Kind            ArtifactKind                `json:"kind"`
@@ -50,6 +51,7 @@ func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	// encoding/json otherwise turns null string elements into empty strings,
 	// which would manufacture native content at an observed reasoning index.
 	var wire struct {
+		FunctionOutput  *FunctionOutputObservation  `json:"function_output,omitempty"`
 		ImageGeneration *ImageGenerationObservation `json:"image_generation,omitempty"`
 		Revision        *OpenCodeRevision           `json:"revision,omitempty"`
 		Kind            ArtifactKind                `json:"kind"`
@@ -60,7 +62,7 @@ func (s *ArtifactSnapshot) UnmarshalJSON(raw []byte) error {
 	if Decode(raw, &wire) != nil || wire.Text == nil {
 		return invalidArtifact()
 	}
-	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision, ImageGeneration: wire.ImageGeneration}
+	*s = ArtifactSnapshot{Kind: wire.Kind, Text: *wire.Text, Revision: wire.Revision, ImageGeneration: wire.ImageGeneration, FunctionOutput: wire.FunctionOutput}
 	for _, pair := range []struct {
 		source []*string
 		target *[]string
@@ -90,6 +92,16 @@ func invalidArtifact() error {
 }
 
 func (s ArtifactSnapshot) Validate() error {
+	if s.Kind == FunctionOutputArtifact {
+		if s.FunctionOutput == nil || s.FunctionOutput.Validate() != nil || s.ImageGeneration != nil || s.Revision != nil || s.Text != "" || s.Summary != nil || s.Content != nil {
+			return invalidArtifact()
+		}
+		return nil
+	}
+	if s.FunctionOutput != nil {
+		return invalidArtifact()
+	}
+
 	if s.Kind == ImageGenerationArtifact {
 		if s.ImageGeneration == nil || s.ImageGeneration.Validate() != nil || s.Revision != nil || s.Text != "" || s.Summary != nil || s.Content != nil {
 			return invalidArtifact()

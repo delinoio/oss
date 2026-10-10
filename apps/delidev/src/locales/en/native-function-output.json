@@ -1,0 +1,7 @@
+{
+  "native-function-output.title": "Function output",
+  "native-function-output.unavailable": "The retained function output is unavailable or inconsistent.",
+  "native-function-output.image": "Image reference",
+  "native-function-output.audio": "Audio reference",
+  "native-function-output.protected": "Protected content present"
+}

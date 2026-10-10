@@ -118,6 +118,8 @@ const (
 	InteractionClosedEvent        EventKind = "interaction-closed"
 	QuestionAcceptedEvent         EventKind = "question-accepted"
 	ApprovalAcceptedEvent         EventKind = "approval-accepted"
+	FunctionOutputStartedEvent    EventKind = "function-output-started"
+	FunctionOutputCompletedEvent  EventKind = "function-output-completed"
 	ImageGenerationStartedEvent   EventKind = "image-generation-started"
 	ImageGenerationCompletedEvent EventKind = "image-generation-completed"
 )
@@ -147,6 +149,7 @@ type Message struct {
 }
 
 type Event struct {
+	FunctionOutput   *FunctionOutput
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -534,6 +537,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "functionCallOutput":
+		return c.observeFunctionOutput(native, params.TurnID, params.Item)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

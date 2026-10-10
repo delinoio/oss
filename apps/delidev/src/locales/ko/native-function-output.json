@@ -1,0 +1,7 @@
+{
+  "native-function-output.title": "함수 출력",
+  "native-function-output.unavailable": "보존된 함수 출력을 사용할 수 없거나 내용이 일치하지 않습니다.",
+  "native-function-output.image": "이미지 참조",
+  "native-function-output.audio": "오디오 참조",
+  "native-function-output.protected": "보호된 콘텐츠 있음"
+}

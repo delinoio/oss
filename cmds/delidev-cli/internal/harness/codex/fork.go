@@ -183,7 +183,7 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					seen["item:"+identity.ID] = true
 				}
 				if !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
-					if !c.managedForkHistory || !settledForkTool(item, identity.Type) {
+					if !c.managedForkHistory || !settledForkTool(item, identity.Type) && !functionOutputForkItem(item, identity.Type) {
 						return nil, unsupportedFork()
 					}
 				}
@@ -449,7 +449,17 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 	return true
 }
 
+func functionOutputForkItem(raw json.RawMessage, kind string) bool {
+	if kind != "functionCallOutput" {
+		return false
+	}
+	_, err := decodeFunctionOutput(raw)
+	return err == nil
+}
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "functionCallOutput" {
+		return functionOutputForkItem(raw, kind)
+	}
 	if kind == "commandExecution" || kind == "fileChange" {
 		return settledForkTool(raw, kind)
 	}
