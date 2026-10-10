@@ -73,15 +73,22 @@ function RepositorySaveReview({ initial, active, review }: { initial: Resource; 
   const repository = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: initial.id }, { enabled: false, retry: false });
   const [fresh, setFresh] = useState<Resource>();
   const [readCompleted, setReadCompleted] = useState(false);
+  const readSequence = useRef(0);
   const read = useCallback(async () => {
+    const sequence = ++readSequence.current;
     setFresh(undefined);
     setReadCompleted(false);
     const result = await repository.refetch({ cancelRefetch: true });
+    if (sequence !== readSequence.current) return;
     const value = result.data?.resource;
     if (!result.error && value?.id === initial.id && value.kind === EntityKind.REPOSITORY && value.revision >= initial.revision && value.revision > 0n && supportsResourceSchema(value)) setFresh(value);
     setReadCompleted(true);
   }, [initial.id, initial.revision, repository.refetch]);
-  useEffect(() => { if (active) void read(); }, [active, read]);
+  useEffect(() => {
+    if (!active) return;
+    void read();
+    return () => { readSequence.current += 1; };
+  }, [active, read]);
   return <>
     <Problem error={repository.error} />
     {readCompleted && !fresh && !repository.error ? <p role="alert">{copy("pull-requests.profileSaveUnverified")}</p> : null}
