@@ -7,6 +7,7 @@ import { createRef } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, InteractionService, ResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { Interaction } from "./interactions";
 import { ConversationRequests } from "./conversation-requests";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
@@ -24,7 +25,7 @@ function fixture(original = row()) {
   const composer = createRef<HTMLTextAreaElement>();
   const query = pages([original]);
   const view = (overrides: Partial<Parameters<typeof ConversationRequests>[0]> = {}) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConversationRequests sessionId={sessionId} query={query} live={new Map()} removed={new Set()} arrivals={[]} active current composer={composer} drafts={new Map()} saveDraft={vi.fn()} {...overrides} /><textarea aria-label="Retained composer" ref={composer} defaultValue="Original draft" /></MutationIntents></QueryClientProvider></TransportProvider>;
-  return { original, answer, composer, query, view };
+  return { original, answer, composer, query, view, transport, client };
 }
 it("retires an exact submitted form, then removes the verified empty tray without replacing the composer", async () => {
   const f = fixture(), mounted = render(f.view());
@@ -131,4 +132,12 @@ it("moves removed-control focus to the next original actionable request", () => 
   const closed = row({ ...question, closure: "turn-ended" }, 11n, f.original.id);
   mounted.rerender(f.view({ query: pages([f.original, other]), live: new Map([[closed.id, closed]]) }));
   expect(document.activeElement).toBe(screen.getByRole("checkbox", { name: "Original answer" }));
+});
+
+it("preserves retained question inspection outside the active tray", () => {
+  const f = fixture(), closed = row({ ...question, closure: "native-closed", response: { state: "accepted" } }, 11n, f.original.id);
+  render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><Interaction resource={closed} refresh={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider>);
+  expect(screen.getByRole("checkbox", { name: "Original answer" })).toBeDefined();
+  expect((screen.getByRole("button", { name: "Send answers" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(f.answer).not.toHaveBeenCalled();
 });
