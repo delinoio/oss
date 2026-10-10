@@ -1211,3 +1211,30 @@ retirement does not change independent backup deletion or restore obligations.
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
 
 New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.
+
+## Original Codex Apps metadata
+
+Issue #2003 uses existing version-1 typed metadata for one current session Apps
+snapshot and immutable original operation histories; no table or migration is
+added. Bound each serialized record to 4 MiB and each original job to 4,096
+operations without evicting source-owned history. Preserve private original
+account generation/connection, configuration generation, request/claim/report
+receipts and independent native-cleanup ownership. Observation timestamps grant
+no source freshness, execution or cleanup authority.
+
+Queued, claimed and uncertain operations fence replacement and fresh assignment.
+Only an original never-claimed queued operation with exact terminal job and
+independently joined cleanup proof may become canceled with positive no-native-send
+evidence. Missing Apps metadata or unproved cleanup does not alter the ordinary
+native job completion outcome; it leaves any original obligation retained.
+
+Managed restore replaces historical Apps selection and operation metadata only
+with validated exact current safety-state authority. Preserve original current
+unsettled histories even when a selected image lacks their session/job; these
+rows grant no restored Worker, credential or execution rights. A historical
+unresolved obligation without a matching original current record/settlement,
+or an operation-ID/source collision, blocks restore rather than being dropped or
+revived. Permanent session purge waits for queued/claimed/uncertain Apps controls
+and existing original Worker/native cleanup, then removes containing Apps metadata
+and catalog content in the same purge transaction. Existing non-content deletion
+tombstones and immutable reference-only mutation receipts retain original identities.
