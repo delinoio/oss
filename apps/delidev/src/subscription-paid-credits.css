@@ -1,6 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.subscription-paid-credits { padding: 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; }
+.subscription-paid-credits { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; background: var(--surface); color: var(--text); overflow-wrap: anywhere; }
 .subscription-paid-credits ul { list-style: none; padding: 0; margin: 0; }
-.subscription-paid-credits li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-block: 8px; min-width: 0; overflow-wrap: anywhere; }
-.subscription-paid-credits li small { flex-basis: 100%; }
-.subscription-paid-summary { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.subscription-paid-credits li { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-block: 8px; min-width: 0; }
+.subscription-paid-summary { grid-column: 1 / -1; margin: 0; width: 100%; box-sizing: border-box; }
+.paid-credit-heading { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.paid-credit-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; max-width: 100%; }
+.paid-credit-balance { min-width: 0; font-size: 24px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.paid-credit-unit, .paid-credit-observation { font-size: 12px; color: var(--text-secondary); }
+.paid-credit-observation { display: block; margin-top: 8px; }
+.paid-credit-bucket { max-width: 100%; overflow-wrap: anywhere; }
+.paid-credit-information { display: inline-flex; flex-wrap: wrap; align-items: center; min-width: 0; max-width: 100%; gap: 4px; }
+.paid-credit-information-button { min-width: 32px; min-height: 32px; padding: 4px; border-color: transparent; color: var(--text-secondary); background: transparent; }
+.paid-credit-exact { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface-muted); font-size: 12px; overflow-wrap: anywhere; }
+.paid-credit-exact[hidden] { display: none; }
