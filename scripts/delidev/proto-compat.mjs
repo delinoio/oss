@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +15,16 @@ export function retireCompatibility() {
     if (filename === 'delidev_pb.ts' || /^delidev-.*_connectquery\.ts$/.test(filename)) rmSync(resolve(directory, filename), { force: true });
   }
   for (const filename of ['delidev.pb.go', 'zz_delidev_compat.go']) rmSync(resolve(root, 'protos/gen/go/delidev/v1', filename), { force: true });
+  // protoc-gen-es 2.14 adds a blank EOF line to this newly owned module.
+  // Keep normalization in the generation path so freshness checks reproduce
+  // the whitespace-clean output. Remove this step when upstream emits one LF.
+  const appsModule = resolve(directory, 'codex_apps_pb.ts');
+  if (existsSync(appsModule)) {
+    const generated = readFileSync(appsModule, 'utf8');
+    const normalized = generated.replace(/\n+$/, '\n');
+    if (normalized !== generated) writeFileSync(appsModule, normalized);
+  }
+
 }
 
 // Only explicitly inventoried declarations can move. Their descriptor contents,
