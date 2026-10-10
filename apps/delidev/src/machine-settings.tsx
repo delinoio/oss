@@ -4,7 +4,7 @@ import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
-import { useState, useId, useMemo, useRef } from "react";
+import { useState, useId, useMemo, useRef, useEffect } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { installationObservation, validRunnerObservation } from "./runner-observation";
 import { useQuery } from "@connectrpc/connect-query";
@@ -22,7 +22,19 @@ export function useMachineSettingsController(initial: Resource, active: boolean)
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource => validRunnerObservation(row) && row.id === initial.id;
-  const current = [initial, result.data?.resource, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
+  const [observed, setObserved] = useState<Resource | undefined>(() => exact(initial) ? initial : undefined);
+  useEffect(() => {
+    setObserved(previous => {
+      // Retain the highest business revision through older or failed polls.
+      // Equal-revision successful reads refresh server-projected heartbeat data;
+      // they do not advance the revision captured by path edits or mutations.
+      let next = [previous, initial, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
+      const read = result.isSuccess && !result.error ? result.data?.resource : undefined;
+      if (exact(read) && (!next || read.revision >= next.revision)) next = read;
+      return next;
+    });
+  }, [initial, acknowledged, result.data, result.dataUpdatedAt, result.isSuccess, result.error]);
+  const current = [observed, initial, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
   const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{ revision: bigint; paths: Record<string, string> }>();
   const [verify, setVerifyValue] = useState(false);
