@@ -123,7 +123,7 @@ try {
   stage = "settings-task-disposal";
   const taskPage = pages[0], environment = run.environments[0];
   await category(taskPage, "Instructions");
-  for (const dismissal of ["X", "Escape", "Cancel"]) {
+  for (const dismissal of ["X", "Escape"]) {
     stage = `settings-task-disposal-${dismissal}`;
     let admitted = false, settled = false, requests = 0, release;
     const responseGate = new Promise(resolve => { release = resolve; });
@@ -147,8 +147,12 @@ try {
       await taskPage.getByLabel("Instructions", { exact: true }).fill("Synthetic task lifecycle fixture.");
       await taskPage.getByRole("button", { name: "Save Instructions", exact: true }).click();
       await until(() => admitted);
+      // This top-level task deliberately omits the audited footer duplicate.
+      // Header X and Escape own local dismissal even after the real save was
+      // admitted; distinct page/nested/business cancellation remains separate.
+      assert.equal(await taskPage.getByRole("button", { name: "Cancel edit", exact: true }).count(), 0);
       if (dismissal === "Escape") await taskPage.keyboard.press("Escape");
-      else await taskPage.getByRole("button", { name: dismissal === "X" ? "Close New Instructions" : "Cancel edit", exact: true }).click();
+      else await taskPage.getByRole("button", { name: "Close New Instructions", exact: true }).click();
       assert.equal(await taskPage.getByRole("dialog").count(), 0);
       assert.equal(await taskPage.locator(".settings-task-background[disabled], .settings-task-background[inert]").count(), 0);
       assert.equal(await taskPage.getByRole("button", { name: "View original operation", exact: true }).count(), 0);
@@ -167,7 +171,7 @@ try {
       await taskPage.keyboard.press("Escape");
     } finally { release(); await taskPage.unroute(routePattern, routeHandler); }
   }
-  checks.push("settings-X-Escape-local-cancel-disposal-admitted-save-fresh-task-and-late-focus-fence");
+  checks.push("settings-X-Escape-duplicate-cancel-absence-disposal-admitted-save-fresh-task-and-late-focus-fence");
 
   stage = "appearance-isolation";
   await Promise.all(pages.map(page => category(page, "Appearance")));

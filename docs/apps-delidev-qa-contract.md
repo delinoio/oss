@@ -285,6 +285,13 @@ environment's inspected repository; edits retain their independent form.
 Creation, rename, deletion and cross-environment isolation still require actual
 server observations rather than synthetic configuration admission.
 
+Held real Instructions saves exercise top-level header X and Escape dismissal
+and assert that the audited duplicate Cancel edit footer button is absent.
+Preserve the admitted server write, sole request, disposed background, original
+opener focus, fresh blank task, retained fresh draft and late-result focus fence.
+Do not describe this as page, nested or business cancellation acceptance; those
+distinct owners retain their separate validation.
+
 ## Dependencies and Integrations
 
 Reuse the ordinary CLI, Go server/Worker, protected-storage ownership, generated
