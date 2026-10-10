@@ -78,6 +78,24 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
     if (current?.owner === row.turn.owner && current.inputId !== row.turn.inputId) continue;
     if (!prior || row.turn.captured && !prior.turn?.captured) turnStarts.set(row.turn.owner, row);
   }
+  // Keep the first display anchor, but find terminal evidence across all
+  // reached original parts of that same input before the Session update lands.
+  const turnKey = (owner: string, inputId: string) => JSON.stringify([owner, inputId]);
+  const terminalTurns = new Map<string, NonNullable<ConversationProjection["turn"]>>();
+  const conflictingTerminals = new Set<string>();
+  for (const row of projections) {
+    const turn = row.turn, anchor = turn && turnStarts.get(turn.owner)?.turn;
+    if (!turn || !anchor || turn.inputId !== anchor.inputId || turn.inherited || turn.timing?.terminal === undefined) continue;
+    const matchesCurrent = current?.owner === turn.owner && current.inputId === turn.inputId;
+    const accepted = matchesCurrent ? current.timing?.accepted : anchor.timing?.accepted;
+    if (accepted === undefined || turn.timing.accepted !== accepted) continue;
+    const key = turnKey(turn.owner, turn.inputId), prior = terminalTurns.get(key);
+    if (conflictingTerminals.has(key)) continue;
+    if (prior && prior.timing?.terminal !== turn.timing.terminal) {
+      terminalTurns.delete(key);
+      conflictingTerminals.add(key);
+    } else terminalTurns.set(key, turn);
+  }
   const pendingTurn = current && !turnStarts.has(current.owner) ? current : undefined;
   // Grok and other original native profiles can publish assistant/tool records
   // before the primary user. Retain a metadata-only first-record anchor, never
@@ -86,8 +104,8 @@ export function ToolTurnTranscript({ sessionId, active = true, query, live, remo
   const byId = new Map(projections.map(row => [row.id, row]));
   const presented = (row: ConversationProjection) => {
     const result = item(row, payloads.get(row.id));
-    const turn = row.turn && turnStarts.get(row.turn.owner)?.id === row.id ? row.turn : pendingAnchor === row.id ? pendingTurn : undefined;
+    const turn = row.turn && turnStarts.get(row.turn.owner)?.id === row.id ? terminalTurns.get(turnKey(row.turn.owner, row.turn.inputId)) ?? row.turn : pendingAnchor === row.id ? pendingTurn : undefined;
     return result || turn ? <div className="turn-transcript-item" key={row.id}>{turn ? <TurnTime turn={turn} current={current} confirmed={confirmed} /> : null}{result}</div> : null;
   };
-  return <TurnTimingProvider current={current} retained={current ? turnStarts.get(current.owner)?.turn : undefined} active={active} confirmed={confirmed}><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}{pendingTurn && !pendingAnchor ? <TurnTime turn={pendingTurn} current={current} confirmed={confirmed} /> : null}</TurnTimingProvider>;
+  return <TurnTimingProvider current={current} retained={current ? terminalTurns.get(turnKey(current.owner, current.inputId)) ?? turnStarts.get(current.owner)?.turn : undefined} active={active} confirmed={confirmed}><ScrollPayloadWindow query={query} root={root} active={active} identity={row => row.id} revision={row => row.revision} projected={rows => rows.flatMap(row => byId.has(row.id) ? [presented(byId.get(row.id)!)] : [])}>{() => null}</ScrollPayloadWindow>{tail.flatMap(row => byId.has(row.id)?[presented(byId.get(row.id)!)]:[])}{pendingTurn && !pendingAnchor ? <TurnTime turn={pendingTurn} current={current} confirmed={confirmed} /> : null}</TurnTimingProvider>;
 }
