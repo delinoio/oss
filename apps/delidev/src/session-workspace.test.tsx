@@ -289,7 +289,7 @@ it("keeps exactly five workspace tools and no Info action in either locale", asy
   const info = screen.getByRole("complementary", { name: "Session information" });
   const composer = screen.getByRole("textbox", { name: "Message" });
   await act(async () => { await i18n.changeLanguage("ko"); });
-  expect([...toolbar.querySelectorAll("button")].map(button => button.textContent)).toEqual(["변경 사항", "파일", "터미널", "브라우저", "진단"]);
+  expect([...toolbar.querySelectorAll("button")].map(button => button.querySelector(".session-tool-label")?.textContent ?? button.textContent)).toEqual(["변경 사항", "파일", "터미널", "브라우저", "진단"]);
   expect(screen.queryByRole("button", { name: "정보" })).toBeNull();
   expect(screen.getByRole("complementary", { name: "세션 정보" })).toBe(info);
   expect(screen.getByRole("textbox", { name: "메시지" })).toBe(composer);
@@ -530,7 +530,7 @@ it("opens Files with primary+E from composer and parent tools without duplicatin
  const f=fixture();render(<ShortcutProvider>{f.view()}</ShortcutProvider>);const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("checkbox",{name:"Plan Mode"}));
  fireEvent.keyDown(composer,{key:"e",ctrlKey:true});await screen.findByRole("tab",{name:"Files"});expect(screen.getByRole("tab",{name:"Files"}).getAttribute("aria-selected")).toBe("true");
  const files=document.querySelector(".session-files")!;fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});expect(screen.getAllByRole("tab",{name:"Files"})).toHaveLength(1);expect(document.querySelector(".session-files")).toBe(files);
- fireEvent.click(screen.getByRole("button",{name:"Open tool"}));const entry=screen.getByRole("menuitem",{name:"Files"});expect(entry.getAttribute("aria-keyshortcuts")).toBe("Control+E");expect(entry.querySelector("kbd")?.textContent).toBe("Ctrl + E");fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
+ fireEvent.click(screen.getByRole("button",{name:"Open tool"}));const entry=screen.getByRole("menuitem",{name:"Files"});expect(entry.getAttribute("aria-keyshortcuts")).toBe("Control+E");expect(entry.querySelector("kbd")?.textContent).toBe("Ctrl+E");fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
  fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});expect(screen.getByRole("tab",{name:"Files"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(composer).toHaveProperty("value","Original draft");expect(screen.getByRole("checkbox",{name:"Plan Mode"})).toHaveProperty("checked",true);expect(f.enqueue).not.toHaveBeenCalled();expect(f.draft).not.toHaveBeenCalled();
 });
 
