@@ -145,6 +145,7 @@ func (r QuestionRequest) Validate() error {
 // closure only. Response claims/delivery require a separate coordinator path;
 // a Worker cannot fabricate owner authorization by adding answer fields here.
 type ExecutionInteractionUpdate struct {
+	NativeApps         *NativeAppCallProof            `json:"native_apps,omitempty"`
 	Grok               *GrokInteractionRequest        `json:"grok,omitempty"`
 	Claude             *ClaudeInteractionRequest      `json:"claude,omitempty"`
 	ClaudeCancellation *ClaudeInteractionCancellation `json:"claude_cancellation,omitempty"`
@@ -172,6 +173,9 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 		return err
 	}
 	if u.NativeRequestID.Kind == InteractionDecimalID && u.Grok == nil {
+		return invalidInteraction()
+	}
+	if u.NativeApps != nil && (kind != ExecutionInteractionRequested || u.Type != UserQuestionInteraction || u.Grok != nil || u.Claude != nil || u.OpenCode != nil || u.Approval != nil || u.NativeApps.NativeItemID != u.NativeItemID || ValidateNativeAppsQuestion(*u.NativeApps, u.Questions) != nil) {
 		return invalidInteraction()
 	}
 	switch kind {

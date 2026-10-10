@@ -37,6 +37,10 @@ func (s *Service) ClaimQuestionResponse(ctx context.Context, req *connect.Reques
 		}
 	}
 	claimID := domain.ID(meta.RequestId)
+	inventory, err := s.refreshNativeAppsEffect(ctx, identity)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
 	result, err := s.Store.Mutate(ctx, claimID, "question.claim", identity, func(tx *store.Tx) (any, error) {
 		r, value, err := s.currentClaimQuestion(tx, identity)
 		if err != nil {
@@ -45,6 +49,14 @@ func (s *Service) ClaimQuestionResponse(ctx context.Context, req *connect.Reques
 		response := value.Response
 		if r.Revision != identity.Revision || response.State != domain.QuestionResponseQueued || response.Claim != nil {
 			return nil, executionEventConflict()
+		}
+		if value.NativeApps != nil {
+			if inventory != nil {
+				value.NativeApps.Inventory = *inventory
+			}
+			if err := s.validateNativeAppsEffect(tx, value); err != nil {
+				return nil, err
+			}
 		}
 		response.State = domain.QuestionResponseClaimed
 		response.Claim = &domain.QuestionResponseClaim{ID: claimID, JobID: identity.Job, MachineID: identity.Machine, InstanceID: identity.Instance, DeviceID: identity.Device, ClaimedAt: time.Now().UTC()}
