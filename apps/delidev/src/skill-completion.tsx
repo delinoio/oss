@@ -36,8 +36,8 @@ export function editedBindings(before: string, after: string, bindings: readonly
     return after.slice(next.start, next.end) === next.token && (next.start === 0 || /\s/u.test(after[next.start - 1]!)) && (next.end === after.length || /\s/u.test(after[next.end]!)) ? [next] : [];
   });
 }
-// Decoration proves the original explicit binding, never matching inventory text.
-export function selectedSkillRanges(value: string, bindings: readonly SkillTokenBinding[], scope: string, resolved: boolean): SkillToken[] {
+// Only exact original explicit bindings can establish selected-token state.
+function validSelectedSkillRanges(value: string, bindings: readonly SkillTokenBinding[], scope: string, resolved: boolean): SkillToken[] {
   if (!resolved) return [];
   const tokens = skillRanges(value);
   return bindings.filter((binding, index) => {
@@ -46,7 +46,10 @@ export function selectedSkillRanges(value: string, bindings: readonly SkillToken
       && selection && isEntityId(selection.skillId) && isEntityId(selection.inventoryId) && isEntityId(selection.workerDeviceId) && /^[a-f0-9]{64}$/.test(selection.contentRevision)
       && tokens.some(token => token.start === binding.start && token.end === binding.end && value.slice(token.start, token.end) === binding.token)
       && !bindings.some((other, otherIndex) => otherIndex !== index && other.start < binding.end && other.end > binding.start);
-  }).slice(0, 16).map(binding => ({ start: binding.start, end: binding.end, prefix: binding.token.slice(1) }));
+  }).map(binding => ({ start: binding.start, end: binding.end, prefix: binding.token.slice(1) }));
+}
+export function selectedSkillRanges(value: string, bindings: readonly SkillTokenBinding[], scope: string, resolved: boolean): SkillToken[] {
+  return validSelectedSkillRanges(value, bindings, scope, resolved).slice(0, 16);
 }
 export function useSkillCompletion({ value, change, textarea, machineId, agentId, sessionId = "", projectId = "", active = true, enabled = true, disabled = false, initialBindings = [], bindingsChanged, retainTransportContext = false }: {
   value: string; change: (value: string, bindings?: SkillTokenBinding[]) => boolean | void; textarea: RefObject<HTMLTextAreaElement | null>;
@@ -83,8 +86,9 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   const candidates = (inventoryKnown ? retained.current.entries : []).filter(entry => entry.name.toLocaleLowerCase().startsWith(prefix)).map(entry => ({ ...entry, availability: inventory.some(current => current.selection!.skillId === entry.selection!.skillId) ? SkillAvailability.Available : SkillAvailability.Unavailable })).sort((a, b) => Number(b.name.toLocaleLowerCase() === prefix) - Number(a.name.toLocaleLowerCase() === prefix) || a.name.localeCompare(b.name) || a.selection!.skillId.localeCompare(b.selection!.skillId));
   const enabledIndices = candidates.flatMap((entry,index) => entry.availability === SkillAvailability.Available ? [index] : []);
   const validIndex = enabledIndices.includes(selected) ? selected : enabledIndices[0] ?? -1;
-  const selectedRanges = !composing.current ? selectedSkillRanges(value, bindings, scope, active && isEntityId(machineId) && isEntityId(agentId) && !contextChanged) : [];
-  const unavailable = inventoryKnown && !composing.current ? ranges.filter(range => !inventory.some(entry => entry.name === range.prefix) && (selectedRanges.some(selected => selected.start === range.start && selected.end === range.end) || !(token && range.start === token.start && inventory.some(entry => entry.name.toLocaleLowerCase().startsWith(token.prefix.toLocaleLowerCase()))))) : [];
+  const boundRanges = !composing.current ? validSelectedSkillRanges(value, bindings, scope, active && isEntityId(machineId) && isEntityId(agentId) && !contextChanged) : [];
+  const selectedRanges = boundRanges.slice(0, 16);
+  const unavailable = inventoryKnown && !composing.current ? ranges.filter(range => !inventory.some(entry => entry.name === range.prefix) && (boundRanges.some(selected => selected.start === range.start && selected.end === range.end) || !(token && range.start === token.start && inventory.some(entry => entry.name.toLocaleLowerCase().startsWith(token.prefix.toLocaleLowerCase()))))) : [];
   const accept = (entry: SkillEntry) => {
     if (!canEdit() || !enabled || !token || !entry.selection || composing.current || contextChanged || !inventoryKnown || !inventory.some(current => current.selection === entry.selection)) return;
     const replacement = `$${entry.name}`, next = value.slice(0, token.start) + replacement + value.slice(token.end), end = token.start + replacement.length;

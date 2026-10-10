@@ -199,10 +199,10 @@ it("keeps manually typed tokens plain and moves only an untouched selected bindi
  fireEvent.change(input,{target:{value:"한글\n$add-issue",selectionStart:13}});expect(view.container.querySelector(".skill-token-selected")?.getAttribute("data-skill-start")).toBe("3");
  fireEvent.change(input,{target:{value:"한글\n$add-issuX",selectionStart:13}});expect(view.container.querySelector(".skill-token-selected")).toBeNull();
 });
-function DecoratedBindings({runner=machine,locked=false,bindings}:{runner?:string;locked?:boolean;bindings:SkillTokenBinding[]}) {
- const [value,change]=useState("$add-issue"),textarea=useRef<HTMLTextAreaElement>(null);
+function DecoratedBindings({runner=machine,locked=false,value="$add-issue",bindings}:{runner?:string;locked?:boolean;value?:string;bindings:SkillTokenBinding[]}) {
+ const [,change]=useState(value),textarea=useRef<HTMLTextAreaElement>(null);
  const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked,initialBindings:bindings});
- return <><fieldset disabled={locked}>{skills.wrap(<textarea ref={textarea} aria-label="Bound decoration" value={value} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd}/>)}{skills.warning}</fieldset><button onClick={skills.clear}>Clear selected skills</button></>;
+ return <><fieldset disabled={locked}>{skills.wrap(<textarea ref={textarea} aria-label="Bound decoration" value={value} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onSelect={skills.onSelect} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd}/>)}{skills.list}{skills.warning}</fieldset><button onClick={skills.clear}>Clear selected skills</button></>;
 }
 const originalDecorationBinding=():SkillTokenBinding=>({start:0,end:10,token:"$add-issue",selection:entries[0]!.selection,stale:false,context:`${machine}:${agent}::`});
 it.each(["stale","ambiguous","unresolved","changed","overlap","invalid-selection"])("never decorates a %s original binding",async(reason)=>{
@@ -232,6 +232,15 @@ it("gives confirmed missing selection precedence even when its token prefixes an
  const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Enter"});
  current=[{...entries[1]!,name:"add-issue-extra"}];fireEvent.change(input,{target:{value:"$add-issue ",selectionStart:10}});await act(async()=>{await client.invalidateQueries()});await screen.findByRole("option",{name:/add-issue-extra/});
  expect(view.container.querySelector(".skill-token-selected")).toBeNull();expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$add-issue");
+});
+
+it("gives bound absence precedence beyond the selected-decoration cap",async()=>{
+ const value=Array(20).fill("$add-issue").join(" "),binding=originalDecorationBinding(),bindings=Array.from({length:20},(_,index)=>({...binding,start:index*11,end:index*11+10}));
+ const live={...entries[1]!,name:"add-issue-extra"},transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:[live]})}));
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><DecoratedBindings value={value} bindings={bindings}/></QueryClientProvider></TransportProvider>);
+ const input=screen.getByRole("textbox") as HTMLTextAreaElement;input.setSelectionRange(value.length,value.length);fireEvent.select(input);await screen.findByRole("option",{name:/add-issue-extra/});
+ const lastStart=value.lastIndexOf("$add-issue");await waitFor(()=>expect(view.container.querySelector(`[data-skill-start="${lastStart}"].skill-token-unavailable`)?.textContent).toBe("$add-issue"));
+ expect(input.value).toBe(value);expect(selectedSkillRanges(value,bindings,`${machine}:${agent}::`,true)).toHaveLength(16);
 });
 
 it("uses one original mirror alignment owner for selected text and retains native scrolling",async()=>{
