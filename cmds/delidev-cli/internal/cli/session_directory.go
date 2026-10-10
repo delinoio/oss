@@ -4,6 +4,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -40,15 +42,18 @@ func directoryOperationView(op *pb.SessionDirectoryOperation, session, requestID
 			return nil, domain.DirectoryUncertain()
 		}
 		name := ""
-		for _, root := range roots {
+		for index, root := range roots {
 			if string(root.RepositoryID) == g.RepositoryId {
-				name = root.Name
+				name = directoryPublicLabel(root.Name)
+				if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "\\") || len(name) > 1 && name[1] == ':' {
+					name = fmt.Sprintf("Prepared repository %d", index+1)
+				}
 			}
 		}
-		if name == "" || strings.ContainsAny(name, "/\\\x00") || domain.ID(name).Validate() == nil {
+		if name == "" || strings.ContainsAny(name, "\x00\r\n") {
 			return nil, domain.DirectoryUncertain()
 		}
-		view["repository"], view["relative_path"], view["verified"] = name, g.RelativePath, true
+		view["repository"], view["relative_path"], view["verified"] = name, directoryPublicLabel(g.RelativePath), true
 	} else if job.State == domain.JobSucceeded {
 		return nil, domain.DirectoryUncertain()
 	}
@@ -118,4 +123,10 @@ func sessionDirectoryCommand(ctx context.Context, c client, o options, args []st
 		roots = result.Roots
 	}
 	return directoryOperationView(op, *id, string(o.requestID), *repository, *path, roots)
+}
+
+var directoryPublicID = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+
+func directoryPublicLabel(value string) string {
+	return directoryPublicID.ReplaceAllString(value, "…")
 }
