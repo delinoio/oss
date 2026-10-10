@@ -6,23 +6,32 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, SessionService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, SessionService, SkillService, newRequestId } from "@delinoio/delidev-api-client";
 import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
 function fixture(prompt = "Original queued input") {
-  const id = newRequestId(), execution = newRequestId(), turn = newRequestId();
-  const session = create(ResourceSchema, { id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 4n, documentJson: encode({ outcome: "running", archive: "active", active_execution_id: execution, execution: { execution_id: execution, native_turn_id: turn } }) });
+  const id = newRequestId(), execution = newRequestId(), turn = newRequestId(), machine = newRequestId(), agent = newRequestId();
+  const session = create(ResourceSchema, { id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 4n, documentJson: encode({ machine_id: machine, agent_id: agent, outcome: "running", archive: "active", active_execution_id: execution, execution: { execution_id: execution, native_turn_id: turn } }) });
   const resource = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 6n, documentJson: encode({ prompt, sequence: 3, delivery: "queued", mode: "plan" }) });
   const edit = vi.fn(async (_request: unknown) => ({ change: { input: create(ResourceSchema, { ...resource, revision: 7n, documentJson: encode({ prompt: "Changed", sequence: 3, delivery: "queued", mode: "plan" }) }) } }));
   const steer = vi.fn(async (_request: unknown) => ({}));
   const remove = vi.fn(async (_request: unknown) => ({}));
-  const transport = createRouterTransport((router) => router.service(SessionService, { editQueuedInput: edit, steerQueuedInput: steer, removeQueuedInput: remove }));
+  const transport = createRouterTransport((router) => { router.service(SessionService, { editQueuedInput: edit, steerQueuedInput: steer, removeQueuedInput: remove }); router.service(SkillService, { listSkills: async () => ({ skills: [] }) }); });
   const client = new QueryClient();
   const view = (input = resource, compact = false, readOnly = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><QueuedInput readOnly={readOnly} compact={compact} resource={input} session={session} refresh={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { resource, session, execution, turn, edit, steer, remove, view, transport, client };
 }
+
+it("keeps unavailable skill status out of the queued editor label name",async()=>{
+ const f=fixture("Original $missing"),view=render(f.view());fireEvent.click(screen.getByRole("button",{name:"Edit input"}));
+ const editor=screen.getByRole("textbox",{name:"Edited input"}),status=view.container.querySelector("[data-skill-availability-status]")!;
+ const unavailable="1 skill tokens are unavailable in this scope.";
+ await waitFor(()=>expect(status.textContent).toBe(unavailable));
+ expect(screen.getByRole("textbox",{name:"Edited input"})).toBe(editor);
+ expect(screen.getByRole("textbox",{name:"Edited input",description:unavailable})).toBe(editor);
+});
 
 it.each([
   { name: "100,000-byte queued ASCII prompt", prompt: "a".repeat(100000) },

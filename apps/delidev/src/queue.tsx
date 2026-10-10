@@ -1,7 +1,7 @@
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { SessionQuery, newRequestId, type Resource, type SkillSelection } from "@delinoio/delidev-api-client";
 import { document, items, object, text } from "./documents";
 import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
@@ -72,12 +72,12 @@ function queuedSkillBindings(data: Record<string, unknown>): SkillTokenBinding[]
 }
 function QueuedInputEditor({edit,setEdit,current,session,busy,imageBound,autoFocus,save}: {edit:QueuedInputDraft;setEdit:(draft?:QueuedInputDraft)=>void;current:Resource;session?:Resource;busy:boolean;imageBound:boolean;autoFocus:boolean;save:(prompt:string,selections:SkillSelection[])=>void}) {
  const [textLimit,setTextLimit]=useState(false);
- const textarea=useRef<HTMLTextAreaElement>(null), data=document(session);
+ const textarea=useRef<HTMLTextAreaElement>(null), textareaId=useId(), data=document(session);
  // Draft ownership remains outside disposable payloads; only token bindings change.
  const bindingsChanged=useCallback((bindings:SkillTokenBinding[])=>{if(edit.skills!==bindings) setEdit({...edit,skills:bindings});},[edit,setEdit]);
  const skills=useSkillCompletion({value:edit.prompt,change:prompt=>{if(new TextEncoder().encode(prompt).byteLength>(256<<10)){setTextLimit(true);return false;}setTextLimit(false);setEdit({...edit,prompt});return true;},textarea,machineId:text(data.machine_id),agentId:text(data.agent_id),sessionId:current.sessionId,initialBindings:edit.skills,bindingsChanged,disabled:busy});
  return <form onSubmit={event=>{event.preventDefault();if(busy || skills.blocked || edit.revision!==current.revision) return;save(edit.prompt,skills.selections);}}>
-  <label>{copy("queue.editedInput_e6f7fe")}{skills.wrap(<textarea ref={textarea} autoFocus={autoFocus} rows={3} disabled={busy} value={edit.prompt} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}</label>
+  <label htmlFor={textareaId}>{copy("queue.editedInput_e6f7fe")}</label>{skills.wrap(<textarea id={textareaId} ref={textarea} autoFocus={autoFocus} rows={3} disabled={busy} value={edit.prompt} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}
   {skills.list}{skills.warning}{textLimit?<p role="alert">{copy("image-input.textLimit")}</p>:null}{edit.skills?.length ? <button type="button" disabled={busy} onClick={skills.clear}>{copy("skills.clear")}</button>:null}
   {edit.revision!==current.revision ? <p role="status">{copy("queue.thisInputChangedWhileYouWere_cfe47a")}</p>:null}
   <div className="actions"><button className="primary" disabled={busy || skills.blocked || (!edit.prompt.trim() && !imageBound) || edit.revision!==current.revision}>{copy("queue.saveInput_9f11a2")}</button><button type="button" disabled={busy} onClick={()=>setEdit(undefined)}>{copy("queue.cancelEdit_6fa271")}</button></div>

@@ -3006,6 +3006,9 @@ Confirmed absent token ranges use semantic muted text in a noninteractive aligne
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs. Issue #2231 keeps a mounted polite count-only live region beside the textarea description and hidden painted mirror, including when completion is dismissed. Publish only changed confirmed counts, including recovery to zero after an unavailable outcome; ordinary edits and unchanged successful reads do not repeat announcements. Loading, errors and IME never prove recovery. Keep the last confirmed announcement text stable through temporary composer inactive/disabled states for the same scope and transport, and retire it on scope/transport replacement without moving focus or changing request authority.
+In a queued-input editor, keep that live region outside the textarea label's
+accessible name; preserve the stable localized label and the textarea's described
+count.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized
@@ -3065,6 +3068,9 @@ snapshot, native input, recovery, protocol and cleanup ownership.
 Typed queued edits restore selected token bindings from immutable accepted metadata.
 They support explicit selection clearing and reselection, preserve bindings and
 drafts across payload eviction, and keep skill-bound Steer unavailable.
+The queued-edit textarea keeps a stable native label; the dynamic unavailable
+skill count stays outside its accessible name and remains available through the
+live region and textarea description.
 
 Restored queued bindings require one unique matching token and one accepted
 package with that display name. Ambiguous same-named packages or literal tokens
