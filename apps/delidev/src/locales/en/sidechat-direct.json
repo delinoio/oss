@@ -1,0 +1,14 @@
+{
+  "sidechat.direct.title": "Sidechat",
+  "sidechat.direct.readOnly": "Read-only · Same account and settings",
+  "sidechat.direct.preparing": "Preparing Sidechat… You can write a draft while preparation finishes.",
+  "sidechat.direct.unavailable": "Sidechat is not ready. Keep your draft and use the original recovery action below.",
+  "sidechat.direct.retryAdmission": "Recheck original source and support",
+  "sidechat.direct.retryRequest": "Retry the same Sidechat request",
+  "sidechat.direct.retryStatus": "Recheck original Sidechat operation",
+  "sidechat.direct.discard": "Discard completed or rejected Sidechat preparation",
+  "sidechat.direct.attach": "Attach image (available after preparation)",
+  "sidechat.direct.send": "Send (available after preparation)",
+  "sidechat.direct.message": "Sidechat message",
+  "sidechat.direct.placeholder": "Ask about this conversation"
+}

@@ -43,3 +43,20 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
  store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
  expect(store.snapshot("session").tabs).toHaveLength(1); expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+
+
+it("replaces pending Sidechat at its original position without changing another selected tab",()=>{
+ const store=new SessionTabsStore(), pending={kind:SessionTabKind.PendingSidechat as const,requestId:"receipt"};
+ store.open("parent",pending);store.open("parent",{kind:SessionTabKind.Files});
+ store.publishSidechat("parent","receipt",{kind:SessionTabKind.Sidechat,id:"child",name:"Child"});
+ expect(store.snapshot("parent").tabs.map(tab=>tab.kind)).toEqual([SessionTabKind.Conversation,SessionTabKind.Sidechat,SessionTabKind.Files]);
+ expect(store.snapshot("parent").selected).toBe(SessionTabKind.Files);
+ expect(store.parent("receipt")).toBeUndefined();expect(store.parent("child")).toBe("parent");
+});
+it("registers verified child after pending tab closure without reopening its presentation",()=>{
+ const store=new SessionTabsStore(), pending={kind:SessionTabKind.PendingSidechat as const,requestId:"receipt"};
+ store.open("parent",pending);store.close("parent",sessionTabKey(pending));
+ store.publishSidechat("parent","receipt",{kind:SessionTabKind.Sidechat,id:"child",name:"Child"});
+ expect(store.snapshot("parent").tabs).toHaveLength(1);expect(store.snapshot("parent").selected).toBe(SessionTabKind.Conversation);
+ expect(store.sidechats("parent")).toHaveLength(1);
+});

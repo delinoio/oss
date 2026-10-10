@@ -344,3 +344,10 @@
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
 .session-name-dialog button, .session-name-dialog input { min-height:40px; }
 .session-name-dialog form > .primary { align-self:flex-end; }
+
+.session-sidechat-pending { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.session-sidechat-pending[hidden] { display:none; }
+.session-sidechat-pending .session-body { flex:1; min-height:0; overflow:auto; }
+.session-sidechat-pending .composer { flex:none; }
+
+.session-tabbed .session-conversation-region[hidden] { display:none; }

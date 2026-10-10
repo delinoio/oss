@@ -6,7 +6,7 @@ import { Comparison } from "./session-diff-model";
 export enum SessionTabKind {
   Conversation = "conversation", Files = "files", File = "file", Diff = "diff",
   Comparison = "comparison", Terminals = "terminals", Terminal = "terminal",
-  Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat",
+  Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat", PendingSidechat = "pending-sidechat",
 }
 export type SessionTab =
   | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Browser | SessionTabKind.Diagnostics }
@@ -14,7 +14,8 @@ export type SessionTab =
   | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string }
   | { kind: SessionTabKind.Terminal; id: string }
   | { kind: SessionTabKind.Page; profile: string; id: string; title: string; label?: string }
-  | { kind: SessionTabKind.Sidechat; id: string; name: string };
+  | { kind: SessionTabKind.Sidechat; id: string; name: string }
+  | { kind: SessionTabKind.PendingSidechat; requestId: string };
 export const conversationTab: SessionTab = { kind: SessionTabKind.Conversation };
 export function sessionTabKey(tab: SessionTab): string {
   switch (tab.kind) {
@@ -22,6 +23,7 @@ export function sessionTabKey(tab: SessionTab): string {
     case SessionTabKind.Comparison: return JSON.stringify([tab.kind, tab.repository, tab.comparison, tab.path]);
     case SessionTabKind.Terminal:
     case SessionTabKind.Sidechat: return JSON.stringify([tab.kind, tab.id]);
+    case SessionTabKind.PendingSidechat: return JSON.stringify([tab.kind, tab.requestId]);
     case SessionTabKind.Page: return JSON.stringify([tab.kind, tab.profile, tab.id]);
     default: return tab.kind;
   }
@@ -64,6 +66,17 @@ export class SessionTabsStore {
     const tabs = [...previous.tabs];
     if (found < 0) tabs.push(tab); else tabs[found] = tab;
     this.publish(id, { tabs, selected: key });
+  }
+  publishSidechat(parent: string, requestId: string, tab: SidechatTab) {
+    this.parents.set(tab.id, parent);
+    const children = this.children.get(parent) ?? new Map<string, SidechatTab>();
+    children.set(tab.id, tab); this.children.set(parent, children);
+    const previous = this.snapshot(parent), pending = sessionTabKey({ kind: SessionTabKind.PendingSidechat, requestId });
+    const index = previous.tabs.findIndex(value => sessionTabKey(value) === pending);
+    // Closing hides presentation. Register the verified child without reopening.
+    if (index < 0) { this.publish(parent, previous); return; }
+    const tabs = previous.tabs.flatMap((value, at) => at === index ? [tab] : sessionTabKey(value) === sessionTabKey(tab) ? [] : [value]);
+    this.publish(parent, { tabs, selected: previous.selected === pending ? sessionTabKey(tab) : previous.selected });
   }
   select(id: string, key: string) {
     const previous = this.snapshot(id);
