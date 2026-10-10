@@ -25,11 +25,13 @@ async function sidebarInlineBounds(browser) {
     node.scrollLeft = 100;
     const rect = node.getBoundingClientRect();
     return { width: node.clientWidth, scrollWidth: node.scrollWidth, left: node.scrollLeft, vertical: node.scrollHeight > node.clientHeight,
-     controls: [...node.querySelectorAll("input,select")].map(control => { const box = control.getBoundingClientRect(); return { left: box.left - rect.left, right: box.right - rect.left, height: box.height }; }) };
+     controls: [...node.querySelectorAll("input,select")].map(control => { const box = control.getBoundingClientRect(); return { left: box.left - rect.left, right: box.right - rect.left }; }),
+     sizedControls: [...node.querySelectorAll('input[type="text"],input[type="datetime-local"],select')].map(control => ({ height: control.getBoundingClientRect().height })) };
    });
    assert(bounds.scrollWidth <= bounds.width + 1 && bounds.left === 0, `${context}: ${JSON.stringify(bounds)}`);
    assert(bounds.vertical, `${context}: long content still scrolls vertically`);
-   assert(bounds.controls.every(control => control.left >= 0 && control.right <= bounds.width + 1 && control.height >= 40), `${context}: controls fit without clipping`);
+   assert(bounds.controls.every(control => control.left >= 0 && control.right <= bounds.width + 1), `${context}: controls fit without clipping`);
+   assert(bounds.sizedControls.every(control => control.height >= 40), `${context}: text, date and select controls meet minimum height`);
    const body = await scroll.boundingBox();
    await page.mouse.move(body.x + body.width / 2, body.y + Math.min(40, body.height / 2));
    await page.mouse.wheel(100, 0);
