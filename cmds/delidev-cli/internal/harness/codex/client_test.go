@@ -26,6 +26,12 @@ func init() {
 	if !strings.HasPrefix(mode, "thread-") && !strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
 		os.Exit(42)
 	}
+	if strings.HasPrefix(mode, "thread-turn-current-time") {
+		args := strings.Join(os.Args, "\n")
+		if !strings.Contains(args, "features.current_time_reminder.enabled=true") || !strings.Contains(args, `features.current_time_reminder.clock_source="external"`) {
+			os.Exit(44)
+		}
+	}
 	if marker := os.Getenv("DELIDEV_CODEX_PLUGIN_OVERRIDE_SENTINEL"); marker != "" && strings.Contains(strings.Join(os.Args, "\n"), "features.plugins=false") {
 		if os.WriteFile(marker, []byte("disabled"), 0600) != nil {
 			os.Exit(43)

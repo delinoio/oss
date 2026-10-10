@@ -30,6 +30,37 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if strings.HasPrefix(f.mode, "thread-turn-current-time") {
+		switch method {
+		case "config/read":
+			var params struct {
+				Cwd           string `json:"cwd"`
+				IncludeLayers bool   `json:"includeLayers"`
+			}
+			cwd, ok := f.thread["cwd"].(string)
+			if domain.Decode(raw, &params) != nil || !ok || params.Cwd != cwd || params.IncludeLayers {
+				os.Exit(39)
+			}
+			clock := "external"
+			if f.mode == "thread-turn-current-time-bad-config" {
+				clock = "system"
+			}
+			write(id, map[string]any{"config": map[string]any{"features": map[string]any{"current_time_reminder": map[string]any{"enabled": true, "clock_source": clock}}}})
+			return true
+		case "experimentalFeature/list":
+			var params struct {
+				ThreadID domain.ID `json:"threadId"`
+				Limit    int       `json:"limit"`
+			}
+			threadID, ok := f.thread["id"].(domain.ID)
+			if domain.Decode(raw, &params) != nil || !ok || params.ThreadID != threadID || params.Limit != 256 {
+				os.Exit(38)
+			}
+			enabled := f.mode != "thread-turn-current-time-bad-feature"
+			write(id, map[string]any{"data": []any{map[string]any{"name": "current_time_reminder", "enabled": enabled}}, "nextCursor": nil})
+			return true
+		}
+	}
 	if f.handleRevert(id, method, raw, write) {
 		return true
 	}
@@ -205,6 +236,9 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	t.Helper()
 	config := fixtureConfig(t, mode)
 	config.Mode = ThreadProtocol
+	if strings.HasPrefix(mode, "thread-turn-current-time") {
+		config.EnableCurrentTime = true
+	}
 	if strings.HasPrefix(mode, "thread-revert-") {
 		config.RevertHistory = true
 		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")

@@ -247,6 +247,9 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	if state.paused || state.active != "" || state.interrupt != "" {
 		return result, turnConflict()
 	}
+	if err := c.verifyCurrentTime(ctx, state.settings.Cwd); err != nil {
+		return result, err
+	}
 	if err := c.reserveInputLocked(inputID); err != nil {
 		return result, err
 	}
@@ -321,6 +324,9 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	turn := state.turns[expectedTurnID]
 	if state.paused || state.interrupt != "" || state.active != expectedTurnID || turn.Turn.Status != TurnRunning || turn.Mode != input.Mode {
 		return result, turnConflict()
+	}
+	if err := c.verifyCurrentTime(ctx, state.settings.Cwd); err != nil {
+		return result, err
 	}
 	if err := c.reserveInputLocked(inputID); err != nil {
 		return result, err
