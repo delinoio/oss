@@ -275,8 +275,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  collapsed?: boolean; paneId?: string; toggleRef?: RefObject<HTMLButtonElement | null>; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
+export function Sidebar({ collapsed = false, paneId, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  collapsed?: boolean; paneId?: string; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
@@ -340,9 +340,11 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
   useLayoutEffect(() => {
     const element = drawer.current;
     if (!element) return;
+    const paneOwnedFocus = element.contains(document.activeElement);
+    const railFocus = () => rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button[aria-current='page']") ?? rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button");
     const hidden = compact ? !drawerOpen : collapsed;
-    if (hidden && element.contains(document.activeElement)) {
-      (compact ? compactFocusRef : toggleRef)?.current?.focus({ preventScroll: true });
+    if (hidden && paneOwnedFocus) {
+      (compact ? compactFocusRef?.current : railFocus())?.focus({ preventScroll: true });
     }
     element.hidden = hidden;
     element.inert = hidden;
@@ -367,10 +369,15 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
       else element.setAttribute("open", "");
       if (wasModal) {
         setDrawerOpen(false);
-        requestAnimationFrame(() => (collapsed ? toggleRef?.current : drawer.current?.querySelector<HTMLElement>("[aria-current='page']") ?? rail.current?.querySelector<HTMLElement>("[aria-current='page']"))?.focus());
+        if (paneOwnedFocus) requestAnimationFrame(() => {
+          // Modal close can restore its compact opener, which is hidden in a
+          // wide layout. Repair only that handoff, never a newly focused composer.
+          if (drawer.current !== element || (document.activeElement !== document.body && document.activeElement !== compactFocusRef?.current && !rail.current?.contains(document.activeElement))) return;
+          (collapsed ? railFocus() : element.querySelector<HTMLElement>("[aria-current='page']") ?? railFocus())?.focus({ preventScroll: true });
+        });
       }
     }
-  }, [compact, drawerOpen, collapsed, setDrawerOpen, toggleRef, compactFocusRef]);
+  }, [compact, drawerOpen, collapsed, setDrawerOpen, compactFocusRef]);
   useLayoutEffect(() => {
     const container = list.current;
     const target = sessionNavigation ? Surface.Sessions : surface;
