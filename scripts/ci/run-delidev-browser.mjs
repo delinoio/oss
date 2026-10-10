@@ -7,7 +7,15 @@ import { fileURLToPath } from "node:url";
 export const browserChecks = Object.freeze([
   { id: "qa-browser", script: "apps/delidev/scripts/qa/test-browser.mjs", operation: "qa-browser-validation" },
   { id: "worker-model-layout", script: "apps/delidev/scripts/test-worker-model-layout.mjs", operation: "worker-model-layout" },
+  { id: "sidebar-collapse-layout", script: "apps/delidev/scripts/test-sidebar-collapse-layout.mjs", operation: "sidebar-collapse-layout" },
   { id: "command-menu-layout", script: "apps/delidev/scripts/test-command-menu-layout.mjs", operation: "command-menu-layout" },
+  { id: "settings-layout", script: "apps/delidev/scripts/test-settings-layout.mjs", operation: "settings_layout", counts: ["categoryChecks", "childFormChecks", "keyboardChecks"], passed: true },
+  { id: "settings-actions-layout", script: "apps/delidev/scripts/test-settings-actions-layout.mjs", operation: "settings_action_icons", counts: ["categoryChecks", "tooltipChecks"], passed: true },
+  { id: "settings-search-layout", script: "apps/delidev/scripts/test-settings-search-layout.mjs", operation: "settings_search_layout", counts: ["checks"], passed: true },
+  { id: "shortcut-settings-layout", script: "apps/delidev/scripts/test-shortcut-settings-layout.mjs", operation: "shortcut-settings-layout", counts: ["cases"] },
+  { id: "creation-skill-layout", script: "apps/delidev/scripts/test-creation-skill-layout.mjs", operation: "creation-skill-layout", counts: ["cases", "overlayCases"] },
+  { id: "pr-cards-layout", script: "apps/delidev/scripts/test-pr-cards-layout.mjs", operation: "pr-list-cards-browser", counts: ["checks"], passed: true },
+  { id: "session-actions-layout", script: "apps/delidev/scripts/test-session-actions-layout.mjs", evidence: "Synthetic Chromium session status/action geometry and keyboard checks; no native CEF acceptance", counts: ["checks"] },
 ]);
 const repository = fileURLToPath(new URL("../..", import.meta.url));
 export function browserEnvironment(source, root = repository) {
@@ -15,22 +23,28 @@ export function browserEnvironment(source, root = repository) {
   if (!module || !isAbsolute(module) || !evidence || !isAbsolute(evidence)) throw new Error("browser-fixture-host-missing");
   const directory = resolve(evidence), checkout = resolve(root);
   if (directory === checkout || directory.startsWith(`${checkout}${sep}`)) throw new Error("browser-evidence-must-be-external");
-  return { ...source, DELIDEV_QA_PLAYWRIGHT_MODULE: module, DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: module,
+  const safe = { ...source };
+  // Existing layout scripts expose optional image capture and narrower modes.
+  // Hosted validation always runs their complete assertions without image output.
+  for (const key of ["DELIDEV_LAYOUT_SCREENSHOT_DIR", "DELIDEV_LAYOUT_SCREENSHOT", "DELIDEV_SEARCH_SCREENSHOT_DIR", "DELIDEV_PR_CARDS_SCREENSHOT_DIR",
+    "DELIDEV_LAYOUT_GITHUB_ONLY", "DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY", "DELIDEV_LAYOUT_ACCOUNTS_ONLY", "DELIDEV_LAYOUT_DISMISSAL_ONLY", "DELIDEV_LAYOUT_PROJECTS_ONLY", "DELIDEV_LAYOUT_PROJECT_ROWS_ONLY", "DELIDEV_LAYOUT_LANGUAGE_ONLY"]) delete safe[key];
+  return { ...safe, DELIDEV_QA_PLAYWRIGHT_MODULE: module, DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: module,
     DELIDEV_QA_BROWSER_CHANNEL: "chromium", DELIDEV_LAYOUT_BROWSER_CHANNEL: "chromium", DELIDEV_QA_SCREENSHOTS: "disabled" };
 }
 export function completedEvidence(check, records) {
-  const record = records.findLast(value => value.operation === check.operation);
+  const record = records.findLast(value => check.operation ? value.operation === check.operation : value.evidence === check.evidence);
   if (!record || record.result === "failed") throw new Error("browser-fixture-evidence-missing");
   if (check.id === "qa-browser" && (record.result !== "passed" || record.screenshots !== "disabled" || !record.checks?.length || !Array.isArray(record.cleanup) || record.cleanup.length !== 2 || record.cleanup.some(value => value.state !== "deleted"))) throw new Error("browser-qa-acceptance-incomplete");
-  if (check.id === "worker-model-layout" && (record.result !== "passed" || !(record.checks > 0))) throw new Error("browser-layout-acceptance-incomplete");
+  if (["worker-model-layout", "sidebar-collapse-layout"].includes(check.id) && (record.result !== "passed" || !(record.checks > 0))) throw new Error("browser-layout-acceptance-incomplete");
   if (check.id === "command-menu-layout" && !(record.cases > 0)) throw new Error("browser-layout-acceptance-incomplete");
+  if (check.counts && ((check.passed && record.result !== "passed") || check.counts.some(field => !Number.isSafeInteger(record[field]) || record[field] <= 0))) throw new Error("browser-layout-acceptance-incomplete");
   return record;
 }
 async function execute(check, env, record) {
   const values = []; let pending = "", overflow = false, stderrBytes = 0, structuredBytes = 0;
   const line = value => {
     if (value.length > 262144 || structuredBytes + value.length > 8 * 1024 * 1024) { overflow = true; return; }
-    try { const parsed = JSON.parse(value); if (parsed && typeof parsed === "object") { structuredBytes += value.length; values.push(parsed); record({ check: check.id, evidence: parsed }); } }
+    try { const parsed = JSON.parse(value); if (parsed && typeof parsed === "object") { structuredBytes += value.length; values.push(parsed); record({ check: check.id, command: [process.execPath, check.script], evidence: parsed }); } }
     catch { /* Build progress and raw exceptions are not validation artifacts. */ }
   };
   const child = spawn(process.execPath, [check.script], { cwd: repository, env, shell: false, stdio: ["ignore", "pipe", "pipe"] });
@@ -46,12 +60,12 @@ async function execute(check, env, record) {
   });
   if (pending.trim()) line(pending);
   if (result.code !== 0 || overflow) {
-    record({ operation: "delidev-browser-check", check: check.id, result: "failed", classification: overflow ? "evidence-bound-exceeded" : "fixture-exit-failed", exitCode: result.code, signal: result.signal, stderrBytes });
+    record({ operation: "delidev-browser-check", check: check.id, command: [process.execPath, check.script], result: "failed", classification: overflow ? "evidence-bound-exceeded" : "fixture-exit-failed", exitCode: result.code, signal: result.signal, stderrBytes });
     throw new Error("browser-fixture-failed");
   }
   try { completedEvidence(check, values); }
-  catch { record({ operation: "delidev-browser-check", check: check.id, result: "failed", classification: "fixture-evidence-incomplete" }); throw new Error("browser-fixture-evidence-missing"); }
-  record({ operation: "delidev-browser-check", check: check.id, result: "passed", screenshots: "disabled", nativeAcceptance: "not-performed", accountAcceptance: "not-performed" });
+  catch { record({ operation: "delidev-browser-check", check: check.id, command: [process.execPath, check.script], result: "failed", classification: "fixture-evidence-incomplete" }); throw new Error("browser-fixture-evidence-missing"); }
+  record({ operation: "delidev-browser-check", check: check.id, command: [process.execPath, check.script], result: "passed", screenshots: "disabled", nativeAcceptance: "not-performed", accountAcceptance: "not-performed" });
 }
 async function main() {
   const env = browserEnvironment(process.env), directory = resolve(env.DELIDEV_BROWSER_EVIDENCE_DIR);

@@ -6,6 +6,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      comparison_base:
+        description: Optional ancestor commit SHA for complete checks of changed domains
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -23,6 +29,7 @@ jobs:
       jobs: ${{ steps.rust.outputs.jobs || steps.plan.outputs.jobs }}
       rust_packages: ${{ steps.rust.outputs.rust_packages || '[]' }}
       forced: ${{ steps.plan.outputs.forced }}
+      mode: ${{ steps.plan.outputs.mode }}
       event: ${{ steps.plan.outputs.event }}
       go_test_matrix: ${{ steps.plan.outputs.go_test_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
@@ -77,6 +84,21 @@ jobs:
           CI_FORCED: ${{ steps.plan.outputs.forced }}
           CARGO_MONO_BINARY: ${{ steps.cargo-mono.outputs.binary }}
         run: node scripts/ci/rust-affected.mjs plan
+
+      - name: Record exact validation selection
+        env:
+          CI_FINAL_JOBS: ${{ steps.rust.outputs.jobs || steps.plan.outputs.jobs }}
+          CI_FINAL_FORCED: ${{ steps.plan.outputs.forced }}
+          CI_FINAL_RUST_PACKAGES: ${{ steps.rust.outputs.rust_packages || '[]' }}
+          CI_PLAN_FILE: ${{ runner.temp }}/ci-selection.json
+        run: node scripts/ci/selection-audit.mjs
+      - name: Preserve exact validation selection
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-selection-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-selection.json
+          if-no-files-found: error
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outcome == 'success' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -2622,6 +2644,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:

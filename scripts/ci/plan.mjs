@@ -7,7 +7,7 @@ import { nativeMatrix as pnportMatrix } from "../../packages/pnport/scripts/nati
 export const jobPaths = JSON.parse(readFileSync(new URL("./job-paths.json", import.meta.url), "utf8"));
 export const nativeMatrices = JSON.parse(readFileSync(new URL("./native-matrices.json", import.meta.url), "utf8"));
 export const Event = Object.freeze({ PullRequest: "pull_request", Push: "push", Manual: "workflow_dispatch" });
-const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json", "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs", "scripts/ci/buf-entry.mjs", "scripts/ci/cache-context.mjs", "scripts/ci/protocol-fresh.mjs", "scripts/ci/rust-affected*.mjs", "scripts/ci/cargo-mono-prebuilt*.mjs", "scripts/ci/run-rust.mjs"];
+const configuration = [".gitattributes", ".github/workflows/CI.yml", ".github/actions/**", "scripts/ci/plan.mjs", "scripts/ci/result.mjs", "scripts/ci/selection-audit.mjs", "scripts/ci/run-affected.mjs", "scripts/ci/native-matrices.json", "scripts/ci/package.json", "scripts/ci/turbo.json", "scripts/ci/from-root.mjs", "scripts/ci/buf-entry.mjs", "scripts/ci/cache-context.mjs", "scripts/ci/protocol-fresh.mjs", "scripts/ci/rust-affected*.mjs", "scripts/ci/cargo-mono-prebuilt*.mjs", "scripts/ci/run-rust.mjs"];
 const rustfmtConfiguration = new Set([".rustfmt.toml", "rustfmt.toml"]);
 // Git reports POSIX paths. Filename ownership also covers hidden directories,
 // which node:path's recursive globs do not match.
@@ -47,12 +47,12 @@ export function matricesForEvent(event) {
   };
 }
 
-export function planJobs(event, paths, previousRules = jobPaths) {
+export function planJobs(event, paths, previousRules = jobPaths, { comparedManual = false } = {}) {
   if (!Object.values(Event).includes(event)) throw new Error(`Unsupported CI event: ${event}`);
   // Broad source/configuration-directory rules also match rustfmt overrides.
   // Only rust-fmt owns these files, even inside a native package or action.
   const nonFormattingPaths = paths.filter((path) => !isRustfmtConfiguration(path));
-  const force = event === Event.Manual || nonFormattingPaths.some((path) => matches(path, configuration));
+  const force = (event === Event.Manual && !comparedManual) || nonFormattingPaths.some((path) => matches(path, configuration));
   const rulesChanged = paths.includes("scripts/ci/job-paths.json");
   const jobs = {};
   const forced = {};
@@ -64,7 +64,7 @@ export function planJobs(event, paths, previousRules = jobPaths) {
     jobs[id] = eligible && (force || ruleChanged || relevant.length > 0);
     // Turbo cannot discover inputs outside the workspace graph, such as installer
     // scripts and native pin contracts. Run their owning workspace explicitly.
-    forced[id] = force || ruleChanged || Boolean(rule.workspace && relevant.some((path) => !matches(path, rule.workspacePaths)));
+    forced[id] = (comparedManual && jobs[id]) || force || ruleChanged || Boolean(rule.workspace && relevant.some((path) => !matches(path, rule.workspacePaths)));
   }
   return { jobs, forced };
 }
@@ -91,13 +91,25 @@ function commit(value) {
   return value;
 }
 
+export function manualCompared(event) {
+  return event.inputs?.comparison_base !== undefined && event.inputs.comparison_base !== "";
+}
+export function comparisonMode(eventName, event) {
+  return eventName === Event.Manual ? (manualCompared(event) ? "manual-compared" : "manual-full") : eventName;
+}
+
 export function changedFiles(eventName, event, sha, cwd = process.cwd()) {
-  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
   const head = commit(eventName === Event.PullRequest ? event.pull_request?.head?.sha : sha);
   git("cat-file", "-e", `${head}^{commit}`);
-  if (eventName === Event.Manual) return { base: head, head, paths: [] };
+  if (eventName === Event.Manual && !manualCompared(event)) return { base: head, head, paths: [] };
   let base;
-  if (eventName === Event.PullRequest) {
+  if (eventName === Event.Manual) {
+    base = commit(event.inputs.comparison_base);
+    git("cat-file", "-e", `${base}^{commit}`);
+    try { git("merge-base", "--is-ancestor", base, head); }
+    catch { throw new Error("Manual CI comparison base must be an ancestor of the head"); }
+  } else if (eventName === Event.PullRequest) {
     base = git("merge-base", commit(event.pull_request?.base?.sha), head).trim();
   } else if (eventName === Event.Push) {
     // Use the entire pushed range, including non-linear/force pushes. A missing
@@ -115,13 +127,13 @@ export function main(env = process.env) {
   const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
   const range = changedFiles(env.GITHUB_EVENT_NAME, event, env.GITHUB_SHA);
   const oldRules = range.paths.includes("scripts/ci/job-paths.json") ? previousJobPaths(range.base) : jobPaths;
-  const plan = planJobs(env.GITHUB_EVENT_NAME, range.paths, oldRules);
+  const plan = planJobs(env.GITHUB_EVENT_NAME, range.paths, oldRules, { comparedManual: env.GITHUB_EVENT_NAME === Event.Manual && manualCompared(event) });
   const matrices = matricesForEvent(env.GITHUB_EVENT_NAME);
-  const outputs = { base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), go_test_matrix: JSON.stringify(matrices.goTestMatrix), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) };
+  const outputs = { mode: comparisonMode(env.GITHUB_EVENT_NAME, event), base: range.base, head: range.head, event: env.GITHUB_EVENT_NAME, jobs: JSON.stringify(plan.jobs), forced: JSON.stringify(plan.forced), go_test_matrix: JSON.stringify(matrices.goTestMatrix), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) };
   appendFileSync(env.GITHUB_OUTPUT, Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(""));
-  console.log(JSON.stringify({ event: "ci_plan", mode: env.GITHUB_EVENT_NAME, base: range.base, head: range.head, changedFiles: range.paths.length, ...plan, ...matrices }));
+  console.log(JSON.stringify({ event: "ci_plan", mode: outputs.mode, base: range.base, head: range.head, changedFiles: range.paths.length, ...plan, ...matrices }));
   if (env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(env.GITHUB_STEP_SUMMARY, `## CI execution plan\n\nMode: ${env.GITHUB_EVENT_NAME}\n\n| Job | Decision |\n| --- | --- |\n${Object.entries(plan.jobs).map(([id, selected]) => `| ${id} | ${selected ? "run" : "skip"} |`).join("\n")}\n`);
+    appendFileSync(env.GITHUB_STEP_SUMMARY, `## CI execution plan\n\nMode: ${outputs.mode}\n\n| Job | Decision |\n| --- | --- |\n${Object.entries(plan.jobs).map(([id, selected]) => `| ${id} | ${selected ? "run" : "skip"} |`).join("\n")}\n`);
   }
 }
 

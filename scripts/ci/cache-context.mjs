@@ -33,3 +33,9 @@ export function cachePolicy(env = process.env) {
   const main = env.GITHUB_REF === "refs/heads/main" && ["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME);
   return main ? "local:rw,remote:rw" : "local:rw,remote:r";
 }
+
+// Manual validation executes selected tasks again, while compiler/dependency
+// caches remain available inside each task. Turbo results are not fresh tests.
+export function freshValidation(env = process.env) {
+  return env.GITHUB_EVENT_NAME === "workflow_dispatch";
+}

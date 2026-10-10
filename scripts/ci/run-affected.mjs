@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
-import { cacheContext, cachePolicy, toolCacheContexts } from "./cache-context.mjs";
+import { cacheContext, cachePolicy, toolCacheContexts, freshValidation } from "./cache-context.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -17,8 +17,17 @@ if (process.env.FORCE_RUN !== "true") {
 process.env.CI_CACHE_CONTEXT = cacheContext();
 Object.assign(process.env, toolCacheContexts());
 const policy = cachePolicy();
-if (policy) args.push(`--cache=${policy}`, "--summarize");
-console.log(JSON.stringify({ event: "ci_workspace", workspace, tasks, forced: process.env.FORCE_RUN === "true", cache: policy ?? "configured-local-development", remoteAuth: process.env.TURBO_REMOTE_CACHE_AUTH === "true" }));
+if (freshValidation()) args.push("--force");
+if (freshValidation()) {
+  // Turbo rejects --force with --cache. Fresh manual validation does not use
+  // remote task results or publish branch results through default cache policy.
+  process.env.TURBO_TOKEN = "";
+  process.env.TURBO_TEAM = "";
+  process.env.TURBO_TEAMID = "";
+  process.env.TURBO_REMOTE_CACHE_AUTH = "false";
+  args.push("--summarize");
+} else if (policy) args.push(`--cache=${policy}`, "--summarize");
+console.log(JSON.stringify({ event: "ci_workspace", workspace, tasks, forced: process.env.FORCE_RUN === "true", fresh: freshValidation(), cache: freshValidation() ? "fresh-manual-local-only" : policy ?? "configured-local-development", remoteAuth: process.env.TURBO_REMOTE_CACHE_AUTH === "true" }));
 // Windows package-manager shims require a shell. Invoke the installed Turbo
 // Node entry point directly so paths and task arguments remain literal on all OSes.
 const result = spawnSync(process.execPath, args, { stdio: "inherit", shell: false });
