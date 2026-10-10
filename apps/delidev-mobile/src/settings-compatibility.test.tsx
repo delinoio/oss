@@ -106,3 +106,37 @@ it("blocks malformed automatic defaults without dropping the draft or overriding
   await waitFor(() => expect((screen.getByRole("button", { name: en.newSession }) as HTMLButtonElement).disabled).toBe(false));
   expect(screen.queryByText(en.defaultsUnavailable)).toBeNull();
 });
+
+it.each([
+  ["가".repeat(100), false],
+  ["가".repeat(84) + "😀", true],
+  ["가".repeat(84) + "😀a", false],
+  ["a".repeat(249) + "가😀", true],
+  ["a".repeat(250) + "가😀", false],
+  ["  " + "a".repeat(256) + "  ", true],
+  [" \t ", true],
+])("checks the normalized session name before enabling or submitting creation (%s)", async (title, valid) => {
+  const f = fixture(); render(f.view()); await fill();
+  await waitFor(() => expect((screen.getByRole("button", { name: en.newSession }) as HTMLButtonElement).disabled).toBe(false));
+  const input = screen.getByLabelText(en.title) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: title } });
+  expect(input.value).toBe(title);
+  expect((screen.getByRole("button", { name: en.newSession }) as HTMLButtonElement).disabled).toBe(!valid);
+  expect(screen.queryByText(en.sessionNameTooLarge) !== null).toBe(!valid);
+  fireEvent.submit(input.closest("form")!);
+  if (valid) {
+    await waitFor(() => expect(f.mutate).toHaveBeenCalledTimes(1));
+    const document = documentOf((f.mutate.mock.calls[0][0] as CreateSessionRequest).documentJson);
+    expect(document.name).toBe(title.trim() || en.newSession);
+    expect(document.prompt).toBe("Retained fixture prompt");
+    expect(document.mode).toBe("plan");
+  } else {
+    expect(f.mutate).not.toHaveBeenCalled();
+    expect((screen.getByLabelText(en.prompt) as HTMLTextAreaElement).value).toBe("Retained fixture prompt");
+    for (const label of [en.project, en.agent, en.runner])
+      expect((screen.getByLabelText(label) as HTMLSelectElement).value).toBe("choice");
+    fireEvent.change(input, { target: { value: "Corrected name" } });
+    expect((screen.getByRole("button", { name: en.newSession }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText(en.sessionNameTooLarge)).toBeNull();
+  }
+});

@@ -64,6 +64,7 @@ import {
   tls,
 } from "./platform";
 import { en, ko, type Labels } from "./localization";
+import { validateSessionName } from "./session-name";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
 const owner = new ProtectedState(storage);
@@ -1045,7 +1046,9 @@ export function NewSession({
   const retainedMode = useRef("execute");
   if (enabled && modeReady) retainedMode.current = manualMode ?? automaticMode;
   const mode = enabled ? manualMode ?? automaticMode : retainedMode.current;
+  const sessionName = validateSessionName(title, c.newSession);
   const valid =
+    sessionName.valid &&
     modeReady &&
     enabled &&
     agent &&
@@ -1062,7 +1065,7 @@ export function NewSession({
             create(CreateSessionRequestSchema, {
               requestId: uuid(),
               documentJson: documentBytes({
-                name: title.trim() || c.newSession,
+                name: sessionName.name,
                 agent_id: agent,
                 machine_id: runner,
                 ...(workspace === "worktree" ? { project_id: project } : {}),
@@ -1112,11 +1115,13 @@ export function NewSession({
         <label>
           {c.title}
           <input
-            maxLength={256}
+            aria-invalid={!sessionName.valid}
+            aria-describedby={!sessionName.valid ? "session-name-guidance" : undefined}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
+        {!sessionName.valid ? <p id="session-name-guidance" role="alert">{c.sessionNameTooLarge}</p> : null}
         <label>
           {c.mode}
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
