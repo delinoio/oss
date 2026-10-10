@@ -204,7 +204,7 @@ func codexAppsCurrent(tx *store.Tx, identity codexAppsMutationIdentity) (store.R
 		if identity.Generation != "" {
 			return sr, session, value, codexAppsUnavailable()
 		}
-	} else if value.Configuration.Generation != identity.Generation || value.Configuration.AccountID != identity.Account {
+	} else if value.Configuration.Generation != identity.Generation || value.Configuration.AccountID != identity.Account && !(identity.Action == "" && len(identity.AppIDs) == 0) {
 		return sr, session, value, codexAppsUnavailable()
 	}
 	return sr, session, value, nil
@@ -248,7 +248,7 @@ func (s *Service) SelectCodexApps(ctx context.Context, req *connect.Request[pb.S
 		if err != nil || account.Subscription == nil || account.Connection == nil {
 			return nil, codexAppsUnavailable()
 		}
-		if value.Configuration != nil && (value.AccountGeneration != account.Subscription.Generation || value.ConnectionID != account.Connection.ID) {
+		if value.Configuration != nil && (value.AccountGeneration != account.Subscription.Generation || value.ConnectionID != account.Connection.ID) && len(selection.AppIDs) != 0 {
 			return nil, codexAppsUnavailable()
 		}
 		value.AccountGeneration, value.ConnectionID = account.Subscription.Generation, account.Connection.ID
