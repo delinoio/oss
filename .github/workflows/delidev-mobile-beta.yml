@@ -100,6 +100,7 @@ jobs:
         with: { distribution: temurin, java-version: "21" }
       - uses: android-actions/setup-android@v3
         if: matrix.platform == 'android'
+        with: { packages: platform-tools }
       - name: Install bounded native targets
         shell: bash
         run: |
@@ -148,6 +149,7 @@ jobs:
         with: { distribution: temurin, java-version: "21" }
       - uses: android-actions/setup-android@v3
         if: inputs.target == 'both'
+        with: { packages: platform-tools }
       - run: |
           brew install xcodegen
           rustup target add aarch64-apple-ios
