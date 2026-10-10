@@ -20,6 +20,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestTerminalNotificationsDeliverWithoutSafetyTicks(t *testing.T) {
@@ -132,9 +133,9 @@ func TestTerminalNotificationsDeliverWithoutSafetyTicks(t *testing.T) {
 		if _, err := worker.PublishTerminalOutput(ctx, ownerRequest(identity, frame)); err != nil {
 			t.Fatal("exact retry rejected", err)
 		}
-		changed := *frame
+		changed := proto.Clone(frame).(*pb.PublishTerminalOutputRequest)
 		changed.Data = []byte("changed retry")
-		if _, err := worker.PublishTerminalOutput(ctx, ownerRequest(identity, &changed)); connect.CodeOf(err) != connect.CodeAborted {
+		if _, err := worker.PublishTerminalOutput(ctx, ownerRequest(identity, changed)); connect.CodeOf(err) != connect.CodeAborted {
 			t.Fatal("changed retry was accepted", err)
 		}
 		select {
