@@ -494,10 +494,12 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
   const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
   expect(shortcut).toHaveProperty("disabled", true);
+  expect(screen.queryByRole("button", { name: "Create agent worker" })).toBeNull();
   fireEvent.click(shortcut);
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
   await act(async () => reject(new ConnectError("ack lost", Code.Unavailable)));
   await screen.findByRole("button", { name: "Retry the same session creation" });
+  expect(screen.queryByRole("button", { name: "Create agent worker" })).toBeNull();
   expect(shortcut).toHaveProperty("disabled", true);
   fireEvent.click(screen.getByRole("button", { name: "Back to sessions" }));
   fireEvent.click(shortcut);
@@ -1546,6 +1548,7 @@ it.each(["New session", "New Chat"])("opens Harness from proven empty %s while r
   await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
   expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
+  await waitFor(() => expect(screen.queryAllByRole("button", { name: "Create agent worker", hidden: true })).toHaveLength(0));
   expect(value.creates).not.toHaveBeenCalled();
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
@@ -1553,5 +1556,43 @@ it.each(["New session", "New Chat"])("opens Harness from proven empty %s while r
   expect(await screen.findByRole("textbox", { name: "First message" })).toHaveProperty("value", `Unsent ${entry}`);
   expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty("checked", true);
   expect(screen.getByLabelText("Estimated-cost threshold")).toHaveProperty("value", "2");
+  expect(value.creates).not.toHaveBeenCalled();
+});
+
+
+it("defers the proven empty worker entry during the original Local proof without replacing its draft", async () => {
+  const project = shortcutProject("Original project");
+  const value = fixture([], [], [project], false, true, undefined, true);
+  value.status.mockImplementation(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }));
+  let release!: (proof: { machineId: string; token: string }) => void;
+  const proof = new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; });
+  const readLocalWorker = vi.fn(() => proof);
+  render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
+  fireEvent.click(await screen.findByRole("button", { name: `New session in Original project. Project ID: ${project.id}` }));
+  const message = await screen.findByRole("textbox", { name: "First message" });
+  fireEvent.change(message, { target: { value: "Keep the original Local draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  const entry = await screen.findByRole("button", { name: "Create agent worker" });
+  fireEvent.click(screen.getByRole("radio", { name: "Local" }));
+  expect(entry.matches(":disabled")).toBe(true);
+  // fireEvent can dispatch a click on an inherited-disabled button; the original
+  // owner guard must reject it even without a browser's native disabled behavior.
+  fireEvent.click(entry);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(message).toHaveProperty("value", "Keep the original Local draft");
+  await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
+  expect(entry.matches(":disabled")).toBe(false);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole("radio", { name: "Local" })).toHaveProperty("checked", true);
+  expect(scrollChoiceValue(within(message.closest("section")!).getByRole("combobox", { name: "Project" }))).toBe(project.id);
+  fireEvent.click(entry);
+  expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "New session" })[0]);
+  expect(screen.getByRole("textbox", { name: "First message" })).toBe(message);
+  expect(message).toHaveProperty("value", "Keep the original Local draft");
+  expect(screen.getByRole("radio", { name: "Local" })).toHaveProperty("checked", true);
+  expect(scrollChoiceValue(within(message.closest("section")!).getByRole("combobox", { name: "Project" }))).toBe(project.id);
   expect(value.creates).not.toHaveBeenCalled();
 });
