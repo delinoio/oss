@@ -2,6 +2,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -16,6 +17,9 @@ import (
 func directoryCheckpointFixture(t *testing.T) (string, Credential, codexDirectoryCheckpoint, domain.SessionDirectoryRef) {
 	t.Helper()
 	f := newCheckpointFixture(t)
+	f.input.Configuration.Accounts = append(f.input.Configuration.Accounts, domain.WeightedAccount{ID: domain.NewID(), Weight: 1})
+	f.input.ConfigurationDigest, _ = f.input.Configuration.Digest()
+	f.ref.ConfigurationDigest = f.input.ConfigurationDigest
 	manifest := workspace.Manifest{SessionID: f.input.SessionID, MachineID: f.input.MachineID, Type: domain.GeneralChat, State: workspace.Ready, PrimaryPath: f.root, Repositories: []workspace.PreparedRepository{}}
 	f.input.Manifest, _ = json.Marshal(manifest)
 	f.job.Input, _ = json.Marshal(f.input)
@@ -119,5 +123,50 @@ func TestDirectoryNativeClaimCannotBeReplaced(t *testing.T) {
 	root, _, p, _ := directoryCheckpointFixture(t)
 	if err := writeDirectoryClaim(root, p.Ownership.JobID, directoryNativeClaim, map[string]string{"replacement": "new"}); err == nil {
 		t.Fatal("original native intent overwritten")
+	}
+}
+
+func TestDirectoryProjectionRequiresExistingAccountSwitchProof(t *testing.T) {
+	for _, mode := range []string{"original", "explicit switch", "unproven switch", "foreign prior account", "foreign source", "wrong previous directory"} {
+		t.Run(mode, func(t *testing.T) {
+			root, credential, p, ref := directoryCheckpointFixture(t)
+			input := p.Input.Assignment
+			input.Directory = &ref
+			input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
+			input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
+			previous := p.Input.PreviousExecution
+			previous.NativeHistory = domain.FullNativeHistory
+			input.Continuation = &domain.ExecutionContinuation{Previous: previous, PreviousDirectory: p.Source.Directory, HistoryExecutionID: p.Input.HistoryExecutionID, HistoryRequestID: domain.NewID(), Completion: p.Input.Completion, AssignmentInputDigest: p.Source.AssignmentInputDigest, InputMode: p.Input.Assignment.Input.Mode, PromptDigest: domain.BindSessionInput(p.Input.Assignment.InputID, p.Input.Assignment.Input).PromptDigest, Intent: domain.ContinueExplicitly}
+			source := p.Source
+			switch mode {
+			case "explicit switch":
+				input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = input.AccountID, input.ConnectionID
+				input.AccountID, input.ConnectionID = input.Configuration.Accounts[1].ID, domain.NewID()
+			case "unproven switch":
+				input.AccountID, input.ConnectionID = domain.NewID(), domain.NewID()
+			case "foreign prior account":
+				input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID = domain.NewID(), domain.NewID()
+			case "foreign source":
+				source.AccountID = domain.NewID()
+			case "wrong previous directory":
+				input.Continuation.PreviousDirectory = &ref
+			}
+			if mode == "original" || mode == "explicit switch" {
+				if err := input.Validate(); err != nil {
+					t.Fatal("accepted continuation fixture", err)
+				}
+			}
+			got, _, err := directoryContinuationProjection(context.Background(), root, credential, input, source)
+			if mode == "original" || mode == "explicit switch" {
+				if err != nil {
+					t.Fatal("verified directory continuation rejected", err)
+				}
+				if got.Native.Effective.Cwd != p.Selected.Effective.Cwd {
+					t.Fatal("lost selected cwd")
+				}
+			} else if err == nil {
+				t.Fatal("unproven authority inherited")
+			}
+		})
 	}
 }

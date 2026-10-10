@@ -75,6 +75,9 @@ func (r ExecutionCheckpointRef) validate() error {
 }
 
 func (r ExecutionCheckpointRef) validateForHarness(harness domain.Harness) error {
+	if r.Directory != nil && (harness != domain.Codex || r.Directory.Validate() != nil) {
+		return executionCheckpointUncertain()
+	}
 	for _, id := range []domain.ID{r.JobID, r.SessionID, r.MachineID, r.HistoryExecutionID, r.AccountID, r.ConnectionID} {
 		if id.Validate() != nil {
 			return executionCheckpointUncertain()

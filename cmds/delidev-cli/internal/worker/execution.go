@@ -231,6 +231,26 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	settings := codex.ThreadSettings{Model: input.Configuration.NativeModel, Provider: codexExecutionProvider(input.Configuration.Subscription), Effort: input.Configuration.Effort, Cwd: lease.WorkingDirectory(), Instructions: instructions, Options: input.Configuration.Options}
 	settings.WorkspaceRoots = nativeWorkspaceRoots(manifest)
+	var directoryGeneration *codexDirectoryCheckpoint
+	var directorySelection *workspace.DirectorySelection
+	if input.Directory != nil {
+		if input.Continuation == nil || input.Fork != nil {
+			return nil, domain.DirectoryUncertain()
+		}
+		checkpoint, directoryGeneration, err = directoryContinuationProjection(ctx, manager.Root, config.execution.Credential, input, checkpoint)
+		if err != nil {
+			return nil, err
+		}
+		directorySelection, err = lease.SelectDirectory(input.Directory.RepositoryID, input.Directory.RelativePath)
+		if err != nil {
+			return nil, err
+		}
+		defer directorySelection.Close()
+		if directorySelection.Path() != checkpoint.Native.Effective.Cwd {
+			return nil, domain.DirectoryUncertain()
+		}
+		settings = directoryThreadSettings(checkpoint.Native.Effective, directorySelection.Path(), manifest.WorkspaceRoots(), instructions, input.Configuration.Options)
+	}
 	if input.Fork != nil {
 		settings.Effort = valueOrEmpty(checkpoint.Native.Effective.Effort)
 		settings.Options.ServiceTier = valueOrEmpty(checkpoint.Native.Effective.ServiceTier)
@@ -435,14 +455,22 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
-		bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		if directoryGeneration != nil {
+			bound, err = client.ResumeDirectoryContinuation(ctx, input.ThreadRequestID, checkpoint.Native, settings)
+		} else {
+			bound, err = client.ResumeThread(ctx, input.ThreadRequestID, checkpoint.Native.ThreadID, settings)
+		}
 		if err == nil {
 			intent := codex.ContinueAfterSuccess
 			if c.Intent == domain.ContinueExplicitly {
 				intent = codex.ResumeAfterTerminal
 			}
 			if compacted != nil {
-				_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+				if directoryGeneration != nil {
+					_, err = client.VerifyDirectoryCompactedContinuation(ctx, c.HistoryRequestID, *compacted, *bound.Effective)
+				} else {
+					_, err = client.VerifyCompactedContinuation(ctx, c.HistoryRequestID, *compacted)
+				}
 			} else {
 				_, err = client.VerifyContinuation(ctx, c.HistoryRequestID, checkpoint.Native, intent)
 			}
@@ -458,12 +486,18 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err != nil {
 		return nil, err
 	}
+	if err := verifyDirectoryReload(ctx, client, domain.NewID(), bound, directoryGeneration, directorySelection); err != nil {
+		return nil, err
+	}
 	if err := mapper.BindThread(ctx, bound); err != nil {
 		return nil, err
 	}
 	logger.InfoContext(ctx, "native_execution_thread_bound")
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
+	}
+	if directorySelection != nil && directorySelection.Verify() != nil {
+		return nil, domain.DirectoryUncertain()
 	}
 	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)

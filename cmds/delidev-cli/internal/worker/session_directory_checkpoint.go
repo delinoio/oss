@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
@@ -203,7 +204,26 @@ func (p codexDirectoryCheckpoint) validateClaims(root string) error {
 	return nil
 }
 
+type directoryProofVisitKey struct{}
+
 func readDirectoryCheckpoint(root string, credential Credential, input domain.ExecutionJobInput, ref domain.SessionDirectoryRef) (codexDirectoryCheckpoint, error) {
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	return readDirectoryCheckpointContext(ctx, root, credential, input, ref)
+}
+
+func readDirectoryCheckpointContext(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput, ref domain.SessionDirectoryRef) (codexDirectoryCheckpoint, error) {
+	visited, _ := ctx.Value(directoryProofVisitKey{}).(map[domain.ID]bool)
+	if visited == nil {
+		visited = make(map[domain.ID]bool)
+		ctx = context.WithValue(ctx, directoryProofVisitKey{}, visited)
+	}
+	if ctx.Err() != nil || visited[ref.GenerationID] {
+		return codexDirectoryCheckpoint{}, domain.DirectoryUncertain()
+	}
+	visited[ref.GenerationID] = true
+	defer delete(visited, ref.GenerationID)
+
 	var empty codexDirectoryCheckpoint
 	if ref.Validate() != nil || input.Validate() != nil || input.Configuration.Harness != domain.Codex {
 		return empty, domain.DirectoryUncertain()
@@ -217,7 +237,7 @@ func readDirectoryCheckpoint(root string, credential Credential, input domain.Ex
 		return empty, domain.DirectoryUncertain()
 	}
 	var p codexDirectoryCheckpoint
-	if domain.DecodeWithLimit(raw, &p, maxDirectoryCheckpointBytes) != nil || p.validateClaims(root) != nil || p.Ownership.ServerID != credential.ServerID || p.Ownership.DeviceID != credential.DeviceID || p.Ownership.JobID != ref.JobID || p.Input.GenerationID != ref.GenerationID || p.Input.RequestID != ref.RequestID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.MachineID != input.MachineID || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.RepositoryID != ref.RepositoryID || p.Input.RelativePath != ref.RelativePath {
+	if domain.DecodeWithLimit(raw, &p, maxDirectoryCheckpointBytes) != nil || p.validateClaims(root) != nil || p.Ownership.ServerID != credential.ServerID || p.Ownership.DeviceID != credential.DeviceID || p.Ownership.JobID != ref.JobID || p.Input.GenerationID != ref.GenerationID || p.Input.RequestID != ref.RequestID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.MachineID != input.MachineID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest || p.Input.RepositoryID != ref.RepositoryID || p.Input.RelativePath != ref.RelativePath {
 		return empty, domain.DirectoryUncertain()
 	}
 	var manifest workspace.Manifest
@@ -228,7 +248,7 @@ func readDirectoryCheckpoint(root string, credential Credential, input domain.Ex
 	if sourceErr != nil || !sameDirectoryValue(original, p.Source) {
 		return empty, domain.DirectoryUncertain()
 	}
-	contextProof, contextErr := directoryContextCheckpoint(context.Background(), root, credential, p.Input, p.Source)
+	contextProof, contextErr := directoryContextCheckpoint(ctx, root, credential, p.Input, p.Source)
 	if contextErr != nil || !sameDirectoryValue(contextProof, p.Context) {
 		return empty, domain.DirectoryUncertain()
 	}
@@ -290,4 +310,52 @@ func directoryContextCheckpoint(ctx context.Context, root string, credential Cre
 		return nil, err
 	}
 	return &proof, nil
+}
+
+// A generation owns its original account and history. Later accepted executions
+// carry their own account authority; only the directory projection is inherited.
+func directoryContinuationProjection(ctx context.Context, root string, credential Credential, input domain.ExecutionJobInput, source CodexExecutionCheckpoint) (CodexExecutionCheckpoint, *codexDirectoryCheckpoint, error) {
+	if _, bounded := ctx.Deadline(); !bounded {
+		var stop context.CancelFunc
+		ctx, stop = context.WithTimeout(ctx, 5*time.Second)
+		defer stop()
+	}
+	if input.Directory == nil {
+		return source, nil, nil
+	}
+	c := input.Continuation
+	if c == nil || source.SessionID != input.SessionID || source.MachineID != input.MachineID || source.ConfigurationDigest != input.ConfigurationDigest || source.JobID != c.Previous.JobID || !sameDirectoryValue(source.Directory, c.PreviousDirectory) {
+		return CodexExecutionCheckpoint{}, nil, domain.DirectoryUncertain()
+	}
+	account, connection := input.AccountID, input.ConnectionID
+	if c.PreviousAccountID != "" {
+		account, connection = c.PreviousAccountID, c.PreviousConnectionID
+	}
+	if source.AccountID != account || source.ConnectionID != connection {
+		return CodexExecutionCheckpoint{}, nil, domain.DirectoryUncertain()
+	}
+	p, err := readDirectoryCheckpointContext(ctx, root, credential, input, *input.Directory)
+	if err != nil {
+		return CodexExecutionCheckpoint{}, nil, err
+	}
+	if source.Completion.ExecutionID == p.Source.Completion.ExecutionID {
+		if !sameDirectoryValue(source, p.Source) {
+			return CodexExecutionCheckpoint{}, nil, domain.DirectoryUncertain()
+		}
+		source.Native = p.Selected
+	} else if source.Native.Effective.Cwd != p.Selected.Effective.Cwd || !codex.DirectorySettingsEqual(p.Selected.Effective, source.Native.Effective) {
+		return CodexExecutionCheckpoint{}, nil, domain.DirectoryUncertain()
+	}
+	return source, &p, nil
+}
+
+func verifyDirectoryReload(ctx context.Context, native *codex.Client, request domain.ID, bound codex.ThreadResult, generation *codexDirectoryCheckpoint, selection *workspace.DirectorySelection) error {
+	if generation == nil {
+		return nil
+	}
+	reload, err := native.ReadDirectoryReloadEvidence(ctx, request, bound)
+	if err != nil || !sameDirectoryValue(reload, generation.Reload) || selection == nil || selection.Verify() != nil {
+		return domain.DirectoryUncertain()
+	}
+	return nil
 }
