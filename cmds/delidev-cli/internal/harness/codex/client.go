@@ -44,6 +44,7 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	apps               *appsController
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string
