@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { BrowserService, BrowserCapability, BrowserProfileSchema, BrowserProfile
 import { MutationIntents } from "./mutation";
 import { SessionBrowser, browserProfile } from "./session-browser";
 import { BrowserHostProvider } from "./host-capabilities";
+import { SessionTabKind, SessionTabsProvider, useSessionTabsStore, type SessionTabsStore } from "./session-tabs";
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
 beforeEach(() => {
@@ -32,7 +33,7 @@ function fixture() {
   native.mockResolvedValue(local);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function View() { return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBrowser session={session} accountId={accountId} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>; }
-  return { accountId, profileId, tabId, profile, session, register, local, View };
+  return { accountId, profileId, tabId, profile, session, register, local, View, transport, client };
 }
 async function open() {
   const button = screen.getByRole("button", { name: "Open account browser" });
@@ -256,4 +257,35 @@ it("fences a retained Browser under the maximized upper inert region through exa
     expect(f.register).toHaveBeenCalledTimes(1);
     expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].profileId).toBe(original.profileId);
   } finally { view.unmount(); }
+});
+
+it("refreshes the existing page after owned URL observations and Back/Forward without selecting another tab", async () => {
+ const f = fixture(); let store!: SessionTabsStore;
+ function Tabbed() {
+  store = useSessionTabsStore();
+  useEffect(() => { store.open(f.session.id, { kind: SessionTabKind.Browser }); }, []);
+  return <SessionBrowser session={f.session} accountId={f.accountId} close={() => {}} openPage={page => store.open(f.session.id, { kind: SessionTabKind.Page, ...page })} />;
+ }
+ render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><SessionTabsProvider><Tabbed /></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ await open(); await screen.findByRole("button", { name: /Tab 1/ });
+ await waitFor(() => expect(store.snapshot(f.session.id).tabs.some(tab => tab.kind === SessionTabKind.Page)).toBe(true));
+ store.open(f.session.id, { kind: SessionTabKind.Files });
+ const original = store.snapshot(f.session.id), selected = original.selected;
+ const owned = f.local.tabs.tabs[0];
+ owned.url = "https://fixture.test/redirected?query=retained";
+ await waitFor(() => expect(store.snapshot(f.session.id).tabs.find(tab => tab.kind === SessionTabKind.Page)).toMatchObject({ profile: f.profileId, id: f.tabId, title: "fixture.test/redirected", label: owned.url }), { timeout: 2500 });
+ expect(store.snapshot(f.session.id).selected).toBe(selected);
+ expect(store.snapshot(f.session.id).tabs.map(tab => tab.kind)).toEqual(original.tabs.map(tab => tab.kind));
+ for (const [action, url] of [["Back", "https://fixture.test/original"], ["Forward", "https://fixture.test/redirected"]]) {
+  owned.url = url;
+  fireEvent.click(screen.getByRole("button", { name: action }));
+  await waitFor(() => expect(store.snapshot(f.session.id).tabs.find(tab => tab.kind === SessionTabKind.Page)).toMatchObject({ label: url }));
+  expect(store.snapshot(f.session.id).selected).toBe(selected);
+ }
+ const unchanged = store.snapshot(f.session.id);
+ await new Promise(resolve => setTimeout(resolve, 1100));
+ expect(store.snapshot(f.session.id)).toBe(unchanged);
+ const actions = native.mock.calls.filter(([operation, args]) => operation === "control_browser" && !["resize", "hide"].includes(args.action));
+ expect(actions.map(([, args]) => args.action)).toEqual(["back", "forward"]);
+ expect(f.register).toHaveBeenCalledTimes(1);
 });

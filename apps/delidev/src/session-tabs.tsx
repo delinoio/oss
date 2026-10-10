@@ -65,6 +65,17 @@ export class SessionTabsStore {
     if (found < 0) tabs.push(tab); else tabs[found] = tab;
     this.publish(id, { tabs, selected: key });
   }
+  updatePage(id: string, page: Extract<SessionTab, { kind: SessionTabKind.Page }>) {
+    if (page.title.length > 8192 || (page.label?.length ?? 0) > 8192) return;
+    const previous = this.snapshot(id), key = sessionTabKey(page);
+    const index = previous.tabs.findIndex(tab => tab.kind === SessionTabKind.Page && sessionTabKey(tab) === key);
+    if (index < 0) return;
+    const original = previous.tabs[index] as Extract<SessionTab, { kind: SessionTabKind.Page }>;
+    if (original.title === page.title && original.label === page.label) return;
+    const tabs = [...previous.tabs];
+    tabs[index] = { ...original, title: page.title, label: page.label };
+    this.publish(id, { tabs, selected: previous.selected });
+  }
   select(id: string, key: string) {
     const previous = this.snapshot(id);
     if (previous.tabs.some(tab => sessionTabKey(tab) === key) && previous.selected !== key) {

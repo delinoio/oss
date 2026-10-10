@@ -43,3 +43,22 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
  store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
  expect(store.snapshot("session").tabs).toHaveLength(1); expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+
+it("updates only existing exact browser pages without selecting, appending or publishing unchanged labels", () => {
+ const store = new SessionTabsStore();
+ const page = { kind: SessionTabKind.Page as const, profile: "profile", id: "page", title: "original", label: "https://fixture.test/original" };
+ store.open("session", page); store.open("session", { kind: SessionTabKind.Files });
+ const before = store.snapshot("session"), selected = before.selected;
+ store.updatePage("session", { ...page, title: "fixture.test/redirected", label: "https://fixture.test/redirected" });
+ const changed = store.snapshot("session");
+ expect(changed.selected).toBe(selected);
+ expect(changed.tabs.map(sessionTabKey)).toEqual(before.tabs.map(sessionTabKey));
+ expect(changed.tabs[1]).toEqual({ ...page, title: "fixture.test/redirected", label: "https://fixture.test/redirected" });
+ store.updatePage("session", changed.tabs[1] as typeof page);
+ expect(store.snapshot("session")).toBe(changed);
+ store.updatePage("session", { ...page, profile: "foreign" });
+ store.updatePage("session", { ...page, id: "foreign" });
+ store.updatePage("other-session", page);
+ expect(store.snapshot("session")).toBe(changed);
+ expect(store.snapshot("other-session").tabs).toHaveLength(1);
+});

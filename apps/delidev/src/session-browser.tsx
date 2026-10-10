@@ -66,6 +66,9 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
   const shortcutAdmission=useRef("");
   const tabsStore=useSessionTabsStore();
   const activeRef=useRef(active);activeRef.current=active;
+  const updatePageLabels = (profile: string, observed: BrowserState) => {
+    for (const tab of observed.tabs.tabs) tabsStore.updatePage(session.id, { kind: SessionTabKind.Page, profile, id: tab.id, title: browserTabTitle(tab.url), label: tab.url });
+  };
   const capabilities = useQuery(BrowserQuery.getBrowserCapabilities, {}, {retry:false,enabled:active});
   const supported = capabilities.data?.capabilities.includes(BrowserCapability.PROTECTED_DEVICE_PROFILE_V1) === true;
   const registration = useRetainedMutation(`browser-register:${session.id}:${accountId}`, BrowserQuery.registerBrowserProfile, (response) => {
@@ -138,6 +141,7 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
               const changed = browserState(await invoke<BrowserState>("control_browser", {profileId,viewId,action:pending.action,url:address,tabId:pending.tabId}));
               if (!disposed && presentation.current === viewId) {
                 setState(changed);
+                updatePageLabels(profileId, changed);
                 if (openPage && [BrowserAction.NewTab,BrowserAction.SelectTab].includes(pending.action)) {
                   const tab=changed.tabs.tabs.find(value=>value.id===changed.tabs.selected);
                   if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});
@@ -145,7 +149,7 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
               }
             } catch { if (!disposed) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
             finally { if (!disposed) {setBusy(false);setPresenting(false);} }
-          } else setState(result);
+          } else { setState(result); updatePageLabels(profileId, result); }
           if(!pending && openPage && activeRef.current && tabsStore.snapshot(session.id).selected===SessionTabKind.Browser && result.tabs.selected) { const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url}); }
         } catch { failed = true; pendingAction.current=undefined; if (!disposed) {setBusy(false);setPresenting(false);setFailure(ownedMessage("session-browser.extra.08759b664829"));} }
         finally { opening = false; if (queued) { queued = false; void update(); } }
@@ -153,7 +157,7 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
         if (geometry === lastBounds) return;
         resizing = true;
         const viewId = presentation.current;
-        try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action: BrowserAction.Resize, bounds: area })); if (!disposed && opened && presentation.current === viewId) { lastBounds = geometry; setState(result); } } catch { lastBounds = ""; if (!disposed) setFailure(ownedMessage("session-browser.extra.1b8cff3d45fb")); }
+        try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action: BrowserAction.Resize, bounds: area })); if (!disposed && opened && presentation.current === viewId) { lastBounds = geometry; setState(result); updatePageLabels(profileId, result); } } catch { lastBounds = ""; if (!disposed) setFailure(ownedMessage("session-browser.extra.1b8cff3d45fb")); }
         finally { resizing = false; if (queued) { queued = false; void update(); } }
       }
     };
@@ -163,7 +167,8 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
     const visibility = new MutationObserver(() => void update()); visibility.observe(documentGlobal().body, { subtree: true, attributes: true, attributeFilter: ["hidden", "inert", "open", "class"], childList: true });
     const timer = window.setInterval(() => {
       if (!opened || disposed || !visible()) return;
-      void invoke<BrowserState>("browser_state", { profileId, viewId: presentation.current }).then((value) => { if (!disposed) setState(browserState(value)); }).catch(() => { if (!disposed) setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4")); });
+      const viewId = presentation.current;
+      void invoke<BrowserState>("browser_state", { profileId, viewId }).then((value) => { if (!disposed && opened && visible() && presentation.current === viewId) { const result = browserState(value); setState(result); updatePageLabels(profileId, result); } }).catch(() => { if (!disposed) setFailure(ownedMessage("session-browser.extra.c6d1ec80c1c4")); });
     }, 1000);
     return () => { disposed = true; window.removeEventListener("scroll", move, true); window.removeEventListener("resize", move); observer.disconnect(); visibility.disconnect(); window.clearInterval(timer); void hide(); };
     // Address changes navigate the existing native tab only at the explicit Go action.
@@ -173,7 +178,8 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
     if (!profileId || busy || state?.removal_pending) return;
     setBusy(true); setFailure(undefined);
     if (openPage && !presentation.current) { pendingAction.current={action,tabId};setPresenting(true);return; }
-    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) { setState(result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
+    const viewId = presentation.current;
+    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action, url: address, tabId })); if (alive.current) { setState(result); if (activeRef.current && presentation.current === viewId) updatePageLabels(profileId, result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
     catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
