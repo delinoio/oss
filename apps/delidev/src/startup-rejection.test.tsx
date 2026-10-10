@@ -1,8 +1,10 @@
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { encode } from "./documents";
+import { i18n, SupportedLanguage } from "./localization";
+import { canRetryExecutionStartup } from "./execution-startup";
 import { RejectedInput, StartupRejection, startupRejection, isImageStartupRejectedInput } from "./startup-rejection";
 
 function fixture() {
@@ -53,13 +55,33 @@ it("does not borrow another queued input's rejection", () => {
   expect(screen.getByText(/could not be verified/)).toBeTruthy();
 });
 
-it("presents only the exact original rejected image input without claiming recovery", () => {
+it.each([SupportedLanguage.English, SupportedLanguage.Korean])("directs changed image selection or text-only input to a new session in %s", async language => {
+ await act(() => i18n.changeLanguage(language));
  const f=fixture(), job=newRequestId(), execution=f.data.initial_execution.id;
  const data={...f.data, initial_execution:f.data.initial_execution, startup:{job_id:job,execution_id:execution,failure:{state:2,phase:5,harness:"codex",problem_code:"unsupported",correlation_id:job,input_delivery:1,cleanup:1,failure_kind:1}}};
  const session=create(ResourceSchema,{...f.session,documentJson:encode(data)});
  expect(isImageStartupRejectedInput(f.queued,session)).toBe(true);
  for (const resource of [create(ResourceSchema,{...f.queued,id:newRequestId()}),create(ResourceSchema,{...f.queued,sessionId:newRequestId()}),create(ResourceSchema,{...f.queued,documentJson:encode({delivery:"accepted",execution_id:execution})})]) expect(isImageStartupRejectedInput(resource,session)).toBe(false);
  render(<RejectedInput session={session} resource={f.queued}/>);
- expect(screen.getByText(/Keep the image draft/)).toBeTruthy();
+ const notice = screen.getByText(language === SupportedLanguage.Korean ? /거부된 원래 입력과 이미지를/ : /Keep the original rejected input and images/);
+ expect(notice.textContent).toContain(language === SupportedLanguage.Korean ? "이미지를 명시적으로 지원하는 Agent Worker와 Runner Device로 새 세션을 시작" : "Start a new session with an Agent Worker and Runner Device that explicitly support images");
+ expect(notice.textContent).toContain(language === SupportedLanguage.Korean ? "텍스트만 사용하는 새 세션을 시작" : "start a new text-only session");
+ expect(notice.textContent).toContain(language === SupportedLanguage.Korean ? "이 세션을 재시도하면 원래 입력, Agent Worker와 Runner Device가 유지" : "Retrying this session keeps its original input, Agent Worker and Runner Device");
+ const original = { ...data, archive: "active", pending_inputs: 0, pending_input_bytes: 0 };
+ const preserved = structuredClone(original);
+ expect(canRetryExecutionStartup(original)).toBe(true);
+ // Queuing a correction cannot repair the original startup retry admission.
+ expect(canRetryExecutionStartup({ ...original, pending_inputs: 1, pending_input_bytes: 12 })).toBe(false);
+ expect(original).toEqual(preserved);
+ expect(screen.queryByRole("button")).toBeNull();
+});
+
+
+it.each([undefined, 0, 2, "1"])("does not advertise image recovery for generic or invalid failure provenance %s", failureKind => {
+ const f = fixture(), job = newRequestId(), execution = f.data.initial_execution.id;
+ const session = create(ResourceSchema, { ...f.session, documentJson: encode({ ...f.data, startup: { job_id: job, execution_id: execution, failure: { state: 2, phase: 5, harness: "codex", problem_code: "unsupported", correlation_id: job, input_delivery: 1, cleanup: 1, ...(failureKind === undefined ? {} : { failure_kind: failureKind }) } } }) });
+ expect(isImageStartupRejectedInput(f.queued, session)).toBe(false);
+ render(<RejectedInput session={session} resource={f.queued} />);
+ expect(screen.queryByText(/new text-only session|텍스트만 사용하는 새 세션/)).toBeNull();
  expect(screen.queryByRole("button")).toBeNull();
 });

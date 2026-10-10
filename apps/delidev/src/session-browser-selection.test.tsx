@@ -23,7 +23,7 @@ vi.mock("@delinoio/delidev-api-client", async importOriginal => ({
 }));
 // Keep unrelated session readers outside this browser boundary fixture.
 vi.mock("./session-tools", () => ({ SessionTools: () => null }));
-vi.mock("./session-fork", () => ({ SessionForkAction: () => null }));
+vi.mock("./session-fork", () => ({ SessionForkAction: () => null, PendingSidechatPane: () => null, SessionCreationAction: { Fork: "fork", Sidechat: "sidechat" } }));
 vi.mock("./session-pull-requests", () => ({ SessionPullRequests: () => null }));
 vi.mock("./session-budget", () => ({ SessionBudget: () => null }));
 vi.mock("./native-usage", () => ({ NativeUsage: () => null }));

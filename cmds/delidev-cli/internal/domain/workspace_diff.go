@@ -14,12 +14,13 @@ const (
 	DiffWorkingTree WorkspaceDiffComparison = "working-tree"
 	DiffStaged      WorkspaceDiffComparison = "staged"
 	DiffCreation    WorkspaceDiffComparison = "creation"
+	DiffBranch      WorkspaceDiffComparison = "branch"
 	DiffCommit      WorkspaceDiffBase       = "commit"
 	DiffEmptyTree   WorkspaceDiffBase       = "empty-tree"
 )
 
 func (v WorkspaceDiffComparison) Valid() bool {
-	return v == DiffWorkingTree || v == DiffStaged || v == DiffCreation
+	return v == DiffWorkingTree || v == DiffStaged || v == DiffCreation || v == DiffBranch
 }
 
 // Revision identifies these exact observed bytes, not an atomic filesystem
@@ -34,6 +35,9 @@ type WorkspaceDiff struct {
 	Patch        string                  `json:"patch"`
 	Untracked    []string                `json:"untracked"`
 	Revision     string                  `json:"revision"`
+	BaseRef      Reference               `json:"base_ref,omitzero"`
+	BaseCommit   string                  `json:"base_commit,omitempty"`
+	MergeBase    string                  `json:"merge_base,omitempty"`
 }
 
 func (v WorkspaceDiff) Digest() string {
@@ -50,7 +54,11 @@ func gitObjectID(v string) bool {
 
 func (v WorkspaceDiff) Validate(q WorkspaceReadQuery) error {
 	valid := q.Operation == WorkspaceGitDiff && q.Validate() == nil && v.Comparison == q.Comparison && v.RepositoryID == q.RepositoryID && v.Path == q.Path && gitObjectID(v.BaseObject) && Text(v.Patch, "Git diff", WorkspacePreviewLimit, false) == nil && v.Untracked != nil && len(v.Untracked) <= 100 && v.Revision == v.Digest()
-	if v.Base == DiffEmptyTree {
+	if v.Comparison == DiffBranch {
+		valid = valid && v.Base == DiffCommit && v.BaseRef == q.BaseRef && v.BaseRef.Validate(false) == nil && gitObjectID(v.HeadCommit) && gitObjectID(v.BaseCommit) && v.MergeBase == v.BaseObject && len(v.BaseObject) == len(v.HeadCommit) && len(v.BaseCommit) == len(v.HeadCommit)
+	} else if v.BaseRef != (Reference{}) || v.BaseCommit != "" || v.MergeBase != "" {
+		valid = false
+	} else if v.Base == DiffEmptyTree {
 		// Git object identity follows the repository format; this is not the
 		// SHA-256 integrity digest used for the returned observation revision.
 		legacy, modern := sha1.Sum([]byte("tree 0\x00")), sha256.Sum256([]byte("tree 0\x00"))

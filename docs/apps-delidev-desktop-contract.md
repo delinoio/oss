@@ -2347,7 +2347,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - Usage rolling presets use the closed `UsageRangePreset` enum and one captured clock for exact BigInt half-open UTC bounds. Preserve pinned timezone/non-date drafts and original endpoint instants; cancel stale validation before atomic selection. Refresh retains captured bounds, same-preset selection recaptures, and manual date edits/Reset/new entries clear the pressed indicator. Keep native keyboard buttons, localized helper, wrapping equal-width controls and the fixed Reset footer. Follow the usage and desktop contracts.
 
-- The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images with concrete Agent Worker/Runner image support guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
+- The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
 - Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The persistent 40px shell toggle and fixed primary+B share dispatch/help/ARIA, ordinary-input admission and existing exclusions. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
@@ -3279,7 +3279,9 @@ Only creation without an initial resource uses the Task → Execution → Repeat
 
 Step 1 has Cancel/Next, steps 2–3 Cancel/Back/Next, and Review Cancel/Back/Create schedule, with a step count. Next validates only its step and focuses the first invalid control; Back and distinctly named Review Edit controls retain drafts without writes. User changes focus the step heading; fresh entry focuses Name once, and refresh/reconnect never steals focus. Enter in single-line inputs follows Next; prompt Enter remains newline. Only Review submits. Final creation validates all authoring steps, reveals the first invalid step/disclosure and focuses correction before calling the original save path. Local proof/save/uncertain states lock editing and all navigation/dismissal, with the original identical-request retry retained.
 
-Review displays the complete name/prompt, exact selected Project/Agent Worker/Runner Device IDs and available labels, workspace/mode, full starting overrides, recurrence/raw cron/timezone, overlap and enabled/paused state. It reports configured selections rather than execution readiness, preserves server next-run authority and never truncates prompts or explicit references. Safe server failures remain visible without invented field attribution.
+Review displays three separate Task, Execution and Repeat cards with 16px gaps, 24px padding, 12px corners, decorative outline icons and distinctly named Edit actions. Definition rows use a 160px label column and wrapping values; below 600px of available content width they stack. The complete prompt uses a lightly tinted inset with preserved whitespace and no nested fixed-height scroll area.
+
+Review displays only the exact cached Project/Agent Worker/Runner Device names, using the existing name/alias/Unnamed behavior. Missing or mismatched cached identities show bundled English/Korean Name unavailable without new reads or selection changes. System resource IDs are absent from Review text, attributes, accessibility descriptions and disclosures. Keep exact IDs internally in query inputs, definitions, validation, Local proofs and outgoing requests; equal names never merge selections. Starting overrides are ordered localized Repository 1/2 rows with complete reference type, name and optional remote. Their original repository identities remain internal; Review performs no repository reads. Preserve UUID-shaped user prompt/reference text and the existing no-overrides guidance. Review retains workspace/mode, recurrence/raw cron/timezone, overlap and enabled/paused state. It reports configured selections rather than execution readiness, preserves server next-run authority and never truncates prompts or explicit references. Safe server failures remain visible without invented field attribution.
 
 The main-content creation form owns a
 scrolling body and a separate white, top-bordered persistent action row; its
@@ -3386,7 +3388,7 @@ Session details expose revision-bound rename, retry of confirmed failed/canceled
 
 Existing session detail uses a compact conversation-first workspace. Keep the
 shared sidebar and native title bar. The header retains the original name and live connection observation. Independent workspace, outcome, dispatch, Archive and automatic-title evidence belongs in Status and recovery . Stop and Resume retain their existing revision, uncertainty, budget and
-startup-rejection guards. Fork/Sidechat and Archive/Restore use a keyboard-operable
+startup-rejection guards. Independent Fork and Archive/Restore use a keyboard-operable
 Session actions popup; opening or closing it never creates or replaces authority.
 
 The header displays a decorative 32px licensed local harness mark and muted
@@ -3406,7 +3408,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -4230,6 +4232,44 @@ Delivery remains visibly unconfirmed until the original native resolution/result
 
 There is no Activity page or PR source disclosure. PR problems, local dismissals, attempts and canonical verified handling remain in their independent workflows. Activity retirement preserves original native completion, cleanup and push verification and legacy dependent session/backup cleanup. See the [retirement contract](cmds-delidev-activity-contract.md).
 
+## Direct Sidechat preparation
+
+Open Sidechat is an explicit creation gesture in the flat Open tool menu after
+Diagnostics. Opening, dismissing or retrying capability/Runner reads does not
+create a job. The existing source, storage, cleanup, account, subagent and busy
+checks remain authoritative; managed Sidechat support is independent of Fork.
+The child and embedded child views never offer nested creation.
+
+One connection-owned controller retains the original parent/revision/native turn,
+default bounded name, original workspace choice, request receipt, draft and text
+selection. It shares the existing single outstanding Fork admission owner.
+Immediately select a frontend-only pending tab keyed by that request. Its ID is
+never a Session ID or an argument to Session RPCs. The focused text composer is
+editable during preparation, with localized status/error announcements, while
+sending, attachments, skills and native child actions are unavailable. It uses
+existing transcript/composer theme tokens and bounded narrow-height scrolling.
+Independent Fork retains its name/workspace modal and Discard/Finish controls.
+
+Observe only the original accepted job, including when its tab is hidden or
+closed. Keep the existing two-second polling and terminal/uncertain stop states.
+A response loss retains the exact original request for explicit replay only;
+accepted-job uncertainty, mismatched identity or unverified child permits only
+an explicit original status read. Failure retains the draft and actionable
+localized guidance. Closing hides presentation; only rejected or confirmed
+terminal operations can be discarded, and unresolved authority stays retained.
+
+Verified publication requires the original job, source relationship and Sidechat
+read-only overlay. Atomically replace the pending descriptor in its original
+position, preserving draft/caret/selection in the child controller and releasing
+completed preparation bookkeeping. A closed tab stays closed; background
+publication does not select another tab, navigate or steal focus. Restore
+composer focus only when the active visible pending composer owned it at
+publication. Preserve the actual inherited transcript and existing paused/Resume
+behavior. Creation, publication and transfer never enqueue, Resume or send
+findings. Logs contain only operation IDs, closed phases and stable error codes.
+Original account/snapshot/native ownership and dependent cleanup remain in the
+[Sidechat contract](cmds-delidev-sidechat-contract.md#direct-desktop-preparation).
+
 ## Codex Fork presentation
 
 The completed-session action is gated by `CODEX_SESSION_FORK_V1` and the absence
@@ -4621,8 +4661,8 @@ revision, commands, results and unresolved limits in PRs and CI artifacts.
 
 Managed ChatGPT/Codex Sidechat composes System 47, Worker 26,
 existing Sidechat 27/16 and managed authentication Worker 3. The session detail
-action menu exposes Open Sidechat only for the original eligible completed
-source and negotiated Runner. Independent subscription Fork remains unsupported.
+Open tool menu exposes Open Sidechat after Diagnostics only for the original eligible completed
+source and negotiated Runner. Activation starts direct preparation and focuses the editable pending composer; no name/Create modal is shown. Independent subscription Fork remains unsupported.
 See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat)
 for protected lease/Finish publication, read-only continuation and dependent
 cleanup ownership. No new RPC or SQLite migration is added.
