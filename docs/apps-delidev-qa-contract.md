@@ -278,6 +278,13 @@ paths or native content in this diagnostic projection. The original error still
 fails the run; a diagnostic record does not establish a repaired fixture or
 browser acceptance.
 
+The real browser fixture binds Settings Edit/Delete action names to each
+environment's original saved resource identity. Project creation follows the
+existing Repositories, Configure and Restrictions wizard, selecting only that
+environment's inspected repository; edits retain their independent form.
+Creation, rename, deletion and cross-environment isolation still require actual
+server observations rather than synthetic configuration admission.
+
 ## Dependencies and Integrations
 
 Reuse the ordinary CLI, Go server/Worker, protected-storage ownership, generated

@@ -19,6 +19,8 @@ const screenshotsEnabled = screenshotPolicy === "enabled";
 const run = new QaRun({ workers: 2 });
 let browser, stage = "startup", passed = false;
 const checks = [];
+const repositories = [], savedConfigurations = new Map();
+const configurationAction = (page, action, name, resource) => page.getByRole("button", { name: `${action} ${name} · ${resource.id}`, exact: true });
 const registration = registrationDiagnostics(errors.TimeoutError);
 try {
   await run.start();
@@ -61,6 +63,7 @@ try {
     }));
     await step(RegistrationStep.ObserveRow, async () => {
       assert.equal(document(repository).name, "browser-git-fixture");
+      repositories[index] = repository;
       // Settings action names include their original target identity. Bind this
       // exact selector to the resource just observed on this environment;
       // a name-only selector cannot match the scoped action presentation.
@@ -70,36 +73,47 @@ try {
   checks.push("real-worker-git-inspection-and-save");
 
   stage = "parallel-same-name-writes";
-  const create = async (page, kind) => {
+  const create = async (page, kind, index) => {
     await category(page, kind === "Project" ? "Projects" : "Instructions");
     await page.getByRole("button", { name: `New ${kind}`, exact: true }).click();
-    await page.getByLabel("Name", { exact: true }).fill(`Parallel ${kind}`);
     if (kind === "Project") {
-      const select = page.getByRole("combobox", { name: /^Add Repository/ });
-      const options = select.locator('option[value]:not([value=""])');
-      await options.first().waitFor({ state: "attached" });
-      const option = await options.first().getAttribute("value");
-      await select.selectOption(option); await page.getByRole("button", { name: "Add selected", exact: true }).click();
-      await page.getByRole("combobox", { name: /^Primary repository/ }).selectOption(option);
-    } else await page.getByLabel("Instructions", { exact: true }).fill("Synthetic QA instructions.");
+      // Creation uses the real three-step wizard; editing keeps its existing
+      // independent form. Select this environment's original saved repository.
+      await page.getByRole("checkbox", { name: "browser-git-fixture", exact: true }).check();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByLabel("Project name", { exact: true }).fill(`Parallel ${kind}`);
+      await page.getByRole("combobox", { name: "Primary repository", exact: true }).selectOption(repositories[index].id);
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+    } else {
+      await page.getByLabel("Name", { exact: true }).fill(`Parallel ${kind}`);
+      await page.getByLabel("Instructions", { exact: true }).fill("Synthetic QA instructions.");
+    }
     await page.getByRole("button", { name: `Save ${kind}`, exact: true }).click();
-    await page.getByRole("button", { name: `Edit Parallel ${kind}`, exact: true }).waitFor();
+    const kindValue = kind === "Project" ? run.api.EntityKind.PROJECT : run.api.EntityKind.TEMPLATE;
+    const resource = await until(async () => (await list(run.environments[index], kindValue)).find(row => document(row).name === `Parallel ${kind}`));
+    if (kind === "Project") {
+      assert.deepEqual(document(resource).repositories, [repositories[index].id]);
+      assert.equal(document(resource).primary_repository, repositories[index].id);
+    }
+    await configurationAction(page, "Edit", `Parallel ${kind}`, resource).waitFor();
+    return resource;
   };
   for (const kind of ["Project", "Instructions"]) {
-    await Promise.all(pages.map(page => create(page, kind)));
-    await pages[0].getByRole("button", { name: `Edit Parallel ${kind}`, exact: true }).click();
+    const originals = await Promise.all(pages.map((page, index) => create(page, kind, index)));
+    savedConfigurations.set(kind, originals);
+    await configurationAction(pages[0], "Edit", `Parallel ${kind}`, originals[0]).click();
     await pages[0].getByLabel("Name", { exact: true }).fill(`Changed ${kind}`);
     await pages[0].getByRole("button", { name: `Save ${kind}`, exact: true }).click();
-    await pages[0].getByRole("button", { name: `Edit Changed ${kind}`, exact: true }).waitFor();
+    await configurationAction(pages[0], "Edit", `Changed ${kind}`, originals[0]).waitFor();
     await Promise.all(pages.map(page => page.reload()));
     await Promise.all(pages.map(page => category(page, kind === "Project" ? "Projects" : "Instructions")));
-    assert.equal(await pages[0].getByRole("button", { name: `Edit Parallel ${kind}`, exact: true }).count(), 0);
-    await pages[1].getByRole("button", { name: `Edit Parallel ${kind}`, exact: true }).waitFor();
-    await pages[0].getByRole("button", { name: `Delete Changed ${kind}`, exact: true }).click();
+    assert.equal(await configurationAction(pages[0], "Edit", `Parallel ${kind}`, originals[0]).count(), 0);
+    await configurationAction(pages[1], "Edit", `Parallel ${kind}`, originals[1]).waitFor();
+    await configurationAction(pages[0], "Delete", `Changed ${kind}`, originals[0]).click();
     await pages[0].getByRole("button", { name: "Confirm configuration deletion", exact: true }).click();
     await pages[0].getByRole("button", { name: `New ${kind}`, exact: true }).waitFor();
     await pages[1].reload(); await category(pages[1], kind === "Project" ? "Projects" : "Instructions");
-    await pages[1].getByRole("button", { name: `Edit Parallel ${kind}`, exact: true }).waitFor();
+    await configurationAction(pages[1], "Edit", `Parallel ${kind}`, originals[1]).waitFor();
     const kindValue = kind === "Project" ? run.api.EntityKind.PROJECT : run.api.EntityKind.TEMPLATE;
     assert.equal((await list(run.environments[0], kindValue)).length, 0);
     assert.equal(document((await list(run.environments[1], kindValue))[0]).name, `Parallel ${kind}`);
@@ -198,7 +212,7 @@ try {
   await until(async () => (await a.status()).state === "blocked");
   await pages[0].reload(); await pages[0].getByRole("heading", { name: "DeliDev browser QA unavailable", exact: true }).waitFor();
   await pages[1].reload(); await category(pages[1], "Projects");
-  await pages[1].getByRole("button", { name: "Edit Parallel Project", exact: true }).waitFor();
+  await configurationAction(pages[1], "Edit", "Parallel Project", savedConfigurations.get("Project")[1]).waitFor();
   checks.push("server-failure-and-paired-auth-revocation-isolation");
   assert.equal(pageErrors.length, 0);
   if (screenshotsEnabled) await Promise.all(pages.map((page, index) => page.screenshot({ path: join(run.artifacts, "screenshots", `worker-${index + 1}.png`) })));
