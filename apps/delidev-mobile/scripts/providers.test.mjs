@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { appleProvider, googleProvider } from "./providers.mjs";
 import { Identity, Stage, distribute } from "./beta.mjs";
 const pem = (type, options) =>
@@ -382,4 +382,108 @@ test("Apple complete version inventory refuses reuse on a later page before crea
   await provider.preflight(manifest);
   await assert.rejects(provider.upload(manifest, {}), /already exists/);
   assert.equal(writes, 0);
+});
+
+test("Apple returned MD5 corroborates only exact original receipt and locally verified SHA-256 bytes", async () => {
+  const bytes = Buffer.from("fixture"), sha256 = createHash("sha256").update(bytes).digest("hex"),
+    md5 = createHash("md5").update(bytes).digest("hex"),
+    m = { ...manifest, artifacts: { ...manifest.artifacts, ios: { sha256, bytes: bytes.length } } };
+  for (const scenario of ["owned", "missing-file", "foreign-file", "foreign-upload", "foreign-candidate", "wrong-md5", "wrong-sha", "processing", "external"]) {
+    let writes = 0;
+    const r = { candidateId: m.candidateId, providerId: "upload", fileId: "file" };
+    if (scenario === "missing-file") delete r.fileId;
+    if (scenario === "foreign-file") r.fileId = "foreign";
+    if (scenario === "foreign-upload") r.providerId = "foreign";
+    if (scenario === "foreign-candidate") r.candidateId = "foreign";
+    const fetcher = async (url, options) => {
+      if (options.method !== "GET") writes++;
+      if (url.includes("/buildUploadFiles")) return response({ data: [{ id: "file", attributes: {
+        uti: "com.apple.ipa", fileSize: bytes.length, assetDeliveryState: { state: "COMPLETE" },
+        sourceFileChecksums: { file: { algorithm: "MD5", hash: scenario === "wrong-md5" ? "wrong" : md5 } },
+      } }] });
+      if (url.includes("/betaGroups/owned/builds")) return response({ data: [{ id: "build" }] });
+      return response({ data: { id: "upload", attributes: { cfBundleShortVersionString: m.version,
+        cfBundleVersion: m.iosBuild, platform: "IOS", state: { state: scenario === "processing" ? "PROCESSING" : "COMPLETE" } } },
+        included: [{ type: "builds", id: "build", attributes: { buildAudienceType: scenario === "external" ? "APP_STORE_ELIGIBLE" : "INTERNAL_ONLY" } }] });
+    };
+    const actual = await appleProvider(environment, bytes, () => {}, fetcher).inspect(
+      scenario === "wrong-sha" ? { ...m, artifacts: { ...m.artifacts, ios: { ...m.artifacts.ios, sha256: "0".repeat(64) } } } : m, r);
+    assert.equal(actual.state, scenario === "owned" ? "present" : "unknown", scenario);
+    if (actual.state === "present") assert.equal(actual.sha256, sha256);
+    assert.equal(writes, 0);
+  }
+});
+test("Apple explicit recovery commits only positively acknowledged original transfers", async () => {
+  const bytes = Buffer.from("fixture"), sha256 = createHash("sha256").update(bytes).digest("hex"),
+    m = { ...manifest, artifacts: { ...manifest.artifacts, ios: { sha256, bytes: bytes.length } } };
+  for (const scenario of ["owned", "no-proof", "wrong-sha", "foreign-file", "foreign-version", "already-complete"]) {
+    let commits = 0;
+    const receipt = { candidateId: m.candidateId, providerId: "upload", fileId: "file", transferComplete: true,
+      fileSha256: sha256, fileBytes: bytes.length };
+    if (scenario === "no-proof") delete receipt.transferComplete;
+    if (scenario === "wrong-sha") receipt.fileSha256 = "wrong";
+    const fetcher = async (url, options) => {
+      if (options.method === "PATCH") {
+        commits++;
+        assert.ok(url.endsWith("/buildUploadFiles/file"));
+        assert.deepEqual(JSON.parse(options.body).data.attributes, { uploaded: true });
+        return response({});
+      }
+      assert.equal(options.method, "GET");
+      if (url.includes("/buildUploadFiles")) return response({ data: [{ id: scenario === "foreign-file" ? "foreign" : "file",
+        attributes: { uti: "com.apple.ipa", fileSize: bytes.length, assetDeliveryState: {
+          state: scenario === "already-complete" ? "COMPLETE" : "AWAITING_UPLOAD" } } }] });
+      return response({ data: { id: "upload", attributes: { cfBundleShortVersionString: m.version,
+        cfBundleVersion: scenario === "foreign-version" ? "9" : m.iosBuild, platform: "IOS" } } });
+    };
+    const provider = appleProvider(environment, bytes, () => {}, fetcher);
+    if (["wrong-sha", "foreign-file", "foreign-version"].includes(scenario)) await assert.rejects(provider.recoverUpload(m, receipt));
+    else await provider.recoverUpload(m, receipt);
+    assert.equal(commits, scenario === "owned" ? 1 : 0, scenario);
+  }
+});
+
+test("Apple upload durably acknowledges exact bytes before the checksum-free original file commit", async () => {
+  const bytes = Buffer.from("fixture"), sha256 = createHash("sha256").update(bytes).digest("hex"),
+    md5 = createHash("md5").update(bytes).digest("hex"),
+    m = { ...manifest, artifacts: { ...manifest.artifacts, ios: { sha256, bytes: bytes.length } } },
+    receipts = [], receipt = { candidateId: m.candidateId, platform: "ios", stage: Stage.Sending };
+  let puts = 0, commits = 0;
+  const upload = { id: "upload", attributes: { cfBundleShortVersionString: m.version,
+    cfBundleVersion: m.iosBuild, platform: "IOS", state: { state: "COMPLETE" } } };
+  const fetcher = async (url, options) => {
+    url = String(url);
+    if (url === "https://storage.example/original") {
+      puts++;
+      assert.equal(options.method, "PUT");
+      assert.deepEqual(options.body, bytes);
+      assert.equal(receipts.at(-1).fileSha256, sha256);
+      assert.equal(receipts.at(-1).transferComplete, undefined);
+      return new Response("", { status: 200 });
+    }
+    if (url.endsWith("/apps/12/buildUploads?limit=200")) return response({ data: [] });
+    if (url.endsWith("/buildUploads") && options.method === "POST") return response({ data: upload });
+    if (url.endsWith("/buildUploadFiles") && options.method === "POST") return response({ data: { id: "file", attributes: {
+      uploadOperations: [{ method: "PUT", url: "https://storage.example/original", offset: 0, length: bytes.length, requestHeaders: [] }],
+    } } });
+    if (options.method === "PATCH") {
+      commits++;
+      assert.equal(puts, 1);
+      assert.equal(receipts.at(-1).transferComplete, true);
+      assert.equal(receipts.at(-1).fileId, "file");
+      assert.deepEqual(JSON.parse(options.body).data.attributes, { uploaded: true });
+      return response({});
+    }
+    if (url.includes("/buildUploadFiles")) return response({ data: [{ id: "file", attributes: {
+      uti: "com.apple.ipa", fileSize: bytes.length, assetDeliveryState: { state: "COMPLETE" },
+      sourceFileChecksums: { file: { algorithm: "MD5", hash: md5 } },
+    } }] });
+    if (url.includes("/betaGroups/owned/builds")) return response({ data: [] });
+    return response({ data: upload, included: [{ type: "builds", id: "build", attributes: { buildAudienceType: "INTERNAL_ONLY" } }] });
+  };
+  const result = await appleProvider(environment, bytes, r => receipts.push(structuredClone(r)), fetcher).upload(m, receipt);
+  assert.equal(result.state, "present");
+  assert.equal(result.sha256, sha256);
+  assert.equal(puts, 1);
+  assert.equal(commits, 1);
 });

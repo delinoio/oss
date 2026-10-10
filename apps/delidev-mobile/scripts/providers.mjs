@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createPrivateKey, sign } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { Identity } from "./beta.mjs";
 const appleOrigin = "https://api.appstoreconnect.apple.com",
   googleOrigin = "https://androidpublisher.googleapis.com";
@@ -105,15 +105,24 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       ).data ?? []
     );
   }
-  async function proof(m, upload) {
+  async function proof(m, upload, r = {}) {
     if (!sameUpload(upload, m))
       throw new Error("Apple original version identity mismatch");
     const matching = (await files(upload.id)).filter(
       (f) =>
         f.attributes?.uti === "com.apple.ipa" &&
-        f.attributes?.sourceFileChecksums?.file?.algorithm === "SHA_256" &&
-        f.attributes.sourceFileChecksums.file.hash === m.artifacts.ios.sha256 &&
-        f.attributes.fileSize === m.artifacts.ios.bytes,
+        f.attributes.fileSize === m.artifacts.ios.bytes &&
+        (f.attributes?.sourceFileChecksums?.file?.algorithm === "SHA_256" &&
+          f.attributes.sourceFileChecksums.file.hash === m.artifacts.ios.sha256 ||
+          // IPA uploads return MD5 despite the generic SHA_256 schema. Only the
+          // retained original file may corroborate locally reverified SHA-256
+          // bytes; never adopt a handleless inventory match using MD5.
+          r.candidateId === m.candidateId && r.providerId === upload.id &&
+          r.fileId === f.id && bytes.length === m.artifacts.ios.bytes &&
+          createHash("sha256").update(bytes).digest("hex") === m.artifacts.ios.sha256 &&
+          f.attributes.assetDeliveryState?.state === "COMPLETE" &&
+          f.attributes.sourceFileChecksums?.file?.algorithm === "MD5" &&
+          f.attributes.sourceFileChecksums.file.hash === createHash("md5").update(bytes).digest("hex")),
     );
     if (matching.length !== 1 || upload.attributes.state?.state !== "COMPLETE")
       return { state: "unknown" };
@@ -172,12 +181,31 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       )
         throw new Error("Apple internal group identity mismatch");
     },
+    async recoverUpload(m, r) {
+      if (!r.transferComplete) return;
+      if (r.candidateId !== m.candidateId || !r.providerId || !r.fileId ||
+          r.fileSha256 !== m.artifacts.ios.sha256 || r.fileBytes !== bytes.length ||
+          createHash("sha256").update(bytes).digest("hex") !== r.fileSha256)
+        throw new Error("Apple original transfer receipt mismatch");
+      const upload = (await api(`/v1/buildUploads/${encodeURIComponent(r.providerId)}`)).data;
+      if (!sameUpload(upload, m)) throw new Error("Apple original upload mismatch");
+      const file = (await files(upload.id)).find(f => f.id === r.fileId);
+      if (!file || file.attributes?.uti !== "com.apple.ipa" ||
+          file.attributes.fileSize !== r.fileBytes)
+        throw new Error("Apple original transfer file mismatch");
+      if (file.attributes.assetDeliveryState?.state === "AWAITING_UPLOAD")
+        await api(`/v1/buildUploadFiles/${encodeURIComponent(r.fileId)}`, {
+          method: "PATCH", body: { data: { type: "buildUploadFiles", id: r.fileId,
+            attributes: { uploaded: true } } },
+        });
+    },
     async inspect(m, r) {
       if (r.providerId)
         return proof(
           m,
           (await api(`/v1/buildUploads/${encodeURIComponent(r.providerId)}`))
             .data,
+          r,
         );
       // Initial POST acknowledgement loss has no handle. Inspect every bounded
       // page and accept only one source-bound upload; never create a replacement.
@@ -197,7 +225,7 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
         } else path = "";
       }
       if (path || matches.length !== 1) return { state: "unknown" };
-      return proof(m, matches[0]);
+      return proof(m, matches[0], r);
     },
     async upload(m, r) {
       // Read the complete bounded inventory before allocating an upload. Do not
@@ -266,6 +294,8 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       ).data;
       if (!file?.id) throw new Error("Apple original file identity missing");
       r.fileId = file.id;
+      r.fileSha256 = m.artifacts.ios.sha256;
+      r.fileBytes = bytes.length;
       await checkpoint({ ...r });
       let offset = 0;
       for (const operation of file.attributes?.uploadOperations ?? []) {
@@ -306,18 +336,18 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       }
       if (offset !== bytes.length)
         throw new Error("Apple upload descriptor coverage incomplete");
+      r.transferComplete = true;
+      await checkpoint({ ...r });
+      // Apple's IPA endpoint rejects the optional generic checksum attributes.
+      // Commit only uploaded=true and verify its returned original-file MD5
+      // against candidate bytes whose source/signature/SHA-256 stay immutable.
       await api(`/v1/buildUploadFiles/${encodeURIComponent(file.id)}`, {
         method: "PATCH",
         body: {
           data: {
             type: "buildUploadFiles",
             id: file.id,
-            attributes: {
-              uploaded: true,
-              sourceFileChecksums: {
-                file: { algorithm: "SHA_256", hash: m.artifacts.ios.sha256 },
-              },
-            },
+            attributes: { uploaded: true },
           },
         },
       });
@@ -326,6 +356,7 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       return proof(
         m,
         (await api(`/v1/buildUploads/${encodeURIComponent(upload.id)}`)).data,
+        r,
       );
     },
     async assignInternal(m, r) {

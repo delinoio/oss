@@ -17,6 +17,11 @@ on:
         description: Exact source commit for both platforms
         type: string
         required: true
+      recovery_sha:
+        description: Reviewed workflow-code SHA for explicit original-candidate resume only
+        type: string
+        default: ""
+        required: false
       version:
         description: Shared app version (major.minor.patch)
         type: string
@@ -46,6 +51,7 @@ concurrency:
 env:
   DELIDEV_MOBILE_TARGET: ${{ inputs.target }}
   DELIDEV_MOBILE_SOURCE_SHA: ${{ inputs.source_sha }}
+  DELIDEV_MOBILE_RECOVERY_SHA: ${{ inputs.recovery_sha }}
   DELIDEV_MOBILE_VERSION: ${{ inputs.version }}
   DELIDEV_MOBILE_IOS_BUILD: ${{ inputs.ios_build }}
   DELIDEV_MOBILE_ANDROID_CODE: ${{ inputs.android_code }}
@@ -67,7 +73,7 @@ jobs:
         run: |
           node <<'JS'
           const e=process.env;
-          if(e.DELIDEV_MOBILE_SOURCE_SHA!==e.GITHUB_SHA)throw Error('Workflow and original candidate must use the same exact source revision');
+          if(e.DELIDEV_MOBILE_RECOVERY_SHA){if(e.MODE!=='resume'||!/^[a-f0-9]{40}$/.test(e.DELIDEV_MOBILE_RECOVERY_SHA)||e.DELIDEV_MOBILE_RECOVERY_SHA!==e.GITHUB_SHA)throw Error('Explicit resume must pin reviewed recovery code');}else if(e.DELIDEV_MOBILE_SOURCE_SHA!==e.GITHUB_SHA)throw Error('Workflow and original candidate must use the same exact source revision');
           if(!/^[a-f0-9]{40}$/.test(e.DELIDEV_MOBILE_SOURCE_SHA)||!/^\d+\.\d+\.\d+$/.test(e.DELIDEV_MOBILE_VERSION)||!/^[1-9]\d{0,17}$/.test(e.DELIDEV_MOBILE_IOS_BUILD)||!['both','ios'].includes(e.DELIDEV_MOBILE_TARGET)||(e.DELIDEV_MOBILE_TARGET==='both'&&(!/^[1-9]\d{0,9}$/.test(e.DELIDEV_MOBILE_ANDROID_CODE)||Number(e.DELIDEV_MOBILE_ANDROID_CODE)>2100000000))||(e.DELIDEV_MOBILE_TARGET==='ios'&&!!e.DELIDEV_MOBILE_ANDROID_CODE)||!['dry-run','package','submit','resume'].includes(e.MODE))throw Error('Invalid mobile beta input');
           if(['submit','resume'].includes(e.MODE)&&!/^\d+$/.test(e.CANDIDATE))throw Error('Original complete candidate artifact ID required');
           if(e.RECEIPTS&&!/^\d+$/.test(e.RECEIPTS))throw Error('Invalid original receipt artifact ID');
@@ -194,6 +200,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { ref: "${{ inputs.source_sha }}", persist-credentials: false }
+      - uses: actions/checkout@v6
+        if: inputs.recovery_sha != ''
+        with:
+          ref: "${{ inputs.recovery_sha }}"
+          path: .mobile-beta-recovery
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
       - name: Verify original candidate provenance before download
@@ -204,7 +216,7 @@ jobs:
             ARTIFACT_ID: "${{ inputs.candidate_artifact_id }}",
             RECEIPT_ID: "${{ inputs.receipt_artifact_id }}",
           }
-        run: node apps/delidev-mobile/scripts/provenance.mjs
+        run: node "${{ inputs.recovery_sha != '' && '.mobile-beta-recovery/' || '' }}apps/delidev-mobile/scripts/provenance.mjs"
       - uses: actions/download-artifact@v8
         with:
           {
@@ -225,6 +237,7 @@ jobs:
       - name: Explicit internal-only submission or original reconciliation
         env:
           MODE: ${{ inputs.mode }}
+          DELIDEV_MOBILE_CANDIDATE_DIR: ${{ github.workspace }}/apps/delidev-mobile/artifacts
           DELIDEV_MOBILE_APPLE_ISSUER: ${{ secrets.DELIDEV_MOBILE_APPLE_ISSUER }}
           DELIDEV_MOBILE_APPLE_KEY_ID: ${{ secrets.DELIDEV_MOBILE_APPLE_KEY_ID }}
           DELIDEV_MOBILE_APPLE_PRIVATE_KEY: ${{ secrets.DELIDEV_MOBILE_APPLE_PRIVATE_KEY }}
@@ -237,7 +250,7 @@ jobs:
           DELIDEV_MOBILE_ANDROID_KEY_ALIAS: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEY_ALIAS }}
           DELIDEV_MOBILE_ANDROID_KEY_PASSWORD: ${{ secrets.DELIDEV_MOBILE_ANDROID_KEY_PASSWORD }}
           DELIDEV_MOBILE_ANDROID_STORE_PASSWORD: ${{ secrets.DELIDEV_MOBILE_ANDROID_STORE_PASSWORD }}
-        run: node apps/delidev-mobile/scripts/pipeline.mjs "$MODE"
+        run: node "${{ inputs.recovery_sha != '' && '.mobile-beta-recovery/' || '' }}apps/delidev-mobile/scripts/pipeline.mjs" "$MODE"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

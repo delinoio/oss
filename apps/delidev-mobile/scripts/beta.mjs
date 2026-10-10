@@ -122,6 +122,8 @@ export async function distribute(
     };
   await provider.preflight(manifest); // Must validate account, signer and INTERNAL-only target before any mutation.
   if (receipt.stage === Stage.Unknown || receipt.stage === Stage.Sending) {
+    // Only retained positive transfer proof can finish the original file commit.
+    await provider.recoverUpload?.(manifest, receipt);
     const original = await provider.inspect(manifest, receipt);
     if (
       original.state !== "present" ||

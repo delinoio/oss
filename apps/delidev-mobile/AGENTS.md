@@ -26,3 +26,5 @@
 - Direct iOS Cargo builds must pass the configured minimum system version to the Swift linker; do not rely on its iOS 13 fallback or a warm local build.
 
 - Android beta build hosts install the exact SDK package `platforms;android-37.0` with command-line tools 16111833; the integer-only `android-37` package is absent from the official inventory. This build SDK does not alter the API 31 runtime minimum.
+
+- Apple IPA commits send only `uploaded: true`. Its returned MD5 corroborates locally reverified SHA-256 bytes only for retained candidate/upload/file receipt ownership and complete exact-size files; no handleless MD5 adoption. Save positive original transfer proof before metadata commit. Explicit repaired resume pins the reviewed recovery-code SHA independently while checking the original clean candidate source and immutable bytes; no rebuild, re-sign or replacement upload.

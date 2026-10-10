@@ -87,3 +87,17 @@ test("foreign candidate or invalid stage rejects before provider access and pres
     } finally { rmSync(directory, { recursive: true, force: true }); }
   }
 });
+
+test("repair source checks preserve the original clean checkout and pin reviewed code independently", async () => {
+  const { verifySourceRecords } = await import("./pipeline.mjs");
+  const input = { sourceSha: "a".repeat(40) }, original = { sha: input.sourceSha, dirty: false },
+    recovery = { sha: "b".repeat(40), dirty: false },
+    environment = { MODE: "resume", GITHUB_SHA: recovery.sha, DELIDEV_MOBILE_RECOVERY_SHA: recovery.sha };
+  assert.doesNotThrow(() => verifySourceRecords(input, original, recovery, environment));
+  for (const record of [{ ...original, sha: recovery.sha }, { ...original, dirty: true }])
+    assert.throws(() => verifySourceRecords(input, record, recovery, environment));
+  for (const record of [{ ...recovery, sha: original.sha }, { ...recovery, dirty: true }])
+    assert.throws(() => verifySourceRecords(input, original, record, environment));
+  for (const delta of [{ MODE: "submit" }, { GITHUB_SHA: original.sha }, { DELIDEV_MOBILE_RECOVERY_SHA: "bad" }])
+    assert.throws(() => verifySourceRecords(input, original, recovery, { ...environment, ...delta }));
+});

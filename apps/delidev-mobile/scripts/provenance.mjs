@@ -6,6 +6,8 @@ export function verifyProvenance(artifact, run, input, receipt = false) {
   const prefix = receipt
     ? "delidev-mobile-receipts-"
     : `delidev-mobile-candidate-${input.sourceSha}-${input.version}-${input.iosBuild}-${input.target === "ios" ? "ios" : input.androidCode}`;
+  const acceptedSource = receipt && input.recoverySha && run?.head_sha === input.recoverySha
+    ? input.recoverySha : input.sourceSha;
   if (
     !artifact ||
     !Number.isSafeInteger(artifact.workflow_run?.id) ||
@@ -14,8 +16,8 @@ export function verifyProvenance(artifact, run, input, receipt = false) {
     artifact.expired ||
     !artifact.name.startsWith(prefix) ||
     (!receipt && artifact.name !== prefix) ||
-    artifact.workflow_run?.head_sha !== input.sourceSha ||
-    run?.head_sha !== input.sourceSha ||
+    artifact.workflow_run?.head_sha !== acceptedSource ||
+    run?.head_sha !== acceptedSource ||
     run.event !== "workflow_dispatch" ||
     run.path !== ".github/workflows/delidev-mobile-beta.yml" ||
     (!receipt && run.conclusion !== "success")
@@ -59,6 +61,7 @@ if (process.argv[1]?.endsWith("/provenance.mjs"))
           {
             target: e.DELIDEV_MOBILE_TARGET ?? "both",
             sourceSha: e.DELIDEV_MOBILE_SOURCE_SHA,
+            recoverySha: e.DELIDEV_MOBILE_RECOVERY_SHA,
             version: e.DELIDEV_MOBILE_VERSION,
             iosBuild: e.DELIDEV_MOBILE_IOS_BUILD,
             androidCode: e.DELIDEV_MOBILE_ANDROID_CODE,

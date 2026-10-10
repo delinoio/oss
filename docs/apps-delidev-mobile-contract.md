@@ -147,7 +147,14 @@ SHA-256 checksums. Conflicting candidate/version reuse is refused. Internal-only
 preflight and immutable provider receipts precede any future upload. All selected platform receipts are stored before any provider is contacted. A
 definitive preflight failure retains the unsubmitted platform as Ready; missing
 receipts during recovery remain Unknown. Apple proof reads the nested processing
-state and the complete bounded internal-group build inventory. Google proof
+state and the complete bounded internal-group build inventory. The IPA endpoint
+rejects optional SHA-256 commit attributes and returns an MD5 file checksum.
+Keep the candidate's source/signature/SHA-256 verification; corroborate those
+bytes only through the original receipt-bound BuildUpload/file ID, exact length,
+completed file and matching returned MD5. Never adopt a handleless match using
+MD5. Retain original file SHA-256/length and positive complete-transfer proof
+before committing `uploaded: true`; explicit recovery may finish that same
+metadata commit, but uncertain transfers cannot resend or replace bytes. Google proof
 distinguishes a new read-only edit from staged membership in the original
 writable edit; only committed internal distribution can complete the receipt.
 Unknown upload outcomes require authoritative inspection of the original provider
@@ -250,7 +257,13 @@ Account/provisioning setup and hosted signing acceptance are owner work.
 
 Do not execute this procedure as ordinary validation. Select a trusted workflow
 ref whose HEAD is the exact `source_sha`. The workflow rejects a different
-workflow/source revision. Enter the same semantic `version`, positive explicit
+workflow/source revision. For an explicitly repaired `resume` only, pin the
+reviewed workflow revision with `recovery_sha` while `source_sha` remains the
+original candidate revision. Check out and verify both clean revisions
+independently. Recovery code reads the original candidate from the original
+checkout and cannot package, submit a fresh candidate, rebuild or re-sign.
+Receipt provenance accepts only the original or exact selected recovery revision;
+receipt content must still bind the original candidate. Enter the same semantic `version`, positive explicit
 `ios_build`. The default `both` target also requires canonical positive
 `android_code`; select `ios` and leave Android code empty for Apple-only work.
 Apple-only execution requires only Apple variables and secrets.
@@ -269,8 +282,9 @@ Apple-only execution requires only Apple variables and secrets.
    Download the candidate and latest receipt from their independently verified
    original run IDs; never search the current submission run for retained artifacts.
    Submission checks the retained candidate and never rebuilds or re-signs it.
-   Apple validates the exact app/internal group, original BuildUpload/file SHA-256
-   and `INTERNAL_ONLY` processed build before assignment. Google validates the
+   Apple validates the exact app/internal group, original receipt-owned upload/file,
+   locally verified candidate SHA-256, returned file checksum and `INTERNAL_ONLY`
+   processed build before assignment. Google validates the
    exact principal, original bundle version/hash and `internal` release only.
 4. Preserve the receipt artifact even when submission fails. After an uncertain
    response or Apple processing, dispatch `resume` against the original candidate

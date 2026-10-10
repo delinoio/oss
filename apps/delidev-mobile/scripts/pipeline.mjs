@@ -23,7 +23,10 @@ import { iosEnvironment } from "./mobile.mjs";
 import { inspectIos, inspectAndroid } from "./artifacts.mjs";
 import { appleProvider, googleProvider } from "./providers.mjs";
 const app = resolve(dirname(fileURLToPath(import.meta.url)), ".."),
-  root = resolve(app, "../.."),
+  toolRoot = resolve(app, "../.."),
+  root = process.env.DELIDEV_MOBILE_RECOVERY_SHA
+    ? resolve(process.env.GITHUB_WORKSPACE ?? toolRoot)
+    : toolRoot,
   output = resolve(
     process.env.DELIDEV_MOBILE_CANDIDATE_DIR ?? join(app, "artifacts"),
   );
@@ -37,9 +40,9 @@ function run(program, args, cwd = app, env = {}) {
   if (r.error || r.status !== 0)
     throw new Error("Mobile candidate build failed");
 }
-function capture(program, args) {
+function capture(program, args, cwd = root) {
   const r = spawnSync(program, args, {
-    cwd: root,
+    cwd,
     encoding: "utf8",
     maxBuffer: 4 << 20,
   });
@@ -61,11 +64,20 @@ export function inputs(e) {
     androidSigner: e.DELIDEV_MOBILE_ANDROID_SIGNER,
   });
 }
+export function verifySourceRecords(input, original, recovery, environment = {}) {
+  if (original.sha !== input.sourceSha || original.dirty)
+    throw new Error("Candidate source revision or tracked state mismatch");
+  if (environment.DELIDEV_MOBILE_RECOVERY_SHA &&
+      (environment.MODE !== "resume" || !/^[a-f0-9]{40}$/.test(environment.DELIDEV_MOBILE_RECOVERY_SHA) ||
+       recovery?.sha !== environment.DELIDEV_MOBILE_RECOVERY_SHA || recovery.dirty ||
+       environment.GITHUB_SHA !== recovery.sha))
+    throw new Error("Reviewed recovery source revision or mode mismatch");
+}
 export function source(input) {
-  if (capture("git", ["rev-parse", "HEAD"]) !== input.sourceSha)
-    throw new Error("Candidate source revision mismatch");
-  if (capture("git", ["status", "--porcelain", "--untracked-files=no"]))
-    throw new Error("Candidate source has tracked changes");
+  const read = cwd => ({ sha: capture("git", ["rev-parse", "HEAD"], cwd),
+    dirty: !!capture("git", ["status", "--porcelain", "--untracked-files=no"], cwd) });
+  verifySourceRecords(input, read(root), process.env.DELIDEV_MOBILE_RECOVERY_SHA ? read(toolRoot) : undefined,
+    process.env);
 }
 function config(input) {
   const file = join(app, "src-tauri/tauri.conf.json"),
