@@ -26,19 +26,45 @@ export function visibleFocusColor(focus:string,surface:string) {
  const black="#000000",white="#FFFFFF";
  return contrast(black,surface)>=contrast(white,surface)?black:white;
 }
+export function validStoredColors(value:unknown):value is ColorMap {
+ return object(value)&&exact(value,[...colorTokens])&&Object.values(value).every(v=>typeof v==="string"&&/^#[0-9A-Fa-f]{6}$/.test(v));
+}
+const contrastSurfaces = ["background","surface","surface-subtle","surface-muted","surface-inset","surface-hover","surface-selected","selected-background","conversation-background"] as const;
+const contentSurfaces = ["background","surface","surface-subtle","surface-muted"] as const;
+const tintedIndicatorSurfaces = ["surface-inset","surface-hover","surface-selected","selected-background"] as const;
+const admissionPairs: readonly [keyof ColorMap,keyof ColorMap,number][] = [
+ ...contrastSurfaces.flatMap(surface=>[
+  ...(["text","text-secondary","muted","success-text","execution-running"] as const).map(text=>[text,surface,4.5] as [keyof ColorMap,keyof ColorMap,number]),
+  ...(["control-border","selected-border","focus"] as const).map(indicator=>[indicator,surface,3] as [keyof ColorMap,keyof ColorMap,number]),
+ ]),
+ ...contentSurfaces.flatMap(surface=>(["text-subtle","link"] as const).map(text=>[text,surface,4.5] as [keyof ColorMap,keyof ColorMap,number])),
+ ...tintedIndicatorSurfaces.flatMap(surface=>(["text-subtle","link"] as const).map(text=>[text,surface,3] as [keyof ColorMap,keyof ColorMap,number])),
+ ...([ ["selected-text","selected-background"], ["conversation-text","conversation-background"], ["warning-text","warning-background"], ["danger-text","danger-background"], ["on-accent","accent"], ["on-accent","accent-hover"], ["on-inverse","inverse-surface"], ["on-inverse","inverse-hover"], ["on-inverse-muted","inverse-surface"] ] as [keyof ColorMap,keyof ColorMap][]).map(([foreground,background])=>[foreground,background,4.5] as [keyof ColorMap,keyof ColorMap,number]),
+];
+const isBundledColors = (value: ColorMap) => Object.values(palettes).some(theme=>Object.values(theme).some(colors=>colorTokens.every(token=>value[token]===colors[token])));
 export function validColors(value:unknown):value is ColorMap {
- if(!object(value)||!exact(value,[...colorTokens])||!Object.values(value).every(v=>typeof v==="string"&&/^#[0-9A-Fa-f]{6}$/.test(v)))return false;
- const v=value as ColorMap;
- return ([["text","surface"],["text-secondary","surface"],["muted","surface"],["text-subtle","surface"],["on-accent","accent"],["on-accent","accent-hover"],["selected-text","selected-background"],["warning-text","warning-background"],["danger-text","danger-background"],["on-inverse","inverse-surface"]] as [keyof ColorMap,keyof ColorMap][]).every(([a,b])=>contrast(v[a],v[b])>=4.5)&&contrast(v["control-border"],v.surface)>=3;
+ return validStoredColors(value)&&(isBundledColors(value)||admissionPairs.every(([foreground,background,minimum])=>contrast(value[foreground],value[background])>=minimum));
+}
+export function validThemeShape(value:unknown,identity=false):value is ThemeFile|CustomTheme {
+ return object(value)&&exact(value,identity?["version","name","light","dark","id"]:["version","name","light","dark"])&&value.version===1&&typeof value.name==="string"&&value.name.trim().length>0&&[...value.name].length<=80&&!/[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(value.name)&&(!identity||typeof value.id==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id))&&validStoredColors(value.light)&&validStoredColors(value.dark);
 }
 export function validTheme(value:unknown,identity=false):value is ThemeFile|CustomTheme {
- return object(value)&&exact(value,identity?["version","name","light","dark","id"]:["version","name","light","dark"])&&value.version===1&&typeof value.name==="string"&&value.name.trim().length>0&&[...value.name].length<=80&&!/[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(value.name)&&(!identity||typeof value.id==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id))&&validColors(value.light)&&validColors(value.dark);
+ return validThemeShape(value,identity)&&validColors(value.light)&&validColors(value.dark);
+}
+export function validThemeColorsUpdate(value:unknown,previous?:ColorMap):value is ColorMap {
+ return validStoredColors(value)&&((!!previous&&colorTokens.every(token=>previous[token]===value[token]))||validColors(value));
+}
+export function validThemeUpdate(value:unknown,identity=true,previous?:CustomTheme):value is ThemeFile|CustomTheme {
+ return validThemeShape(value,identity)&&validThemeColorsUpdate(value.light,previous?.light)&&validThemeColorsUpdate(value.dark,previous?.dark);
+}
+export function validStoredTheme(value:unknown,identity=false):value is ThemeFile|CustomTheme {
+ return validThemeShape(value,identity);
 }
 export function parseThemeFile(bytes:string):ThemeFile { if(new TextEncoder().encode(bytes).length>32768)throw new Error("Invalid theme");const value:unknown=JSON.parse(bytes);if(!validTheme(value))throw new Error("Invalid theme");return value; }
 export function parsePreferences(value:unknown):AppearancePreferences {
  const defaults=defaultPreferences();if(!object(value)||!exact(value,Object.keys(defaults)))throw new Error("Invalid preferences");
  for(const key of Object.keys(defaults) as (keyof AppearancePreferences)[]){const v=value[key];if(typeof defaults[key]==="boolean"&&typeof v!=="boolean")throw new Error("Invalid preferences");}
- if(![0,12,14,16,18].includes(value.composer_size as number)||![0,12,14,16,18].includes(value.conversation_size as number)||![value.density,value.composer_layout].every(v=>Object.values(Layout).includes(v as Layout))||!Object.values(StatusPresentation).includes(value.status as StatusPresentation)||!Object.values(ImageSize).includes(value.image_size as ImageSize)||![value.tool_disclosure,value.reasoning_disclosure,value.compaction_disclosure].every(v=>Object.values(DisclosureDefault).includes(v as DisclosureDefault))||!Array.isArray(value.custom_themes)||value.custom_themes.length>32||!value.custom_themes.every(v=>validTheme(v,true)))throw new Error("Invalid preferences");
+ if(![0,12,14,16,18].includes(value.composer_size as number)||![0,12,14,16,18].includes(value.conversation_size as number)||![value.density,value.composer_layout].every(v=>Object.values(Layout).includes(v as Layout))||!Object.values(StatusPresentation).includes(value.status as StatusPresentation)||!Object.values(ImageSize).includes(value.image_size as ImageSize)||![value.tool_disclosure,value.reasoning_disclosure,value.compaction_disclosure].every(v=>Object.values(DisclosureDefault).includes(v as DisclosureDefault))||!Array.isArray(value.custom_themes)||value.custom_themes.length>32||!value.custom_themes.every(v=>validStoredTheme(v,true)))throw new Error("Invalid preferences");
  const ids=value.custom_themes.map(v=>(v as CustomTheme).id);if(new Set(ids).size!==ids.length||![value.light_palette,value.dark_palette].every(v=>typeof v==="string"&&(Object.values(Palette).includes(v as Palette)||ids.includes(v))))throw new Error("Invalid preferences");return value as unknown as AppearancePreferences;
 }
 export function selectedColors(preferences:AppearancePreferences,dark:boolean):ColorMap { const id=dark?preferences.dark_palette:preferences.light_palette;const theme=preferences.custom_themes.find(t=>t.id===id)??palettes[id as Palette];return theme[dark?"dark":"light"]; }

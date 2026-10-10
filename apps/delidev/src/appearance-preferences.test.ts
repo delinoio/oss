@@ -2,7 +2,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { applyAppearanceColors, contrast, defaultPreferences, palettes, selectedColors, validColors } from "./appearance-preferences";
+import { applyAppearanceColors, contrast, defaultPreferences, parsePreferences, parseThemeFile, palettes, selectedColors, validColors, validStoredColors, validThemeUpdate, type CustomTheme } from "./appearance-preferences";
 
 const originalSheets = document.adoptedStyleSheets;
 const NativeSheet = CSSStyleSheet;
@@ -130,6 +130,25 @@ test("family text, status, selection, controls and focus retain their actual sur
       for (const [foreground, background] of [["selected-text", "selected-background"], ["conversation-text", "conversation-background"], ["warning-text", "warning-background"], ["danger-text", "danger-background"], ["on-accent", "accent"], ["on-accent", "accent-hover"], ["on-inverse", "inverse-surface"], ["on-inverse", "inverse-hover"], ["on-inverse-muted", "inverse-surface"]] as const) pair(foreground, background, 4.5);
     }
   }
+});
+
+test("new custom themes enforce documented contrast while saved maps remain grandfathered", () => {
+  const weakLight = { ...palettes.default.light, link: palettes.default.light.surface, focus: palettes.default.light.surface };
+  const weakDark = { ...palettes.default.dark, link: palettes.default.dark.surface, focus: palettes.default.dark.surface };
+  const saved: CustomTheme = { id: "019b0000-0000-7000-8000-000000000019", version: 1, name: "Earlier custom", light: weakLight, dark: weakDark };
+  const preferences = { ...defaultPreferences(), light_palette: saved.id, dark_palette: saved.id, custom_themes: [saved] };
+
+  expect(validStoredColors(weakLight)).toBe(true);
+  expect(validColors(weakLight)).toBe(false);
+  expect(validColors(palettes.default.light)).toBe(true);
+  expect(validThemeUpdate({ version: 1, id: "019b0000-0000-7000-8000-000000000020", name: "Default duplicate", light: palettes.default.light, dark: palettes.default.dark })).toBe(true);
+  expect(() => parseThemeFile(JSON.stringify({ version: 1, name: "New custom", light: weakLight, dark: weakDark }))).toThrow("Invalid theme");
+  expect(parseThemeFile(JSON.stringify({ version: 1, name: "Default duplicate", light: palettes.default.light, dark: palettes.default.dark }))).toEqual({ version: 1, name: "Default duplicate", light: palettes.default.light, dark: palettes.default.dark });
+  expect(parsePreferences(preferences)).toEqual(preferences);
+  expect(validThemeUpdate(saved, true, saved)).toBe(true);
+  expect(validThemeUpdate({ ...saved, name: "Renamed custom" }, true, saved)).toBe(true);
+  expect(validThemeUpdate({ ...saved, light: { ...saved.light, accent: "#123456" } }, true, saved)).toBe(false);
+  expect(validThemeUpdate(saved, true)).toBe(false);
 });
 
 test("Default map bytes and previously saved custom duplicates remain original", () => {

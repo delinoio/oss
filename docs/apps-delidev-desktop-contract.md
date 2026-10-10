@@ -2868,10 +2868,23 @@ synthetic preview pixels are supporting evidence.
   `mix(#000000,#087B78,.15)` to preserve its teal status meaning.
 
 Normal text and links require 4.5:1 contrast against their actual content
-surfaces. Required control, focus and disclosure/icon indicators require 3:1
-against their adjacent surfaces. Saved bundled references select the updated
-map; existing custom maps, including earlier duplicates, retain their stored
-values without a migration or preference rewrite. Palette changes preserve
+surfaces. For theme admission, `text`, `text-secondary`, `muted`,
+`success-text` and `execution-running` meet that threshold against
+`background`, `surface`, `surface-subtle`, `surface-muted`, `surface-inset`,
+`surface-hover`, `surface-selected`, `selected-background` and
+`conversation-background`. `text-subtle` and `link` meet 4.5:1 against the
+first four content surfaces and 3:1 against the tinted `surface-inset`,
+`surface-hover`, `surface-selected` and `selected-background` indicator
+surfaces. Required `control-border`, `selected-border` and `focus` indicators
+meet 3:1 against the same nine adjacent surfaces. Selected, conversation,
+warning, danger, accent and inverse foreground/background pairs retain their
+4.5:1 thresholds. Frontend and native admission use the same pairs. Exact
+token-value matches for immutable bundled maps retain the established
+duplicate/import/save flow. Other new themes and saves that change custom color
+maps enforce these checks; unchanged maps in existing custom themes, including
+earlier duplicates, remain grandfathered and load without a contrast
+revalidation or preference rewrite.
+Saved bundled references select the updated map. Palette changes preserve
 geometry, labels, keyboard/focus ownership, mounted drafts, request identities,
 independent mode selection and native revision/recovery behavior. Terminal,
 backdrop, shadow and OS-native surfaces retain their existing treatment. No

@@ -234,26 +234,109 @@ fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
     {
         return false;
     }
+    true
+}
+fn valid_new_theme_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
+    const CONTRAST_SURFACES: &[&str] = &[
+        "background",
+        "surface",
+        "surface-subtle",
+        "surface-muted",
+        "surface-inset",
+        "surface-hover",
+        "surface-selected",
+        "selected-background",
+        "conversation-background",
+    ];
+    const CONTENT_SURFACES: &[&str] = &["background", "surface", "surface-subtle", "surface-muted"];
+    const TINTED_INDICATOR_SURFACES: &[&str] = &[
+        "surface-inset",
+        "surface-hover",
+        "surface-selected",
+        "selected-background",
+    ];
+    if !valid_colors(value) {
+        return false;
+    }
+    if is_bundled_colors(value) {
+        return true;
+    }
     let contrast = |a: &str, b: &str| {
         let x = luminance(&value[a]);
         let y = luminance(&value[b]);
         (x.max(y) + 0.05) / (x.min(y) + 0.05)
     };
+    for surface in CONTRAST_SURFACES {
+        for foreground in [
+            "text",
+            "text-secondary",
+            "muted",
+            "success-text",
+            "execution-running",
+        ] {
+            if contrast(foreground, surface) < 4.5 {
+                return false;
+            }
+        }
+        for foreground in ["control-border", "selected-border", "focus"] {
+            if contrast(foreground, surface) < 3.0 {
+                return false;
+            }
+        }
+    }
+    for surface in CONTENT_SURFACES {
+        for foreground in ["text-subtle", "link"] {
+            if contrast(foreground, surface) < 4.5 {
+                return false;
+            }
+        }
+    }
+    for surface in TINTED_INDICATOR_SURFACES {
+        for foreground in ["text-subtle", "link"] {
+            if contrast(foreground, surface) < 3.0 {
+                return false;
+            }
+        }
+    }
     [
-        ("text", "surface"),
-        ("text-secondary", "surface"),
-        ("muted", "surface"),
-        ("text-subtle", "surface"),
-        ("on-accent", "accent"),
-        ("on-accent", "accent-hover"),
         ("selected-text", "selected-background"),
+        ("conversation-text", "conversation-background"),
         ("warning-text", "warning-background"),
         ("danger-text", "danger-background"),
+        ("on-accent", "accent"),
+        ("on-accent", "accent-hover"),
         ("on-inverse", "inverse-surface"),
+        ("on-inverse", "inverse-hover"),
+        ("on-inverse-muted", "inverse-surface"),
     ]
     .into_iter()
-    .all(|(a, b)| contrast(a, b) >= 4.5)
-        && contrast("control-border", "surface") >= 3.0
+    .all(|(foreground, surface)| contrast(foreground, surface) >= 4.5)
+}
+fn is_bundled_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
+    let Ok(palettes) = serde_json::from_str::<std::collections::BTreeMap<String, PaletteColors>>(
+        include_str!("../../src/appearance-palettes.json"),
+    ) else {
+        return false;
+    };
+    palettes
+        .values()
+        .any(|palette| palette.light == *value || palette.dark == *value)
+}
+fn valid_new_theme_changes(previous: &Preferences, next: &Preferences) -> bool {
+    for theme in &next.custom_themes {
+        let previous_theme = previous.custom_themes.iter().find(|old| old.id == theme.id);
+        if previous_theme.is_none_or(|old| old.light != theme.light)
+            && !valid_new_theme_colors(&theme.light)
+        {
+            return false;
+        }
+        if previous_theme.is_none_or(|old| old.dark != theme.dark)
+            && !valid_new_theme_colors(&theme.dark)
+        {
+            return false;
+        }
+    }
+    true
 }
 fn luminance(color: &str) -> f64 {
     let channel = |start: usize| {
@@ -404,7 +487,7 @@ impl AppearanceStore {
         if state.problem.is_some() || state.revision == u32::MAX {
             return state.clone();
         }
-        if !preferences.valid() {
+        if !preferences.valid() || !valid_new_theme_changes(&state.preferences, &preferences) {
             let mut rejected = state.clone();
             rejected.problem = Some(AppearanceProblem::InvalidDocument);
             return rejected;
@@ -591,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_themes_require_complete_contrast_maps_and_unique_original_references() {
+    fn custom_themes_require_complete_maps_and_unique_original_references() {
         let source: serde_json::Value =
             serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
         let theme = CustomTheme {
@@ -601,6 +684,8 @@ mod tests {
             light: serde_json::from_value(source["default"]["light"].clone()).unwrap(),
             dark: serde_json::from_value(source["default"]["dark"].clone()).unwrap(),
         };
+        assert!(valid_new_theme_colors(&theme.light));
+        assert!(valid_new_theme_colors(&theme.dark));
         let mut preferences = Preferences::default();
         preferences.custom_themes.push(theme.clone());
         preferences.light_palette = theme.id.clone();
@@ -611,7 +696,8 @@ mod tests {
         preferences.custom_themes[0]
             .light
             .insert("text".into(), "#FFFFFF".into());
-        assert!(!preferences.valid());
+        assert!(preferences.valid());
+        assert!(!valid_new_theme_colors(&preferences.custom_themes[0].light));
         preferences.custom_themes[0] = theme.clone();
         preferences.custom_themes[0]
             .dark
@@ -619,6 +705,76 @@ mod tests {
         assert!(!preferences.valid());
         preferences.custom_themes = vec![theme.clone(); 33];
         assert!(!preferences.valid());
+    }
+
+    #[test]
+    fn new_theme_admission_enforces_contrast_and_preserves_saved_maps() {
+        let source: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let light: std::collections::BTreeMap<String, String> =
+            serde_json::from_value(source["default"]["light"].clone()).unwrap();
+        let dark: std::collections::BTreeMap<String, String> =
+            serde_json::from_value(source["default"]["dark"].clone()).unwrap();
+        assert!(valid_new_theme_colors(&light));
+        assert!(valid_new_theme_colors(&dark));
+
+        let mut weak_light = light;
+        let mut weak_dark = dark;
+        weak_light.insert("link".into(), weak_light["surface"].clone());
+        weak_light.insert("focus".into(), weak_light["surface"].clone());
+        weak_dark.insert("link".into(), weak_dark["surface"].clone());
+        weak_dark.insert("focus".into(), weak_dark["surface"].clone());
+        assert!(valid_colors(&weak_light));
+        assert!(!valid_new_theme_colors(&weak_light));
+
+        let theme = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Earlier custom".into(),
+            light: weak_light,
+            dark: weak_dark,
+        };
+        let mut saved = Preferences::default();
+        saved.light_palette = theme.id.clone();
+        saved.dark_palette = theme.id.clone();
+        saved.custom_themes.push(theme.clone());
+        assert!(saved.valid());
+        assert!(valid_new_theme_changes(&saved, &saved));
+
+        let mut renamed = saved.clone();
+        renamed.custom_themes[0].name = "Renamed custom".into();
+        assert!(valid_new_theme_changes(&saved, &renamed));
+
+        let mut edited = saved.clone();
+        edited.custom_themes[0]
+            .light
+            .insert("accent".into(), "#123456".into());
+        assert!(!valid_new_theme_changes(&saved, &edited));
+        assert!(valid_new_theme_changes(&Preferences::default(), &saved));
+        let mut weak = saved.clone();
+        weak.custom_themes[0].light.insert(
+            "link".into(),
+            weak.custom_themes[0].light["surface"].clone(),
+        );
+        weak.custom_themes[0].light.insert(
+            "focus".into(),
+            weak.custom_themes[0].light["surface"].clone(),
+        );
+        assert!(!valid_new_theme_changes(&Preferences::default(), &weak));
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("appearance.json");
+        let bytes = serde_json::to_vec(&Document {
+            version: 2,
+            theme: Theme::Dark,
+            preferences: Some(saved.clone()),
+        })
+        .unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let store = AppearanceStore::new(Some(directory.path().into()));
+        let loaded = store.read();
+        assert_eq!(loaded.preferences, saved);
+        assert_eq!(fs::read(path).unwrap(), bytes);
     }
 
     #[test]

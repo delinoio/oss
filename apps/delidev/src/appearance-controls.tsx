@@ -4,13 +4,13 @@ import { newRequestId } from "@delinoio/delidev-api-client";
 import { Modal } from "./ui";
 import { copy, useLocale, type MessageKey } from "./localization";
 import { useAppearance } from "./appearance";
-import { appearanceIdentity, colorTokens, defaultPreferences, palettes, Palette, Layout, StatusPresentation, ImageSize, DisclosureDefault, parseThemeFile, validColors, validTheme, type AppearancePreferences, type CustomTheme, type ThemeFile } from "./appearance-preferences";
+import { appearanceIdentity, colorTokens, defaultPreferences, palettes, Palette, Layout, StatusPresentation, ImageSize, DisclosureDefault, parseThemeFile, validThemeShape, validThemeColorsUpdate, validThemeUpdate, type AppearancePreferences, type CustomTheme, type ThemeFile } from "./appearance-preferences";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 const label=(key:string)=>copy(`appearance.v2.${key}` as MessageKey);
 function ColorPreview({ draft }: {draft:ThemeFile}) {
  const ref=useRef<HTMLDivElement>(null);
  useLayoutEffect(()=>{
-  if(typeof CSSStyleSheet.prototype.replaceSync!=="function"||!validTheme(draft))return;
+  if(typeof CSSStyleSheet.prototype.replaceSync!=="function"||!validThemeShape(draft))return;
   const sheets=["light","dark"].map(mode=>{const sheet=new CSSStyleSheet();sheet.replaceSync(`.appearance-preview-${mode} {}`);const rule=sheet.cssRules[0] as CSSStyleRule;for(const [token,value] of Object.entries(draft[mode as "light"|"dark"]))rule.style.setProperty(`--${token}`,value);return sheet;});
   document.adoptedStyleSheets=[...document.adoptedStyleSheets,...sheets];return ()=>{document.adoptedStyleSheets=document.adoptedStyleSheets.filter(v=>!sheets.includes(v));};
  },[draft]);
@@ -19,11 +19,13 @@ function ColorPreview({ draft }: {draft:ThemeFile}) {
 function ThemeEditor({initial,revision,close}: {initial:CustomTheme;revision:number;close:()=>void}) {
  const {snapshot,operation,update}=useAppearance();const [draft,setDraft]=useState(initial),[error,setError]=useState(false),[submitted,setSubmitted]=useState(false);
  const changed=snapshot.revision!==revision;
+ const previous=snapshot.preferences?.custom_themes.find(theme=>theme.id===draft.id);
+ const validMode=(mode:"light"|"dark")=>validThemeColorsUpdate(draft[mode],previous?.[mode]);
  useEffect(()=>{if(submitted && snapshot.problem===null && snapshot.revision>revision && snapshot.preferences?.custom_themes.some(t=>appearanceIdentity(t)===appearanceIdentity(draft)))close();},[submitted,snapshot,draft,revision,close]);
- return <Modal title={label("editTheme")} close={close}><form onSubmit={event=>{event.preventDefault();if(!validTheme(draft,true)){setError(true);return;}if(changed||snapshot.problem||operation)return;const p=snapshot.preferences??defaultPreferences();const custom=p.custom_themes.filter(t=>t.id!==draft.id);if(custom.length>=32){setError(true);return;}setSubmitted(true);update({...p,custom_themes:[...custom,draft]},revision);}}>
+ return <Modal title={label("editTheme")} close={close}><form onSubmit={event=>{event.preventDefault();if(!validThemeUpdate(draft,true,previous)){setError(true);return;}if(changed||snapshot.problem||operation)return;const p=snapshot.preferences??defaultPreferences();const custom=p.custom_themes.filter(t=>t.id!==draft.id);if(custom.length>=32){setError(true);return;}setSubmitted(true);update({...p,custom_themes:[...custom,draft]},revision);}}>
  <label>{label("themeName")}<input aria-invalid={error && (!draft.name.trim() || [...draft.name].length>80)} value={draft.name} onChange={event=>{setError(false);setDraft({...draft,name:event.target.value});}} /></label>
  <ColorPreview draft={draft}/>
- <p>{label("tokenHelp")}</p><div className="appearance-token-grid">{colorTokens.map(token=><fieldset key={token}><legend>{token}</legend>{(["light","dark"] as const).map(mode=><label key={mode}>{label(mode)}<input aria-invalid={error && (!/^#[0-9a-fA-F]{6}$/.test(draft[mode][token]) || !validColors(draft[mode]))} value={draft[mode][token]} aria-label={`${label(mode)} ${token}`} onChange={event=>{setError(false);setDraft({...draft,[mode]:{...draft[mode],[token]:event.target.value}});}} /></label>)}{error && (!validColors(draft.light)||!validColors(draft.dark))?<p role="alert">{label("invalidTheme")}</p>:null}</fieldset>)}</div>
+ <p>{label("tokenHelp")}</p><div className="appearance-token-grid">{colorTokens.map(token=><fieldset key={token}><legend>{token}</legend>{(["light","dark"] as const).map(mode=><label key={mode}>{label(mode)}<input aria-invalid={error && (!/^#[0-9a-fA-F]{6}$/.test(draft[mode][token]) || !validMode(mode))} value={draft[mode][token]} aria-label={`${label(mode)} ${token}`} onChange={event=>{setError(false);setDraft({...draft,[mode]:{...draft[mode],[token]:event.target.value}});}} /></label>)}{error && (!validMode("light")||!validMode("dark"))?<p role="alert">{label("invalidTheme")}</p>:null}</fieldset>)}</div>
  {error?<p role="alert">{label("invalidTheme")}</p>:null}
  {changed?<p role="alert">{label("draftConflict")}</p>:null}
  <div className="appearance-actions"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" onClick={close}>{label("cancel")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Save} type="submit" disabled={changed||!!snapshot.problem||!!operation}>{label("saveTheme")}</SettingsActionButton></div>

@@ -1,4 +1,4 @@
-import {validColors, type ColorMap} from "./appearance-preferences";
+import {validStoredColors, type ColorMap} from "./appearance-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { DateFormatPreference } from "./timestamp-format";
 import { SupportedLanguage } from "./localization";
@@ -31,7 +31,7 @@ export function parseTrayPanel(value: unknown, instance: string): TrayPanelSnaps
   try {
     if (!data || !fields(data, ["instance", "windows", "more", "recent", "theme", "language", "date_format", "colors"]) || data.instance !== instance || !id.test(data.instance) || !Array.isArray(data.windows) || data.windows.length > 32 || typeof data.more !== "boolean" || (data.recent !== null && !id.test(data.recent)) || !["system", "light", "dark"].includes(data.theme) || !Object.values(SupportedLanguage).includes(data.language) || !Object.values(DateFormatPreference).includes(data.date_format) || data.windows.some(row =>
       !fields(row, ["target", "name", "summary", "stale", "observed_age_ms"]) || !row.target || !fields(row.target, ["label", "instance", "scope", "revision"]) || !bounded(row.target.label, 160) || !id.test(row.target.instance) || (row.target.scope !== "" && !id.test(row.target.scope)) || !integer(row.target.revision, 0xffffffff) || !bounded(row.name, 512) || !row.name || typeof row.stale !== "boolean" || !integer(row.observed_age_ms) || !summary(row.summary)) || new Set(data.windows.map(v => v.target.instance)).size !== data.windows.length) throw new Error();
-    if(data.colors && (!fields(data.colors,["light","dark"]) || !validColors(data.colors.light)||!validColors(data.colors.dark)))throw new Error();
+    if(data.colors && (!fields(data.colors,["light","dark"]) || !validStoredColors(data.colors.light)||!validStoredColors(data.colors.dark)))throw new Error();
     return data;
   } catch { throw new Error("Invalid retained tray snapshot"); }
 }

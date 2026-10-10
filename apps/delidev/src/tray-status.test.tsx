@@ -5,6 +5,7 @@ import { i18n, SupportedLanguage } from "./localization";
 import { DateFormatPreference } from "./timestamp-format";
 import { TrayQuotaState, TraySubscriptionService } from "./tray-types";
 import { TrayPanelAction, parseTrayPanel, type TrayPanelSnapshot } from "./tray-status-model";
+import { palettes } from "./appearance-preferences";
 import { TrayStatus, type TrayPanelBridge } from "./tray-status";
 const instance="11111111-1111-4111-8111-111111111111", first="22222222-2222-4222-8222-222222222222", second="33333333-3333-4333-8333-333333333333", scope="44444444-4444-4444-8444-444444444444";
 function fixture(): TrayPanelSnapshot {
@@ -82,6 +83,8 @@ describe("isolated tray panel",()=>{
 });
 it("rejects foreign instances, authority fields, oversized data, duplicates and impossible quota",()=>{
   const valid=fixture();expect(parseTrayPanel(valid,instance)).toBe(valid);
+  const legacy=fixture();legacy.colors={light:{...palettes.default.light,link:palettes.default.light.surface,focus:palettes.default.light.surface},dark:{...palettes.default.dark,link:palettes.default.dark.surface,focus:palettes.default.dark.surface}};
+  expect(parseTrayPanel(legacy,instance)).toBe(legacy);
   expect(()=>parseTrayPanel({...valid,endpoint:"https://private.test"},instance)).toThrow();
   expect(()=>parseTrayPanel(valid,second)).toThrow();
   expect(()=>parseTrayPanel({...valid,windows:[...valid.windows,valid.windows[0]]},instance)).toThrow();
