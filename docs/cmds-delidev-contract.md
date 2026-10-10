@@ -416,3 +416,21 @@ permanent-deletion enforcement, bounded staging and startup recovery.
 CLI `account oauth complete` and public `update check` select 35 seconds for both the outer command and response-header budget. `account validate` and `provider discover` select 50 seconds for optional OAuth refresh, independent protected settlement and provider inspection. Shorter caller deadlines/cancellation retain priority. Other commands keep their existing limits, and timeout never grants a retry or new mutation identity.
 
 Current protocol 2 pricing also accepts `--subscription-service SERVICE --native-id EXACT_NATIVE_ID` instead of the API provider source. `usage pricing mode` takes the same exact source, `--mode automatic|manual`, and original provider/policy revisions plus `--revision` for the displayed active price (zero when unavailable). All three are retained for exact retries; a concurrent automatic price update conflicts before changing the policy. `usage pricing refresh` explicitly requests a bounded joined models.dev update; ordinary reads and Usage summary never fetch a price source. The native-ID Usage filter requires one original provider or subscription service. Earlier Model UUID selectors and Model configuration commands are retired by the complete current-only reset; immutable pricing-version UUIDs remain readable.
+
+### Explicit session directory controls
+
+`session directory change --id ID --revision N --request-id ID
+[--repository-id ID] --path RELATIVE` requests one settled-root directory change.
+The current session revision and an explicit request ID are required. The path
+must be canonical and relative to an original prepared root; `.` selects that
+root. An omitted repository selects only the original General Chat root.
+The server and original Worker independently validate admission, existing native
+directory confinement, cleanup and applied settings before subsequent input.
+
+`session directory operation --id ID --request-id ID` reads the original
+actor-bound operation. Use this read after an uncertain change result; it never
+repeats Change or creates a replacement request. Output reports safe operation
+state and verified repository names and relative paths. It omits UUIDs, absolute
+native paths and raw job input, output and problem contents. A queued receipt
+is not completion. A succeeded result requires matching session, request, job
+and generation identities, canonical path and original prepared-root label.

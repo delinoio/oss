@@ -39,6 +39,7 @@ type client struct {
 	providers     delidevv1connect.ProviderServiceClient
 	forwards      delidevv1connect.ForwardServiceClient
 	terminals     delidevv1connect.TerminalServiceClient
+	directories   delidevv1connect.SessionDirectoryServiceClient
 	sessions      delidevv1connect.SessionServiceClient
 	interactions  delidevv1connect.InteractionServiceClient
 	inbox         delidevv1connect.InboxServiceClient
@@ -145,6 +146,7 @@ func connectClient(o options, input io.Reader) (client, error) {
 		inbox:         delidevv1connect.NewInboxServiceClient(httpClient, endpoint, opts...),
 		schedules:     delidevv1connect.NewScheduleServiceClient(httpClient, endpoint, opts...),
 		interactions:  delidevv1connect.NewInteractionServiceClient(httpClient, endpoint, opts...),
+		directories:   delidevv1connect.NewSessionDirectoryServiceClient(httpClient, endpoint, opts...),
 		sessions:      delidevv1connect.NewSessionServiceClient(httpClient, endpoint, opts...),
 		forwards:      delidevv1connect.NewForwardServiceClient(httpClient, endpoint, opts...),
 		terminals:     delidevv1connect.NewTerminalServiceClient(httpClient, endpoint, opts...),

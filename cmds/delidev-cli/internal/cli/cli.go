@@ -27,10 +27,11 @@ type IO struct {
 }
 
 type options struct {
-	desktop         *desktopruntime.Target
-	dataDir, server string
-	requestID       domain.ID
-	tokenStdin      bool
+	desktop           *desktopruntime.Target
+	dataDir, server   string
+	requestID         domain.ID
+	requestIDExplicit bool
+	tokenStdin        bool
 }
 
 func Run(ctx context.Context, args []string, streams IO) int {
