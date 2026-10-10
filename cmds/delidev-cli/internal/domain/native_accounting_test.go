@@ -129,3 +129,50 @@ func TestOpenCodeAccountingPricesDisjointStepsWithUnavailableZeros(t *testing.T)
 		t.Fatal("assistant summary fabricated a step")
 	}
 }
+
+func TestOpenCodeAccountingSourceIdentity(t *testing.T) {
+	api := nativeUnitFixture().Attribution()
+	for _, service := range []SubscriptionService{"", SubscriptionOpenCodeGo} {
+		t.Run("source-"+string(service), func(t *testing.T) {
+			provider := api.ProviderID
+			if service != "" {
+				provider = ""
+			}
+			model := ModelIdentity{ProviderID: provider, SubscriptionService: service, NativeID: "fixture"}.Key()
+			u := NativeAccountingUnit{Kind: OpenCodeStep, SourceID: NewID(), RequestID: NewID(), SessionID: NewID(), InputID: NewID(), OpenCode: &OpenCodeUsageRecord{ExecutionID: api.ExecutionID, AccountID: api.AccountID, ConnectionID: api.ConnectionID, ProviderID: provider, SubscriptionService: service, ModelID: model, Harness: OpenCode, Version: OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 1, Usage: OpenCodeUsageObservation{Source: OpenCodeStepUsage, NativeID: "prt_01960dcbe1faABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: OpenCodeTokenCounts{Input: "12", CacheRead: "7", CacheWrite: "3", Output: "8", Reasoning: "2"}, NativeEstimate: "999"}}}
+			if err := u.Validate(); err != nil {
+				t.Fatal("valid source rejected", err)
+			}
+			a := u.Attribution()
+			if a.ProviderID != provider || a.SubscriptionService != service || a.ModelID != model || a.AccountID != api.AccountID {
+				t.Fatal("source projection changed", a)
+			}
+			rate := "1"
+			price := PricingVersion{ID: NewID(), ModelID: model, ProviderID: provider, SubscriptionService: service, Basis: TokenPricing{Currency: "USD", Source: "Fixture", AsOf: "2026-10-03", InputMode: UniformInputPrice, InputPerMillion: &rate, OutputPerMillion: &rate}}
+			if e, err := EstimateNativeInput(u, price); err != nil || e.KnownAmount != "0.000032" {
+				t.Fatal("source price rejected", e, err)
+			}
+			wrong := price
+			wrong.SubscriptionService = SubscriptionClaude
+			if _, err := EstimateNativeInput(u, wrong); err == nil {
+				t.Fatal("cross-service price accepted")
+			}
+			for _, source := range []ModelIdentity{{NativeID: "fixture"}, {SubscriptionService: SubscriptionClaude, NativeID: "fixture"}, {SubscriptionService: SubscriptionService("foreign"), NativeID: "fixture"}, {ProviderID: api.ProviderID, SubscriptionService: SubscriptionOpenCodeGo, NativeID: "fixture"}, {ProviderID: ID("invalid"), NativeID: "fixture"}} {
+				copy := *u.OpenCode
+				copy.ProviderID, copy.SubscriptionService = source.ProviderID, source.SubscriptionService
+				// Preserve the original model key so a replacement source also fails.
+				v := u
+				v.OpenCode = &copy
+				if v.Validate() == nil {
+					t.Fatalf("invalid source accepted: %+v", source)
+				}
+				if key := source.Key(); key != "" {
+					copy.ModelID = key
+					if v.Validate() == nil {
+						t.Fatalf("unsupported matching source accepted: %+v", source)
+					}
+				}
+			}
+		})
+	}
+}

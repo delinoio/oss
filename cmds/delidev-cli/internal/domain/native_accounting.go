@@ -32,10 +32,19 @@ func (u NativeAccountingUnit) Validate() error {
 	if !ModelKeyMatchesSource(o.ModelID, o.ProviderID, o.SubscriptionService) {
 		return invalidObservation()
 	}
-	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID} {
+	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID} {
 		if id.Validate() != nil {
 			return invalidClaudeUsage()
 		}
+	}
+	// Only OpenCode Go may use a service identity here. API accounting retains
+	// its real Provider UUID; no subscription can synthesize a Provider.
+	if o.SubscriptionService != "" {
+		if u.Kind != OpenCodeStep || o.SubscriptionService != SubscriptionOpenCodeGo || o.ProviderID != "" {
+			return invalidObservation()
+		}
+	} else if o.ProviderID.Validate() != nil {
+		return invalidObservation()
 	}
 	if u.ProjectID != "" && u.ProjectID.Validate() != nil {
 		return invalidClaudeUsage()
@@ -150,7 +159,7 @@ func UnpricedNativeEstimate() NativeEstimate {
 	return NativeEstimate{Coverage: EstimateUnavailable, Input: c, CacheRead: c, CacheWrite: c, Output: c, Reasoning: NativeEstimateComponent{State: ComponentNotApplicable}}
 }
 func EstimateNativeInput(unit NativeAccountingUnit, price PricingVersion) (NativeEstimate, error) {
-	if unit.Validate() != nil || price.ID.Validate() != nil || price.Basis.Validate() != nil || price.ModelID != unit.Attribution().ModelID || price.ProviderID != unit.Attribution().ProviderID {
+	if unit.Validate() != nil || price.ID.Validate() != nil || price.Basis.Validate() != nil || price.ModelID != unit.Attribution().ModelID || price.ProviderID != unit.Attribution().ProviderID || price.SubscriptionService != unit.Attribution().SubscriptionService {
 		return NativeEstimate{}, invalidPricing()
 	}
 	c := unit.Counts()
@@ -267,6 +276,7 @@ func (t *NativeAccountingTotals) Add(unit NativeAccountingUnit, e NativeEstimate
 
 type NativeAccountingGroup struct {
 	SessionID, ProjectID, AccountID, ProviderID, ModelID ID
+	SubscriptionService                                  SubscriptionService
 	Totals                                               NativeAccountingTotals
 }
 type NativeAccountingDay struct {

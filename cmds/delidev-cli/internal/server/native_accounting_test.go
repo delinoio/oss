@@ -121,3 +121,25 @@ func TestClaudeUncorrelatedDenialDoesNotCreateAccountingUnit(t *testing.T) {
 		t.Fatal("uncorrelated denial entered accounting", summary, err)
 	}
 }
+
+func TestNativeAccountingWireSourceIdentity(t *testing.T) {
+	account := domain.NewID()
+	for _, service := range []domain.SubscriptionService{"", domain.SubscriptionOpenCodeGo} {
+		provider := domain.NewID()
+		if service != "" {
+			provider = ""
+		}
+		model := domain.ModelIdentity{ProviderID: provider, SubscriptionService: service, NativeID: "fixture"}.Key()
+		group := domain.NativeAccountingGroup{AccountID: account, ProviderID: provider, SubscriptionService: service, ModelID: model, Totals: domain.NativeAccountingTotals{Kind: domain.OpenCodeStep, Units: 1}}
+		wire := nativeSummary(domain.NativeAccountingSummary{Groups: []domain.NativeAccountingGroup{group}, Models: []domain.NativeAccountingGroup{group}})
+		for _, got := range []*pb.NativeAccountingGroup{wire.Groups[0], wire.Models[0]} {
+			want := pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_UNSPECIFIED
+			if service != "" {
+				want = pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO
+			}
+			if got.AccountId != string(account) || got.ProviderId != string(provider) || got.SubscriptionService != want || got.Model == nil || got.Model.NativeId != "fixture" || got.Model.ProviderId != string(provider) || got.Model.SubscriptionService != want || got.Totals.Units != 1 {
+				t.Fatal("wire source attribution changed", got)
+			}
+		}
+	}
+}

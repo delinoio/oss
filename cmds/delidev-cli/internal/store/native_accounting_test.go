@@ -292,71 +292,129 @@ func TestNativeBudgetCombinesAmountsWithoutResponseCountOrWriteContamination(t *
 }
 
 func TestOpenCodeAccountingSourceDeduplicationAndAssistantExclusion(t *testing.T) {
-	s, root := openTest(t)
-	r, claude, input := nativeAccountingFixture(t, s)
-	first := domain.OpenCodeUsageRecord{ExecutionID: r.ExecutionID, AccountID: r.AccountID, ConnectionID: r.ConnectionID, ProviderID: r.ProviderID, ModelID: r.ModelID, Harness: domain.OpenCode, Version: domain.OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 3, Usage: domain.OpenCodeUsageObservation{Source: domain.OpenCodeStepUsage, NativeID: "prt_01960dcbe1faABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: domain.OpenCodeTokenCounts{Input: "12", CacheRead: "7", CacheWrite: "3", Output: "8", Reasoning: "2"}, NativeEstimate: "999"}}
-	_ = claude
-	p := preparePrice(t, s, r)
-	basis := pricingFixture()
-	one, two := "1", "2"
-	basis.InputPerMillion, basis.OutputPerMillion = &one, &two
-	if _, err := s.Mutate(context.Background(), domain.NewID(), "fixture.price", nil, func(tx *Tx) (any, error) { return tx.PutPricing(r.ModelID, p.Revision, domain.NewID(), basis) }); err != nil {
-		t.Fatal(err)
-	}
-	retain := func(request, source domain.ID, o domain.OpenCodeUsageRecord) (Result, error) {
-		return s.Mutate(context.Background(), request, "fixture.step", o, func(tx *Tx) (any, error) {
-			if err := tx.PutOpenCodeUsage(source, r.SessionID, r.ProjectID, o); err != nil {
-				return nil, err
+	for _, service := range []domain.SubscriptionService{"", domain.SubscriptionOpenCodeGo} {
+		t.Run("source-"+string(service), func(t *testing.T) {
+			s, root := openTest(t)
+			r, claude, input := nativeAccountingFixture(t, s)
+			if service != "" {
+				r.ProviderID = ""
+				r.SubscriptionService = service
+				r.ModelID = domain.ModelIdentity{SubscriptionService: service, NativeID: "fixture"}.Key()
 			}
-			return nil, tx.PutOpenCodeAccounting(source, input, r.SessionID, r.ProjectID, o)
+			first := domain.OpenCodeUsageRecord{ExecutionID: r.ExecutionID, AccountID: r.AccountID, ConnectionID: r.ConnectionID, ProviderID: r.ProviderID, SubscriptionService: service, ModelID: r.ModelID, Harness: domain.OpenCode, Version: domain.OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 3, Usage: domain.OpenCodeUsageObservation{Source: domain.OpenCodeStepUsage, NativeID: "prt_01960dcbe1faABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: domain.OpenCodeTokenCounts{Input: "12", CacheRead: "7", CacheWrite: "3", Output: "8", Reasoning: "2"}, NativeEstimate: "999"}}
+			_ = claude
+			var revision uint64
+			if service == "" {
+				p := preparePrice(t, s, r)
+				revision = p.Revision
+			}
+			basis := pricingFixture()
+			one, two := "1", "2"
+			basis.InputPerMillion, basis.OutputPerMillion = &one, &two
+			if _, err := s.Mutate(context.Background(), domain.NewID(), "fixture.price", nil, func(tx *Tx) (any, error) { return tx.PutPricing(r.ModelID, revision, domain.NewID(), basis) }); err != nil {
+				t.Fatal(err)
+			}
+			retain := func(request, source domain.ID, o domain.OpenCodeUsageRecord) (Result, error) {
+				return s.Mutate(context.Background(), request, "fixture.step", o, func(tx *Tx) (any, error) {
+					if err := tx.PutOpenCodeUsage(source, r.SessionID, r.ProjectID, o); err != nil {
+						return nil, err
+					}
+					return nil, tx.PutOpenCodeAccounting(source, input, r.SessionID, r.ProjectID, o)
+				})
+			}
+			for _, identity := range []domain.ModelIdentity{{NativeID: "fixture"}, {SubscriptionService: domain.SubscriptionClaude, NativeID: "fixture"}, {SubscriptionService: domain.SubscriptionService("foreign"), NativeID: "fixture"}, {ProviderID: domain.NewID(), SubscriptionService: domain.SubscriptionOpenCodeGo, NativeID: "fixture"}} {
+				invalid := first
+				invalid.ProviderID, invalid.SubscriptionService, invalid.ModelID = identity.ProviderID, identity.SubscriptionService, identity.Key()
+				invalidSource := domain.NewID()
+				if _, err := retain(domain.NewID(), invalidSource, invalid); err == nil {
+					t.Fatal("invalid accounting source settled", identity)
+				}
+				if _, err := s.Get(context.Background(), domain.UsageKind, invalidSource); domain.SafeError(err).Code != domain.NotFound {
+					t.Fatal("failed accounting left partial usage", err)
+				}
+			}
+			request, source := domain.NewID(), domain.NewID()
+			if _, err := retain(request, source, first); err != nil {
+				t.Fatal(err)
+			}
+			if result, err := retain(request, source, first); err != nil || !result.Replayed {
+				t.Fatal("receipt lost original step", result, err)
+			}
+			assistant := first
+			assistant.Usage.Source, assistant.Usage.NativeID = domain.OpenCodeMessageUsage, first.Usage.NativeParentID
+			if _, err := retain(domain.NewID(), domain.NewID(), assistant); err != nil {
+				t.Fatal(err)
+			}
+			second := first
+			second.Usage.NativeID = "prt_01960dcbe1fbABCDEFGHIJKLMN"
+			total := "9"
+			second.Usage.Counts = domain.OpenCodeTokenCounts{Input: "5", Output: "4", Reasoning: "0", CacheRead: "0", CacheWrite: "0", Total: &total}
+			if _, err := retain(domain.NewID(), domain.NewID(), second); err != nil {
+				t.Fatal("second step shares an input legitimately", err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			s, err = Open(context.Background(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			if _, err := retain(domain.NewID(), domain.NewID(), first); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("source duplicated after restart", err)
+			}
+			conflicting := first
+			conflicting.Usage.Counts.Input = "13"
+			if _, err := retain(domain.NewID(), domain.NewID(), conflicting); domain.SafeError(err).Code != domain.Conflict {
+				t.Fatal("conflicting repeated native unit accepted", err)
+			}
+			v, err := readUsage(s, nativeSelection())
+			if err != nil || len(v.NativeAccounting) != 2 || v.NativeAccounting[1].Totals.Units != 2 || v.NativeAccounting[1].Totals.Currencies[0].KnownAmount != "0.000055" || v.NativeAccounting[1].Totals.Currencies[0].PartialUnits != 1 || v.Totals.Responses != 0 {
+				t.Fatal("overlap or lost coverage", v, err)
+			}
+			for _, selection := range []domain.UsageSelection{nativeSelection(), func() domain.UsageSelection {
+				f := nativeSelection()
+				f.SubscriptionService = domain.SubscriptionOpenCodeGo
+				return f
+			}()} {
+				summary, err := readUsage(s, selection)
+				if err != nil {
+					t.Fatal(err)
+				}
+				g := summary.NativeAccounting[1]
+				if selection.SubscriptionService != "" && service == "" {
+					if g.Totals.Units != 0 {
+						t.Fatal("API unit crossed service filter", g)
+					}
+					continue
+				}
+				if len(g.Groups) != 1 || len(g.Models) != 1 || len(g.Pricing) != 1 || g.Groups[0].AccountID != r.AccountID || g.Groups[0].ProviderID != r.ProviderID || g.Groups[0].SubscriptionService != service || g.Groups[0].ModelID != r.ModelID || g.Models[0].ProviderID != r.ProviderID || g.Models[0].SubscriptionService != service || g.Models[0].ModelID != r.ModelID || g.Pricing[0].Pricing.SubscriptionService != service || g.Pricing[0].Pricing.ProviderID != r.ProviderID || g.Totals.Input.KnownTotal != "22" || g.Totals.Output.KnownTotal != "10" {
+					t.Fatal("immutable native source/count/price attribution lost", g)
+				}
+			}
+			if err := s.Read(context.Background(), func(tx *Tx) error {
+				e, err := tx.SessionBudgetEstimate(r.SessionID, "USD")
+				if err != nil {
+					return err
+				}
+				if e.KnownAmount != "0.000055" || e.CompleteNativeUnits != 1 || e.PartialNativeUnits != 1 || e.CompleteResponses != 0 {
+					t.Fatal("wrong lifetime estimate", e)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if service != "" {
+				priceID := v.NativeAccounting[1].Pricing[0].Pricing.ID
+				if _, err := s.db.Exec("UPDATE pricing_versions SET subscription_service='claude' WHERE id=?", priceID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := readUsage(s, nativeSelection()); domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("cross-service retained price accepted", err)
+				}
+			}
 		})
-	}
-	request, source := domain.NewID(), domain.NewID()
-	if _, err := retain(request, source, first); err != nil {
-		t.Fatal(err)
-	}
-	if result, err := retain(request, source, first); err != nil || !result.Replayed {
-		t.Fatal("receipt lost original step", result, err)
-	}
-	assistant := first
-	assistant.Usage.Source, assistant.Usage.NativeID = domain.OpenCodeMessageUsage, first.Usage.NativeParentID
-	if _, err := retain(domain.NewID(), domain.NewID(), assistant); err != nil {
-		t.Fatal(err)
-	}
-	second := first
-	second.Usage.NativeID = "prt_01960dcbe1fbABCDEFGHIJKLMN"
-	total := "9"
-	second.Usage.Counts = domain.OpenCodeTokenCounts{Input: "5", Output: "4", Reasoning: "0", CacheRead: "0", CacheWrite: "0", Total: &total}
-	if _, err := retain(domain.NewID(), domain.NewID(), second); err != nil {
-		t.Fatal("second step shares an input legitimately", err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	var err error
-	s, err = Open(context.Background(), root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if _, err := retain(domain.NewID(), domain.NewID(), first); domain.SafeError(err).Code != domain.Conflict {
-		t.Fatal("source duplicated after restart", err)
-	}
-	v, err := readUsage(s, nativeSelection())
-	if err != nil || len(v.NativeAccounting) != 2 || v.NativeAccounting[1].Totals.Units != 2 || v.NativeAccounting[1].Totals.Currencies[0].KnownAmount != "0.000055" || v.NativeAccounting[1].Totals.Currencies[0].PartialUnits != 1 || v.Totals.Responses != 0 {
-		t.Fatal("overlap or lost coverage", v, err)
-	}
-	if err := s.Read(context.Background(), func(tx *Tx) error {
-		e, err := tx.SessionBudgetEstimate(r.SessionID, "USD")
-		if err != nil {
-			return err
-		}
-		if e.KnownAmount != "0.000055" || e.CompleteNativeUnits != 1 || e.PartialNativeUnits != 1 || e.CompleteResponses != 0 {
-			t.Fatal("wrong lifetime estimate", e)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
 }
 
