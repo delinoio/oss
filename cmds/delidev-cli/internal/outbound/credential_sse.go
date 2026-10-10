@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 package outbound
 
-import "bytes"
+import (
+	"bytes"
+	"encoding/json"
+)
+
+const credentialSSEProbeLimit = 256
 
 type credentialFraming uint8
 
@@ -12,8 +17,8 @@ const (
 )
 
 // Select framing from the response media type when available. Otherwise retain
-// only a bounded initial field prefix, preserving typeless SSE compatibility.
-// Metadata never enters the JSON decoder; the body literal guard still sees it.
+// only a bounded initial line while checking typeless SSE syntax. Metadata never
+// enters the JSON decoder; the body literal guard still sees it.
 func (g *credentialJSONGuard) frame(b byte, offset int64) {
 	if g.framing == credentialOrdinary {
 		g.feed(b, offset)
@@ -29,6 +34,9 @@ func (g *credentialJSONGuard) frame(b byte, offset int64) {
 			}
 			return
 		}
+		if g.framing == credentialUnknown {
+			g.framing = credentialOrdinary
+		}
 		g.flushProbe(offset)
 		return
 	}
@@ -37,33 +45,113 @@ func (g *credentialJSONGuard) frame(b byte, offset int64) {
 		return
 	}
 	if len(g.probe) == 0 && (b == '\r' || b == '\n') {
+		g.sse.probeLeadingWhitespace = false
+		return
+	}
+	if len(g.probe) == 0 && (b == ' ' || b == '\t') {
+		g.sse.probeLeadingWhitespace = true
+		return
+	}
+	// JSON objects and arrays are unambiguous before an SSE field delimiter.
+	// Keep strings in the bounded probe because a colon inside a valid JSON
+	// string is content, while a colon after a quoted SSE field name is a field
+	// delimiter.
+	if len(g.probe) == 0 && (b == '{' || b == '[') {
+		g.framing = credentialOrdinary
+		g.sse.probeLeadingWhitespace = false
+		g.feed(b, offset)
 		return
 	}
 	g.probe = append(g.probe, b)
+	if b == ':' && credentialSSEProbeColonIsDelimiter(g.probe) {
+		g.framing = credentialSSE
+		g.flushProbe(offset)
+		return
+	}
 	if b == '\r' || b == '\n' {
-		for _, field := range []string{"data", "event", "id", "retry"} {
-			if bytes.Equal(g.probe[:len(g.probe)-1], []byte(field)) {
-				g.framing = credentialSSE
-				g.flushProbe(offset)
-				return
+		line := g.probe[:len(g.probe)-1]
+		if json.Valid(line) {
+			g.framing = credentialOrdinary
+		} else {
+			g.framing = credentialSSE
+		}
+		g.flushProbe(offset)
+		return
+	}
+	if len(g.probe) >= credentialSSEProbeLimit {
+		// A long quoted JSON string remains on the ordinary path. Other long
+		// prefixes cannot be a valid JSON object/array (handled above) and are
+		// bounded as SSE field metadata instead of retaining an unbounded line.
+		if g.probe[0] == '"' {
+			g.framing = credentialOrdinary
+		} else {
+			g.framing = credentialSSE
+		}
+		g.flushProbe(offset)
+	}
+}
+
+// A top-level JSON string may contain colons. For that one ambiguous start,
+// treat only a colon outside the quoted string as an SSE field delimiter.
+func credentialSSEProbeColonIsDelimiter(probe []byte) bool {
+	if len(probe) == 0 || probe[0] != '"' {
+		return true
+	}
+	inside, escaped := false, false
+	for _, b := range probe {
+		if !inside {
+			if b == ':' {
+				return true
 			}
+			if b == '"' {
+				inside = true
+			}
+			continue
+		}
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch b {
+		case '\\':
+			escaped = true
+		case '"':
+			inside = false
+		case ':':
+			// A colon inside a JSON string is content. Continue in case a
+			// quoted SSE field name is followed by its actual delimiter.
 		}
 	}
-	for _, field := range []string{":", "data:", "event:", "id:", "retry:"} {
-		if bytes.HasPrefix([]byte(field), g.probe) {
-			if len(g.probe) == len(field) {
-				g.framing = credentialSSE
-				g.flushProbe(offset)
-			}
-			return
-		}
+	return false
+}
+
+// A typeless stream may end before an initial SSE field reaches a line ending.
+// Finalize that bounded candidate before the body guard decides whether its
+// retained wire suffix can be released.
+func (g *credentialJSONGuard) finishProbe() {
+	if g.framing != credentialUnknown {
+		return
 	}
-	g.framing = credentialOrdinary
-	g.flushProbe(offset)
+	if len(g.probe) == 0 {
+		g.framing = credentialOrdinary
+		return
+	}
+	if json.Valid(g.probe) {
+		g.framing = credentialOrdinary
+	} else {
+		g.framing = credentialSSE
+	}
+	g.flushProbe(g.position - 1)
 }
 
 func (g *credentialJSONGuard) flushProbe(offset int64) {
 	start := offset - int64(len(g.probe)) + 1
+	if g.framing == credentialSSE && g.sse.probeLeadingWhitespace {
+		// Initial horizontal whitespace is valid JSON padding, but it is part of
+		// an SSE field name. Such a field cannot be the standard "data" field.
+		g.sse = credentialSSEFraming{field: credentialSSEIgnored, linePresent: true}
+	}
+	g.sse.probeLeadingWhitespace = false
 	for i, b := range g.probe {
 		if g.framing == credentialSSE {
 			g.frameSSE(b, start+int64(i))
@@ -84,11 +172,12 @@ const (
 )
 
 type credentialSSEFraming struct {
-	field       credentialSSEField
-	nameLength  int
-	linePresent bool
-	firstValue  bool
-	lastCR      bool
+	field                  credentialSSEField
+	nameLength             int
+	linePresent            bool
+	firstValue             bool
+	lastCR                 bool
+	probeLeadingWhitespace bool
 }
 
 func (g *credentialJSONGuard) frameSSE(b byte, offset int64) {

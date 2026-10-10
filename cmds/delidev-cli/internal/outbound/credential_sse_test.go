@@ -19,6 +19,7 @@ func TestCredentialSSEMetadataCannotChangeDataDecoding(t *testing.T) {
 			"data: {\n: \"\nevent: \"\ndata: \"value\":\"" + form + "\"}\n\n",
 			"data: \"unmatched\n\n: \"\ndata: {\"value\":\"" + form + "\"}\n\n",
 			": \"\r\ndata:{\"value\":\"" + form + "\"}\r\n\r\n",
+			"extension: \"\ndata: {\"value\":\"" + form + "\"}\n\n",
 			": \"\rdata: {\"value\":\"" + form + "\"}\r\r",
 			"\xef\xbb\xbfdata: {\"value\":\"" + form + "\"}\n\n",
 			"data\n\n: \"\ndata: {\"value\":\"" + form + "\"}\n\n",
@@ -39,6 +40,71 @@ func TestCredentialSSEMetadataCannotChangeDataDecoding(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestCredentialTypelessUnknownSSEMetadataCannotChangeDataDecoding(t *testing.T) {
+	credential := domainCredentialFixture()
+	form := escapedCredential(credential.Password, false)
+	for _, initialField := range []string{`extension: "`, `extension"`} {
+		wire := initialField + "\n" + `data: {"value":"` + form + `"}` + "\n\n"
+		for split := 0; split <= len(wire); split++ {
+			original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+			guard := newCredentialBody(original, credential)
+			output, err := io.ReadAll(guard)
+			if err == nil || err == io.EOF || !original.closed {
+				t.Fatalf("typeless SSE reflection accepted at split %d for %q", split, initialField)
+			}
+			if strings.Contains(string(output), form) {
+				t.Fatalf("credential-bearing wire bytes released at split %d for %q", split, initialField)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialTypelessFramingPreservesOrdinaryJSONAndSafeWire(t *testing.T) {
+	for _, wire := range []string{
+		`{"value":"ordinary"}`,
+		`"extension: value"`,
+		`"extension: \"value\""`,
+		`true`,
+		"extension: \"\ndata: {\"value\":\"ordinary\"}\n\n",
+	} {
+		for split := 0; split <= len(wire); split++ {
+			original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+			guard := newCredentialBody(original, domainCredentialFixture())
+			output, err := io.ReadAll(guard)
+			if err != nil || string(output) != wire {
+				t.Fatalf("safe typeless content changed at split %d for %q: %v", split, wire, err)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialTypelessJSONStringWithColonStillDecodesEscapes(t *testing.T) {
+	credential := domainCredentialFixture()
+	form := escapedCredential(credential.Password, false)
+	wire := `"extension: ` + form + `"`
+	for split := 0; split <= len(wire); split++ {
+		original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+		guard := newCredentialBody(original, credential)
+		output, err := io.ReadAll(guard)
+		if err == nil || !original.closed || strings.Contains(string(output), form) {
+			t.Fatalf("JSON string reflection bypassed typeless probing at split %d", split)
+		}
+		guard.Close()
+	}
+}
+
+func TestCredentialExplicitJSONContentTypeKeepsOrdinaryFraming(t *testing.T) {
+	wire := `data: {"value":"ordinary"}`
+	guard := newCredentialBody(io.NopCloser(strings.NewReader(wire)), domainCredentialFixture(), "application/json")
+	output, err := io.ReadAll(guard)
+	if err != nil || string(output) != wire || guard.jsonGuard.framing != credentialOrdinary {
+		t.Fatal("explicit JSON content type did not select ordinary decoding", err)
+	}
+	guard.Close()
 }
 
 func TestCredentialSSEPreservesSafeFramingAtEverySplit(t *testing.T) {
@@ -118,6 +184,31 @@ func TestCredentialSSEShortDecodedTokenBoundaries(t *testing.T) {
 	}
 }
 
+func TestCredentialTypelessUnknownSSEShortDecodedTokenBoundaries(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "x", Password: "pass123"}
+	for _, test := range []struct {
+		value  string
+		reject bool
+	}{
+		{`\u0078`, true}, {`\u0070ass123`, true}, {`e\u0078tra`, false}, {`\u0070ass123more`, false},
+	} {
+		wire := `extension: "` + "\n" + `data: {"value":"` + test.value + "\"}\n\n"
+		for split := 0; split <= len(wire); split++ {
+			original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+			guard := newCredentialBody(original, credential)
+			output, err := io.ReadAll(guard)
+			if test.reject {
+				if err == nil || !original.closed || strings.Contains(string(output), test.value) {
+					t.Fatalf("short typeless SSE reflection released at split %d", split)
+				}
+			} else if err != nil || string(output) != wire {
+				t.Fatalf("unrelated short typeless token rejected at split %d: %v", split, err)
+			}
+			guard.Close()
+		}
+	}
+}
+
 func TestCredentialSSEFramingRetainsBoundedState(t *testing.T) {
 	wire := ": " + strings.Repeat("metadata", 20000) + "\n\ndata: {\"value\":\"" + strings.Repeat(`\u0061`, 20000) + "\"}\n\n"
 	source := strings.NewReader(wire)
@@ -127,7 +218,7 @@ func TestCredentialSSEFramingRetainsBoundedState(t *testing.T) {
 	for {
 		n, err := guard.Read(buffer)
 		output.Write(buffer[:n])
-		if len(guard.jsonGuard.probe) > 6 || len(guard.jsonGuard.decoded) > 32 || len(guard.jsonGuard.escape) > 12 || len(guard.pending) > 8192+12 {
+		if len(guard.jsonGuard.probe) > credentialSSEProbeLimit || len(guard.jsonGuard.decoded) > 32 || len(guard.jsonGuard.escape) > 12 || len(guard.pending) > 8192+12 {
 			t.Fatal("unbounded SSE framing or retained wire state")
 		}
 		if output.Len() == 256 && source.Len() == 0 {
@@ -144,4 +235,37 @@ func TestCredentialSSEFramingRetainsBoundedState(t *testing.T) {
 		t.Fatal("bounded SSE bytes changed")
 	}
 	guard.Close()
+}
+
+func TestCredentialTypelessUnknownSSECancellationJoinsWithoutReleasingPrefix(t *testing.T) {
+	assertCredentialCancellationWithheld(
+		t,
+		"extension: \"\ndata: {\"value\":\"\\u0066",
+		"extension: \"\ndata: {\"value\":\"",
+	)
+}
+
+func TestCredentialTypelessUnknownFieldProbeRetainsBoundedState(t *testing.T) {
+	wire := strings.Repeat("extension", 2000) + `: "` + "\n\ndata: [DONE]\n\n"
+	source := strings.NewReader(wire)
+	guard := newCredentialBody(io.NopCloser(source), domainCredentialFixture())
+	buffer := make([]byte, 256)
+	var output strings.Builder
+	for {
+		n, err := guard.Read(buffer)
+		output.Write(buffer[:n])
+		if len(guard.jsonGuard.probe) > credentialSSEProbeLimit {
+			t.Fatal("typeless framing retained an unbounded initial field")
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	guard.Close()
+	if output.String() != wire {
+		t.Fatal("bounded typeless framing changed safe SSE bytes")
+	}
 }

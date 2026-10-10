@@ -33,8 +33,12 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 	g := &credentialBody{body: body, jsonGuard: &credentialJSONGuard{}}
 	if len(contentType) > 0 {
 		mediaType, _, err := mime.ParseMediaType(contentType[0])
-		if err == nil && mediaType == "text/event-stream" {
-			g.jsonGuard.framing = credentialSSE
+		if err == nil && mediaType != "" {
+			if mediaType == "text/event-stream" {
+				g.jsonGuard.framing = credentialSSE
+			} else {
+				g.jsonGuard.framing = credentialOrdinary
+			}
 		}
 	}
 	for _, value := range []string{c.Username, c.Password, c.Username + ":" + c.Password} {
@@ -124,6 +128,9 @@ func containsCredentialForms(raw []byte, ended bool, previous byte, hasPrevious 
 }
 func (g *credentialBody) retainedPrefix() int {
 	retained := int(g.jsonGuard.position - g.jsonGuard.retainFrom())
+	if g.jsonGuard.framing == credentialUnknown && len(g.jsonGuard.probe) > retained {
+		retained = len(g.jsonGuard.probe)
+	}
 	for _, pattern := range g.patterns {
 		for n := min(len(pattern)-1, len(g.pending)); n > retained; n-- {
 			if bytes.Equal(g.pending[len(g.pending)-n:], pattern[:n]) {
@@ -159,8 +166,11 @@ func (g *credentialBody) Read(p []byte) (int, error) {
 		decodedReflection := g.jsonGuard.scan(buf[:n])
 		clear(buf)
 		g.eof = err == io.EOF
-		if g.eof && g.jsonGuard.finish() {
-			decodedReflection = true
+		if g.eof {
+			g.jsonGuard.finishProbe()
+			if g.jsonGuard.finish() {
+				decodedReflection = true
+			}
 		}
 		if decodedReflection || g.containsBounded(g.pending, g.eof, g.previous, g.hasPrevious) {
 			clear(g.pending)
