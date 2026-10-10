@@ -273,8 +273,9 @@ but no fresh execution, preparation, response or recovery is admitted. Startup
 reapplies intent before listeners, reconstructs reference-only receipts and
 repurges an older database when removal had committed. Obligations are never
 evicted: 4,096 sessions and 4,096 original jobs per session are explicit bounds.
-Each plan validates UUID uniqueness across the full 4,096-job capacity independently
-of the general 1,000-link bound; one immutable plan is capped at 4 MiB. Worker pages retain at most 20 envelopes
+Assembly and every plan reader share the 4,096-job allowance for original jobs
+and distinct Worker owners. Each plan validates job and device UUID uniqueness
+across that full capacity independently of the general 1,000-link bound; one immutable plan is capped at 4 MiB. Worker pages retain at most 20 envelopes
 and 4 MiB total ownership JSON; the native Connect response allowance includes
 its bounded JSON/base64 overhead. Ordinary command JSON retains its 1 MiB bound. Unknown
 ownership fails closed.
