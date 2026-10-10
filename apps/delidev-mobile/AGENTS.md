@@ -18,3 +18,5 @@
   track, provision owner accounts or invent credentials as part of fixtures.
 
 - New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.
+
+- Queue pagination (#2254) owns separate typed Session ListQueue 50-entry reads and exact cursors, with at most 1,000 pending originals. Preserve reached IDs/revisions/order on page errors, show incomplete/reload controls and block stale Steer. Original profile/transport/session/foreground replacement fences old reads/callbacks; reload and foreground synchronization remain read-only. Preserve protected Steer receipts and original execution/turn eligibility under the mobile contract.

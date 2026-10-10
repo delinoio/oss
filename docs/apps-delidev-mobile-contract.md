@@ -59,7 +59,9 @@ A lost response retains the original request. Foreground return and connection
 refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
 Steer operates on an already queued input and its original revision, execution
-and native turn. Stop and Resume require current observations and confirmation.
+and native turn. Queue reads (#2254) use a separate typed Session ListQueue owner, exact opaque cursors and explicit 50-entry continuations, retaining reached original IDs, revisions and order up to the domain limit of 1,000 pending inputs. Failed, expired, empty nonadvancing, repeated-token, duplicate-ID or over-bound pages retain reached rows with an incomplete state and disable Steer until a valid read or explicit queue reload. Reload starts at the first page and discards stale suffixes; background, authenticated transport, profile or session replacement fences old queue owners and callbacks. Foreground return performs fresh reads only. Generic failure logs contain only closed operation/outcome classifications, never prompts, tokens or native diagnostics.
+
+Stop and Resume require current observations and confirmation.
 Question and approval responses retain the original interaction revision.
 Protected-answer questions remain unavailable outside their original supported
 client boundary. Inbox opens the current original entry and interaction before

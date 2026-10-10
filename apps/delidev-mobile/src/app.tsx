@@ -36,7 +36,6 @@ import {
   EnqueueInputRequestSchema,
   ControlSessionRequestSchema,
   SessionAction,
-  SteerQueuedInputRequestSchema,
   RespondQuestionRequestSchema,
   RespondApprovalRequestSchema,
   SetInboxReadStateRequestSchema,
@@ -66,6 +65,7 @@ import {
 import { en, ko, type Labels } from "./localization";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
+import { QueuedInputs } from "./queued-inputs";
 const owner = new ProtectedState(storage);
 const Copy = createContext<Labels>(en);
 const useCopy = () => useContext(Copy);
@@ -1181,11 +1181,6 @@ function Conversation({
     { filter: { kind: EntityKind.INTERACTION, sessionId: id, pageSize: 50 } },
     { enabled },
   );
-  const queue = useQuery(
-    SessionQuery.listQueue,
-    { sessionId: id, pageSize: 50 },
-    { enabled },
-  );
   useEffect(() => {
     if (messages.data)
       setHistory((previous) =>
@@ -1316,38 +1311,9 @@ function Conversation({
           <button disabled={!prompt.trim()}>{c.send}</button>
         </fieldset>
       </form>
-      <h3>{c.queue}</h3>
-      {queue.data?.inputs.map((input) => (
-        <article key={input.id}>
-          <p>{text(value(input).prompt)}</p>
-          <button
-            disabled={
-              !available ||
-              data.outcome !== "running" ||
-              !text(data.active_execution_id) ||
-              !text(record(data.execution).native_turn_id)
-            }
-            onClick={() =>
-              void mutate(
-                Operation.Steer,
-                create(SteerQueuedInputRequestSchema, {
-                  mutation: {
-                    id: input.id,
-                    expectedRevision: input.revision,
-                    requestId: uuid(),
-                  },
-                  sessionId: id,
-                  expectedExecutionId: text(data.active_execution_id),
-                  expectedTurnId: text(record(data.execution).native_turn_id),
-                }),
-                id,
-              )
-            }
-          >
-            {c.steer}
-          </button>
-        </article>
-      ))}
+      <QueuedInputs id={id} enabled={enabled} available={available && !session.isFetching && !session.isError && data.outcome === "running"}
+        execution={text(data.active_execution_id)} turn={text(record(data.execution).native_turn_id)} labels={c}
+        steer={request => { void mutate(Operation.Steer, request, id); }} />
       <button
         disabled={!available}
         onClick={() => setConfirmation(SessionAction.STOP)}
