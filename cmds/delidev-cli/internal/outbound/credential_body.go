@@ -19,6 +19,7 @@ import (
 type credentialBody struct {
 	body          io.ReadCloser
 	jsonGuard     *credentialJSONGuard
+	sseGuard      *credentialJSONGuard
 	patterns      [][]byte
 	shortPatterns [][]byte
 	previous      byte
@@ -63,6 +64,18 @@ func newCredentialBody(body io.ReadCloser, c domain.ProxyCredential, contentType
 		}
 	}
 	g.patterns = append(g.patterns, []byte("Basic "+base64.StdEncoding.EncodeToString([]byte(c.Username+":"+c.Password))))
+	if g.jsonGuard.framing == credentialUnknown {
+		// Typeless input can be either JSON or SSE. Keep a streaming SSE view
+		// alongside the bounded framing probe so a JSON-shaped unknown field name
+		// cannot commit the response to the wrong decoder before a later data field.
+		g.sseGuard = &credentialJSONGuard{framing: credentialSSE}
+		for _, pattern := range g.jsonGuard.patterns {
+			g.sseGuard.patterns = append(g.sseGuard.patterns, bytes.Clone(pattern))
+		}
+		for _, pattern := range g.jsonGuard.short {
+			g.sseGuard.short = append(g.sseGuard.short, bytes.Clone(pattern))
+		}
+	}
 
 	return g
 }
@@ -128,6 +141,11 @@ func containsCredentialForms(raw []byte, ended bool, previous byte, hasPrevious 
 }
 func (g *credentialBody) retainedPrefix() int {
 	retained := int(g.jsonGuard.position - g.jsonGuard.retainFrom())
+	if g.sseGuard != nil {
+		if candidate := int(g.sseGuard.position - g.sseGuard.retainFrom()); candidate > retained {
+			retained = candidate
+		}
+	}
 	if g.jsonGuard.framing == credentialUnknown && len(g.jsonGuard.probe) > retained {
 		retained = len(g.jsonGuard.probe)
 	}
@@ -164,11 +182,17 @@ func (g *credentialBody) Read(p []byte) (int, error) {
 		n, err := g.body.Read(buf)
 		g.pending = append(g.pending, buf[:n]...)
 		decodedReflection := g.jsonGuard.scan(buf[:n])
+		if g.sseGuard != nil && g.sseGuard.scan(buf[:n]) {
+			decodedReflection = true
+		}
 		clear(buf)
 		g.eof = err == io.EOF
 		if g.eof {
 			g.jsonGuard.finishProbe()
 			if g.jsonGuard.finish() {
+				decodedReflection = true
+			}
+			if g.sseGuard != nil && g.sseGuard.finish() {
 				decodedReflection = true
 			}
 		}
@@ -217,5 +241,8 @@ func (g *credentialBody) Close() error {
 	}
 	g.previous, g.hasPrevious = 0, false
 	g.jsonGuard.clear()
+	if g.sseGuard != nil {
+		g.sseGuard.clear()
+	}
 	return err
 }

@@ -62,9 +62,52 @@ func TestCredentialTypelessUnknownSSEMetadataCannotChangeDataDecoding(t *testing
 	}
 }
 
+func TestCredentialTypelessBraceAndBracketSSEFieldsCannotChangeDataDecoding(t *testing.T) {
+	credential := domainCredentialFixture()
+	form := escapedCredential(credential.Password, false)
+	for _, initialField := range []string{"{", "[", `{"extension"`} {
+		wire := initialField + `: "` + "\n" + `data: {"value":"` + form + `"}` + "\n\n"
+		for split := 0; split <= len(wire); split++ {
+			original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+			guard := newCredentialBody(original, credential)
+			output, err := io.ReadAll(guard)
+			if err == nil || err == io.EOF || !original.closed {
+				t.Fatalf("brace-prefixed typeless SSE reflection accepted at split %d for %q", split, initialField)
+			}
+			if strings.Contains(string(output), form) {
+				t.Fatalf("credential-bearing wire bytes released at split %d for %q", split, initialField)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialTypelessBraceSSEFieldBeyondProbeLimitCannotChangeDataDecoding(t *testing.T) {
+	credential := domainCredentialFixture()
+	form := escapedCredential(credential.Password, false)
+	metadata := `{"extension":"` + strings.Repeat("a", credentialSSEProbeLimit*2)
+	wire := metadata + "\n" + `data: {"value":"` + form + `"}` + "\n\n"
+	for _, split := range []int{0, credentialSSEProbeLimit - 1, credentialSSEProbeLimit, credentialSSEProbeLimit + 1, len(metadata), len(wire) - 1, len(wire)} {
+		original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+		guard := newCredentialBody(original, credential)
+		output, err := io.ReadAll(guard)
+		if err == nil || err == io.EOF || !original.closed || strings.Contains(string(output), form) {
+			t.Fatalf("long brace-prefixed typeless SSE reflection accepted at split %d", split)
+		}
+		if len(guard.jsonGuard.probe) > credentialSSEProbeLimit || len(guard.sseGuard.decoded) > 32 || len(guard.sseGuard.escape) > 12 {
+			t.Fatalf("typeless SSE scanner retained unbounded state at split %d", split)
+		}
+		guard.Close()
+	}
+}
+
 func TestCredentialTypelessFramingPreservesOrdinaryJSONAndSafeWire(t *testing.T) {
 	for _, wire := range []string{
 		`{"value":"ordinary"}`,
+		`{"value":"https://example.invalid/a:b"}`,
+		`[{"value":"ordinary"}]`,
+		"{\n\"value\":\"ordinary\"\n}",
+		"[\n{\"value\":\"ordinary\"}\n]",
 		`"extension: value"`,
 		`"extension: \"value\""`,
 		`true`,
@@ -186,25 +229,27 @@ func TestCredentialSSEShortDecodedTokenBoundaries(t *testing.T) {
 
 func TestCredentialTypelessUnknownSSEShortDecodedTokenBoundaries(t *testing.T) {
 	credential := domain.ProxyCredential{Username: "x", Password: "pass123"}
-	for _, test := range []struct {
-		value  string
-		reject bool
-	}{
-		{`\u0078`, true}, {`\u0070ass123`, true}, {`e\u0078tra`, false}, {`\u0070ass123more`, false},
-	} {
-		wire := `extension: "` + "\n" + `data: {"value":"` + test.value + "\"}\n\n"
-		for split := 0; split <= len(wire); split++ {
-			original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
-			guard := newCredentialBody(original, credential)
-			output, err := io.ReadAll(guard)
-			if test.reject {
-				if err == nil || !original.closed || strings.Contains(string(output), test.value) {
-					t.Fatalf("short typeless SSE reflection released at split %d", split)
+	for _, initialField := range []string{`extension: "`, `{: "`, `[: "`} {
+		for _, test := range []struct {
+			value  string
+			reject bool
+		}{
+			{`\u0078`, true}, {`\u0070ass123`, true}, {`e\u0078tra`, false}, {`\u0070ass123more`, false},
+		} {
+			wire := initialField + "\n" + `data: {"value":"` + test.value + "\"}\n\n"
+			for split := 0; split <= len(wire); split++ {
+				original := &trackedCredentialReader{Reader: io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))}
+				guard := newCredentialBody(original, credential)
+				output, err := io.ReadAll(guard)
+				if test.reject {
+					if err == nil || !original.closed || strings.Contains(string(output), test.value) {
+						t.Fatalf("short typeless SSE reflection released at split %d", split)
+					}
+				} else if err != nil || string(output) != wire {
+					t.Fatalf("unrelated short typeless token rejected at split %d: %v", split, err)
 				}
-			} else if err != nil || string(output) != wire {
-				t.Fatalf("unrelated short typeless token rejected at split %d: %v", split, err)
+				guard.Close()
 			}
-			guard.Close()
 		}
 	}
 }
@@ -242,6 +287,11 @@ func TestCredentialTypelessUnknownSSECancellationJoinsWithoutReleasingPrefix(t *
 		t,
 		"extension: \"\ndata: {\"value\":\"\\u0066",
 		"extension: \"\ndata: {\"value\":\"",
+	)
+	assertCredentialCancellationWithheld(
+		t,
+		`{: "`+"\n"+`data: {"value":"\u0066`,
+		`{: "`+"\n"+`data: {"value":"`,
 	)
 }
 

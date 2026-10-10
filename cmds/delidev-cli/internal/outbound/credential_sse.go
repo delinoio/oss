@@ -52,10 +52,9 @@ func (g *credentialJSONGuard) frame(b byte, offset int64) {
 		g.sse.probeLeadingWhitespace = true
 		return
 	}
-	// JSON objects and arrays are unambiguous before an SSE field delimiter.
-	// Keep strings in the bounded probe because a colon inside a valid JSON
-	// string is content, while a colon after a quoted SSE field name is a field
-	// delimiter.
+	// Keep ordinary JSON containers on the main path immediately so long JSON
+	// streams retain normal behavior. They are also legal SSE field-name starts,
+	// so credentialBody keeps an independent SSE view for typeless responses.
 	if len(g.probe) == 0 && (b == '{' || b == '[') {
 		g.framing = credentialOrdinary
 		g.sse.probeLeadingWhitespace = false
