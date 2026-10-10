@@ -22,7 +22,7 @@ func (c CodexAppConfiguration) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, id := range c.AppIDs {
-		if Text(id, "Codex app identity", 1024, true) != nil || seen[id] {
+		if id == "_default" || Text(id, "Codex app identity", 1024, true) != nil || seen[id] {
 			return invalidCodexApps()
 		}
 		seen[id] = true
