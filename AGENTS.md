@@ -8,6 +8,8 @@
 
 ## Instructions
 
+- Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
+
 - Use the `@docs/` directory as the source of truth for project contracts and implementation documents.
 - License repository-owned source and future distributions under Apache-2.0. Keep imported code and bundled fonts under their original licenses with notices intact; follow `docs/repository-license-contract.md`.
 - All repository-wide rules must be defined in the appropriate AGENTS.md.

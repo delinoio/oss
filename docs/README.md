@@ -20,6 +20,7 @@ Instruction files contain development procedures, directory ownership and contra
 Record new implementation status, validation results and unresolved limits in pull requests, issues and CI logs/artifacts. Include the source revision, commands, results and unperformed checks. Distinguish fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content. Preserve existing validation records.
 
 ## Documentation Editing Rules
+- Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
 - DeliDev implementation status and validation results belong in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Project indexes route to domain contracts, and validation-only records do not require changes to project indexes or AGENTS files. See [source ownership](cmds-delidev-structure-contract.md).
 - These rules apply to documentation authoring and editing work, not general conversational summaries.
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
