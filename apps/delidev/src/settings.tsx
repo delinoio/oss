@@ -390,6 +390,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
     appliedNotification.current=true;
     if(value.kind===EntityKind.MACHINE&&selectedCategory===SettingsCategory.ExecutionWorkers)setMachine(value);
     if(value.kind===EntityKind.ACCOUNT&&selectedCategory===SettingsCategory.SubscriptionAccounts)setAccount(value);
+    if(value.kind===EntityKind.REPOSITORY&&selectedCategory===SettingsCategory.Repositories&&value.revision>0n&&supportsResourceSchema(value))setEditing({kind:EntityKind.REPOSITORY,initial:value,key:newRequestId()});
   },[visible,notificationTarget,notificationResource.data,notificationResource.error,notificationResource.isFetching,selectedCategory]);
 
   const [providerList, setProviderList] = useState<ProviderListState>({ query: "", page: "" });

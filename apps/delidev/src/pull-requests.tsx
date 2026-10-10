@@ -5,17 +5,20 @@ import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource, newRequestId } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
 import { ItemKind, ItemState, QueryOperation, type GitHubQuery } from "./github-query-model";
 import { StandalonePullRequestResults, type PullRequestNavigation } from "./github-items";
 import { Problem } from "./ui";
-import { SettingsEntryDestination } from "./settings";
+import { SettingsEntryDestination, type SettingsNavigationEntry } from "./settings";
 import { SidebarSurface, useCloseSidebarDrawer } from "./sidebar-context";
-import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent } from "./mutation";
+import { useRetainedMutation, useRetainedMutationIntents, type RetainedMutationIntent, repositoryConfigurationPrefix, useRepositoryConfigurationPending } from "./mutation";
 import { usePRWorkflow } from "./pr-workflow";
 import { Icon } from "./sidebar";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation, SettingsActionScope } from "./settings-action";
+
+import { PendingRepositoryConfiguration, RepositoryProfileAssociation } from "./repository-association";
+import { SettingsCategory } from "./settings-category";
 
 interface LoadedPullRequests {
   repositoryId: string;
@@ -82,8 +85,9 @@ function PendingFix({ intent, remoteRepositoryId, pullRequestId }: { intent: Ret
 function PendingPRActions() {
   useLocale();
   const intents = useRetainedMutationIntents("pr-");
+  const repositoryIntents = useRetainedMutationIntents(repositoryConfigurationPrefix);
   const workflow = usePRWorkflow();
-  const rows = intents.flatMap((intent) => {
+  const rows = [...repositoryIntents.map(intent => <PendingRepositoryConfiguration key={intent.key} intent={intent} />), ...intents.flatMap((intent) => {
     if (intent.key.startsWith("pr-problem-dismiss:")) {
       return [<PendingDismissal key={intent.key} intent={intent} id={intent.key.slice("pr-problem-dismiss:".length)} />];
     }
@@ -100,12 +104,12 @@ function PendingPRActions() {
       return remoteRepositoryId && pullRequestId ? [<PendingFix key={intent.key} intent={intent} remoteRepositoryId={remoteRepositoryId} pullRequestId={pullRequestId} />] : [];
     }
     return [];
-  });
+  })];
   const confirmations = [...workflow.confirmations.values()].map((confirmation) => <article className="pending-pr-action" key={confirmation.key}><strong><LocalizedText id="pull-requests.allowanceConfirmationPr_3184de" components={{ s0: <>{confirmation.selection.number}</> }} /></strong><p>{copy("pull-requests.confirmationRetainedOpenThisPrAnd_15ba22")}</p><button type="button" onClick={() => workflow.cancelAllowance(confirmation.key)}>{copy("pull-requests.cancelAllowanceConfirmation_111886")}</button></article>);
   return <section className="pending-pr-actions" data-empty={!rows.length && !confirmations.length} aria-label={copy("pull-requests.pendingPrActions_7f3945")}><h3>{copy("pull-requests.pendingPrActions_7f3945")}</h3>{rows.length || confirmations.length ? <>{rows}{confirmations}</> : <p>{copy("pull-requests.noPendingPrActions_d8073e")}</p>}</section>;
 }
 
-export function PullRequests({ active, openSettings }: { active: boolean; openSettings: (destination?: SettingsEntryDestination) => void }) {
+export function PullRequests({ active, openSettings }: { active: boolean; openSettings: (destination?: SettingsNavigationEntry) => void }) {
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
@@ -144,7 +148,8 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const config = document(selected);
   const configured = Boolean(selected && selected.id === repositoryId && selected.kind === EntityKind.REPOSITORY && selected.schemaVersion === 1 && text(config.integration_id) && text(config.github_owner) && text(config.github_name));
   const searchValid = plainSearch(search.trim());
-  const canLoad = Boolean(active && metadataConfirmed && configured && !selectedQuery.error && !selectedQuery.isFetching);
+  const repositorySavePending = useRepositoryConfigurationPending(repositoryId);
+  const canLoad = Boolean(!repositorySavePending && active && metadataConfirmed && configured && !selectedQuery.error && !selectedQuery.isFetching);
   const scopeKey = selected ? JSON.stringify([selected.id, selected.revision.toString(), state, appliedSearch, pageSize]) : "";
 
   useEffect(() => {
@@ -218,7 +223,7 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       <Problem error={selectedQuery.error} />
       {!repositoryId ? <p>{copy("pull-requests.selectOneConfiguredRepositoryInThe_6c065a")}</p> : null}
       {repositoryId && !selectedQuery.isPending && !selected ? <p role="alert">{copy("pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad")}</p> : null}
-      {selected && !configured ? <><p>{copy("pull-requests.configureThisRepositorySGithubProfile_86db03")}</p><div className="actions"><button type="button" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.GitProfiles); }}>{copy("pull-requests.githubProfiles")}</button></div></> : null}
+      {selected && !configured ? selected.id === repositoryId && selected.kind === EntityKind.REPOSITORY && selected.schemaVersion === 1 && selected.revision > 0n && text(config.github_owner) && text(config.github_name) && !text(config.integration_id) && active && metadataConfirmed && !selectedQuery.isFetching && !selectedQuery.error ? <RepositoryProfileAssociation key={`${metadataGeneration}:${selected.revision}`} repository={selected} active={active} profiles={() => { closeDrawer(); openSettings(SettingsEntryDestination.GitProfiles); }} review={async () => { const result = await selectedQuery.refetch({ cancelRefetch: false }); const row = result.data?.resource; if (result.error || row?.id !== repositoryId || row.kind !== EntityKind.REPOSITORY || row.schemaVersion !== 1) throw new Error("Repository review is unavailable"); }} /> : <><p>{copy("pull-requests.configureThisRepositorySGithubProfile_86db03")}</p><div className="actions"><button type="button" onClick={() => { closeDrawer(); openSettings({ category: SettingsCategory.Repositories, generation: newRequestId(), resourceId: repositoryId, resourceKind: EntityKind.REPOSITORY }); }}>{copy("pull-requests.editCurrentRepository")}</button><button type="button" onClick={() => { closeDrawer(); openSettings(SettingsEntryDestination.GitProfiles); }}>{copy("pull-requests.githubProfiles")}</button></div></> : null}
       {selected && configured && !loaded ? <p>{copy("pull-requests.chooseTheStateAndOptionalTitle_5fb280")}</p> : null}
       {resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey ? <StandalonePullRequestResults key={loaded.scopeKey} selected={selected!} navigation={navigation} active={active} changeNavigation={setNavigation} pending={<PendingPRActions />} /> : null}
     </section>
