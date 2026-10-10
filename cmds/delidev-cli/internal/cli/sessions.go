@@ -81,6 +81,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 		return sessionFiles(ctx, c, append([]string{"diff"}, args[1:]...))
 	case "review-context":
 		return sessionFiles(ctx, c, append([]string{"review-context"}, args[1:]...))
+	case "native-review":
+		return sessionNativeReview(ctx, c, o, args[1:], streams)
 	case "review":
 		return sessionReview(ctx, c, o, args[1:], streams)
 	case "steer":

@@ -516,5 +516,23 @@ message PublishNativeCodeReviewRequest {
  string thread_id = 6;
  string turn_id = 7;
  string item_id = 8;
+ // Durable independent response receipt; does not advance lifecycle state.
+ NativeCodeReviewResponseUsage usage = 14;
 }
 message PublishNativeCodeReviewResponse { uint64 revision = 1; }
+
+// The Worker reports one normalized original response. Account, model, context
+// and price authority remain bound to the server's immutable review job.
+message NativeCodeReviewResponseUsage {
+ string response_digest = 1;
+ optional int64 input = 2;
+ optional int64 cached_input = 3;
+ optional int64 cache_write_input = 4;
+ optional int64 output = 5;
+ optional int64 reasoning_output = 6;
+ optional int64 total = 7;
+ bool counts_available = 8;
+ bool unspecified_native_cost = 9;
+ uint64 sequence = 10;
+ string native_version = 11;
+}

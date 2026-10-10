@@ -48,8 +48,9 @@ func (t *Tx) AccountExecutionJobs(account, after domain.ID, limit int) ([]Record
 FROM jobs j JOIN entities e ON e.id=j.id
 WHERE j.id>? AND j.state IN ('queued','claimed','uncertain')
 AND ((json_extract(e.body,'$.type')='execute-session' AND json_extract(e.body,'$.input.account_id')=?)
-OR (json_extract(e.body,'$.type')='compact-session' AND json_extract(e.body,'$.input.assignment.account_id')=?))
-ORDER BY j.id LIMIT ?`, after, account, account, limit)
+OR (json_extract(e.body,'$.type')='compact-session' AND json_extract(e.body,'$.input.assignment.account_id')=?)
+OR (json_extract(e.body,'$.type')='native-code-review' AND json_extract(e.body,'$.input.source.account_id')=?))
+ORDER BY j.id LIMIT ?`, after, account, account, account, limit)
 	if err != nil {
 		return nil, storageError(err)
 	}

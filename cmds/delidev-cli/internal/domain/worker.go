@@ -202,7 +202,9 @@ func (j Job) Validate() error {
 	// compaction envelope needs room for two copies plus its bounded metadata.
 	// Keep this exception until compaction stores the source assignment by
 	// reference; the larger cap is still finite and applies only to this job.
-	if j.Type == CompactSessionJob {
+	if j.Type == NativeCodeReviewJob {
+		maxInput = MaxNativeCodeReviewInputBytes
+	} else if j.Type == CompactSessionJob {
 		maxInput = maxCompactionJobInputBytes
 	} else if j.Type == WorkspaceStorageJob {
 		maxInput = MaxStorageRecoveryInputBytes

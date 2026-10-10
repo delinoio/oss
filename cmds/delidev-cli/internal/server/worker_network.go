@@ -461,6 +461,11 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Subscription || input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || input.ExecutionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
+		case domain.NativeCodeReviewJob:
+			var input domain.NativeCodeReviewInput
+			if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil || input.Source.Configuration.Subscription || input.ActionID != value.ExecutionID {
+				return nil, executionDenied()
+			}
 		case domain.CompactSessionJob:
 			var input domain.SessionCompactionInput
 			if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.Configuration.Harness != domain.Codex || input.Assignment.Configuration.Subscription || input.ActionID != value.ExecutionID {

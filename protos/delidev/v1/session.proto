@@ -4,6 +4,7 @@ package delidev.v1;
 import "delidev/v1/attachments.proto";
 import "delidev/v1/common.proto";
 import "delidev/v1/skills.proto";
+import "delidev/v1/usage.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -607,6 +608,7 @@ enum NativeCodeReviewState {
  NATIVE_CODE_REVIEW_STATE_INTERRUPTED = 6;
  NATIVE_CODE_REVIEW_STATE_UNCERTAIN = 7;
  NATIVE_CODE_REVIEW_STATE_STALE = 8;
+ NATIVE_CODE_REVIEW_STATE_REJECTED = 9;
 }
 message NativeCodeReviewTarget {
  NativeCodeReviewTargetKind kind = 1;
@@ -654,6 +656,10 @@ message NativeCodeReview {
  string entered_item_id = 8;
  string exited_item_id = 9;
  NativeCodeReviewResult result = 10;
+ // Independent auxiliary response totals, including observations before uncertainty.
+ UsageTotals usage = 11;
+ EstimateTotals estimates = 12;
+ bool usage_complete = 13;
 }
 message CreateNativeCodeReviewRequest {
  Mutation mutation = 1;

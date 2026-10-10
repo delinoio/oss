@@ -536,6 +536,15 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				}
 				execution = fork.SourceAssignment
 				forkRevision = jr.Revision
+			case domain.NativeCodeReviewJob:
+				var review domain.NativeCodeReviewInput
+				if domain.DecodeNativeCodeReviewInput(job.Input, &review) != nil || review.Validate() != nil || review.SubscriptionGeneration != state.Generation {
+					return nil, subscriptionDenied()
+				}
+				if _, err := nativeReviewAuthority(tx, jr, job); err != nil {
+					return nil, err
+				}
+				execution = review.Source
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
 				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || (compact.Version != 2 && compact.Version != 4) {

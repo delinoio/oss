@@ -104,16 +104,21 @@ func (f NativeCodeReviewFinding) Validate() error {
 // Each auxiliary review has its own action/job and immutable source assignment.
 // It never replaces a conversation execution or its continuation predecessor.
 type NativeCodeReviewInput struct {
-	Version        uint32                 `json:"version"`
-	ActionID       ID                     `json:"action_id"`
-	SourceJobID    ID                     `json:"source_job_id"`
-	SourceRevision uint64                 `json:"source_revision"`
-	Source         ExecutionJobInput      `json:"source"`
-	Target         NativeCodeReviewTarget `json:"target"`
-	Actor          Principal              `json:"actor"`
+	ContextRevision        uint64                 `json:"context_revision,omitempty"`
+	SubscriptionGeneration ID                     `json:"subscription_generation,omitempty"`
+	Version                uint32                 `json:"version"`
+	ActionID               ID                     `json:"action_id"`
+	SourceJobID            ID                     `json:"source_job_id"`
+	SourceRevision         uint64                 `json:"source_revision"`
+	Source                 ExecutionJobInput      `json:"source"`
+	Target                 NativeCodeReviewTarget `json:"target"`
+	Actor                  Principal              `json:"actor"`
 }
 
 func (i NativeCodeReviewInput) Validate() error {
+	if i.Source.Configuration.Subscription && i.SubscriptionGeneration.Validate() != nil || !i.Source.Configuration.Subscription && i.SubscriptionGeneration != "" || i.Actor.MachineID != "" || i.Actor.Type == ClientDevice && i.Actor.DeviceID.Validate() != nil || i.Actor.Type == OwnerDevice && i.Actor.DeviceID != "" && i.Actor.DeviceID.Validate() != nil {
+		return NativeCodeReviewUnavailable()
+	}
 	if i.Version != 1 || UniqueIDs([]ID{i.ActionID, i.SourceJobID, i.Source.ExecutionID, i.Source.InputID, i.Source.SessionID}) != nil || i.SourceRevision == 0 || i.SourceRevision >= 1<<63 || i.Source.Validate() != nil || i.Source.Configuration.Harness != Codex || i.Target.Validate() != nil || (i.Actor.Type != OwnerDevice && i.Actor.Type != ClientDevice) {
 		return NativeCodeReviewUnavailable()
 	}
@@ -123,6 +128,7 @@ func (i NativeCodeReviewInput) Validate() error {
 type NativeCodeReviewState string
 
 const (
+	NativeReviewRejected    NativeCodeReviewState = "rejected"
 	NativeReviewQueued      NativeCodeReviewState = "queued"
 	NativeReviewReady       NativeCodeReviewState = "ready"
 	NativeReviewEntered     NativeCodeReviewState = "entered"
@@ -136,6 +142,7 @@ const (
 // No native path, raw rollout bytes, credentials or inferred workspace mutation
 // enters this projection. Findings remain bound to their original selection.
 type NativeCodeReviewResult struct {
+	UsageRecords    []ResponseUsageRecord     `json:"usage_records,omitempty"`
 	Version         uint32                    `json:"version"`
 	ActionID        ID                        `json:"action_id"`
 	Selection       NativeCodeReviewSelection `json:"selection"`
@@ -154,6 +161,14 @@ type NativeCodeReviewResult struct {
 func (r NativeCodeReviewResult) Validate() error {
 	if r.Version != 1 || r.ActionID.Validate() != nil || r.Selection.Validate() != nil || r.ThreadID.Validate(Codex, NativeThreadIdentity) != nil || r.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(r.EnteredItemID, "entered review item", 256, true) != nil || Text(r.ExitedItemID, "exited review item", 256, true) != nil || r.EnteredItemID == r.ExitedItemID || r.Findings == nil || len(r.Findings) > 64 || Text(r.Explanation, "native review explanation", 8192, false) != nil || (r.Correctness != "patch is correct" && r.Correctness != "patch is incorrect") || math.IsNaN(r.Confidence) || math.IsInf(r.Confidence, 0) || r.Confidence < 0 || r.Confidence > 1 || !reviewDigest(r.RolloutDigest) || !r.CleanupVerified {
 		return NativeCodeReviewUnavailable()
+	}
+	if len(r.UsageRecords) > 128 {
+		return NativeCodeReviewUnavailable()
+	}
+	for _, u := range r.UsageRecords {
+		if u.Validate() != nil || u.Purpose != NativeCodeReviewUsage || u.ExecutionID != r.ActionID || u.ThreadID != string(r.ThreadID) || u.TurnID != string(r.TurnID) {
+			return NativeCodeReviewUnavailable()
+		}
 	}
 	for _, f := range r.Findings {
 		if f.Validate() != nil {
@@ -192,6 +207,39 @@ func (p NativeCodeReviewProgress) Validate() error {
 			return NativeCodeReviewUnavailable()
 		}
 	default:
+		return NativeCodeReviewUnavailable()
+	}
+	return nil
+}
+
+const MaxNativeCodeReviewInputBytes = 2 << 20
+const MaxNativeCodeReviewJobBytes = 4 << 20
+
+func DecodeNativeCodeReviewInput(raw []byte, target *NativeCodeReviewInput) error {
+	return DecodeWithLimit(raw, target, MaxNativeCodeReviewInputBytes)
+}
+func DecodeNativeCodeReviewJob(raw []byte, target *Job) error {
+	if DecodeWithLimit(raw, target, MaxNativeCodeReviewJobBytes) != nil || target.Type != NativeCodeReviewJob || target.Validate() != nil {
+		return NativeCodeReviewUnavailable()
+	}
+	var input NativeCodeReviewInput
+	if DecodeNativeCodeReviewInput(target.Input, &input) != nil || input.Validate() != nil {
+		return NativeCodeReviewUnavailable()
+	}
+	return nil
+}
+
+// A positive original no-send proof is distinct from unknown native completion.
+// Cleanup alone after a claimed review/start cannot authorize a replacement.
+type NativeCodeReviewRejectedProof struct {
+	Version         uint32 `json:"version"`
+	ActionID        ID     `json:"action_id"`
+	NoSend          bool   `json:"no_send"`
+	CleanupVerified bool   `json:"cleanup_verified"`
+}
+
+func (p NativeCodeReviewRejectedProof) Validate() error {
+	if p.Version != 1 || p.ActionID.Validate() != nil || !p.NoSend || !p.CleanupVerified {
 		return NativeCodeReviewUnavailable()
 	}
 	return nil

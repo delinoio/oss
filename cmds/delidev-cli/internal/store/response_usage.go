@@ -26,6 +26,16 @@ func (t *Tx) PutResponseUsage(id domain.ID, record domain.ResponseUsageRecord) (
 	if _, err := t.Get(domain.SessionKind, record.SessionID); err != nil {
 		return "", false, err
 	}
+	// Auxiliary review receipts share response identity without widening the
+	// legacy SQL purpose constraint or charging an observed response twice.
+	var auxiliary string
+	auxErr := t.tx.QueryRowContext(t.ctx, "SELECT value FROM metadata WHERE key=?", nativeReviewUsageKey(record)).Scan(&auxiliary)
+	if auxErr == nil {
+		return "", false, domain.NativeCodeReviewUnavailable()
+	}
+	if !errors.Is(auxErr, sql.ErrNoRows) {
+		return "", false, storageError(auxErr)
+	}
 	var existingID domain.ID
 	var body []byte
 	err := t.tx.QueryRowContext(t.ctx, "SELECT id,body FROM response_usage WHERE id=?", id).Scan(&existingID, &body)

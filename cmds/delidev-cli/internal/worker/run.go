@@ -365,6 +365,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1) {
 				profile += "\x00codex-approval-review-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1)
+			}
 			if subagentExpected {
 				profile += "\x00codex-subagent-configuration-v1"
 			}
@@ -841,7 +844,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				cancel(publicationUncertain())
 				return
 			}
-			work.native = envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob
+			work.native = envelope.Type == domain.NativeCodeReviewJob || envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob
 			if _, loaded := active.LoadOrStore(resource.Id, work); loaded {
 				stopJob()
 				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received a duplicate live assignment.", "Reconcile its original operation before another send."))
@@ -1034,6 +1037,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
+	if job.Type == domain.NativeCodeReviewJob {
+		var input domain.NativeCodeReviewInput
+		if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil || input.Source.SessionID != domain.ID(resource.SessionId) || input.Source.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
+			return journal{}, publicationUncertain()
+		}
+	}
 	if job.Type == domain.CompactSessionJob {
 		var input domain.SessionCompactionInput
 		if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
@@ -1129,6 +1138,8 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	switch job.Type {
+	case domain.NativeCodeReviewJob:
+		return executeNativeCodeReview(ctx, config, owner, job)
 	case domain.CompactSessionJob:
 		return executeSessionCompaction(ctx, config, owner, job)
 	case domain.NativeModelsJob:

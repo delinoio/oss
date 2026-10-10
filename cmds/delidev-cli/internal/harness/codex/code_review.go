@@ -10,6 +10,7 @@ import (
 )
 
 const CodeReviewEvent EventKind = "code-review"
+const NativeReviewItemPending MetadataKind = "native-review-item-pending"
 
 type CodeReviewObservation struct {
 	ActionID domain.ID
@@ -140,7 +141,7 @@ func (c *Client) observeCodeReviewLocked(native nativewire.Event, thread, turn d
 			if previous.kind != item.Type || previous.text != item.Review || previous.started != *started {
 				return Event{}, codeReviewUncertain()
 			}
-			return Event{Kind: MetadataEvent}, nil
+			return Event{Kind: MetadataEvent, Metadata: NativeReviewItemPending, ThreadID: thread, TurnID: turn, Correlated: true}, nil
 		}
 		if item.Type == "enteredReviewMode" {
 			if a.entered != "" || a.exited != "" {
@@ -157,7 +158,7 @@ func (c *Client) observeCodeReviewLocked(native nativewire.Event, thread, turn d
 			return Event{}, codeReviewUncertain()
 		}
 		a.items[item.ID] = codeReviewItem{kind: item.Type, text: item.Review, started: *started}
-		return Event{Kind: MetadataEvent}, nil
+		return Event{Kind: MetadataEvent, Metadata: NativeReviewItemPending, ThreadID: thread, TurnID: turn, Correlated: true}, nil
 	}
 	if completed == nil || *completed < 0 || !seen || previous.kind != item.Type || previous.text != item.Review || *completed < previous.started {
 		return Event{}, codeReviewUncertain()
@@ -166,7 +167,7 @@ func (c *Client) observeCodeReviewLocked(native nativewire.Event, thread, turn d
 		if *previous.completed != *completed {
 			return Event{}, codeReviewUncertain()
 		}
-		return Event{Kind: MetadataEvent}, nil
+		return Event{Kind: MetadataEvent, Metadata: NativeReviewItemPending, ThreadID: thread, TurnID: turn, Correlated: true}, nil
 	}
 	previous.completed = completed
 	a.items[item.ID] = previous
@@ -175,4 +176,14 @@ func (c *Client) observeCodeReviewLocked(native nativewire.Event, thread, turn d
 		stage = domain.NativeReviewExited
 	}
 	return Event{Kind: CodeReviewEvent, ThreadID: thread, TurnID: turn, ItemID: item.ID, Correlated: true, CodeReview: &CodeReviewObservation{ActionID: a.action, Stage: stage, ItemID: item.ID}}, nil
+}
+
+// A local immutable send claim is positive no-send evidence only while absent.
+// Neither a native rejection nor missing turn acknowledgment clears the claim.
+func (c *Client) CodeReviewSendClaimed(ctx context.Context) (bool, error) {
+	if err := c.acquireControl(ctx); err != nil {
+		return true, err
+	}
+	defer func() { <-c.control }()
+	return c.codeReview != nil, nil
 }

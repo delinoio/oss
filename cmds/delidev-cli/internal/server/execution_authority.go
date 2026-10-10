@@ -60,6 +60,9 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil {
 		return empty, executionDenied()
 	}
+	if job.Type == domain.NativeCodeReviewJob {
+		return a.nativeReviewScope(tx, grant, jobRecord, job)
+	}
 	if job.Type == domain.CompactSessionJob {
 		return a.compactionScope(tx, grant, jobRecord, job)
 	}
@@ -461,7 +464,7 @@ func (a *executionAuthority) Acquire(ctx context.Context, token string) (*apipro
 		return credential.Key, err
 	}
 
-	if scope.Purpose != domain.SessionTitleUsage && scope.Provider.Protocol == domain.OpenAIResponses {
+	if scope.Purpose != domain.SessionTitleUsage && scope.Purpose != domain.NativeCodeReviewUsage && scope.Provider.Protocol == domain.OpenAIResponses {
 		lease.ObserveHistory = func(ctx context.Context, accountBound bool) error {
 			if leaseContext.Err() != nil {
 				return executionDenied()
@@ -702,7 +705,13 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, executionDenied()
 		}
-		if job.Type == domain.CompactSessionJob {
+		if job.Type == domain.NativeCodeReviewJob {
+			var input domain.NativeCodeReviewInput
+			if domain.DecodeNativeCodeReviewInput(job.Input, &input) != nil || input.Validate() != nil {
+				return nil, executionDenied()
+			}
+			grant.ExecutionID = input.ActionID
+		} else if job.Type == domain.CompactSessionJob {
 			var input domain.SessionCompactionInput
 			if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil {
 				return nil, executionDenied()
@@ -745,6 +754,9 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				} else if job.Type == domain.CompactSessionJob {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex
+				} else if job.Type == domain.NativeCodeReviewJob {
+					var input domain.NativeCodeReviewInput
+					supported = domain.DecodeNativeCodeReviewInput(job.Input, &input) == nil && input.Validate() == nil && !input.Source.Configuration.Subscription
 				} else if job.Type == domain.GenerateSessionTitleJob {
 					var input domain.AuxiliaryTitleInput
 					supported = domain.Decode(job.Input, &input) == nil && input.Harness == domain.Codex && domain.CodexVersionAllowed(input.NativeVersion)
