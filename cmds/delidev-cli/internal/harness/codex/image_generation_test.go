@@ -158,7 +158,7 @@ func TestNativeImageGenerationActivationRequiresOriginalManagedAssignment(t *tes
 	if configureImageGeneration(&disabled) != nil || disabled.Process.Args[1] != "features.image_generation=false" {
 		t.Fatal("historical assignment gained generation")
 	}
-	readonly := Client{managedHome: t.TempDir(), sidechat: ReadOnlySidechatV1, imageRoot: t.TempDir()}
+	readonly := Client{imageObservations: (Config{Mode: ThreadProtocol, ManagedAuthentication: true, Sidechat: ReadOnlySidechatV1, ImageRoot: t.TempDir()}).imageObservationProfile()}
 	if readonly.nativeFrameLimit() != 16<<20 {
 		t.Fatal("original image-bearing history truncated for read-only Sidechat")
 	}
@@ -177,6 +177,9 @@ func TestNativeImageGenerationRequiresObservedEffectiveFeatureBeforeInput(t *tes
 				if err != nil {
 					t.Fatal("original effective feature rejected", err)
 				}
+				if !client.imageObservations || client.nativeFrameLimit() != 16<<20 {
+					t.Fatal("admitted generation did not retain the enlarged original decoder profile")
+				}
 				if err = client.Close(); err != nil {
 					t.Fatal(err)
 				}
@@ -185,5 +188,80 @@ func TestNativeImageGenerationRequiresObservedEffectiveFeatureBeforeInput(t *tes
 				t.Fatal("unobserved native feature authorized input")
 			}
 		})
+	}
+}
+
+func TestImageObservationProfileFreezesOriginalAdmissionAndDecoderBounds(t *testing.T) {
+	original := Config{Mode: ThreadProtocol, ManagedAuthentication: true, ImageRoot: t.TempDir(), ImageMachineID: domain.NewID()}
+	raw, err := json.Marshal(map[string]string{"original": string(bytes.Repeat([]byte{'x'}, nativewire.MaxFrame))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ordinary-disabled", "generation", "readonly-history", "custom-api", "unmanaged", "probe", "no-root", "no-machine", "unknown-sidechat"} {
+		t.Run(name, func(t *testing.T) {
+			config := original
+			switch name {
+			case "generation":
+				config.EnableImageGeneration = true
+			case "readonly-history":
+				config.Sidechat = ReadOnlySidechatV1
+			case "custom-api":
+				config.EnableImageGeneration, config.API = true, &APIConfig{}
+			case "unmanaged":
+				config.EnableImageGeneration, config.ManagedAuthentication = true, false
+			case "probe":
+				config.EnableImageGeneration, config.Mode = true, ProbeProtocol
+			case "no-root":
+				config.EnableImageGeneration, config.ImageRoot = true, ""
+			case "no-machine":
+				config.EnableImageGeneration, config.ImageMachineID = true, ""
+			case "unknown-sidechat":
+				config.Sidechat = "future"
+			}
+			admitted := name == "generation" || name == "readonly-history"
+			profile := config.imageObservationProfile()
+			if profile != admitted {
+				t.Fatal("storage or unrelated route changed image observation admission")
+			}
+			client := Client{imageObservations: profile}
+			expected := nativewire.MaxFrame
+			if admitted {
+				expected = 16 << 20
+			}
+			if client.nativeFrameLimit() != expected {
+				t.Fatal("decoder did not retain the admitted transport frame profile")
+			}
+			var decoded map[string]string
+			if err := domain.DecodeBounded(raw, &decoded, client.nativeFrameLimit()); (err == nil) != admitted {
+				t.Fatalf("oversized original history classification: %v", err)
+			}
+			if admitted && decoded["original"] != string(bytes.Repeat([]byte{'x'}, nativewire.MaxFrame)) {
+				t.Fatal("original history was silently truncated")
+			}
+			config.EnableImageGeneration = !config.EnableImageGeneration
+			config.ImageRoot = ""
+			if client.nativeFrameLimit() != expected {
+				t.Fatal("later settings changed the frozen original decoder profile")
+			}
+		})
+	}
+}
+
+func TestOrdinaryManagedStorageDoesNotAdmitImageFrames(t *testing.T) {
+	config := fixtureConfig(t, "thread-managed-ready")
+	config.Mode, config.ManagedAuthentication = ThreadProtocol, true
+	config.ImageRoot, config.ImageMachineID = t.TempDir(), domain.NewID()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client, err := Open(ctx, config)
+	if err != nil {
+		t.Fatal("ordinary managed profile rejected", err)
+	}
+	defer client.Close()
+	if client.imageObservations || client.imageGeneration || client.nativeFrameLimit() != nativewire.MaxFrame {
+		t.Fatal("private storage enlarged an explicitly disabled original generation")
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

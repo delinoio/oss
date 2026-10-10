@@ -21,6 +21,11 @@ const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&
 const exact=(v:Record<string,unknown>,keys:string[])=>Object.keys(v).sort().join(",")===keys.sort().join(",");
 const luminance=(hex:string)=>{const values=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*values[0]+.7152*values[1]+.0722*values[2];};
 export function contrast(a:string,b:string) { const x=luminance(a),y=luminance(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); }
+export function visibleFocusColor(focus:string,surface:string) {
+ if(contrast(focus,surface)>=3)return focus;
+ const black="#000000",white="#FFFFFF";
+ return contrast(black,surface)>=contrast(white,surface)?black:white;
+}
 export function validColors(value:unknown):value is ColorMap {
  if(!object(value)||!exact(value,[...colorTokens])||!Object.values(value).every(v=>typeof v==="string"&&/^#[0-9A-Fa-f]{6}$/.test(v)))return false;
  const v=value as ColorMap;
@@ -50,6 +55,7 @@ export function applyAppearanceColors(colors:ColorMap,selector=":root"):()=>void
  if(typeof CSSStyleSheet.prototype.replaceSync!=="function")return ()=>{};
  const sheet=new CSSStyleSheet();sheet.replaceSync(`${selector} {}`);const rule=sheet.cssRules[0] as CSSStyleRule;
  for(const [token,value] of Object.entries(colors))rule.style.setProperty(`--${token}`,value);
+ rule.style.setProperty("--focus-on-selected",visibleFocusColor(colors.focus,colors["surface-selected"]));
  document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];
  return ()=>{document.adoptedStyleSheets=document.adoptedStyleSheets.filter(value=>value!==sheet);};
 }
