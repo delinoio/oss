@@ -17,6 +17,14 @@ export function createDiagnosticFilter(args, emit) {
     }
   }
   const privateValues = [...variants].sort((a, b) => b.length - a.length);
+  const patterns = privateValues.map(value => {
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    // A short positional value must not erase unrelated words in safe logs.
+    return /^[\p{L}\p{N}_]+$/u.test(value)
+      ? `(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`
+      : escaped;
+  });
+  const privatePattern = patterns.length ? new RegExp(patterns.join("|"), "gu") : null;
   const decoder = new StringDecoder("utf8");
   let line = "";
   let omitted = false;
@@ -24,8 +32,7 @@ export function createDiagnosticFilter(args, emit) {
     if (omitted) {
       emit(`[desktop diagnostic omitted: oversized line]${newline}`);
     } else if (!/^\s*Running\s/u.test(line.replace(ansiSequence, ""))) {
-      let safe = line;
-      for (const value of privateValues) safe = safe.replaceAll(value, "[redacted]");
+      const safe = privatePattern ? line.replace(privatePattern, "[redacted]") : line;
       emit(safe + newline);
     }
     line = "";

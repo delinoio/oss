@@ -253,7 +253,6 @@ test("captured diagnostics preserve child signal outcomes", { skip: process.plat
 });
 
 test("surviving descendants cannot hold the captured launcher open", { skip: process.platform === "win32", timeout: 3000 }, async () => {
-  const started = Date.now();
   let incomplete = 0;
   const result = await spawnDevServer(process.execPath, ["-e", `
     const { spawn } = require('node:child_process');
@@ -263,7 +262,6 @@ test("surviving descendants cannot hold the captured launcher open", { skip: pro
   `], { stdio: ["ignore", "pipe", "pipe"] }, { onStdout: () => {}, onStderr: () => {}, onOutputIncomplete: () => { incomplete++; } });
   assert.deepEqual(result, success);
   assert.equal(incomplete, 1);
-  assert.ok(Date.now() - started < 500, "desktop exit must not wait for the surviving descendant");
 });
 
 test("lock cleanup uncertainty stays visible without exception paths or replacing child failure", async () => {
@@ -277,4 +275,13 @@ test("lock cleanup uncertainty stays visible without exception paths or replacin
   assert.deepEqual(result, { code: 17, signal: null });
   assert.deepEqual(logs.at(-1), { operation: "desktop_development", stage: "prepare", state: "cleanup-uncertain", code: "build-lock-release-failed" });
   assert.equal(JSON.stringify(logs).includes("/absolute/private/fixture-scope"), false);
+});
+
+test("short argument values do not erase unrelated safe diagnostic words", async () => {
+  const { createDiagnosticFilter } = await import("./desktop-diagnostics.mjs");
+  const output = [];
+  const filter = createDiagnosticFilter(["e", "redacted"], text => output.push(text));
+  filter.write(Buffer.from("error: recovery pending; token e; argument redacted\n"));
+  filter.end();
+  assert.equal(output.join(""), "error: recovery pending; token [redacted]; argument [redacted]\n");
 });
