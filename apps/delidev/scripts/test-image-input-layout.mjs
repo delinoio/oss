@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser layout evidence; no native window or provider account is used.
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
+import { screenshotDirectory } from "./image-layout-screenshot-path.mjs";
 
 
 async function guidance(page, plus, language) {
@@ -38,12 +39,13 @@ async function guidance(page, plus, language) {
 }
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const screenshots = await screenshotDirectory(process.env.DELIDEV_LAYOUT_SCREENSHOTS, resolve(app, "../.."));
 const modulePath = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
 const { chromium } = await import(modulePath ? pathToFileURL(resolve(modulePath)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-image-layout-"));
-const screenshots = process.env.DELIDEV_LAYOUT_SCREENSHOTS;
 let browser, server;
 try {
+ if (screenshots) await mkdir(screenshots, { recursive: true });
  const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/image-input-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
  await build.build();
  server = createServer(async (request,response) => {
