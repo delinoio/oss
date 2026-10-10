@@ -711,7 +711,7 @@ func finishForwardArchive(tx *store.Tx, id domain.ID) error {
 		}
 		return err
 	}
-	if session.Archive != domain.ArchivePending || session.ActiveExecutionID != "" || session.CompactionJobID != "" || session.Recovery != domain.NoRecovery {
+	if session.Archive != domain.ArchivePending || session.ActiveExecutionID != "" || session.ContextActionJobID() != "" || session.Recovery != domain.NoRecovery {
 		return nil
 	}
 	pending, err := tx.SessionForwardsPending(id)

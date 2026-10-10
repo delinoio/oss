@@ -13,7 +13,7 @@ func DecodeCompactionJob(raw []byte, target *Job) error {
 		return err
 	}
 	var input SessionCompactionInput
-	if target.Type != CompactSessionJob || target.Validate() != nil || DecodeCompactionInput(target.Input, &input) != nil || input.Validate() != nil {
+	if !target.Type.NativeContextAction() || target.Validate() != nil || DecodeCompactionInput(target.Input, &input) != nil || input.Validate() != nil || (target.Type == NativeShellJob) != (input.Shell != nil) {
 		return CompactionUncertain()
 	}
 	return nil

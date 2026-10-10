@@ -33,6 +33,15 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SessionServiceRunNativeShellProcedure is the fully-qualified name of the SessionService's
+	// RunNativeShell RPC.
+	SessionServiceRunNativeShellProcedure = "/delidev.v1.SessionService/RunNativeShell"
+	// SessionServiceCancelNativeShellProcedure is the fully-qualified name of the SessionService's
+	// CancelNativeShell RPC.
+	SessionServiceCancelNativeShellProcedure = "/delidev.v1.SessionService/CancelNativeShell"
+	// SessionServiceGetNativeShellProcedure is the fully-qualified name of the SessionService's
+	// GetNativeShell RPC.
+	SessionServiceGetNativeShellProcedure = "/delidev.v1.SessionService/GetNativeShell"
 	// SessionServiceListRequestDiagnosticsProcedure is the fully-qualified name of the SessionService's
 	// ListRequestDiagnostics RPC.
 	SessionServiceListRequestDiagnosticsProcedure = "/delidev.v1.SessionService/ListRequestDiagnostics"
@@ -145,6 +154,9 @@ const (
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	RunNativeShell(context.Context, *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error)
+	CancelNativeShell(context.Context, *connect.Request[v1.CancelNativeShellRequest]) (*connect.Response[v1.CancelNativeShellResponse], error)
+	GetNativeShell(context.Context, *connect.Request[v1.GetNativeShellRequest]) (*connect.Response[v1.GetNativeShellResponse], error)
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
 	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
@@ -194,6 +206,24 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		runNativeShell: connect.NewClient[v1.RunNativeShellRequest, v1.RunNativeShellResponse](
+			httpClient,
+			baseURL+SessionServiceRunNativeShellProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("RunNativeShell")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelNativeShell: connect.NewClient[v1.CancelNativeShellRequest, v1.CancelNativeShellResponse](
+			httpClient,
+			baseURL+SessionServiceCancelNativeShellProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CancelNativeShell")),
+			connect.WithClientOptions(opts...),
+		),
+		getNativeShell: connect.NewClient[v1.GetNativeShellRequest, v1.GetNativeShellResponse](
+			httpClient,
+			baseURL+SessionServiceGetNativeShellProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetNativeShell")),
+			connect.WithClientOptions(opts...),
+		),
 		listRequestDiagnostics: connect.NewClient[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse](
 			httpClient,
 			baseURL+SessionServiceListRequestDiagnosticsProcedure,
@@ -415,6 +445,9 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	runNativeShell           *connect.Client[v1.RunNativeShellRequest, v1.RunNativeShellResponse]
+	cancelNativeShell        *connect.Client[v1.CancelNativeShellRequest, v1.CancelNativeShellResponse]
+	getNativeShell           *connect.Client[v1.GetNativeShellRequest, v1.GetNativeShellResponse]
 	listRequestDiagnostics   *connect.Client[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse]
 	retrySidechatQuestion    *connect.Client[v1.RetrySidechatQuestionRequest, v1.RetrySidechatQuestionResponse]
 	getSidechatQuestionRetry *connect.Client[v1.GetSidechatQuestionRetryRequest, v1.GetSidechatQuestionRetryResponse]
@@ -451,6 +484,21 @@ type sessionServiceClient struct {
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
 	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
+}
+
+// RunNativeShell calls delidev.v1.SessionService.RunNativeShell.
+func (c *sessionServiceClient) RunNativeShell(ctx context.Context, req *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error) {
+	return c.runNativeShell.CallUnary(ctx, req)
+}
+
+// CancelNativeShell calls delidev.v1.SessionService.CancelNativeShell.
+func (c *sessionServiceClient) CancelNativeShell(ctx context.Context, req *connect.Request[v1.CancelNativeShellRequest]) (*connect.Response[v1.CancelNativeShellResponse], error) {
+	return c.cancelNativeShell.CallUnary(ctx, req)
+}
+
+// GetNativeShell calls delidev.v1.SessionService.GetNativeShell.
+func (c *sessionServiceClient) GetNativeShell(ctx context.Context, req *connect.Request[v1.GetNativeShellRequest]) (*connect.Response[v1.GetNativeShellResponse], error) {
+	return c.getNativeShell.CallUnary(ctx, req)
 }
 
 // ListRequestDiagnostics calls delidev.v1.SessionService.ListRequestDiagnostics.
@@ -635,6 +683,9 @@ func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *co
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	RunNativeShell(context.Context, *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error)
+	CancelNativeShell(context.Context, *connect.Request[v1.CancelNativeShellRequest]) (*connect.Response[v1.CancelNativeShellResponse], error)
+	GetNativeShell(context.Context, *connect.Request[v1.GetNativeShellRequest]) (*connect.Response[v1.GetNativeShellResponse], error)
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
 	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
@@ -680,6 +731,24 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
+	sessionServiceRunNativeShellHandler := connect.NewUnaryHandler(
+		SessionServiceRunNativeShellProcedure,
+		svc.RunNativeShell,
+		connect.WithSchema(sessionServiceMethods.ByName("RunNativeShell")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceCancelNativeShellHandler := connect.NewUnaryHandler(
+		SessionServiceCancelNativeShellProcedure,
+		svc.CancelNativeShell,
+		connect.WithSchema(sessionServiceMethods.ByName("CancelNativeShell")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetNativeShellHandler := connect.NewUnaryHandler(
+		SessionServiceGetNativeShellProcedure,
+		svc.GetNativeShell,
+		connect.WithSchema(sessionServiceMethods.ByName("GetNativeShell")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceListRequestDiagnosticsHandler := connect.NewUnaryHandler(
 		SessionServiceListRequestDiagnosticsProcedure,
 		svc.ListRequestDiagnostics,
@@ -898,6 +967,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceRunNativeShellProcedure:
+			sessionServiceRunNativeShellHandler.ServeHTTP(w, r)
+		case SessionServiceCancelNativeShellProcedure:
+			sessionServiceCancelNativeShellHandler.ServeHTTP(w, r)
+		case SessionServiceGetNativeShellProcedure:
+			sessionServiceGetNativeShellHandler.ServeHTTP(w, r)
 		case SessionServiceListRequestDiagnosticsProcedure:
 			sessionServiceListRequestDiagnosticsHandler.ServeHTTP(w, r)
 		case SessionServiceRetrySidechatQuestionProcedure:
@@ -978,6 +1053,18 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) RunNativeShell(context.Context, *connect.Request[v1.RunNativeShellRequest]) (*connect.Response[v1.RunNativeShellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.RunNativeShell is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) CancelNativeShell(context.Context, *connect.Request[v1.CancelNativeShellRequest]) (*connect.Response[v1.CancelNativeShellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CancelNativeShell is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetNativeShell(context.Context, *connect.Request[v1.GetNativeShellRequest]) (*connect.Response[v1.GetNativeShellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetNativeShell is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListRequestDiagnostics is not implemented"))

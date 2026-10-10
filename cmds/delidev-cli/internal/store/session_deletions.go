@@ -1006,7 +1006,7 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 			}
 			copy.SnapshotID = input.SnapshotID
 		}
-		if j.Type == domain.CompactSessionJob {
+		if j.Type.NativeContextAction() {
 			var input domain.SessionCompactionInput
 			if domain.DecodeCompactionInput(original.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != v.SessionID {
 				return v, domain.SessionDeletionPending()

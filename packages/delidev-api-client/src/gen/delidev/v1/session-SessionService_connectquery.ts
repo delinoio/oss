@@ -5,6 +5,21 @@
 import { SessionService } from "./session_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.SessionService.RunNativeShell
+ */
+export const runNativeShell = SessionService.method.runNativeShell;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.CancelNativeShell
+ */
+export const cancelNativeShell = SessionService.method.cancelNativeShell;
+
+/**
+ * @generated from rpc delidev.v1.SessionService.GetNativeShell
+ */
+export const getNativeShell = SessionService.method.getNativeShell;
+
+/**
  * @generated from rpc delidev.v1.SessionService.ListRequestDiagnostics
  */
 export const listRequestDiagnostics = SessionService.method.listRequestDiagnostics;

@@ -14,6 +14,7 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc PublishNativeShell(PublishNativeShellRequest) returns (PublishNativeShellResponse);
   rpc SyncWorkerNetwork(SyncWorkerNetworkRequest) returns (SyncWorkerNetworkResponse);
   rpc ReportWorkerNativeRoute(ReportWorkerNativeRouteRequest) returns (ReportWorkerNativeRouteResponse);
   rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
@@ -173,6 +174,7 @@ enum WorkerCapability {
   WORKER_CAPABILITY_CODEX_API_PROXY_V1 = 10;
   WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1 = 11;
   WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12;
+  WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1 = 53;
 }
 
 message AttachWorkerResponse {
@@ -503,3 +505,11 @@ message ReportSessionStartupProgressRequest {
 message ReportSessionStartupProgressResponse {
   bool replayed = 1;
 }
+
+message PublishNativeShellRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  bytes observation_json = 4;
+}
+message PublishNativeShellResponse { Resource job = 1; }

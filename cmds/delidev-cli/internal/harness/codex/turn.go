@@ -71,6 +71,8 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	shells              map[domain.ID]*shellAttempt
+	activeShell         domain.ID
 	strictReviewNotices map[strictReviewNoticeKey]bool
 
 	autoReviews         map[domain.ID]domain.AutoReviewState
@@ -148,6 +150,9 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	}
 	if !allowRecovery && c.execution.continuationPending {
 		return continuationUncertain()
+	}
+	if !allowRecovery && c.execution.activeShell != "" {
+		return shellUncertain()
 	}
 	if !allowRecovery && c.execution.interactions.blocksInput() {
 		return interactionConflict()

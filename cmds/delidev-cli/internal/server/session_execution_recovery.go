@@ -58,7 +58,7 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 				return nil, err
 			}
 			expectedParent := original.ID
-			if session.CompactionJobID != "" {
+			if session.ContextActionJobID() != "" {
 				expectedParent = session.CompactionJobID
 			}
 			if prior.SessionID != sr.ID || job.Type != domain.RecoverExecutionJob || job.ParentID != expectedParent || (session.CompactionJobID == "" && session.Execution != nil && job.ParentID != session.Execution.JobID) {
@@ -115,7 +115,7 @@ func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record,
 	var result domain.ExecutionRecoveryRequest
 	// A separate manual action owns its checkpoint and workspace until cleanup
 	// is proved. Original conversation recovery cannot release that ownership.
-	if session.CompactionJobID != "" {
+	if session.ContextActionJobID() != "" {
 		return revertRecoveryRequest(tx, serverID, sr, session)
 	}
 	if session.Execution == nil {

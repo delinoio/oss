@@ -39,14 +39,17 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 	if i.Revert != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
 		return denied()
 	}
-	if i.Revert == nil && i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
+	if i.Shell == nil && i.Revert == nil && i.Assignment.Configuration.Harness == domain.Codex && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
 		return denied()
 	}
 	if i.Assignment.Configuration.Harness == domain.OpenCode && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {
 		return denied()
 	}
+	if i.Shell != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexNativeShellV1) {
+		return denied()
+	}
 	sr, s, err := sessionRecord(tx, r.SessionID)
-	if err != nil || !s.WorkspaceAvailable() || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
+	if err != nil || !s.WorkspaceAvailable() || s.ContextActionJobID() != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
 		return denied()
 	}
 	if err := checkedExecutionSource(tx, sr, s, machine, i.Assignment); err != nil {

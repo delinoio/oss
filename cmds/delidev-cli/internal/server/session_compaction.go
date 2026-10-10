@@ -27,10 +27,11 @@ func compactionActor(ctx context.Context) error {
 func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID) (domain.SessionCompactionInput, error) {
 	return contextActionSource(tx, sr, session, action, false)
 }
-func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert bool) (domain.SessionCompactionInput, error) {
+func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert bool, nativeShell ...bool) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
+	shell := len(nativeShell) > 0 && nativeShell[0]
 	p := session.Execution
-	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
+	if !session.WorkspaceAvailable() || session.ContextActionJobID() != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
 		return empty, domain.CompactionUncertain()
 	}
 	h := session.InitialExecution.Configuration.Harness
@@ -72,10 +73,13 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 	if err != nil {
 		return empty, err
 	}
+	if shell && !slices.Contains(machine.WorkerCapabilities, domain.CodexNativeShellV1) {
+		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support native shell commands.", "Update the original Worker before accepting this full-access operation.")
+	}
 	if revert && !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionRevertV1) {
 		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support conversation revert.", "Update the original Worker.")
 	}
-	if !revert && h == domain.Codex && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
+	if !revert && !shell && h == domain.Codex && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) {
 		return empty, domain.Fail(domain.Unsupported, "The original Worker does not support Codex compaction.", "Update that Worker before requesting this operation.")
 	}
 	if h == domain.OpenCode && (!slices.Contains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeSessionCompactionV1)) {

@@ -34,7 +34,7 @@ func decodeWorkerClaim(raw []byte) (store.Record, domain.Job, error) {
 	}
 	var err error
 	switch envelope.Type {
-	case domain.CompactSessionJob:
+	case domain.CompactSessionJob, domain.NativeShellJob:
 		err = domain.DecodeCompactionJob(record.Data, &job)
 	case domain.WorkspaceStorageJob:
 		err = workspace.DecodeStorageJob(record.Data, &job)

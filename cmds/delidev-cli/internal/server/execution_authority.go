@@ -60,7 +60,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil {
 		return empty, executionDenied()
 	}
-	if job.Type == domain.CompactSessionJob {
+	if job.Type.NativeContextAction() {
 		return a.compactionScope(tx, grant, jobRecord, job)
 	}
 	if job.Type == domain.GenerateSessionTitleJob {
@@ -606,7 +606,7 @@ func (a *executionAuthority) historyObservation(tx *store.Tx, grant store.Execut
 	if jobErr != nil {
 		return store.Record{}, domain.Session{}, "", jobErr
 	}
-	if job.Type == domain.CompactSessionJob {
+	if job.Type.NativeContextAction() {
 		var action domain.SessionCompactionInput
 		if domain.DecodeCompactionInput(job.Input, &action) != nil || action.Validate() != nil {
 			return store.Record{}, domain.Session{}, "", executionDenied()
@@ -702,7 +702,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, executionDenied()
 		}
-		if job.Type == domain.CompactSessionJob {
+		if job.Type.NativeContextAction() {
 			var input domain.SessionCompactionInput
 			if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil {
 				return nil, executionDenied()
@@ -742,7 +742,7 @@ func (s *Service) RegisterExecution(ctx context.Context, req *connect.Request[pb
 				if job.Type == domain.ExecuteSessionJob {
 					var input domain.ExecutionJobInput
 					supported = domain.Decode(job.Input, &input) == nil && !input.Configuration.Subscription && input.Configuration.Harness == domain.Codex && (input.Version == 4 || domain.CodexVersionAllowed(input.Installation.Version))
-				} else if job.Type == domain.CompactSessionJob {
+				} else if job.Type.NativeContextAction() {
 					var input domain.SessionCompactionInput
 					supported = domain.DecodeCompactionInput(job.Input, &input) == nil && input.Validate() == nil && !input.Assignment.Configuration.Subscription && input.Assignment.Configuration.Harness == domain.Codex
 				} else if job.Type == domain.GenerateSessionTitleJob {

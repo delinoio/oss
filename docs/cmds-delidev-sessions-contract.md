@@ -977,3 +977,39 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Explicit native shell actions
+
+Authenticated owners and paired human clients may accept a separate `native-shell`
+operation on the original idle ordinary Codex session. Agent/execution/Worker
+credentials cannot authorize Run or Cancel. The selected machine must advertise
+`codex-native-shell-v1`; account, original assignment, history, workspace, recovery,
+archive and active child restrictions remain authoritative. This operation has no
+prompt, input delivery, model usage or ordinary terminal authority.
+
+`session shell --id ID --revision N --command COMMAND --confirm-full-access
+[--timeout-ms N]` requires an explicit confirmation that the command runs outside
+the native sandbox with full access. Commands are bounded to 64 KiB; omitted
+native timeout retains its default, and explicit zero remains zero. The maximum
+requested timeout is one hour. Server acceptance durably freezes the exact command,
+confirmation, timeout presence and original session before a Worker can send it.
+The job identity equals the original Run request identity. A lost Run response can
+be inspected with `session shell-status --job-id ORIGINAL_REQUEST_ID`; this read
+never resends the command. `session shell-cancel --job-id ID --revision N` cancels
+only that original operation. Uncertain Run or Cancel acknowledgment cannot become
+automatic retry, replacement request or process adoption.
+
+`session.native_shell_job_id` retains the original active/recovery operation.
+The Worker publishes bounded typed original process IDs, command, cwd, status,
+streamed output and separately observed aggregate output/exit code. Sequence values
+are safe exact integers bounded to 100000. An empty native RPC acknowledgment is
+delivery evidence only. Original turn terminal evidence does not prove descendant,
+subprocess, proxy, workspace or authentication cleanup. Final completion authenticates
+the immutable original claim despite intervening live resource revisions and
+requires independently joined cleanup. Unproved ownership, delivery or cleanup
+keeps the original operation uncertain and the session paused for recovery.
+
+Native shell commands do not replace independently owned DeliDev terminals, resume
+ordinary paused input, authorize subsequent agent commands or manufacture a new
+prompt-bearing execution checkpoint. Retained reads remain available without
+claiming a native send or cancellation receipt.

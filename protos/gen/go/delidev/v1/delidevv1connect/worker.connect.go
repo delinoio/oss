@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// WorkerServicePublishNativeShellProcedure is the fully-qualified name of the WorkerService's
+	// PublishNativeShell RPC.
+	WorkerServicePublishNativeShellProcedure = "/delidev.v1.WorkerService/PublishNativeShell"
 	// WorkerServiceSyncWorkerNetworkProcedure is the fully-qualified name of the WorkerService's
 	// SyncWorkerNetwork RPC.
 	WorkerServiceSyncWorkerNetworkProcedure = "/delidev.v1.WorkerService/SyncWorkerNetwork"
@@ -114,6 +117,7 @@ const (
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	PublishNativeShell(context.Context, *connect.Request[v1.PublishNativeShellRequest]) (*connect.Response[v1.PublishNativeShellResponse], error)
 	SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error)
 	ReportWorkerNativeRoute(context.Context, *connect.Request[v1.ReportWorkerNativeRouteRequest]) (*connect.Response[v1.ReportWorkerNativeRouteResponse], error)
 	ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error)
@@ -154,6 +158,12 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		publishNativeShell: connect.NewClient[v1.PublishNativeShellRequest, v1.PublishNativeShellResponse](
+			httpClient,
+			baseURL+WorkerServicePublishNativeShellProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("PublishNativeShell")),
+			connect.WithClientOptions(opts...),
+		),
 		syncWorkerNetwork: connect.NewClient[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse](
 			httpClient,
 			baseURL+WorkerServiceSyncWorkerNetworkProcedure,
@@ -315,6 +325,7 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	publishNativeShell           *connect.Client[v1.PublishNativeShellRequest, v1.PublishNativeShellResponse]
 	syncWorkerNetwork            *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
 	reportWorkerNativeRoute      *connect.Client[v1.ReportWorkerNativeRouteRequest, v1.ReportWorkerNativeRouteResponse]
 	listSessionDeletionWork      *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
@@ -341,6 +352,11 @@ type workerServiceClient struct {
 	claimQuestionResponse        *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse        *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput              *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// PublishNativeShell calls delidev.v1.WorkerService.PublishNativeShell.
+func (c *workerServiceClient) PublishNativeShell(ctx context.Context, req *connect.Request[v1.PublishNativeShellRequest]) (*connect.Response[v1.PublishNativeShellResponse], error) {
+	return c.publishNativeShell.CallUnary(ctx, req)
 }
 
 // SyncWorkerNetwork calls delidev.v1.WorkerService.SyncWorkerNetwork.
@@ -475,6 +491,7 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	PublishNativeShell(context.Context, *connect.Request[v1.PublishNativeShellRequest]) (*connect.Response[v1.PublishNativeShellResponse], error)
 	SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error)
 	ReportWorkerNativeRoute(context.Context, *connect.Request[v1.ReportWorkerNativeRouteRequest]) (*connect.Response[v1.ReportWorkerNativeRouteResponse], error)
 	ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error)
@@ -511,6 +528,12 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
+	workerServicePublishNativeShellHandler := connect.NewUnaryHandler(
+		WorkerServicePublishNativeShellProcedure,
+		svc.PublishNativeShell,
+		connect.WithSchema(workerServiceMethods.ByName("PublishNativeShell")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceSyncWorkerNetworkHandler := connect.NewUnaryHandler(
 		WorkerServiceSyncWorkerNetworkProcedure,
 		svc.SyncWorkerNetwork,
@@ -669,6 +692,8 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServicePublishNativeShellProcedure:
+			workerServicePublishNativeShellHandler.ServeHTTP(w, r)
 		case WorkerServiceSyncWorkerNetworkProcedure:
 			workerServiceSyncWorkerNetworkHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkerNativeRouteProcedure:
@@ -729,6 +754,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) PublishNativeShell(context.Context, *connect.Request[v1.PublishNativeShellRequest]) (*connect.Response[v1.PublishNativeShellResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.PublishNativeShell is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.SyncWorkerNetwork is not implemented"))

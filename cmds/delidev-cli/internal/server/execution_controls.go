@@ -8,29 +8,33 @@ import (
 )
 
 func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session, action domain.SessionAction) error {
-	if session.CompactionJobID != "" {
+	if session.ContextActionJobID() != "" {
 		if action != domain.StopSession && action != domain.ArchiveSession {
 			return domain.CompactionUncertain()
 		}
-		if err := tx.RequestJobCancellation(session.CompactionJobID); err != nil {
+		if err := tx.RequestJobCancellation(session.ContextActionJobID()); err != nil {
 			return err
 		}
-		r, err := tx.Get(domain.JobKind, session.CompactionJobID)
+		r, err := tx.Get(domain.JobKind, session.ContextActionJobID())
 		if err != nil {
 			return err
 		}
 		job, err := store.Decode[domain.Job](r)
-		if err != nil || job.Type != domain.CompactSessionJob {
+		if err != nil || !job.Type.NativeContextAction() {
 			return domain.CompactionUncertain()
 		}
 		if job.State == domain.JobQueued {
 			now := time.Now().UTC()
 			job.State, job.FinishedAt = domain.JobCanceled, &now
-			job.Problem = domain.Fail(domain.Canceled, "Compaction was canceled before Worker dispatch.", "The original conversation checkpoint remains available for explicit Resume.")
+			job.Problem = domain.Fail(domain.Canceled, "The native context action was canceled before Worker dispatch.", "The original conversation checkpoint remains available for explicit Resume.")
 			if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job); err != nil {
 				return err
 			}
-			session.CompactionJobID = ""
+			if job.Type == domain.NativeShellJob {
+				session.NativeShellJobID = ""
+			} else {
+				session.CompactionJobID = ""
+			}
 		}
 		session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
 		if action == domain.ArchiveSession {
@@ -122,7 +126,7 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 			if err != nil {
 				return err
 			}
-			if job.Type == domain.CompactSessionJob {
+			if job.Type.NativeContextAction() {
 				var input domain.SessionCompactionInput
 				if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.AccountID != account {
 					return domain.CompactionUncertain()

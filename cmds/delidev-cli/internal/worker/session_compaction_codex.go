@@ -72,8 +72,27 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	phase := compactionPrepare
 	nativeClosed, workspaceClosed, authenticationClosed := false, false, !i.Assignment.Configuration.Subscription
 	proxyClosed := true
-	var preSendFailure error
 	claimInvoked, cleanupFailed := false, false
+	if i.Shell != nil {
+		defer func() {
+			var observation domain.NativeShellObservation
+			if returned != nil || domain.Decode(output, &observation) != nil || !nativeClosed || !workspaceClosed || !authenticationClosed || !proxyClosed || cleanupFailed {
+				return
+			}
+			if err := verifyNativeShellSendClaim(config, owner, i, observation.NativeThreadID); err != nil {
+				output, returned = nil, err
+				return
+			}
+			observation.CleanupVerified = true
+			observation.Sequence++
+			if observation.Validate() != nil {
+				output, returned = nil, domain.NativeShellUncertain()
+				return
+			}
+			output, returned = json.Marshal(observation)
+		}()
+	}
+	var preSendFailure error
 	defer func() {
 		if returned != nil {
 			logger.WarnContext(ctx, "codex_session_compaction_uncertain", "phase", phase, "code", domain.SafeError(returned).Code)
@@ -249,7 +268,10 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 	}
 	nativeCtx, cancel := context.WithCancel(config.executionContext)
 	defer cancel()
-	cancelAction := context.AfterFunc(ctx, cancel)
+	cancelAction := func() bool { return false }
+	if i.Shell == nil {
+		cancelAction = context.AfterFunc(ctx, cancel)
+	}
 	defer cancelAction()
 	nativeConfig := codex.Config{RevertHistory: source.Native.PaginatedHistory || i.Assignment.ContextRevision > 0 || i.Revert != nil || prior != nil && prior.Revert != nil, ImageRoot: config.Root, ImageMachineID: i.Assignment.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: c.Credential.Endpoint, Token: token}, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: logger}}
 	if i.Assignment.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
@@ -342,6 +364,32 @@ func executeCodexSessionCompaction(ctx context.Context, config Config, owner dom
 		return nil, err
 	}
 	phase = compactionCommand
+	if i.Shell != nil {
+		proof := nativeShellSendClaimFor(config, owner, i, source.Native.ThreadID)
+		if err := writeCompactionClaim(config.Root, owner, nativeShellSendClaim, proof); err != nil {
+			return nil, err
+		}
+		observation, shellErr := runNativeShellAction(ctx, config, owner, native, i, source.Native.ThreadID)
+		if err := closeNative(); err != nil {
+			return nil, err
+		}
+		if proxy != nil {
+			if err := proxy.Close(); err != nil {
+				return nil, err
+			}
+			proxyClosed = true
+		}
+		if err := lease.Close(); err != nil {
+			return nil, err
+		}
+		workspaceClosed = true
+		// Authentication finalization runs before this final deferred proof gate.
+		output, returned = json.Marshal(observation)
+		if shellErr != nil {
+			returned = shellErr
+		}
+		return output, returned
+	}
 	var retained codex.CompactedCheckpoint
 	usages := []domain.NativeResponseUsage{}
 	if i.Revert != nil {

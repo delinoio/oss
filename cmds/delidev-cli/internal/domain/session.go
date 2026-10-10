@@ -247,6 +247,7 @@ type LocalOrigin struct {
 // Session separates visibility, outcome and recovery from dispatch eligibility.
 // Blocked or restored sessions must never be interpreted as completed execution.
 type Session struct {
+	NativeShellJobID      ID                      `json:"native_shell_job_id,omitempty"`
 	StartupProgress       *SessionStartupProgress `json:"startup_progress,omitempty"`
 	SidechatRetries       []SidechatRetry         `json:"sidechat_retries,omitempty"`
 	SidechatCurrentAnswer ID                      `json:"sidechat_current_answer,omitempty"`
@@ -376,4 +377,11 @@ func (s Session) NativeExecutionRoot() ID {
 
 func (i SessionInput) Equal(other SessionInput) bool {
 	return i.Prompt == other.Prompt && i.Mode == other.Mode && slices.Equal(i.Attachments, other.Attachments) && slices.Equal(i.Skills, other.Skills)
+}
+
+func (s Session) ContextActionJobID() ID {
+	if s.NativeShellJobID != "" {
+		return s.NativeShellJobID
+	}
+	return s.CompactionJobID
 }

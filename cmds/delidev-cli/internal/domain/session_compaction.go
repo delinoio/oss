@@ -40,6 +40,7 @@ func (r SessionCompactionRef) Validate() error {
 }
 
 type SessionCompactionInput struct {
+	Shell       *NativeShellCommand   `json:"shell,omitempty"`
 	Revert      *SessionRevertTarget  `json:"revert,omitempty"`
 	Version     uint32                `json:"version"`
 	ActionID    ID                    `json:"action_id"`
@@ -54,6 +55,9 @@ type SessionCompactionInput struct {
 
 func (i SessionCompactionInput) Validate() error {
 	a, done := i.Assignment, i.Completion
+	if i.Shell != nil && (i.Shell.Validate() != nil || i.Version != 2 || i.Revert != nil || a.Configuration.Harness != Codex || a.Configuration.SidechatPolicy != "") {
+		return NativeShellUncertain()
+	}
 	if (i.Version == 4) != (i.Revert != nil) {
 		return CompactionUncertain()
 	}

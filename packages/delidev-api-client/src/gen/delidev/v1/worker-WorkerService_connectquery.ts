@@ -5,6 +5,11 @@
 import { WorkerService } from "./worker_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.PublishNativeShell
+ */
+export const publishNativeShell = WorkerService.method.publishNativeShell;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.SyncWorkerNetwork
  */
 export const syncWorkerNetwork = WorkerService.method.syncWorkerNetwork;

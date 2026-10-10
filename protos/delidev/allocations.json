@@ -13293,6 +13293,164 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "command",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "timeout_ms",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellRequest",
+      "member": "full_access_confirmed",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "RunNativeShellResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellResponse",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "CancelNativeShellResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "GetNativeShellRequest",
+      "member": "job_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "GetNativeShellResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "instance_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellRequest",
+      "member": "observation_json",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "message",
+      "declaration": "PublishNativeShellResponse",
+      "member": "job",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+      "number": 82
+    },
+    {
+      "issue": 2020,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+      "number": 53
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13685,42 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "SessionService",
+      "method": "RunNativeShell",
+      "input": "RunNativeShellRequest",
+      "output": "RunNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "SessionService",
+      "method": "CancelNativeShell",
+      "input": "CancelNativeShellRequest",
+      "output": "CancelNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "SessionService",
+      "method": "GetNativeShell",
+      "input": "GetNativeShellRequest",
+      "output": "GetNativeShellResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2020,
+      "service": "WorkerService",
+      "method": "PublishNativeShell",
+      "input": "PublishNativeShellRequest",
+      "output": "PublishNativeShellResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

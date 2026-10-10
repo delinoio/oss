@@ -24,7 +24,7 @@ func continuationDigest(raw []byte) string {
 // initial snapshot/route; the successor retains the exact preceding progress.
 // There is no native, credential or filesystem operation inside this transaction.
 func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, explicit bool) (store.Record, error) {
-	if session.CompactionJobID != "" {
+	if session.ContextActionJobID() != "" {
 		return store.Record{}, domain.CompactionUncertain()
 	}
 	if err := tx.RequireNoSessionFork(sr.ID); err != nil {

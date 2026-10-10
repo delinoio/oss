@@ -10,6 +10,9 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc RunNativeShell(RunNativeShellRequest) returns (RunNativeShellResponse);
+  rpc CancelNativeShell(CancelNativeShellRequest) returns (CancelNativeShellResponse);
+  rpc GetNativeShell(GetNativeShellRequest) returns (GetNativeShellResponse);
   rpc ListRequestDiagnostics(ListRequestDiagnosticsRequest) returns (ListRequestDiagnosticsResponse);
   rpc RetrySidechatQuestion(RetrySidechatQuestionRequest) returns (RetrySidechatQuestionResponse);
   rpc GetSidechatQuestionRetry(GetSidechatQuestionRetryRequest) returns (GetSidechatQuestionRetryResponse);
@@ -586,3 +589,24 @@ message ListWaitingQueueResponse {
   uint64 current_queue_generation = 3;
   uint32 waiting_count = 4;
 }
+
+// Explicit owner/client full-access command. Job ID is mutation.request_id.
+message RunNativeShellRequest {
+  Mutation mutation = 1;
+  string command = 2;
+  optional uint64 timeout_ms = 3;
+  bool full_access_confirmed = 4;
+}
+message RunNativeShellResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message CancelNativeShellRequest { Mutation mutation = 1; }
+message CancelNativeShellResponse {
+  Resource job = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetNativeShellRequest { string job_id = 1; }
+message GetNativeShellResponse { Resource job = 1; }

@@ -54,7 +54,7 @@ func settleExecutionStartupFailure(tx *store.Tx, record store.Record, job domain
 // Resume creates a distinct attempt only from positively settled no-send proof.
 // It never reroutes, consumes another input, or rewrites the failed assignment.
 func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Session) (store.Record, error) {
-	if session.Startup == nil || session.Startup.Failure == nil || session.Startup.Failure.Validate() != nil || session.Startup.Failure.State != domain.StartupFailed || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.PendingInputs != 0 || session.PendingInputBytes != 0 || !session.WorkspaceAvailable() || session.CompactionJobID != "" {
+	if session.Startup == nil || session.Startup.Failure == nil || session.Startup.Failure.Validate() != nil || session.Startup.Failure.State != domain.StartupFailed || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.PendingInputs != 0 || session.PendingInputBytes != 0 || !session.WorkspaceAvailable() || session.ContextActionJobID() != "" {
 		return store.Record{}, domain.StartupRejectionUncertain()
 	}
 	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {

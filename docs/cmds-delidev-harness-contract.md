@@ -2339,3 +2339,22 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Original Codex user shell protocol
+
+The native shell controller restores the immutable original idle thread and
+selected account/workspace, then persists a private exclusive original command
+send claim before one `thread/shellCommand` call. Its upstream response is the
+closed empty object. Correlate separately observed `userShell` command items,
+streamed output and terminal root turn to that original action; foreign threads,
+replaced items, duplicate lifecycle and unresolved running children cannot complete
+it. Keep native aggregate output distinct from streamed deltas. Agent command
+items cannot stand in for explicit human shell authorization.
+
+Cancellation fences at most one `turn/interrupt` for the already observed original
+shell turn. A missing original turn identity or lost interrupt response retains
+uncertainty. Closing the original process independently joins its owned children;
+RPC acceptance and native terminal status never substitute for that proof.
+The Worker never repeats the original command after reconnect or uncertain send.
+Authenticated product interfaces and recovery reads follow the
+[session contract](cmds-delidev-sessions-contract.md).
