@@ -252,7 +252,21 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	native := *c.pendingEvent
 	c.pendingEvent = nil
-	event, err := c.observeEventLocked(native)
+	var event Event
+	var err error
+	if native.Kind == nativewire.ServerRequest && native.Method == "item/tool/call" {
+		event, err = c.answerDynamicUnavailableLocked(ctx, native)
+	} else {
+		event, err = c.observeEventLocked(native)
+	}
+	if err == nil && event.Metadata == DynamicRequestResolved {
+		for _, owned := range c.dynamicReplies {
+			if owned.state.CallID == event.ItemID {
+				err = c.dynamicRecorder(ctx, owned.state)
+				break
+			}
+		}
+	}
 	if err != nil {
 		c.problem = turnUncertain()
 		if c.execution != nil {
@@ -571,7 +585,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
-	case "commandExecution", "fileChange", "imageView", "sleep":
+	case "commandExecution", "fileChange", "imageView", "sleep", "dynamicToolCall":
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {
 			return Event{}, err
@@ -579,6 +593,27 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 		turn, known := c.execution.turns[params.TurnID]
 		if !known && c.problem == nil {
 			return Event{}, incompatible()
+		}
+		if tool.Kind == DynamicTool {
+			for _, request := range c.dynamicReplies {
+				if request.state.CallID == tool.ID && !domain.SameDynamicToolCall(request.call, tool.Dynamic) {
+					return Event{}, incompatible()
+				}
+			}
+			if c.sidechat != "" {
+				return Event{}, incompatible()
+			}
+			if c.dynamicItems == nil {
+				c.dynamicItems = map[string]*domain.DynamicToolObservation{}
+			}
+			if native.Method == "item/started" {
+				if c.dynamicItems[tool.ID] != nil || len(c.dynamicItems) >= maxTrackedInteractions {
+					return Event{}, incompatible()
+				}
+				c.dynamicItems[tool.ID] = domain.CloneDynamicTool(tool.Dynamic)
+			} else if original := c.dynamicItems[tool.ID]; original == nil || !domain.SameDynamicToolCall(original, tool.Dynamic) {
+				return Event{}, incompatible()
+			}
 		}
 		eventKind := ToolStartedEvent
 		if native.Method == "item/completed" {

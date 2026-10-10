@@ -24,10 +24,11 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
-	ManagedForkHistory    bool
-	OrdinaryTools         executionenv.Ordinary `json:"-"`
-	RevertHistory         bool                  `json:"-"`
-	EnableImageGeneration bool
+	DynamicUnavailableRecorder func(context.Context, DynamicReplyState) error `json:"-"`
+	ManagedForkHistory         bool
+	OrdinaryTools              executionenv.Ordinary `json:"-"`
+	RevertHistory              bool                  `json:"-"`
+	EnableImageGeneration      bool
 
 	SkillsRoot       string
 	ImageRoot        string
@@ -44,6 +45,9 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	dynamicRecorder    func(context.Context, DynamicReplyState) error
+	dynamicReplies     map[string]*trackedDynamicReply
+	dynamicItems       map[string]*domain.DynamicToolObservation
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string
@@ -266,7 +270,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version, "image_observations", imageObservations)
 	}
-	client = &Client{imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{dynamicRecorder: config.DynamicUnavailableRecorder, imageObservations: imageObservations, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

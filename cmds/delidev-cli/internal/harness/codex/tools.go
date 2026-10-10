@@ -15,6 +15,7 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
+	DynamicTool   ToolKind = "dynamic-tool"
 	CommandTool   ToolKind = "command-execution"
 	PatchTool     ToolKind = "file-change"
 	ImageViewTool ToolKind = "image-view"
@@ -73,6 +74,7 @@ type FileChange struct {
 // work or imply that an entire turn succeeded. Native aggregate output may be
 // truncated independently from streamed deltas, so retain both observations.
 type Tool struct {
+	Dynamic         *domain.DynamicToolObservation
 	ID              string
 	Kind            ToolKind
 	Status          ToolStatus
@@ -150,6 +152,8 @@ func (c *Client) observeToolUpdateLocked(native nativewire.Event) (Event, error)
 func decodeTool(raw json.RawMessage, kind string, completed bool) (*Tool, error) {
 	result := &Tool{}
 	switch kind {
+	case "dynamicToolCall":
+		return decodeDynamicTool(raw, completed)
 	case "commandExecution":
 		var item struct {
 			Type             string            `json:"type"`

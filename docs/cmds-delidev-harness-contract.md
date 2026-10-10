@@ -2339,3 +2339,32 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+
+### Codex dynamic-tool unavailable profile
+
+Ordinary original Codex execution accepts closed `dynamicToolCall` started and
+completed items, retaining namespace, tool, JSON arguments, native status,
+ordered text/image/audio metadata, nullable success and duration. Native media
+locations remain inert observations and grant no fetch, upload or byte claim.
+The synchronized execution outbox and server transcript preserve item ownership;
+completion must match the original namespace/tool/arguments. Complete context,
+continuation and Fork validation accepts these items without dispatch or replay.
+
+An original `item/tool/call` request can receive only the fixed negative response
+`{"success":false,"contentItems":[{"type":"inputText","text":"This dynamic tool is unavailable in DeliDev."}]}`.
+There is no registry, backend adoption, handler or MCP emulation. Validate exact
+root/turn/call and numeric/text request identity, complete bounded params and
+the original nativewire arrival token. Before the pipe write, the ordinary Worker
+synchronizes metadata-only reply intent beside the original execution outbox,
+bound to server/device/instance/job/revision/assignment digest and execution.
+The retained intent cannot authorize another send after replay, replacement,
+uncertainty or restart. Record delivery and native resolution separately; neither
+proves item success, root completion or original cleanup. Existing outbox cleanup
+and backup ownership include these adjacent journals.
+
+Auxiliary title and read-only Sidechat profiles have no unavailable recorder and
+retain their existing restrictions. No native version comparison, public RPC,
+capability allocation or migration grants dynamic dispatch. Logs exclude tool
+arguments and outputs. Fixture transmission/history/retention are separate from
+installed native, real-account and platform acceptance.

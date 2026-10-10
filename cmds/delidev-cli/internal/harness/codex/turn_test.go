@@ -71,6 +71,11 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 			f.thread[key] = value
 		}
 		write(id, map[string]any{})
+	case "fixture/dynamic":
+		fields := params["params"].(map[string]any)
+		fields["threadId"], fields["turnId"] = f.thread["id"], f.turn
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "item/tool/call", "params": fields})
+		write(id, map[string]any{})
 	case "fixture/question":
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "item/tool/requestUserInput", "params": map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "itemId": func() any {
 			if params["itemId"] != nil {

@@ -21,6 +21,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			return executionEventConflict()
 		}
 	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.DynamicTool && (input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || input.Configuration.SidechatPolicy != "") {
+		return executionEventConflict()
+	}
 	if update.Snapshot != nil && update.Snapshot.Kind == domain.SleepTool && (input.Configuration.Harness != domain.Codex || update.NativeParentID != "") {
 		return executionEventConflict()
 	}
@@ -87,6 +90,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 				}
 			}
 			if update.Snapshot.Kind != tool.Started.Kind {
+				return executionEventConflict()
+			}
+			if tool.Started.Kind == domain.DynamicTool && !domain.SameDynamicToolCall(tool.Started.Dynamic, update.Snapshot.Dynamic) {
 				return executionEventConflict()
 			}
 			if tool.Started.Kind == domain.CommandTool {

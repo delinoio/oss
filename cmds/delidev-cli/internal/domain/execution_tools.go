@@ -12,6 +12,7 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
+	DynamicTool         ToolKind = "dynamic-tool"
 	CommandTool         ToolKind = "command"
 	PatchTool           ToolKind = "patch"
 	ImageViewTool       ToolKind = "image-view"
@@ -78,6 +79,7 @@ type SleepObservation struct {
 }
 
 type ToolSnapshot struct {
+	Dynamic   *DynamicToolObservation     `json:"dynamic,omitempty"`
 	Sleep     *SleepObservation           `json:"sleep,omitempty"`
 	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
 	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
@@ -185,6 +187,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == DynamicTool {
+		if s.Dynamic == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || s.Sleep != nil || s.ImageView != nil {
+			return invalidTool()
+		}
+		return s.Dynamic.Validate(s.Status)
+	}
+	if s.Dynamic != nil {
+		return invalidTool()
+	}
 	if s.Kind == SleepTool {
 		if s.Sleep == nil || s.Sleep.DurationMS == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || s.ImageView != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
 			return invalidTool()

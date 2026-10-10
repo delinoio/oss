@@ -258,6 +258,11 @@ func decodeLatestTurnInputs(raw json.RawMessage, readers ...func([]json.RawMessa
 			return Turn{}, nil, incompatible()
 		}
 		items[identity.ID] = true
+		if identity.Type == "dynamicToolCall" {
+			if _, err := decodeDynamicTool(rawItem, true); err != nil {
+				return Turn{}, nil, err
+			}
+		}
 		if identity.Type == "sleep" {
 			if _, err := decodeSleep(rawItem); err != nil {
 				return Turn{}, nil, err

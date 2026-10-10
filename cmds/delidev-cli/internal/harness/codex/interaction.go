@@ -211,6 +211,9 @@ func (c *Client) endInteractionsLocked(turn domain.ID) error {
 }
 
 func (c *Client) observeInteractionClosedLocked(native nativewire.Event) (Event, error) {
+	if event, handled, err := c.resolveDynamicRequestLocked(native); handled {
+		return event, err
+	}
 	var params struct {
 		ThreadID  domain.ID       `json:"threadId"`
 		RequestID json.RawMessage `json:"requestId"`
