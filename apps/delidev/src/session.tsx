@@ -385,7 +385,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const historyHeights=useRef(new Map<string,number>());
   const historyRoot=useRef<HTMLDivElement>(null);
   const data = readDocument(session);
-  useSessionInboxRead(id, conversationActive && !embedded, inboxAcknowledgmentReady && !queueStatus.isError && queueStatus.data?.capabilities.includes(SystemCapability.SESSION_INBOX_READ_V1) === true, Boolean(validSessionActionResource(session, id) && original?.id === id && supportsResourceSchema(session) && live.state === ConnectionState.Live && !live.error && messages.loaded && !messages.error && !messages.loading), session?.revision ?? 0n);
+  useSessionInboxRead(id, conversationActive && !embedded, inboxAcknowledgmentReady && !queueStatus.isError && queueStatus.data?.capabilities.includes(SystemCapability.SESSION_INBOX_READ_V1) === true, Boolean(validSessionActionResource(session, id) && original?.id === id && supportsResourceSchema(session) && live.state === ConnectionState.Live && !live.error && messages.loaded && !messages.error && !messages.loading), session?.revision ?? 0n, conversationRegion);
   const hasStartupOperations = Boolean(data.startup_progress);
   const startupFailure = executionStartupFailure(data);
   const startupRetry = canRetryExecutionStartup(data);

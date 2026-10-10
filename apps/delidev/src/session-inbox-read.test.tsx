@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { StrictMode } from "react";
+import { StrictMode, useRef } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { createQueryOptions, TransportProvider } from "@connectrpc/connect-query";
@@ -14,7 +14,7 @@ const native = vi.hoisted(() => ({ desktop: true }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => native.desktop }));
 let focused = true, visible = true;
 beforeEach(() => { native.desktop = true; focused = true; visible = true; vi.spyOn(document,"hasFocus").mockImplementation(() => focused); Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>visible?"visible":"hidden"}); });
-function Sender({id,active=true,admitted=true,loaded=true}:{id:string;active?:boolean;admitted?:boolean;loaded?:boolean}){useSessionInboxRead(id,active,admitted,loaded);return null;}
+function Sender({id,active=true,admitted=true,loaded=true,hidden=false,inert=false}:{id:string;active?:boolean;admitted?:boolean;loaded?:boolean;hidden?:boolean;inert?:boolean}){const region=useRef<HTMLDivElement>(null);useSessionInboxRead(id,active,admitted,loaded,1n,region);return <div ref={region} data-conversation hidden={hidden} inert={inert}/>;}
 function fixture() {
  const id=newRequestId(),client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const mark=vi.fn(async(request:{requestId:string;sessionId:string})=>({...request,markedCount:2n,observedAt:"2026-10-10T00:00:00Z",replayed:false}));
@@ -61,4 +61,17 @@ it("invalidates original Inbox and count caches when acceptance settles after ch
  const view=render(f.wrap(<Sender id={f.id}/>));await waitFor(()=>expect(f.mark).toHaveBeenCalledTimes(1));view.rerender(f.wrap(null));
  await act(async()=>{resolve({...f.mark.mock.calls[0][0],markedCount:2n,observedAt:"2026-10-10T00:00:00Z",replayed:false});});
  expect(f.client.getQueryState(options.queryKey)?.isInvalidated).toBe(true);expect(f.client.getQueryData(options.queryKey)).toMatchObject({unreadCount:3n});
+});
+
+it.each(["hidden", "inert", "modal"])("does not acknowledge a %s presentation or rearm on presentation changes", async reason => {
+ const f=fixture();
+ const content=(covered:boolean)=>f.wrap(<><Sender id={f.id} hidden={reason==="hidden"&&covered} inert={reason==="inert"&&covered}/>{reason==="modal"&&covered?<div role="dialog" aria-modal="true"/>:null}</>);
+ const view=render(content(true));await act(async()=>{});expect(f.read).not.toHaveBeenCalled();expect(f.mark).not.toHaveBeenCalled();
+ view.rerender(content(false));await waitFor(()=>expect(f.mark).toHaveBeenCalledTimes(1));
+ view.rerender(content(true));await act(async()=>{});view.rerender(content(false));await act(async()=>{});expect(f.mark).toHaveBeenCalledTimes(1);
+});
+it("checks conversation availability again after a delayed preflight",async()=>{
+ const f=fixture();let finish!:()=>void;f.list.mockImplementationOnce(()=>new Promise(done=>{finish=()=>done({resources:[],nextPageToken:""});}));
+ const view=render(f.wrap(<Sender id={f.id}/>));await waitFor(()=>expect(f.read).toHaveBeenCalled());
+ view.container.querySelector("[data-conversation]")!.setAttribute("inert","");await act(async()=>{finish();});expect(f.mark).not.toHaveBeenCalled();
 });

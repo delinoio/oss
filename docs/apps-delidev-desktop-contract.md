@@ -5107,7 +5107,10 @@ under the [Inbox acknowledgment contract](cmds-delidev-inbox-contract.md#foregro
 The existing native product bridge and authenticated Local/Saved connection
 admission must be current; document visibility, window focus, active conversation
 and successfully loaded current session/initial transcript are all required.
-Sidechat, embedded/hidden conversations and mobile remain excluded. A Fork uses
+Sidechat, embedded/hidden conversations and mobile remain excluded. The mounted
+conversation must remain visible, outside inert ancestors and available under
+modal ownership, including after asynchronous preflight. Presentation changes
+may unblock an unattempted activation but never rearm a completed one. A Fork uses
 its own session identity. Rerenders, polling, pagination, reconnects and newly
 arriving alerts never rearm an activation. Preflight reads remain bounded and
 preserve the existing session/projection schema and identity guards.

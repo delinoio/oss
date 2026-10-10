@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,10 +20,28 @@ export function SessionInboxReadInvalidation() {
   return null;
 }
 
+/** A mounted conversation must remain available beneath native modal ownership. */
+function availableConversation(region?: RefObject<HTMLElement | null>) {
+  if (!region) return true;
+  const root = region.current;
+  if (!root || !root.isConnected) return false;
+  const visible = (element: Element) => {
+    for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+      if (parent.hasAttribute("hidden") || parent.hasAttribute("inert")) return false;
+      const style = getComputedStyle(parent);
+      if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
+    }
+    return true;
+  };
+  if (!visible(root)) return false;
+  return !Array.from(document.querySelectorAll('dialog[open]:not([role="region"]), [aria-modal="true"]')).some(modal => visible(modal) && !modal.contains(root));
+}
+
 /** Selection/background return defines an activation, independently of reads. */
-export function useSessionInboxRead(sessionId: string, active: boolean, admitted: boolean, loaded: boolean, expectedRevision = 1n) {
+export function useSessionInboxRead(sessionId: string, active: boolean, admitted: boolean, loaded: boolean, expectedRevision = 1n, region?: RefObject<HTMLElement | null>) {
   const transport = useTransport();
   const [epoch, setEpoch] = useState(0);
+  const [presented, setPresented] = useState(!region);
   const foreground = useRef(false), attempted = useRef<number | undefined>(undefined), selection = useRef(sessionId);
   const current = useRef({ sessionId, active, admitted, loaded });
   current.current = { sessionId, active, admitted, loaded };
@@ -36,17 +54,22 @@ export function useSessionInboxRead(sessionId: string, active: boolean, admitted
       if (next && !foreground.current) setEpoch(value => value + 1);
       foreground.current = next;
     };
-    update();
+    const presentation = () => setPresented(availableConversation(region));
+    presentation(); update();
+    // Modal and inert changes can unblock an unattempted activation, but never
+    // create a new activation after acknowledgment or a settled failed read.
+    const observer = new MutationObserver(presentation);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "inert", "open", "role", "aria-modal", "class", "style"] });
     window.addEventListener("focus", update); window.addEventListener("blur", blur);
     document.addEventListener("visibilitychange", update);
-    return () => { window.removeEventListener("focus", update); window.removeEventListener("blur", blur); document.removeEventListener("visibilitychange", update); };
-  }, [active, sessionId]);
+    return () => { observer.disconnect(); window.removeEventListener("focus", update); window.removeEventListener("blur", blur); document.removeEventListener("visibilitychange", update); };
+  }, [active, sessionId, region]);
   useEffect(() => {
-    if (!epoch || !foreground.current || !active || !admitted || !loaded || !isEntityId(sessionId) || mutation.busy || attempted.current === epoch) return;
+    if (!presented || !availableConversation(region) || !epoch || !foreground.current || !active || !admitted || !loaded || !isEntityId(sessionId) || mutation.busy || attempted.current === epoch) return;
     attempted.current = epoch;
     const original = { sessionId, epoch }, controller = new AbortController();
     let sent = false, inspecting = true;
-    const eligible = () => !controller.signal.aborted && current.current.sessionId === original.sessionId && current.current.active && current.current.admitted && current.current.loaded && foreground.current && document.visibilityState === "visible" && document.hasFocus();
+    const eligible = () => availableConversation(region) && !controller.signal.aborted && current.current.sessionId === original.sessionId && current.current.active && current.current.admitted && current.current.loaded && foreground.current && document.visibilityState === "visible" && document.hasFocus();
     // Reinspect the initial transcript and session on this activation. Retained
     // payloads alone cannot prove that a stale/reconnected scope loaded safely.
     // These bounded reads carry the original authenticated connection transport.
@@ -77,5 +100,5 @@ export function useSessionInboxRead(sessionId: string, active: boolean, admitted
       // may be reinspected; retained mutations own every accepted/uncertain ID.
       if (!sent && inspecting && attempted.current === original.epoch) attempted.current = undefined;
     };
-  }, [epoch, active, admitted, loaded, expectedRevision, sessionId, transport, mutation.busy, mutation.uncertain]);
+  }, [epoch, presented, active, admitted, loaded, expectedRevision, sessionId, transport, mutation.busy, mutation.uncertain, region]);
 }
