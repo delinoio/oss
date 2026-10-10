@@ -3056,7 +3056,7 @@ use one horizontal option row: name, original description and an unshrunk neutra
 User/Project badge. Project and General Chat creation constrain both the content grid item and its
 fieldset with `min-width: 0`, so intrinsic candidate text cannot widen the
 820px-capped content or responsive composer. Keep project grid placement and
-General Chat centering independent of this shrink boundary. The in-flow panel has a 220px maximum scroll height, 4px padding,
+General Chat centering independent of this shrink boundary. The panel has a 220px maximum scroll height, 4px padding,
 a neutral border and 8px corners. Rows have a 40px minimum height, 12px horizontal
 padding, 12px gaps and 8px corners. Names use 14px/20px semibold text; descriptions
 use muted 12px/18px text. Preserve full original text in the DOM and accessible
