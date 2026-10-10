@@ -1453,7 +1453,9 @@ Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
 with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
-adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
+adoption. Custom light and dark themes also require `text-secondary` to retain at
+least 4.5:1 contrast against `surface-hover` for the Revert action. Terminal
+colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
 CSS injection or a CSP exception. Export captures one committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to

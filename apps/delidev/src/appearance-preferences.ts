@@ -24,7 +24,7 @@ export function contrast(a:string,b:string) { const x=luminance(a),y=luminance(b
 export function validColors(value:unknown):value is ColorMap {
  if(!object(value)||!exact(value,[...colorTokens])||!Object.values(value).every(v=>typeof v==="string"&&/^#[0-9A-Fa-f]{6}$/.test(v)))return false;
  const v=value as ColorMap;
- return ([["text","surface"],["text-secondary","surface"],["muted","surface"],["text-subtle","surface"],["on-accent","accent"],["on-accent","accent-hover"],["selected-text","selected-background"],["warning-text","warning-background"],["danger-text","danger-background"],["on-inverse","inverse-surface"]] as [keyof ColorMap,keyof ColorMap][]).every(([a,b])=>contrast(v[a],v[b])>=4.5)&&contrast(v["control-border"],v.surface)>=3;
+ return ([["text","surface"],["text-secondary","surface"],["text-secondary","surface-hover"],["muted","surface"],["text-subtle","surface"],["on-accent","accent"],["on-accent","accent-hover"],["selected-text","selected-background"],["warning-text","warning-background"],["danger-text","danger-background"],["on-inverse","inverse-surface"]] as [keyof ColorMap,keyof ColorMap][]).every(([a,b])=>contrast(v[a],v[b])>=4.5)&&contrast(v["control-border"],v.surface)>=3;
 }
 export function validTheme(value:unknown,identity=false):value is ThemeFile|CustomTheme {
  return object(value)&&exact(value,identity?["version","name","light","dark","id"]:["version","name","light","dark"])&&value.version===1&&typeof value.name==="string"&&value.name.trim().length>0&&[...value.name].length<=80&&!/[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(value.name)&&(!identity||typeof value.id==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.id))&&validColors(value.light)&&validColors(value.dark);

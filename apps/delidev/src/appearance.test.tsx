@@ -166,7 +166,7 @@ test("v2 validates custom theme imports and preserves immutable defaults", async
  const original=defaultPreferences();expect(parsePreferences(original)).toEqual(original);
  const theme={version:1,name:"Fixture",...structuredClone(palettes.default)};
  expect(parseThemeFile(JSON.stringify(theme))).toEqual(theme);
- for(const value of [{...theme,script:"alert(1)"},{...theme,light:{...theme.light,text:"#FFFFFF"}},{...theme,light:{...theme.light,accent:"url(private)"}},{...theme,name:"x".repeat(81)}])expect(()=>parseThemeFile(JSON.stringify(value))).toThrow();
+ for(const value of [{...theme,script:"alert(1)"},{...theme,light:{...theme.light,text:"#FFFFFF"}},{...theme,light:{...theme.light,accent:"url(private)"}},{...theme,light:{...theme.light,"surface-hover":theme.light["text-secondary"]}},{...theme,name:"x".repeat(81)}])expect(()=>parseThemeFile(JSON.stringify(value))).toThrow();
  expect(()=>parseThemeFile(" ".repeat(32769))).toThrow();
  expect(()=>parsePreferences({...original,light_palette:"foreign"})).toThrow();
 });
