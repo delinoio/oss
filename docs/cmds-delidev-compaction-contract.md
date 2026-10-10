@@ -365,6 +365,8 @@ store reads, authenticated Worker dispatch, server scope/settlement and deletion
 copy derivation. The Connect receive bound covers the finite serialized job.
 Larger ordinary execution or other jobs do not acquire this exception. Trailing
 documents, unknown fields and invalid original assignments remain rejected.
+Database restore uses the same owning typed compaction Job decoder before any quarantine transformation, preserving both the 3 MiB input and 4 MiB outer limits and complete Job/assignment invariants. Valid immutable input and output remain unchanged; only the existing historical nonterminal quarantine state changes. An invalid typed input, oversized nested document or malformed Job aborts the private transaction before database publication. Ordinary Job and typed workspace recovery limits remain independent, and aggregate restore bounds remain unchanged under the [storage contract](cmds-delidev-storage-contract.md).
+
 The primary WatchWork claim receipt adds only a separate 1 KiB Record metadata
 allowance and rechecks its embedded job through the owning typed decoder.
 Same-instance reconnect preserves the original claim identity, revision and

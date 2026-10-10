@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 // validateRestoreImage admits only the current immutable layout. The original
@@ -45,6 +46,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		return storageError(err)
 	}
 	defer tx.Rollback()
+	if err := validateRestoreCompactionJobs(ctx, tx); err != nil {
+		return err
+	}
 	var conflicting bool
 	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM receipts a JOIN current_state.receipts b ON a.id=b.id WHERE a.digest<>b.digest)").Scan(&conflicting); err != nil {
 		return storageError(err)
@@ -204,7 +208,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		case domain.JobKind:
 			// Restore supported history with the same closed type-aware limits
 			// as ordinary storage reads, without enlarging generic documents.
-			v, err := Decode[domain.Job](Record{ID: id, Kind: kind, Data: raw})
+			v, err := decodeRestoreJob(raw)
 			if err != nil {
 				rows.Close()
 				return err
@@ -394,6 +398,54 @@ func redactRestoredDeletedSessions(ctx context.Context, tx *sql.Tx, now time.Tim
 		if err := t.redactSessionRemediation(id); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// Select the owning decoder before quarantine can mask invalid historical Job
+// state or compaction assignments. Ordinary and typed recovery limits remain
+// independent; the restore transaction rolls back on any rejected document.
+func decodeRestoreJob(raw []byte) (domain.Job, error) {
+	job, err := Decode[domain.Job](Record{Kind: domain.JobKind, Data: raw})
+	if err != nil {
+		return job, err
+	}
+	switch job.Type {
+	case domain.CompactSessionJob:
+		err = domain.DecodeCompactionJob(raw, &job)
+	case domain.WorkspaceStorageJob:
+		err = workspace.DecodeStorageJob(raw, &job)
+	}
+	return job, err
+}
+
+// A restore image cannot hide malformed compaction evidence behind later
+// cancellation, tombstones or receipt quarantine. Stream the same bounded
+// source documents before any transformation; never retain another full image.
+func validateRestoreCompactionJobs(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "SELECT body FROM entities WHERE kind='job' AND json_extract(body,'$.type')='compact-session' ORDER BY id")
+	if err != nil {
+		return storageError(err)
+	}
+	defer rows.Close()
+	var count int
+	var total int64
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return storageError(err)
+		}
+		total += int64(len(raw))
+		if count >= 100000 || total > 256<<20 {
+			return domain.Fail(domain.ResourceExhausted, "Restore transformation exceeds its document bound.", "Preserve both databases and arrange offline maintenance.")
+		}
+		count++
+		if _, err := decodeRestoreJob(raw); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return storageError(err)
 	}
 	return nil
 }

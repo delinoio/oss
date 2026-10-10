@@ -38,11 +38,13 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 		{"compaction-small", domain.CompactSessionJob, 512 << 10, false},
 		{"compaction-large", domain.CompactSessionJob, 2 << 20, false},
 		{"compaction-queued", domain.CompactSessionJob, 2 << 20, true},
+		{"compaction-input-bound", domain.CompactSessionJob, domain.MaxCompactionInputBytes, false},
 		{"storage-recovery-large", domain.WorkspaceStorageJob, 600 << 10, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s, root, ctx, in, session := restoreFixture(t)
 			id := domain.NewID()
+			machine := domain.NewID()
 			now := time.Now().UTC()
 			input, err := json.Marshal(struct {
 				History string `json:"history"`
@@ -50,12 +52,15 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if test.kind == domain.CompactSessionJob {
+				input = restoreCompactionInput(t, session, machine, test.size)
+			}
 			if test.kind == domain.WorkspaceStorageJob {
 				input = historyRecoveryInput(t, test.size)
 			}
-			// Storage-envelope evidence only: full contextual native request
-			// admission remains the independent server/Worker owner's validation.
-			job := domain.Job{Type: test.kind, State: domain.JobSucceeded, MachineID: domain.NewID(), InstanceID: domain.NewID(), Input: input, Output: json.RawMessage(`{"retained":"output"}`), AcceptedAt: now, FinishedAt: &now}
+			// Compaction uses the complete closed typed input; actual native
+			// cleanup and external account authority remain separate evidence.
+			job := domain.Job{Type: test.kind, State: domain.JobSucceeded, MachineID: machine, InstanceID: domain.NewID(), Input: input, Output: json.RawMessage(`{"retained":"output"}`), AcceptedAt: now, FinishedAt: &now}
 			if test.queued {
 				job.State = domain.JobQueued
 				job.InstanceID = ""
@@ -137,7 +142,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 }
 
 func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t *testing.T) {
-	for _, mode := range []string{"ordinary-size", "compaction-size", "recovery-size", "unknown", "duplicate", "utf8"} {
+	for _, mode := range []string{"ordinary-size", "compaction-size", "compaction-input-size", "compaction-input-unknown", "compaction-input-duplicate", "compaction-input-invariant", "compaction-job-invariant", "recovery-size", "unknown", "duplicate", "utf8"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root, ctx, in, session := restoreFixture(t)
 			id := domain.NewID()
@@ -174,6 +179,31 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 				}
 				job.Input, _ = json.Marshal(strings.Repeat("x", size))
 				raw, _ = json.Marshal(job)
+			case "compaction-input-size", "compaction-input-unknown", "compaction-input-duplicate", "compaction-input-invariant", "compaction-job-invariant":
+				job.Type = domain.CompactSessionJob
+				job.Input = restoreCompactionInput(t, session, job.MachineID, 512<<10)
+				switch mode {
+				case "compaction-input-size":
+					job.Input = restoreCompactionInput(t, session, job.MachineID, domain.MaxCompactionInputBytes+1)
+				case "compaction-input-unknown":
+					job.Input = append(job.Input[:len(job.Input)-1], []byte(`,"unknown":true}`)...)
+				case "compaction-input-duplicate":
+					job.Input = append(job.Input[:len(job.Input)-1], []byte(`,"version":2}`)...)
+				case "compaction-input-invariant":
+					var input domain.SessionCompactionInput
+					if domain.DecodeCompactionInput(job.Input, &input) != nil {
+						t.Fatal("decode fixture")
+					}
+					input.ActionID = input.Assignment.ExecutionID
+					job.Input, _ = json.Marshal(input)
+				case "compaction-job-invariant":
+					job.State = domain.JobState("invalid")
+				}
+				raw, _ = json.Marshal(job)
+
+				if len(raw) >= domain.MaxCompactionJobBytes {
+					t.Fatal("inner-bound regression escaped outer bound", len(raw))
+				}
 			case "recovery-size":
 				job.Type = domain.WorkspaceStorageJob
 				job.Input = historyRecoveryInput(t, 2<<20)
@@ -185,7 +215,12 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 			case "utf8":
 				raw = bytes.Replace(raw, []byte(`"input":{}`), []byte{'"', 'i', 'n', 'p', 'u', 't', '"', ':', '"', 0xff, '"'}, 1)
 			}
-			if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: raw}); err == nil {
+			if mode == "compaction-input-size" || mode == "compaction-input-unknown" || mode == "compaction-input-invariant" || mode == "compaction-job-invariant" {
+				if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: raw}); err != nil {
+					t.Fatal("regression must fit the generic outer envelope", mode, err)
+				}
+			}
+			if _, err := decodeRestoreJob(raw); err == nil {
 				t.Fatal("owning decoder accepted unsupported document", mode)
 			}
 			if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: append(append([]byte(nil), live.Data...), []byte(` {}`)...)}); err == nil {
@@ -199,11 +234,38 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 			if err != nil {
 				t.Fatal(err)
 			}
+			var candidateSession []byte
+			if err := db.QueryRowContext(ctx, "SELECT body FROM entities WHERE id=?", session).Scan(&candidateSession); err != nil {
+				t.Fatal(err)
+			}
+			var quarantineBefore int
+			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM receipts WHERE result=?", quarantinedReceipt).Scan(&quarantineBefore); err != nil {
+				t.Fatal(err)
+			}
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
 			if err := prepareRestoreImage(ctx, candidate, source, BackupRestore{RequestID: domain.NewID(), Input: in, CreatedAt: now}); err == nil {
 				t.Fatal("unsupported candidate transformed", mode)
+			}
+			rolledBack, err := sql.Open("sqlite", databaseURI(candidate, true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var retainedCandidateSession, retainedCandidateJob []byte
+			var quarantineAfter int
+			if err := rolledBack.QueryRowContext(ctx, "SELECT body FROM entities WHERE id=?", session).Scan(&retainedCandidateSession); err != nil {
+				t.Fatal(err)
+			}
+			if err := rolledBack.QueryRowContext(ctx, "SELECT body FROM entities WHERE id=?", id).Scan(&retainedCandidateJob); err != nil {
+				t.Fatal(err)
+			}
+			if err := rolledBack.QueryRowContext(ctx, "SELECT COUNT(*) FROM receipts WHERE result=?", quarantinedReceipt).Scan(&quarantineAfter); err != nil {
+				t.Fatal(err)
+			}
+			rolledBack.Close()
+			if !bytes.Equal(candidateSession, retainedCandidateSession) || !bytes.Equal(raw, retainedCandidateJob) || quarantineBefore != quarantineAfter {
+				t.Fatal("rejected restore committed partial candidate quarantine")
 			}
 			after, err := s.Get(ctx, domain.JobKind, id)
 			if err != nil || !bytes.Equal(after.Data, live.Data) || after.Revision != live.Revision {

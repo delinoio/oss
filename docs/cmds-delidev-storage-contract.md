@@ -457,6 +457,8 @@ and subsequent profile deletion remain possible even when the backup predates
 the Worker. These descriptors do not retain Worker credential verifiers,
 instances or execution grants; Workers still require fresh pairing.
 
+Restore streams bounded historical compact-session Job documents through their owning decoder before any quarantine transformation. Compact-session history uses the strict typed compaction decoder: input remains at most 3 MiB and its outer Job at most 4 MiB, with complete immutable assignment and Job invariants checked before cancellation can mask malformed evidence. Typed workspace recovery retains its independent decoder and bounds; ordinary jobs retain the existing generic limit. Keep the aggregate 100,000-document/256 MiB transformation bound. Rejection rolls back the private candidate transaction before publication and preserves live/source databases. Valid compaction input and output bytes remain unchanged while nonterminal history receives the original quarantine semantics. No truncation, expanded limit, migration or native authority is introduced. See the [compaction contract](cmds-delidev-compaction-contract.md#complete-immutable-assignment-decoding).
+
 Every restored session is paused and recovery-required. Nonterminal historical
 jobs are canceled with a typed quarantine problem; schedules are disabled and their
 next-run timestamps cleared. Historical assignment copies cannot grant native
