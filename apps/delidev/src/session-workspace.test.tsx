@@ -317,6 +317,8 @@ it("keeps a compact header and all independent status/title evidence in the expa
 it("retains primary section choices and editor/input identities across tools and locale changes",async()=>{
  const f=fixture();render(f.view());const composer=await screen.findByRole("textbox",{name:"Message"});
  const info=screen.getByRole("complementary",{name:"Session information"});
+ // The composer can mount before the independently read execution projection.
+ await waitFor(()=>expect(info.querySelector(".execution-configuration")).not.toBeNull());
  const execution=[...info.querySelectorAll<HTMLDetailsElement>(".session-information-section")].find(node=>node.querySelector(".execution-configuration"))!;
  const projection=info.querySelector(".execution-configuration");
  await act(async()=>{execution.open=false;fireEvent(execution,new Event("toggle"));});
