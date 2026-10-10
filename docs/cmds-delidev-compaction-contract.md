@@ -429,6 +429,11 @@ mutation receipt. A replay cannot change its target, prompt or generation.
 The original resolved native process resumes the same private history with its
 original settings. The closed 0.162.0 response profile uses `thread/revert` with
 `beforeTurnId`, excluding that turn and later turns. `thread/rollback` is absent.
+The selected Revert profile admits legacy or paginated history at binding,
+initial native-state admission, post-result verification, replacement continuation
+and explicit original-action observation. Other profiles admit legacy history
+only. Unknown history modes and foreign original metadata remain rejected;
+native version metadata alone never enables the Revert profile.
 Persist the exact intent and complete expected retained prefix before sending
 once. Require original non-ephemeral idle root metadata, required nullable
 backwards cursors, descending full-item pagination from the returned anchor, and

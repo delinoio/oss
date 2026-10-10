@@ -101,6 +101,12 @@ type boundThreadWire struct {
 	CollaborationMode       json.RawMessage `json:"collaborationMode,omitempty"`
 }
 
+// The selected Revert response profile admits paginated history. Other native
+// profiles retain legacy-only admission; an observed version grants no authority.
+func nativeHistoryAllowed(history HistoryMode, revert bool) bool {
+	return history == LegacyHistory || revert && history == PaginatedHistory
+}
+
 func decodeBoundThread(raw json.RawMessage, settings ThreadSettings, expectedID domain.ID, method threadMethod, version string) (*Thread, *EffectiveSettings, error) {
 	return decodeBoundThreadProfile(raw, settings, expectedID, method, version, false)
 }
@@ -114,7 +120,7 @@ func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expe
 		return nil, nil, err
 	}
 	thread := wire.summary()
-	if thread.History != LegacyHistory && !revert {
+	if !nativeHistoryAllowed(thread.History, revert) {
 		return &thread, nil, incompatible()
 	}
 	if expectedID != "" && wire.ID != expectedID {

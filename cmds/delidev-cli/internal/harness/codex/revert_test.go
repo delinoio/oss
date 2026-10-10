@@ -108,6 +108,9 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 			os.Exit(75)
 		}
 		page.Data = page.Data[:index]
+		if f.mode == "thread-revert-paginated-after" {
+			f.thread["historyMode"] = "paginated"
+		}
 		f.history, _ = json.Marshal(page)
 		if f.mode == "thread-revert-lost" {
 			json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "lost acknowledgment"}})
@@ -257,6 +260,81 @@ func TestRevertPreClaimHistoryAndBoundsFailuresNeverReachClaimOrWire(t *testing.
 			}
 			if err := c.Close(); err != nil {
 				t.Fatal("original native cleanup not joined", err)
+			}
+		})
+	}
+}
+
+func TestRevertPaginatedHistoryAtOriginalAndReplacementBoundaries(t *testing.T) {
+	for _, timing := range []string{"before", "after"} {
+		t.Run(timing, func(t *testing.T) {
+			mode := "ready"
+			if timing == "after" {
+				mode = "paginated-after"
+			}
+			c, capture, source, ids, inputs := revertFixture(t, mode)
+			if timing == "before" {
+				fixtureSignal(t, c, "metadata", map[string]any{"historyMode": "paginated"})
+			}
+			claims := 0
+			var intent RevertIntent
+			checkpoint, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(value RevertIntent) error {
+				claims++
+				intent = value
+				return nil
+			})
+			if err != nil || claims != 1 || checkpoint.TurnsCount != 1 {
+				t.Fatal("selected paginated source or post-result state rejected", err)
+			}
+			observed, err := c.ReconcileRevert(context.Background(), intent)
+			if err != nil || observed.HistoryDigest != checkpoint.HistoryDigest {
+				t.Fatal("original paginated observation rejected", err)
+			}
+			// Model the fresh process state after resuming the original thread.
+			// The wire fixture retains its exact history, metadata and rollout.
+			c.execution = newExecutionState(c.execution.thread, c.execution.settings)
+			c.execution.continuationPending = true
+			last, err := c.VerifyCompactedContinuation(context.Background(), domain.NewID(), checkpoint)
+			if err != nil || last.ID != ids[0] || c.execution.continuationPending {
+				t.Fatal("paginated replacement continuation rejected", err)
+			}
+			if len(requestsOf(t, capture, "thread/revert")) != 1 {
+				t.Fatal("observation or continuation sent another native Revert")
+			}
+		})
+	}
+}
+
+func TestRevertHistoryAdmissionRetainsProfileAndOriginalMetadataGuards(t *testing.T) {
+	for _, scenario := range []string{"legacy-profile", "unknown-history", "foreign-cwd", "foreign-provider", "foreign-session", "foreign-thread", "no-direct-input", "active"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, "ready")
+			metadata := map[string]any{"historyMode": "paginated"}
+			switch scenario {
+			case "legacy-profile":
+				c.revertHistory = false
+			case "unknown-history":
+				metadata["historyMode"] = "unknown"
+			case "foreign-cwd":
+				metadata["cwd"] = filepath.Join(t.TempDir(), "foreign")
+			case "foreign-provider":
+				metadata["modelProvider"] = "foreign"
+			case "foreign-session":
+				metadata["sessionId"] = domain.NewID()
+			case "foreign-thread":
+				metadata["id"] = domain.NewID()
+			case "no-direct-input":
+				metadata["canAcceptDirectInput"] = false
+			case "active":
+				metadata["status"] = map[string]any{"type": "active", "activeFlags": []any{}}
+			}
+			fixtureSignal(t, c, "metadata", metadata)
+			if err := c.checkNativeStateLocked(context.Background(), true); err == nil {
+				t.Fatal("unsupported profile or foreign original state admitted")
+			}
+			claims := 0
+			if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(RevertIntent) error { claims++; return nil }); err == nil || claims != 0 || len(requestsOf(t, capture, "thread/revert")) != 0 {
+				t.Fatal("unproved metadata reached native mutation", err)
 			}
 		})
 	}
