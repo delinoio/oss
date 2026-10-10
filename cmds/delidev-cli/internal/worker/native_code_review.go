@@ -333,7 +333,7 @@ func executeNativeCodeReview(ctx context.Context, config Config, owner domain.ID
 					return publicationUncertain()
 				}
 				switch event.Metadata {
-				case codex.NativeReviewItemPending, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.SkillsChangedDiscarded:
+				case codex.NativeReviewItemPending, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.SkillsChangedDiscarded, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved:
 					continue
 				default:
 					return domain.NativeCodeReviewUnavailable()

@@ -93,3 +93,18 @@ func (b EstimatedCostBudget) Reached(e BudgetEvidence) (bool, error) {
 func BudgetReachedError() error {
 	return Fail(BudgetReached, "The session's known estimated-cost subtotal reached its budget.", "Review the retained estimate and change or remove the budget before starting another turn. Queued input and accepted work are retained; this is not a billing ceiling.")
 }
+
+// MergeResponses combines separate immutable auxiliary response aggregates.
+// It does not turn an unavailable response into measured zero.
+func (e *BudgetEvidence) MergeResponses(aux BudgetEvidence) error {
+	if e.Validate() != nil || aux.Validate() != nil || e.Currency != aux.Currency || aux.CompleteNativeUnits != 0 || aux.PartialNativeUnits != 0 || aux.UnavailableNativeUnits != 0 {
+		return Fail(RecoveryRequired, "Inconsistent auxiliary budget evidence.", "Preserve original response and immutable price receipts.")
+	}
+	e.CompleteResponses += aux.CompleteResponses
+	e.PartialResponses += aux.PartialResponses
+	e.UnavailableResponses += aux.UnavailableResponses
+	if aux.KnownAmount != "" {
+		e.KnownAmount = addAmount(e.KnownAmount, aux.KnownAmount)
+	}
+	return e.Validate()
+}

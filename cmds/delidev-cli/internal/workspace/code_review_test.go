@@ -61,3 +61,43 @@ func TestNativeReviewPinsUntrackedBytesWithoutChangingExecutionOwner(t *testing.
 		})
 	}
 }
+
+func TestNativeReviewCommitAndBaseTargetsKeepExactCommit(t *testing.T) {
+	for _, kind := range []domain.NativeCodeReviewTargetKind{domain.ReviewCommit, domain.ReviewBaseBranch} {
+		t.Run(string(kind), func(t *testing.T) {
+			m := manager(t)
+			source, err := filepath.EvalSymlinks(repository(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, _ := requestFor(source)
+			manifest, err := m.Prepare(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease, err := m.ClaimFirstExecution(context.Background(), domain.NewID(), domain.NewID(), input, manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lease.Close()
+			request := diffRequest(input, manifest, domain.DiffWorkingTree, ".")
+			observed, err := m.ReadWorkspace(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			head := gitTest(t, manifest.PrimaryPath, "rev-parse", "HEAD")
+			target := domain.NativeCodeReviewTarget{Kind: kind, RepositoryID: input.PrimaryRepository, DiffRevision: observed.Diff.Revision, Reference: head}
+			if kind == domain.ReviewBaseBranch {
+				target.Reference = "HEAD"
+			}
+			if err = m.WithNativeCodeReview(context.Background(), request, target, func(ctx context.Context, path string, selection domain.NativeCodeReviewSelection) error {
+				if selection.HeadCommit != head || kind == domain.ReviewBaseBranch && selection.BaseCommit != head || kind == domain.ReviewCommit && selection.Target.Reference != head {
+					t.Fatal("original exact commit changed")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

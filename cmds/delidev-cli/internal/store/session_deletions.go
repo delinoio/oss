@@ -640,6 +640,11 @@ func (t *Tx) purgeSession(v SessionDeletion) error {
 	return t.retireForkImageSnapshots(v.SessionID)
 }
 func (t *Tx) deleteSessionRecord(r Record) error {
+	if r.Kind == domain.SessionKind {
+		if err := t.DeleteNativeCodeReviewSessionUsage(r.ID); err != nil {
+			return err
+		}
+	}
 	if r.Kind == domain.JobKind {
 		if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=?", nativeReviewProgressPrefix+string(r.ID)); err != nil {
 			return storageError(err)

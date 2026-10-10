@@ -20,7 +20,7 @@ type ResponseUsage struct {
 // PutResponseUsage shares the original event/session transaction. It never
 // consumes cumulative counter snapshots, sums overlaps or infers monetary cost.
 func (t *Tx) PutResponseUsage(id domain.ID, record domain.ResponseUsageRecord) (domain.ID, bool, error) {
-	if id.Validate() != nil || record.Validate() != nil {
+	if id.Validate() != nil || record.Validate() != nil || record.Purpose == domain.NativeCodeReviewUsage {
 		return "", false, domain.Fail(domain.InvalidArgument, "Invalid response usage ownership.", "Preserve the original normalized response observation.")
 	}
 	if _, err := t.Get(domain.SessionKind, record.SessionID); err != nil {

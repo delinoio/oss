@@ -131,6 +131,11 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		"DELETE FROM entities WHERE kind='inbox' AND json_extract(body,'$.source')='operational' AND (id IN (SELECT id FROM tombstones) OR (json_extract(body,'$.operational.machine_id') IS NOT NULL AND json_extract(body,'$.operational.machine_id') NOT IN (SELECT id FROM entities WHERE kind='machine')) OR (json_extract(body,'$.operational.account_id') IS NOT NULL AND json_extract(body,'$.operational.account_id') NOT IN (SELECT id FROM entities WHERE kind='account')) OR (json_extract(body,'$.operational.occurrence_id') IS NOT NULL AND json_extract(body,'$.operational.occurrence_id') NOT IN (SELECT id FROM entities WHERE kind='occurrence')))",
 		"DELETE FROM metadata WHERE key LIKE 'notification-delivery-v1:%' AND substr(key,length('notification-delivery-v1:')+1,36) NOT IN (SELECT id FROM entities WHERE kind='inbox')",
 		"DELETE FROM metadata WHERE key LIKE 'notification-worker-baseline-v1:%'",
+		// Review receipts retain accounting only. Deleted original sessions and
+		// jobs cannot regain private evidence or operational progress on restore.
+		"DELETE FROM metadata WHERE key LIKE 'native-code-review-usage-v1:%' AND json_extract(value,'$.record.session_id') NOT IN (SELECT id FROM entities WHERE kind='session')",
+		"DELETE FROM metadata WHERE key LIKE 'native-code-review-estimate-v1:%' AND substr(key,length('native-code-review-estimate-v1:')+1,36) NOT IN (SELECT id FROM entities WHERE kind='session')",
+		"DELETE FROM metadata WHERE key LIKE 'native-code-review-progress-v1:%' AND substr(key,length('native-code-review-progress-v1:')+1) NOT IN (SELECT id FROM entities WHERE kind='job')",
 	}
 	for _, query := range queries {
 		if query == "DELETE FROM entities WHERE id IN (SELECT id FROM tombstones) OR session_id IN (SELECT id FROM tombstones WHERE kind='session')" {

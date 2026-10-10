@@ -119,7 +119,7 @@ func (i NativeCodeReviewInput) Validate() error {
 	if i.Source.Configuration.Subscription && i.SubscriptionGeneration.Validate() != nil || !i.Source.Configuration.Subscription && i.SubscriptionGeneration != "" || i.Actor.MachineID != "" || i.Actor.Type == ClientDevice && i.Actor.DeviceID.Validate() != nil || i.Actor.Type == OwnerDevice && i.Actor.DeviceID != "" && i.Actor.DeviceID.Validate() != nil {
 		return NativeCodeReviewUnavailable()
 	}
-	if i.Version != 1 || UniqueIDs([]ID{i.ActionID, i.SourceJobID, i.Source.ExecutionID, i.Source.InputID, i.Source.SessionID}) != nil || i.SourceRevision == 0 || i.SourceRevision >= 1<<63 || i.Source.Validate() != nil || i.Source.Configuration.Harness != Codex || i.Target.Validate() != nil || (i.Actor.Type != OwnerDevice && i.Actor.Type != ClientDevice) {
+	if i.Version != 1 || i.ContextRevision >= 1<<63 || UniqueIDs([]ID{i.ActionID, i.SourceJobID, i.Source.ExecutionID, i.Source.InputID, i.Source.SessionID}) != nil || i.SourceRevision == 0 || i.SourceRevision >= 1<<63 || i.Source.Validate() != nil || i.Source.Configuration.Harness != Codex || i.Target.Validate() != nil || (i.Actor.Type != OwnerDevice && i.Actor.Type != ClientDevice) {
 		return NativeCodeReviewUnavailable()
 	}
 	return nil

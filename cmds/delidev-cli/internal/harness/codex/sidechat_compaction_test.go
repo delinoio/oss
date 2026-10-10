@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
+	"strings"
 	"testing"
 )
 
 func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
-	if f.mode != "thread-continuation-sidechat" {
+	if f.mode != "thread-continuation-sidechat" && !strings.HasPrefix(f.mode, "thread-native-review-") {
 		return false
 	}
 	if method == "fixture/sidechat-drift" {
@@ -43,6 +44,9 @@ func (f *threadFixture) handleSidechatCompaction(id json.RawMessage, method stri
 			features[key] = false
 		}
 		config := map[string]any{"features": features, "sandbox_mode": "read-only", "approval_policy": "never", "approvals_reviewer": "user", "allow_login_shell": false, "web_search": "disabled"}
+		if strings.HasPrefix(f.mode, "thread-native-review-") {
+			config["review_model"] = "fixture-model"
+		}
 		if os.Getenv("DELIDEV_CODEX_MANAGED_SIDECHAT") == "1" {
 			config["cli_auth_credentials_store"], config["model_provider"], config["forced_login_method"] = "file", "openai", "chatgpt"
 			config["model_providers"] = map[string]any{}

@@ -394,3 +394,9 @@ Endpoint or API-profile edits remove managed mapping eligibility. No name,
 URL resemblance or native-ID alias establishes a match.
 
 Mode changes retain and check the original displayed active price revision (zero only when unavailable), together with the policy and provider revisions. A concurrent automatic publication conflicts before any policy mutation, so Manual cannot freeze an unseen rate. Exact uncertain retries retain all three original revisions.
+
+## Dedicated review usage — issue #2019
+
+Dedicated Codex review responses use the closed `native-code-review` auxiliary purpose. Each immutable typed metadata receipt binds its original job, action, session, account, model, context, native thread/turn and provider response digest. The owning Worker publishes observed responses before terminal completion, so unknown completion cannot erase measured usage. Sequence replay never changes the original receipt or charges it twice. Legacy conversation/session-title SQL CHECK values remain unchanged; no migration is added.
+
+Each receipt freezes its exact eligible pricing basis and estimate at observation time. A separate typed metadata lifetime aggregate contributes once to the original session budget, including unavailable counts and independent currencies. Restore preserves these current accounting claims without granting native execution or replay; original session deletion removes their receipts and totals. `GetNativeCodeReview` exposes independent `UsageTotals` and `EstimateTotals` for the exact review. Completion without an exact observed response remains unavailable, not zero. Ordinary conversation response counts and missing-response coverage do not absorb auxiliary reviews, and no estimate establishes actual spending.

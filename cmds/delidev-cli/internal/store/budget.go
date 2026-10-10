@@ -41,6 +41,13 @@ func (t *Tx) SessionBudgetEstimate(session domain.ID, currency domain.Currency) 
 	if err != nil {
 		return total, err
 	}
+	review, err := t.NativeCodeReviewEstimate(session, currency)
+	if err != nil {
+		return total, err
+	}
+	if err = total.MergeResponses(review); err != nil {
+		return total, err
+	}
 	native, err := t.NativeSessionEstimate(session, currency)
 	if err != nil {
 		return total, err
@@ -73,5 +80,13 @@ func (t *Tx) RequireSessionBudget(session domain.ID, budget *domain.EstimatedCos
 func (t *Tx) OtherBudgetCurrencies(session domain.ID, selected domain.Currency) (uint64, error) {
 	var count uint64
 	err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(SUM(complete_responses+partial_responses+unavailable_responses),0) FROM session_estimate_totals WHERE session_id=? AND currency<>'' AND currency<>?`, session, selected).Scan(&count)
-	return count, storageError(err)
+	if err != nil {
+		return count, storageError(err)
+	}
+	var auxiliary uint64
+	err = t.tx.QueryRowContext(t.ctx, "SELECT COALESCE(SUM(json_extract(value,'$.complete_responses')+json_extract(value,'$.partial_responses')+json_extract(value,'$.unavailable_responses')),0) FROM metadata WHERE key LIKE ? AND json_extract(value,'$.currency')<>'' AND json_extract(value,'$.currency')<>?", nativeReviewEstimatePrefix+string(session)+":%", selected).Scan(&auxiliary)
+	if auxiliary > 1<<63-1-count {
+		return 0, domain.NativeCodeReviewUnavailable()
+	}
+	return count + auxiliary, storageError(err)
 }

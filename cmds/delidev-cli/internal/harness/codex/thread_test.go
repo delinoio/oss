@@ -30,6 +30,9 @@ type threadFixture struct {
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if f.handleNativeCodeReview(id, method, raw, write) {
+		return true
+	}
 	if f.handleRevert(id, method, raw, write) {
 		return true
 	}
@@ -208,6 +211,9 @@ func openThreadFixture(t *testing.T, mode string) (*Client, string) {
 	if strings.HasPrefix(mode, "thread-revert-") {
 		config.RevertHistory = true
 		config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")
+	}
+	if strings.HasPrefix(mode, "thread-native-review-") {
+		config.CodeReviewModel = "fixture-model"
 	}
 	if mode == "thread-continuation-sidechat" {
 		config.Sidechat = ReadOnlySidechatV1

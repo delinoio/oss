@@ -383,3 +383,7 @@ missing earlier observation. Callbacks carry no paths, remote URLs or Git output
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+
+## Dedicated review observations — issue #2019
+
+Dedicated review holds one joined read-only observation of the original prepared workspace and selected repository. Its bounded admission/capture verifies manifest, continuation identity, working-tree diff revision, exact HEAD/reference commit and tracked/untracked content digest. The native operation retains its own joined lifetime; ordinary read deadlines do not detach it. Recheck the same complete selection after native completion and cleanup. Drift prevents result publication. No workspace claim, predecessor advance, file write, clone, checkout adoption or original Local deletion authority is added.

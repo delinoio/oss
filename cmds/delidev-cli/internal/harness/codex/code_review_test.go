@@ -2,10 +2,13 @@
 package codex
 
 import (
+	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -109,5 +112,113 @@ func TestNativeReviewLifecycleRejectsForeignAndReorderedItems(t *testing.T) {
 	}
 	if _, err := c.observeCodeReviewLocked(native, c.thread, c.codeReview.turn, exit, &started, &completed); err == nil {
 		t.Fatal("unsolicited completion accepted")
+	}
+}
+
+func (f *threadFixture) handleNativeCodeReview(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if !strings.HasPrefix(f.mode, "thread-native-review-") || method != "review/start" {
+		return false
+	}
+	if f.thread == nil {
+		os.Exit(90)
+	}
+	var params map[string]any
+	if json.Unmarshal(raw, &params) != nil {
+		os.Exit(91)
+	}
+	out, err := os.OpenFile(os.Getenv("DELIDEV_CODEX_CAPTURE"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		os.Exit(92)
+	}
+	_ = json.NewEncoder(out).Encode(map[string]any{"method": method, "params": params})
+	_ = out.Close()
+	if params["threadId"] != f.thread["id"] || params["delivery"] != "inline" {
+		os.Exit(93)
+	}
+	f.turn = domain.NewID()
+	if f.mode == "thread-native-review-loss" {
+		time.Sleep(2 * time.Second)
+	}
+	write(id, map[string]any{"turn": fixtureTurn(f.turn, TurnRunning), "reviewThreadId": f.thread["id"]})
+	return true
+}
+
+func TestDedicatedReviewSendsFrozenTargetOnceAndRetainsResponseLoss(t *testing.T) {
+	for _, kind := range []domain.NativeCodeReviewTargetKind{domain.ReviewUncommitted, domain.ReviewBaseBranch, domain.ReviewCommit, domain.ReviewCustom} {
+		t.Run(string(kind), func(t *testing.T) {
+			c, capture := openThreadFixture(t, "thread-native-review-ready")
+			settings := threadSettings(t)
+			settings.Options = domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "never", ServiceTier: "fast"}
+			if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
+				t.Fatal(err)
+			}
+			selected := reviewFixture(t).codeReview.selection
+			selected.Target.Kind = kind
+			if kind == domain.ReviewBaseBranch {
+				selected.Target.Reference = "original-branch"
+				selected.BaseCommit = strings.Repeat("d", 40)
+			}
+			if kind == domain.ReviewCommit {
+				selected.Target.Reference = strings.Repeat("e", 40)
+			}
+			if kind == domain.ReviewCustom {
+				selected.Target.Instructions = "Inspect the original selection."
+			}
+			action := domain.NewID()
+			if _, err := c.StartCodeReview(context.Background(), action, selected); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.StartCodeReview(context.Background(), domain.NewID(), selected); err == nil {
+				t.Fatal("repeated dedicated send admitted")
+			}
+			count := 0
+			for _, request := range capturedThreads(t, capture) {
+				if request["method"] != "review/start" {
+					continue
+				}
+				count++
+				target := request["params"].(map[string]any)["target"].(map[string]any)
+				if kind == domain.ReviewBaseBranch && target["branch"] != selected.BaseCommit {
+					t.Fatal("moving branch sent instead of pinned commit")
+				}
+				if kind == domain.ReviewCommit && target["sha"] != selected.Target.Reference {
+					t.Fatal("commit target changed")
+				}
+				if kind == domain.ReviewCustom && target["instructions"] != selected.Target.Instructions {
+					t.Fatal("custom target changed")
+				}
+			}
+			if count != 1 {
+				t.Fatal("dedicated operation was replaced or repeated")
+			}
+		})
+	}
+	c, capture := openThreadFixture(t, "thread-native-review-loss")
+	settings := threadSettings(t)
+	settings.Options = domain.AgentOptions{Permission: domain.PermissionReadOnly, ApprovalPolicy: "never", ServiceTier: "fast"}
+	if _, err := c.StartThread(context.Background(), domain.NewID(), settings); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	_, err := c.StartCodeReview(ctx, domain.NewID(), reviewFixture(t).codeReview.selection)
+	cancel()
+	if err == nil {
+		t.Fatal("lost acknowledgment reported success")
+	}
+	claimed, err := c.CodeReviewSendClaimed(context.Background())
+	if err != nil || !claimed {
+		t.Fatal("lost response cleared original send claim", err)
+	}
+	if _, err := c.StartCodeReview(context.Background(), domain.NewID(), reviewFixture(t).codeReview.selection); err == nil {
+		t.Fatal("unknown review retried")
+	}
+	count := 0
+	for _, request := range capturedThreads(t, capture) {
+		if request["method"] == "review/start" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatal("unknown completion issued another operation")
 	}
 }

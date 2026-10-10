@@ -23,30 +23,21 @@ func nativeReviewAuthority(tx *store.Tx, row store.Record, job domain.Job) (doma
 	if job.Type != domain.NativeCodeReviewJob || domain.DecodeNativeCodeReviewInput(job.Input, &i) != nil || i.Validate() != nil || i.Source.SessionID != row.SessionID || job.MachineID != i.Source.MachineID || job.ParentID != i.SourceJobID {
 		return i, domain.NativeCodeReviewUnavailable()
 	}
-	if err := tx.RequireForkActor(i.Actor); err != nil {
+	if err := nativeReviewEvidenceAuthority(tx, row, i); err != nil {
 		return i, err
 	}
 	sr, session, err := sessionRecord(tx, row.SessionID)
-	if err != nil || !session.OwnsExecution(i.Source) || session.ActiveExecutionID != "" || !session.WorkspaceAvailable() || session.Recovery != domain.NoRecovery || session.Archive != domain.NotArchived || session.Execution == nil || !session.Execution.CleanupVerified || session.ContextRevision != i.ContextRevision || session.Execution.JobID != i.SourceJobID || session.CompactionJobID != "" || session.PendingSteerID != "" {
+	if err != nil || session.Archive != domain.NotArchived {
 		return i, domain.NativeCodeReviewUnavailable()
 	}
-	original, err := tx.Get(domain.JobKind, i.SourceJobID)
-	if err != nil || original.Revision != i.SourceRevision || original.SessionID != row.SessionID {
-		return i, domain.NativeCodeReviewUnavailable()
-	}
-	sourceJob, err := store.Decode[domain.Job](original)
-	expected, _ := json.Marshal(i.Source)
-	if err != nil || sourceJob.Type != domain.ExecuteSessionJob || !sourceJob.State.Terminal() || !bytes.Equal(sourceJob.Input, expected) {
-		return i, domain.NativeCodeReviewUnavailable()
+	if err := tx.RequireForkActor(i.Actor); err != nil {
+		return i, err
 	}
 	_, machine, err := activeMachine(tx, job.MachineID)
 	if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.NativeCodexReviewV1) {
 		return i, domain.NativeCodeReviewUnavailable()
 	}
 	if err := checkedExecutionSource(tx, sr, session, machine, i.Source); err != nil {
-		return i, err
-	}
-	if err := tx.RequireSessionBudget(sr.ID, session.EstimatedCostBudget); err != nil {
 		return i, err
 	}
 	if i.Source.Configuration.Subscription {
@@ -56,6 +47,25 @@ func nativeReviewAuthority(tx *store.Tx, row store.Record, job domain.Job) (doma
 		}
 	}
 	return i, nil
+}
+
+// Evidence publication can acknowledge the original operation after Stop or
+// account disconnection. It grants no further native send or credential access.
+func nativeReviewEvidenceAuthority(tx *store.Tx, row store.Record, i domain.NativeCodeReviewInput) error {
+	_, session, err := sessionRecord(tx, row.SessionID)
+	if err != nil || !session.OwnsExecution(i.Source) || session.ActiveExecutionID != "" || !session.WorkspaceAvailable() || session.Recovery != domain.NoRecovery || session.Execution == nil || !session.Execution.CleanupVerified || session.ContextRevision != i.ContextRevision || session.Execution.JobID != i.SourceJobID || session.CompactionJobID != "" || session.PendingSteerID != "" {
+		return domain.NativeCodeReviewUnavailable()
+	}
+	original, err := tx.Get(domain.JobKind, i.SourceJobID)
+	if err != nil || original.Revision != i.SourceRevision || original.SessionID != row.SessionID {
+		return domain.NativeCodeReviewUnavailable()
+	}
+	sourceJob, err := store.Decode[domain.Job](original)
+	expected, _ := json.Marshal(i.Source)
+	if err != nil || sourceJob.Type != domain.ExecuteSessionJob || !sourceJob.State.Terminal() || !bytes.Equal(sourceJob.Input, expected) {
+		return domain.NativeCodeReviewUnavailable()
+	}
+	return nil
 }
 
 func (s *Service) CreateNativeCodeReview(ctx context.Context, req *connect.Request[pb.CreateNativeCodeReviewRequest]) (*connect.Response[pb.CreateNativeCodeReviewResponse], error) {
@@ -241,7 +251,7 @@ func finishNativeCodeReview(tx *store.Tx, row store.Record, job domain.Job, revi
 		if !found || progress.State != domain.NativeReviewExited || domain.Decode(raw, &output) != nil || output.Validate() != nil || output.ActionID != input.ActionID || output.Selection != progress.Selection || output.ThreadID != progress.ThreadID || output.TurnID != progress.TurnID || output.EnteredItemID != progress.EnteredItemID || output.ExitedItemID != progress.ExitedItemID {
 			return nil, domain.NativeCodeReviewUnavailable()
 		}
-		if _, err := nativeReviewAuthority(tx, row, job); err != nil {
+		if err := nativeReviewEvidenceAuthority(tx, row, input); err != nil {
 			return nil, err
 		}
 		for _, usage := range output.UsageRecords {
@@ -267,6 +277,20 @@ func finishNativeCodeReview(tx *store.Tx, row store.Record, job domain.Job, revi
 	saved, err := tx.PutJob(row.ID, row.Revision, row.SessionID, row.ProjectID, job)
 	if err != nil {
 		return nil, err
+	}
+	// A review never supplies a successor conversation checkpoint. Confirmed
+	// original cleanup may finish visibility cleanup while preserving Stop.
+	if job.State == domain.JobSucceeded || job.State == domain.JobFailed && len(job.Output) > 0 {
+		sr, session, err := sessionRecord(tx, row.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if session.Archive == domain.ArchivePending {
+			session.Archive, session.Dispatch, session.NextExecutionIntent = domain.Archived, domain.DispatchPaused, ""
+			if _, err = tx.Put(domain.SessionKind, sr.ID, sr.Revision, sr.ID, sr.ProjectID, session); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return store.Record{ID: saved.ID}, nil
 }
