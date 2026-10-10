@@ -12,6 +12,8 @@ import (
 type MetadataKind string
 
 const (
+	AuthRecoveryStartedObserved      MetadataKind = "auth-recovery-started-observed"
+	AuthRecoveryCompletedObserved    MetadataKind = "auth-recovery-completed-observed"
 	AutoReviewReplayChecked          MetadataKind = "auto-review-replay-checked"
 	ThreadIdentityChecked            MetadataKind = "thread-identity-checked"
 	ThreadSettingsChecked            MetadataKind = "thread-settings-checked"
@@ -86,6 +88,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "error", "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
+		return c.observeRecoveryTelemetryLocked(native)
 	case "thread/name/updated", "thread/attachment/updated", "project/changed", "thread/project/updated", "thread/prediction/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/readState/changed":
 		return c.observeThreadMetadataLocked(native)
 	case "thread/archived", "thread/deleted", "thread/closed", "thread/unarchived", "thread/queue/changed", "thread/compacted", "thread/reverted":

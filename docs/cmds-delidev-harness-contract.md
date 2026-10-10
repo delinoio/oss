@@ -102,6 +102,38 @@ turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
 
+### Codex native error and authentication recovery observations
+
+Notification-only `error`, `modelProvider/authRecoveryStarted` and
+`modelProvider/authRecoveryCompleted` use the closed native envelopes from the
+[error schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/ErrorNotification.json)
+and [authentication recovery schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/AuthRecoveryNotification.json).
+Require the original process connection, root thread and known active running
+turn. Authentication-recovery provider names are matched through a closed
+canonical mapping from the immutable effective provider key: managed `openai`
+uses the native display name `OpenAI`. The wire display name and provider key
+remain separate identities. Paused, interrupted, uncertain, foreign, unknown
+or terminal turns cannot gain current observation authority. Preserve frame limits, exact field names and bounded
+private text; reject unknown error union variants, mixed/extra fields and invalid
+nullable HTTP status or misalignment shapes. Private misalignment instructions
+never become a new user input or continuation action.
+
+Retain only fixed-size per-turn retry/nonretry and recovery phase telemetry,
+separate from terminal evidence. `willRetry` describes the original native
+process's retry; DeliDev sends no retry or replacement input. An error emits only
+the existing bounded native-warning notice, with private diagnostics discarded.
+Authentication recovery phases are consumed as private metadata without product
+publication, login, credential refresh, account replacement or changed readiness.
+Structured diagnostics contain only original owner identity, closed phase and
+retry boolean; no native error/provider prose or private paths are logged.
+
+Only the independently observed original terminal turn reports success or actual
+failure. Missing or uncertain terminal evidence retains original recovery without
+resend or definite no-send inference. Terminal replay cannot produce another
+result. Original history, receipts, account ownership and independent cleanup
+remain unchanged; no public RPC, allocation or migration is introduced. Synthetic
+adapter/Worker fixtures establish this boundary without native/account acceptance.
+
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so
 parser-level success cannot conceal an unsupported Worker event family.

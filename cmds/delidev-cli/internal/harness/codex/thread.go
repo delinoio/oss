@@ -116,6 +116,13 @@ const (
 	readThread   threadMethod = "thread/read"
 )
 
+// Managed OpenAI auth recovery reports the native provider display name,
+// while thread settings retain the immutable provider key.
+const (
+	managedOpenAIProviderKey  = "openai"
+	managedOpenAIProviderName = "OpenAI"
+)
+
 type threadParams struct {
 	RawEvents                  bool           `json:"experimentalRawEvents,omitempty"`
 	ThreadID                   domain.ID      `json:"threadId,omitempty"`
@@ -315,7 +322,7 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		return result, domain.Fail(domain.Conflict, "This native connection already owns a root thread.", "Use the retained native thread; do not start or resume another one on this connection.")
 	}
 	if c.managedHome != "" {
-		if settings.Provider != "openai" {
+		if settings.Provider != managedOpenAIProviderKey {
 			return result, incompatible()
 		}
 		if err := c.verifyManagedConfig(ctx, settings.Cwd); err != nil {

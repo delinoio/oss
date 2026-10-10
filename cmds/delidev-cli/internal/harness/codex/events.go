@@ -17,6 +17,7 @@ type eventValidationStage string
 
 const (
 	validationOther          eventValidationStage = "other"
+	validationNativeError    eventValidationStage = "native-error"
 	validationSettings       eventValidationStage = "thread-settings"
 	validationItem           eventValidationStage = "message-item"
 	validationUsage          eventValidationStage = "response-usage"
@@ -43,6 +44,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "error":
+		return validationNativeError
 	case "thread/settings/updated":
 		return validationSettings
 	case "item/started", "item/completed":
@@ -150,6 +153,7 @@ type Message struct {
 }
 
 type Event struct {
+	NativeError      *NativeErrorObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -267,6 +271,12 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if event.Kind == InteractionRequestedEvent && event.Interaction.Kind == ApprovalInteraction && c.logger != nil {
 		c.logger.InfoContext(ctx, "Codex native approval requested", "owner_id", c.ownerID, "interaction_id", event.Interaction.ID, "turn_id", event.TurnID, "approval_kind", event.Interaction.Approval.Kind)
+	}
+	if c.logger != nil && event.NativeError != nil {
+		c.logger.WarnContext(ctx, "Codex native error observed", "owner_id", c.ownerID, "stage", validationNativeError, "will_retry", event.NativeError.WillRetry)
+	}
+	if c.logger != nil && (event.Metadata == AuthRecoveryStartedObserved || event.Metadata == AuthRecoveryCompletedObserved) {
+		c.logger.InfoContext(ctx, "Codex native authentication recovery observed", "owner_id", c.ownerID, "phase", event.Metadata)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
