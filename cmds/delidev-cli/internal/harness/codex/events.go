@@ -153,6 +153,7 @@ type Message struct {
 }
 
 type Event struct {
+	timeServiced     bool
 	NativeError      *NativeErrorObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
@@ -206,6 +207,17 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 		return Event{}, domain.SafeError(ctx.Err())
 	}
 	defer func() { <-c.eventGate }()
+	for {
+		event, err := c.nextEvent(ctx)
+		if err != nil || !event.timeServiced {
+			return event, err
+		}
+	}
+}
+
+// nextEvent runs beneath the serialized reader. Automatic service responses
+// never escape to product event consumers or acknowledge an input.
+func (c *Client) nextEvent(ctx context.Context) (Event, error) {
 	if err := c.wire.Err(); err != nil {
 		return Event{}, err
 	}
@@ -252,7 +264,14 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	native := *c.pendingEvent
 	c.pendingEvent = nil
-	event, err := c.observeEventLocked(native)
+	var event Event
+	var err error
+	if native.Method == "currentTime/read" {
+		err = c.answerCurrentTimeLocked(ctx, native, c.wire.Reply)
+		event.timeServiced = err == nil
+	} else {
+		event, err = c.observeEventLocked(native)
+	}
 	if err != nil {
 		c.problem = turnUncertain()
 		if c.execution != nil {
