@@ -26,6 +26,7 @@ const (
 	validationModeration     eventValidationStage = "turn-moderation"
 	validationBuffering      eventValidationStage = "model-safety-buffering"
 	validationDeprecation    eventValidationStage = "deprecation"
+	validationGuardian       eventValidationStage = "guardian-notice"
 	validationThreadIdentity eventValidationStage = "thread-identity"
 	validationRawItem        eventValidationStage = "raw-item"
 	validationQueue          eventValidationStage = "thread-queue"
@@ -58,6 +59,8 @@ func validationStage(method string) eventValidationStage {
 		return validationModeration
 	case "model/safetyBuffering/updated":
 		return validationBuffering
+	case "guardianWarning", "strictReviewRequired":
+		return validationGuardian
 	case "deprecationNotice":
 		return validationDeprecation
 	case "thread/started":
@@ -147,39 +150,40 @@ type Message struct {
 }
 
 type Event struct {
-	AutoReview       *domain.AutoReviewObservation
-	ImageGeneration  *ImageGeneration `json:"-"`
-	Compaction       *CompactionObservation
-	AgentThreadID    domain.ID
-	Subagents        []domain.SubagentObservation
-	Kind             EventKind
-	ThreadID         domain.ID
-	TurnID           domain.ID
-	Turn             *Turn
-	Status           *ThreadStatus
-	Message          *Message
-	TextDelta        string
-	ItemID           string
-	RequestID        domain.ID
-	InputID          domain.ID
-	Action           TurnAction
-	Problem          *domain.Error
-	Late             bool
-	Correlated       bool
-	EmittedAtMS      *int64
-	Metadata         MetadataKind
-	Usage            *domain.NativeTokenUsage
-	ResponseUsage    *domain.NativeResponseUsage
-	Notice           domain.NativeNotice
-	Tool             *Tool
-	ToolInput        *ToolInput
-	Artifact         *Artifact
-	ArtifactDelta    *ArtifactDelta
-	Plan             *PlanUpdate
-	Diff             *string
-	Interaction      *Interaction
-	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	AutoReview              *domain.AutoReviewObservation
+	ImageGeneration         *ImageGeneration `json:"-"`
+	Compaction              *CompactionObservation
+	AgentThreadID           domain.ID
+	Subagents               []domain.SubagentObservation
+	Kind                    EventKind
+	ThreadID                domain.ID
+	TurnID                  domain.ID
+	Turn                    *Turn
+	Status                  *ThreadStatus
+	Message                 *Message
+	TextDelta               string
+	ItemID                  string
+	RequestID               domain.ID
+	InputID                 domain.ID
+	Action                  TurnAction
+	Problem                 *domain.Error
+	Late                    bool
+	Correlated              bool
+	EmittedAtMS             *int64
+	Metadata                MetadataKind
+	Usage                   *domain.NativeTokenUsage
+	ResponseUsage           *domain.NativeResponseUsage
+	StrictReviewStartedAtMS *int64 `json:"-"`
+	Notice                  domain.NativeNotice
+	Tool                    *Tool
+	ToolInput               *ToolInput
+	Artifact                *Artifact
+	ArtifactDelta           *ArtifactDelta
+	Plan                    *PlanUpdate
+	Diff                    *string
+	Interaction             *Interaction
+	InteractionState        *InteractionStatus
+	Steer                   *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.

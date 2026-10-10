@@ -70,6 +70,7 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	strictReviewStarts  map[domain.ID]int64
 	autoReviews         map[domain.ID]domain.AutoReviewState
 	autoReviewPayloads  map[string][32]byte
 	autoReviewActions   map[string][32]byte
