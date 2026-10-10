@@ -162,3 +162,35 @@ func TestSessionDeletionAssemblesEveryHistoricalWorker(t *testing.T) {
 		}
 	}
 }
+
+func TestExecutionCapacityRetainsDeletionEnvelopeHeadroom(t *testing.T) {
+	// A valid original-owner inventory close to the byte bound: one recovery
+	// fits, but a complete new generation must be rejected without shrinking it.
+	plan := deletionPlanWithWorkers(domain.MaxSessionDeletionJobs)
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := domain.MaxSessionDeletionBytes - 24576
+	extra := (target - len(raw)) / 67
+	if extra < 0 || extra > 16*len(plan.Workers) {
+		t.Fatal("invalid near-bound fixture", len(raw), extra)
+	}
+	for n := 0; n < extra; n++ {
+		plan.Workers[n/16].Work.PreparationDigests = append(plan.Workers[n/16].Work.PreparationDigests, strings.Repeat("b", 64))
+	}
+	if err := plan.validate(); err != nil {
+		t.Fatal("invalid retained ownership fixture", err)
+	}
+	before, _ := json.Marshal(plan)
+	if err := checkDeletionHeadroom(plan, 1); err != nil {
+		t.Fatal("reserved recovery envelope", len(before), err)
+	}
+	if err := checkDeletionHeadroom(plan, 5); err == nil {
+		t.Fatal("new generation exceeded original envelope", len(before))
+	}
+	after, _ := json.Marshal(plan)
+	if string(before) != string(after) {
+		t.Fatal("capacity check rewrote retained ownership")
+	}
+}

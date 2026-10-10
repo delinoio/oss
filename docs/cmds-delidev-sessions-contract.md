@@ -964,3 +964,16 @@ Every claim, including the independent first-execution transaction primitive, us
 `ListWaitingQueue` reads dispatch order, exact uint64 generation, exact waiting count and bounded payloads from one transaction. Defaults are 50 inputs, maximum 200 and 3 MiB per payload page. Signed tokens bind server, session, generation and last reached input position. Membership/order changes return CursorExpired and require a fresh first page. Legacy ListQueue keeps its acceptance-history order and cursor meaning. Generation stays exact in Go uint64 and desktop bigint, including values above JavaScript's safe integer range.
 
 At each new Fork admission, freeze the source's already accepted image references in `fork-image-snapshot:<job-id>`, including an explicit empty set. Bind original source/child/execution/turn and immutable job-input digest. Independent inheritance and read-only Sidechat use this frozen set and recheck original image/Worker claims; later acceptance cannot enlarge it. Existing pre-cutover jobs without a snapshot retain the old verified history cutoff. Missing new snapshots require recovery. Retire snapshot metadata only after both original job and dependent child are retired; retain independent child deletion ownership and all original native/workspace restrictions.
+
+### Recovery and startup retry retention capacity
+
+Before queuing a new execution recovery inspection, reserve one retained job
+within the existing permanent deletion limits. An explicit startup retry reserves
+its execution and recovery before creating its fresh queued input. Recheck the
+original session and, for a Sidechat, its parent/dependent deletion envelope.
+Insufficient capacity leaves the original session, input and assignment history
+unchanged. Reusing a queued recovery or replaying an accepted request adds no
+jobs and remains available at the retention bound. These checks grant no native
+replay or new execution authority; original ownership and settled no-send proof
+remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
+for the five-job admission reservation.
