@@ -60,10 +60,14 @@ grant external download, Account readiness or native execution authority.
 
 The Model input retains direct exact-ID entry, original source identity and
 mounted draft ownership while loading, failed or unavailable suggestions are
-reported. Retain the last successful same-source candidates as stale observations
-when their original source identity remains valid; unknown or mismatched echoes
-cannot supply candidates. No match preserves exact-ID entry. A valid selection retains that exact native ID until atomic Worker
-save. Name/ID filtering, focus-open listbox, keyboard arrows/Enter, Escape,
+reported. Retain the last successful same-service candidates only for Known
+subscription advisory reads, while their service identity and validated catalog
+source remain valid; unknown or mismatched echoes cannot supply candidates. API
+endpoint hints remain explicit revision-bound reads, and a failed read clears
+those choices while preserving exact direct input, as required by the [catalog
+contract](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation). No
+match preserves exact-ID entry. A valid selection retains that exact native ID
+until atomic Worker save. Name/ID filtering, focus-open listbox, keyboard arrows/Enter, Escape,
 accessible active descendants, option visibility and narrow-width wrapping remain
 required. Source changes clear incompatible Account/model selections; ordered
 source-group keys retain their independent drafts and read/receipt lifetimes.
