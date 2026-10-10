@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it, vi } from "vitest";
-import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
+import { customizationBindings, openToolShortcutSuppressed, captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}} as const;
@@ -65,4 +65,23 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("captures physical chord
   vi.spyOn(altGraph, "getModifierState").mockImplementation(key => key === "AltGraph");
   expect(captureShortcut(altGraph, platform)).toBeUndefined();
   expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅏ", code: "KeyK", ...modifiers }), platform)).toBeUndefined();
+});
+
+it("preserves each committed T override and suppresses only the fixed Open tool binding", () => {
+ const definition = { id:ShortcutId.OpenTool, scope:Surface.Sessions, label:"session.openTool" as const, bindings:[{key:"t",primary:true}], enabled:true };
+ for (const action of editableShortcutCatalog) {
+  const overrides = {[action.id]: {state:ShortcutOverrideState.Binding, chord:{key:"t",shift:false}}} as const;
+  const original = JSON.stringify(overrides);
+  expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+  expect(shortcutConflicts(overrides)).toEqual([]);
+  expect(customizationBindings(ShortcutId.OpenTool,overrides)).toEqual([]);
+  expect(effectiveShortcutDefinitions([definition],overrides)[0]).toMatchObject({bindings:[],enabled:false,unavailableReason:"shortcuts.customToolPriority"});
+  expect(JSON.stringify(overrides)).toBe(original);
+  expect(openToolShortcutSuppressed({[action.id]:{state:ShortcutOverrideState.Disabled}})).toBe(false);
+  expect(openToolShortcutSuppressed({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:"t",shift:true}}})).toBe(false);
+ }
+ expect(customizationBindings(ShortcutId.OpenTool,{})).toEqual([{key:"t",primary:true}]);
+ expect(effectiveShortcutDefinitions([definition],{})[0]).toEqual(definition);
+ expect(editableShortcutCatalog).toHaveLength(7);
+ expect(()=>parseShortcutOverrides({[ShortcutId.OpenTool]:{state:"disabled"}})).toThrow();
 });
