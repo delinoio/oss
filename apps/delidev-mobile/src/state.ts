@@ -6,9 +6,12 @@ import {
   type DescMessage,
   type Message,
 } from "@bufbuild/protobuf";
-import { createClient, type Transport } from "@connectrpc/connect";
+import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
+  clientFailure,
+  FailureCode,
+  ErrorDetailSchema,
   createDeliDevTransport,
   serverOrigin,
   requireEntityId,
@@ -44,10 +47,16 @@ export enum Operation {
   Report = "report",
   Revoke = "revoke",
 }
+export enum PendingAttempt {
+  Prepared = "prepared",
+  Sending = "sending",
+  Uncertain = "uncertain",
+}
 export interface Pending {
   operation: Operation;
   request: string;
   target: string;
+  attempt?: PendingAttempt;
 }
 export interface Pairing {
   requestId: string;
@@ -148,7 +157,8 @@ function validate(value: unknown): State {
     if (
       profile.pending &&
       (!Object.values(Operation).includes(profile.pending.operation) ||
-        profile.pending.request.length > 2 * 1024 * 1024)
+        profile.pending.request.length > 2 * 1024 * 1024 ||
+        (profile.pending.attempt !== undefined && !Object.values(PendingAttempt).includes(profile.pending.attempt)))
     )
       throw new Error("protected-state-invalid");
     if (profile.pairing) {
@@ -165,6 +175,24 @@ function validate(value: unknown): State {
   if (s.selectedProfile && !ids.has(s.selectedProfile))
     throw new Error("protected-state-invalid");
   return s;
+}
+// Only these method-specific InvalidArgument paths reject before acceptance or
+// roll back their apply transaction. Permission, lookup and conflict failures
+// can occur while observing committed results and cannot prove no acceptance.
+const validationRejectionOperations = new Set<Operation>([
+  Operation.Create, Operation.Send, Operation.Steer, Operation.Question,
+  Operation.Approval, Operation.Read, Operation.Preferences,
+]);
+function provenValidationRejection(operation: Operation, reason: unknown): boolean {
+  const error = ConnectError.from(reason);
+  return validationRejectionOperations.has(operation) && error.code === Code.InvalidArgument &&
+    error.findDetails(ErrorDetailSchema).some(detail => detail.code === FailureCode.InvalidArgument) &&
+    clientFailure(reason).code === FailureCode.InvalidArgument;
+}
+function matchingPending(current: Profile | undefined, original: Profile, pending: Pending): current is Profile {
+  return Boolean(current && current.origin === original.origin && current.serverId === original.serverId &&
+    current.deviceId === original.deviceId && current.token === original.token && !current.pairing && !current.revoked &&
+    current.pending?.request === pending.request && current.pending.operation === pending.operation && current.pending.target === pending.target);
 }
 const schemas: Record<Operation, DescMessage> = {
   [Operation.Create]: CreateSessionRequestSchema,
@@ -331,7 +359,7 @@ export class ProtectedState {
       const p = s.profiles.find((p) => p.id === id);
       if (!p || p.pending || p.pairing || p.revoked)
         throw new Error("pending-operation");
-      p.pending = { operation, request: raw, target };
+      p.pending = { operation, request: raw, target, attempt: PendingAttempt.Prepared };
     });
   }
   async perform(
@@ -367,18 +395,57 @@ export class ProtectedState {
       report: (r) => inbox.reportNotification(r),
       revoke: (r) => createClient(DeviceService, transport).revokeDevice(r),
     };
-    const result = await calls[p.operation](request as never);
-    await this.update((s) => {
-      const current = s.profiles.find((p) => p.id === id);
-      if (
-        !current ||
-        current.pending?.request !== p.request ||
-        current.pending.operation !== p.operation
-      )
-        throw new Error("mutation-scope-changed");
-      delete current.pending;
-      if (p.operation === Operation.Revoke) current.revoked = true;
-    });
+    let fresh = false;
+    try {
+      await this.update((s) => {
+        const current = s.profiles.find((value) => value.id === id);
+        if (!matchingPending(current, profile, p))
+          throw new Error("mutation-scope-changed");
+        fresh = current.pending!.attempt === PendingAttempt.Prepared;
+        // Sending is durable before the wire. Restored Sending and legacy records
+        // have no no-send proof; a replay must preserve that uncertainty forever.
+        current.pending!.attempt = fresh
+          ? PendingAttempt.Sending
+          : PendingAttempt.Uncertain;
+      });
+    } catch {
+      throw new Error("mutation-recovery-required");
+    }
+    let result: unknown;
+    try {
+      result = await calls[p.operation](request as never);
+    } catch (reason) {
+      try {
+        await this.update((s) => {
+          const current = s.profiles.find((value) => value.id === id);
+          if (!matchingPending(current, profile, p)) throw new Error("mutation-scope-changed");
+          if (
+            fresh && current.pending!.attempt === PendingAttempt.Sending &&
+            provenValidationRejection(p.operation, reason)
+          ) {
+            delete current.pending;
+          } else {
+            current.pending!.attempt = PendingAttempt.Uncertain;
+          }
+        });
+      } catch {
+        // A failed durable settlement retains the original protected request;
+        // it cannot turn an unrecorded clear into permission for a new request.
+        throw new Error("mutation-recovery-required");
+      }
+      throw reason;
+    }
+    try {
+      await this.update((s) => {
+        const current = s.profiles.find((p) => p.id === id);
+        if (!matchingPending(current, profile, p))
+          throw new Error("mutation-scope-changed");
+        delete current.pending;
+        if (p.operation === Operation.Revoke) current.revoked = true;
+      });
+    } catch {
+      throw new Error("mutation-recovery-required");
+    }
     return result;
   }
 }

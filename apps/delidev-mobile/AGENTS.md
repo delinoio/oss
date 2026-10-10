@@ -18,3 +18,5 @@
   track, provision owner accounts or invent credentials as part of fixtures.
 
 - New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.
+
+- Issue #2263 preserves optional Prepared/Sending/Uncertain pending-attempt provenance in protected state v1. Persist Sending before dispatch; only a fresh allowlisted versioned InvalidArgument validation rejection may durably clear its original scoped intent. Keep legacy/restored Sending/Uncertain retries conservative, correction drafts intact, non-allowlisted and post-commit observation failures uncertain, and storage failures protected. Check original profile authentication and exact operation/request/target before settlement; never clear a replacement request or infer permission from an apparent replay rejection. Follow the mobile contract.

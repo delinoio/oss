@@ -55,6 +55,23 @@ One unresolved mutation per profile is durably stored before sending, using the
 original generated protobuf JSON and exact request ID. Create, Send, Steer,
 Stop, Resume, question, approval, Inbox read-state, notification preferences,
 notification claim/report and self-revocation use closed operation dispatch.
+Issue #2263 adds optional Prepared/Sending/Uncertain provenance to the protected
+pending record without changing its protobuf JSON or state version. Persist
+Sending before dispatch. Only a fresh Prepared attempt may durably clear its
+matching profile/operation/request after a versioned InvalidArgument validation
+rejection from CreateSession, EnqueueInput, SteerQueuedInput, RespondQuestion,
+RespondApproval, SetInboxReadState or SetNotificationPreferences. These owning
+validation paths reject before acceptance or roll back their apply transaction.
+Preserve the correction draft. Control, Claim, Report and Revoke do not use this
+clearing rule. PermissionDenied, NotFound, Conflict, transport failures, Internal,
+Canceled, RecoveryRequired, unknown and unversioned errors retain uncertainty;
+post-commit observation failures do not prove rejection. Restored Sending,
+legacy records without provenance and Uncertain retries cannot regain fresh
+attempt authority from a later apparent rejection. Failed protected settlement
+retains the original request and requires recovery. Check original HTTPS/server,
+device/token and pending operation/request/target before every state transition;
+late results cannot clear another profile or replacement request.
+
 A lost response retains the original request. Foreground return and connection
 refresh perform reads only. Explicit retry requires inspection of current
 server state and confirmation; it never changes a retained request or selection.
