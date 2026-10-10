@@ -3599,6 +3599,24 @@ The transcript renders original `reasoning-text` artifacts in a collapsed, keybo
 ### Retained native Read operations
 The transcript gives `opencode-read` its own collapsed disclosure with Pending, Running, Completed and Failed states. Validate original call identity, ordered exact sequences, immutable applied inputs/start time, content bounds and the recorded message state before presenting the retained operation. A pending proposal cannot imply a successful read; contradictory or missing evidence remains Unavailable. Preserve explicitly empty output, zero requested offsets/limits and original Unicode/whitespace. Display paths as inert text, never local file links or access authority. Original proposal/state history, native preview, loaded instruction paths and native truncation/interruption evidence stay separately inspectable. A tool error is neither an assistant answer nor an execution outcome. This read-only surface does not enable unfinished native dispatch or attachment presentation.
 
+### Explicit native Shell action
+
+Session Actions exposes Shell for ordinary Codex sessions. The dialog identifies
+its original session, focuses the command field, and requires explicit confirmation
+that the exact command runs with full access outside the thread sandbox. Agent
+text and opening the dialog cannot authorize execution. Source revision changes
+block a fresh run until the dialog is reopened. Keep the conversation composer,
+independent terminals and original native child cleanup unchanged.
+
+Retain the original command request in the connection-owned mutation registry.
+Its deterministic job identity permits read-only inspection after a lost reply;
+never resend an uncertain Run or cancellation. Only the original request verifier
+can settle an uncertain Run from an independently accepted job read. Native output,
+exit and cleanup observations remain separate; a terminal result alone does not
+prove cleanup. Closing the dialog or changing tabs stops presentation, not native
+work. Escape closes the dialog and restores focus. Show localized bounded command,
+output and original status without rendering product-owned job/process identities.
+
 ### Retained native Shell operations
 The transcript gives `opencode-shell` a collapsed Shell disclosure with original Pending/Running/Completed/Failed state. Validate original call, immutable applied command/workdir/timeout/start, exact ordered sequences, safe integer/Unicode/content bounds and independent message closure. Inconsistent or unknown evidence stays Unavailable without partial display. Preserve omitted options without inventing defaults and explicit null exit as Unavailable, separately from no exit observation during execution.
 

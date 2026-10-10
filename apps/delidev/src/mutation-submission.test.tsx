@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -100,4 +101,22 @@ it("shares existing repository saves across nested Settings registries and prese
  fireEvent.click(screen.getByRole("button", { name: "Retry Settings" })); await screen.findByText("Inline: locked");
  expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]);
  fireEvent.click(screen.getByRole("button", { name: "Settings" })); fireEvent.click(screen.getByRole("button", { name: "Retry Inline" })); expect(requests).toHaveLength(2);
+});
+
+it("settles an uncertain original intent only from its original read verifier without sending again", async () => {
+  const id = newRequestId(), requestId = newRequestId();
+  let calls = 0;
+  const transport = createRouterTransport(router => router.service(SessionService, { enqueueInput: () => { calls++; throw new ConnectError("Lost original reply", Code.Unavailable); } }));
+  function Sender() {
+    const mutation = useRetainedMutation("observed-fixture", SessionQuery.enqueueInput, undefined, (result, request) => result.change?.requestId === request.requestId);
+    return <><button onClick={() => void mutation.send({ sessionId: id, requestId })}>Send original</button><button onClick={() => mutation.acceptObserved(create(SessionQuery.enqueueInput.output, { change: { requestId: newRequestId() } }))}>Inspect foreign</button><button onClick={() => mutation.acceptObserved(create(SessionQuery.enqueueInput.output, { change: { requestId } }))}>Inspect original</button><p>{mutation.uncertain ? "Uncertain observation" : "Settled observation"}</p></>;
+  }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><MutationIntents><Sender /></MutationIntents></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Send original" }));
+  await screen.findByText("Uncertain observation");
+  fireEvent.click(screen.getByRole("button", { name: "Inspect foreign" }));
+  expect(screen.getByText("Uncertain observation")).toBeDefined();
+  fireEvent.click(screen.getByRole("button", { name: "Inspect original" }));
+  await screen.findByText("Settled observation");
+  expect(calls).toBe(1);
 });

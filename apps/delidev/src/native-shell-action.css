@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.native-shell-action { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; }
+.native-shell-action form, .native-shell-action label, .native-shell-action article { display: grid; gap: 12px; }
+.native-shell-action form, .native-shell-action section { margin-block: 24px; }
+.native-shell-action textarea { min-height: 112px; width: 100%; box-sizing: border-box; }
+.native-shell-action .native-shell-confirm { display: flex; align-items: flex-start; }
+.native-shell-action button { min-height: 40px; border-radius: 8px; }
+.native-shell-action pre, .native-shell-action p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.native-shell-action .native-shell-warning { padding: 12px; border: 1px solid var(--warning-border); border-radius: 8px; background: var(--warning-background); color: var(--warning-text); }
+.native-shell-action .native-shell-output { max-height: 320px; overflow: auto; }

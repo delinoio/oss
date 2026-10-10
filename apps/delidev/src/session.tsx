@@ -53,6 +53,7 @@ import { NativeTodo, NativeTodoProgress } from "./native-todo";
 import { NativeUsage } from "./native-usage";
 import { NativeRead } from "./native-read";
 import { NativeShell } from "./native-shell";
+import { NativeShellAction } from "./native-shell-action";
 import { NativeClaudeMessage, validNativeClaudeMessage } from "./native-claude-message";
 import { NativeClaudeInterruption } from "./native-claude-interruption";
 import { NativeContextCompaction } from "./native-context-compaction";
@@ -593,6 +594,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
         <button type="button" disabled={!session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
+          {session && !embedded ? <NativeShellAction session={session} active={active && tabs.tab.kind !== SessionTabKind.Sidechat && tabs.tab.kind !== SessionTabKind.PendingSidechat} blocked={control.busy || control.uncertain || runnerRemediationPending || budgetBlocked} /> : null}
           {session ? <SessionForkAction source={session} disabled={control.busy || control.uncertain} /> : null}
           <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
         </SessionActions>

@@ -221,8 +221,27 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
     if (current.error !== undefined) registry.put(key, empty);
     setLocalError(previous => previous?.key === key && previous.rejected ? undefined : previous);
   };
+  // A read can settle an uncertain original operation only through the verifier
+  // captured before its mutation was sent. This path never invokes the RPC.
+  const acceptObserved = (result: MessageShape<O>): boolean => {
+    const current = registry.entries.get(key);
+    if (!registry.alive || opening?.disposed || !current?.uncertain || current.busy || !current.input || !current.acknowledge) return false;
+    try {
+      if (!current.acknowledge(result) || registry.entries.get(key) !== current) return false;
+    } catch { return false; }
+    const request = current.input as MessageShape<I>;
+    registry.notifyAcceptedResult(key, request, result);
+    if (!registry.alive || opening?.disposed || registry.entries.get(key) !== current) return false;
+    registry.put(key, empty);
+    setLocalError(undefined);
+    registry.notifyAccepted(key);
+    if (mounted.current) {
+      try { accepted?.(result, request); } catch (error) { setLocalError({ key, error, rejected: false }); }
+    }
+    return true;
+  };
   const resolveJob = (jobId: string) => {
     if (registry.entries.get(key)?.job?.id === jobId) registry.put(key, empty);
   };
-  return { resolveJob, send, retry: () => send(), clearRejected, ...state, busy: state.busy || Boolean(state.job), error: localError?.key === key ? localError.error : state.error };
+  return { acceptObserved, resolveJob, send, retry: () => send(), clearRejected, ...state, busy: state.busy || Boolean(state.job), error: localError?.key === key ? localError.error : state.error };
 }
